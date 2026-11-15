@@ -15,3 +15,4 @@ pub mod outcome;
 pub mod roles;
 pub mod rbac;
 pub mod role_actions;
+pub mod people;

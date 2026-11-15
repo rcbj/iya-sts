@@ -66,6 +66,11 @@ impl Replay {
         )
     }
 
+    /// Whether Node called this port method in the step.
+    pub fn has(&self, key: &str) -> bool {
+        self.calls.iter().any(|row| Replay::key(row) == key)
+    }
+
     fn problem(&self, text: String) {
         self.problems.lock().unwrap().push(text);
     }
@@ -325,5 +330,165 @@ impl BootstrapName for Replay {
             .as_str()
             .unwrap_or("")
             .to_string()
+    }
+}
+
+fn strings_of(v: &Value) -> Vec<String> {
+    v.as_array()
+        .map(|l| l.iter().map(|s| s.as_str().unwrap_or("").to_string()).collect())
+        .unwrap_or_default()
+}
+
+impl Credentials for Replay {
+    fn account_disabled(&self, name: &str) -> bool {
+        self.answer("credentials", "accountDisabled", json!([name])) == json!(true)
+    }
+    fn set_account_disabled(&self, name: &str, disabled: bool, options: &Value) -> Marked {
+        self.marked("credentials", "setAccountDisabled", json!([name, disabled, options]))
+    }
+    fn generate_password(&self, name: &str) -> String {
+        self.answer("credentials", "generatePassword", json!([name]))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    }
+    fn set_password(&self, name: &str, password: &str, options: &Value) -> Value {
+        self.answer("credentials", "setPassword", json!([name, password, options]))
+    }
+    fn set_password_reset_required(&self, name: &str, flag: bool) -> Value {
+        self.answer("credentials", "setPasswordResetRequired", json!([name, flag]))
+    }
+    fn issue_activation(&self, name: &str) -> Value {
+        self.answer("credentials", "issueActivation", json!([name]))
+    }
+}
+
+impl IdentityKeys for Replay {
+    fn identity_key_of(&self, name: &str) -> String {
+        self.answer("stats", "identityKeyOf", json!([name]))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    }
+}
+
+impl Logout for Replay {
+    fn terminate(&self, key: &str, selection: &Value, options: &Value) -> Value {
+        self.answer("logout", "terminate", json!([key, selection, options]))
+    }
+}
+
+impl AccountEffects for Replay {
+    fn note_revoking_write(&self, what: &str) {
+        self.call("revokingWrites", "note", json!([what]));
+    }
+    fn mail_account_disabled(&self, name: &str, why: &str, by_system: bool) {
+        self.call("mail", "accountDisabled", json!([name, why, by_system]));
+    }
+}
+
+impl PersonWriter for Replay {
+    fn create_user(&self, name: &str, options: &Value) -> Marked {
+        self.marked("directory", "createUser", json!([name, options]))
+    }
+}
+
+impl GroupWriter for Replay {
+    fn create_group(&self, name: &str, options: &Value) -> Marked {
+        self.marked("groups", "createGroup", json!([name, options]))
+    }
+    fn add_group_member(&self, group: &str, member: &str, options: &Value) -> Marked {
+        self.marked("groups", "addGroupMember", json!([group, member, options]))
+    }
+    fn set_group_mail(&self, group: &str, mail: &str, options: &Value) -> Marked {
+        self.marked("groups", "setGroupMail", json!([group, mail, options]))
+    }
+    fn set_group_policy(&self, group: &str, attribute: &str, policy: &str, options: &Value) -> Marked {
+        self.marked("groups", "setGroupPolicy", json!([group, attribute, policy, options]))
+    }
+    fn add_group_owner(&self, group: &str, owner: &str, options: &Value) -> Marked {
+        self.marked("groups", "addGroupOwner", json!([group, owner, options]))
+    }
+    fn remove_group_owner(&self, group: &str, owner: &str, options: &Value) -> Marked {
+        self.marked("groups", "removeGroupOwner", json!([group, owner, options]))
+    }
+}
+
+impl GroupDirectory for Replay {
+    fn groups_of_user(&self, name: &str) -> Value {
+        // The groups claim reads it as `groups.directory`, ownership as `ldap`.
+        let port = if self.has("groups.directory.groupsOfUser") {
+            "groups.directory"
+        } else {
+            "ldap"
+        };
+        self.answer(port, "groupsOfUser", json!([name]))
+    }
+    fn groups_owned_by(&self, dns: &[String]) -> Vec<Value> {
+        self.answer("ldap", "groupsOwnedBy", json!([dns]))
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    }
+    fn group_ownership(&self, name: &str) -> Value {
+        self.answer("ldap", "groupOwnership", json!([name]))
+    }
+    fn set_group_owner_protected(&self, name: &str, flag: bool, options: &Value) -> Marked {
+        self.marked("ldap", "setGroupOwnerProtected", json!([name, flag, options]))
+    }
+}
+
+impl ServiceAccounts for Replay {
+    fn write_refusal(&self, fields: &Value) -> Option<PolicyRefusal> {
+        let a = self.answer("serviceAccountPolicy", "writeRefusal", json!([fields]));
+        if a.is_null() {
+            return None;
+        }
+        Some(PolicyRefusal {
+            code: a["code"].as_str().and_then(code_named)?,
+            message: a["message"].as_str().unwrap_or("").to_string(),
+        })
+    }
+    fn check(&self, body: &Value, existing: &str) -> Marked {
+        self.marked("serviceAccounts", "check", json!([body, existing]))
+    }
+    fn set(&self, username: &str, change: &Value) -> Value {
+        self.answer("serviceAccounts", "set", json!([username, change]))
+    }
+    fn list(&self) -> Vec<Value> {
+        self.answer("serviceAccounts", "list", json!([]))
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    }
+    fn of(&self, name: &str) -> Value {
+        self.answer("serviceAccounts", "of", json!([name]))
+    }
+    fn set_owner_protected(&self, name: &str, flag: bool) -> Marked {
+        self.marked("serviceAccounts", "setOwnerProtected", json!([name, flag]))
+    }
+}
+
+impl AccountSignals for Replay {
+    fn credential_changed(&self, change: &Value) {
+        self.call("accountSignals", "credentialChanged", json!([change]));
+    }
+}
+
+impl LinkMailer for Replay {
+    fn mailed_link(&self, kind: &str, who: &str, token: &str, body: &Value, actor: &str, via: &str) -> Value {
+        self.answer("actions", "mailedLink", json!([kind, who, token, body, actor, via]))
+    }
+}
+
+impl ScopePolicy for Replay {
+    fn protected_scopes(&self) -> Vec<String> {
+        strings_of(&self.answer("scopePolicy", "protectedScopes", json!([])))
+    }
+    fn declared_scopes(&self, identifier: &str) -> Vec<String> {
+        strings_of(&self.answer("scopePolicy", "declaredScopes", json!([identifier])))
+    }
+    fn delegated_permission_scopes(&self, identifier: &str) -> Vec<String> {
+        strings_of(&self.answer("scopePolicy", "delegatedPermissionScopes", json!([identifier])))
     }
 }

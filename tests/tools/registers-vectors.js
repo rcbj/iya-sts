@@ -418,8 +418,351 @@ async function build(ROOT) {
   grant({ action: 'revoke', username: 'emil', role: 'security' });
   grant({ action: 'promote' });
 
+  // ---- a disabled account (common/account_state.ts, rule 3at) ---------
+  const credentials = req('common/credentials');
+  const stats = req('common/admin_stats');
+  const realms = req('common/realms');
+  const credPort = rec.object('credentials', credentials);
+  const statsPort = rec.object('stats', stats);
+  const revoking = req('common/revoking_writes');
+  revoking.note = rec.fn('revokingWrites', 'note', revoking.note.bind(revoking));
+  const mailUses = req('common/mail_uses');
+  mailUses.accountDisabled = rec.fn('mail', 'accountDisabled',
+    function () {
+      return undefined;
+    });
+  const logoutPort = rec.object('logout', {
+    terminate: function (key) {
+      return { terminated: key === 'dora' ? ['s1', 's2'] : [], skipped: [],
+               notifications: [], backchannel: key === 'dora' ? ['b1'] : [],
+               message: 'ended what ' + key + ' held' };
+    },
+    heldIds: function () {
+      return [];
+    }
+  });
+  const AccountState = req('common/account_state').AccountState;
+  const accountState = new AccountState({
+    log: helpers.log, credentials: credPort, audit: auditPort,
+    stats: statsPort, errorCodes: errorCodes, realms: realms,
+    findLogout: function () {
+      return logoutPort;
+    },
+    later: function () {
+      return undefined;
+    } });
+  const account = function (op, input, run) {
+    rec.step(steps, 'accountState', op, input, run);
+  };
+  [['', true], ['anonymous', true], ['dora', true], ['dora', true],
+   ['dora', false], ['dora', false], ['ghost-person', true]]
+    .forEach(function (row) {
+      account('setDisabled', { who: row[0], disabled: row[1],
+                               opts: { actor: 'vectors', via: 'api',
+                                       reason: 'testing' } }, function () {
+        return accountState.setDisabled(row[0], row[1],
+          { actor: 'vectors', via: 'api', reason: 'testing' });
+      });
+    });
+  account('setDisabled', { who: 'emil', disabled: true,
+                           opts: { door: 'the password policy',
+                                   riscReason: 'hijacking' } }, function () {
+    return accountState.setDisabled('emil', true,
+      { door: 'the password policy', riscReason: 'hijacking' });
+  });
+  ['', 'anonymous', 'dora', 'emil'].forEach(function (who) {
+    account('isDisabled', { who: who }, function () {
+      return { disabled: accountState.isDisabled(who) };
+    });
+  });
+
+  // ---- the users and groups acts (admin_actions.ts usersAction, ------
+  // groupsAction): the person created, the account switched, the group
+  // written — the directory's half is the writer port.
+  const mode = req('common/mode');
+  mode.verifiesCredentials = rec.fn('mode', 'verifiesCredentials',
+                                    mode.verifiesCredentials.bind(mode));
+  const peopleActions = new AdminActions(Object.assign(
+    AdminActions.defaultDeps(),
+    { auditLog: auditPort, applications: appsPort, roles: roles, rbac: rbac,
+      credentials: credPort, accountState: accountState,
+      accountSignals: rec.object('accountSignals',
+                                 req('ssf/account_signals')),
+      serviceAccounts: rec.object('serviceAccounts',
+                                  req('common/service_accounts')),
+      serviceAccountPolicy: rec.object('serviceAccountPolicy',
+                                       req('common/service_account_policy'))
+    }));
+  peopleActions.setDirectoryWriter(rec.fn('directory', 'createUser',
+                                          ldap.createUser));
+  peopleActions.setGroupWriter(rec.object('groups', {
+    createGroup: ldap.createGroup, addGroupMember: ldap.addGroupMember,
+    addGroupOwner: ldap.addGroupOwner,
+    removeGroupOwner: ldap.removeGroupOwner,
+    setGroupMail: ldap.setGroupMail, setGroupPolicy: ldap.setGroupPolicy }));
+  peopleActions.mailedLink = rec.fn('actions', 'mailedLink',
+    function () {
+      return null;
+    });
+  const users = function (body) {
+    rec.step(steps, 'users', 'usersAction', { body: body }, function () {
+      return peopleActions.usersAction(body, { actor: 'vectors', via: 'api' });
+    });
+  };
+  users({ action: 'create', username: 'frank', credential: 'none' });
+  users({ action: 'create', username: 'gina', credential: 'password',
+          password: 'Pw-1234567890!', passwordConfirm: 'other' });
+  users({ action: 'create', username: 'hank', credential: 'password' });
+  users({ action: 'create', username: 'ivan', credential: 'password',
+          password: 'Correct-Horse-9-Battery!',
+          'field.mail': 'ivan@example.com', 'field.cn': ' Ivan ',
+          'field.telephoneNumber.0': '1', 'field.telephoneNumber.1': '2' });
+  users({ action: 'create', username: 'jane', credential: 'generate',
+          attributes: { sn: 'Jones' }, invent: 'no' });
+  users({ action: 'create', username: 'kate', credential: 'bogus' });
+  users({ action: 'create', username: 'lena', credential: 'activation' });
+  users({ action: 'create', username: 'dora', credential: 'none' });
+  users({ action: 'create', username: '', credential: 'none' });
+  users({ action: 'create', username: 'a,b', credential: 'none' });
+  users({ action: 'create', username: 'svc-one', credential: 'none',
+          serviceAccount: 'true', owners: ['dora'] });
+  users({ action: 'disable' });
+  users({ action: 'disable', user: 'frank', riscReason: 'tired' });
+  users({ action: 'disable', user: 'frank', riscReason: 'bulk-account' });
+  users({ action: 'enable', username: 'frank' });
+  users({ action: 'enable', username: '' });
+  users({ action: 'fly' });
+  const groups = function (body) {
+    rec.step(steps, 'groups', 'groupsAction', { body: body }, function () {
+      return peopleActions.groupsAction(body, { actor: 'vectors' });
+    });
+  };
+  groups({ action: 'create', group: 'g-new', members: 'dora, emil\nfrank' });
+  groups({ action: 'create', displayName: 'g-empty' });
+  groups({ action: 'create', group: '' });
+  groups({ action: 'create', group: 'g-new' });
+  groups({ action: 'add-member', group: 'g-new', member: 'hank' });
+  groups({ action: 'add-member', group: 'g-new', user: 'hank' });
+  groups({ action: 'add-member', group: 'nosuch-group', member: 'hank' });
+  groups({ action: 'set-mail', group: 'g-new', mail: 'team@example.com' });
+  groups({ action: 'set-policy', group: 'g-new', attribute: 'x',
+           policy: 'y' });
+  groups({ action: 'add-owner', group: 'g-new', owner: 'dora' });
+  groups({ action: 'remove-owner', group: 'g-new', owner: 'emil' });
+  groups({ action: 'remove-member', group: 'g-new', member: 'hank' });
+
+  // ---- the groups claim (common/group_claims.ts, rule 3d-ii) ----------
+  const GroupClaims = req('common/group_claims').GroupClaims;
+  const groupClaims = new GroupClaims({ log: helpers.log, config: config,
+    applications: appsPort, stats: statsPort, errorCodes: errorCodes });
+  groupClaims.setDirectory(rec.object('groups.directory',
+                                      { groupsOfUser: ldap.groupsOfUser }));
+  const claim = function (op, input, run) {
+    rec.step(steps, 'groupClaims', op, input, run);
+  };
+  const claimSteps = function () {
+    [['dora', ''], ['nobody-here', ''], ['dora', 'app-cli'], ['', '']]
+      .forEach(function (row) {
+        claim('groupsOf', { username: row[0], app: row[1] }, function () {
+          return groupClaims.groupsOf(row[0], row[1]);
+        });
+      });
+    claim('jwtClaimsFor', { set: 'id_token', context: { username: 'dora' } },
+      function () {
+        return groupClaims.jwtClaimsFor('id_token', { username: 'dora' });
+      });
+    ['saml2', 'saml11'].forEach(function (set) {
+      claim('samlAttributesFor', { set: set,
+                                   context: { subject: 'dora',
+                                              client_id: 'app-cli' } },
+        function () {
+          return groupClaims.samlAttributesFor(set,
+            { subject: 'dora', client_id: 'app-cli' });
+        });
+    });
+    claim('state', {}, function () {
+      return groupClaims.state();
+    });
+  };
+  claimSteps();
+  config.setOverride('groups.claimValue', 'dn');
+  claimSteps();
+  config.setOverride('groups.claimName', 'exp');
+  claimSteps();
+  config.clearOverride('groups.claimName');
+  config.clearOverride('groups.claimValue');
+  config.setOverride('groups.claim', false);
+  claimSteps();
+  config.clearOverride('groups.claim');
+
+  // ---- ownership (common/ownership.ts, rule 3cn) -----------------------
+  const Ownership = req('common/ownership').Ownership;
+  const ownership = new Ownership({ log: helpers.log, errorCodes: errorCodes,
+    config: function () {
+      return config;
+    },
+    ldap: function () {
+      return rec.object('ldap', ldap, ['groupsOfUser', 'groupsOwnedBy',
+        'groupOwnership', 'setGroupOwnerProtected']);
+    },
+    roles: function () {
+      return roles;
+    },
+    applications: function () {
+      return appsPort;
+    },
+    serviceAccounts: function () {
+      return rec.object('serviceAccounts', req('common/service_accounts'));
+    },
+    scopePolicy: function () {
+      return rec.object('scopePolicy', req('common/scope_policy'));
+    } });
+  const own = function (op, input, run) {
+    rec.step(steps, 'ownership', op, input, run);
+  };
+  ['dora', 'emil', 'nobody-here', ''].forEach(function (who) {
+    own('identityOf', { username: who }, function () {
+      return ownership.identityOf(who);
+    });
+    own('ownsAnything', { username: who }, function () {
+      return { owns: ownership.ownsAnything(who) };
+    });
+  });
+  [['role', 'staff'], ['role', 'ADMIN_READ'], ['role', 'EVERYBODY'],
+   ['role', 'nosuch'], ['group', 'g-staff'], ['group', 'g-new'],
+   ['group', 'admin-read'], ['application', 'app-res'],
+   ['application', 'sts-api-client'], ['service-account', 'svc-one'],
+   ['service-account', 'dora'], ['robot', 'x'], ['role', '']]
+    .forEach(function (row) {
+      own('objectOf', { kind: row[0], name: row[1] }, function () {
+        return ownership.objectOf(row[0], row[1]);
+      });
+      own('owns', { username: 'dora', kind: row[0], name: row[1] },
+        function () {
+          return { owns: ownership.owns('dora', row[0], row[1]) };
+        });
+    });
+  [['robot', 'x', true], ['role', '', true], ['role', 'staff', false],
+   ['role', 'staff', 'true'], ['role', 'nosuch', true],
+   ['group', 'g-new', true], ['application', 'app-res', true],
+   ['application', 'app-res', false]].forEach(function (row) {
+    own('setProtected', { kind: row[0], name: row[1], flag: row[2] },
+      function () {
+        return ownership.setProtected(row[0], row[1], row[2],
+                                      { actor: 'vectors' });
+      });
+  });
+
+  // ---- the permission register (common/app_permissions.ts, rule 3s) ---
+  const AppPermissions = req('common/app_permissions').AppPermissions;
+  const appPermissions = new AppPermissions({ log: helpers.log,
+    applications: appsPort, errorCodes: errorCodes });
+  const perm = function (op, input, run) {
+    rec.step(steps, 'appPermissions', op, input, run);
+  };
+  perm('register', {}, function () {
+    return appPermissions.register();
+  });
+  ['app-res', 'app-cli', 'nosuch'].forEach(function (id) {
+    perm('forApplication', { identifier: id }, function () {
+      return appPermissions.forApplication(id);
+    });
+  });
+  const permAct = function (op, args) {
+    perm(op, { args: args }, function () {
+      return appPermissions[op].apply(appPermissions, args);
+    });
+  };
+  permAct('definePermission', ['app-res', 'admin', 'Administer it']);
+  permAct('definePermission', ['app-res', 'bad name', '']);
+  permAct('definePermission', ['nosuch', 'x', '']);
+  permAct('removePermission', ['nosuch', 'x', 'vectors']);
+  permAct('removePermission', ['app-res', 'zzz', 'vectors']);
+  permAct('grant', ['app-cli', 'https://api.example/admin', 'vectors']);
+  permAct('grant', ['app-cli', 'https://api.example/write', 'vectors']);
+  permAct('grant', ['app-cli', 'https://nowhere.example/x', 'vectors']);
+  permAct('removePermission', ['app-res', 'admin', 'vectors']);
+  permAct('revoke', ['app-cli', 'https://api.example/admin', 'vectors']);
+  permAct('revoke', ['app-cli', 'https://never.example/x', 'vectors']);
+  perm('register', {}, function () {
+    return appPermissions.register();
+  });
+  permAct('setBaseUri', ['app-cli', 'urn:cli:', 'vectors']);
+  permAct('setBaseUri', ['app-cli', 'https://cli.example', 'vectors']);
+  permAct('setBaseUri', ['app-cli', '', 'vectors']);
+  permAct('setBaseUri', ['nosuch', 'https://x.example', 'vectors']);
+
+  // ---- a role authorizing a permission (role_permissions.ts, 3bq) -----
+  const gate = req('common/issuance_gate');
+  gate.checkScopes = rec.fn('gate', 'checkScopes', gate.checkScopes);
+  helpers.subjectIsGone = rec.fn('helpers', 'subjectIsGone',
+                                 helpers.subjectIsGone);
+  helpers.nameForSubject = rec.fn('helpers', 'nameForSubject',
+                                  helpers.nameForSubject);
+  mode.refusesTokenForGoneSubject = rec.fn('mode',
+    'refusesTokenForGoneSubject', mode.refusesTokenForGoneSubject.bind(mode));
+  const RolePermissions = req('common/role_permissions').RolePermissions;
+  const ownershipModule = req('common/ownership');
+  const rolePermissions = new RolePermissions({ log: helpers.log,
+    realms: realms, roles: roles, applications: appsPort, audit: auditPort,
+    adminRbac: rec.object('rbac', adminRbacModule,
+                          ['rolesOf', 'noteConsoleSignIn']),
+    ownsAnything: rec.fn('ownership', 'ownsAnything',
+                         ownershipModule.ownsAnything) });
+  const rp = function (op, input, run) {
+    rec.step(steps, 'rolePermissions', op, input, run);
+  };
+  ['admin:read', 'owner:write', 'https://api.example/write',
+   'https://api.example/read', 'openid', ''].forEach(function (value) {
+    rp('isGated', { value: value }, function () {
+      return { gated: rolePermissions.isGated(value),
+               application: rolePermissions.isApplicationPermission(value) };
+    });
+  });
+  const subjects = [{ kind: 'user', name: 'dora' },
+    { kind: 'user', name: 'dora', authenticated: false },
+    { kind: 'user', name: 'emil' },
+    { kind: 'application', name: 'app-cli' },
+    { kind: 'application', name: 'sts-api-client' }, {}];
+  subjects.forEach(function (who) {
+    rp('heldRoles', { subject: who }, function () {
+      return rolePermissions.heldRoles(who);
+    });
+    rp('asksFor', { scope: 'openid https://api.example/read', subject: who },
+      function () {
+        return { asks: rolePermissions.asksFor(
+          'openid https://api.example/read', who) };
+      });
+    rp('conferredOn', { subject: who, clientId: 'sts-admin-console' },
+      function () {
+        return rolePermissions.conferredOn(who, 'sts-admin-console');
+      });
+  });
+  [['openid profile', { kind: 'user', name: 'dora' }, {}],
+   ['openid admin:read https://api.example/write',
+    { kind: 'user', name: 'dora' }, { clientId: 'app-cli', record: false }],
+   ['admin:read admin:write', { kind: 'user', name: 'emil' },
+    { clientId: 'sts-admin-console', grant: 'authorization_code' }],
+   ['https://api.example/read ssf.read', { kind: 'application',
+     name: 'app-cli' }, { clientId: 'app-cli', grant: 'client_credentials' }],
+   ['admin:read', { kind: 'user', name: 'x', authenticated: false },
+    { clientId: 'app-cli' }]].forEach(function (row) {
+    rp('narrowScope', { scope: row[0], subject: row[1], context: row[2] },
+      function () {
+        return rolePermissions.narrowScope(row[0], row[1], row[2]);
+      });
+  });
+  [[{ client_id: 'app-cli', sub: 'app-cli' }, ['https://api.example/write']],
+   [{ client_id: 'sts-admin-console', sub: 'dora' },
+    ['admin:read', 'admin:write', 'admin:console']],
+   [{ client_id: 'app-cli', sub: 'urn:uuid:nobody' }, ['admin:read']]]
+    .forEach(function (row) {
+      rp('effectiveRoles', { claims: row[0], carried: row[1] }, function () {
+        return rolePermissions.effectiveRoles(row[0], row[1], '');
+      });
+    });
+
   config.value = realValue;
-  void helpers;
   return { steps: steps };
 }
 

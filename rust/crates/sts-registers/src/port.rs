@@ -152,3 +152,130 @@ pub trait BootstrapName: Send + Sync {
     /// `BootstrapName.current()`.
     fn current(&self) -> String;
 }
+
+/// `common/credentials.ts`: a person's credentials and account lock, kept
+/// on their directory entry (`pwdAccountLockedTime`, the password hash).
+/// The password policy — what a password must be, how one is generated —
+/// is the policy slice's, behind `set_password` and `generate_password`.
+pub trait Credentials: Send + Sync {
+    /// `accountDisabled(name)`.
+    fn account_disabled(&self, name: &str) -> bool;
+    /// `setAccountDisabled(name, disabled, {riscReason})`: `{ok, …}` or a
+    /// marked refusal.
+    fn set_account_disabled(&self, name: &str, disabled: bool,
+                            options: &Value) -> Marked;
+    /// `generatePassword(name)`: one the person's policy accepts.
+    fn generate_password(&self, name: &str) -> String;
+    /// `setPassword(name, password, {generated})`: `{ok, errors}`.
+    fn set_password(&self, name: &str, password: &str, options: &Value)
+        -> Value;
+    /// `setPasswordResetRequired(name, flag)`.
+    fn set_password_reset_required(&self, name: &str, flag: bool) -> Value;
+    /// `issueActivation(name)`: `{ok, token, expiresAt}` or `{ok, errors}`.
+    fn issue_activation(&self, name: &str) -> Value;
+}
+
+/// `admin_stats.identityKeyOf(name)`: the one key a person is counted
+/// under.
+pub trait IdentityKeys: Send + Sync {
+    fn identity_key_of(&self, name: &str) -> String;
+}
+
+/// The sign-out model (`logout/logout.ts`): `terminate(key, selection,
+/// options)`, ending everything a person holds.
+pub trait Logout: Send + Sync {
+    fn terminate(&self, key: &str, selection: &Value, options: &Value)
+        -> Value;
+}
+
+/// The side effects of an account change that are not this register's:
+/// `RevokingWrites.note(what)` and the account-disabled mail.
+pub trait AccountEffects: Send + Sync {
+    /// `RevokingWrites.note(what)`.
+    fn note_revoking_write(&self, what: &str);
+    /// `mail_uses.accountDisabled(name, why, bySystem)`.
+    fn mail_account_disabled(&self, name: &str, why: &str, by_system: bool);
+}
+
+/// `ldap_server.js`'s person writer (`admin.setDirectoryWriter()`):
+/// `createUser(name, options)`, `{ok, dn, username, typed, invented,
+/// entry}` or a marked refusal.
+pub trait PersonWriter: Send + Sync {
+    fn create_user(&self, name: &str, options: &Value) -> Marked;
+}
+
+/// `ldap_server.js`'s group writer (`admin.setGroupWriter()`): each act
+/// answers `{ok, changed, …}` or a marked refusal.
+pub trait GroupWriter: Send + Sync {
+    fn create_group(&self, name: &str, options: &Value) -> Marked;
+    fn add_group_member(&self, group: &str, member: &str, options: &Value)
+        -> Marked;
+    fn set_group_mail(&self, group: &str, mail: &str, options: &Value)
+        -> Marked;
+    fn set_group_policy(&self, group: &str, attribute: &str, policy: &str,
+                        options: &Value) -> Marked;
+    fn add_group_owner(&self, group: &str, owner: &str, options: &Value)
+        -> Marked;
+    fn remove_group_owner(&self, group: &str, owner: &str, options: &Value)
+        -> Marked;
+}
+
+/// What the directory answers about groups for the groups claim and for
+/// ownership (`ldap_server.js`).
+pub trait GroupDirectory: Send + Sync {
+    /// `groupsOfUser(name)`: `{dn, entryFound, groups: [{dn, cn, via,
+    /// viaMemberOf}]}`.
+    fn groups_of_user(&self, name: &str) -> Value;
+    /// `groupsOwnedBy(dns)`: the groups naming any of them as an owner.
+    fn groups_owned_by(&self, dns: &[String]) -> Vec<Value>;
+    /// `groupOwnership(name)`: `{dn, cn, owners, ownerProtected}` or null.
+    fn group_ownership(&self, name: &str) -> Value;
+    /// `setGroupOwnerProtected(name, flag, options)`.
+    fn set_group_owner_protected(&self, name: &str, flag: bool,
+                                 options: &Value) -> Marked;
+}
+
+/// Service accounts (`common/service_accounts.ts`) and their policy
+/// (`common/service_account_policy.ts`), the policy slice's.
+pub trait ServiceAccounts: Send + Sync {
+    /// `serviceAccountPolicy.writeRefusal(fields)`: the refusal, or none.
+    fn write_refusal(&self, fields: &Value) -> Option<PolicyRefusal>;
+    /// `check(body, existing)`.
+    fn check(&self, body: &Value, existing: &str) -> Marked;
+    /// `set(username, change)`.
+    fn set(&self, username: &str, change: &Value) -> Value;
+    /// `list()`.
+    fn list(&self) -> Vec<Value>;
+    /// `of(name)`: `{username, dn, owners, ownerProtected}` or null.
+    fn of(&self, name: &str) -> Value;
+    /// `setOwnerProtected(name, flag)`.
+    fn set_owner_protected(&self, name: &str, flag: bool) -> Marked;
+}
+
+/// `ssf/account_signals.ts`: the CAEP and RISC signals of a credential
+/// change.
+pub trait AccountSignals: Send + Sync {
+    fn credential_changed(&self, change: &Value);
+}
+
+/// `AdminActions.mailedLink(kind, who, token, body, actor, via)`: an
+/// activation or reset link mailed, `{ok, mailedTo}` / `{ok: false,
+/// errors}`, or null with no mail channel.
+pub trait LinkMailer: Send + Sync {
+    fn mailed_link(&self, kind: &str, who: &str, token: &str, body: &Value,
+                   actor: &str, via: &str) -> Value;
+}
+
+/// `common/scope_policy.ts`'s questions ownership asks.
+pub trait ScopePolicy: Send + Sync {
+    fn protected_scopes(&self) -> Vec<String>;
+    fn declared_scopes(&self, identifier: &str) -> Vec<String>;
+    fn delegated_permission_scopes(&self, identifier: &str) -> Vec<String>;
+}
+
+/// A refusal a policy decided before a write: its code and its sentence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PolicyRefusal {
+    pub code: ErrorCode,
+    pub message: String,
+}

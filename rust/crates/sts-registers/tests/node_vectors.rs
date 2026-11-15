@@ -24,6 +24,7 @@ use std::sync::Arc;
 use replay::{code_text, Replay};
 use serde_json::{json, Value};
 use sts_registers::outcome::Outcome;
+use sts_registers::people::{AccountChange, AccountState, People, PeopleDeps};
 use sts_registers::rbac::Rbac;
 use sts_registers::role_actions::RoleActions;
 use sts_registers::roles::{self, Roles, Who};
@@ -57,6 +58,32 @@ fn plain(answer: Value) -> Got {
 
 fn roles_over(replay: &Arc<Replay>) -> Roles {
     Roles::new(Some(replay.clone()), replay.clone())
+}
+
+fn accounts_over(replay: &Arc<Replay>) -> AccountState {
+    AccountState::new(
+        replay.clone(),
+        replay.clone(),
+        Some(replay.clone()),
+        replay.clone(),
+        replay.clone(),
+    )
+}
+
+fn people_over(replay: &Arc<Replay>) -> People {
+    People::new(
+        PeopleDeps {
+            people: Some(replay.clone()),
+            groups: Some(replay.clone()),
+            credentials: replay.clone(),
+            service_accounts: replay.clone(),
+            signals: replay.clone(),
+            mailer: replay.clone(),
+            mode: replay.clone(),
+            audit: replay.clone(),
+        },
+        Arc::new(accounts_over(replay)),
+    )
 }
 
 /// The roles register's steps.
@@ -94,6 +121,29 @@ fn run_roles(step: &Value, replay: &Arc<Replay>) -> Option<Got> {
     })
 }
 
+/// THE PINNED DISAGREEMENTS.
+///
+/// `users/create`'s answer carries `entry`, and in Node that is the LIVE
+/// directory entry object, which the credential step then writes on — so
+/// Node's answer shows the `userPassword` hash, `pwdChangedTime` and the
+/// activation token's hash set after the create (a Node defect: a
+/// credential hash in an `/admin-api` answer). Rust answers the entry as
+/// the directory's writer returned it, which must be the entry Node's
+/// writer returned before the credential step; the rest of the answer is
+/// compared whole.
+fn pinned(register: &str, step: &Value, mut mine: Value) -> (Value, Value) {
+    let mut theirs = step["answer"].clone();
+    let create = register == "users"
+        && step["input"]["body"]["action"] == json!("create");
+    if create {
+        if let (Some(m), Some(t)) = (mine.as_object_mut(), theirs.as_object_mut()) {
+            m.remove("entry");
+            t.remove("entry");
+        }
+    }
+    (mine, theirs)
+}
+
 #[test]
 fn every_register_answers_as_node_does() {
     let Some(v) = vectors() else {
@@ -120,6 +170,27 @@ fn every_register_answers_as_node_does() {
                 );
                 Some(got(actions.act(&step["input"]["body"], "vectors")))
             }
+            "accountState" => {
+                let accounts = accounts_over(&replay);
+                let input = &step["input"];
+                let who = input["who"].as_str().unwrap_or("");
+                Some(match step["op"].as_str().unwrap_or("") {
+                    "isDisabled" => {
+                        plain(json!({"disabled": accounts.is_disabled(who)}))
+                    }
+                    _ => got(accounts.set_disabled(
+                        who,
+                        input["disabled"] == json!(true),
+                        &AccountChange::from_json(&input["opts"]),
+                    )),
+                })
+            }
+            "users" => people_over(&replay)
+                .users(&step["input"]["body"], "api", "vectors")
+                .map(got),
+            "groups" => Some(got(
+                people_over(&replay).groups(&step["input"]["body"], "vectors"),
+            )),
             "rbac" => {
                 let rbac = Rbac::new(
                     Some(replay.clone()),
@@ -138,10 +209,11 @@ fn every_register_answers_as_node_does() {
         };
         checked += 1;
         let mut wrong = replay.finish();
-        if answer.answer != step["answer"] {
+        let (mine, theirs) = pinned(register, step, answer.answer.clone());
+        if mine != theirs {
             wrong.push(format!(
                 "answer\n     rust {}\n     node {}",
-                answer.answer, step["answer"]
+                mine, theirs
             ));
         }
         if answer.code != step["code"] {
