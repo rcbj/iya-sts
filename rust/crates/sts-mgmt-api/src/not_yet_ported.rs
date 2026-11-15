@@ -86,8 +86,6 @@ macro_rules! not_yet_ported {
         | Operation::GetNewUserForm
         | Operation::IssueActivationLink
         | Operation::SetUserPassword
-        | Operation::DisableUserAccount
-        | Operation::EnableUserAccount
         | Operation::ClearUserAuthenticatorApp
         | Operation::ClearUserBackupCodes
         | Operation::ClearUserEmailFactor

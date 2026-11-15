@@ -786,6 +786,7 @@ impl Stack {
                     ),
                 )),
                 version: version_info,
+                logout: logout.logout.clone(),
             },
         );
         let authn_routes = authn_routes.merge(admin.router());

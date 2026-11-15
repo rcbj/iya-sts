@@ -125,6 +125,9 @@ pub struct AdminParts {
     pub facts: Arc<dyn sts_authn_api::ports::SignInFacts>,
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
     pub version: sts_core::version::VersionInfo,
+    /// The protocol-independent sign-out (`logout/logout.ts`), which a
+    /// disable ends everything the person holds through.
+    pub logout: Arc<sts_logout::Logout>,
 }
 
 /// The journal of a request's writes: `(realm, key)` of every entry the
@@ -942,12 +945,18 @@ impl rp::Credentials for PeopleCredentials {
     }
     fn set_account_disabled(
         &self,
-        _name: &str,
-        _disabled: bool,
+        name: &str,
+        disabled: bool,
         _options: &Json,
     ) -> rp::Marked {
-        rp::Marked::plain(json!({ "ok": false,
-            "errors": ["The account lock is not ported to this runtime yet."] }))
+        // `credentials.setAccountDisabled()`: the lock on the entry. The
+        // RISC reason in `options` is the signal's, and this runtime has no
+        // transmitter to carry it.
+        let v = self.0.set_account_disabled(name, disabled);
+        rp::Marked {
+            value: v.value,
+            code: v.code,
+        }
     }
     fn generate_password(&self, _name: &str) -> String {
         // `generatePassword()` is the password policy's; until it is in the
@@ -1024,6 +1033,43 @@ struct Names;
 impl rp::IdentityKeys for Names {
     fn identity_key_of(&self, name: &str) -> String {
         name.to_string()
+    }
+}
+
+/// `logout.terminate(key, selection, options)` over the runtime's
+/// sign-out: what a disable ends (`endEverything()`).
+struct EndEverything(Arc<sts_logout::Logout>);
+
+impl rp::Logout for EndEverything {
+    fn terminate(&self, key: &str, selection: &Json, options: &Json) -> Json {
+        let text = |k: &str| {
+            options
+                .get(k)
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        let opts = sts_logout::TerminateOptions {
+            actor: text("actor"),
+            by: text("by"),
+            channel: text("channel"),
+            initiating_entity: text("initiatingEntity"),
+            no_provider_command: options.get("providerCommand")
+                == Some(&Json::Bool(false)),
+            ..Default::default()
+        };
+        let chosen: Vec<String> = selection
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        match self.0.terminate(key, &chosen, &opts) {
+            Ok(v) => v,
+            Err(e) => json!({ "message": e }),
+        }
     }
 }
 
@@ -1623,7 +1669,7 @@ impl AdminStack {
             Arc::new(sts_registers::people::AccountState::new(
                 credentials,
                 Arc::new(Names),
-                None,
+                Some(Arc::new(EndEverything(parts.logout.clone()))),
                 Arc::new(NoEffects),
                 Arc::new(LogAudit),
             )),

@@ -36,9 +36,10 @@ pub enum Handler {
     ConsoleDashboard,
     /// `GET /admin-api/announcements`.
     Announcements,
-    /// `POST /admin-api/users/{action}`: `create`, through
-    /// `sts-registers`' `People` (its `disable` and `enable` are not routed
-    /// here yet: the account lock's writes are not in the runtime).
+    /// `POST /admin-api/users/{action}`: `create`, `disable` and `enable`,
+    /// through `sts-registers`' `People` (the lock written by
+    /// `sts-credentials`, a disable ending what the person holds through
+    /// the runtime's sign-out).
     UsersAction,
     /// A family's own act or view (`families.rs`): the certificate
     /// authority's and the enrollment protocols', with their monitors.
@@ -87,7 +88,9 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         Operation::GetConsoleShell => Some(Handler::ConsoleShell),
         Operation::GetConsoleDashboard => Some(Handler::ConsoleDashboard),
         Operation::GetConsoleAnnouncements => Some(Handler::Announcements),
-        Operation::CreateUser => Some(Handler::UsersAction),
+        Operation::CreateUser
+        | Operation::DisableUserAccount
+        | Operation::EnableUserAccount => Some(Handler::UsersAction),
         Operation::BuildPkiChain
         | Operation::RevokePkiCertificate
         | Operation::ReleasePkiCertificateHold
