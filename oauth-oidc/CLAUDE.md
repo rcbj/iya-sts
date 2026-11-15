@@ -6211,6 +6211,18 @@ resource server here compares an `aud` whole (RFC 9068 section 4).
   `invalid_target` (RFC 8707 section 2), REDIRECTED from the authorization
   endpoint and a 400 at PAR, `STS-OAUTH-0950`. A malformed resource is left
   to the shape check that answers it after sign-in (`STS-OAUTH-0154`).
+  **REDIRECTED WITH NOBODY SIGNED IN TOO, IN RFC 9700 MODE (#26, rcbj,
+  2026-11-15)**, where it was this service's 400 page until then: RFC 9700
+  section 4.11.2's authenticate-before-redirect (`redirectPolicyFor()`)
+  showed it, so a product client never received the error RFC 8707 asks
+  for. The exception is this one refusal, and only where the request's
+  client is REGISTERED and its redirect_uri matched one of that client's OWN
+  registered URIs (`verifiedRedirect`) — not the service-wide
+  `oauth2.redirectUris` list, and not an address RFC 9126 section 2.4 let a
+  pushed request through with. A request less verified than that keeps the
+  page, which is section 4.11.2's reasoning: a browser forwarded to an
+  address nobody vouched for is the open redirector, whatever rides along.
+  Every other refusal at the endpoint keeps the rule.
 * **The token endpoint**: once above every grant but the token exchange, and
   before anything a grant spends — 400 `invalid_target`, `STS-OAUTH-0951`.
 * **The token exchange is not asked**: its `resource` and `audience` are RFC
