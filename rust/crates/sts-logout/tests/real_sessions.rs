@@ -146,7 +146,11 @@ impl CredentialChecks for Plain {
     fn passkey_sign_in_refusal(&self, _u: &str, _c: &Value) -> Option<Value> {
         None
     }
-    fn recovery_refusal_at_session(&self, _u: &str, _c: &Value) -> Option<Value> {
+    fn recovery_refusal_at_session(
+        &self,
+        _u: &str,
+        _c: &Value,
+    ) -> Option<Value> {
         None
     }
     fn note_algorithm_mismatch(&self, _u: &str, _c: &Value, _v: &Value) {}
@@ -246,9 +250,13 @@ fn world(product: bool) -> World {
         Arc::new(Mode::new(settings.clone())),
     );
     let handles = StoreHandles::new();
-    let revoked =
-        sts_oauth::revocation::RevokedTokens::new(&lifecycle, &handles, settings.clone());
-    let register = TokenRegister::new(&lifecycle, &handles, settings.clone(), revoked);
+    let revoked = sts_oauth::revocation::RevokedTokens::new(
+        &lifecycle,
+        &handles,
+        settings.clone(),
+    );
+    let register =
+        TokenRegister::new(&lifecycle, &handles, settings.clone(), revoked);
     let records = Arc::new(SessionTokens {
         inner: None,
         register: register.clone(),
@@ -438,7 +446,10 @@ fn one_sessions_end_revokes_what_it_was_issued_by_mode() {
             .unwrap();
         assert_eq!(got.status, 200, "{:?}", got);
         assert!(w.sessions.session_by_id(&w.sids[0]).is_none());
-        assert!(w.sessions.session_by_id(&w.sids[1]).is_some(), "not the other");
+        assert!(
+            w.sessions.session_by_id(&w.sids[1]).is_some(),
+            "not the other"
+        );
         assert_eq!(
             revoked(&w, "at-0"),
             product,

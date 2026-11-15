@@ -130,8 +130,11 @@ pub trait AuthnPort: Send + Sync {
     /// Not a call of `logout.ts`'s, so the vectors do not see it.
     fn arrival(&self, asked: &Asked, reply: &mut Reply);
     /// `beginAuthentication(opts)`: where the browser goes to sign in.
-    fn begin_authentication(&self, opts: &Value, asked: Option<&Asked>)
-        -> String;
+    fn begin_authentication(
+        &self,
+        opts: &Value,
+        asked: Option<&Asked>,
+    ) -> String;
     /// `lastAuthenticatedAt(session)`: epoch SECONDS, 0 for none.
     fn last_authenticated_at(&self, session: &Value) -> f64;
     /// `sessionNamesFactor(session, factor)` (#722).
@@ -180,8 +183,11 @@ pub trait BackchannelPort: Send + Sync {
     /// `dispatch(planned)`.
     fn dispatch(&self, planned: &[Value]);
     /// `deliveriesFor(sessionIds, mark)`.
-    fn deliveries_for(&self, session_ids: &[String], mark: &Value)
-        -> Vec<Value>;
+    fn deliveries_for(
+        &self,
+        session_ids: &[String],
+        mark: &Value,
+    ) -> Vec<Value>;
     /// `summarize(rows)`: a sentence, or ''.
     fn summarize(&self, rows: &[Value]) -> String;
     /// `render(rows)`: the deliveries' table, or ''.
@@ -285,8 +291,13 @@ pub trait GrantsPort: Send + Sync {
     fn list(&self) -> Vec<Value>;
     /// `revoke(grantId, key, by, initiatingEntity)`: `{ ok, clientId,
     /// revoked }`.
-    fn revoke(&self, grant_id: &str, key: &str, by: &str, entity: &str)
-        -> Value;
+    fn revoke(
+        &self,
+        grant_id: &str,
+        key: &str,
+        by: &str,
+        entity: &str,
+    ) -> Value;
 }
 
 /// `uma/uma_store.ts` (#1168), which Node requires lazily.

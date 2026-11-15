@@ -109,6 +109,9 @@ function recorder() {
       if (!rec.calls || rec.depth > 0) {
         return f.apply(this, args);
       }
+      // The arguments as they were PASSED: a fake may change what it was
+      // handed (an ended grant), and the call is what the port was asked.
+      const asked = rec.copy(args);
       rec.depth += 1;
       let answer;
       try {
@@ -116,7 +119,7 @@ function recorder() {
       } finally {
         rec.depth -= 1;
       }
-      rec.calls.push({ port: port, method: method, args: rec.copy(args),
+      rec.calls.push({ port: port, method: method, args: asked,
                        answer: rec.copy(answer) });
       return answer;
     };

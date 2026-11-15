@@ -91,8 +91,11 @@ pub trait SignInFacts: Send + Sync {
 /// status, the JSON, the cookies and headers the act wrote, and the code.
 pub trait SignOutPages: Send + Sync {
     /// `GET /authn-api/logout`, the query already held to the model.
-    fn view(&self, call: &crate::flow::Call, query: &serde_json::Map<String, Json>)
-        -> crate::flow::Answer;
+    fn view(
+        &self,
+        call: &crate::flow::Call,
+        query: &serde_json::Map<String, Json>,
+    ) -> crate::flow::Answer;
     /// `POST /authn-api/logout`, bound and its body held to the model.
     fn act(
         &self,

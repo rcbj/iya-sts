@@ -179,7 +179,12 @@ impl Logout {
     /// `row(family, kind, handle, detail)`: the one shape every family
     /// produces, Node's members in Node's order, `detail` assigned over it.
     // A hot path: once per row; no span.
-    pub fn row(family: &str, kind: &Value, handle: &str, detail: Object) -> Object {
+    pub fn row(
+        family: &str,
+        kind: &Value,
+        handle: &str,
+        detail: Object,
+    ) -> Object {
         let mut o = Object::new();
         o.insert("id".into(), json!(format!("{}:{}", family, handle)));
         o.insert("family".into(), json!(family));
@@ -554,8 +559,10 @@ impl Logout {
         let mut rows = Vec::new();
         for session in &ctx.sessions {
             let sid = string_of(session.get("id"));
-            for note in
-                self.deps.frontchannel.notifications_for(session, &ctx.issuer)
+            for note in self
+                .deps
+                .frontchannel
+                .notifications_for(session, &ctx.issuer)
             {
                 let client = string_of(note.get("clientId"));
                 let detail = if truthy(note.get("url")) {
@@ -665,7 +672,10 @@ impl Logout {
             }
             let can = self.deps.federation_slo.can_tell_partner(held);
             let why = if !truthy(can.get("ok")) {
-                format!("the partner cannot be told: {}", concat(can.get("why")))
+                format!(
+                    "the partner cannot be told: {}",
+                    concat(can.get("why"))
+                )
             } else if ctx.browser {
                 String::new()
             } else {
@@ -796,7 +806,11 @@ impl Logout {
                     "detail".into(),
                     json!(format!(
                         "for {}{}{}{}",
-                        if client.is_empty() { "no client" } else { &client },
+                        if client.is_empty() {
+                            "no client"
+                        } else {
+                            &client
+                        },
                         if truthy(t.get("scope")) {
                             format!(", scope {}", text(&t["scope"]))
                         } else {
@@ -850,14 +864,22 @@ impl Logout {
                     "label".into(),
                     json!(format!(
                         "a code for {}",
-                        if client.is_empty() { "no client" } else { &client }
+                        if client.is_empty() {
+                            "no client"
+                        } else {
+                            &client
+                        }
                     )),
                 );
                 d.insert(
                     "detail".into(),
                     json!(format!(
                         "redirect_uri {}{}",
-                        if redirect.is_empty() { "(none)" } else { &redirect },
+                        if redirect.is_empty() {
+                            "(none)"
+                        } else {
+                            &redirect
+                        },
                         if truthy(code.get("scope")) {
                             format!(", scope {}", text(&code["scope"]))
                         } else {
@@ -865,7 +887,8 @@ impl Logout {
                         }
                     )),
                 );
-                for (k, from) in [("startedAt", "issuedAt"), ("expiresAt", "expiresAt")]
+                for (k, from) in
+                    [("startedAt", "issuedAt"), ("expiresAt", "expiresAt")]
                 {
                     d.insert(
                         k.into(),
@@ -1112,12 +1135,7 @@ impl Logout {
                 );
                 d.insert("expiresAt".into(), json!(0));
                 d.insert("sessionId".into(), json!(session));
-                Logout::row(
-                    "gnap",
-                    &s("grant"),
-                    &string_of(grant.get("id")),
-                    d,
-                )
+                Logout::row("gnap", &s("grant"), &string_of(grant.get("id")), d)
             })
             .collect()
     }
@@ -1204,12 +1222,7 @@ impl Logout {
                         )),
                     );
                 }
-                Logout::row(
-                    "ldap",
-                    &s("connection"),
-                    &concat(c.get("id")),
-                    d,
-                )
+                Logout::row("ldap", &s("connection"), &concat(c.get("id")), d)
             })
             .collect()
     }
@@ -1257,9 +1270,8 @@ impl Logout {
         let already = krb5.signed_out_at(&names, &realm);
         let principal = krb5.find(&names, &realm);
         let handle = format!("{}@{}", ctx.key, realm);
-        let instant = || -> Result<String, String> {
-            js::iso(js::parse_iso(&already))
-        };
+        let instant =
+            || -> Result<String, String> { js::iso(js::parse_iso(&already)) };
         if !truthy(Some(&principal)) {
             return Ok(vec![Logout::krb5_row(
                 &handle,
@@ -1300,7 +1312,13 @@ impl Logout {
                 .into()
         };
         let started = if set { js::parse_iso(&already) } else { 0.0 };
-        Ok(vec![Logout::krb5_row(&handle, true, detail, "", Some(started))])
+        Ok(vec![Logout::krb5_row(
+            &handle,
+            true,
+            detail,
+            "",
+            Some(started),
+        )])
     }
 
     fn collect_issued(&self, ctx: &mut Ctx) -> Vec<Object> {
@@ -1405,7 +1423,12 @@ impl Logout {
         (first, rest)
     }
 
-    fn end_row(&self, id: &str, r: &Object, ctx: &mut Ctx) -> Result<Outcome, String> {
+    fn end_row(
+        &self,
+        id: &str,
+        r: &Object,
+        ctx: &mut Ctx,
+    ) -> Result<Outcome, String> {
         let handle = string_of(r.get("handle"));
         let by_or = |ctx: &Ctx, d: &str| -> String {
             if ctx.by.is_empty() {
@@ -1460,9 +1483,10 @@ impl Logout {
                 )))
             }
             "oauth-grant" => {
-                let held = self.oauth_grants_for(ctx).into_iter().any(|row| {
-                    string_of(row.get("grantId")) == handle
-                });
+                let held = self
+                    .oauth_grants_for(ctx)
+                    .into_iter()
+                    .any(|row| string_of(row.get("grantId")) == handle);
                 if !held {
                     return Ok(no("that grant has already been revoked or \
                                   has expired"));
@@ -1528,7 +1552,11 @@ impl Logout {
                 Ok(ok(format!(
                     "an authorization code for {} was discarded and can no \
                      longer be redeemed",
-                    if client.is_empty() { "no client" } else { &client }
+                    if client.is_empty() {
+                        "no client"
+                    } else {
+                        &client
+                    }
                 )))
             }
             "vci-code" => {
@@ -1539,9 +1567,11 @@ impl Logout {
                     }
                 }
                 if found.is_empty() {
-                    return Ok(no("that pre-authorized code has already been \
+                    return Ok(no(
+                        "that pre-authorized code has already been \
                                   redeemed or has expired, so there is \
-                                  nothing left to end"));
+                                  nothing left to end",
+                    ));
                 }
                 self.deps.oid4vc.delete_pre_authorized_code(&found);
                 Ok(ok("a pre-authorized code was discarded; the Credential \
@@ -1549,9 +1579,11 @@ impl Logout {
                     .into()))
             }
             "wallet-signin" => {
-                let found = self.wallet_signins_of(ctx).into_iter().find(|one| {
-                    Logout::handle_for(&string_of(one.get("state"))) == handle
-                });
+                let found =
+                    self.wallet_signins_of(ctx).into_iter().find(|one| {
+                        Logout::handle_for(&string_of(one.get("state")))
+                            == handle
+                    });
                 let withdrawn = match found {
                     Some(one) => self.deps.oid4vc.withdraw_sign_in(
                         &string_of(one.get("state")),
@@ -1679,9 +1711,11 @@ impl Logout {
             "krb5" => {
                 let krb5 = &self.deps.krb5;
                 if !truthy(krb5.kerberos_realm_of().get("enabled")) {
-                    return Ok(no("Kerberos is off in this trust realm, so it \
+                    return Ok(no(
+                        "Kerberos is off in this trust realm, so it \
                                   has issued no ticket and there is nothing \
-                                  to sign out."));
+                                  to sign out.",
+                    ));
                 }
                 let realm = krb5.realm();
                 let p = krb5.sign_out(&[ctx.key.clone()], &realm);
@@ -1719,7 +1753,11 @@ impl Logout {
                 Ok(ok(format!(
                     "{}{}{} revoked in this service's record. The holder \
                      has NOT been told and cannot be by this act",
-                    if first { "marked " } else { "was already marked " },
+                    if first {
+                        "marked "
+                    } else {
+                        "was already marked "
+                    },
                     concat(record.get("kind")),
                     if truthy(record.get("id")) {
                         format!(" {}", text(&record["id"]))
@@ -1756,7 +1794,8 @@ impl Logout {
                 client,
                 session_id,
                 match notified {
-                    Some(n) => format!(" is notified at {}", concat(n.get("uri"))),
+                    Some(n) =>
+                        format!(" is notified at {}", concat(n.get("uri"))),
                     None => " has nowhere to be notified in a browser".into(),
                 }
             ));
@@ -1875,7 +1914,14 @@ impl Logout {
     // The inventory and the termination.
     // -----------------------------------------------------------------
 
-    fn audit_failure(&self, code: &str, channel: &str, key: &str, summary: String, detail: Value) {
+    fn audit_failure(
+        &self,
+        code: &str,
+        channel: &str,
+        key: &str,
+        summary: String,
+        detail: Value,
+    ) {
         self.deps.host.audit_failure(
             code,
             &json!({ "protocol": "Logout", "channel": channel, "target": key,
@@ -1888,7 +1934,11 @@ impl Logout {
     /// family by family, capped in what is DRAWN (`logout.maxRows`), never
     /// in what a termination reaches.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn inventory_for(&self, key: &str, issuer: &str) -> Result<Value, String> {
+    pub fn inventory_for(
+        &self,
+        key: &str,
+        issuer: &str,
+    ) -> Result<Value, String> {
         self.inventory_in(key, issuer, None)
     }
 
@@ -2073,8 +2123,11 @@ impl Logout {
         } else {
             opts.channel.as_str()
         };
-        let wanted: Vec<String> =
-            selection.iter().filter(|s| !s.is_empty()).cloned().collect();
+        let wanted: Vec<String> = selection
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect();
         let global = wanted.is_empty();
         if global {
             host.subject_terminated(&host.realm_id(), key);
@@ -2216,8 +2269,11 @@ impl Logout {
                 }));
             }
         }
-        let ids: Vec<String> =
-            ctx.sessions.iter().map(|s| string_of(s.get("id"))).collect();
+        let ids: Vec<String> = ctx
+            .sessions
+            .iter()
+            .map(|s| string_of(s.get("id")))
+            .collect();
         let deliveries = self.deps.backchannel.deliveries_for(&ids, &mark);
         let summary = self.deps.backchannel.summarize(&deliveries);
         let mut families_done: Vec<String> = Vec::new();
@@ -2263,7 +2319,11 @@ impl Logout {
         }));
         let message = format!(
             "{}{}: {} item(s) ended{}{}.{}{}",
-            if global { "Global logout for " } else { "Logout for " },
+            if global {
+                "Global logout for "
+            } else {
+                "Logout for "
+            },
             ctx.key,
             done.len(),
             if skipped.is_empty() {
@@ -2464,8 +2524,11 @@ impl Logout {
                 json!({ "factor": kind, "sessions": still.join(", ") }),
             );
         }
-        let gone: Vec<String> =
-            ended.iter().filter(|id| !still.contains(id)).cloned().collect();
+        let gone: Vec<String> = ended
+            .iter()
+            .filter(|id| !still.contains(id))
+            .cloned()
+            .collect();
         json!({ "ok": still.is_empty(), "sessionsEnded": gone.len(),
             "itemsEnded": list_of(result.get("terminated")).len(),
             "failed": still.len(), "sessionIds": gone,

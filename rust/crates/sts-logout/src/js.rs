@@ -12,8 +12,8 @@
 
 use serde_json::{Map, Value};
 pub use sts_authn::js::{
-    num, number, number_or_zero, object_of, or_empty, string_of, strings,
-    text, truthy,
+    num, number, number_or_zero, object_of, or_empty, string_of, strings, text,
+    truthy,
 };
 
 /// A row, a context, a result: Node's JSON object.

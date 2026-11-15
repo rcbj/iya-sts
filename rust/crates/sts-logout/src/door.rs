@@ -110,7 +110,8 @@ fn cross_site(asked: &Asked, cookie_domain: bool) -> bool {
         return !asked.own_origins.contains(&origin);
     }
     if !site.is_empty() {
-        return site != "same-origin" && !(site == "same-site" && cookie_domain);
+        return site != "same-origin"
+            && !(site == "same-site" && cookie_domain);
     }
     origin == "null"
 }
@@ -127,7 +128,11 @@ fn body_of(headers: &HeaderMap, text: &str) -> Option<Object> {
             _ => None,
         };
     }
-    Some(sts_mgmt_api::request::parse_query(text).into_iter().collect())
+    Some(
+        sts_mgmt_api::request::parse_query(text)
+            .into_iter()
+            .collect(),
+    )
 }
 
 /// `LOGOUT_FORM`, as the model's schemas are written for the checker.
@@ -184,7 +189,10 @@ impl SignOutDoor {
             headers: headers
                 .iter()
                 .map(|(k, v)| {
-                    (k.as_str().to_string(), v.to_str().unwrap_or("").to_string())
+                    (
+                        k.as_str().to_string(),
+                        v.to_str().unwrap_or("").to_string(),
+                    )
                 })
                 .collect(),
             base: sts_authn_api::router::base_of(
@@ -193,12 +201,21 @@ impl SignOutDoor {
                 over_tls,
                 &prefix,
             ),
-            own_origins: self.http.own_origins(headers, peer.as_ref(), over_tls),
+            own_origins: self.http.own_origins(
+                headers,
+                peer.as_ref(),
+                over_tls,
+            ),
         }
     }
 
     /// The sign-out's shell, with the arrival's cookie.
-    fn shell(&self, headers: &HeaderMap, person: &str, reply: &Reply) -> Response {
+    fn shell(
+        &self,
+        headers: &HeaderMap,
+        person: &str,
+        reply: &Reply,
+    ) -> Response {
         let html = self.surfaces.shells().signout(headers, person);
         let options = sts_http::shell::ServeOptions {
             csp: vec![("style-src".into(), Some("'self'".into()))],
@@ -208,7 +225,12 @@ impl SignOutDoor {
     }
 
     /// `GET /logout`.
-    fn get(&self, headers: &HeaderMap, asked: &Asked, mut reply: Reply) -> Response {
+    fn get(
+        &self,
+        headers: &HeaderMap,
+        asked: &Asked,
+        mut reply: Reply,
+    ) -> Response {
         let logout = &self.logout;
         let subject = logout.subject_of(asked, None);
         let json = Logout::wants_json(asked);
@@ -227,7 +249,8 @@ impl SignOutDoor {
             }
             return self.shell(headers, "", &reply);
         }
-        if subject.key.is_empty() && logout.account_step(asked, false).is_some() {
+        if subject.key.is_empty() && logout.account_step(asked, false).is_some()
+        {
             if json {
                 return self.account_choice_required(asked, &reply);
             }
@@ -281,7 +304,11 @@ impl SignOutDoor {
     }
 
     /// `accountChoiceRequired(req, res)`: 409 and the accounts by key.
-    fn account_choice_required(&self, asked: &Asked, reply: &Reply) -> Response {
+    fn account_choice_required(
+        &self,
+        asked: &Asked,
+        reply: &Reply,
+    ) -> Response {
         let step = self
             .logout
             .account_step(asked, true)
@@ -305,12 +332,22 @@ impl SignOutDoor {
     }
 
     /// `POST /logout`: the JSON door.
-    fn post(&self, asked: &Asked, body_text: &str, headers: &HeaderMap, mut reply: Reply) -> Response {
+    fn post(
+        &self,
+        asked: &Asked,
+        body_text: &str,
+        headers: &HeaderMap,
+        mut reply: Reply,
+    ) -> Response {
         let logout = &self.logout;
         if !Logout::wants_json(asked) {
-            let to = format!("{}{}", logout.deps.host.realm_prefix(), LOGOUT_PATH);
+            let to =
+                format!("{}{}", logout.deps.host.realm_prefix(), LOGOUT_PATH);
             return marked(
-                with_reply(sts_http::redirect_with(StatusCode::SEE_OTHER, &to), &reply),
+                with_reply(
+                    sts_http::redirect_with(StatusCode::SEE_OTHER, &to),
+                    &reply,
+                ),
                 Some(codes::STS_LOGOUT_0010.as_str()),
             );
         }
@@ -342,7 +379,8 @@ impl SignOutDoor {
                 Some(codes::STS_LOGOUT_0001.as_str()),
             );
         }
-        if subject.key.is_empty() && logout.account_step(asked, false).is_some() {
+        if subject.key.is_empty() && logout.account_step(asked, false).is_some()
+        {
             return self.account_choice_required(asked, &reply);
         }
         if subject.key.is_empty() {
@@ -399,13 +437,20 @@ impl SignOutDoor {
 
     /// `POST /logout/signed-out`: the document a sign-out that fans out
     /// answers, from the sealed result.
-    fn signed_out(&self, asked: &Asked, headers: &HeaderMap, body_text: &str) -> Response {
+    fn signed_out(
+        &self,
+        asked: &Asked,
+        headers: &HeaderMap,
+        body_text: &str,
+    ) -> Response {
         let logout = &self.logout;
         let origin = asked.header("origin");
         let site = asked.header("sec-fetch-site");
         let same_site =
             (origin.is_empty() || origin == "null") && site == "same-origin";
-        if !same_site && (origin.is_empty() || !asked.own_origins.contains(&origin)) {
+        if !same_site
+            && (origin.is_empty() || !asked.own_origins.contains(&origin))
+        {
             return self.refused_document(
                 headers,
                 403,
@@ -545,9 +590,15 @@ impl SignOutDoor {
             "{}{}<p><strong>{}</strong></p><p class=\"sub\">{}</p><p><a \
              class=\"btn\" href=\"/portal\">{}</a></p>",
             if terminated.is_empty() {
-                format!("<div class=\"warn\">{}</div>", html("logout.result.nothingEnded", &[]))
+                format!(
+                    "<div class=\"warn\">{}</div>",
+                    html("logout.result.nothingEnded", &[])
+                )
             } else {
-                format!("<div class=\"ok\">{}</div>", html("logout.result.brief", &[]))
+                format!(
+                    "<div class=\"ok\">{}</div>",
+                    html("logout.result.brief", &[])
+                )
             },
             partners,
             html("logout.result.closeTab", &[]),
@@ -559,9 +610,16 @@ impl SignOutDoor {
             "<p class=\"sub\">{}</p>{}{}{}<h2>{}</h2>{}",
             esc(&js::string_of(result.get("message"))),
             if terminated.is_empty() {
-                format!("<div class=\"warn\">{}</div>", html("logout.result.nothingEnded", &[]))
+                format!(
+                    "<div class=\"warn\">{}</div>",
+                    html("logout.result.nothingEnded", &[])
+                )
             } else {
-                format!("<h2>{}</h2>{}", html("logout.result.ended", &[]), list_of(&terminated, "sub"))
+                format!(
+                    "<h2>{}</h2>{}",
+                    html("logout.result.ended", &[]),
+                    list_of(&terminated, "sub")
+                )
             },
             if skipped.is_empty() {
                 String::new()
@@ -570,7 +628,10 @@ impl SignOutDoor {
                     "<h2>{}</h2>{}{}",
                     html("logout.result.notEnded", &[]),
                     list_of(&skipped, "cannot"),
-                    crate::document::note(&html("logout.result.notEndedNote", &[]))
+                    crate::document::note(&html(
+                        "logout.result.notEndedNote",
+                        &[]
+                    ))
                 )
             },
             fan.html,
@@ -578,7 +639,10 @@ impl SignOutDoor {
             if total != 0.0 {
                 format!(
                     "<p class=\"sub\">{} <a href=\"{}\">{}</a>{}</p>",
-                    html("logout.result.remain", &[("total", &js::text(&js::num(total)))]),
+                    html(
+                        "logout.result.remain",
+                        &[("total", &js::text(&js::num(total)))]
+                    ),
                     esc(&format!(
                         "{}?username={}",
                         LOGOUT_PATH,
@@ -604,8 +668,16 @@ impl SignOutDoor {
             crate::document::tabbed_panels(
                 "logout-tabs",
                 &[
-                    ("logout-signout", &t.text("logout.tab.signOut", &[]), sign_out),
-                    ("logout-details", &t.text("logout.tab.details", &[]), details),
+                    (
+                        "logout-signout",
+                        &t.text("logout.tab.signOut", &[]),
+                        sign_out
+                    ),
+                    (
+                        "logout-details",
+                        &t.text("logout.tab.details", &[]),
+                        details
+                    ),
                 ]
             )
         );
@@ -669,11 +741,18 @@ fn send_page(status: u16, html: &str, policy: &str) -> Response {
     r
 }
 
-async fn serve(State(door): State<Arc<SignOutDoor>>, request: AxumRequest) -> Response {
+async fn serve(
+    State(door): State<Arc<SignOutDoor>>,
+    request: AxumRequest,
+) -> Response {
     let asked = door.asked_of(&request);
     let headers = request.headers().clone();
     let method = request.method().clone();
-    let path = request.uri().path().trim_end_matches('/').to_ascii_lowercase();
+    let path = request
+        .uri()
+        .path()
+        .trim_end_matches('/')
+        .to_ascii_lowercase();
     let body_text = request
         .extensions()
         .get::<sts_http::body::ParsedBody>()
@@ -717,7 +796,10 @@ fn asked_from_call(
     }
 }
 
-fn answer_of(seen: Result<Answered, String>, reply: Reply) -> sts_authn_api::flow::Answer {
+fn answer_of(
+    seen: Result<Answered, String>,
+    reply: Reply,
+) -> sts_authn_api::flow::Answer {
     match seen {
         Ok(a) => {
             let mut out = sts_authn_api::flow::Answer::json(a.status, a.json);
@@ -764,7 +846,10 @@ impl sts_authn_api::ports::SignOutPages for SignOutPages {
         query: &Map<String, Value>,
     ) -> sts_authn_api::flow::Answer {
         let asked = asked_from_call(call, query);
-        answer_of(Ok(self.logout.sign_out_accounts_view(&asked)), Reply::default())
+        answer_of(
+            Ok(self.logout.sign_out_accounts_view(&asked)),
+            Reply::default(),
+        )
     }
 
     fn accounts_act(

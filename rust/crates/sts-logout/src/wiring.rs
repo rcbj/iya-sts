@@ -75,7 +75,11 @@ impl AuthnPort for SessionsPort {
         false
     }
 
-    fn sessions_held_under(&self, username: &str, subject: &str) -> Option<Vec<Value>> {
+    fn sessions_held_under(
+        &self,
+        username: &str,
+        subject: &str,
+    ) -> Option<Vec<Value>> {
         Some(
             self.sessions
                 .store()
@@ -86,7 +90,8 @@ impl AuthnPort for SessionsPort {
                     let user = s.get("user");
                     or_empty(user.and_then(|u| u.get("username"))) == username
                         || (!subject.is_empty()
-                            && or_empty(user.and_then(|u| u.get("sub"))) == subject)
+                            && or_empty(user.and_then(|u| u.get("sub")))
+                                == subject)
                 })
                 .collect(),
         )
@@ -100,7 +105,9 @@ impl AuthnPort for SessionsPort {
                 .entries()
                 .into_iter()
                 .map(|(_, v)| v)
-                .filter(|s| self.sessions.session_ended(Some(s), now).is_empty())
+                .filter(|s| {
+                    self.sessions.session_ended(Some(s), now).is_empty()
+                })
                 .collect(),
         )
     }
@@ -125,7 +132,10 @@ impl AuthnPort for SessionsPort {
     fn note_session_changed(&self, session: &Value) {
         let sid = string_of(session.get("id"));
         let replacement = session.as_object().cloned().unwrap_or_default();
-        if !self.sessions.note_session_changed(&sid, |o| *o = replacement) {
+        if !self
+            .sessions
+            .note_session_changed(&sid, |o| *o = replacement)
+        {
             tracing::debug!("logout: the session {} had gone.", sid);
         }
     }
@@ -156,8 +166,9 @@ impl AuthnPort for SessionsPort {
 
     fn after_account_sign_out(&self, asked: &Asked, reply: &mut Reply) {
         let mut response = Response::default();
-        let _moved =
-            self.sessions.after_account_sign_out(request_of(asked), &mut response);
+        let _moved = self
+            .sessions
+            .after_account_sign_out(request_of(asked), &mut response);
         into_reply(reply, response);
     }
 
@@ -168,7 +179,10 @@ impl AuthnPort for SessionsPort {
     }
 
     fn clear_site_data_after_sign_out(&self, asked: &Asked, reply: &mut Reply) {
-        if self.sessions.clear_site_data_after_sign_out(request_of(asked)) {
+        if self
+            .sessions
+            .clear_site_data_after_sign_out(request_of(asked))
+        {
             reply
                 .headers
                 .push(("clear-site-data".into(), "\"storage\"".into()));
@@ -178,7 +192,11 @@ impl AuthnPort for SessionsPort {
     fn arrival(&self, asked: &Asked, reply: &mut Reply) {
         let request = request_of(asked);
         self.sessions.touch_arrival_session(request);
-        if self.sessions.cookie_session(Some(request), "sts_session").is_some() {
+        if self
+            .sessions
+            .cookie_session(Some(request), "sts_session")
+            .is_some()
+        {
             return;
         }
         let mut response = Response::default();
@@ -192,7 +210,11 @@ impl AuthnPort for SessionsPort {
         into_reply(reply, response);
     }
 
-    fn begin_authentication(&self, opts: &Value, _asked: Option<&Asked>) -> String {
+    fn begin_authentication(
+        &self,
+        opts: &Value,
+        _asked: Option<&Asked>,
+    ) -> String {
         (self.begin)(opts)
     }
 
@@ -224,7 +246,8 @@ impl AuthnPort for SessionsPort {
             let was = or_empty(given.get("kind"));
             match kind.as_str() {
                 "webauthn" => {
-                    was == "webauthn" && or_empty(given.get("fingerprint")) == print
+                    was == "webauthn"
+                        && or_empty(given.get("fingerprint")) == print
                 }
                 "email" => {
                     was.starts_with("email-")
@@ -275,15 +298,15 @@ impl IdentityKeys {
         let dn = {
             let mut c = rest.chars();
             matches!(c.next(), Some(ch) if ch.is_ascii_alphabetic())
-                && rest
-                    .split_once('=')
-                    .is_some_and(|(n, _)| n.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-'))
+                && rest.split_once('=').is_some_and(|(n, _)| {
+                    n.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+                })
         };
         let did = rest.len() > 4
             && rest[..4].eq_ignore_ascii_case("did:")
-            && rest[4..]
-                .split_once(':')
-                .is_some_and(|(m, _)| !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric()));
+            && rest[4..].split_once(':').is_some_and(|(m, _)| {
+                !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric())
+            });
         if !dn && !did {
             if let Some(at) = rest.rfind('@').filter(|a| *a > 0) {
                 return (rest[..at].to_string(), false);
@@ -319,7 +342,8 @@ pub struct TokensPort {
 impl TokensPort {
     /// `tokenStateOf(record, now)`.
     fn state_of(&self, record: &Value, now: f64) -> &'static str {
-        let skew = self.settings.value_of("oauth2.clockSkewS").as_int() as f64 * 1000.0;
+        let skew = self.settings.value_of("oauth2.clockSkewS").as_int() as f64
+            * 1000.0;
         let exp = crate::js::number_or_zero(record.get("exp"));
         let nbf = crate::js::number_or_zero(record.get("nbf"));
         if truthy(record.get("revoked")) {
@@ -727,7 +751,8 @@ fn begin_with(
     Arc::new(move |opts: &Value| {
         let bytes = sts_crypto::random::random_bytes(18).unwrap_or_default();
         let id = sts_crypto::b64::encode(&bytes);
-        let ttl = settings.value_of("authn.pendingTtlS").as_int().max(1) as f64 * 1000.0;
+        let ttl = settings.value_of("authn.pendingTtlS").as_int().max(1) as f64
+            * 1000.0;
         let record = json!({
             "id": id,
             "restart": "",
@@ -771,7 +796,10 @@ impl LogoutStack {
         let deps = LogoutDeps {
             authn: Arc::new(SessionsPort {
                 sessions: parts.sessions.clone(),
-                begin: begin_with(parts.pending.clone(), parts.settings.clone()),
+                begin: begin_with(
+                    parts.pending.clone(),
+                    parts.settings.clone(),
+                ),
             }),
             stats: Arc::new(TokensPort {
                 keys: IdentityKeys {

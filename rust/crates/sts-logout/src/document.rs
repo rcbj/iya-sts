@@ -108,10 +108,9 @@ fn sentence_end(html: &str) -> Option<usize> {
                     .iter()
                     .any(|p| {
                         lower.starts_with(p)
-                            && lower[p.len()..]
-                                .chars()
-                                .next()
-                                .is_none_or(|n| !n.is_alphanumeric() && n != '_')
+                            && lower[p.len()..].chars().next().is_none_or(|n| {
+                                !n.is_alphanumeric() && n != '_'
+                            })
                     })
             {
                 depth += 1;
@@ -254,7 +253,9 @@ fn safe_return(value: &str) -> String {
         && n <= 2048
         && value.starts_with('/')
         && !value[1..].starts_with('/')
-        && !value.chars().any(|c| c == '\\' || (c as u32) < 0x20 || c == '\u{7f}')
+        && !value
+            .chars()
+            .any(|c| c == '\\' || (c as u32) < 0x20 || c == '\u{7f}')
         && !{
             let head: String = value[1..]
                 .chars()
@@ -282,10 +283,16 @@ pub fn chooser(
     let current = t.negotiated.locale.to_lowercase();
     let offered = catalogs.offered();
     let tag_of = |o: &serde_json::Value| -> String {
-        o.get("tag").and_then(serde_json::Value::as_str).unwrap_or("").to_string()
+        o.get("tag")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string()
     };
     let name_of = |o: &serde_json::Value| -> String {
-        o.get("name").and_then(serde_json::Value::as_str).unwrap_or("").to_string()
+        o.get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string()
     };
     let exact = offered.iter().find(|o| tag_of(o).to_lowercase() == current);
     let same = offered.iter().find(|o| {

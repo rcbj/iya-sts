@@ -27,7 +27,8 @@ use sts_logout::ports::*;
 use sts_logout::{Logout, LogoutDeps, TerminateOptions};
 
 fn vectors() -> Option<(Value, std::path::PathBuf)> {
-    let dir = std::path::PathBuf::from(std::env::var("STS_CRYPTO_VECTORS").ok()?);
+    let dir =
+        std::path::PathBuf::from(std::env::var("STS_CRYPTO_VECTORS").ok()?);
     let text = std::fs::read_to_string(dir.join("logout-node.json")).ok()?;
     // The generator's stdout may carry the service's log lines.
     let text: String = text
@@ -54,7 +55,9 @@ struct Replay {
 impl Replay {
     fn new(v: &Value, case: &Value, step: &Value) -> Replay {
         Replay {
-            calls: Mutex::new(step["calls"].as_array().cloned().unwrap_or_default()),
+            calls: Mutex::new(
+                step["calls"].as_array().cloned().unwrap_or_default(),
+            ),
             at: Mutex::new(0),
             problems: Mutex::new(Vec::new()),
             settings: case["settings"].clone(),
@@ -98,9 +101,9 @@ impl Replay {
     fn peek_is(&self, port: &str, method: &str) -> bool {
         let calls = self.calls.lock().unwrap();
         let at = self.at.lock().unwrap();
-        calls
-            .get(*at)
-            .is_some_and(|n| n["port"] == json!(port) && n["method"] == json!(method))
+        calls.get(*at).is_some_and(|n| {
+            n["port"] == json!(port) && n["method"] == json!(method)
+        })
     }
 
     fn finish(&self) -> Vec<String> {
@@ -164,7 +167,9 @@ impl AuthnPort for Replay {
         self.call("authn", "sessionView", json!([s]))
     }
     fn session_started_at(&self, s: &Value) -> f64 {
-        self.call("authn", "sessionStartedAt", json!([s])).as_f64().unwrap_or(0.0)
+        self.call("authn", "sessionStartedAt", json!([s]))
+            .as_f64()
+            .unwrap_or(0.0)
     }
     fn end_session_by_id(&self, id: &str, via: &str, e: &str) -> bool {
         truthy(&self.call("authn", "endSessionById", json!([id, via, e])))
@@ -198,7 +203,11 @@ impl AuthnPort for Replay {
         self.call("authn", "clearSiteDataAfterSignOut", json!([REQ, RES]));
     }
     fn arrival(&self, _a: &Asked, _r: &mut Reply) {}
-    fn begin_authentication(&self, opts: &Value, asked: Option<&Asked>) -> String {
+    fn begin_authentication(
+        &self,
+        opts: &Value,
+        asked: Option<&Asked>,
+    ) -> String {
         let mut o = opts.clone();
         if asked.is_some() {
             o["request"] = json!(REQ);
@@ -206,7 +215,9 @@ impl AuthnPort for Replay {
         text(self.call("authn", "beginAuthentication", json!([o])))
     }
     fn last_authenticated_at(&self, s: &Value) -> f64 {
-        self.call("authn", "lastAuthenticatedAt", json!([s])).as_f64().unwrap_or(0.0)
+        self.call("authn", "lastAuthenticatedAt", json!([s]))
+            .as_f64()
+            .unwrap_or(0.0)
     }
     fn session_names_factor(&self, s: &Value, f: &Value) -> bool {
         truthy(&self.call("authn", "sessionNamesFactor", json!([s, f])))
@@ -404,10 +415,10 @@ impl HostPort for Replay {
         match self.settings.get(key) {
             Some(v) => v.clone(),
             None => {
-                self.problems
-                    .lock()
-                    .unwrap()
-                    .push(format!("a setting the vectors do not hold: {}", key));
+                self.problems.lock().unwrap().push(format!(
+                    "a setting the vectors do not hold: {}",
+                    key
+                ));
                 Value::Null
             }
         }
@@ -474,7 +485,8 @@ fn deps_of(r: Arc<Replay>) -> LogoutDeps {
 }
 
 fn options_of(o: &Value) -> TerminateOptions {
-    let s = |k: &str| o.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let s =
+        |k: &str| o.get(k).and_then(Value::as_str).unwrap_or("").to_string();
     TerminateOptions {
         issuer: s("issuer"),
         by: s("by"),
@@ -484,7 +496,9 @@ fn options_of(o: &Value) -> TerminateOptions {
         base: s("base"),
         browser: o.get("browser") == Some(&json!(true)),
         no_provider_command: o.get("providerCommand") == Some(&json!(false)),
-        spare_credentials: truthy(o.get("spareCredentials").unwrap_or(&Value::Null)),
+        spare_credentials: truthy(
+            o.get("spareCredentials").unwrap_or(&Value::Null),
+        ),
         quiet: truthy(o.get("quiet").unwrap_or(&Value::Null)),
     }
 }
@@ -542,7 +556,9 @@ fn run(logout: &Logout, step: &Value) -> Result<Value, String> {
             &strings(&a["selection"]),
             &options_of(&a["opts"]),
         ),
-        "heldIds" => logout.held_ids(a["key"].as_str().unwrap()).map(|ids| json!(ids)),
+        "heldIds" => logout
+            .held_ids(a["key"].as_str().unwrap())
+            .map(|ids| json!(ids)),
         "heldIdsFor" => logout.held_ids_for(&strings(&a["keys"])).map(|all| {
             Value::Object(all.into_iter().map(|(k, v)| (k, json!(v))).collect())
         }),
@@ -551,7 +567,9 @@ fn run(logout: &Logout, step: &Value) -> Result<Value, String> {
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|one| (text(one["key"].clone()), strings(&one["selection"])))
+                .map(|one| {
+                    (text(one["key"].clone()), strings(&one["selection"]))
+                })
                 .collect();
             logout
                 .terminate_each(&items, &options_of(&a["opts"]))
@@ -575,11 +593,15 @@ fn run(logout: &Logout, step: &Value) -> Result<Value, String> {
             logout.end_partner_session(&a["session"], &options_of(&a["opts"]))
         }
         "signOutView" => logout.sign_out_view(&asked).map(answered),
-        "signOutAct" => logout.sign_out_act(&asked, &mut reply, &body).map(answered),
+        "signOutAct" => {
+            logout.sign_out_act(&asked, &mut reply, &body).map(answered)
+        }
         "signOutAccountsAct" => logout
             .sign_out_accounts_act(&asked, &mut reply, &body)
             .map(answered),
-        "subjectOf" => Ok(subject_json(&logout.subject_of(&asked, Some(&body)))),
+        "subjectOf" => {
+            Ok(subject_json(&logout.subject_of(&asked, Some(&body))))
+        }
         other => Err(format!("no such op {}", other)),
     }
 }
@@ -614,8 +636,12 @@ fn every_act_makes_nodes_calls_and_gives_nodes_answer() {
             );
             match (&got, step["threw"].as_str()) {
                 (Err(e), Some(t)) if e == t => {}
-                (Err(e), _) => failures.push(format!("{}: Rust threw {}", label, e)),
-                (Ok(_), Some(t)) => failures.push(format!("{}: Node threw {}", label, t)),
+                (Err(e), _) => {
+                    failures.push(format!("{}: Rust threw {}", label, e))
+                }
+                (Ok(_), Some(t)) => {
+                    failures.push(format!("{}: Node threw {}", label, t))
+                }
                 (Ok(answer), None) => {
                     if without_seal(answer) != without_seal(&step["answer"]) {
                         failures.push(format!(
@@ -640,8 +666,11 @@ fn every_act_makes_nodes_calls_and_gives_nodes_answer() {
     }
     let fan = Logout::new(fan_deps(Arc::new(FanStub::of(&v))))
         .fan_out_of(&[&sealed["result"]]);
-    let policy: Map<String, Value> =
-        fan.policy.iter().map(|(k, x)| (k.clone(), json!(x))).collect();
+    let policy: Map<String, Value> = fan
+        .policy
+        .iter()
+        .map(|(k, x)| (k.clone(), json!(x)))
+        .collect();
     if json!({ "html": fan.html, "policy": policy }) != sealed["fanOut"] {
         failures.push(format!(
             "the fan-out differs\n  rust {}\n  node {}",
@@ -704,7 +733,9 @@ impl FrontChannelPort for FanStub {
         let frames: String = n
             .iter()
             .map(|one| match one["url"].as_str() {
-                Some(u) if !u.is_empty() => format!("<iframe src=\"{}\"></iframe>", u),
+                Some(u) if !u.is_empty() => {
+                    format!("<iframe src=\"{}\"></iframe>", u)
+                }
                 _ => String::new(),
             })
             .collect();
@@ -716,7 +747,11 @@ impl FrontChannelPort for FanStub {
             .map(|u| {
                 let rest = u.split_once("://").map_or("", |(_, r)| r);
                 let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-                format!("{}://{}", u.split("://").next().unwrap_or(""), host)
+                format!(
+                    "{}://{}",
+                    u.split("://").next().unwrap_or(""),
+                    host.to_ascii_lowercase()
+                )
             })
             .collect()
     }

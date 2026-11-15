@@ -142,9 +142,8 @@ impl Logout {
             };
         }
         if let Some(session) = authn.session_of(asked) {
-            let username = or_empty(
-                session.get("user").and_then(|u| u.get("username")),
-            );
+            let username =
+                or_empty(session.get("user").and_then(|u| u.get("username")));
             return Subject {
                 key: stats.identity_key_of(&username),
                 username,
@@ -228,10 +227,14 @@ impl Logout {
     /// `reauthenticationOwed(subject, body)` (#1521, ASVS 5.0.0 7.5.2):
     /// ending somebody's OTHER sessions needs a recent sign-in; leaving
     /// never does.
-    pub fn reauthentication_owed(&self, subject: &Subject, body: &Object) -> bool {
-        let limit =
-            js::number(Some(&self.deps.host.setting("account.recentAuthMinutes")))
-                * 60.0;
+    pub fn reauthentication_owed(
+        &self,
+        subject: &Subject,
+        body: &Object,
+    ) -> bool {
+        let limit = js::number(Some(
+            &self.deps.host.setting("account.recentAuthMinutes"),
+        )) * 60.0;
         let own = subject
             .session
             .as_ref()
@@ -248,10 +251,9 @@ impl Logout {
         {
             return false;
         }
-        let at = self
-            .deps
-            .authn
-            .last_authenticated_at(subject.session.as_ref().unwrap_or(&Value::Null));
+        let at = self.deps.authn.last_authenticated_at(
+            subject.session.as_ref().unwrap_or(&Value::Null),
+        );
         let now = self.deps.host.now_ms() / 1000.0;
         !(at > 0.0 && now - at <= limit)
     }
@@ -272,7 +274,10 @@ impl Logout {
         let selection: Vec<String> = if explicit_global {
             Vec::new()
         } else {
-            js::listed(body.get("select")).iter().map(js::text).collect()
+            js::listed(body.get("select"))
+                .iter()
+                .map(js::text)
+                .collect()
         };
         let own = subject
             .session
@@ -449,28 +454,32 @@ impl Logout {
             let username = string_of(one.get("username"));
             let key = self.deps.stats.identity_key_of(&username);
             let issuer = self.issuer_for(asked);
-            results.push(self.terminate(
-                &key,
-                &[],
-                &TerminateOptions {
-                    issuer,
-                    base: asked.base.clone(),
-                    browser: true,
-                    actor: username,
-                    initiating_entity: "user".into(),
-                    by: "the person's own sign-out at /logout, of every \
+            results.push(
+                self.terminate(
+                    &key,
+                    &[],
+                    &TerminateOptions {
+                        issuer,
+                        base: asked.base.clone(),
+                        browser: true,
+                        actor: username,
+                        initiating_entity: "user".into(),
+                        by: "the person's own sign-out at /logout, of every \
                          account in the browser"
-                        .into(),
-                    spare_credentials: true,
-                    ..TerminateOptions::default()
-                },
-            )?);
+                            .into(),
+                        spare_credentials: true,
+                        ..TerminateOptions::default()
+                    },
+                )?,
+            );
         }
         authn.after_account_sign_out(asked, reply);
         authn.clear_site_data_after_sign_out(asked, reply);
         let result = Logout::merged_result(&results);
-        let names: Vec<String> =
-            accounts.iter().map(|a| string_of(a.get("username"))).collect();
+        let names: Vec<String> = accounts
+            .iter()
+            .map(|a| string_of(a.get("username")))
+            .collect();
         let mut answer = json!({ "ok": true, "next": "signed-out",
             "username": names.join(", "), "ownSessionEnded": true,
             "scope": "global" });
@@ -500,8 +509,10 @@ impl Logout {
                     .collect(),
             )
         };
-        let messages: Vec<String> =
-            results.iter().map(|r| string_of(r.get("message"))).collect();
+        let messages: Vec<String> = results
+            .iter()
+            .map(|r| string_of(r.get("message")))
+            .collect();
         json!({ "ok": true,
             "key": results.first().map_or(json!(""), |r| r["key"].clone()),
             "scope": "global", "terminated": join("terminated"),
@@ -615,7 +626,11 @@ impl Logout {
         let return_to = if account.is_empty() {
             LOGOUT_PATH.to_string()
         } else {
-            format!("{}?account={}", LOGOUT_PATH, js::encode_uri_component(&account))
+            format!(
+                "{}?account={}",
+                LOGOUT_PATH,
+                js::encode_uri_component(&account)
+            )
         };
         let sign_in = self.deps.authn.begin_authentication(
             &json!({ "returnTo": return_to, "protocol": "Logout",
@@ -646,7 +661,10 @@ impl Logout {
             results
                 .iter()
                 .flat_map(|r| {
-                    r.get(name).and_then(Value::as_array).cloned().unwrap_or_default()
+                    r.get(name)
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default()
                 })
                 .collect()
         };
@@ -818,13 +836,17 @@ impl Logout {
             Vec::new(),
             flate2::Compression::new(6),
         );
-        let packed = match enc.write_all(text.as_bytes()).and_then(|_| enc.finish()) {
-            Ok(bytes) => sts_crypto::b64::encode(&bytes),
-            Err(e) => {
-                tracing::error!("logout: a result could not be deflated: {}", e);
-                String::new()
-            }
-        };
+        let packed =
+            match enc.write_all(text.as_bytes()).and_then(|_| enc.finish()) {
+                Ok(bytes) => sts_crypto::b64::encode(&bytes),
+                Err(e) => {
+                    tracing::error!(
+                        "logout: a result could not be deflated: {}",
+                        e
+                    );
+                    String::new()
+                }
+            };
         format!("{}.{}", packed, self.mac_of(&packed))
     }
 
@@ -856,8 +878,9 @@ impl Logout {
                 expected.as_bytes(),
             )
         {
-            return Err("That sign-out result was not made by this service."
-                .into());
+            return Err(
+                "That sign-out result was not made by this service.".into()
+            );
         }
         let payload = sts_crypto::b64::decode_loose(packed)
             .ok()
@@ -878,13 +901,16 @@ impl Logout {
         if js::text(payload.get("realm").unwrap_or(&json!("undefined")))
             != self.deps.host.realm_id()
         {
-            return Err("That sign-out result was made in another trust realm."
-                .into());
+            return Err(
+                "That sign-out result was made in another trust realm.".into(),
+            );
         }
         if !(js::number(payload.get("exp")) > self.deps.host.now_ms()) {
-            return Err("That sign-out result has expired. What is still live \
+            return Err(
+                "That sign-out result has expired. What is still live \
                         is at /logout."
-                .into());
+                    .into(),
+            );
         }
         Ok(payload["result"].clone())
     }

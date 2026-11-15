@@ -245,7 +245,8 @@ impl AuthnApi {
             o.insert("csrf".into(), json!(self.csrf_of(&call.request)));
         }
         if !accounts {
-            let username = text(seen.body.get("view").and_then(|v| v.get("username")));
+            let username =
+                text(seen.body.get("view").and_then(|v| v.get("username")));
             if !username.is_empty() {
                 if let Some(own) =
                     self.signin.facts.preferred_language_of(&username)
