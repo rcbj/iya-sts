@@ -27,6 +27,11 @@
 // `start()` (which must keep Rust's offer rather than its own) and derives
 // again.
 //
+// The same file carries the post-quantum half of a key set (`pqKeys`),
+// each key with a signature: Rust must verify Node's signatures, sign with
+// Node's private halves and derive Node's `kid`s, and Rust's keys go back
+// the same way.
+//
 // Both halves run in a child process: the keystore and the secrets are
 // process-wide, and the child's log shares stdout.
 //
@@ -55,6 +60,48 @@ const CLIENTS = {
 const LOCALS = ['urn:uuid:0b6b9b7e-6f53-4d6c-9a3c-0f1f2f3f4f5f',
                 'urn:uuid:d0c4a0a2-1b1b-4c4c-8d8d-123456789abc'];
 const REALMS = ['', 'acme'];
+// What every post-quantum key signs, as a JWS signing input would be.
+const MESSAGE = 'eyJhbGciOiJNTC1EU0EtNDQifQ.eyJzdWIiOiJ2ZWN0b3IifQ';
+
+// THE POST-QUANTUM HALF OF A KEY SET, run IN THE CHILD (its source is
+// copied there, so it requires everything itself and logs nothing — code in
+// a `node -e` child is exempt from the Entering/Leaving rule): `pqKeys` as
+// `keystore.serialise()` stores them, made by `helpers.pqKeyFrom()`, each
+// with a signature over the message; or Rust's, verified and signed with.
+function pqPart(ROOT, input) {
+  const path = require('path');
+  const out = {};
+  if (!input.pqMake && !input.pqCheck) {
+    return out;
+  }
+  const helpers = require(path.join(ROOT, 'common', 'helpers.js'));
+  const pqJose = require(path.join(ROOT, 'common', 'pq_jose.js'));
+  const MSG = input.message;
+  if (input.pqMake) {
+    out.keys = pqJose.PQ_ALGS.map(function (alg) {
+      const k = helpers.pqKeyFrom(alg, pqJose.generate(alg));
+      return { alg: alg,
+        privateKey: Buffer.from(k.privateKey).toString('base64'),
+        publicJwk: k.publicJwk,
+        signature: Buffer.from(pqJose.sign(alg, k.privateKey, MSG))
+          .toString('base64url') };
+    });
+  }
+  if (input.pqCheck) {
+    out.checked = input.pqCheck.map(function (one) {
+      const pub = Buffer.from(one.publicJwk.pub, 'base64url');
+      const priv = Buffer.from(one.privateKey, 'base64');
+      return { alg: one.alg,
+        theirs: pqJose.verify(one.alg, pub, MSG,
+          Buffer.from(one.signature, 'base64url')),
+        mine: pqJose.verify(one.alg, pub, MSG,
+          pqJose.sign(one.alg, priv, MSG)),
+        kid: helpers.pqKeyFrom(one.alg, { pub: pub, priv: priv })
+          .publicJwk.kid === one.publicJwk.kid };
+    });
+  }
+  return out;
+}
 
 // The child: Node's keystore and cluster secrets over `input`'s rows, and
 // the subjects. Its answer goes to a file.
@@ -121,8 +168,10 @@ const CHILD = [
   '      });',
   '    });',
   '  });',
+  '  const pq = pqPart(ROOT, input);',
   '  await keystore.settleDeks();',
   '  fs.writeFileSync(process.argv[3], JSON.stringify({',
+  '    pq: pq,',
   '    started: started,',
   '    describe: cs.describe(),',
   '    keyRows: Array.from(rows, function (e) {',
@@ -131,7 +180,10 @@ const CHILD = [
   '    secretRows: Array.from(secrets.values()),',
   '    subjects: subjects }));',
   '  keystore.reset();',
-  '})().catch(function (e) { console.error(e); process.exitCode = 1; });'
+  '})().catch(function (e) { console.error(e); process.exitCode = 1; });',
+  'function pqPart(ROOT, input) {',
+  '  return (' + pqPart.toString() + ')(ROOT, input);',
+  '}'
 ].join('\n');
 
 /**
@@ -182,12 +234,13 @@ function build(root, out) {
                    { mode: 0o600 });
   const answer = runChild(root, out, kekFile, {
     keyRows: [], secretRows: [], clients: CLIENTS, locals: LOCALS,
-    realms: REALMS });
+    realms: REALMS, pqMake: true, message: MESSAGE });
   log.debug("Leaving build().");
   return { kekFile: path.basename(kekFile), clients: CLIENTS,
            locals: LOCALS, realms: REALMS, started: answer.started,
            keyRows: answer.keyRows, secretRows: answer.secretRows,
-           subjects: answer.subjects };
+           subjects: answer.subjects, message: MESSAGE,
+           pqKeys: answer.pq.keys };
 }
 
 /**
@@ -205,7 +258,8 @@ function checkRust(root, dir, v, check) {
   try {
     answer = runChild(root, dir, path.join(dir, v.kekFile), {
       keyRows: v.keyRows, secretRows: v.secretRows, clients: CLIENTS,
-      locals: LOCALS, realms: REALMS });
+      locals: LOCALS, realms: REALMS, message: MESSAGE,
+      pqCheck: v.pqKeys || [] });
   } catch (e) {
     log.debug("Caught in checkRust(): " + ((e && e.message) || e));
     check(false, 'cluster secrets: Node opens the rows Rust wrote',
@@ -234,6 +288,17 @@ function checkRust(root, dir, v, check) {
           'cluster secrets: the pairwise sub Rust derived for ' +
           one.client + ' in [' + one.realm + ']',
           JSON.stringify({ rust: one.sub, node: mine && mine.sub }));
+  });
+  // The post-quantum keys Rust made, in the stored shape: each signature
+  // Rust made verifies here, each private half signs here, and each `kid`
+  // is the one Node would derive.
+  check((v.pqKeys || []).length === 11,
+        'post-quantum keys: Rust made all eleven of PQ_ALGS',
+        String((v.pqKeys || []).length));
+  ((answer.pq && answer.pq.checked) || []).forEach(function (one) {
+    check(one.theirs && one.mine && one.kid,
+          'post-quantum keys: Rust\'s ' + one.alg + ' key signs, verifies ' +
+          'and is named as Node\'s', JSON.stringify(one));
   });
   log.debug("Leaving checkRust().");
 }

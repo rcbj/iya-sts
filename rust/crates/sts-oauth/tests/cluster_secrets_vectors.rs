@@ -15,6 +15,10 @@
 //! it derived, for Node to open, keep and derive again
 //! (`tests/rust_crypto_vectors.js`).
 //!
+//! And the post-quantum half of a key set (`pqKeys`) as Node stores it:
+//! Node's signatures verify here, Node's private halves sign here under
+//! Node's `kid`s, and the keys Rust makes go back for Node to check.
+//!
 //! The directory is `STS_CRYPTO_VECTORS`, never committed (the KEK is in
 //! it); with it unset this test says so and passes.
 
@@ -34,6 +38,7 @@ use sts_oauth::clients::Clients;
 use sts_oauth::pairwise::PairwiseSubjects;
 use sts_store::cluster_secrets::ClusterSecrets;
 use sts_store::driver::{Directory, KeyMerge, SharedSecretRow};
+use sts_store::key_sets::{generate_pq_keys, KeySet, PQ_ALGS};
 use sts_store::keystore::DataKeys;
 use sts_store::ldif_driver::LdifDriver;
 use sts_store::model::DirectoryOutcome;
@@ -250,6 +255,60 @@ fn subjects_of(v: &Json, secrets: Arc<ClusterSecrets>) -> Vec<Json> {
     out
 }
 
+/// Each key's signature over the vector's message, base64url.
+fn signed_by(keys: &[Json], message: &str) -> Vec<Json> {
+    let set = KeySet {
+        realm: "default".into(),
+        blob: json!({ "pqKeys": keys }),
+    };
+    keys.iter()
+        .map(|one| {
+            let alg = one["alg"].as_str().unwrap();
+            let (key, kid) = set.signer_for(alg, "").unwrap();
+            assert_eq!(kid, one["publicJwk"]["kid"].as_str().unwrap());
+            let signature =
+                sts_crypto::jws::sign_input(alg, &key, message.as_bytes())
+                    .unwrap();
+            let mut out = one.clone();
+            out["signature"] = json!(sts_crypto::b64::encode(&signature));
+            out
+        })
+        .collect()
+}
+
+fn verifies(one: &Json, message: &str) -> bool {
+    let alg = one["alg"].as_str().unwrap();
+    let public = sts_crypto::keys::JwsKey::from_jwk(&one["publicJwk"]).unwrap();
+    let signature =
+        sts_crypto::b64::decode_loose(one["signature"].as_str().unwrap())
+            .unwrap();
+    sts_crypto::jws::verify_input(
+        alg,
+        &public,
+        message.as_bytes(),
+        &signature,
+        sts_crypto::keys::KeyPolicy::STRICT,
+    )
+    .unwrap()
+}
+
+#[test]
+fn nodes_post_quantum_keys_verify_and_sign_here() {
+    let Some((_, v)) = vectors() else {
+        return;
+    };
+    let message = v["message"].as_str().unwrap();
+    let theirs = v["pqKeys"].as_array().unwrap();
+    assert_eq!(theirs.len(), PQ_ALGS.len());
+    for (one, alg) in theirs.iter().zip(PQ_ALGS) {
+        assert_eq!(one["alg"], alg, "Node's order is PQ_ALGS'");
+        assert!(verifies(one, message), "Node's {} signature", alg);
+    }
+    for mine in signed_by(theirs, message) {
+        assert!(verifies(&mine, message), "{}", mine["alg"]);
+    }
+}
+
 fn kek_of(dir: &std::path::Path, v: &Json) -> Vec<u8> {
     let (kek, text) = DataKeys::read_kek_file(
         dir.join(v["kekFile"].as_str().unwrap()).to_str().unwrap(),
@@ -316,6 +375,10 @@ async fn rust_offers_on_an_empty_store_for_node_to_keep() {
     // A different secret, so different subjects from Node's.
     assert_ne!(&subjects, v["subjects"].as_array().unwrap());
     if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let pq_keys = signed_by(
+            &generate_pq_keys().unwrap(),
+            v["message"].as_str().unwrap(),
+        );
         let key_rows: Vec<Json> = driver
             .load_keys()
             .await
@@ -347,6 +410,7 @@ async fn rust_offers_on_an_empty_store_for_node_to_keep() {
                 "keyRows": key_rows,
                 "secretRows": secret_rows,
                 "subjects": subjects,
+                "pqKeys": pq_keys,
             }))
             .unwrap(),
         )
