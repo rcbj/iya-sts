@@ -282,13 +282,18 @@ function scimRead(who, pass) {
 
 function scimWrite(who, pass) {
   log.debug("Entering scimWrite().");
+  const made = "pl-made-" + who + "-" + K.rand(3);
   log.debug("Leaving scimWrite().");
   return K.send(K.rb(PROD) + "/scim/v2/Users", { method: "POST",
     headers: { Authorization: basicAs(who, pass),
                "Content-Type": "application/scim+json" },
     raw: JSON.stringify({
       schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
-      userName: "pl-made-" + who + "-" + K.rand(3) }) });
+      // Every attribute a product realm's attribute policy requires
+      // (uid, cn, sn, givenName, mail), so a refusal is the role check's.
+      userName: made, displayName: "Made " + made,
+      name: { givenName: "Made", familyName: made, formatted: "Made " + made },
+      emails: [{ value: made + "@asvs.example.test", primary: true }] }) });
 }
 
 function ssf(who, pass) {

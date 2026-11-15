@@ -491,7 +491,8 @@ async function test() {
   await check("A. the screen answers 403 saying the realm is full, and " +
               "records STS-AUTHN-0337 with no code in the answer",
               async function () {
-    expect(/^403 /.test(c.shown) && /full/i.test(c.shown), c.shown);
+    expect(/^403 /.test(c.shown) &&
+           /as many sign-in sessions as it allows/.test(c.shown), c.shown);
     expect(!/holds no session/.test(c.shown), c.shown);
     expect(!/STS-[A-Z]+-\d{4}/.test(c.shown), c.shown);
     expect(fullAfter, "no new STS-AUTHN-0337 row after " + fullBefore);

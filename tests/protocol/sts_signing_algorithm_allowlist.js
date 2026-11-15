@@ -417,8 +417,6 @@ async function test() {
               atRoot.raw.slice(0, 300));
     assert.ok(k192 > k192Before, k192Before + " -> " + k192);
   });
-  await ok(base + "/realm/" + LIST + "/admin-api/config/reset",
-           { key: "oauth2.accessTokenSigningAlg" }, "reset the setting");
   await ok(base + "/realm/" + LIST + "/admin-api/config/reset", { key: KEY },
            "reset the list");
   await setting(LIST, "oauth2.accessTokenSigningAlg", "ES256");

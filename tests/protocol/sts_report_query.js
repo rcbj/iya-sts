@@ -40,9 +40,11 @@
 //      another owner refused (0038), oneself allowed; the schedules',
 //      definitions' and jobs' pages and caps, and a cursor walk;
 //   4b. THE SCHEDULE'S TICKS: the realm's report.schedule job, waited for
-//      twice off /admin-api/scheduler, queues a due definition, notes a
-//      missing parameter (0035) and a disabled owner (0048, #1042) — the
-//      in-process file's scheduleNow() expectations, on a running service.
+//      twice off /admin-api/scheduler, queues a due definition and notes a
+//      disabled owner (0048, #1042), consuming that slot — the in-process
+//      file's scheduleNow() expectations, on a running service. Its
+//      missing-parameter note (0035) is owed: the definition that would
+//      show it belongs to the disabled owner here.
 //
 // NOT carried, and why: the artifact and sealed-artifact store, the time
 // budget (0034, 0005 by the clock) and the row projections given invented
@@ -719,9 +721,8 @@ async function test() {
 
   log.info("=== 4b. the schedule's ticks ===");
   // At a due minute `who` is queued as a job "schedule" and its lastSlotAt
-  // is that minute; `theirs` keeps its slot and is noted "A saved parameter
-  // was not given." (STS-REPORT-0035); `locked`, whose owner is disabled,
-  // has its slot consumed and is noted "The owner's account is disabled."
+  // is that minute; `locked` and `theirs`, whose owner is disabled, have
+  // their slots consumed and are noted "The owner's account is disabled."
   // (STS-REPORT-0048). Until fix/node-defects-1114 a running service
   // answered {"enqueued":0} here (ctx.nowMs read as a number).
   let ticks = [];
@@ -768,14 +769,17 @@ async function test() {
     });
     assert.ok(after[WHO].lastSlotAt, JSON.stringify(after[WHO]));
   });
-  check("4b. `theirs`, with no value for its parameter, keeps its slot and " +
-        "is noted (STS-REPORT-0035)", function () {
-    assert.strictEqual(after[THEIRS].lastSlotAt, null,
-                       JSON.stringify(after[THEIRS]));
+  // `theirs` belongs to the same owner as `locked`, who is disabled when
+  // the ticks run, so the owner's rule answers first: its slot is consumed
+  // and it is noted as `locked` is. The missing-parameter note
+  // (STS-REPORT-0035) is the in-process file's, owed here.
+  check("4b. `theirs`, whose owner is disabled too, has its slot consumed " +
+        "and is noted the same way, not queued", function () {
+    assert.ok(after[THEIRS].lastSlotAt, JSON.stringify(after[THEIRS]));
     const notes = after[THEIRS].failures || [];
     assert.ok(notes.length >= 1, JSON.stringify(after[THEIRS]));
     assert.strictEqual(notes[notes.length - 1].description,
-                       "A saved parameter was not given.",
+                       "The owner's account is disabled.",
                        JSON.stringify(notes));
   });
   check("4b. `locked`, whose owner is disabled, has its slot consumed and " +
