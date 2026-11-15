@@ -381,6 +381,15 @@ impl sts_authn::ports::Records for SessionTokens {
         }
     }
 
+    /// `admin_stats.recordAccountChoice()` (#561), forwarded as
+    /// `record_authentication` is: the token register only owns
+    /// revocation, and the counts belong to whatever it wraps.
+    fn record_account_choice(&self, kind: &str, n: Option<u64>) {
+        if let Some(inner) = &self.inner {
+            inner.record_account_choice(kind, n);
+        }
+    }
+
     fn revoke_session_tokens(
         &self,
         sid: &str,
