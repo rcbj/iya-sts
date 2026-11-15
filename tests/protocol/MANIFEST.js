@@ -2357,6 +2357,52 @@ const JOBS = [
   // Exclusive: they are every job's.
   { file: 'sts_pki_process_scope.js', browser: false, local: true,
     exclusive: true },
+  // ---------------------------------------------------------------------
+  // #444's D12, PHASE 7 (2026-11-15): federation, SAML, WS-Trust and
+  // WS-Federation. Same rules as phase 5's and 6's blocks: throwaway realms,
+  // codes off /admin-api/audit, realms removed only when
+  // STS_TEST_REMOVE_REALMS=1; none is exclusive. sts_idp_initiated_saml.js
+  // (above) was extended with its codes.
+  // ---------------------------------------------------------------------
+  // D12 (#444): every WS-Trust refusal a request reaches on both SOAP
+  // versions, the JWT's RFC 9068 / 8693 shape, SAML 1.1 as a token type, the
+  // AppliesTo's claim settings, wstrustJwtScope's warnings and the reserved
+  // password at LDAPS and /sts (wstrust_fault_codes, wstrust_jwt_claims,
+  // wstrust_saml11, wstrust_token_claims, wstrust_scope_warnings,
+  // reserved_password_refusal).
+  { file: 'sts_wstrust_rules.js', browser: false, local: true },
+  // D12 (#444): the requester by WS-Security message signature and by TLS
+  // client certificate, each refusal by code (wstrust_message_signature,
+  // wstrust_client_certificate). Posts an outside test Root to the client
+  // truststore and removes it.
+  { file: 'sts_wstrust_requester_auth.js', browser: false, local: true },
+  // D12 (#444): the WSDL, the capability document, WS-MEX and the WSDL
+  // against the published schemas (wstrust_metadata). Needs xmllint and
+  // STS_XML_SCHEMA_DIR, as sts_xml_schema_validation.js does.
+  { file: 'sts_wstrust_metadata.js', browser: false, local: true },
+  // D12 (#444): WS-Federation's SAML 2.0 token names its session, and wauth
+  // as a step-up (wsfed_saml2_token, wsfed_wauth_step_up).
+  { file: 'sts_wsfed_rules.js', browser: false, local: true },
+  // D12 (#444): one trip to the screen per SAML request, the AuthnRequest's
+  // envelope, back-channel logout, the attribute authority, the metadata
+  // and its TLS leaf, a relying party's written metadata, the
+  // identity-provider-initiated list (saml2_force_authn,
+  // saml_interop_findings, saml_listener_key, saml11_metadata_written,
+  // saml_idp_initiated_tab).
+  { file: 'sts_saml_sso_rules.js', browser: false, local: true },
+  // D12 (#444): a service provider's signatures on both bindings, the
+  // signing policy, observed certificates, metadata consumption and expiry,
+  // encryption with no certificate (saml_request_signatures,
+  // saml_signature_algorithms, saml_metadata_lifecycle).
+  { file: 'sts_saml_signatures.js', browser: false, local: true },
+  // D12 (#444): what a partner's sign-in creates, stamps and joins — the
+  // service as its own partner (federation_jit, stable_subject F,
+  // portal_delegate_search A, mail_address_sources 4,
+  // federation_group_authority, sourced_attributes).
+  { file: 'sts_federation_rules.js', browser: false, local: true },
+  // D12 (#444): the federation pages' shell and the unconverted ACS
+  // (federation_pages).
+  { file: 'sts_federation_pages.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
@@ -2618,6 +2664,11 @@ const LOCAL_HELPERS = [
   // realm removal.
   'oauth_wire_kit.js',
   'passkey_wire_kit.js',
+  // D12 (#444, phase 7): the RST and fault plumbing of the WS-Trust jobs,
+  // and the AuthnRequests, service provider keys and screen walk of the
+  // SAML jobs, over oauth_wire_kit.js.
+  'wstrust_wire_kit.js',
+  'saml_wire_kit.js',
   // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
   // static surface over /authn-api since #571, through `authn_signin.js`;
   // it was a copy of the parent's (listed in HELPERS until then).
