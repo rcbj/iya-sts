@@ -24,6 +24,8 @@ use std::sync::Arc;
 use replay::{code_text, Replay};
 use serde_json::{json, Value};
 use sts_registers::outcome::Outcome;
+use sts_registers::rbac::Rbac;
+use sts_registers::role_actions::RoleActions;
 use sts_registers::roles::{self, Roles, Who};
 
 fn vectors() -> Option<Value> {
@@ -110,6 +112,24 @@ fn every_register_answers_as_node_does() {
         let replay = Arc::new(Replay::new(step, &[]));
         let answer = match register {
             "roles" => run_roles(step, &replay),
+            "roleActions" => {
+                let actions = RoleActions::new(
+                    Arc::new(roles_over(&replay)),
+                    replay.clone(),
+                    replay.clone(),
+                );
+                Some(got(actions.act(&step["input"]["body"], "vectors")))
+            }
+            "rbac" => {
+                let rbac = Rbac::new(
+                    Some(replay.clone()),
+                    replay.clone(),
+                    replay.clone(),
+                    replay.clone(),
+                    replay.clone(),
+                );
+                Some(got(rbac.act(&step["input"]["body"], "api", "vectors")))
+            }
             _ => None,
         };
         let Some(answer) = answer else {

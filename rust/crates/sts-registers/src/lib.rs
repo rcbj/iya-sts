@@ -13,3 +13,5 @@ pub mod port;
 pub mod schema;
 pub mod outcome;
 pub mod roles;
+pub mod rbac;
+pub mod role_actions;
