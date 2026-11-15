@@ -114,6 +114,11 @@ pub struct StoreHooks {
     /// origin, and the minted restore reads it. An `Err` is fatal, as
     /// `openStore()`'s chain rejects.
     pub after_open: Option<StoreStep>,
+    /// The origin adopted and nothing yet read back: Node's `cluster.gate()`
+    /// (#46) — a node joins here, and in active-passive mode a standby
+    /// WAITS here for the service lease, before the keystore has a store
+    /// and before a single row is read. An `Err` is fatal.
+    pub cluster_gate: Option<StoreStep>,
     /// Minted persistence built and not yet restored: what each declared
     /// store files beside its rows and which rows a start reads
     /// (`set_index_hooks()`, `set_restore_expiring()`), which a store's
@@ -972,6 +977,12 @@ impl Persistence {
         // THIS PROCESS'S ORIGIN, BEFORE ANYTHING READS IT (Node's
         // `adoptStableOrigin()`, 2026-09-18): the composition root's step.
         if let Some(step) = self.hooks().after_open {
+            step().await?;
+        }
+        // THE CLUSTER GATE, BEFORE ANYTHING IS ARMED OR RESTORED (Node's
+        // `cluster.gate()`, 2026-09-14, #46): the join, and a standby's
+        // wait for the service lease.
+        if let Some(step) = self.hooks().cluster_gate {
             step().await?;
         }
         // The change log's position BEFORE anything is read: a change

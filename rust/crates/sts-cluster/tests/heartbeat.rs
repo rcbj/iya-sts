@@ -204,6 +204,36 @@ async fn the_service_lease_lost_in_active_passive_mode_stops_the_node() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_standby_waits_for_the_service_lease_and_takes_it_on_release() {
+    // `waitForServiceLease()`: the active node holds the lease at once; a
+    // second waits, its membership renewed meanwhile, and becomes active
+    // within a heartbeat of the first leaving.
+    let (store, stops) = setup();
+    let (a, b) = (node(&store, &stops, "a"), node(&store, &stops, "b"));
+    a.set_mode(ClusterMode::ActivePassive);
+    b.set_mode(ClusterMode::ActivePassive);
+    a.join().await.unwrap();
+    assert!(a.wait_for_service_lease().await.unwrap().held);
+    b.join().await.unwrap();
+    let waiting = {
+        let b = b.clone();
+        tokio::spawn(async move { b.wait_for_service_lease().await })
+    };
+    tokio::time::sleep(Duration::from_millis(20_000)).await;
+    assert!(!waiting.is_finished(), "a standby while the lease is held");
+    assert!(!b.stopped() && !b.holds(SERVICE_LEASE));
+    a.leave().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let answer = waiting.await.unwrap().unwrap();
+    assert!(answer.held && b.holds(SERVICE_LEASE));
+    assert!(
+        stops.lock().unwrap().is_empty(),
+        "{:?}",
+        stops.lock().unwrap()
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_lease_guarded_write_carries_its_token_and_fails_alone() {
     let (store, stops) = setup();
     let (a, b) = (node(&store, &stops, "a"), node(&store, &stops, "b"));

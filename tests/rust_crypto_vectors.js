@@ -54,6 +54,9 @@ function read(name) {
 function run(t) {
   log.debug("Entering run().");
   log.debug("Leaving run(). The audit and mail checks are asynchronous.");
+  // The cloud key-encryption keys' (#444, phase 3) first, needing no other
+  // Rust vector: tests/tools/kms-vectors.js checks what Rust wrote.
+  require('./tools/kms-vectors.js').fromRust(t, VECTORS);
   // The audit log's and the mail channel's (#444, phase 4) first: each
   // half checks only what Rust wrote (tests/tools/auditmail-vectors.js).
   return require('./tools/auditmail-vectors.js').fromRust(t, VECTORS)

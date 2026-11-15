@@ -25,7 +25,7 @@ use google_cloud_kms_v1::model::CryptoKeyVersion;
 use google_cloud_secretmanager_v1::client::SecretManagerService;
 
 use super::forms::{
-    b64, gcp_body, gcp_version_of, gcp_version_prefix, node_base64,
+    b64, gcp_body, gcp_version_of, gcp_version_prefix, no_bytes, node_base64,
 };
 use super::{kms_parts, kms_text, BoxFuture, Failure, RemoteKek};
 use crate::errors::codes;
@@ -96,7 +96,11 @@ pub(super) async fn access(
         .send()
         .await
         .map_err(|e| said(&e))?;
-    Ok(answer.payload.map(|p| p.data.to_vec()))
+    // `noBytes()` (#1789): an empty payload is none.
+    Ok(answer
+        .payload
+        .map(|p| p.data.to_vec())
+        .filter(|d| !no_bytes(Some(d))))
 }
 
 /// What `getCryptoKey` says of the key, for `gcp_key_refusal()`.
@@ -190,10 +194,10 @@ impl RemoteKek for GcpKms {
                 .send()
                 .await
                 .map_err(|e| said(&e))?;
-            // Node refuses only a missing version: an empty Buffer is
-            // truthy.
+            // `noBytes()` (#1789): an empty ciphertext is none, as a
+            // missing version is.
             let version = gcp_version_of(&answer.name);
-            if version.is_empty() {
+            if no_bytes(Some(&answer.ciphertext)) || version.is_empty() {
                 return Err(Failure::new(
                     codes::STS_KEYS_0103,
                     "Cloud KMS answered no ciphertext or no key version",
@@ -236,6 +240,12 @@ impl RemoteKek for GcpKms {
                 .send()
                 .await
                 .map_err(|e| said(&e))?;
+            if no_bytes(Some(&answer.plaintext)) {
+                return Err(Failure::new(
+                    codes::STS_KEYS_0103,
+                    "Cloud KMS answered no plaintext",
+                ));
+            }
             Ok(answer.plaintext.to_vec())
         })
     }
