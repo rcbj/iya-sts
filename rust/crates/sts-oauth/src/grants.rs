@@ -51,6 +51,7 @@ fn text(v: Option<&Json>) -> String {
 }
 
 /// `Number(config.value(key))`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn setting_number(settings: &Settings, key: &str) -> f64 {
     use sts_core::settings::SettingValue;
     match settings.value_of(key) {
@@ -70,6 +71,9 @@ pub struct GrantStores {
     pub refresh_tokens: RealmMap<Json>,
     pub refresh_families: RealmMap<Json>,
     pub grant_tokens: RealmMap<Json>,
+    /// Woken when this process records what a code bought, for a request
+    /// waiting on a concurrent redemption (`awaitRedemptionRecord()`).
+    pub redeemed_recorded: tokio::sync::Notify,
 }
 
 impl GrantStores {
@@ -136,6 +140,7 @@ impl GrantStores {
                 handles,
                 kept("oauth2_bcp.grantTokens", true),
             ),
+            redeemed_recorded: tokio::sync::Notify::new(),
         })
     }
 
@@ -178,6 +183,7 @@ impl GrantStores {
     }
 
     /// `transactionKeys(query)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn transaction_keys(query: &Json) -> Vec<(String, &'static str)> {
         let mut keys = Vec::new();
         let challenge = text(query.get("code_challenge"));
@@ -557,6 +563,7 @@ impl GrantStores {
 
     /// `familyRevocationTtlMs(clientId)`, with the client's own
     /// `oauth2.refreshTokenTtlS` override handed in.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn family_revocation_ttl_ms(&self, per_client_s: f64) -> f64 {
         let skew = self.setting_num("oauth2.clockSkewS");
         self.refresh_family_window_ms()
@@ -569,11 +576,13 @@ impl GrantStores {
     }
 
     /// A family's row (`refreshFamilies.get()`).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn family(&self, id: &str) -> Option<Json> {
         self.refresh_families.get(id)
     }
 
     /// A refresh token's row (`refreshTokens.get()`).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn refresh_record(&self, jti: &str) -> Option<Json> {
         self.refresh_tokens.get(jti)
     }

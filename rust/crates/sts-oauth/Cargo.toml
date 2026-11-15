@@ -26,7 +26,7 @@ axum.workspace = true
 chrono.workspace = true
 serde.workspace = true
 regex.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "sync"] }
 
 [dev-dependencies]
 # The tests make certificates of their own to fingerprint.

@@ -53,11 +53,13 @@ pub const MTLS_EXEMPT_CLIENTS: [&str; 3] =
 /// `rotationRequired()`: RFC 9700, OAuth 2.1 or product mode, or
 /// `oauth2.refreshTokenRotation`. FAPI 2.0's prohibition is the FAPI
 /// slice's.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn rotation_required(settings: &Settings, bcp_enabled: bool) -> bool {
     bcp_enabled || settings.value_of("oauth2.refreshTokenRotation").as_bool()
 }
 
 /// `refreshDpopRequired()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn refresh_dpop_required(settings: &Settings) -> bool {
     settings
         .value_of("oauth2.refreshTokenRequireDpop")
@@ -65,6 +67,7 @@ pub fn refresh_dpop_required(settings: &Settings) -> bool {
 }
 
 /// `refreshMtlsRequired()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn refresh_mtls_required(settings: &Settings) -> bool {
     settings
         .value_of("oauth2.refreshTokenRequireMtls")

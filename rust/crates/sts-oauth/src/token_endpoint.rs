@@ -1261,6 +1261,7 @@ impl TokenEndpoint {
             row["response"] = issued.clone();
         }
         self.grants.redeemed.set(key, row);
+        self.grants.redeemed_recorded.notify_waiters();
         if again {
             for jti in &jtis {
                 self.revoke(jti, "RFC 9700 section 4.5: an authorization code was presented twice", false, 0);
@@ -1286,20 +1287,28 @@ impl TokenEndpoint {
                 else { "An authorization code may be presented once, so start a new authorization request." }));
         }
         tracing::warn!("oauth2: an authorization code is being redeemed by another request at the same moment; this one waits for that redemption and is answered as a replay of it.");
-        let deadline = self.clock.now_ms() + 5000;
-        loop {
-            if self
-                .grants
+        // `awaitRedemptionRecord()`: a bounded wait inside this one
+        // request — CONCURRENT_REDEMPTION_WAIT_MS (5 s) in polls of
+        // CONCURRENT_REDEMPTION_POLL_MS (50 ms) — not periodic work.
+        let recorded = |me: &Self| {
+            me.grants
                 .redeemed
                 .get(key)
                 .is_some_and(|d| d.get("jtis").is_some_and(|j| !j.is_null()))
-            {
-                break;
-            }
-            if self.clock.now_ms() >= deadline {
-                return self.refusal(codes::STS_OAUTH_0512, 400, "invalid_grant", "This authorization code is being redeemed by another Token Request at the same moment, and that redemption had not completed within 5 second(s). An authorization code is single use (RFC 6749 section 4.1.2).");
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        };
+        if !recorded(self) {
+            // Woken by this process's redemption as it is recorded; a
+            // redemption on another node arrives through the change log
+            // within the same deadline, and is read once it has passed.
+            let woken = self.grants.redeemed_recorded.notified();
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_millis(5000),
+                woken,
+            )
+            .await;
+        }
+        if !recorded(self) {
+            return self.refusal(codes::STS_OAUTH_0512, 400, "invalid_grant", "This authorization code is being redeemed by another Token Request at the same moment, and that redemption had not completed within 5 second(s). An authorization code is single use (RFC 6749 section 4.1.2).");
         }
         self.replay_or_refuse(key).await
     }
