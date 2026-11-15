@@ -471,21 +471,25 @@ impl TokenEndpoint {
                 skew,
             )
             .await;
-            let ctx = crate::dpop_reservation::Reserved {
-                local: self.dpop.as_ref(),
-                reservation: reservation.as_ref(),
+            // The proof's context is dropped before the reservation is
+            // settled, so nothing held across the await is shared.
+            let checked = {
+                let ctx = crate::dpop_reservation::Reserved {
+                    local: self.dpop.as_ref(),
+                    reservation: reservation.as_ref(),
+                };
+                crate::dpop::verify_proof(
+                    Some(header),
+                    &crate::dpop::ProofRequest {
+                        htm: "POST",
+                        htu: &ask.htu,
+                        access_token: None,
+                        expected_jkt: None,
+                        now: self.clock.now_s(),
+                    },
+                    &ctx,
+                )
             };
-            let checked = crate::dpop::verify_proof(
-                Some(header),
-                &crate::dpop::ProofRequest {
-                    htm: "POST",
-                    htu: &ask.htu,
-                    access_token: None,
-                    expected_jkt: None,
-                    now: self.clock.now_s(),
-                },
-                &ctx,
-            );
             if let Some(r) = &reservation {
                 r.settle(self.claims.as_ref()).await;
             }
