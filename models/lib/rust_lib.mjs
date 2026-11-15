@@ -1029,3 +1029,85 @@ function renderUnions(unions) {
   log.debug("Leaving renderUnions().");
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// The persistence model (#444, phase 3).
+// ---------------------------------------------------------------------------
+
+/**
+ * One engine's tables, objects and added columns as a Rust constant.
+ *
+ * @param constant - the constant's name
+ * @param engine - `postgres` or `mariadb`
+ * @param persistence - what `readPersistence()` answered for the engine
+ * @returns the lines
+ */
+function rustSchema(constant, engine, persistence) {
+  log.debug("Entering rustSchema().");
+  const tableNames = new Set(persistence.tables.map(function (table) {
+    return table.name;
+  }));
+  const lines = ['/// The ' + engine + ' schema, version ' +
+    persistence.version + '.', 'pub const ' + constant + ': Schema = Schema {',
+    '    engine: ' + literal(engine) + ',',
+    '    version: ' + Number(persistence.version) + ',', '    tables: &['];
+  persistence.tables.forEach(function (table) {
+    lines.push('        Table {', '            name: ' + literal(table.name) +
+      ',', '            columns: &[');
+    table.columns.forEach(function (column) {
+      lines.push('                Column { name: ' + literal(column.name) +
+        ', sql: ' + literal(column.sqlType) + ', required: ' +
+        (column.required === true) + ', generated: ' +
+        (column.generated === true) + ', primary_key: ' +
+        (column.primaryKey === true) + ', added: ' +
+        (column.added === true) + ' },');
+    });
+    lines.push('            ],', '        },');
+  });
+  lines.push('    ],', '    objects: &[');
+  persistence.objects.forEach(function (object) {
+    lines.push('        SchemaObject { name: ' + literal(object.name) +
+      ', table: ' + tableNames.has(object.name) + ' },');
+  });
+  lines.push('    ],', '    added: &[');
+  (persistence.added || []).forEach(function (one) {
+    lines.push('        (' + literal(one.table) + ', ' + literal(one.column) +
+      '),');
+  });
+  lines.push('    ],', '};', '');
+  log.debug("Leaving rustSchema().");
+  return lines;
+}
+
+/**
+ * The persistence model's tables and columns as Rust constants, for
+ * `sts-store` to build its statements against (#444, phase 3): every table
+ * and column of `persistence.postgres.json` and `persistence.mariadb.json`,
+ * the driver's objects in their order, the columns added after a table
+ * first shipped, and each engine's schema version. The DDL stays the Node
+ * service's (`postgres/schema.sql`, `mariadb/schema.sql`); this is only what
+ * a driver may name.
+ *
+ * @param postgres - `readPersistence(program)`
+ * @param mariadb - `readPersistence(program, 'mariadb')`
+ * @returns the text of `rust/crates/sts-store/src/generated/persistence.rs`
+ */
+export function renderRustPersistence(postgres, mariadb) {
+  log.debug("Entering renderRustPersistence().");
+  const lines = HEADER.concat([
+    '// GENERATED from models/persistence/ (#1390, #444). Do not edit: change',
+    '// the model and run tests/tools/regenerate-model-docs.sh.',
+    '// tests/model_domain.js fails when this differs.', '',
+    '// Every table and column of the two engines\' schemas, as the model',
+    '// holds them. Included by sts-store\'s schema.rs, whose const checks',
+    '// refuse to build a statement naming a column that is not here.', '',
+    'use crate::schema::{Column, Schema, SchemaObject, Table};', '']);
+  rustSchema('POSTGRES', 'postgres', postgres).forEach(function (line) {
+    lines.push(line);
+  });
+  rustSchema('MARIADB', 'mariadb', mariadb).forEach(function (line) {
+    lines.push(line);
+  });
+  log.debug("Leaving renderRustPersistence().");
+  return lines.join('\n');
+}

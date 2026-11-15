@@ -70,6 +70,9 @@ tokio-openssl = "0.6"
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
 deadpool-postgres = "0.14"
 postgres-openssl = "0.5"
+# MariaDB (#677): the async MySQL-protocol client of the tokio ecosystem,
+# over native TLS (OpenSSL on Linux, as the postgres connection is).
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
 tracing-subscriber = { version = "0.3", features = ["registry"] }
 indexmap = { version = "2.14", features = ["serde"] }
 num-bigint = "0.5"
@@ -111,3 +114,11 @@ unsafe_code = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 let_underscore_must_use = "deny"
+
+# THE GENERATED API TYPES ARE BUILT WITHOUT DEBUG INFO (2026-11-14). sts-model's
+# api.rs is about 140,000 generated lines of serde types, and at the default
+# debuginfo one rustc compiling it grew past 12 GB and was killed; several
+# builds at once took the laptop down twice that day. Nobody steps through
+# generated serde code, so the cost buys nothing. `test` inherits `dev`.
+[profile.dev.package.sts-model]
+debug = 0

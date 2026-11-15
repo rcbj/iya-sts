@@ -640,7 +640,13 @@ impl ClusterNode {
     /// Joins the cluster and starts the heartbeat.
     pub async fn join(&self) -> Result<(), String> {
         self.store
-            .join(&self.node_id, self.ttl_ms, json!({ "name": self.name }))
+            // The mode is written on the row and compared with every live
+            // node's under the store's join lock (`joinCluster()`).
+            .join(
+                &self.node_id,
+                self.ttl_ms,
+                json!({ "name": self.name, "mode": self.mode().as_str() }),
+            )
             .await?;
         {
             let mut st = self.state();

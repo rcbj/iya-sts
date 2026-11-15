@@ -139,6 +139,15 @@ function declarations(t) {
     'rust/crates/sts-model/src/generated/' + name + '.rs is what the model ' +
       'generates (tests/tools/regenerate-model-docs.sh)');
   });
+  // THE PERSISTENCE MODEL AS RUST (#444, phase 3): sts-store's tables and
+  // columns, which its statements are checked against when it builds, are
+  // the model's as well, written by the same script.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-store',
+    'src', 'generated', 'persistence.rs'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'persistence.rs'),
+      'utf8'),
+  'rust/crates/sts-store/src/generated/persistence.rs is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');
