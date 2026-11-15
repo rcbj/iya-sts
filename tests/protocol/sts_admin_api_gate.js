@@ -48,6 +48,9 @@
 // object_checks.js and tests/admin_api_session_bound.js, so they stay
 // covered when Rust replaces Node.
 //
+// Its realms are removed at the end only when STS_TEST_REMOVE_REALMS=1
+// (see removeRealms()).
+//
 // OWNED HERE (local: true): this repository's own management API and its
 // gate.
 // ===========================================================================
@@ -743,6 +746,32 @@ async function sectionF(ctx) {
   log.debug("Leaving sectionF().");
 }
 
+// THE REALMS THIS JOB MADE ARE REMOVED ONLY WHEN ASKED
+// (`STS_TEST_REMOVE_REALMS=1`, which a by-hand run against a long-lived
+// probe sets so its directory does not fill). The suite leaves them
+// standing: tests/CLAUDE.md's *No job removes a realm* is the rule for a
+// shared run, where a realm left behind is what an operator reads.
+async function removeRealms(ids) {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked.");
+    return;
+  }
+  for (const id of ids) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("removed the realm " + id + ": " + r.status);
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A realm left behind is litter, not a failure of what was tested.
+      log.info("could not remove the realm " + id);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. throwaway realms " + [A, B, F].join(", ") + " ===");
@@ -776,7 +805,14 @@ async function test() {
   log.debug("Leaving test().");
 }
 
+let failure = null;
 test().catch(function (e) {
-  log.error(e.stack || e.message);
-  process.exit(1);
+  failure = e;
+}).then(function () {
+  return removeRealms([A, B, F]);
+}).then(function () {
+  if (failure) {
+    log.error(failure.stack || failure.message);
+    process.exit(1);
+  }
 });
