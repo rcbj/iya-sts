@@ -42,6 +42,7 @@ use sts_credentials::backup_codes::BackupCodes;
 use sts_credentials::credentials::{
     Credentials, CredentialsDeps, PendingStores, VerifyOptions,
 };
+use sts_credentials::mail_factor::{MailFactor, MailFactorPorts, PersonValues};
 use sts_credentials::phishing::PhishingResistance;
 use sts_credentials::ports::{
     CredentialDirectory, Environment, Hook, Keystore, Observers, People,
@@ -76,6 +77,7 @@ struct Tape {
     random: Vec<Json>,
     now: f64,
     realm: String,
+    sent_when: Json,
     state: Mutex<State>,
 }
 
@@ -102,6 +104,10 @@ impl Tape {
                 .unwrap_or_default(),
             random: case["random"].as_array().cloned().unwrap_or_default(),
             now: case["spec"]["now"].as_f64().unwrap_or(NOW),
+            sent_when: case["observed"]
+                .as_array()
+                .and_then(|l| l.iter().find(|o| o["kind"] == json!("send")))
+                .map_or(Json::Null, |o| o["message"]["values"]["when"].clone()),
             realm: case["spec"]["realm"]
                 .as_str()
                 .unwrap_or("default")
@@ -377,6 +383,68 @@ impl Observers for Tape {
             .observed
             .push(json!({ "kind": "failure",
             "username": username, "via": via, "code": code }));
+    }
+}
+
+impl MailFactorPorts for Tape {
+    fn person(&self, username: &str) -> Option<PersonValues> {
+        let gen = self.state.lock().unwrap().gen;
+        let v = self.ask(vec![s("mail.person"), json!(gen), s(username)]);
+        if v.is_null() {
+            return None;
+        }
+        let t = |k: &str| js::string_or_empty(v.get(k));
+        Some(PersonValues {
+            mail: t("mail"),
+            verified: t("verified"),
+            factor: t("factor"),
+            failures: t("failures"),
+        })
+    }
+    fn write_flag(&self, username: &str, name: &str, value: &str) -> bool {
+        let mut st = self.state.lock().unwrap();
+        let n = st.mutations.len();
+        let outcome = self
+            .node_mutations
+            .get(n)
+            .map(|m| m["outcome"].clone())
+            .unwrap_or(json!({ "value": false }));
+        st.mutations
+            .push(json!({ "hook": "writeMailFlag", "name": username,
+            "value": [name, value], "outcome": outcome }));
+        outcome["value"] == json!(true)
+    }
+    fn allows(&self, mechanism: &str, role: &str) -> bool {
+        Policies::allows(self, mechanism, role)
+    }
+    fn active(&self, mechanism: &str, role: &str) -> bool {
+        self.ask(vec![s("policy.active"), s(mechanism), s(role)]) == json!(true)
+    }
+    fn failure_limit(&self) -> f64 {
+        js::number(&self.ask(vec![s("policy.failureLimit")]))
+    }
+    fn audit(&self, row: &Json) {
+        self.observe(json!({ "kind": "audit", "row": row }));
+    }
+    fn credential_changed(&self, facts: &Json) {
+        self.observe(json!({ "kind": "changed", "facts": facts }));
+    }
+    fn credential_compromised(&self, facts: &Json) {
+        self.observe(json!({ "kind": "compromised", "facts": facts }));
+    }
+    fn send(&self, message: &Json) {
+        self.observe(json!({ "kind": "send", "message": message }));
+    }
+    // The instant is Node's own clock (`new Date()`, which the recorder
+    // cannot hold still): taken from what Node sent.
+    fn now_iso(&self) -> String {
+        js::string_or_empty(Some(&self.sent_when))
+    }
+}
+
+impl Tape {
+    fn observe(&self, row: Json) {
+        self.state.lock().unwrap().observed.push(row);
     }
 }
 
@@ -846,6 +914,64 @@ fn credentials_answer_what_node_answers() {
         {
             report.wrong.push(format!("phishing key {}", row["key"]));
         }
+    }
+    // The emailed factor.
+    for case in v["mail"].as_array().unwrap() {
+        let tape = Arc::new(Tape::new(case));
+        let m = MailFactor::new(tape.clone(), tape.clone());
+        let steps = case["steps"].as_array().unwrap();
+        let answers: Vec<_> = steps
+            .iter()
+            .map(|st| {
+                let method = st["method"].as_str().unwrap();
+                let a: Vec<String> = st["args"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|x| js::string_or_empty(Some(x)))
+                    .collect();
+                let t = |i: usize| a.get(i).cloned().unwrap_or_default();
+                let ok = |j: Json| (j, String::new(), None);
+                let out = match method {
+                    "status" => ok(m.status(&t(0))),
+                    "held" => ok(json!(m.held(&t(0)))),
+                    "optIn" => {
+                        let v = m.opt_in(&t(0), &t(1), &t(2), &t(3));
+                        (v.value.clone(), v.code_text().to_string(), None)
+                    }
+                    "clear" => ok(m.clear(&t(0), &t(1), &t(2), &t(3))),
+                    "noteFailure" => ok(m.note_failure(&t(0))),
+                    "noteSuccess" => {
+                        m.note_success(&t(0));
+                        ok(Json::Null)
+                    }
+                    "mintCode" => ok(json!(m.mint_code())),
+                    "mintToken" => ok(json!(m.mint_token())),
+                    "normalizeCode" => {
+                        ok(json!(MailFactor::normalize_code(&t(0))))
+                    }
+                    "masked" => ok(json!(MailFactor::masked(&t(0)))),
+                    other => {
+                        (Json::Null, String::new(), Some(other.to_string()))
+                    }
+                };
+                if method != "status" {
+                    tape.state.lock().unwrap().gen += 1;
+                }
+                out
+            })
+            .collect();
+        let expected: Vec<&Json> =
+            steps.iter().map(|st| &st["answer"]).collect();
+        check_case(
+            &format!("mail {}", case["name"].as_str().unwrap()),
+            case,
+            &tape,
+            answers,
+            expected,
+            &mut report,
+        );
+        counted += 1;
     }
     // What a credential earns.
     let ev = &v["evidence"];

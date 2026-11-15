@@ -961,6 +961,137 @@ async function build(ROOT) {
   [{ method: 'backupCodeStatus', args: ['quin'] },
    { method: 'verifyBackupCode', args: ['quin', 'ABCDEFGHIJ'] }]);
 
+  // THE EMAILED FACTOR (3be): `MailFactor` over a recorded world — the
+  // person's values as `entryOf()` reads them, the flags it writes, the
+  // policy, and what it audits, signals and sends.
+  const mailModule = req('common/mail_factor');
+  const accountSignals = req('ssf/account_signals');
+  const signalled = function (kind) {
+    return function (facts) {
+      if (OBSERVED) {
+        OBSERVED.push({ kind: kind, facts: clone(facts) });
+      }
+    };
+  };
+  accountSignals.credentialChanged = signalled('changed');
+  accountSignals.credentialCompromised = signalled('compromised');
+  const mailFactor = new mailModule.MailFactor(Object.assign(
+    mailModule.MailFactor.defaultDeps(), {
+      crypto: recordedCrypto,
+      randomInt: randomInt, randomBytes: randomBytes,
+      audit: { audit: function (row) {
+        if (OBSERVED) {
+          OBSERVED.push({ kind: 'audit', row: clone(row) });
+        }
+      } },
+      authnPolicy: {
+        allows: fakeAuthnPolicy.allows,
+        active: function (mechanism, role) {
+          const off = (policy().inactive || []);
+          return rec(['policy.active', mechanism, role],
+                     off.indexOf(mechanism) < 0 &&
+                     (policy().off || []).indexOf(mechanism + '/' + role) <
+                     0);
+        },
+        emailSettings: function () {
+          return { failureLimit: rec(['policy.failureLimit'],
+                                     policy().failureLimit || 5),
+                   ttlS: 600, attempts: 3, resendS: 30, maxSends: 5 };
+        }
+      },
+      mail: function () {
+        return {
+          directory: function () {
+            return {
+              personEntry: function (name) {
+                const people = (CASE && CASE.people) || {};
+                return people[name] ? { attributes: people[name] } : null;
+              },
+              writeMailFlag: function (name, attr, value) {
+                const people = (CASE && CASE.people) || {};
+                const ok = !!people[name] &&
+                  !(CASE.refusesFlags || []).includes(attr);
+                if (ok) {
+                  people[name][attr] = value === '' ? [] : [value];
+                }
+                if (MUTATIONS) {
+                  MUTATIONS.push({ hook: 'writeMailFlag', name: name,
+                                   value: [attr, value],
+                                   outcome: { value: ok } });
+                }
+                return ok;
+              }
+            };
+          },
+          send: function (message) {
+            if (OBSERVED) {
+              OBSERVED.push({ kind: 'send', message: clone(message) });
+            }
+            return { ok: true };
+          }
+        };
+      }
+    }));
+  const entryOf = mailFactor.entryOf;
+  mailFactor.entryOf = function (name) {
+    const out = entryOf.call(mailFactor, name);
+    return rec(['mail.person', GEN, String(name)], out);
+  };
+  const mailCases = [];
+  const mailScenario = function (name, spec, steps) {
+    const world = clone(spec);
+    const run = recorded(Object.assign({ now: NOW }, world), function () {
+      return steps.map(function (step) {
+        return { method: step[0], args: clone(step[1]),
+                 answer: verdict(function () {
+                   const out = mailFactor[step[0]].apply(mailFactor,
+                                                         step[1]);
+                   GEN += step[0] === 'status' ? 0 : 1;
+                   return out;
+                 }) };
+      });
+    });
+    mailCases.push(Object.assign({ name: name, spec: clone(spec),
+                                   steps: run.out }, run.taped));
+  };
+  const person = function (factor, failures, verified) {
+    return { mail: ['dee@example.com'],
+             stsMailVerified: [verified === false ? '' : 'DEE@example.com'],
+             stsMailFactor: factor ? [factor] : [],
+             stsMailFactorFailures: failures ? [String(failures)] : [] };
+  };
+  mailScenario('opted in, usable', { people: { dee: person('code') } },
+    [['status', ['dee']], ['held', ['dee']], ['status', ['nobody']]]);
+  mailScenario('opt in, each refusal', {
+    people: { dee: person(''), eve: person('', 0, false) },
+    policy: { off: ['emailLink/second-factor'], inactive: ['emailCode'] } },
+    [['optIn', ['dee', 'sms', 'dee', 'portal']],
+     ['optIn', ['dee', 'link', 'dee', 'portal']],
+     ['optIn', ['dee', 'code', 'dee', 'portal']],
+     ['status', ['dee']]]);
+  mailScenario('opt in, verified and not', {
+    people: { dee: person(''), eve: person('', 0, false) } },
+    [['optIn', ['eve', 'code', 'eve', 'portal']],
+     ['optIn', ['dee', 'code', 'dee', 'portal']],
+     ['optIn', ['dee', 'link', 'admin', 'console']],
+     ['optIn', ['dee', 'link', 'admin', 'console']],
+     ['clear', ['dee', 'dee', 'portal']],
+     ['clear', ['dee', 'dee', 'portal']]]);
+  mailScenario('opt in, the write refused', {
+    people: { dee: person('') }, refusesFlags: ['stsMailFactorFailures'] },
+    [['optIn', ['dee', 'code', 'dee', 'portal']]]);
+  mailScenario('failures up to the limit', {
+    people: { dee: person('code', 2) }, policy: { failureLimit: 4 } },
+    [['noteFailure', ['dee']], ['noteSuccess', ['dee']],
+     ['noteFailure', ['dee']], ['noteFailure', ['dee']],
+     ['noteFailure', ['dee']], ['noteFailure', ['dee']],
+     ['status', ['dee']]]);
+  mailScenario('the secrets', {}, [['mintCode', []], ['mintToken', []],
+    ['normalizeCode', ['12 34-56']], ['normalizeCode', ['12345']],
+    ['normalizeCode', ['１２３４５６']], ['normalizeCode', [null]],
+    ['masked', ['dee@example.com']], ['masked', ['@x']],
+    ['masked', ['nobody']], ['masked', ['é@x.org']]]);
+
   // WHAT A CREDENTIAL EARNS: authn.ts's own readers of an `amr`, a step's
   // first factor, an AAGUID and a key's lane.
   const Authn = req('authn/authn').Authn;
@@ -994,7 +1125,7 @@ async function build(ROOT) {
   // the same scenario answered: filled in as the steps run.
   return { totp: totpCases, backup: backupCases, apps: appCases,
            phishing: phishing, phishingKeys: phishingKeys,
-           evidence: evidence,
+           evidence: evidence, mail: mailCases,
            scenarios: scenarios,
            webauthn: await req('tests/tools/credentials-webauthn.js')
              .build(ROOT) };
@@ -1016,7 +1147,7 @@ async function build(ROOT) {
 function checkRust(ROOT, rust, node, check) {
   const stsCrypto = require(path.join(ROOT, 'common', 'crypto'));
   const nodeCases = [].concat(node.totp, node.backup, node.apps,
-                              node.scenarios);
+                              node.scenarios, node.mail);
   const rustCases = rust.cases || [];
   let hashes = 0;
   const wrong = [];
