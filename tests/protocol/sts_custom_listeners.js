@@ -562,7 +562,48 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-test().catch(function (e) {
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe that
+// would otherwise fill its directory) every realm this run made — each id
+// carries the run's STAMP — is removed at the end, pass or fail. A suite run
+// leaves them standing (tests/CLAUDE.md, *No job removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  const listed = await send(base + "/admin-api/realms?per=500");
+  const mine = ((listed.body && listed.body.realms) || []).filter(
+    function (one) {
+      return one.id !== "default" && one.id.indexOf(STAMP) >= 0;
+    });
+  for (const one of mine) {
+    const r = await postJson(base + "/admin-api/realms/remove",
+                             { id: one.id });
+    log.info("removed the realm " + one.id + " (" + r.status + ")");
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+async function main() {
+  log.debug("Entering main().");
+  let failure = null;
+  try {
+    await test();
+  } catch (e) {
+    log.debug("Caught in main(): " + ((e && e.message) || e));
+    // Reported below, after the realms are removed.
+    failure = e;
+  }
+  await removeRealms();
+  if (failure) {
+    log.debug("Leaving main(). Failed.");
+    throw failure;
+  }
+  log.debug("Leaving main().");
+}
+
+main().catch(function (e) {
   log.error("sts_custom_listeners FAILED: " + ((e && e.stack) || e));
   process.exit(1);
 });
