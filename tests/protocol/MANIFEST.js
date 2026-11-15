@@ -2576,6 +2576,10 @@ const JOBS = [
   // fga_issuance, fga_owned_policy_names). Pins remove-access-type-row's
   // refusal answered 500 (STS-API-0139), a suspected defect.
   { file: 'sts_fga_codes.js', browser: false, local: true },
+  // D12 (#444): User-Managed Access 2.0 — the protection API, the
+  // uma-ticket grant and /admin-api/uma — each refusal by its code
+  // (uma_protection, uma_grant, uma_admin).
+  { file: 'sts_uma_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
