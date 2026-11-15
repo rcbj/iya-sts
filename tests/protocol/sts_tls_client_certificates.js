@@ -257,6 +257,11 @@ async function test() {
       domain: id + ".example.net", name: "TLS client " + STAMP },
       "created the realm " + id);
   }
+  // DEVELOPMENT MODE IN THE REALM, whatever the service's (the header
+  // says why).
+  await ok("POST", "/realm/" + REALM + "/admin-api/config/set",
+           { key: "global.mode", value: "development" },
+           "development mode in the realm");
   // A generation per check below, against a limit of five per window.
   await ok("POST", "/realm/" + REALM + "/admin-api/config/set",
            { key: "pki.personSelfServicePerIdentity", value: 100 },

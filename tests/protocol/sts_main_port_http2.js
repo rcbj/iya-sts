@@ -335,6 +335,12 @@ async function test() {
       name: "HTTP/2 " + STAMP });
   assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
   const realmBase = "/realm/" + REALM;
+  // DEVELOPMENT MODE IN THE REALM, whatever the service's: the token
+  // requests name a client nobody registered, which only development
+  // creates the first time it is named.
+  const dev = await api("POST", realmBase + "/admin-api/config/set",
+                        { key: "global.mode", value: "development" });
+  assert.strictEqual(dev.status, 200, dev.raw.slice(0, 300));
 
   log.info("=== 1. the same answer over each protocol ===");
   const one = await session();
