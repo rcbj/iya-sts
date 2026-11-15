@@ -2482,6 +2482,15 @@ const JOBS = [
   // F, N11-N12). Dialled at OUTBOUND_TEST_HOST.
   { file: 'sts_federation_consumer_providers.js', browser: false,
     local: true },
+  // D12 (#444): one sign-in through each named social provider's dummy —
+  // companion/social_idps.js served by this job, dialled at
+  // OUTBOUND_TEST_HOST (social_idp_signins).
+  { file: 'sts_social_idp_signins.js', browser: false, local: true },
+  // D12 (#444): a federation partner's Shared Signals from a stand-in
+  // transmitter on the runner: discovery, a poll stream, session-revoked,
+  // account-disabled's block (STS-FED-0156) and its lifting
+  // (ssf_transmitters B-G, I).
+  { file: 'sts_ssf_transmitters.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
