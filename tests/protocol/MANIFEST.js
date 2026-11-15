@@ -2611,6 +2611,14 @@ const JOBS = [
   // development and a product realm (authzen_model_wire). Posts six
   // outside test Roots to the client truststore and removes them.
   { file: 'sts_authzen_model_wire.js', browser: false, local: true },
+  // D12 (#444): AuthZEN search's and the access request profile's
+  // remaining refusals by code (authzen_evaluation, authzen_access_request).
+  // Waits a minute for a denial to expire. Posts an outside test Root to
+  // the client truststore and removes it.
+  { file: 'sts_authzen_search_access.js', browser: false, local: true },
+  // D12 (#444): the AuthZEN tab's view and its acts' effects
+  // (authzen_admin).
+  { file: 'sts_authzen_admin_view.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
