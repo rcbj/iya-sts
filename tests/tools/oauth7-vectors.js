@@ -104,6 +104,9 @@ function claimsAnswer(oauth2, raw) {
 async function build(ROOT) {
   const out = { problems: [] };
   try {
+    // THE COMPOSITION ROOT FIRST: it installs every instance, and a module
+    // a facade had already built refuses the second install.
+    require(path.join(ROOT, 'common', 'protocol_stack'));
     const stats = require(path.join(ROOT, 'common', 'admin_stats'));
     out.identities = PRESENTED.map(function (one) {
       const id = stats.identityOf(one);
@@ -128,7 +131,6 @@ async function build(ROOT) {
     out.accepts = ACCEPTS.map(function (one) {
       return { accept: one, jwt: introspectionJwt.wantsJwt(one) };
     });
-    require(path.join(ROOT, 'common', 'protocol_stack'));
     const oauth2 = require(path.join(ROOT, 'oauth-oidc', 'oauth2'));
     out.claims = CLAIMS.map(function (raw) {
       return Object.assign({ raw: raw }, claimsAnswer(oauth2, raw));
@@ -144,6 +146,7 @@ function checkRust(ROOT, rows, check) {
   const same = function (a, b) {
     return JSON.stringify(a) === JSON.stringify(b);
   };
+  require(path.join(ROOT, 'common', 'protocol_stack'));
   const stats = require(path.join(ROOT, 'common', 'admin_stats'));
   (rows.identities || []).forEach(function (row) {
     const id = stats.identityOf(row.presented);
@@ -175,7 +178,6 @@ function checkRust(ROOT, rows, check) {
           'oauth7: Node negotiates the JWT answer as Rust did (' +
           row.accept + ')', String(row.jwt));
   });
-  require(path.join(ROOT, 'common', 'protocol_stack'));
   const oauth2 = require(path.join(ROOT, 'oauth-oidc', 'oauth2'));
   (rows.claims || []).forEach(function (row) {
     const mine = claimsAnswer(oauth2, row.raw);
