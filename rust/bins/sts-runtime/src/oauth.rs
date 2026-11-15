@@ -104,6 +104,8 @@ pub struct OAuthStack {
     pub consent: Arc<sts_oauth::consent::ConsentScreen>,
     /// `/oauth2/userinfo` (OIDC Core section 5.3).
     pub userinfo: Arc<sts_oauth::userinfo::UserInfo>,
+    /// `/oauth2/logout` (RP-Initiated Logout 1.0).
+    pub logout: Arc<sts_oauth::logout_endpoint::LogoutEndpoint>,
 }
 
 /// The person's entry for UserInfo's claims: the live directory's person
@@ -201,6 +203,17 @@ impl Signer for RealmSigner {
             set: Arc::new(self.set()?),
         }
         .verify_own(token, now_s)
+    }
+
+    fn verify_own_signature(
+        &self,
+        token: &str,
+        now_s: i64,
+    ) -> Result<Json, String> {
+        sts_oauth::token_endpoint::KeySetSigner {
+            set: Arc::new(self.set()?),
+        }
+        .verify_own_signature(token, now_s)
     }
 }
 
@@ -699,7 +712,20 @@ impl OAuthStack {
             directory: Arc::new(ClaimEntries(parts.directory_ports.clone())),
             pairwise: Some(pairwise.clone()),
         });
+        let logout = Arc::new(sts_oauth::logout_endpoint::LogoutEndpoint {
+            settings: settings.clone(),
+            mode: mode.clone(),
+            clients: clients.clone(),
+            sessions: parts.sessions.clone(),
+            hints: authorize.clone(),
+            catalogs: parts.catalogs.clone(),
+            footer: parts.footer.clone(),
+            // No audit ring here (`LogAudit`): no incident ID to reserve.
+            incident: Arc::new(|| 0),
+            channels: Arc::new(sts_oauth::logout_endpoint::NoChannels),
+        });
         Arc::new(OAuthStack {
+            logout,
             settings,
             mode,
             registry: parts.registry,
@@ -857,6 +883,26 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        // `/oauth2/logout`, GET and POST (RP-Initiated Logout 1.0 section
+        // 2's MUST).
+        let routes = routes.route(
+            "/oauth2/logout",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.logout(h, r).await }
+                }
+            })
+            .post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.logout(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         let routes = routes.route(
             "/oauth2/par",
             axum::routing::post({
@@ -988,6 +1034,22 @@ impl OAuthStack {
                 }
             })
             .fallback(unrouted),
+        );
+        let logout = {
+            let (me, h) = (me.clone(), h.clone());
+            move |Path(server): Path<String>, r: AxumRequest| {
+                let (me, h) = (me.clone(), h.clone());
+                async move {
+                    let inner = me.clone();
+                    me.for_profile(server, move || inner.logout(h, r)).await
+                }
+            }
+        };
+        let routes = routes.route(
+            "/{as}/oauth2/logout",
+            axum::routing::get(logout.clone())
+                .post(logout)
+                .fallback(unrouted),
         );
         let routes = routes.route(
             "/{as}/oauth2/par",
@@ -1147,6 +1209,65 @@ impl OAuthStack {
         // What the session core queued on the request (an account set's
         // cookie, #561).
         for line in session_request.accounts.lock().appended.drain(..) {
+            if let Ok(v) = axum::http::HeaderValue::from_str(&line) {
+                response
+                    .headers_mut()
+                    .append(axum::http::header::SET_COOKIE, v);
+            }
+        }
+        response
+    }
+
+    /// `GET`/`POST /oauth2/logout` (RP-Initiated Logout 1.0): the page or
+    /// the return, with the cookies the session core wrote.
+    async fn logout(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let url = match request.uri().query() {
+            Some(q) => format!("{}?{}", request.uri().path(), q),
+            None => request.uri().path().to_string(),
+        };
+        let mut session_request = sts_authn::ports::Request {
+            cookie: header_of(&headers, "cookie"),
+            user_agent: header_of(&headers, "user-agent"),
+            address,
+            url,
+            ..sts_authn::ports::Request::default()
+        };
+        session_request.accounts.lock().response_open = true;
+        self.sessions.spend_account_ticket(&mut session_request);
+        let query = session_request
+            .url
+            .split_once('?')
+            .map(|(_, q)| q.to_string())
+            .unwrap_or_default();
+        let ask = sts_oauth::logout_endpoint::LogoutAsk {
+            method: request.method().to_string(),
+            content_type: header_of(&headers, "content-type"),
+            query,
+            body,
+            accept_language: header_of(&headers, "accept-language"),
+            fetch_dest: header_of(&headers, "sec-fetch-dest"),
+            fetch_mode: header_of(&headers, "sec-fetch-mode"),
+            base,
+            prefix: http.registry().current_prefix(),
+            as_path: named::path_of(&named::current()),
+            request: session_request.clone(),
+        };
+        let answered = self.logout.answer(&ask);
+        let mut response = answered.answer.into_response();
+        for line in answered
+            .response
+            .cookies
+            .iter()
+            .cloned()
+            .chain(session_request.accounts.lock().appended.drain(..))
+        {
             if let Ok(v) = axum::http::HeaderValue::from_str(&line) {
                 response
                     .headers_mut()

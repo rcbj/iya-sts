@@ -1425,67 +1425,108 @@ impl AuthorizationEndpoint {
         self.authorize(ask, q, types, client)
     }
 
+    /// `verifyIdTokenHint(req, hint, clientId)` for the realm's base: the
+    /// verdict the RP-Initiated Logout endpoint reads too (`{ ok, sub,
+    /// claims }`, or `{ ok: false, reason, params, why }`).
+    #[tracing::instrument(level = "debug", skip(self, hint))]
+    pub fn verify_hint(&self, base: &str, hint: &str, client_id: &str) -> Json {
+        let ask = AuthorizeAsk {
+            base: base.to_string(),
+            ..AuthorizeAsk::default()
+        };
+        self.verify_id_token_hint(&ask, hint, client_id)
+    }
+
     /// `verifyIdTokenHint(req, hint, clientId)`: an ID Token this service
-    /// issued to this client — the realm's own key, or the client's secret
-    /// for an HMAC one — or why not.
+    /// issued to this client — the realm's own key, or one of the client's
+    /// secrets for an HMAC one — or why not. Each refusal names its
+    /// `reason` (#1326), the key of the error page's sentence, and `why`,
+    /// the English detail.
     fn verify_id_token_hint(
         &self,
         ask: &AuthorizeAsk,
         hint: &str,
         client_id: &str,
     ) -> Json {
-        let refused = |why: String| json!({ "ok": false, "why": why });
+        let refused = |reason: &str, params: Json, why: String| {
+            json!({ "ok": false, "reason": reason, "params": params,
+                    "why": why })
+        };
         let parts: Vec<&str> = hint.split('.').collect();
         if parts.len() == 5 {
-            return refused("the id_token_hint is encrypted (a JWE), and this service reads only the signed ID Token it issued — send that, as section 3.1.2.1 has the client do.".into());
+            return refused("encrypted", json!({}), "the id_token_hint is encrypted (a JWE), and this service reads only the signed ID Token it issued — send that, as section 3.1.2.1 has the client do.".into());
         }
         let Ok(header) = crate::js::segment_json(hint, 0) else {
-            return refused("the id_token_hint is not a JWT.".into());
+            return refused("notJwt", json!({}), "the id_token_hint is not a JWT.".into());
         };
         let alg = s(header.get("alg"));
         if alg.is_empty() || alg.eq_ignore_ascii_case("none") {
-            return refused(format!(
+            return refused("unsigned",
+                json!({ "alg": if alg.is_empty() { "none" } else { &alg } }),
+                format!(
                 "the id_token_hint is unsigned (alg {}), and every ID Token this service issues is signed, so it is not one this service issued.",
                 if alg.is_empty() { "missing" } else { &alg }));
         }
         let now = ((self.now_ms)() / 1000.0).floor() as i64;
         let verified: Result<Json, String> = if alg.starts_with("HS") {
+            // EVERY SECRET THE CLIENT HOLDS (2026-10-01): a rotation may
+            // have put another in front of the one that signed the hint.
             let registered = self.clients.client_config_of(client_id);
-            let secret = s(registered.get("client_secret"));
-            if secret.is_empty() {
-                return refused(format!(
+            let mut held: Vec<String> = registered
+                .get("client_secrets")
+                .and_then(Json::as_array)
+                .map(|l| l.iter().map(|o| s(o.get("secret"))).collect())
+                .unwrap_or_default();
+            held.retain(|x| !x.is_empty());
+            if held.is_empty() {
+                let one = s(registered.get("client_secret"));
+                if !one.is_empty() {
+                    held.push(one);
+                }
+            }
+            if held.is_empty() {
+                return refused("noSecret",
+                    json!({ "alg": alg, "client": client_id }),
+                    format!(
                     "the id_token_hint is signed with {} and client \"{}\" has no client_secret to verify it with.",
                     alg, client_id));
             }
-            sts_crypto::keys::JwsKey::from_jwk(&json!({
-                "kty": "oct",
-                "k": sts_crypto::b64::encode(secret.as_bytes()),
-            }))
-            .map_err(|e| e.to_string())
-            .and_then(|key| {
-                let algs = [alg.as_str()];
-                sts_crypto::jws::verify_compact(
-                    hint,
-                    &key,
-                    &sts_crypto::jws::VerifyOptions {
-                        algorithms: &algs,
-                        empty_payload: false,
-                        policy: sts_crypto::keys::KeyPolicy::LENIENT,
-                    },
-                )
-                .map(|v| v.claims.unwrap_or(Json::Null))
+            let mut last = Err(String::new());
+            for secret in held {
+                last = sts_crypto::keys::JwsKey::from_jwk(&json!({
+                    "kty": "oct",
+                    "k": sts_crypto::b64::encode(secret.as_bytes()),
+                }))
                 .map_err(|e| e.to_string())
-            })
+                .and_then(|key| {
+                    let algs = [alg.as_str()];
+                    sts_crypto::jws::verify_compact(
+                        hint,
+                        &key,
+                        &sts_crypto::jws::VerifyOptions {
+                            algorithms: &algs,
+                            empty_payload: false,
+                            policy: sts_crypto::keys::KeyPolicy::LENIENT,
+                        },
+                    )
+                    .map(|v| v.claims.unwrap_or(Json::Null))
+                    .map_err(|e| e.to_string())
+                });
+                if last.is_ok() {
+                    break;
+                }
+            }
+            last
         } else {
             match self.signer.as_ref() {
                 None => Err("no key is held to verify it".into()),
-                Some(signer) => signer.verify_own(hint, now),
+                Some(signer) => signer.verify_own_signature(hint, now),
             }
         };
         let claims = match verified {
             Ok(c) => c,
             Err(e) => {
-                return refused(format!(
+                return refused("signature", json!({}), format!(
                     "the id_token_hint did not verify as an ID Token this service issued: {}.",
                     e.trim_end_matches('.')));
             }
@@ -1496,7 +1537,10 @@ impl AuthorizationEndpoint {
         .issuer_for(&ask.base);
         let iss = s(claims.get("iss"));
         if iss != issuer {
-            return refused(format!(
+            return refused(
+                if iss.is_empty() { "noIssuer" } else { "issuer" },
+                json!({ "iss": iss, "issuer": issuer }),
+                format!(
                 "{}, and this authorization server is \"{}\".",
                 if iss.is_empty() {
                     "the id_token_hint names no issuer (no iss)".to_string()
@@ -1512,7 +1556,9 @@ impl AuthorizationEndpoint {
             None => Vec::new(),
         };
         if !audiences.iter().any(|a| a == client_id) {
-            return refused(format!(
+            return refused("audience",
+                json!({ "aud": audiences.join(", "), "client": client_id }),
+                format!(
                 "the id_token_hint was issued to {}, not to client \"{}\".",
                 crate::js::stringify(claims.get("aud").unwrap_or(&Json::Null)),
                 client_id
@@ -1523,7 +1569,8 @@ impl AuthorizationEndpoint {
             || typ.contains("logout+jwt")
             || typ.contains("at+jwt")
         {
-            return refused("the id_token_hint is not an ID Token.".into());
+            return refused("signature", json!({}),
+                "the id_token_hint is not an ID Token.".into());
         }
         json!({ "ok": true, "sub": s(claims.get("sub")), "claims": claims })
     }

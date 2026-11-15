@@ -69,6 +69,7 @@ pub mod jarm;
 pub mod js;
 pub mod jwks;
 pub mod jwt_access_token;
+pub mod logout_endpoint;
 pub mod metadata;
 pub mod minted;
 pub mod model;

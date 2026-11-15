@@ -122,6 +122,17 @@ pub trait Signer: Send + Sync {
     fn verify_own(&self, _token: &str, _now_s: i64) -> Result<Json, String> {
         Err("no key verified it".into())
     }
+    /// `helpers.verifyOwnCompactJws(token)`: the signature alone, with no
+    /// claim checked — an expired ID Token is still an id_token_hint
+    /// (RP-Initiated Logout 1.0 section 2). The keys are those in force
+    /// at `now_s`.
+    fn verify_own_signature(
+        &self,
+        token: &str,
+        now_s: i64,
+    ) -> Result<Json, String> {
+        self.verify_own(token, now_s)
+    }
 }
 
 /// The OIDC slice's ID Token (`idToken()`), not minted here.
@@ -2876,6 +2887,29 @@ impl Signer for KeySetSigner {
     fn verify_own(&self, token: &str, now_s: i64) -> Result<Json, String> {
         let checks = sts_crypto::jws::ClaimChecks {
             now: Some(now_s),
+            ..Default::default()
+        };
+        self.set
+            .verify_own_jws(
+                token,
+                None,
+                &checks,
+                sts_crypto::keys::KeyPolicy::STRICT,
+                "",
+                (now_s * 1000) as f64,
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    fn verify_own_signature(
+        &self,
+        token: &str,
+        now_s: i64,
+    ) -> Result<Json, String> {
+        // No time claim refuses: a tolerance wider than any token's life.
+        let checks = sts_crypto::jws::ClaimChecks {
+            now: Some(now_s),
+            clock_tolerance: i64::MAX / 4,
             ..Default::default()
         };
         self.set

@@ -42,11 +42,12 @@ fs.rmSync(dir, { recursive: true, force: true });
 
 // What the Rust runtime does not answer yet (#444 phase 5; the consent
 // screen and `/authn-api/consent` left with the `oauth4` slice, UserInfo and
-// the two mode reports with `oauth5`): beside the slice-two set, the FAPI
+// the two mode reports with `oauth5`, RP-Initiated Logout's
+// `/oauth2/logout` with `oauth6`): beside the slice-two set, the FAPI
 // report, the attestation challenge and the device and CIBA endpoints — each
 // under a named authorization server too.
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
-  '/oauth2/(register|introspect|revoke|logout|' +
+  '/oauth2/(register|introspect|revoke|' +
   'fapi|challenge|device_authorization|' +
   'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
