@@ -2506,6 +2506,12 @@ const JOBS = [
   // operation (STS-KEYS-0070), rsa-oaep decrypted, development unwrapping
   // it, another key's STS-SAML-0020.
   { file: 'sts_saml_encrypted_logout.js', browser: false, local: true },
+  // D12 (#444): the SAML halves of an application's claim settings, read
+  // out of real assertions — its own attribute rows by audience (SAML 2.0
+  // NameFormat, SAML 1.1 namespace), its selection replacing the realm's,
+  // the realm's custom attributes as text (application_claims C,
+  // application_claim_selections C, custom_attribute_claims D).
+  { file: 'sts_application_saml_claims.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
