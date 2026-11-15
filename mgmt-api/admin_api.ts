@@ -8438,7 +8438,16 @@ class AdminApi {
               ? Object.assign({}, result,
                               { workbench: pkiAdmin.workbenchOf(result.draft) })
               : result;
-            self.sendJson(res, result.ok ? 200 : 400, answered);
+            // A BUILD WAITED FOR TOO LONG, OR A STORE THAT COULD NOT BE ASKED
+            // ABOUT ONE (STS-PKI-0184, STS-PKI-0183), is about the moment and
+            // not the request: 503 with Retry-After, which a client retries,
+            // rather than a 400 it would take as its own fault (CI run #250,
+            // `pki.isBusyRefusal()`).
+            const busy = pki.isBusyRefusal(result);
+            if (busy) {
+              res.setHeader('Retry-After', '5');
+            }
+            self.sendJson(res, result.ok ? 200 : (busy ? 503 : 400), answered);
             log.debug("Leaving the management API PKI action endpoint.");
           }).catch(function (e) {
             errorCodes.mark(res, 'STS-API-0021');
