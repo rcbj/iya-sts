@@ -26,17 +26,46 @@
 //      settings;
 //   g. set-service-account false makes them an ordinary person again.
 //
-// What a door does with a service account — the password doors, the
-// browser, the KDC, the second-factor exemption — and the rotation's push
-// and commit are held in process by `tests/service_accounts.js`, which can
-// stand in a fake push destination; this job holds the surface a client of
-// the management API sees.
+// D12 (#444) carries over what `tests/service_accounts.js` holds that a
+// client sees, in two more throwaway realms — one development, one born in
+// product (`overrides: { "global.mode": "product" }`):
+//
+//   h. the refusals of `set-service-account` by their codes on the realm's
+//      audit: nobody (STS-SVCACCT-0021), no owner while one is required
+//      (0023), an owner who is nobody (0024), the account as its own owner
+//      (0025), half a destination (0026); a create with a bad owner is
+//      0024; Rotate now refuses a person (0040) and an account naming no
+//      destination (0041);
+//   i. the policy: a save leaving a field out is refused by name; rotation
+//      with no push destination is refused (STS-SVCACCT-0002); with
+//      `requireOwner` off an account may have no owner;
+//   j. the doors in development: the OAuth 2.0 password grant takes the
+//      account, the sign-in screen refuses it (STS-SVCACCT-0010) while an
+//      ordinary person signs in; the grant's door closed refuses its right
+//      password as a wrong one is (invalid_grant, STS-OAUTH-0220) and
+//      `allowBrowserSignIn` lets the screen take it;
+//   k. the doors in product, over LDAPS: the account's RIGHT password
+//      binds; with `allowLdapBind` off it is refused as a wrong one is
+//      (invalidCredentials, STS-SVCACCT-0011); with a second factor
+//      required of it its password alone is refused (STS-AUTHN-0213) until
+//      the realm exempts service accounts; the screen refuses it there too;
+//   l. an LDAP modify making a person a service account with no owner is
+//      refused while one is required, and with an owner is accepted with
+//      the auxiliary class beside the flag.
+//
+// What stays in process (its D12 note): the rotation's push, commit,
+// overlap and alarm against a fake destination, the KDC's question, the
+// keyed session funnel, and inheriting the DEFAULT realm's profile (a write
+// to the default realm this job may not make on a shared service).
 //
 // `local: true` in MANIFEST.js: this repository's own /admin-api.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const crypto = require("crypto");
+const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
+const authnSignin = require("./authn_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -66,6 +95,14 @@ const OWNER = "svc221-owner-" + STAMP.toLowerCase();
 const OWNER_TWO = "svc221-owner2-" + STAMP.toLowerCase();
 const ACCOUNT = "svc221-acct-" + STAMP.toLowerCase();
 const REFUSED = "svc221-refused-" + STAMP.toLowerCase();
+const DEV = ("svcd-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
+  .slice(0, 31);
+const PROD = ("svcp-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
+  .slice(0, 31);
+const PASSWORD = "Sv1c-Acc0unt-Pa55word!x";
+const WEB = "svc-web";
+const CONFIDENTIAL = "svc-grant";
+const CONFIDENTIAL_SECRET = "svc-grant-secret-" + STAMP.toLowerCase();
 
 let checks = 0;
 function check(what, fn) {
@@ -116,6 +153,455 @@ function ownerAttributes(who) {
   log.debug("Leaving ownerAttributes().");
   return { givenName: "Owner", sn: who,
            mail: who + "@" + REALM + ".example.net" };
+}
+
+function sleep(ms) {
+  log.debug("Entering sleep().");
+  log.debug("Leaving sleep().");
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+// The audit rows of one code in the realm whose API this is: a code is
+// recorded, never sent.
+async function codeCount(api, code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await send(api + "/audit?per=1&code=" + encodeURIComponent(code));
+  assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+  log.debug("Leaving codeCount().");
+  return Number(r.body.matched || 0);
+}
+
+// Runs `act` and answers it with how far the code's count grew.
+async function coded(api, code, act) {
+  log.debug("Entering coded(). " + code);
+  const before = await codeCount(api, code);
+  const answer = await act();
+  let now = before;
+  for (let i = 0; i < 20 && now <= before; i += 1) {
+    now = await codeCount(api, code);
+    if (now <= before) {
+      await sleep(150);
+    }
+  }
+  log.debug("Leaving coded(). " + before + " -> " + now);
+  return { answer: answer, grew: now - before };
+}
+
+function refusedWith(got, code, what) {
+  log.debug("Entering refusedWith(). " + code);
+  check(what + ", recorded as " + code, function () {
+    assert.ok(got.answer.status >= 400 && got.answer.status < 500,
+              got.answer.status + " " + got.answer.raw.slice(0, 300));
+    assert.strictEqual(got.grew, 1, code + " rows grew by " + got.grew);
+    assert.ok(got.answer.raw.indexOf(code) < 0, "the code was sent");
+  });
+  log.debug("Leaving refusedWith().");
+}
+
+// The whole service-account profile, `default` as the realm reads it, with
+// `changes` on top: a save replaces the whole profile.
+async function fullPolicy(api, changes) {
+  log.debug("Entering fullPolicy().");
+  const r = await send(api + "/policies");
+  const out = Object.assign({}, r.body.serviceAccount.defaults, changes || {});
+  log.debug("Leaving fullPolicy().");
+  return out;
+}
+
+// A person's stored attributes, as the users view answers them.
+function attributesOf(view) {
+  log.debug("Entering attributesOf().");
+  const ldap = (view && view.ldap) || {};
+  log.debug("Leaving attributesOf().");
+  return (ldap.entry && ldap.entry.attributes) || {};
+}
+
+function person(api, who, extra) {
+  log.debug("Entering person(). " + who);
+  log.debug("Leaving person().");
+  return ok(api + "/users/create", Object.assign({ username: who,
+    invent: false, credential: "password", password: PASSWORD,
+    attributes: { cn: "Person " + who, givenName: "Person", sn: who,
+                  mail: who + "@svc.example.net" } }, extra || {}),
+    "created " + who);
+}
+
+function ldapUrl() {
+  log.debug("Entering ldapUrl().");
+  const host = new URL(base).hostname;
+  log.debug("Leaving ldapUrl().");
+  return process.env.STS_LDAPS_URL ||
+    ("ldaps://" + host + ":" + (process.env.STS_LDAPS_PORT || 636));
+}
+
+// One LDAPS connection: bound as `dn` with `password`, then `then(client)`.
+// Answers the bind's result code (0 for success) and what `then` answered.
+function overLdap(dn, password, then) {
+  log.debug("Entering overLdap(). dn=" + dn);
+  log.debug("Leaving overLdap().");
+  return new Promise(function (resolve) {
+    const client = ldapjs.createClient({ url: ldapUrl(), reconnect: false,
+      timeout: 20000, connectTimeout: 15000,
+      tlsOptions: { rejectUnauthorized:
+                      process.env.NODE_TLS_REJECT_UNAUTHORIZED !== "0" } });
+    client.on("error", function (e) {
+      // The operation in flight reports it; an unhandled 'error' would throw.
+      log.debug("The LDAP client emitted an error: " + e.message);
+    });
+    client.bind(dn, password, function (e) {
+      const code = e ? e.code : 0;
+      if (e || !then) {
+        client.unbind();
+        resolve({ code: code, then: null });
+        return;
+      }
+      then(client).then(function (out) {
+        client.unbind();
+        resolve({ code: 0, then: out });
+      }, function (err) {
+        log.debug("Caught in overLdap(): " + ((err && err.message) || err));
+        client.unbind();
+        resolve({ code: 0, then: { code: (err && err.code) || -1 } });
+      });
+    });
+  });
+}
+
+function modify(client, dn, changes) {
+  log.debug("Entering modify(). dn=" + dn);
+  log.debug("Leaving modify().");
+  return new Promise(function (resolve) {
+    client.modify(dn, changes.map(function (one) {
+      return new ldapjs.Change({ operation: one[0],
+        modification: new ldapjs.Attribute({ type: one[1],
+                                             values: one[2] }) });
+    }), function (e) {
+      resolve({ code: e ? e.code : 0, message: e ? e.message : "" });
+    });
+  });
+}
+
+function dnOf(realm, who) {
+  log.debug("Entering dnOf().");
+  log.debug("Leaving dnOf().");
+  return "uid=" + who + ",ou=users,dc=" + realm.split(".").join(",dc=") +
+         ",dc=example,dc=net";
+}
+
+// The sign-in screen for `who`, reached through an authorization request of
+// the realm's public client `WEB`, as a browser reaches it.
+async function screenSignIn(realmBase, who, password) {
+  log.debug("Entering screenSignIn(). " + who);
+  const verifier = crypto.randomBytes(32).toString("base64url");
+  const at = await fetch(realmBase + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: WEB,
+      redirect_uri: "https://svc-web.example.net/cb", scope: "openid",
+      state: "s-" + STAMP, code_challenge_method: "S256",
+      code_challenge: crypto.createHash("sha256").update(verifier)
+        .digest("base64url") }).toString(), { redirect: "manual" });
+  const where = new URL(at.headers.get("location") || "", realmBase)
+    .toString();
+  assert.ok(/\/authn\/login/.test(where), "the authorization request went " +
+            at.status + " -> " + where);
+  const answer = await authnSignin.signIn(realmBase, where,
+    { action: "login", username: who, password: password }, {});
+  log.debug("Leaving screenSignIn(). " + answer.next);
+  return answer;
+}
+
+function passwordGrant(realmBase, who) {
+  log.debug("Entering passwordGrant(). " + who);
+  log.debug("Leaving passwordGrant().");
+  return send(realmBase + "/oauth2/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "password", username: who,
+      password: PASSWORD, client_id: CONFIDENTIAL,
+      client_secret: CONFIDENTIAL_SECRET, scope: "openid" }).toString() });
+}
+
+async function aRealmWithClients(id, overrides) {
+  log.debug("Entering aRealmWithClients(). " + id);
+  await ok(base + "/admin-api/realms/create", Object.assign({ id: id,
+    domain: id + ".example.net", name: "Service account doors " + STAMP },
+    overrides ? { overrides: overrides } : {}), "created the realm " + id);
+  const api = base + "/realm/" + id + "/admin-api";
+  await ok(api + "/applications/create", { identifier: WEB,
+    kind: "oauth2-client", name: WEB, protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [WEB], oauthTokenEndpointAuthMethod: "none",
+              oauthGrantType: ["authorization_code"],
+              oauthRedirectUri: ["https://svc-web.example.net/cb"] } },
+    "created the realm's sign-in client");
+  await ok(api + "/applications/create", { identifier: CONFIDENTIAL,
+    kind: "oauth2-client", name: CONFIDENTIAL, protocols: ["oauth2"],
+    fields: { oauthClientId: [CONFIDENTIAL],
+              oauthClientSecret: CONFIDENTIAL_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["password"],
+              oauthRedirectUri: ["https://svc-grant.example.net/cb"] } },
+    "created the realm's password-grant client");
+  log.debug("Leaving aRealmWithClients().");
+  return api;
+}
+
+async function theRefusalsByCode() {
+  log.debug("Entering theRefusalsByCode().");
+  log.info("=== h. the refusals, by their codes ===");
+  const api = base + "/realm/" + DEV + "/admin-api";
+  await person(api, "svc-h");
+  await person(api, "svc-h-owner");
+  const setTo = function (body) {
+    return function () {
+      return postJson(api + "/users/set-service-account", body);
+    };
+  };
+  refusedWith(await coded(api, "STS-SVCACCT-0021", setTo({
+    user: "svc-h-nobody", owners: ["svc-h-owner"] })),
+    "STS-SVCACCT-0021", "nobody by that name is refused");
+  refusedWith(await coded(api, "STS-SVCACCT-0023", setTo({
+    user: "svc-h" })),
+    "STS-SVCACCT-0023", "no owner is refused while one is required");
+  refusedWith(await coded(api, "STS-SVCACCT-0024", setTo({
+    user: "svc-h", owners: ["nobody-here"] })),
+    "STS-SVCACCT-0024", "an owner who is neither a person nor a group is " +
+    "refused");
+  refusedWith(await coded(api, "STS-SVCACCT-0025", setTo({
+    user: "svc-h", owners: ["svc-h"] })),
+    "STS-SVCACCT-0025", "an account cannot own itself");
+  refusedWith(await coded(api, "STS-SVCACCT-0026", setTo({
+    user: "svc-h", owners: ["svc-h-owner"], secretName: "x" })),
+    "STS-SVCACCT-0026", "a secret name without a destination is refused");
+  refusedWith(await coded(api, "STS-SVCACCT-0024", function () {
+    return postJson(api + "/users/create", { username: "svc-h-refused",
+      invent: false, credential: "none", serviceAccount: true,
+      owners: ["nobody-at-all"] });
+  }), "STS-SVCACCT-0024", "a create with a bad owner is refused before " +
+      "anybody exists");
+  await ok(api + "/users/set-service-account", { user: "svc-h",
+    owners: ["svc-h-owner"] }, "made svc-h a service account");
+  const page = await send(api + "/users?user=svc-h");
+  check("a person owns it, and its entry carries the auxiliary class",
+        function () {
+    const sa = page.body.serviceAccount;
+    assert.ok(sa && sa.owners.length === 1 && sa.owners[0].kind === "person",
+              JSON.stringify(sa));
+    const classes = attributesOf(page.body).objectClass || [];
+    assert.ok(classes.indexOf("stsServiceAccount") >= 0,
+              JSON.stringify(classes));
+  });
+  refusedWith(await coded(api, "STS-SVCACCT-0040", function () {
+    return postJson(api + "/users/rotate-password", { user: "svc-h-owner" });
+  }), "STS-SVCACCT-0040", "Rotate now refuses a person");
+  refusedWith(await coded(api, "STS-SVCACCT-0041", function () {
+    return postJson(api + "/users/rotate-password", { user: "svc-h" });
+  }), "STS-SVCACCT-0041", "and an account naming no destination");
+  await ok(api + "/users/set-service-account", { user: "svc-h",
+    serviceAccount: false }, "cleared the flag");
+  const cleared = await send(api + "/users?user=svc-h");
+  check("clearing the flag takes the class and the owner with it",
+        function () {
+    const attrs = attributesOf(cleared.body);
+    const keys = Object.keys(attrs).map(function (k) {
+      return k.toLowerCase();
+    });
+    assert.ok(keys.indexOf("stsserviceaccountowner") < 0, keys.join(","));
+    assert.ok((attrs.objectClass || attrs.objectclass || [])
+      .indexOf("stsServiceAccount") < 0);
+  });
+  log.debug("Leaving theRefusalsByCode().");
+}
+
+async function thePolicy() {
+  log.debug("Entering thePolicy().");
+  log.info("=== i. the policy's own rules ===");
+  const api = base + "/realm/" + DEV + "/admin-api";
+  const partial = await postJson(api + "/policies/save-serviceAccount-policy",
+                                 { allowBrowserSignIn: true });
+  check("a save that leaves a field out is refused by name", function () {
+    assert.strictEqual(partial.status, 400, partial.raw.slice(0, 300));
+    assert.ok((partial.body.errors || []).some(function (one) {
+      return /`requireOwner`.*required/.test(one);
+    }), partial.raw.slice(0, 400));
+  });
+  refusedWith(await coded(api, "STS-SVCACCT-0002", async function () {
+    return postJson(api + "/policies/save-serviceAccount-policy",
+                    await fullPolicy(api, { rotationEnabled: true }));
+  }), "STS-SVCACCT-0002", "rotation is refused in a realm with no push " +
+      "destination");
+  await ok(api + "/policies/save-serviceAccount-policy",
+           await fullPolicy(api, { requireOwner: false }),
+           "turned requireOwner off");
+  await person(api, "svc-unowned");
+  const unowned = await postJson(api + "/users/set-service-account",
+                                 { user: "svc-unowned" });
+  check("with requireOwner off a service account may have none",
+        function () {
+    assert.strictEqual(unowned.status, 200, unowned.raw.slice(0, 300));
+    assert.strictEqual(unowned.body.serviceAccount, true);
+  });
+  await ok(api + "/policies/reset-serviceAccount-policy", {},
+           "reset the realm's policy");
+  log.debug("Leaving thePolicy().");
+}
+
+async function theDoorsInDevelopment() {
+  log.debug("Entering theDoorsInDevelopment().");
+  log.info("=== j. the doors, in development ===");
+  const api = base + "/realm/" + DEV + "/admin-api";
+  const realmBase = base + "/realm/" + DEV;
+  await person(api, "svc-d");
+  await person(api, "svc-d-owner");
+  await ok(api + "/users/set-service-account", { user: "svc-d",
+    owners: ["svc-d-owner"] }, "made svc-d a service account");
+  const grant = await passwordGrant(realmBase, "svc-d");
+  check("the password grant's door is open, and takes the account",
+        function () {
+    assert.strictEqual(grant.status, 200, grant.raw.slice(0, 300));
+    assert.ok(grant.body.access_token);
+  });
+  const screen = await coded(api, "STS-SVCACCT-0010", function () {
+    return screenSignIn(realmBase, "svc-d", PASSWORD);
+  });
+  check("the sign-in screen refuses it by default, recorded as " +
+        "STS-SVCACCT-0010", function () {
+    assert.strictEqual(screen.answer.next, "refused",
+                       JSON.stringify(screen.answer.json));
+    // The credential check and the screen's refusal each record it.
+    assert.ok(screen.grew >= 1, "STS-SVCACCT-0010 rows grew by " +
+              screen.grew);
+  });
+  const owner = await screenSignIn(realmBase, "svc-d-owner", PASSWORD);
+  check("an ordinary person is asked nothing new", function () {
+    assert.strictEqual(owner.next, "redirect", JSON.stringify(owner.json));
+  });
+  await ok(api + "/policies/save-serviceAccount-policy",
+           await fullPolicy(api, { allowPasswordGrant: false,
+                                   allowBrowserSignIn: true }),
+           "closed the password grant's door and opened the browser");
+  // OBSERVED: the token endpoint records the closed door as it records a
+  // wrong password, STS-OAUTH-0220 ("did not verify"), not the credential
+  // check's STS-SVCACCT-0011 — the refusal reads as a wrong password's.
+  const closed = await coded(api, "STS-OAUTH-0220", function () {
+    return passwordGrant(realmBase, "svc-d");
+  });
+  check("a closed door refuses the account's right password as a wrong " +
+        "one is, recorded as STS-OAUTH-0220", function () {
+    assert.strictEqual(closed.answer.status, 400,
+                       closed.answer.raw.slice(0, 300));
+    assert.strictEqual(closed.answer.body.error, "invalid_grant");
+    assert.strictEqual(closed.grew, 1);
+  });
+  const opened = await screenSignIn(realmBase, "svc-d", PASSWORD);
+  check("allowBrowserSignIn lets the screen take it", function () {
+    assert.strictEqual(opened.next, "redirect", JSON.stringify(opened.json));
+  });
+  await ok(api + "/policies/reset-serviceAccount-policy", {},
+           "reset the realm's policy");
+  log.debug("Leaving theDoorsInDevelopment().");
+}
+
+async function theDoorsInProduct() {
+  log.debug("Entering theDoorsInProduct().");
+  log.info("=== k. the doors, in product, over LDAPS ===");
+  const api = await aRealmWithClients(PROD, { "global.mode": "product" });
+  const realmBase = base + "/realm/" + PROD;
+  await person(api, "svc-p");
+  await person(api, "svc-p-owner");
+  await ok(api + "/users/set-service-account", { user: "svc-p",
+    owners: ["svc-p-owner"] }, "made svc-p a service account");
+  const dn = dnOf(PROD, "svc-p");
+  const open = await overLdap(dn, PASSWORD);
+  check("PRODUCT: the account's right password binds at the open door",
+        function () {
+    assert.strictEqual(open.code, 0);
+  });
+  const wrong = await overLdap(dn, PASSWORD + "-wrong");
+  check("PRODUCT: a wrong one does not", function () {
+    assert.strictEqual(wrong.code, 49);
+  });
+  const screen = await coded(api, "STS-SVCACCT-0010", function () {
+    return screenSignIn(realmBase, "svc-p", PASSWORD);
+  });
+  check("PRODUCT: the sign-in screen refuses it, recorded as " +
+        "STS-SVCACCT-0010", function () {
+    assert.strictEqual(screen.answer.next, "refused",
+                       JSON.stringify(screen.answer.json));
+    // The credential check and the screen's refusal each record it.
+    assert.ok(screen.grew >= 1, "STS-SVCACCT-0010 rows grew by " +
+              screen.grew);
+  });
+  await ok(api + "/policies/save-serviceAccount-policy",
+           await fullPolicy(api, { allowLdapBind: false }),
+           "closed the LDAP door");
+  const closed = await coded(api, "STS-SVCACCT-0011", function () {
+    return overLdap(dn, PASSWORD);
+  });
+  check("PRODUCT: the closed door refuses its RIGHT password as a wrong " +
+        "one is, recorded as STS-SVCACCT-0011", function () {
+    assert.strictEqual(closed.answer.code, 49);
+    assert.strictEqual(closed.grew, 1);
+  });
+  await ok(api + "/policies/reset-serviceAccount-policy", {},
+           "reset the realm's policy");
+  await ok(api + "/users/require-mfa", { user: "svc-p" },
+           "required a second factor of the account");
+  const alone = await coded(api, "STS-AUTHN-0213", function () {
+    return overLdap(dn, PASSWORD);
+  });
+  check("PRODUCT: with a second factor required its password alone is " +
+        "refused at the password-only door, recorded as STS-AUTHN-0213",
+        function () {
+    assert.notStrictEqual(alone.answer.code, 0);
+    assert.strictEqual(alone.grew, 1);
+  });
+  await ok(api + "/policies/save-serviceAccount-policy",
+           await fullPolicy(api, { exemptFromSecondFactor: true }),
+           "exempted service accounts from the second factor");
+  const exempt = await overLdap(dn, PASSWORD);
+  check("PRODUCT: an exempting realm asks it for none, and the door takes " +
+        "its password", function () {
+    assert.strictEqual(exempt.code, 0);
+  });
+  await ok(api + "/policies/reset-serviceAccount-policy", {},
+           "reset the realm's policy");
+  log.debug("Leaving theDoorsInProduct().");
+}
+
+async function anLdapModify() {
+  log.debug("Entering anLdapModify().");
+  log.info("=== l. an LDAP modify meets the same rules ===");
+  const api = base + "/realm/" + DEV + "/admin-api";
+  await person(api, "svc-l");
+  await person(api, "svc-l-owner");
+  const dn = dnOf(DEV, "svc-l");
+  const noOwner = await overLdap(dn, PASSWORD, function (client) {
+    return modify(client, dn, [["replace", "stsServiceAccount", ["TRUE"]]]);
+  });
+  const still = await send(api + "/users?user=svc-l");
+  check("an LDAP modify making a service account with no owner is refused " +
+        "while one is required", function () {
+    assert.strictEqual(noOwner.code, 0, "the bind failed");
+    assert.notStrictEqual(noOwner.then.code, 0, JSON.stringify(noOwner));
+    assert.strictEqual(still.body.serviceAccount, null);
+  });
+  const owned = await overLdap(dn, PASSWORD, function (client) {
+    return modify(client, dn, [
+      ["replace", "stsServiceAccount", ["TRUE"]],
+      ["replace", "stsServiceAccountOwner", [dnOf(DEV, "svc-l-owner")]]]);
+  });
+  const after = await send(api + "/users?user=svc-l");
+  check("with an owner it is accepted, and the auxiliary class is kept " +
+        "beside the flag", function () {
+    assert.strictEqual(owned.then.code, 0, JSON.stringify(owned));
+    assert.ok(after.body.serviceAccount &&
+              after.body.serviceAccount.owners.length === 1,
+              JSON.stringify(after.body.serviceAccount));
+    const attrs = attributesOf(after.body);
+    assert.ok((attrs.objectClass || attrs.objectclass || [])
+      .indexOf("stsServiceAccount") >= 0, JSON.stringify(attrs.objectClass));
+  });
+  log.debug("Leaving anLdapModify().");
 }
 
 async function test() {
@@ -282,6 +768,13 @@ async function test() {
     assert.strictEqual(cleared.body.serviceAccount, null,
                        JSON.stringify(cleared.body.serviceAccount));
   });
+
+  await aRealmWithClients(DEV, null);
+  await theRefusalsByCode();
+  await thePolicy();
+  await theDoorsInDevelopment();
+  await theDoorsInProduct();
+  await anLdapModify();
 
   log.info("Test completed successfully. " + checks + " check(s) passed.");
   log.debug("Leaving test().");
