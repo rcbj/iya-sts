@@ -571,3 +571,109 @@ pub fn dashboard_json(
     out.insert("sections".into(), visible_sections(authority));
     Json::Object(out)
 }
+
+/// `PageLocale.preferences(req, page)`: `ui_locales` (none here), the
+/// person's own language, the chooser's cookie (`sts_lang`), then
+/// `Accept-Language` (`WebLocale.preferences()`'s order).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn preferences_of(
+    headers: &HeaderMap,
+    own: Option<(String, bool)>,
+) -> Vec<String> {
+    let mut chooser = String::new();
+    if let Some(cookie) = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+    {
+        for pair in cookie.split(';') {
+            if let Some(v) = pair.trim().strip_prefix("sts_lang=") {
+                chooser = v.to_string();
+            }
+        }
+    }
+    sts_http::i18n::preferences(&sts_http::i18n::Preferences {
+        ui_locales: String::new(),
+        own,
+        chooser,
+        accept_language: headers
+            .get(axum::http::header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
+/// A negotiation as Node answers it: `{locale, chain, catalog,
+/// direction, matched}`.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn negotiated_json(n: &sts_http::i18n::Negotiated) -> Json {
+    json!({ "locale": n.locale, "chain": n.chain, "catalog": n.catalog,
+            "direction": if n.rtl { "rtl" } else { "ltr" },
+            "matched": n.matched })
+}
+
+/// `i18n.catalogData()` over several prefixes, merged as
+/// `Object.assign({}, first, second, …)` merges them, and the offered
+/// languages: `{ negotiated, catalogs, offered }` — the console's
+/// (`consoleData()`, `console`) and the portal's (`localeData()`, `portal`
+/// then `chooser`).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn locale_data(
+    catalogs: &sts_http::i18n::Catalogs,
+    preferences: &[String],
+    prefixes: &[&str],
+) -> Json {
+    let t = catalogs.translator(preferences, "en");
+    let mut data = Map::new();
+    for tag in &t.negotiated.chain {
+        let mut flat = Map::new();
+        for prefix in prefixes {
+            for (k, v) in catalogs.merged(tag, prefix) {
+                flat.insert(k, v);
+            }
+        }
+        data.insert(tag.clone(), Json::Object(flat));
+    }
+    json!({ "negotiated": negotiated_json(&t.negotiated),
+            "catalogs": data, "offered": catalogs.offered() })
+}
+
+/// `PageLocale.consoleLanguage()` (#1333): the negotiation, the offered
+/// languages and where each catalog along the chain is, under this
+/// build's address (`version.buildId()`).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn locale_files(
+    catalogs: &sts_http::i18n::Catalogs,
+    preferences: &[String],
+    version: &sts_core::version::VersionInfo,
+) -> Json {
+    let t = catalogs.translator(preferences, "en");
+    let at: String =
+        v_digits(&version.built_at);
+    let build = format!(
+        "{}{}",
+        if at.is_empty() { "0".to_string() } else { at },
+        if version.commit.is_empty() {
+            String::new()
+        } else {
+            format!("-{}", version.commit)
+        }
+    );
+    let mut files = Map::new();
+    for tag in &t.negotiated.chain {
+        files.insert(
+            tag.clone(),
+            json!(format!(
+                "/web/locales/console-all/{}.json?v={}",
+                crate::request::encode_component(tag),
+                crate::request::encode_component(&build)
+            )),
+        );
+    }
+    json!({ "negotiated": negotiated_json(&t.negotiated),
+            "offered": catalogs.offered(), "catalogFiles": files })
+}
+
+fn v_digits(text: &str) -> String {
+    text.chars().filter(char::is_ascii_digit).collect()
+}

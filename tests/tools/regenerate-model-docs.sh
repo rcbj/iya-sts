@@ -76,7 +76,7 @@ docker run --rm --label com.docker.compose.project=none \
      /out/rust/sts-registers/src/generated/application.schema.json"
 # sts-mgmt-api's copy (#444, phase 4): the operation enum it routes by and the
 # two documents /admin-api serves and validates against, as the image's model
-# build wrote them.
+# build wrote them — and /account-api's (phase 5), which it serves too.
 mkdir -p rust/crates/sts-mgmt-api/src/generated
 docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/rust/crates/sts-mgmt-api/src/generated:/out/mgmt" \
@@ -84,10 +84,11 @@ docker run --rm --label com.docker.compose.project=none \
   "cp models/generated/mgmt_operations.rs /out/mgmt/operations.rs && \
    cp models/generated/openapi.management.json \
      models/generated/openapi.console.json \
-     models/generated/openapi.every.json /out/mgmt/ && \
+     models/generated/openapi.every.json \
+     models/generated/openapi.account.json /out/mgmt/ && \
    chown $(id -u):$(id -g) /out/mgmt/operations.rs \
      /out/mgmt/openapi.management.json /out/mgmt/openapi.console.json \
-     /out/mgmt/openapi.every.json"
+     /out/mgmt/openapi.every.json /out/mgmt/openapi.account.json"
 # sts-enroll's copy of the enrollment model (#444, phase 6): the very file
 # common/enrollment_model.ts reads, which the crate reads whole.
 mkdir -p rust/crates/sts-enroll/src/generated

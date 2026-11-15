@@ -120,6 +120,9 @@ pub struct AdminParts {
     pub oauth: Arc<crate::oauth::OAuthStack>,
     pub sessions: Arc<sts_authn::Sessions>,
     pub credentials: Arc<sts_credentials::credentials::Credentials>,
+    /// The sign-in surface's facts: whether a passkey may be a first or a
+    /// second factor here (`webauthnPolicy.useAllowed()`).
+    pub facts: Arc<dyn sts_authn_api::ports::SignInFacts>,
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
     pub version: sts_core::version::VersionInfo,
 }
@@ -649,6 +652,372 @@ impl rp::RosterRoles for RosterRoles {
     }
 }
 
+/// `ldap_server.js`'s `createUser(name, options)`: a person created on
+/// purpose at `uid=<name>,ou=users`, refused for a name that is a DN, a
+/// subject identifier, a DID or a SPIFFE ID, that carries RFC 4514's
+/// reserved characters, or that is taken; held to the realm's attribute
+/// policy in product mode (#396), a `cn` made from `givenName sn` first,
+/// and a `description` saying why the entry exists. The entry is put back
+/// into the live directory at once, so a password set in the same act
+/// (`sts-credentials`, over the live directory) finds it.
+///
+/// NOT PORTED: the persona `namePlan()` and `applyVcAttributes()` invent
+/// in development mode (`mode.inventsClaimValues()`), so a person made here
+/// in development carries only what was typed — product's behaviour; the
+/// attribute catalogue's check of each typed name (STS-LDAP-0047, 0106);
+/// the account observer's notice and the identity register's row.
+struct PersonWriter {
+    dir: Arc<LiveDir>,
+    mode: Arc<Mode>,
+}
+
+impl PersonWriter {
+    fn refused(code: sts_core::errors::ErrorCode, why: String) -> rp::Marked {
+        rp::Marked {
+            value: json!({ "ok": false, "errors": [why] }),
+            code: Some(code),
+        }
+    }
+}
+
+impl rp::PersonWriter for PersonWriter {
+    fn create_user(&self, name: &str, options: &Json) -> rp::Marked {
+        use sts_core::errors::codes;
+        let wanted = name.trim().to_string();
+        if wanted.is_empty() {
+            return Self::refused(
+                codes::STS_LDAP_0042,
+                "Which user? Send `username` with the name they will authenticate under — the same string \
+                 that would appear in a token's `sub` and on /admin/users."
+                    .into(),
+            );
+        }
+        let lower = wanted.to_lowercase();
+        let dn_shaped = wanted
+            .split_once('=')
+            .is_some_and(|(a, _)| {
+                a.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                    && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            });
+        if dn_shaped {
+            return Self::refused(
+                codes::STS_LDAP_0043,
+                format!(
+                    "\"{}\" is a DN and not a username. An entry named by a distinguished name gets here by \
+                     presenting a client certificate, where the DN is the identity; there is nothing to create \
+                     one from by hand.",
+                    wanted
+                ),
+            );
+        }
+        if lower.starts_with("urn:uuid:")
+            || sts_directory::uuid::uuid_shaped(&lower)
+        {
+            return Self::refused(
+                codes::STS_LDAP_0090,
+                format!(
+                    "\"{}\" is a subject identifier and not a username. Every person here is given one — their \
+                     entryUUID — and a token's sub is urn:uuid:<that value>, so a person named after one would \
+                     be a second person answering to somebody else's subject.",
+                    wanted
+                ),
+            );
+        }
+        if sts_directory::uuid::did_shaped(&wanted) {
+            return Self::refused(
+                codes::STS_LDAP_0044,
+                format!(
+                    "\"{}\" is a decentralized identifier and not a username. A DID reaches this directory by \
+                     being presented, and where this service knows whose it is the identifier goes onto that \
+                     person's entry as didSubject.",
+                    wanted.chars().take(48).collect::<String>()
+                ),
+            );
+        }
+        if lower.starts_with("spiffe://") {
+            return Self::refused(
+                codes::STS_LDAP_0045,
+                format!(
+                    "\"{}\" is a SPIFFE identity and not a username. A workload identity reaches this directory \
+                     by being PRESENTED — an X509-SVID over mutual TLS at the SPIRE Server API, an agent \
+                     attesting, a JWT-SVID validated at the Workload API — and its entry is named by a digest \
+                     with the identity on it as spiffeSubject. What you probably want instead is a REGISTRATION \
+                     ENTRY, which is a different thing in a different container: /admin/spiffe/entries, POST \
+                     /admin-api/spiffe/entries/create, or BatchCreateEntry.",
+                    wanted.chars().take(64).collect::<String>()
+                ),
+            );
+        }
+        if wanted.chars().any(|c| ",=+<>#;\"\\".contains(c)) {
+            return Self::refused(
+                codes::STS_LDAP_0046,
+                format!(
+                    "\"{}\" cannot be a username here: it carries a character RFC 4514 reserves in a DN (one of \
+                     , = + < > # ; \" \\), so the entry would be named something other than what was typed. An \
+                     ldapadd can still create such an entry, with the escaping written out.",
+                    wanted
+                ),
+            );
+        }
+        let realm_id = realm::current_id();
+        let outcome = {
+            let mut tree =
+                self.dir.tree.lock().unwrap_or_else(PoisonError::into_inner);
+            let Some(r) = LiveDir::realm_index(&tree, &realm_id) else {
+                return Self::refused(
+                    codes::STS_LDAP_0008,
+                    "This realm has no directory.".into(),
+                );
+            };
+            if let Some(clash) = tree.existing_user_entry(r, &wanted) {
+                return rp::Marked {
+                    value: json!({ "ok": false,
+                        "errors": [format!(
+                            "There is already a user called \"{}\" here, at {}. One entry per person is the rule \
+                             this directory keeps at every door — whatever protocol authenticated them, and \
+                             whichever attribute their entry happens to be named by.",
+                            wanted, clash.dn)],
+                        "existing": { "dn": clash.dn,
+                                      "origin": clash.origin.clone().unwrap_or_default() } }),
+                    code: Some(codes::STS_LDAP_0005),
+                };
+            }
+            let mut attributes: indexmap::IndexMap<String, Vec<String>> =
+                indexmap::IndexMap::new();
+            attributes.insert(
+                "objectclass".into(),
+                ["top", "person", "organizationalPerson", "inetOrgPerson"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            );
+            attributes.insert("uid".into(), vec![wanted.clone()]);
+            let mut typed: Vec<String> = Vec::new();
+            if let Some(given) = options["attributes"].as_object() {
+                for (k, v) in given {
+                    let values: Vec<String> = match v {
+                        Json::Array(l) => l
+                            .iter()
+                            .map(|x| match x {
+                                Json::String(t) => t.trim().to_string(),
+                                other => other.to_string(),
+                            })
+                            .filter(|t| !t.is_empty())
+                            .collect(),
+                        Json::Null => Vec::new(),
+                        Json::String(t) => {
+                            vec![t.trim().to_string()]
+                                .into_iter()
+                                .filter(|t| !t.is_empty())
+                                .collect()
+                        }
+                        other => vec![other.to_string()],
+                    };
+                    if values.is_empty() {
+                        continue;
+                    }
+                    typed.push(k.clone());
+                    attributes.insert(k.to_lowercase(), values);
+                }
+            }
+            if !attributes.contains_key("description") {
+                let note = options["note"].as_str().unwrap_or("").trim();
+                attributes.insert(
+                    "description".into(),
+                    vec![if note.is_empty() {
+                        "created by hand rather than by authenticating"
+                            .to_string()
+                    } else {
+                        note.to_string()
+                    }],
+                );
+            }
+            if !attributes.contains_key("cn") {
+                let given = attributes
+                    .get("givenname")
+                    .and_then(|v| v.first())
+                    .cloned()
+                    .unwrap_or_default();
+                let sn = attributes
+                    .get("sn")
+                    .and_then(|v| v.first())
+                    .cloned()
+                    .unwrap_or_default();
+                let cn = format!("{} {}", given, sn).trim().to_string();
+                if !cn.is_empty() {
+                    attributes.insert("cn".into(), vec![cn]);
+                }
+            }
+            let exempt = options["requiredExempt"]
+                .as_str()
+                .is_some_and(|e| !e.is_empty());
+            if !exempt {
+                use sts_directory::ports::PersonRules;
+                let enforced = !self
+                    .mode
+                    .predicate("createsIncompletePeople")
+                    .unwrap_or(false);
+                if let Some(refusal) = sts_directory::ports::DefaultPersonRules
+                    .attribute_create_refusal(&attributes, enforced)
+                {
+                    return rp::Marked {
+                        value: json!({ "ok": false,
+                                       "errors": [refusal.message] }),
+                        code: Some(codes::STS_LDAP_0162),
+                    };
+                }
+            }
+            let mail = attributes
+                .get("mail")
+                .and_then(|v| v.first())
+                .cloned()
+                .unwrap_or_default();
+            if !mail.is_empty() {
+                // `verifyWrittenMail()`: an address an administrator typed
+                // is verified.
+                attributes.insert("stsmailverified".into(), vec![mail]);
+            }
+            let dn = format!("uid={},{}", wanted, tree.users_dn(r));
+            let pairs: Vec<(String, Vec<String>)> =
+                attributes.into_iter().collect();
+            let origin = options["origin"].as_str().unwrap_or("console");
+            match tree.put_entry(r, &dn, &pairs, Some(origin), None) {
+                Err(e) => Err(e),
+                Ok(_) => Ok((
+                    dn.clone(),
+                    tree.get(r, &dn).map(|e| {
+                        sts_registers::applications::store::StoredApplication::of(e)
+                    }),
+                    typed,
+                )),
+            }
+        };
+        let (dn, stored, typed) = match outcome {
+            Err(e) => {
+                return rp::Marked {
+                    value: json!({ "ok": false, "errors": [e.message.clone()] }),
+                    code: Some(e.code.unwrap_or(codes::STS_LDAP_0008)),
+                }
+            }
+            Ok(v) => v,
+        };
+        self.dir.write_back();
+        tracing::info!(
+            "audit: user.create {} on request ({})",
+            dn,
+            options["note"].as_str().unwrap_or("")
+        );
+        let entry = stored.map(|s| {
+            json!({ "dn": s.dn, "origin": s.origin, "attributes": s.attributes })
+        });
+        rp::Marked::plain(json!({ "ok": true, "dn": dn, "username": wanted,
+                                  "typed": typed, "invented": false,
+                                  "entry": entry }))
+    }
+}
+
+/// `common/credentials.ts` as the users acts ask it, over `sts-credentials`.
+struct PeopleCredentials(Arc<sts_credentials::credentials::Credentials>);
+
+impl rp::Credentials for PeopleCredentials {
+    fn account_disabled(&self, name: &str) -> bool {
+        self.0.account_disabled(name)
+    }
+    fn set_account_disabled(
+        &self,
+        _name: &str,
+        _disabled: bool,
+        _options: &Json,
+    ) -> rp::Marked {
+        rp::Marked::plain(json!({ "ok": false,
+            "errors": ["The account lock is not ported to this runtime yet."] }))
+    }
+    fn generate_password(&self, _name: &str) -> String {
+        // `generatePassword()` is the password policy's; until it is in the
+        // runtime, a random token of 192 bits.
+        sts_crypto::random::random_token(Some(192)).unwrap_or_default()
+    }
+    fn set_password(&self, name: &str, password: &str, options: &Json) -> Json {
+        match self.0.set_password(name, password, options) {
+            Ok(v) => v.value,
+            Err(e) => json!({ "ok": false, "errors": [e] }),
+        }
+    }
+    fn set_password_reset_required(&self, _name: &str, _flag: bool) -> Json {
+        json!({ "ok": false })
+    }
+    fn issue_activation(&self, _name: &str) -> Json {
+        json!({ "ok": false,
+                "errors": ["An activation link is not ported to this runtime yet."] })
+    }
+}
+
+/// Service accounts: not ported. Nothing is refused, nothing is one.
+struct NoServiceAccounts;
+
+impl rp::ServiceAccounts for NoServiceAccounts {
+    fn write_refusal(&self, _fields: &Json) -> Option<rp::PolicyRefusal> {
+        None
+    }
+    fn check(&self, _body: &Json, _existing: &str) -> rp::Marked {
+        rp::Marked::plain(json!({ "ok": true }))
+    }
+    fn set(&self, _username: &str, _change: &Json) -> Json {
+        json!({ "ok": false,
+                "errors": ["Service accounts are not ported to this runtime yet."] })
+    }
+    fn list(&self) -> Vec<Json> {
+        Vec::new()
+    }
+    fn of(&self, _name: &str) -> Json {
+        Json::Null
+    }
+    fn set_owner_protected(&self, _name: &str, _flag: bool) -> rp::Marked {
+        rp::Marked::plain(json!({ "ok": false }))
+    }
+}
+
+/// The CAEP and RISC signals of a credential change: SSF is not ported.
+struct NoSignals;
+
+impl rp::AccountSignals for NoSignals {
+    fn credential_changed(&self, _change: &Json) {}
+}
+
+/// No mail channel in this runtime: a link is never mailed.
+struct NoMailer;
+
+impl rp::LinkMailer for NoMailer {
+    fn mailed_link(
+        &self,
+        _kind: &str,
+        _who: &str,
+        _token: &str,
+        _body: &Json,
+        _actor: &str,
+        _via: &str,
+    ) -> Json {
+        Json::Null
+    }
+}
+
+/// `admin_stats.identityKeyOf(name)`: the name itself.
+struct Names;
+
+impl rp::IdentityKeys for Names {
+    fn identity_key_of(&self, name: &str) -> String {
+        name.to_string()
+    }
+}
+
+/// The side effects of an account change outside the register.
+struct NoEffects;
+
+impl rp::AccountEffects for NoEffects {
+    fn note_revoking_write(&self, _what: &str) {}
+    fn mail_account_disabled(&self, _name: &str, _why: &str, _by: bool) {}
+}
+
 /// The gate's registers.
 struct Gate {
     registry: Arc<RealmRegistry>,
@@ -828,6 +1197,7 @@ impl KeySource for Keys {
 struct Setup {
     persistence: Arc<Persistence>,
     apps: Arc<ApplicationRegistry>,
+    people: Arc<sts_registers::people::People>,
     tokens: Arc<sts_oauth::minted::TokenRegister>,
     sessions: Arc<sts_authn::Sessions>,
     dir: Arc<LiveDir>,
@@ -907,6 +1277,9 @@ impl SetupPorts for Setup {
     fn applications(&self) -> Option<Arc<ApplicationRegistry>> {
         Some(self.apps.clone())
     }
+    fn people(&self) -> Option<Arc<sts_registers::people::People>> {
+        Some(self.people.clone())
+    }
 }
 
 impl Setup {
@@ -923,6 +1296,7 @@ impl Setup {
 /// The console's first screen.
 struct Console {
     settings: Arc<Settings>,
+    version: sts_core::version::VersionInfo,
     mode: Arc<Mode>,
     roster: Arc<RosterRoles>,
     persistence: Arc<Persistence>,
@@ -962,7 +1336,20 @@ impl ConsolePorts for Console {
         _username: &str,
         as_files: bool,
     ) -> Json {
-        console_locale(&self.catalogs, &self.settings, headers, as_files)
+        let preferences = sts_mgmt_api::console::preferences_of(headers, None);
+        if as_files {
+            sts_mgmt_api::console::locale_files(
+                &self.catalogs,
+                &preferences,
+                &self.version,
+            )
+        } else {
+            sts_mgmt_api::console::locale_data(
+                &self.catalogs,
+                &preferences,
+                &["console"],
+            )
+        }
     }
     fn announcements(&self, surface: &str, since: i64) -> Json {
         announcements_for(&self.announcements, &self.settings, surface, since)
@@ -1006,68 +1393,91 @@ pub fn announcements_for(
     })
 }
 
-/// The language a surface is drawn in: the chooser's cookie, then
-/// `Accept-Language`, English last.
-fn preferences(headers: &HeaderMap) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    if let Some(cookie) = headers
-        .get(axum::http::header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-    {
-        for pair in cookie.split(';') {
-            if let Some(v) = pair.trim().strip_prefix("sts_lang=") {
-                if !v.is_empty() {
-                    out.push(v.to_string());
-                }
-            }
-        }
-    }
-    if let Some(al) = headers
-        .get(axum::http::header::ACCEPT_LANGUAGE)
-        .and_then(|v| v.to_str().ok())
-    {
-        out.extend(sts_http::i18n::accept_language(al));
-    }
-    out
+/// What `/account-api` reads, in the ambient realm.
+struct Account {
+    dir: Arc<LiveDir>,
+    tokens: Arc<sts_oauth::minted::TokenRegister>,
+    sessions: Arc<sts_authn::Sessions>,
+    credentials: Arc<sts_credentials::credentials::Credentials>,
+    facts: Arc<dyn sts_authn_api::ports::SignInFacts>,
+    catalogs: Arc<sts_http::i18n::Catalogs>,
 }
 
-/// `PageLocale.consoleData()` and `consoleLanguage()`: the negotiation,
-/// the offered languages, and either the catalogs along the chain (the
-/// console's namespaces and the footer's) or where each is as a file.
-pub fn console_locale(
-    catalogs: &sts_http::i18n::Catalogs,
-    settings: &Settings,
-    headers: &HeaderMap,
-    as_files: bool,
-) -> Json {
-    let _ = settings;
-    let t = catalogs.translator(&preferences(headers), "en");
-    let n = &t.negotiated;
-    let negotiated = json!({ "locale": n.locale, "catalog": n.catalog,
-                             "chain": n.chain, "rtl": n.rtl,
-                             "matched": n.matched });
-    if as_files {
-        let mut files = serde_json::Map::new();
-        for tag in &n.chain {
-            files.insert(
-                tag.clone(),
-                json!(format!("/web/locales/console-all/{}.json", tag)),
-            );
-        }
-        return json!({ "negotiated": negotiated,
-                       "offered": catalogs.offered(),
-                       "catalogFiles": files });
+impl sts_mgmt_api::account::AccountPorts for Account {
+    fn name_for_subject(&self, sub: &str) -> String {
+        self.dir.with(|t| t.name_for_subject(&realm::current_id(), sub))
     }
-    let mut data = serde_json::Map::new();
-    for tag in &n.chain {
-        let mut flat = catalogs.merged(tag, "console");
-        for (k, v) in catalogs.merged(tag, "footer") {
-            flat.insert(k, v);
-        }
-        data.insert(tag.clone(), Json::Object(flat));
+    fn subject_is_gone(&self, sub: &str) -> bool {
+        sub.trim().to_lowercase().starts_with("urn:uuid:")
+            && self.name_for_subject(sub).is_empty()
     }
-    json!({ "negotiated": negotiated, "catalogs": data,
-            "offered": catalogs.offered() })
+    fn session_id_of(&self, jti: &str) -> String {
+        self.tokens
+            .get(&realm::current_id(), jti)
+            .and_then(|row| row["sessionId"].as_str().map(str::to_string))
+            .unwrap_or_default()
+    }
+    fn session(&self, sid: &str) -> Option<Json> {
+        self.sessions.session_by_id(sid)
+    }
+    fn sign_on_facts(&self, session: &Json) -> Json {
+        self.sessions.sign_on_facts_for(session)
+    }
+    fn person_entry(&self, name: &str) -> Option<Json> {
+        self.dir.with(|t| {
+            let r = LiveDir::realm_index(t, &realm::current_id())?;
+            t.existing_user_entry(r, name).map(|e| {
+                json!({ "dn": e.dn, "attributes": e.attributes })
+            })
+        })
+    }
+    fn mechanisms(&self, name: &str) -> Json {
+        // `credentials.mechanismsFor(name)`'s members the Overview reads.
+        // The emailed second factor (#64, off by default) is not ported.
+        let keys = self.credentials.keys_of(name);
+        let held = keys.len();
+        let mfa = if held > 0 && self.facts.key_use_allowed("mfa").is_ok() {
+            held
+        } else {
+            0
+        };
+        let totp = self.credentials.totp_of(name);
+        let unusable = totp
+            .as_ref()
+            .is_some_and(|t| t["unusable"] == json!(true));
+        json!({
+            "password": self.credentials.has_password(name),
+            "keys": keys,
+            "totp": totp.is_some(),
+            "totpUsable": totp.is_some() && !unusable,
+            "mfaRequired": mfa > 0 || totp.is_some(),
+            "secondFactor": if mfa > 0 { "webauthn" }
+                            else if totp.is_some() { "totp" } else { "" },
+            "backupCodes": self.credentials.backup_code_status(name),
+        })
+    }
+    fn times_signed_in(&self, _name: &str) -> Option<i64> {
+        // `stats.userDetail()` is the identity register's, not ported: no
+        // row, so the page draws no figure rather than a zero.
+        None
+    }
+    fn photo_path(&self, _name: &str) -> String {
+        String::new()
+    }
+    fn photo_view(&self, _name: &str) -> Json {
+        json!({ "path": "", "origin": "", "selfService": true,
+                "limits": { "maxBytes": 0, "types": [] } })
+    }
+    fn locale(&self, headers: &HeaderMap, _username: &str) -> Json {
+        sts_mgmt_api::console::locale_data(
+            &self.catalogs,
+            &sts_mgmt_api::console::preferences_of(headers, None),
+            &["portal", "chooser"],
+        )
+    }
+    fn offered(&self) -> Vec<Json> {
+        self.catalogs.offered()
+    }
 }
 
 /// `/admin-api`, built.
@@ -1078,6 +1488,10 @@ pub struct AdminStack {
     /// a request and written back after it, so two at once would undo each
     /// other's writes.
     serial: Arc<tokio::sync::Mutex<()>>,
+    /// `/account-api` over the same services.
+    account: Arc<sts_mgmt_api::account::AccountApi>,
+    /// The families' acts, answered once the router hands them over.
+    pub families: Arc<crate::admin_families::AdminFamilies>,
 }
 
 impl AdminStack {
@@ -1153,12 +1567,41 @@ impl AdminStack {
             ));
         let register = parts.oauth.tokens.register.clone();
         let dpop = parts.oauth.tokens.dpop.clone();
+        let credentials: Arc<dyn rp::Credentials> =
+            Arc::new(PeopleCredentials(parts.credentials.clone()));
+        let people = Arc::new(sts_registers::people::People::new(
+            sts_registers::people::PeopleDeps {
+                people: Some(Arc::new(PersonWriter {
+                    dir: dir.clone(),
+                    mode: mode.clone(),
+                })),
+                groups: None,
+                credentials: credentials.clone(),
+                service_accounts: Arc::new(NoServiceAccounts),
+                signals: Arc::new(NoSignals),
+                mailer: Arc::new(NoMailer),
+                mode: Arc::new(RegMode {
+                    mode: mode.clone(),
+                    registry: parts.registry.clone(),
+                }),
+                audit: Arc::new(LogAudit),
+            },
+            Arc::new(sts_registers::people::AccountState::new(
+                credentials,
+                Arc::new(Names),
+                None,
+                Arc::new(NoEffects),
+                Arc::new(LogAudit),
+            )),
+        ));
         let announcements = RealmMap::new(
             &parts.lifecycle,
             &parts.handles,
             StoreSpec::persisted("ssf_receivers.announcements"),
         );
         let store = parts.persistence.status();
+        let families =
+            Arc::new(crate::admin_families::AdminFamilies::default());
         let services = Arc::new(Services {
             settings: settings.clone(),
             mode: mode.clone(),
@@ -1187,6 +1630,7 @@ impl AdminStack {
             setup_ports: Arc::new(Setup {
                 persistence: parts.persistence.clone(),
                 apps,
+                people,
                 tokens: register,
                 sessions: parts.sessions.clone(),
                 dir: dir.clone(),
@@ -1195,12 +1639,14 @@ impl AdminStack {
             }),
             console: Arc::new(Console {
                 settings: settings.clone(),
+                version: parts.version.clone(),
                 mode: mode.clone(),
                 roster,
                 persistence: parts.persistence.clone(),
                 catalogs: parts.catalogs.clone(),
                 announcements,
             }),
+            families: families.clone(),
             facts: ProcessFacts {
                 config_file: std::env::var("CONFIG_FILE").ok(),
                 defaults_file: "./env/defaults.js".to_string(),
@@ -1216,9 +1662,22 @@ impl AdminStack {
             eddsa_curve: String::new(),
             now: Arc::new(|| chrono::Utc::now().timestamp()),
         });
+        let account = Arc::new(sts_mgmt_api::account::AccountApi {
+            services: services.clone(),
+            ports: Arc::new(Account {
+                dir: dir.clone(),
+                tokens: parts.oauth.tokens.register.clone(),
+                sessions: parts.sessions.clone(),
+                credentials: parts.credentials.clone(),
+                facts: parts.facts.clone(),
+                catalogs: parts.catalogs.clone(),
+            }),
+        });
         Arc::new(AdminStack {
             services,
             dir,
+            account,
+            families,
             serial: Arc::new(tokio::sync::Mutex::new(())),
         })
     }
@@ -1229,7 +1688,9 @@ impl AdminStack {
     pub fn router(&self) -> axum::Router {
         let dir = self.dir.clone();
         let serial = self.serial.clone();
-        sts_mgmt_api::router::router(self.services.clone()).layer(
+        sts_mgmt_api::router::router(self.services.clone())
+            .merge(self.account.clone().router())
+            .layer(
             axum::middleware::from_fn(
                 move |request: axum::extract::Request,
                       next: axum::middleware::Next| {

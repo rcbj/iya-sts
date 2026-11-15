@@ -97,6 +97,12 @@ pub trait SetupPorts: Send + Sync {
     {
         std::sync::Arc::new(sts_registers::applications::actions::NoActionPorts)
     }
+    /// The users acts (`adminActions.usersAction()`, `sts-registers`'
+    /// `People`); None until the composition root hands it over, when they
+    /// answer as operations not yet ported.
+    fn people(&self) -> Option<std::sync::Arc<sts_registers::people::People>> {
+        None
+    }
 }
 
 /// `realms.retiringState(id)`: a realm being removed, as the realm's row
@@ -757,4 +763,33 @@ fn js_parse_int(text: &str) -> Option<i64> {
 #[tracing::instrument(level = "debug")]
 pub fn setting_keys() -> Vec<&'static str> {
     rows().iter().map(|r| r.key).collect()
+}
+
+/// `POST /admin-api/users/{action}` (`adminActions.usersAction()`): the
+/// acts `sts-registers`' `People` ports, 200 for `ok` and 400 otherwise,
+/// marked with the act's code or STS-API-0030, as the route marks it.
+/// None where there is no register, or for an action Node has and the
+/// register does not port.
+#[tracing::instrument(level = "debug", skip(setup, body, caller))]
+pub fn users_action(
+    setup: &Setup<'_>,
+    action: &str,
+    body: &Json,
+    caller: Option<&crate::gate::Caller>,
+) -> Option<Answered> {
+    let people = setup.ports.people()?;
+    let mut asked = body.as_object().cloned().unwrap_or_default();
+    asked.insert("action".into(), Json::from(action));
+    let actor = caller.map(|c| c.name.clone()).unwrap_or_default();
+    let outcome = people.users(&Json::Object(asked), "api", &actor)?;
+    let ok = outcome.answer.get("ok") == Some(&Json::Bool(true));
+    Some(Answered {
+        status: if ok { 200 } else { 400 },
+        code: if ok {
+            None
+        } else {
+            Some(outcome.code.unwrap_or(codes::STS_API_0030))
+        },
+        body: outcome.answer,
+    })
 }

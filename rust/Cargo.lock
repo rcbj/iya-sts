@@ -4822,6 +4822,7 @@ dependencies = [
  "chrono",
  "hyper 1.11.1",
  "hyper-util",
+ "indexmap 2.14.2",
  "openssl",
  "serde_json",
  "sts-authn",

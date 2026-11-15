@@ -166,6 +166,7 @@ async fn the_applications_operations_answer_within_their_models() {
         dpop,
         setup_ports: fake.clone(),
         console: Arc::new(sts_mgmt_api::console::NoConsole),
+        families: Arc::new(sts_mgmt_api::families::NoFamilies),
         facts: ProcessFacts {
             config_file: None,
             defaults_file: String::new(),

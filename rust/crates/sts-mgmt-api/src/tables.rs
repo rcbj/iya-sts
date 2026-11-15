@@ -100,6 +100,10 @@ pub struct Tables {
     /// may not reach.
     #[serde(default)]
     pub service_pages: Vec<String>,
+    /// `common/inetorgperson.ts`'s `CLASSES`: the schema's fixed list the
+    /// Account API's Overview draws an entry against.
+    #[serde(default)]
+    pub inet_org_person_classes: Json,
 }
 
 /// What the frames write for the base URL and the version.
@@ -134,6 +138,7 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
             console_sections: Json::Array(Vec::new()),
             nav_labels: Json::Object(Default::default()),
             service_pages: Vec::new(),
+            inet_org_person_classes: Json::Array(Vec::new()),
         }
     })
 });

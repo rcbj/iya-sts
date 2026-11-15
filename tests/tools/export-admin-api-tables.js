@@ -172,7 +172,11 @@ function tables() {
     consoleSections: frame.sections,
     navLabels: frame.navLabels,
     servicePages: require(path.join(ROOT, 'admin-ui',
-                                    'admin_scope')).SERVICE_PAGES
+                                    'admin_scope')).SERVICE_PAGES,
+    // The Account API's Overview draws a person's entry against the
+    // inetOrgPerson schema's fixed list (`common/inetorgperson.ts`, 3z).
+    inetOrgPersonClasses: require(path.join(ROOT, 'common',
+                                            'inetorgperson')).CLASSES
   };
   log.debug("Leaving tables(). " + rows.length + " row(s).");
   return out;

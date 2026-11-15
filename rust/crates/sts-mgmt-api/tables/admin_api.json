@@ -18591,5 +18591,365 @@
   "/admin/tls",
   "/admin/ldap/service",
   "/admin/api-explorer"
+ ],
+ "inetOrgPersonClasses": [
+  {
+   "id": "person",
+   "name": "person",
+   "rfc": "RFC 4519 3.12",
+   "oid": "2.5.6.6",
+   "what": "The base class. The only one of the three with attributes the schema REQUIRES.",
+   "attributes": [
+    {
+     "ldap": "cn",
+     "label": "Common name",
+     "must": true,
+     "rfc": "RFC 4519 2.3",
+     "note": "The full name this entry is filed under. Required by the schema, and the RDN of every person this service creates."
+    },
+    {
+     "ldap": "sn",
+     "label": "Surname",
+     "must": true,
+     "rfc": "RFC 4519 2.32"
+    },
+    {
+     "ldap": "userPassword",
+     "label": "Password",
+     "rfc": "RFC 4519 2.41",
+     "secret": true,
+     "note": "A scrypt hash rather than the password. It is never shown here and there is nowhere it could usefully be."
+    },
+    {
+     "ldap": "telephoneNumber",
+     "label": "Telephone number",
+     "rfc": "RFC 4519 2.35"
+    },
+    {
+     "ldap": "seeAlso",
+     "label": "See also",
+     "rfc": "RFC 4519 2.30",
+     "note": "The DN of another entry about the same thing."
+    },
+    {
+     "ldap": "description",
+     "label": "Description",
+     "rfc": "RFC 4519 2.5"
+    }
+   ]
+  },
+  {
+   "id": "organizationalPerson",
+   "name": "organizationalPerson",
+   "rfc": "RFC 4519 3.10",
+   "oid": "2.5.6.7",
+   "what": "Where this person is — an organisation, an address, and the telecoms of the era the schema was written in.",
+   "attributes": [
+    {
+     "ldap": "title",
+     "label": "Job title",
+     "rfc": "RFC 4519 2.38"
+    },
+    {
+     "ldap": "ou",
+     "label": "Organizational unit",
+     "rfc": "RFC 4519 2.20"
+    },
+    {
+     "ldap": "l",
+     "label": "Locality",
+     "rfc": "RFC 4519 2.16"
+    },
+    {
+     "ldap": "st",
+     "label": "State or province",
+     "rfc": "RFC 4519 2.33"
+    },
+    {
+     "ldap": "street",
+     "label": "Street address",
+     "rfc": "RFC 4519 2.34"
+    },
+    {
+     "ldap": "postalAddress",
+     "label": "Postal address",
+     "rfc": "RFC 4519 2.23"
+    },
+    {
+     "ldap": "postalCode",
+     "label": "Postal code",
+     "rfc": "RFC 4519 2.24"
+    },
+    {
+     "ldap": "postOfficeBox",
+     "label": "Post office box",
+     "rfc": "RFC 4519 2.25"
+    },
+    {
+     "ldap": "physicalDeliveryOfficeName",
+     "label": "Delivery office",
+     "rfc": "RFC 4519 2.22"
+    },
+    {
+     "ldap": "registeredAddress",
+     "label": "Registered address",
+     "rfc": "RFC 4519 2.27"
+    },
+    {
+     "ldap": "destinationIndicator",
+     "label": "Destination indicator",
+     "rfc": "RFC 4519 2.6"
+    },
+    {
+     "ldap": "preferredDeliveryMethod",
+     "label": "Preferred delivery method",
+     "rfc": "RFC 4519 2.26"
+    },
+    {
+     "ldap": "facsimileTelephoneNumber",
+     "label": "Fax number",
+     "rfc": "RFC 4519 2.10"
+    },
+    {
+     "ldap": "internationalISDNNumber",
+     "label": "ISDN number",
+     "rfc": "RFC 4519 2.15"
+    },
+    {
+     "ldap": "telexNumber",
+     "label": "Telex number",
+     "rfc": "RFC 4519 2.37"
+    },
+    {
+     "ldap": "teletexTerminalIdentifier",
+     "label": "Teletex terminal",
+     "rfc": "RFC 4519 2.36"
+    },
+    {
+     "ldap": "x121Address",
+     "label": "X.121 address",
+     "rfc": "RFC 4519 2.42"
+    }
+   ]
+  },
+  {
+   "id": "inetOrgPerson",
+   "name": "inetOrgPerson",
+   "rfc": "RFC 2798",
+   "oid": "2.16.840.1.113730.3.2.2",
+   "what": "What an internet-era directory holds about a person that X.500's did not: an email address, a photograph, a mobile number, a department.",
+   "attributes": [
+    {
+     "ldap": "uid",
+     "label": "User id",
+     "rfc": "RFC 4519 2.39",
+     "note": "The login name. This service uses it as the username, and it is what everything else on this page is keyed by."
+    },
+    {
+     "ldap": "displayName",
+     "label": "Display name",
+     "rfc": "RFC 2798 2.3"
+    },
+    {
+     "ldap": "givenName",
+     "label": "Given name",
+     "rfc": "RFC 4519 2.12"
+    },
+    {
+     "ldap": "initials",
+     "label": "Initials",
+     "rfc": "RFC 4519 2.14"
+    },
+    {
+     "ldap": "mail",
+     "label": "Email address",
+     "rfc": "RFC 4524 2.16",
+     "note": "RFC 4524 registers it; inetOrgPerson is where it is met."
+    },
+    {
+     "ldap": "o",
+     "label": "Organization",
+     "rfc": "RFC 4519 2.19"
+    },
+    {
+     "ldap": "businessCategory",
+     "label": "Business category",
+     "rfc": "RFC 4519 2.1"
+    },
+    {
+     "ldap": "departmentNumber",
+     "label": "Department number",
+     "rfc": "RFC 2798 2.2"
+    },
+    {
+     "ldap": "employeeNumber",
+     "label": "Employee number",
+     "rfc": "RFC 2798 2.4"
+    },
+    {
+     "ldap": "employeeType",
+     "label": "Employee type",
+     "rfc": "RFC 2798 2.5",
+     "note": "The one attribute on this page an XACML policy in this service reads by default — see xacml/xacml_pip.ts."
+    },
+    {
+     "ldap": "roomNumber",
+     "label": "Room number",
+     "rfc": "RFC 4524 2.22"
+    },
+    {
+     "ldap": "manager",
+     "label": "Manager",
+     "rfc": "RFC 4524 2.17",
+     "note": "A DN. Nothing here follows it."
+    },
+    {
+     "ldap": "secretary",
+     "label": "Secretary",
+     "rfc": "RFC 4524 2.23",
+     "note": "A DN, like the manager beside it."
+    },
+    {
+     "ldap": "homePhone",
+     "label": "Home phone",
+     "rfc": "RFC 4524 2.12"
+    },
+    {
+     "ldap": "homePostalAddress",
+     "label": "Home address",
+     "rfc": "RFC 4524 2.13"
+    },
+    {
+     "ldap": "mobile",
+     "label": "Mobile number",
+     "rfc": "RFC 4524 2.18"
+    },
+    {
+     "ldap": "pager",
+     "label": "Pager number",
+     "rfc": "RFC 4524 2.20"
+    },
+    {
+     "ldap": "carLicense",
+     "label": "Car licence",
+     "rfc": "RFC 2798 2.1"
+    },
+    {
+     "ldap": "preferredLanguage",
+     "label": "Preferred language",
+     "rfc": "RFC 2798 2.7",
+     "note": "An RFC 2068 Accept-Language value. Nothing in this service reads it; no page is translated."
+    },
+    {
+     "ldap": "labeledURI",
+     "label": "Labelled URI",
+     "rfc": "RFC 2079",
+     "note": "A URI and an optional label. **This service never dials it** — the rule about not fetching a URL a caller supplied covers an attribute on an entry too."
+    },
+    {
+     "ldap": "x500UniqueIdentifier",
+     "label": "X.500 unique identifier",
+     "rfc": "RFC 4519 2.43"
+    },
+    {
+     "ldap": "jpegPhoto",
+     "label": "Photograph (JPEG)",
+     "rfc": "RFC 2798 2.6",
+     "binary": true
+    },
+    {
+     "ldap": "photo",
+     "label": "Photograph (G3 fax)",
+     "rfc": "RFC 1274 9.3.7",
+     "binary": true,
+     "note": "The older of the two photo attributes, and G3 fax rather than JPEG."
+    },
+    {
+     "ldap": "audio",
+     "label": "Audio",
+     "rfc": "RFC 1274 9.3.45",
+     "binary": true
+    },
+    {
+     "ldap": "userCertificate",
+     "label": "X.509 certificate",
+     "rfc": "RFC 4523 4.1",
+     "binary": true,
+     "note": "A DER certificate. **This is not the certificate a client presents to the main port** — nothing here reads this attribute during a TLS handshake, and a certificate written to it authorises nothing."
+    },
+    {
+     "ldap": "userSMIMECertificate",
+     "label": "S/MIME certificate",
+     "rfc": "RFC 2798 2.8",
+     "binary": true
+    },
+    {
+     "ldap": "userPKCS12",
+     "label": "PKCS#12 bundle",
+     "rfc": "RFC 2798 2.9",
+     "binary": true,
+     "note": "A PKCS#12 file, which conventionally carries a PRIVATE KEY. It is binary and it is a credential, and it is never shown."
+    }
+   ]
+  },
+  {
+   "id": "identityClaims",
+   "name": "Identity Assurance claims",
+   "rfc": "OpenID Connect for Identity Assurance Claims Registration 1.0",
+   "oid": "none — not an object class",
+   "what": "What the Claims Registration adds about a person: an honorific, a salutation, nationalities, names at birth, other names and a place of birth. No LDAP object class defines these.",
+   "attributes": [
+    {
+     "ldap": "schacPersonalTitle",
+     "label": "Title (honorific)",
+     "rfc": "SCHAC 1.5.0 (not RFC 4519)"
+    },
+    {
+     "ldap": "salutation",
+     "label": "Salutation",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "schacCountryOfCitizenship",
+     "label": "Nationalities",
+     "rfc": "SCHAC 1.5.0 (not RFC 4519)"
+    },
+    {
+     "ldap": "birthFamilyName",
+     "label": "Family name at birth",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "birthGivenName",
+     "label": "Given name at birth",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "birthMiddleName",
+     "label": "Middle name at birth",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "alsoKnownAs",
+     "label": "Also known as",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "placeOfBirthCountry",
+     "label": "Country of birth",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "placeOfBirthRegion",
+     "label": "Region of birth",
+     "rfc": "this service's own (no standard type)"
+    },
+    {
+     "ldap": "placeOfBirthLocality",
+     "label": "Locality of birth",
+     "rfc": "this service's own (no standard type)"
+    }
+   ]
+  }
  ]
 }

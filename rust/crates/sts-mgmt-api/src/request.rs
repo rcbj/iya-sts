@@ -223,6 +223,11 @@ fn fits(schema: Option<&Json>, raw: &Json) -> bool {
 }
 
 /// `encodeURIComponent()`.
+/// `encodeURIComponent()`.
+pub fn encode_component(text: &str) -> String {
+    encode_uri_component(text)
+}
+
 fn encode_uri_component(text: &str) -> String {
     let mut out = String::new();
     for b in text.as_bytes() {

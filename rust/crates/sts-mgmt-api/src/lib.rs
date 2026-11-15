@@ -18,15 +18,21 @@
 //!   acts, over `sts-registers`.
 //! * [`console`] — the console's first screen: `me`, the frame, the
 //!   dashboard and the announcements.
+//! * [`families`] — the certificate authority's and the enrollment
+//!   protocols' acts, answered by their own crates.
 //! * [`router`] — the axum router the HTTP layer mounts.
+//! * [`account`] — `/account-api`, the user portal's door, over the same
+//!   services.
 
 #![forbid(unsafe_code)]
 
+pub mod account;
 pub mod answer;
 pub mod applications;
 pub mod config_view;
 pub mod console;
 pub mod document;
+pub mod families;
 pub mod gate;
 pub mod operations;
 pub mod request;

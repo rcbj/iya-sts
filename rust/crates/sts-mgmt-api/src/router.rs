@@ -76,6 +76,8 @@ pub struct Services {
     pub setup_ports: Arc<dyn SetupPorts>,
     /// What the console's first screen reads (`console.rs`).
     pub console: Arc<dyn crate::console::ConsolePorts>,
+    /// The families' own acts (`families.rs`).
+    pub families: Arc<dyn crate::families::FamilyPorts>,
     pub facts: ProcessFacts,
     pub version: VersionInfo,
     pub eddsa_curve: String,
@@ -551,6 +553,35 @@ fn unknown_action(
         Some(Handler::RealmsAction) => {
             setup(services, &realm_id).realms_action(action, body)
         }
+        Some(Handler::Family) => {
+            let root = base_of(services, headers, false);
+            let realm_base =
+                format!("{}{}", root, services.registry.current_prefix());
+            let asked = crate::families::Asked {
+                operation_id: "",
+                family: crate::families::family_of(&path),
+                action,
+                query,
+                body,
+                caller: None,
+                base: &realm_base,
+            };
+            match services.families.answer(&asked) {
+                Some(a) => a,
+                None => return express_404(method, &path),
+            }
+        }
+        Some(Handler::UsersAction) => {
+            match crate::setup::users_action(
+                &setup(services, &realm_id),
+                action,
+                body,
+                None,
+            ) {
+                Some(a) => a,
+                None => return express_404(method, &path),
+            }
+        }
         Some(Handler::ApplicationsAction) => {
             match crate::applications::action(
                 &setup(services, &realm_id),
@@ -708,6 +739,36 @@ fn run(
         },
         Handler::ApplicationsAction => {
             match crate::applications::action(&s, &action, body, caller) {
+                Some(a) => a,
+                None => return express_404(method, row.path),
+            }
+        }
+        Handler::Family => {
+            let asked = crate::families::Asked {
+                operation_id: row.id,
+                family: crate::families::family_of(row.path),
+                action: &action,
+                query,
+                body,
+                caller,
+                base: &realm_base,
+            };
+            match services.families.answer(&asked) {
+                Some(a) => a,
+                None => {
+                    tracing::info!(
+                        "admin-api: {} {} ({}) has no family to answer it \
+                         in this process.",
+                        method,
+                        row.path,
+                        row.id
+                    );
+                    return express_404(method, row.path);
+                }
+            }
+        }
+        Handler::UsersAction => {
+            match crate::setup::users_action(&s, &action, body, caller) {
                 Some(a) => a,
                 None => return express_404(method, row.path),
             }

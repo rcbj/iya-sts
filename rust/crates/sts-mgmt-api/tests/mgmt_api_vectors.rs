@@ -36,6 +36,7 @@ use sts_core::realm_store::StoreHandles;
 use sts_core::settings::Settings;
 use sts_core::version::VersionInfo;
 use sts_mgmt_api::config_view::ProcessFacts;
+use sts_mgmt_api::console::ConsolePorts;
 use sts_mgmt_api::gate::{
     BuiltInAccess, ConsoleOperation, Effective, GatePorts,
 };
@@ -180,20 +181,91 @@ impl SetupPorts for Fake {
             .collect()
     }
     fn totals(&self, _realm: &str) -> Json {
-        // The console's totals are the registers' (port-supplied); the
-        // case that injects a member the model does not have asks for it.
+        // The console's totals are the registers' (port-supplied): the
+        // case's own answer's, less what this crate adds (the pages, and
+        // the dashboard's four members); the case that injects a member
+        // the model does not have asks for it.
         let case = self.case();
-        let mut t = self.answer_of("status");
+        let own: Json = serde_json::from_str(
+            case["answer"]["body"].as_str().unwrap_or("{}"),
+        )
+        .unwrap_or(json!({}));
+        let mut t = if own.get("issuer").is_some() {
+            own
+        } else {
+            self.answer_of("status")
+        };
         if case["name"] == "an answer its model refuses" {
             t["bogus"] = json!(true);
         }
-        t.as_object_mut().unwrap().remove("pages");
+        let o = t.as_object_mut().unwrap();
+        for k in ["pages", "base", "persistence", "testDouble", "sections"] {
+            o.remove(k);
+        }
         t
     }
     fn retire(&self, _realm: &str) -> Result<Json, (ErrorCode, Vec<String>)> {
         Ok(json!({ "ok": true }))
     }
 }
+
+impl ConsolePorts for Fake {
+    fn roster_available(&self) -> bool {
+        self.v["consoleFacts"]["rosterAvailable"].as_bool().unwrap_or(false)
+    }
+    fn runtime_facts(&self) -> Json {
+        self.v["consoleFacts"]["runtime"].clone()
+    }
+    fn persistence(&self) -> (bool, String) {
+        let p = &self.v["consoleFacts"]["persistence"];
+        (
+            p["enabled"].as_bool().unwrap_or(false),
+            p["mode"].as_str().unwrap_or("").to_string(),
+        )
+    }
+    fn locale(
+        &self,
+        headers: &axum::http::HeaderMap,
+        _username: &str,
+        as_files: bool,
+    ) -> Json {
+        let preferences =
+            sts_mgmt_api::console::preferences_of(headers, None);
+        let version: VersionInfo =
+            serde_json::from_value(self.v["version"].clone()).unwrap();
+        if as_files {
+            sts_mgmt_api::console::locale_files(
+                &CATALOGS,
+                &preferences,
+                &version,
+            )
+        } else {
+            sts_mgmt_api::console::locale_data(
+                &CATALOGS,
+                &preferences,
+                &["console"],
+            )
+        }
+    }
+    fn announcements(&self, _surface: &str, _since: i64) -> Json {
+        // `now` is Node's clock: the case's own answer, whose rows the
+        // store this test has none of would have to give.
+        serde_json::from_str(
+            self.case()["answer"]["body"].as_str().unwrap_or("{}"),
+        )
+        .unwrap_or(json!({}))
+    }
+}
+
+/// The catalogs, as the repository holds them.
+static CATALOGS: std::sync::LazyLock<sts_http::i18n::Catalogs> =
+    std::sync::LazyLock::new(|| {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..");
+        sts_http::i18n::Catalogs::load(&sts_http::i18n::Catalogs::dir_in(
+            &root,
+        ))
+    });
 
 struct Keys(HashMap<String, KeySet>);
 
@@ -328,7 +400,8 @@ async fn admin_api_answers_as_node_does() {
         access: Arc::new(BuiltInAccess::new()),
         dpop,
         setup_ports: fake.clone(),
-        console: Arc::new(sts_mgmt_api::console::NoConsole),
+        console: fake.clone(),
+        families: Arc::new(sts_mgmt_api::families::NoFamilies),
         facts,
         version,
         eddsa_curve: String::new(),
