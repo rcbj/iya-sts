@@ -397,6 +397,10 @@ pub struct Message {
     pub sender_nonce: Vec<u8>,
     pub message_type_text: String,
     pub message_type: Option<i64>,
+    /// `pkiStatus` and `failInfo` (a CertRep's).
+    pub pki_status: String,
+    pub fail_info: String,
+    pub recipient_nonce: Option<Vec<u8>>,
     pub content_type_attr: String,
     pub message_digest_attr: Option<Vec<u8>>,
     pub e_content_type: String,
@@ -566,6 +570,10 @@ pub fn parse_pki_message(bytes: &[u8]) -> Result<Message, CmsRefusal> {
         sender_nonce,
         message_type,
         message_type_text: type_text,
+        pki_status: string_of(attr(oids::PKI_STATUS)),
+        fail_info: string_of(attr(oids::FAIL_INFO)),
+        recipient_nonce: attr(oids::RECIPIENT_NONCE)
+            .and_then(|n| octets_of(Some(n))),
         content_type_attr: oid_of(attr(oids::CONTENT_TYPE)),
         message_digest_attr: attr(oids::MESSAGE_DIGEST)
             .and_then(|n| octets_of(Some(n))),
