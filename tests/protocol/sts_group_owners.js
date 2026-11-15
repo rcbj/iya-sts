@@ -36,7 +36,8 @@
 // Owners tab's markup — run in the browser over these answers and stay in
 // process (class (d)).
 //
-// In a throwaway development realm this job creates. OWNED HERE
+// In a throwaway development realm this job creates, removed at the end
+// only when STS_TEST_REMOVE_REALMS=1 (removeRealms() says why). OWNED HERE
 // (local: true).
 // ---------------------------------------------------------------------------
 
@@ -362,10 +363,39 @@ async function test() {
   log.debug("Leaving test().");
 }
 
+// REMOVAL IS OPT-IN (#444 D12). tests/CLAUDE.md's *No job removes a realm*
+// is the rule for a suite run, whose realms an operator reads afterwards;
+// a run against a private probe sets STS_TEST_REMOVE_REALMS=1 so that the
+// realms this job made do not fill a directory shared with other runs.
+async function removeRealms(ids) {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Kept.");
+    return;
+  }
+  for (const id of ids) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("removed the realm " + id + ": " + r.status);
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A removal that fails leaves the realm standing, which is what a
+      // suite run does anyway; the job's verdict is already decided.
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
 async function main() {
   log.debug("Entering main().");
   try {
-    await test();
+    try {
+      await test();
+    } finally {
+      await removeRealms([REALM]);
+    }
     log.info("Test completed successfully.");
     log.debug("Leaving main().");
     process.exit(0);
