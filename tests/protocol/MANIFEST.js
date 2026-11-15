@@ -652,8 +652,10 @@ const JOBS = [
   // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
   // this job's own sign-in, every window and level in its shape with every
   // count at or over risk.geoMinimumCount or held back, the four refusals,
-  // and the page — the map inline with no script, the zoom trail, the
-  // outlines credited, ?format=json the API's answer. Loads no dataset.
+  // and the page — drawing.map, the outlines file, the map the console's
+  // bundle lays out from them (#444 phase 2b) with no script, the zoom
+  // trail, the outlines credited, ?format=json the API's answer. Loads no
+  // dataset.
   // `local: true`: this repository's own /admin and /admin-api.
   { file: 'sts_admin_geolocation.js',    browser: false },
   // EVERY CLOSED SET AN ADMINISTRATOR CAN TYPE INTO (#86, 2026-09-26): each
