@@ -224,11 +224,16 @@ async function run(t) {
     upstream: 'http://companion:9700', enabled: true,
     routes: [
       { id: 'orders-api', path: '/api', match: 'prefix', methods: ['GET'],
-        public: false, mechanisms: ['session'], application: 'orders-app',
-        resource: '', action: '', forwardCredentials: false, signals: true },
+        mechanisms: ['session'], application: 'orders-app',
+        authorization: { kind: 'policy', policy: 'orders-policy',
+                         resource: '', actionModel: 'method', roles: {} },
+        forwardCredentials: false, signals: true },
       { id: 'health', path: '/health', match: 'exact', methods: [],
-        public: true, mechanisms: [], application: '', resource: '',
-        action: '', forwardCredentials: false, signals: true }] };
+        mechanisms: [], application: '',
+        authorization: { kind: 'public', policy: 'pep-pep-1-health',
+                         resource: 'https://pep.example:9543/health',
+                         actionModel: 'method', roles: {} },
+        forwardCredentials: false, signals: true }] };
   const writer = kit.context({}, true);
   writer.json = {};
   const tab = XacmlPage.proxySection(writer,
@@ -409,7 +414,8 @@ async function run(t) {
           'R6. its set-pep-route form holds the application in the ' +
           'chooser\'s hidden field, no datalist', form);
   t.check(form.indexOf('accepted on save only for a public route') >= 0 &&
-          /name="public"/.test(form),
+          /<select name="authzKind" data-panels="authz">/.test(form) &&
+          /<option value="public"/.test(form) && !/name="public"/.test(form),
           'R7. the form says a public route clears the application, and ' +
           'offers public', form);
 
@@ -485,9 +491,9 @@ async function run(t) {
   };
   const typed = { action: 'set-pep-route', name: 'pep-1', id: 'typed-id',
                   path: '/typed', match: 'exact', methods: ['GET', 'POST'],
-                  public: 'false', mechanisms: 'oauth2',
-                  application: '', resource: 'urn:typed',
-                  routeAction: 'write', position: '1',
+                  mechanisms: 'oauth2', application: '',
+                  authzKind: 'policy', authzResource: 'urn:typed',
+                  authzPolicyActionModel: 'crud', position: '1',
                   'fgfind.application': 'bill' };
   const WebAnswersModule = require('../admin-ui/web_answers');
   t.check(WebAnswersModule.isFieldSearch('/admin/xacml/peps',
@@ -528,6 +534,7 @@ async function run(t) {
           !afterUse.results && afterUse.clear &&
           chosenHtml.indexOf('value="typed-id"') >= 0 &&
           chosenHtml.indexOf('value="urn:typed"') >= 0 &&
+          /<option value="crud" selected>/.test(chosenHtml) &&
           /<option value="exact" selected>/.test(chosenHtml) &&
           /name="methods" value="POST" checked/.test(chosenHtml) &&
           /name="mechanisms" value="oauth2" checked/.test(chosenHtml) &&
@@ -551,7 +558,8 @@ async function run(t) {
     peps: [{ name: 'pep-1', proxy: proxy }], applicationChoices: [],
     state: { pepRoute: Object.assign(pageState, {
       draft: Object.assign({}, proxy.routes[0], pageState.draft,
-                           { id: 'orders-api', public: 'false',
+                           { id: 'orders-api', authzKind: 'policy',
+                             authzPolicy: 'orders-policy',
                              mechanisms: ['session'], methods: ['GET'] }) }) },
     routeDetail: { found: true, route: proxy.routes[0], usable: true,
                    position: 0, count: 2, servedBy: [],
@@ -709,18 +717,20 @@ async function run(t) {
     log.debug("Leaving legendsOf().");
     return out.join(' | ');
   };
-  t.equal(fieldsOf(form), 'id | path | match | methods | public | ' +
+  t.equal(fieldsOf(form), 'id | path | match | methods+methodsGiven | ' +
           'mechanisms | forwardCredentials | signals | multipleAccounts | ' +
-          'application | resource | routeAction | position | mode | ' +
+          'application | authzKind | authzResource | authzPolicy | ' +
+          'authzPolicyActionModel | authzActionModel | position | mode | ' +
           'headerName+headerClaim | headerName+headerClaim | separator',
           'F1. the route page\'s form: one field per line, one header ' +
           '(name, claim) per line');
   t.equal(legendsOf(form), 'Matching | Authentication | Authorization | ' +
           'Order | Identity sent to the application',
           'F2. the route page\'s fields under their legends');
-  t.equal(fieldsOf(newPanel), 'id | path | match | methods | public | ' +
+  t.equal(fieldsOf(newPanel), 'id | path | match | methods+methodsGiven | ' +
           'mechanisms | forwardCredentials | signals | multipleAccounts | ' +
-          'application | resource | routeAction | position',
+          'application | authzKind | authzResource | authzPolicy | ' +
+          'authzPolicyActionModel | authzActionModel | position',
           'F4. Create a New Route: the same one field per line');
   t.equal(legendsOf(newPanel), 'Matching | Authentication | ' +
           'Authorization | Order',
@@ -836,9 +846,10 @@ async function run(t) {
       const noneLabel = /<label([^>]*)><input type="checkbox" data-check-none/
         .exec(group);
       t.check(!!noneLabel &&
-              noneLabel[1].indexOf('accepts as any method') >= 0,
+              noneLabel[1].indexOf('deny-all') >= 0 &&
+              noneLabel[1].indexOf('any method') < 0,
               'B3. ' + one[0] + ': None\'s tooltip says the validator ' +
-              'takes no method as any method', group);
+              'takes no method as deny-all, not any method', group);
     });
   const checkedOf = function (html, attr) {
     log.debug("Entering checkedOf(). " + attr);
@@ -1029,6 +1040,129 @@ async function run(t) {
           'orders-api',
           'T2. a route\'s page: Admin console › XACML › Remote PEPs › the ' +
           'PEP › Reverse proxy › the route');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== Z. the Authorization section (#1760) ===');
+  // -------------------------------------------------------------------------
+  // rcbj 2026-11-15: two approaches and Public, one selector with the
+  // matching fields below it; a search for the policy and for each
+  // action's role, the Application field's pattern.
+  writer.json = { peps: [{ name: 'pep-1',
+    proxyResourceBase: { base: 'https://pep.example:9543',
+                         source: 'publicBaseUrl' } }] };
+  const newZ = panelOf(XacmlPage.proxySection(writer,
+    { name: 'pep-1', proxy: proxy, proxyRoutes: [],
+      proxyResourceBase: { base: 'https://pep.example:9543',
+                           source: 'publicBaseUrl' } }),
+    'xacml-pep-proxy-new-route');
+  const kindSelect = /<select name="authzKind" data-panels="authz">([\s\S]*?)<\/select>/
+    .exec(newZ);
+  t.check(!!kindSelect &&
+          /^<option value="" selected>/.test(kindSelect[1]) &&
+          (kindSelect[1].match(/<option /g) || []).length === 4 &&
+          /value="policy"/.test(kindSelect[1]) &&
+          /value="simple"/.test(kindSelect[1]) &&
+          /value="public"/.test(kindSelect[1]),
+          'Z1. a new route\'s authorization is one selector, nothing chosen: ' +
+          'an existing policy, a simple policy, Public',
+          kindSelect ? kindSelect[1] : newZ);
+  const panels = newZ.match(/data-panel-of="authz" data-panel="[^"]*"[^>]*>/g)
+    || [];
+  t.check(panels.length === 4 && panels.every(function (one) {
+    return / hidden>$/.test(one);
+  }) && newZ.indexOf('placeholder="https://pep.example:9543/"') >= 0,
+          'Z2. with nothing chosen every panel is hidden, and the resource ' +
+          'box shows the default (the base URL and the path)',
+          panels.join(' '));
+  const simpleRoute = Object.assign({}, proxy.routes[0], {
+    authorization: { kind: 'simple', policy: 'pep-pep-1-orders-api',
+                     resource: 'https://pep.example:9543/api',
+                     actionModel: 'crud',
+                     roles: { read: ['orders-users'],
+                              delete: ['orders-admins', 'orders-ops'] } } });
+  writer.json = {};
+  const simpleHtml = XacmlPage.routeFields(writer.t, { peps: [{}] },
+                                           simpleRoute, 1, 'new', true);
+  const readRow = /data-panel="crud read-write">([\s\S]*?)<\/div><\/div>/
+    .exec(simpleHtml);
+  t.check(/<select name="authzActionModel" data-panels="authzModel">/
+            .test(simpleHtml) &&
+          /<option value="crud" selected>/.test(simpleHtml) &&
+          /name="authzActions" value="read" checked/.test(simpleHtml) &&
+          /name="authzActions" value="delete" checked/.test(simpleHtml) &&
+          !/name="authzActions" value="update" checked/.test(simpleHtml) &&
+          /data-panel="read-write" hidden>/.test(simpleHtml) &&
+          simpleHtml.indexOf('<input type="hidden" name="authzRole.delete" ' +
+                             'value="orders-ops">') >= 0 &&
+          simpleHtml.indexOf('value="authzRole.delete|!orders-ops"') >= 0 &&
+          !!readRow && readRow[1].indexOf('fgq-authzRole.read') >= 0,
+          'Z3. a simple route: the model selected, a box per action, each ' +
+          'ticked action\'s roles held with a Remove, and a role search per ' +
+          'action; the other model\'s actions hidden', simpleHtml);
+  const zAsked = [];
+  const zRuntime = Object.assign({}, fakeRuntime, {
+    view: { json: Object.assign({}, pepJson) },
+    apiJson: async function apiJson(method, path) {
+      log.debug("Entering apiJson(). " + path);
+      zAsked.push(method + ' ' + path);
+      log.debug("Leaving apiJson().");
+      return { status: 200, json: path.indexOf('/roles') >= 0
+        ? { shownRoles: [{ name: 'orders-users', description: 'Readers' },
+                         { name: 'orders-admins' }],
+            paging: { page: 1, pages: 2 }, matched: 7 }
+        : { policies: [{ name: 'orders-policy', description: 'Orders' },
+                       { name: 'pep-pep-1-health', pepRoute: 'pep-1/health' }],
+            page: 1, pages: 1, matched: 2 } };
+    } });
+  const zTyped = Object.assign({}, typed, { authzKind: 'simple',
+    authzActionModel: 'read-write', 'fgfind.authzPolicy': 'ord',
+    'fgfind.authzRole.read': 'users' });
+  await Runtime.prototype.pepRouteSearch.call(zRuntime,
+    Object.assign({ fgsearch: 'authzPolicy' }, zTyped));
+  await Runtime.prototype.pepRouteSearch.call(zRuntime,
+    Object.assign({ fgsearch: 'authzRole.read' }, zTyped));
+  t.equal(zAsked.join(' ; '),
+          'GET /admin-api/xacml/policies?q=ord&per=5&page=1&routable=true ; ' +
+          'GET /admin-api/roles?q=users&per=5&rolesPage=1',
+          'Z4. the policy chooser asks the repository\'s search (routable, ' +
+          'five to a page) and a role chooser the Roles list');
+  const zFound = zRuntime.view.json.state.pepRoute;
+  t.check(zFound.find.attribute === 'authzRole.read' &&
+          zFound.find.rows[0].value === 'orders-users' &&
+          zFound.find.pages === 2,
+          'Z5. the results say which chooser they answer',
+          JSON.stringify(zFound.find));
+  await Runtime.prototype.pepRouteSearch.call(zRuntime,
+    Object.assign({ fgadd: 'authzRole.read|orders-users',
+                    'fgpage.authzRole.read': '1' }, zTyped));
+  const added = zRuntime.view.json.state.pepRoute.draft;
+  await Runtime.prototype.pepRouteSearch.call(zRuntime,
+    Object.assign({ fgadd: 'authzPolicy|orders-policy' }, zTyped));
+  const chosenPolicy = zRuntime.view.json.state.pepRoute.draft;
+  const removed = WebAnswersModule.pepRouteState(Object.assign({},
+    added, { fgadd: 'authzRole.read|!orders-users' }), null, null).draft;
+  t.check([].concat(added['authzRole.read']).join(',') === 'orders-users' &&
+          [].concat(added.authzActions).indexOf('read') >= 0 &&
+          chosenPolicy.authzPolicy === 'orders-policy' &&
+          chosenPolicy.authzKind === 'policy' &&
+          [].concat(removed['authzRole.read']).length === 0 &&
+          zAsked.length === 2,
+          'Z6. a role\'s Use adds it and ticks its action, its Remove takes ' +
+          'it off, a policy\'s Use chooses it and the existing-policy kind, ' +
+          'and none of them asks anything', JSON.stringify([added,
+            chosenPolicy, removed]));
+  const tableZ = XacmlPage.proxyRoutesTable(writer.t, proxy, [
+    { route: 'health', usable: true, authorization: 'public',
+      policy: 'pep-pep-1-health', policyProblem: 'missing' }], writer,
+    'pep-1');
+  t.check(tableZ.indexOf('none (deny all)') >= 0 &&
+          tableZ.indexOf('<code>pep-pep-1-health</code>') >= 0 &&
+          tableZ.indexOf('no policy of this name') >= 0 &&
+          tableZ.indexOf('name="removePolicy" value="true" required') >= 0,
+          'Z7. the routes table: an empty methods list is none (deny all), ' +
+          'each route\'s policy linked and its problem said, and a ' +
+          'generated policy\'s route removed only with its box ticked',
+          tableZ);
   log.debug("Leaving run().");
 }
 

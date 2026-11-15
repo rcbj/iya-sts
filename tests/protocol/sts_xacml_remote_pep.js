@@ -3467,18 +3467,26 @@ async function browse(jars, url, username) {
 // the application's entry at the pull. First match wins. The two session
 // routes are there only when the https listener is (the relying party
 // refuses a non-loopback http redirect URI, D5).
-function proxyConfiguration(publicBaseUrl, withSession) {
+//
+// EVERY ROUTE MAKES ONE AUTHORIZATION CHOICE (#1760, rcbj 2026-11-15: "All
+// authorization decisions are made in XACML"): the two public routes are
+// Public, decided by the policy the save generates for each, and every
+// other route chooses the realm's ROOT policy by name — the policy this
+// job deployed — with the request's path and method, so what it decides
+// is what the root decided before routes named their own policy.
+function proxyConfiguration(publicBaseUrl, withSession, policyName) {
   log.debug("Entering proxyConfiguration().");
   // D11: the identity reaches the application in one of three modes. Most
   // routes use `headers`, naming five claims; the jwt and saml-app routes
   // below are the other two modes.
-  const identity = { forwardCredentials: false, resource: "", action: "",
+  const decidedBy = { kind: "policy", policy: policyName };
+  const identity = { forwardCredentials: false, authorization: decidedBy,
                      identity: PROXY_IDENTITY_HEADERS };
   const routes = [
     { id: "public", path: "/pep-app/public", match: "prefix",
-      methods: ["GET", "HEAD"], public: true },
+      methods: ["GET", "HEAD"], authorization: { kind: "public" } },
     { id: "slow", path: "/pep-app/slow", match: "exact",
-      methods: ["GET"], public: true }
+      methods: ["GET"], authorization: { kind: "public" } }
   ];
   if (withSession) {
     routes.push(Object.assign({ id: "protected-fallback",
@@ -3504,11 +3512,11 @@ function proxyConfiguration(publicBaseUrl, withSession) {
   routes.push({ id: "jwt", path: "/pep-app/jwt", match: "prefix",
                 methods: ["GET"], mechanisms: ["oauth2", "basic"],
                 application: PROXY_APP, forwardCredentials: false,
-                resource: "", action: "", identity: { mode: "jwt" } });
+                authorization: decidedBy, identity: { mode: "jwt" } });
   routes.push({ id: "saml-app", path: "/pep-app/saml-app", match: "prefix",
                 methods: ["GET"], mechanisms: ["basic"],
                 application: PROXY_SAML_APP, forwardCredentials: false,
-                resource: "", action: "", identity: { mode: "saml" } });
+                authorization: decidedBy, identity: { mode: "saml" } });
   routes.push(Object.assign({ id: "scratch", path: "/pep-app/scratch",
                               match: "prefix", methods: ["GET"],
                               mechanisms: ["basic"],
@@ -4016,7 +4024,14 @@ async function theProxyIsConfigured() {
 
   const withSession = !!pep.proxyHttpsUrl;
   const publicBase = pep.proxyHttpsUrl || pep.proxyUrl;
-  const config = proxyConfiguration(publicBase, withSession);
+  // The routes choose the realm's root by name (#1760): the policy this
+  // job deployed, whichever it made the root.
+  const repository = await get(api("/xacml/policies"));
+  const rootName = repository.body && repository.body.root;
+  assert.ok(rootName, "GET /admin-api/xacml/policies should name the " +
+    "realm's root before the proxy is configured; it answered " +
+    String(repository.text).slice(0, 300));
+  const config = proxyConfiguration(publicBase, withSession, rootName);
   const savedAnswer = await postJson(api("/xacml/set-pep-proxy"),
                                      { name: PEP_NAME, proxy: config });
   assert.ok(savedAnswer.status === 200 && savedAnswer.body &&
@@ -4058,28 +4073,41 @@ async function theProxyIsConfigured() {
     { what: "a route path with a dot segment",
       body: { name: PEP_NAME, proxy: Object.assign({}, config, {
         routes: [{ id: "bad", path: "/pep-app/../admin", match: "prefix",
-                   methods: ["GET"], public: true }] }) } },
+                   methods: ["GET"], authorization: { kind: "public" } }] }) } },
+    { what: "a route making no authorization choice (#1760)",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "nochoice", path: "/pep-app/api", match: "prefix",
+                   methods: ["GET"], mechanisms: ["oauth2"],
+                   application: PROXY_APP }] }) } },
+    { what: "a route stating no methods (#1760)",
+      body: { name: PEP_NAME, proxy: Object.assign({}, config, {
+        routes: [{ id: "nomethods", path: "/pep-app/public",
+                   match: "prefix", authorization: { kind: "public" } }] }) } },
     { what: "an upstream carrying userinfo",
       body: { name: PEP_NAME, proxy: Object.assign({}, config, {
         upstream: "http://someone:secret@companion:9700" }) } },
     { what: "a route naming no application",
       body: { name: PEP_NAME, proxy: Object.assign({}, config, {
         routes: [{ id: "noapp", path: "/pep-app/api", match: "prefix",
-                   methods: ["GET"], mechanisms: ["oauth2"] }] }) } },
+                   methods: ["GET"], authorization: { kind: "policy", policy: rootName },
+                   mechanisms: ["oauth2"] }] }) } },
     { what: "a route naming an application this realm does not hold",
       body: { name: PEP_NAME, proxy: Object.assign({}, config, {
         routes: [{ id: "unknown", path: "/pep-app/api", match: "prefix",
-                   methods: ["GET"], mechanisms: ["oauth2"],
+                   methods: ["GET"], authorization: { kind: "policy", policy: rootName },
+                   mechanisms: ["oauth2"],
                    application: "no-such-application-" + PEP_NAME }] }) } },
     { what: "an OAuth 2.0 route whose application has no audience",
       body: { name: PEP_NAME, proxy: Object.assign({}, config, {
         routes: [{ id: "noaud", path: "/pep-app/api", match: "prefix",
-                   methods: ["GET"], mechanisms: ["oauth2"],
+                   methods: ["GET"], authorization: { kind: "policy", policy: rootName },
+                   mechanisms: ["oauth2"],
                    application: PROXY_NO_CALLBACK_APP }] }) } },
     { what: "a SAML 2.0 route whose application has no SP entity ID",
       body: { name: PEP_NAME, proxy: Object.assign({}, config, {
         routes: [{ id: "nosp", path: "/pep-app/saml", match: "prefix",
-                   methods: ["GET"], mechanisms: ["saml2"],
+                   methods: ["GET"], authorization: { kind: "policy", policy: rootName },
+                   mechanisms: ["saml2"],
                    application: PROXY_SCRATCH_APP }] }) } },
     { what: "a PEP that never registered",
       body: { name: "no-such-pep-" + PEP_NAME, proxy: config } }
@@ -4091,6 +4119,7 @@ async function theProxyIsConfigured() {
       return { name: PEP_NAME, proxy: Object.assign({}, config, {
         routes: [{ id: "session", path: "/pep-app/protected",
                    match: "prefix", methods: ["GET"],
+                   authorization: { kind: "policy", policy: rootName },
                    mechanisms: ["session"], application: application }] }) };
     };
     refusals.push(

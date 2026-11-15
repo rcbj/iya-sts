@@ -82,10 +82,12 @@ function example() {
     maxBodyBytes: 1048576,
     routes: [
       { id: 'public', path: '/public', match: 'prefix',
-        methods: ['GET', 'HEAD'], public: true },
+        methods: ['GET', 'HEAD'],
+        authorization: { kind: 'public',
+                         resource: 'https://xacml-pep:9543/public' } },
       { id: 'api', path: '/api', match: 'prefix', methods: ['GET', 'POST'],
         mechanisms: ['oauth2', 'basic'], application: 'ppx-api',
-        resource: '', action: '',
+        authorization: { kind: 'policy', policy: 'ppx-route' },
         identity: { mode: 'headers',
                     headers: [{ name: 'X-Remote-User', claim: 'username' },
                               { name: 'X-Remote-Groups', claim: 'groups' }],
@@ -174,6 +176,101 @@ function closedTo(json, kind) {
   return !!json && stray.length === 0;
 }
 
+// THE ROUTE SHAPE SINCE THE AUTHORIZATION CHOICE (#1760, rcbj 2026-11-15:
+// "force them to pick one of these two policies or Public ... All
+// authorization decisions are made in XACML"). The fixtures below were
+// written for the shape before it, and are read here into the new one
+// rather than rewritten one by one: `public: true` is the Public choice,
+// a route with no choice chooses the policy `ppx-route` (which the stack
+// writes), a route with no `methods` states GET and HEAD, and the retired
+// `resource` and `action` members go. A form body's `public` becomes its
+// `authzKind`. A value that is not a boolean is left for the grammar.
+// Section Z holds the new shape itself, unconverted.
+const ROUTE_POLICY = 'ppx-route';
+function shapedRoute(route) {
+  log.debug("Entering shapedRoute().");
+  if (!route || typeof route !== 'object' || Array.isArray(route) ||
+      typeof route.id !== 'string') {
+    log.debug("Leaving shapedRoute(). Not a route.");
+    return route;
+  }
+  const out = Object.assign({}, route);
+  if (out.authorization === undefined) {
+    if (out.public === true) {
+      out.authorization = { kind: 'public',
+        resource: 'https://xacml-pep:9543' + (out.path && out.path !== '/'
+          ? String(out.path).replace(/\/+$/, '') : '/') };
+    } else if (out.public === undefined || out.public === false) {
+      out.authorization = { kind: 'policy', policy: ROUTE_POLICY };
+    }
+  }
+  if (typeof out.public === 'boolean') {
+    delete out.public;
+  }
+  delete out.resource;
+  delete out.action;
+  if (out.methods === undefined) {
+    out.methods = ['GET', 'HEAD'];
+  }
+  log.debug("Leaving shapedRoute().");
+  return out;
+}
+function shaped(given) {
+  log.debug("Entering shaped().");
+  if (typeof given === 'string') {
+    let doc = null;
+    try {
+      doc = JSON.parse(given);
+    } catch (e) {
+      log.debug("Caught in shaped(): " + e.message);
+      doc = null;
+    }
+    log.debug("Leaving shaped(). Text.");
+    return doc && Array.isArray(doc.routes)
+      ? JSON.stringify(shaped(doc)) : given;
+  }
+  if (!given || typeof given !== 'object' || Array.isArray(given)) {
+    log.debug("Leaving shaped(). Not an object.");
+    return given;
+  }
+  const out = Object.assign({}, given);
+  if (Array.isArray(out.routes)) {
+    out.routes = out.routes.map(shapedRoute);
+  }
+  if (out.proxy !== undefined) {
+    out.proxy = shaped(out.proxy);
+  }
+  if (out.route && typeof out.route === 'object') {
+    out.route = shapedRoute(out.route);
+  }
+  // A generated policy goes with its route; the fixtures confirm it (Z
+  // holds the refusal without it).
+  if (out.action === 'remove-pep-route' && out.removePolicy === undefined) {
+    out.removePolicy = 'true';
+  }
+  // A form body of set-pep-route.
+  if (out.action === 'set-pep-route' && out.route === undefined) {
+    if (out.authzKind === undefined && out.public !== undefined) {
+      out.authzKind = String(out.public) === 'true' ? 'public' : 'policy';
+      if (out.authzKind === 'policy') {
+        out.authzPolicy = ROUTE_POLICY;
+      }
+    } else if (out.authzKind === undefined && out.from === undefined) {
+      out.authzKind = 'policy';
+      out.authzPolicy = ROUTE_POLICY;
+    }
+    delete out.public;
+    delete out.resource;
+    delete out.routeAction;
+    if (out.methods === undefined && out.methodsGiven === undefined) {
+      out.methodsGiven = 'true';
+      out.methods = ['GET', 'HEAD'];
+    }
+  }
+  log.debug("Leaving shaped().");
+  return out;
+}
+
 async function childBody() {
   log.debug("Entering childBody().");
   const t = recorder();
@@ -189,12 +286,26 @@ async function childBody() {
   const tls = require(ROOT + '/tls/tls_server');
   const ldap = require(ROOT + '/ldap/ldap_server');
   const authn = require(ROOT + '/authn/authn');
-  const adminActions = require(ROOT + '/admin-core/admin_actions');
+  // The fixtures' shape read into the new one (`shaped()`, above); the
+  // modules themselves as `rawActions` and `rawProxy` (section Z).
+  const rawActions = require(ROOT + '/admin-core/admin_actions');
+  const adminActions = Object.assign(Object.create(rawActions), {
+    xacmlAction: function (body) {
+      log.debug("Entering xacmlAction().");
+      log.debug("Leaving xacmlAction().");
+      return rawActions.xacmlAction(shaped(body));
+    } });
   const store = require(ROOT + '/xacml/xacml_store');
   const xml = require(ROOT + '/xacml/xacml_xml');
   const alfa = require(ROOT + '/xacml/xacml_alfa');
   const peps = require(ROOT + '/xacml/xacml_pep_registry');
-  const pepProxy = require(ROOT + '/xacml/xacml_pep_proxy');
+  const rawProxy = require(ROOT + '/xacml/xacml_pep_proxy');
+  const pepProxy = Object.assign(Object.create(rawProxy), {
+    validate: function (doc, pep) {
+      log.debug("Entering validate().");
+      log.debug("Leaving validate().");
+      return rawProxy.validate(shaped(doc), pep);
+    } });
   const saml2 = require(ROOT + '/saml/saml2');
   const testCa = require('./protocol/outbound_test_ca');
   const outsideCa = require('./tools/pep-credential.js');
@@ -361,8 +472,8 @@ async function childBody() {
     ['forwardCredentials as a string', { routes: [{ id: 'a', path: '/a',
       mechanisms: ['basic'], application: 'ppx-api', forwardCredentials: 'no' }] },
      'STS-XACML-0199'],
-    ['public as a string', { routes: [{ id: 'a', path: '/a',
-      public: 'yes' }] }, 'STS-XACML-0199'],
+    ['an authorization kind outside the three', { routes: [{ id: 'a',
+      path: '/a', authorization: { kind: 'open' } }] }, 'STS-XACML-0263'],
     ['an application with a newline', { routes: [{ id: 'a', path: '/a',
       mechanisms: ['oauth2'], application: 'a\nb' }] }, 'STS-XACML-0199']
   ];
@@ -427,6 +538,13 @@ async function childBody() {
     ['ppxpep', 'ppxalice'].forEach(function (name) {
       ldap.createUser(name, { invent: false });
     });
+    // THE POLICY THE FIXTURES' ROUTES CHOOSE (#1760): an ordinary
+    // policy of the realm's repository, which the save asks for.
+    const routePolicy = store.write(ROUTE_POLICY, xml.writePolicy(alfa.parse(
+      'namespace ppx { policy ppxRoute { apply denyUnlessPermit ' +
+      'rule anyone { permit } } }')), { enabled: true });
+    t.check(routePolicy.ok, 'B0. the routes\' policy is written',
+            JSON.stringify(routePolicy));
     // THE APPLICATIONS THE ROUTES FRONT (D10).
     const made = [
       applications.createApplication({ identifier: 'ppx-api',
@@ -2159,13 +2277,13 @@ async function childBody() {
     return xacmlAdminL.pepsJson(NAME);
   }).peps[0].proxy;
   const guarded = routesBefore.routes.filter(function (one) {
-    return !one.public;
+    return one.authorization.kind !== 'public';
   })[0];
   const addR = routeAct({ action: 'set-pep-route', id: 'health',
                           path: '/health', match: 'exact', methods: 'GET',
                           public: 'true', position: '0' });
   t.check(addR && addR.ok && addR.proxy.routes[0].id === 'health' &&
-          addR.proxy.routes[0].public === true &&
+          addR.proxy.routes[0].authorization.kind === 'public' &&
           addR.proxy.routes[0].methods.join(',') === 'GET' &&
           addR.proxy.routes.length === routesBefore.routes.length + 1,
           'R1. set-pep-route adds a route from the form where it is asked',
@@ -2173,14 +2291,15 @@ async function childBody() {
   const editR = routeAct({ action: 'set-pep-route', id: guarded.id,
     path: guarded.path, match: guarded.match, methods: ['GET', 'HEAD'],
     public: 'false', mechanisms: guarded.mechanisms,
-    application: guarded.application, resource: 'edited' });
+    application: guarded.application });
   const edited = editR && editR.proxy && editR.proxy.routes.filter(
     function (one) {
       return one.id === guarded.id;
     })[0];
   t.check(editR && editR.ok && edited &&
           edited.methods.join(',') === 'GET,HEAD' &&
-          edited.resource === 'edited' &&
+          edited.authorization.kind === 'policy' &&
+          edited.authorization.policy === ROUTE_POLICY &&
           JSON.stringify(edited.identity) ===
             JSON.stringify(guarded.identity) &&
           editR.proxy.routes.indexOf(edited) ===
@@ -2292,7 +2411,6 @@ async function childBody() {
     id: newId, path: guarded.path, match: guarded.match,
     methods: guarded.methods, public: 'false',
     mechanisms: guarded.mechanisms, application: guarded.application,
-    resource: guarded.resource, routeAction: guarded.action,
     forwardCredentials: 'false', signals: 'true',
     mode: 'headers', headerName: ['X-Page-User', ''],
     headerClaim: ['username', ''], separator: ';' });
@@ -2352,7 +2470,8 @@ async function childBody() {
   // form, and the PEP's bound a managed setting.
   const nonSession = (pageView.peps[0].proxy.routes || [])
     .filter(function (one) {
-      return !one.public && one.mechanisms.indexOf('session') < 0;
+      return one.authorization.kind !== 'public' &&
+        one.mechanisms.indexOf('session') < 0;
     })[0];
   const everyFalse = pageView.peps[0].proxy.routes.every(function (one) {
     return one.multipleAccounts === false;
@@ -2533,8 +2652,26 @@ async function childBody() {
   const otherM = inRealm(function () {
     return xacmlAdminL.pepsJson(OTHER);
   }).peps[0].proxy;
+  // A GENERATED POLICY IS THE PEP'S OWN (#1760): a simple or public
+  // route's policy is named for the PEP that holds it, so the file loaded
+  // on OTHER names OTHER's, and everything else is the file.
+  const withoutGenerated = function (doc) {
+    log.debug("Entering withoutGenerated().");
+    log.debug("Leaving withoutGenerated().");
+    return JSON.stringify(Object.assign({}, doc, {
+      routes: (doc.routes || []).map(function (one) {
+        return one.authorization.kind === 'policy' ? one
+          : Object.assign({}, one, { authorization: Object.assign({},
+              one.authorization, { policy: '' }) });
+      }) }));
+  };
   t.check(movedM && movedM.ok &&
-          JSON.stringify(otherM) === JSON.stringify(storedM),
+          withoutGenerated(otherM) === withoutGenerated(storedM) &&
+          otherM.routes.filter(function (one) {
+            return one.authorization.kind === 'public';
+          }).every(function (one) {
+            return one.authorization.policy === 'pep-' + OTHER + '-' + one.id;
+          }),
           'M2. the file saved on another PEP of this realm is taken, through ' +
           'set-pep-proxy\'s validator', JSON.stringify(movedM).slice(0, 300));
   // An application of ANOTHER realm: the default realm holds it, this
@@ -2545,7 +2682,7 @@ async function childBody() {
               oauthAudience: [AUDIENCE] } });
   const foreignM = JSON.parse(fileM);
   const guardedM = foreignM.routes.filter(function (one) {
-    return !one.public;
+    return one.authorization.kind !== 'public';
   })[0];
   guardedM.application = 'ppx-other-realm';
   const refusedM = inRealm(function () {
@@ -2558,7 +2695,7 @@ async function childBody() {
   t.check(refusedM && !refusedM.ok &&
           errorCodes.codeOf(refusedM) === 'STS-XACML-0217' &&
           /ppx-other-realm/.test(JSON.stringify(refusedM)) &&
-          JSON.stringify(keptM) === JSON.stringify(storedM),
+          JSON.stringify(keptM) === JSON.stringify(otherM),
           'M3. a file whose route names another realm\'s application is ' +
           'refused by name (STS-XACML-0217), the stored document kept',
           JSON.stringify(refusedM).slice(0, 300) + ' ' +
