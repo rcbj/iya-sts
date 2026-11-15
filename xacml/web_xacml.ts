@@ -1867,10 +1867,37 @@ class XacmlPage {
         esc(value) + '"' + (on ? ' checked' : '') + '> ' + esc(value) +
         '</label> ';
     };
-    const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE',
-                     'OPTIONS'].map(function (m) {
-      return box('methods', m, (r.methods || []).indexOf(m) >= 0);
-    }).join('');
+    const every = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE',
+                   'OPTIONS'];
+    const ticked = every.filter(function (m) {
+      return (r.methods || []).indexOf(m) >= 0;
+    });
+    // NONE AND ALL (rcbj, 2026-11-15: "Clicking None deselects everything
+    // else. Clicking All deselects None and selects all other options"),
+    // ahead of the seven. They are HELPERS ONLY and carry no `name`, so
+    // they are never posted and the route's `methods` stays the list of
+    // real methods ticked: `ConsoleRuntime.wireCheckAll()` reads
+    // `data-check-none` / `data-check-all` and does the ticking, and keeps
+    // both showing the state (None when no method is ticked, All when
+    // every one is). Drawn ticked to match, so the page reads right before
+    // the script runs. None's tooltip says what the validator makes of an
+    // empty list (`xacml_pep_proxy.ts`'s validateRoute(): empty is any
+    // method), since None ticked IS that list.
+    const helper = function (attr: string, labelKey: string, tipKey: string,
+                             on: boolean): string {
+      return '<label' + self.tipOf(t, tipKey) + '><input type="checkbox" ' +
+        attr + '="methods"' + (on ? ' checked' : '') + '> ' +
+        t.html(labelKey) + '</label> ';
+    };
+    const methods = helper('data-check-none',
+        'consoleXacml.routeForm.methodsNone',
+        'consoleXacml.tip.route.methodsNone', ticked.length === 0) +
+      helper('data-check-all', 'consoleXacml.routeForm.methodsAll',
+        'consoleXacml.tip.route.methodsAll',
+        ticked.length === every.length) +
+      every.map(function (m) {
+        return box('methods', m, ticked.indexOf(m) >= 0);
+      }).join('');
     const mechanisms = ['session', 'oauth2', 'saml2', 'basic']
       .map(function (m) {
         return box('mechanisms', m, (r.mechanisms || []).indexOf(m) >= 0);

@@ -3391,44 +3391,94 @@ class ConsoleRuntime extends SpaClient {
   // exactly when every one of them is. It carries no name, so it posts
   // nothing. Directory → Policies' export and import checklists are the
   // first; the boxes work without it.
+  //
+  // AND A NONE BOX (#1760, rcbj 2026-11-15, a remote PEP route's Methods:
+  // "Clicking None deselects everything else. Clicking All deselects None
+  // and selects all other options"): `data-check-none="<name>"` unticks
+  // every box of that name and the group's All. Both switches of a form and
+  // name share ONE refresh, run after every change, so each shows the state
+  // rather than the last click: All is ticked when every box is, None when
+  // none is — a method ticked by hand unticks None, the last one ticked
+  // ticks All, and unticking None with nothing ticked leaves it ticked,
+  // because nothing ticked is what None means. Ticking a box by script
+  // fires no `change`, which is why the refresh is called, not awaited.
   /**
-   * Wires every Select all box on the page drawn.
+   * Wires every Select all and None box on the page drawn.
    *
    * @returns nothing
    */
   wireCheckAll(): void {
     const doc = this.env.document;
     const switches = doc && doc.querySelectorAll
-      ? doc.querySelectorAll('input[data-check-all]') : [];
+      ? doc.querySelectorAll('input[data-check-all], input[data-check-none]')
+      : [];
+    const groups: Json[] = [];
     for (let i = 0; i < switches.length; i++) {
       const sw = switches[i];
       const form = sw.form;
       if (!form) {
         continue;
       }
-      const name = String(sw.getAttribute('data-check-all') || '');
-      const boxes: Json[] = [];
-      const inputs = form.querySelectorAll('input[type="checkbox"]');
-      for (let j = 0; j < inputs.length; j++) {
-        if (String(inputs[j].name || '') === name && name !== '') {
-          boxes.push(inputs[j]);
-        }
+      const allName = sw.getAttribute('data-check-all');
+      const name = String(allName || sw.getAttribute('data-check-none') ||
+        '');
+      if (name === '') {
+        continue;
       }
+      let group = groups.filter(function (one) {
+        return one.form === form && one.name === name;
+      })[0];
+      if (!group) {
+        const boxes: Json[] = [];
+        const inputs = form.querySelectorAll('input[type="checkbox"]');
+        for (let j = 0; j < inputs.length; j++) {
+          if (String(inputs[j].name || '') === name) {
+            boxes.push(inputs[j]);
+          }
+        }
+        group = { form: form, name: name, boxes: boxes, alls: [],
+                  nones: [] };
+        groups.push(group);
+      }
+      (allName ? group.alls : group.nones).push(sw);
+    }
+    groups.forEach(function (group) {
+      const boxes: Json[] = group.boxes;
       const refresh = function (): void {
-        sw.checked = boxes.length > 0 && boxes.every(function (box) {
-          return !!box.checked;
+        group.alls.forEach(function (sw: Json) {
+          sw.checked = boxes.length > 0 && boxes.every(function (box) {
+            return !!box.checked;
+          });
+        });
+        group.nones.forEach(function (sw: Json) {
+          sw.checked = boxes.every(function (box) {
+            return !box.checked;
+          });
         });
       };
-      sw.addEventListener('change', function () {
-        boxes.forEach(function (box) {
-          box.checked = !!sw.checked;
+      group.alls.forEach(function (sw: Json) {
+        sw.addEventListener('change', function () {
+          boxes.forEach(function (box) {
+            box.checked = !!sw.checked;
+          });
+          refresh();
+        });
+      });
+      group.nones.forEach(function (sw: Json) {
+        sw.addEventListener('change', function () {
+          if (sw.checked) {
+            boxes.forEach(function (box) {
+              box.checked = false;
+            });
+          }
+          refresh();
         });
       });
       boxes.forEach(function (box) {
         box.addEventListener('change', refresh);
       });
       refresh();
-    }
+    });
   }
 
   // AN ORDERED CHOICE'S SELECT ALL / NONE SWITCH (#1130), drawn by

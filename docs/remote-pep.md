@@ -1248,6 +1248,11 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   without the identity. **Save** sends `set-pep-route` with the route's current
   id in `from` and every member of the form. The save goes through the same
   checks as the document editor and the other forms.
+* **Methods** has a **None** and an **All** box on both forms, ahead of the
+  seven methods. **All** ticks every method; **None** unticks them all,
+  and with no method ticked the route takes any method (the route's
+  `methods` is stored empty). Ticking a method by hand updates both. They
+  are shortcuts only: the methods saved are the ones ticked.
 * **The application is chosen by a search**, on this form and on Create a
   New Route alike. The chosen application is shown linked to its page. Type
   part of an application's identifier or name in the box and press **Find**

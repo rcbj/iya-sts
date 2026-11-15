@@ -1586,6 +1586,18 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   PEP's file only where every route's application resolves in this realm
   (`STS-XACML-0217` otherwise). `tests/xacml_pep_console.js` M1–M4,
   `tests/xacml_pep_proxy.js` M1–M3.
+* **METHODS HAS A NONE AND AN ALL BOX on both route forms** (rcbj
+  2026-11-15: "Clicking None deselects everything else. Clicking All
+  deselects None and selects all other options"), drawn by
+  `routeFields()` ahead of the seven methods, ticked to match the route.
+  They carry NO NAME, so they are never posted and the route's `methods`
+  is the list of real methods ticked. `ConsoleRuntime.wireCheckAll()`
+  does the ticking (`data-check-none` beside the Policies checklists'
+  `data-check-all`): both switches of a form and name share one refresh,
+  so each shows the state — None when no method is ticked, All when
+  every one is — and unticking None with nothing ticked leaves it ticked.
+  None ticked is the empty list, which `validateRoute()` takes as ANY
+  method, and None's tooltip says so. `tests/xacml_pep_console.js` B1–B8.
 * **A ROUTE'S OWN PAGE** (rcbj 2026-11-14: "click on a route name and go to
   another page and be able to update all the configuration values"),
   `/admin/xacml/pep/route?pep=&route=`: `getXacmlPeps` with `route` adds

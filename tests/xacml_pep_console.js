@@ -48,6 +48,9 @@
 //   M. THE MANIFEST'S BUTTONS IN ONE ROW (rcbj, 2026-11-15): Save, Remove
 //      behind a confirmation, Download (the stored document as
 //      <pep>-proxy.json) and Load from file (into the editor, unsent).
+//   B. NONE AND ALL AMONG THE METHODS (rcbj, 2026-11-15) on both route
+//      forms: helpers with no name, never posted; the runtime's
+//      wireCheckAll() ticks and unticks, and keeps both showing the state.
 //   T. THE TRAILS (rcbj): a PEP's page is Admin console › XACML › Remote
 //      PEPs › the PEP, and a route's adds › Reverse proxy › the route, each
 //      tab a crumb linking to that tab, built by the runtime's drawView().
@@ -405,7 +408,7 @@ async function run(t) {
           form.indexOf('set-pep-route-application') < 0,
           'R6. its set-pep-route form holds the application in the ' +
           'chooser\'s hidden field, no datalist', form);
-  t.check(form.indexOf('make the route public') >= 0 &&
+  t.check(form.indexOf('accepted on save only for a public route') >= 0 &&
           /name="public"/.test(form),
           'R7. the form says a public route clears the application, and ' +
           'offers public', form);
@@ -788,6 +791,181 @@ async function run(t) {
                 'the group of its boxes', one[1]);
       });
     });
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== B. None and All among the route forms\' Methods ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): "Add a None checkbox and an All checkbox. Clicking
+  // None deselects everything else. Clicking All deselects None and selects
+  // all other options." Helpers only: never posted as a method.
+  const helperOf = function (html, attr) {
+    log.debug("Entering helperOf(). " + attr);
+    const m = new RegExp('<label[^>]*><input type="checkbox" ' + attr +
+                         '="methods"[^>]*> ([^<]*)</label>').exec(html);
+    log.debug("Leaving helperOf().");
+    return m;
+  };
+  const methodsGroup = function (html) {
+    log.debug("Entering methodsGroup().");
+    const part = html.split('-methods-label"><label')[1];
+    log.debug("Leaving methodsGroup().");
+    return part === undefined ? '' : '<label' + part.split('</span>')[0];
+  };
+  [['route page', form], ['Create a New Route', newPanel]]
+    .forEach(function (one) {
+      const group = methodsGroup(one[1]);
+      const none = helperOf(group, 'data-check-none');
+      const all = helperOf(group, 'data-check-all');
+      t.check(none && none[1] === 'None' && all && all[1] === 'All' &&
+              group.indexOf('data-check-none') <
+                group.indexOf('data-check-all') &&
+              group.indexOf('data-check-all') < group.indexOf('value="GET"'),
+              'B1. ' + one[0] + ': Methods draws None, then All, then the ' +
+              'methods', group);
+      const helpers = group.match(/<input[^>]*data-check-[^>]*>/g) || [];
+      const posted = (group.match(/<input[^>]*name="methods"[^>]*>/g) || [])
+        .map(function (input) {
+          return /value="([^"]*)"/.exec(input)[1];
+        });
+      t.check(helpers.length === 2 && helpers.every(function (input) {
+        return input.indexOf(' name=') < 0 && input.indexOf('value=') < 0;
+      }) && posted.join(',') === 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS',
+              'B2. ' + one[0] + ': None and All carry no name, so the only ' +
+              'methods posted are the seven real ones',
+              JSON.stringify({ helpers: helpers, posted: posted }));
+      const noneLabel = /<label([^>]*)><input type="checkbox" data-check-none/
+        .exec(group);
+      t.check(!!noneLabel &&
+              noneLabel[1].indexOf('accepts as any method') >= 0,
+              'B3. ' + one[0] + ': None\'s tooltip says the validator ' +
+              'takes no method as any method', group);
+    });
+  const checkedOf = function (html, attr) {
+    log.debug("Entering checkedOf(). " + attr);
+    const m = new RegExp('<input type="checkbox" ' + attr +
+                         '="methods"( checked)?>').exec(html);
+    log.debug("Leaving checkedOf().");
+    return !!(m && m[1]);
+  };
+  const drawnWith = function (methods) {
+    log.debug("Entering drawnWith().");
+    log.debug("Leaving drawnWith().");
+    return methodsGroup(XacmlPage.routeFields(tr, {},
+      { path: '/', match: 'prefix', methods: methods, mechanisms: [] }, 0,
+      'b', false));
+  };
+  const allSeven = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE',
+                    'OPTIONS'];
+  t.check(checkedOf(drawnWith([]), 'data-check-none') &&
+          !checkedOf(drawnWith([]), 'data-check-all') &&
+          !checkedOf(drawnWith(['GET']), 'data-check-none') &&
+          !checkedOf(drawnWith(['GET']), 'data-check-all') &&
+          checkedOf(drawnWith(allSeven), 'data-check-all') &&
+          !checkedOf(drawnWith(allSeven), 'data-check-none'),
+          'B4. drawn ticked to match: None for no method, All for every ' +
+          'one, neither for some', drawnWith(['GET']));
+  // The runtime's wiring, on a fake form: the seven boxes, None and All.
+  const CheckRuntime = require('../admin-ui/web_runtime');
+  const fakeBox = function (name, attrs) {
+    log.debug("Entering fakeBox(). " + name);
+    const handlers = [];
+    const box = { name: name, checked: false, form: null,
+      getAttribute: function (a) {
+        return Object.prototype.hasOwnProperty.call(attrs, a)
+          ? attrs[a] : null;
+      },
+      addEventListener: function (kind, fn) {
+        if (kind === 'change') {
+          handlers.push(fn);
+        }
+      },
+      click: function () {
+        box.checked = !box.checked;
+        handlers.forEach(function (fn) {
+          fn();
+        });
+      } };
+    log.debug("Leaving fakeBox().");
+    return box;
+  };
+  const methodBoxes = allSeven.map(function () {
+    return fakeBox('methods', {});
+  });
+  const noneBox = fakeBox('', { 'data-check-none': 'methods' });
+  const allBox = fakeBox('', { 'data-check-all': 'methods' });
+  const mechanismBox = fakeBox('mechanisms', {});
+  const fakeForm = { querySelectorAll: function () {
+    return [noneBox, allBox].concat(methodBoxes, [mechanismBox]);
+  } };
+  [noneBox, allBox].concat(methodBoxes, [mechanismBox])
+    .forEach(function (b) {
+      b.form = fakeForm;
+    });
+  methodBoxes[0].checked = true;
+  mechanismBox.checked = true;
+  // The page's query answers only the switches its selector names.
+  CheckRuntime.prototype.wireCheckAll.call({ env: { document: {
+    querySelectorAll: function (selector) {
+      return [noneBox, allBox].filter(function (sw) {
+        return sw === noneBox
+          ? selector.indexOf('input[data-check-none]') >= 0
+          : selector.indexOf('input[data-check-all]') >= 0;
+      });
+    } } } });
+  const state = function () {
+    log.debug("Entering state().");
+    log.debug("Leaving state().");
+    return (noneBox.checked ? 'N' : '-') + (allBox.checked ? 'A' : '-') +
+      ' ' + methodBoxes.map(function (b) {
+        return b.checked ? '1' : '0';
+      }).join('');
+  };
+  const atStart = state();
+  allBox.click();
+  const afterAll = state();
+  noneBox.click();
+  const afterNone = state();
+  t.check(atStart === '-- 1000000' && afterAll === '-A 1111111' &&
+          afterNone === 'N- 0000000' && mechanismBox.checked,
+          'B5. All ticks every method and unticks None; None unticks ' +
+          'every method and All; another field\'s boxes are untouched',
+          JSON.stringify([atStart, afterAll, afterNone]));
+  methodBoxes[2].click();
+  const oneByHand = state();
+  methodBoxes.forEach(function (b) {
+    if (!b.checked) {
+      b.click();
+    }
+  });
+  const everyByHand = state();
+  methodBoxes[6].click();
+  const oneOff = state();
+  t.check(oneByHand === '-- 0010000' && everyByHand === '-A 1111111' &&
+          oneOff === '-- 1111110',
+          'B6. ticking a method by hand unticks None; ticking the last ' +
+          'ticks All; unticking one unticks All',
+          JSON.stringify([oneByHand, everyByHand, oneOff]));
+  methodBoxes.forEach(function (b) {
+    if (b.checked) {
+      b.click();
+    }
+  });
+  const noneByHand = state();
+  noneBox.click();
+  const noneUnticked = state();
+  t.check(noneByHand === 'N- 0000000' && noneUnticked === 'N- 0000000',
+          'B7. unticking every method by hand ticks None, and None stays ' +
+          'ticked while no method is', JSON.stringify([noneByHand,
+                                                       noneUnticked]));
+
+  // The route page's note under the application names Clear, and says it
+  // is accepted on save only for a public route (Clear's own tooltip).
+  t.check(page.indexOf('make the route public') < 0 &&
+          page.indexOf('Clear empties it, but a route that checks ' +
+                       'credentials must name an application, so Clear is ' +
+                       'accepted on save only for a public route.') >= 0,
+          'B8. the application note names Clear, and when a save takes it',
+          page);
 
   // -------------------------------------------------------------------------
   t.log.info('=== T. the trails name the tab each page was opened from ===');
