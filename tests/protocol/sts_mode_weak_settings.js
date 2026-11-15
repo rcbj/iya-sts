@@ -465,9 +465,15 @@ async function theCodes() {
     .slice(0, 31);
   const CA = ("weakmode-c-" + STAMP).toLowerCase().replace(/[^a-z0-9-]/g, "")
     .slice(0, 31);
+  // BOTH START IN DEVELOPMENT, SAID SO (run #300): each half asserts the
+  // development answer first and then puts its realm in product, so in a
+  // product process a realm made without the override would be product
+  // from the start and refuse saml.allowSha1Signatures — setUp()'s DEV
+  // realm says it the same way.
   for (const id of [SHA, CA]) {
     await ok(base + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "Weak settings " + STAMP },
+      domain: id + ".example.net", name: "Weak settings " + STAMP,
+      overrides: { "global.mode": "development" } },
       "created the realm " + id);
   }
   try {
