@@ -75,10 +75,9 @@ impl AppEnv for Replay {
             Some(p) if p["answer"]["ok"] == json!(true) => {
                 Ok(p["answer"]["value"].clone())
             }
-            Some(p) => Err(p["answer"]["problem"]
-                .as_str()
-                .unwrap_or("")
-                .to_string()),
+            Some(p) => {
+                Err(p["answer"]["problem"].as_str().unwrap_or("").to_string())
+            }
             None => Err(format!("(Node never parsed {key}={raw})")),
         }
     }
@@ -92,7 +91,10 @@ impl AppEnv for Replay {
     }
 
     fn write_refusal_reason(&self, key: &str) -> String {
-        self.v["refusalReasons"][key].as_str().unwrap_or("").to_string()
+        self.v["refusalReasons"][key]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     }
 
     fn random_bytes(&self, n: usize) -> Vec<u8> {
@@ -101,7 +103,9 @@ impl AppEnv for Replay {
             if !*used && hex.len() == n * 2 {
                 *used = true;
                 return (0..n)
-                    .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
+                    .map(|i| {
+                        u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap()
+                    })
                     .collect();
             }
         }
@@ -352,7 +356,11 @@ fn run_step(
     let marked = |m: sts_registers::outcome::Outcome| Some((m.answer, m.code));
     let plain = |v: Value| Some((v, None));
     match op {
-        "seen" => plain(reg.seen(&a[0]).map(|r| record_json(&r)).unwrap_or(Value::Null)),
+        "seen" => plain(
+            reg.seen(&a[0])
+                .map(|r| record_json(&r))
+                .unwrap_or(Value::Null),
+        ),
         "create" => marked(reg.create_application(&a[0])),
         "update" => marked(reg.update_application(&s(&a[0]), &a[1])),
         "confirmReturnAddress" => {
@@ -364,9 +372,9 @@ fn run_step(
         "addOwner" => marked(reg.add_owner(&s(&a[0]), &s(&a[1]))),
         "removeOwner" => marked(reg.remove_owner(&s(&a[0]), &s(&a[1]))),
         "ownerProtected" => plain(json!(reg.owner_protected(&s(&a[0])))),
-        "setOwnerProtected" => marked(
-            reg.set_owner_protected(&s(&a[0]), a[1] == json!(true)),
-        ),
+        "setOwnerProtected" => {
+            marked(reg.set_owner_protected(&s(&a[0]), a[1] == json!(true)))
+        }
         "renameOwner" => plain(json!(reg.rename_owner(&s(&a[0]), &s(&a[1])))),
         "forgetOwner" => plain(json!(reg.forget_owner(&s(&a[0])))),
         "addClientSecret" => marked(reg.add_client_secret(&s(&a[0]), &a[1])),
@@ -385,9 +393,13 @@ fn run_step(
             plain(json!(reg.applications_enforcing_fga()))
         }
         "get" => plain(reg.get(&s(&a[0])).unwrap_or(Value::Null)),
-        "forClientId" => plain(reg.for_client_id(&s(&a[0])).unwrap_or(Value::Null)),
+        "forClientId" => {
+            plain(reg.for_client_id(&s(&a[0])).unwrap_or(Value::Null))
+        }
         "everyForClientId" => plain(json!(reg.every_for_client_id(&s(&a[0])))),
-        "forAudience" => plain(reg.for_audience(&s(&a[0])).unwrap_or(Value::Null)),
+        "forAudience" => {
+            plain(reg.for_audience(&s(&a[0])).unwrap_or(Value::Null))
+        }
         "forAppliesTo" => {
             plain(reg.for_applies_to(&s(&a[0])).unwrap_or(Value::Null))
         }
@@ -410,9 +422,9 @@ fn run_step(
         ),
         "isResourceServer" => plain(json!(reg.is_resource_server(&s(&a[0])))),
         "requiredRolesOf" => plain(json!(reg.required_roles_of(&s(&a[0])))),
-        "applicationsNamingPolicy" => plain(json!(
-            reg.applications_naming_policy(&s(&a[0]), &s(&a[1]))
-        )),
+        "applicationsNamingPolicy" => {
+            plain(json!(reg.applications_naming_policy(&s(&a[0]), &s(&a[1]))))
+        }
         "applicationsDeclaredFor" => {
             plain(json!(reg.applications_declared_for(&s(&a[0]))))
         }
@@ -424,10 +436,15 @@ fn run_step(
         }
         "deleteApplication" => marked(reg.delete_application(&s(&a[0]), &a[1])),
         "action" => {
-            let protocols = a[1].as_array().map(|l| {
-                l.iter().map(|x| s(x)).collect::<Vec<String>>()
-            });
-            marked(reg.applications_action(&a[0], protocols, "vector-admin", ports))
+            let protocols = a[1]
+                .as_array()
+                .map(|l| l.iter().map(|x| s(x)).collect::<Vec<String>>());
+            marked(reg.applications_action(
+                &a[0],
+                protocols,
+                "vector-admin",
+                ports,
+            ))
         }
         "listJson" => plain(reg.applications_list_json(
             a[0].as_object().unwrap(),
@@ -439,7 +456,8 @@ fn run_step(
             let mut d = dir.lock().unwrap();
             let base = d.realms()[0].base.clone();
             let old = format!("cn={},ou=applications,{}", s(&a[0]), base);
-            let mut moved = d.remove_entry(0, &old, "an LDAP modify DN").unwrap();
+            let mut moved =
+                d.remove_entry(0, &old, "an LDAP modify DN").unwrap();
             moved.dn = format!("cn=renamed-saml11,ou=applications,{}", base);
             // `adoptEntry()`: the entry as it was, stamped now.
             let at = generalized_time_of(reg_now(reg).div_euclid(1000));
@@ -461,14 +479,18 @@ fn the_application_register_answers_as_node_does() {
     };
     let now = Arc::new(AtomicI64::new(v["start"].as_i64().unwrap()));
     let base = s(&v["base"]);
-    let mut directory = Directory::new(&base)
-        .with_clock(
-            Arc::new(FixedClock(now.clone())),
-            Arc::new(sts_directory::ports::CryptoUuids),
-        );
+    let mut directory = Directory::new(&base).with_clock(
+        Arc::new(FixedClock(now.clone())),
+        Arc::new(sts_directory::ports::CryptoUuids),
+    );
     directory.restore(
         "default",
-        v["initial"].as_array().unwrap().iter().map(entry_of).collect(),
+        v["initial"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(entry_of)
+            .collect(),
     );
     let dir = Arc::new(Mutex::new(directory));
     let replay = Arc::new(Replay {
@@ -512,8 +534,7 @@ fn the_application_register_answers_as_node_does() {
             &op,
             &args,
             &step["answer"]["settings"],
-        )
-        else {
+        ) else {
             continue;
         };
         // The end of the turn: the credential changes announced.
@@ -588,7 +609,8 @@ fn the_application_register_answers_as_node_does() {
         let rows: Vec<Value> = rows
             .into_iter()
             .map(|mut row| {
-                row["view"] = reg.get(&s(&row["identifier"])).unwrap_or(Value::Null);
+                row["view"] =
+                    reg.get(&s(&row["identifier"])).unwrap_or(Value::Null);
                 row
             })
             .collect();

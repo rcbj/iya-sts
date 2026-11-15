@@ -163,8 +163,13 @@ pub trait ActionPorts: Send + Sync {
     /// `spMetadata.consume(identifier, text, 'upload')` (a create) or
     /// `spMetadata.upload(identifier, text, actor)` (a write): `{ok,
     /// message, errors}`.
-    fn sp_metadata(&self, identifier: &str, text: &str, actor: &str, create: bool)
-        -> Value;
+    fn sp_metadata(
+        &self,
+        identifier: &str,
+        text: &str,
+        actor: &str,
+        create: bool,
+    ) -> Value;
     /// `scope_policy.configuredScopeWarnings(identifier)`: `[{text, …}]`.
     fn scope_warnings(&self, identifier: &str) -> Vec<Value>;
 }
@@ -257,7 +262,9 @@ pub fn application_fields_from(body: &Value) -> Map<String, Value> {
         }
     }
     for (name, mut list) in indexed {
-        list.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        list.sort_by(|a, b| {
+            a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
         let values: Vec<String> = list
             .into_iter()
             .map(|(_, v)| v)
@@ -369,7 +376,8 @@ fn trimmed_values(value: Option<&Value>) -> Vec<String> {
 }
 
 fn same_values(current: &[String], wanted: &[String]) -> bool {
-    current.len() == wanted.len() && current.iter().all(|one| wanted.contains(one))
+    current.len() == wanted.len()
+        && current.iter().all(|one| wanted.contains(one))
 }
 
 impl ApplicationRegistry {
@@ -456,7 +464,8 @@ impl ApplicationRegistry {
         ports: &dyn ActionPorts,
     ) -> Marked {
         let action = text(body, "action");
-        let identifier = crate::js::trim(&text(body, "application")).to_string();
+        let identifier =
+            crate::js::trim(&text(body, "application")).to_string();
         if NEEDS_ONE.contains(&action.as_str()) && identifier.is_empty() {
             return refused(
                 codes::STS_ADMIN_0529,
@@ -571,7 +580,10 @@ impl ApplicationRegistry {
             ),
             "rotate-secret" => refused_by(
                 codes::STS_ADMIN_0620,
-                self.rotate_client_secret(&identifier, &json!({ "actor": actor })),
+                self.rotate_client_secret(
+                    &identifier,
+                    &json!({ "actor": actor }),
+                ),
             ),
             "add-secret" => {
                 let mut o = json!({ "actor": actor });
@@ -782,17 +794,18 @@ impl ApplicationRegistry {
         };
         let given = application_fields_from(body);
         let covered = fields_covered_by(body);
-        let with_protocols = body
-            .get("protocolsPresent")
-            .is_some_and(crate::js::truthy)
-            || body.get("protocols").is_some();
+        let with_protocols =
+            body.get("protocolsPresent").is_some_and(crate::js::truthy)
+                || body.get("protocols").is_some();
         if covered.is_empty() && !with_protocols {
             return refused(
                 codes::STS_ADMIN_0835,
-                vec!["Name the attributes to change: `fields` (each member an \
+                vec![
+                    "Name the attributes to change: `fields` (each member an \
                       attribute, a string or an array of strings; empty clears \
                       it), `protocols`, or both."
-                    .to_string()],
+                        .to_string(),
+                ],
             );
         }
         let t = Tables::get();
@@ -821,7 +834,8 @@ impl ApplicationRegistry {
         }
         let fields = entry["fields"].as_object().cloned().unwrap_or_default();
         let mut sync_confidential = false;
-        if let Some(at) = changes.iter().position(|(a, _)| a == "oauthConfidential")
+        if let Some(at) =
+            changes.iter().position(|(a, _)| a == "oauthConfidential")
         {
             let projected: Vec<String> = changes
                 .iter()
@@ -832,16 +846,20 @@ impl ApplicationRegistry {
                     trimmed_values(fields.get("oauthTokenEndpointAuthMethod"))
                 });
             let mut preview = Record::default();
-            preview
-                .fields
-                .insert("oauthTokenEndpointAuthMethod".into(), json!(projected));
+            preview.fields.insert(
+                "oauthTokenEndpointAuthMethod".into(),
+                json!(projected),
+            );
             let determination = values::oauth_confidential_of(
                 entry.get("registered").is_some_and(crate::js::truthy),
                 &preview.fields,
             );
             let stated = &changes[at].1;
             let problem = match stated.len() {
-                1 => values::confidential_disagreement(&stated[0], &determination),
+                1 => values::confidential_disagreement(
+                    &stated[0],
+                    &determination,
+                ),
                 0 => values::confidential_clear_sentence(),
                 _ => values::confidential_disagreement(
                     &stated.join(" "),
@@ -883,7 +901,10 @@ impl ApplicationRegistry {
             } else {
                 codes::STS_REG_0368
             };
-            return refused(code, bounds.into_iter().map(|b| b.message).collect());
+            return refused(
+                code,
+                bounds.into_iter().map(|b| b.message).collect(),
+            );
         }
         let mut changed: Vec<String> = Vec::new();
         let mut errors: Vec<String> = Vec::new();
@@ -975,7 +996,8 @@ impl ApplicationRegistry {
                     {
                         continue;
                     }
-                    let verb = if mode_of(name) == "set" { "set" } else { "add" };
+                    let verb =
+                        if mode_of(name) == "set" { "set" } else { "add" };
                     let own = crate::js::or_empty(fresh.get("identifier"));
                     let written = self.update_application(
                         identifier,
@@ -997,12 +1019,13 @@ impl ApplicationRegistry {
             }
         }
         if errors.is_empty() && !metadata.is_empty() {
-            let consumed =
-                self.consume_written_metadata(identifier, &metadata, actor, ports);
+            let consumed = self
+                .consume_written_metadata(identifier, &metadata, actor, ports);
             if consumed.is_ok() {
                 changed.push("samlSpMetadata".into());
             } else {
-                errors.extend(crate::js::strings(consumed.answer.get("errors")));
+                errors
+                    .extend(crate::js::strings(consumed.answer.get("errors")));
             }
         }
         if !errors.is_empty() {

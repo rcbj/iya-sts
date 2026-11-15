@@ -170,7 +170,10 @@ pub const DID_KEY_ALGS: &[(&str, &[&str])] = &[
     ("EC secp256k1", &["ES256K"]),
     ("OKP Ed25519", &["EdDSA", "Ed25519"]),
     ("OKP Ed448", &["EdDSA", "Ed448"]),
-    ("RSA", &["RS256", "RS384", "RS512", "PS256", "PS384", "PS512"]),
+    (
+        "RSA",
+        &["RS256", "RS384", "RS512", "PS256", "PS384", "PS512"],
+    ),
 ];
 
 /// `DID_AKP_ALGS`.
@@ -181,8 +184,7 @@ fn did_url_of(text: &str) -> Option<url::Url> {
     let url = url::Url::parse(text).ok()?;
     let scheme_ok = url.scheme() == "https" || url.scheme() == "http";
     let host = url.host_str().unwrap_or("");
-    if scheme_ok && !host.is_empty() && !text.chars().any(char::is_whitespace)
-    {
+    if scheme_ok && !host.is_empty() && !text.chars().any(char::is_whitespace) {
         Some(url)
     } else {
         None
@@ -304,8 +306,7 @@ fn did_key_problem(jwk: &Value) -> String {
     } else {
         format!("{} {}", kty, member_text(jwk, "crv"))
     };
-    let Some((_, algs)) = DID_KEY_ALGS.iter().find(|(s, _)| *s == shape)
-    else {
+    let Some((_, algs)) = DID_KEY_ALGS.iter().find(|(s, _)| *s == shape) else {
         return format!(
             "didPublicKeyJwk takes EC keys on P-256, P-384, P-521 or \
              secp256k1; \"{}\" is not one.",
@@ -514,7 +515,10 @@ pub fn did_duplicate_problem(
         return String::new();
     }
     let mine = did_sameness(attribute, value);
-    if existing.iter().any(|one| did_sameness(attribute, one) == mine) {
+    if existing
+        .iter()
+        .any(|one| did_sameness(attribute, one) == mine)
+    {
         format!(
             "{} already holds {}; each value appears once.",
             attribute,
@@ -674,8 +678,12 @@ pub const FLOW_RESPONSE_TYPES: &[&str] = &[
 
 /// `TOKEN_RESPONSE_TYPES`: the response types that issue an access token
 /// from the authorization endpoint.
-pub const TOKEN_RESPONSE_TYPES: &[&str] =
-    &["token", "code token", "id_token token", "code id_token token"];
+pub const TOKEN_RESPONSE_TYPES: &[&str] = &[
+    "token",
+    "code token",
+    "id_token token",
+    "code id_token token",
+];
 
 /// `FLOW_GRANT_TYPES`.
 pub const FLOW_GRANT_TYPES: &[&str] = &[
@@ -834,7 +842,8 @@ fn policy_choices(kind: &str) -> Vec<String> {
 /// an attribute with no closed list here.
 #[tracing::instrument(level = "debug")]
 pub fn attribute_choices(attribute: &str) -> Option<Vec<String>> {
-    let realm_modes = || owned(&["application", "union", "intersection", "realm"]);
+    let realm_modes =
+        || owned(&["application", "union", "intersection", "realm"]);
     let profiles = |device: bool| {
         let mut ids = owned(ENROLLMENT_PROFILE_IDS);
         if device {
@@ -852,9 +861,7 @@ pub fn attribute_choices(attribute: &str) -> Option<Vec<String>> {
         }
         "krb5ForeignTgtDelegation" => owned(&["inherit", "deny"]),
         "oauthTokenEndpointAuthMethod" => owned(CLIENT_AUTH_METHODS),
-        "oauthBackchannelTokenDeliveryMode" => {
-            owned(&["poll", "ping", "push"])
-        }
+        "oauthBackchannelTokenDeliveryMode" => owned(&["poll", "ping", "push"]),
         "oauthBackchannelAuthenticationRequestSigningAlg" => {
             sources().offered_asymmetric_jws_algs()
         }
@@ -1001,8 +1008,7 @@ pub fn preview_auth_methods(
     protocols: &[String],
     fields: &Fields,
 ) -> Vec<String> {
-    let declared =
-        auth_method_list(fields.get("oauthTokenEndpointAuthMethod"));
+    let declared = auth_method_list(fields.get("oauthTokenEndpointAuthMethod"));
     if !declared.is_empty() {
         return declared;
     }
@@ -1050,8 +1056,7 @@ pub fn stated_confidential(value: &str) -> String {
 /// `oauthConfidentialOf(record)`, over a record's `registered` and fields.
 #[tracing::instrument(level = "debug", skip(fields))]
 pub fn oauth_confidential_of(registered: bool, fields: &Fields) -> String {
-    let methods =
-        auth_method_list(fields.get("oauthTokenEndpointAuthMethod"));
+    let methods = auth_method_list(fields.get("oauthTokenEndpointAuthMethod"));
     let method = match methods.first() {
         Some(m) => m.clone(),
         None if registered => "client_secret_basic".into(),
@@ -1142,7 +1147,10 @@ pub fn record_oauth_confidential(
     }
     let flag = oauth_confidential_of(record.registered, &record.fields);
     // setField(record, 'oauthConfidential', flag): a single-valued row.
-    if record.fields.get("oauthConfidential").and_then(Value::as_str)
+    if record
+        .fields
+        .get("oauthConfidential")
+        .and_then(Value::as_str)
         == Some(flag.as_str())
     {
         return false;

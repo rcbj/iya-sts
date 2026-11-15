@@ -117,8 +117,12 @@ pub trait AppEffects: Send + Sync {
     fn application_removed(&self, identifier: &str, dn: &str, via: &str);
     /// `gnap_revocation.endForClientKeyChange()` / `endForClient()`:
     /// how many grants ended.
-    fn end_gnap_grants(&self, identifier: &str, key_changed: bool, how: &Value)
-        -> i64;
+    fn end_gnap_grants(
+        &self,
+        identifier: &str,
+        key_changed: bool,
+        how: &Value,
+    ) -> i64;
     /// `account_signals.claimsFanOut()` for a scope withdrawn from
     /// `attribute` on `identifier` (`announceScopeRemoval()`): `removed`
     /// is the scope the tokens lose, `audience` the base URI a permission
@@ -226,7 +230,13 @@ impl ApplicationRegistry {
 
     // `fgaHook(which, identifier, actor, policy)`: a refusal or a panic is
     // logged under STS-FGA-0010 and changes nothing about the write.
-    fn fga_hook(&self, which: &str, identifier: &str, actor: &str, policy: &str) {
+    fn fga_hook(
+        &self,
+        which: &str,
+        identifier: &str,
+        actor: &str,
+        policy: &str,
+    ) {
         let hooks = self.fga.read().ok().and_then(|h| h.clone());
         let Some(hooks) = hooks else {
             return;
@@ -243,7 +253,11 @@ impl ApplicationRegistry {
                 sts_core::log::tag(sts_core::errors::codes::STS_FGA_0010),
                 identifier,
                 which,
-                if which == "created" { "created" } else { "retired" }
+                if which == "created" {
+                    "created"
+                } else {
+                    "retired"
+                }
             );
         }
     }

@@ -257,9 +257,9 @@ pub fn home_page_problem(value: &str) -> Option<String> {
 pub fn initiate_login_uri_problem(value: &str) -> Option<String> {
     let text = crate::js::trim(value);
     match js_url(text) {
-        None => Some(
-            "oauthInitiateLoginUri must be an absolute https URL.".into(),
-        ),
+        None => {
+            Some("oauthInitiateLoginUri must be an absolute https URL.".into())
+        }
         Some(parsed) if parsed.protocol != "https:" => Some(
             "oauthInitiateLoginUri must be an https URL (OpenID Connect \
              Registration section 2)."
@@ -328,8 +328,8 @@ pub fn owner_lookup_uri_problem(value: &str) -> Option<String> {
     {
         return Some(why.into());
     }
-    let usable = js_url(&text.replacen("{identifier}", "x", 1)).is_some_and(
-        |p| {
+    let usable =
+        js_url(&text.replacen("{identifier}", "x", 1)).is_some_and(|p| {
             p.protocol == "https:"
                 && !p.hostname.is_empty()
                 && p.username.is_empty()
@@ -339,8 +339,7 @@ pub fn owner_lookup_uri_problem(value: &str) -> Option<String> {
                 && !text.contains('?')
                 && !text.contains('#')
                 && p.pathname.contains("/x")
-        },
-    );
+        });
     if !usable {
         return Some(why.into());
     }

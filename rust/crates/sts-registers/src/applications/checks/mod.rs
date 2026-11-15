@@ -178,8 +178,9 @@ impl ApplicationRegistry {
             if name == "oauthConfidential" {
                 let stated = values::stated_confidential(&first);
                 if stated.is_empty() {
-                    out.errors
-                        .push(values::confidential_disagreement(&first, "FALSE"));
+                    out.errors.push(values::confidential_disagreement(
+                        &first, "FALSE",
+                    ));
                     note(codes::STS_REG_0363, &mut code);
                     continue;
                 }
@@ -315,12 +316,11 @@ impl ApplicationRegistry {
                     continue;
                 }
                 if name == "oauthBackchannelLogoutUri" {
-                    let method = values_of(
-                        asked.get("oauthTokenEndpointAuthMethod"),
-                    )
-                    .into_iter()
-                    .next()
-                    .unwrap_or_default();
+                    let method =
+                        values_of(asked.get("oauthTokenEndpointAuthMethod"))
+                            .into_iter()
+                            .next()
+                            .unwrap_or_default();
                     let truthy =
                         |k: &str| asked.get(k).is_some_and(crate::js::truthy);
                     let public = method == "none"
@@ -409,9 +409,9 @@ impl ApplicationRegistry {
                     continue;
                 }
             }
-            if let Some(problem) =
-                oauth::introspection_attribute_problem(self, name, &first, asked)
-            {
+            if let Some(problem) = oauth::introspection_attribute_problem(
+                self, name, &first, asked,
+            ) {
                 out.errors.push(problem);
                 note(codes::STS_REG_0073, &mut code);
                 continue;
@@ -443,9 +443,12 @@ impl ApplicationRegistry {
             let problems: Vec<String> = values
                 .iter()
                 .filter_map(|one| {
-                    uris::kerberos_trust_attribute_problem(self, name, one, &|r| {
-                        self.effects.kerberos_accepts_realm(r)
-                    })
+                    uris::kerberos_trust_attribute_problem(
+                        self,
+                        name,
+                        one,
+                        &|r| self.effects.kerberos_accepts_realm(r),
+                    )
                 })
                 .collect();
             if !problems.is_empty() {
@@ -453,9 +456,9 @@ impl ApplicationRegistry {
                 note(codes::STS_REG_0362, &mut code);
                 continue;
             }
-            if let Some(problem) =
-                oauth::pushed_authorization_attribute_problem(self, name, &first)
-            {
+            if let Some(problem) = oauth::pushed_authorization_attribute_problem(
+                self, name, &first,
+            ) {
                 out.errors.push(problem);
                 note(codes::STS_REG_0121, &mut code);
                 continue;
@@ -497,7 +500,9 @@ impl ApplicationRegistry {
             }
             let problems: Vec<Coded> = values
                 .iter()
-                .filter_map(|one| oauth::authzen_attribute_problem(self, name, one))
+                .filter_map(|one| {
+                    oauth::authzen_attribute_problem(self, name, one)
+                })
                 .collect();
             if let Some(first_problem) = problems.first() {
                 note(first_problem.code, &mut code);

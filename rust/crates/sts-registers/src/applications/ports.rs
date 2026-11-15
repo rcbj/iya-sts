@@ -42,7 +42,8 @@ impl Applications for ApplicationRegistry {
     }
 
     fn update_application(&self, identifier: &str, change: &Value) -> Marked {
-        let out = ApplicationRegistry::update_application(self, identifier, change);
+        let out =
+            ApplicationRegistry::update_application(self, identifier, change);
         Marked {
             value: out.answer,
             code: out.code,
@@ -58,7 +59,8 @@ impl Applications for ApplicationRegistry {
     }
 
     fn set_owner_protected(&self, identifier: &str, flag: bool) -> Marked {
-        let out = ApplicationRegistry::set_owner_protected(self, identifier, flag);
+        let out =
+            ApplicationRegistry::set_owner_protected(self, identifier, flag);
         Marked {
             value: out.answer,
             code: out.code,
@@ -90,7 +92,9 @@ impl sts_policy::ports::ApplicationRegister for ApplicationRegistry {
     }
 
     fn by_identifier(&self, realm: &str, identifier: &str) -> Option<Object> {
-        in_realm(realm, || fields_of(ApplicationRegistry::get(self, identifier)))
+        in_realm(realm, || {
+            fields_of(ApplicationRegistry::get(self, identifier))
+        })
     }
 
     fn naming_policy(
@@ -119,11 +123,18 @@ impl ApplicationRegistry {
     }
 }
 
-/// The identifiers `internalApplications()` seeds, in its order: the
-/// three hosted surfaces' clients, the management API's, and the embedded
-/// debugger's (`debuggerApplications()`, listed whether or not the
-/// debugger is enabled).
+/// The identifiers `internalApplications()` seeds, in its order: this
+/// service's own APIs as resources (`apiResourceApplications()`), the
+/// three hosted surfaces' clients, the management API's client, and the
+/// embedded debugger's (`debuggerApplications()`, listed whether or not
+/// the debugger is enabled).
 pub const INTERNAL_IDENTIFIERS: &[&str] = &[
+    "sts-management-api",
+    "sts-account-api",
+    "sts-report-api",
+    "sts-authzen-api",
+    "sts-uma-protection-api",
+    "sts-resource",
     "sts-admin-console",
     "sts-user-portal",
     "sts-report",

@@ -19,7 +19,9 @@ use serde_json::{json, Map, Value};
 use sts_core::errors::{codes, ErrorCode};
 
 use super::checks::{self, address_kind, nz, values, Coded, SEALED_FIELDS};
-use super::record::{first_of, snapshot_of, values_of, Fields, Record, Snapshot};
+use super::record::{
+    first_of, snapshot_of, values_of, Fields, Record, Snapshot,
+};
 use super::store::StoredApplication;
 use super::tables::{Tables, PROTOCOLS};
 use super::{refused, ApplicationRegistry, Marked};
@@ -33,8 +35,11 @@ pub const OBSERVED_CERTIFICATE_ATTRIBUTE: &str =
 pub const SAML_CERTIFICATE_ATTRIBUTES: &[&str] =
     &["samlSigningCertificate", "samlSpMetadataSigningCertificate"];
 /// `NOT_THE_REGISTRY_IDENTIFIER`.
-const NOT_THE_REGISTRY_IDENTIFIER: &[&str] =
-    &["oauthTlsClientAuthSubjectDn", "ldapBindDn", "spiffeWorkloadId"];
+const NOT_THE_REGISTRY_IDENTIFIER: &[&str] = &[
+    "oauthTlsClientAuthSubjectDn",
+    "ldapBindDn",
+    "spiffeWorkloadId",
+];
 /// `KEY_SOURCES`.
 pub const KEY_SOURCES: &[&str] =
     &["issued", "uploaded-realm-ca", "uploaded-external-ca"];
@@ -237,8 +242,7 @@ pub fn normalise_protocols(value: &Value) -> Result<Vec<String>, String> {
             t.protocol_ids.join(", ")
         ));
     }
-    Ok(t
-        .protocol_ids
+    Ok(t.protocol_ids
         .iter()
         .filter(|id| chosen.iter().any(|c| c == *id))
         .map(|id| id.to_string())
@@ -278,9 +282,7 @@ fn parse_observed_mark(text: &str) -> Option<(String, String)> {
     }
     let attribute = &text[..at];
     let value = crate::js::trim(&text[at + 1..]);
-    if !Tables::get()
-        .return_address_attributes
-        .contains(&attribute)
+    if !Tables::get().return_address_attributes.contains(&attribute)
         || value.is_empty()
     {
         return None;
@@ -460,8 +462,7 @@ impl ApplicationRegistry {
         let mut out: Vec<(String, i64)> = Vec::new();
         for one in values_of(Some(stored)) {
             if let Some(r) = self.parse_client_secret_value(&one) {
-                if let Some(slot) = out.iter_mut().find(|(id, _)| *id == r.id)
-                {
+                if let Some(slot) = out.iter_mut().find(|(id, _)| *id == r.id) {
                     slot.1 = r.expires_at;
                 } else {
                     out.push((r.id, r.expires_at));
@@ -890,8 +891,7 @@ impl ApplicationRegistry {
                 structural = true;
             }
         }
-        if let Some(p) =
-            detail.get("protocol").filter(|v| crate::js::truthy(v))
+        if let Some(p) = detail.get("protocol").filter(|v| crate::js::truthy(v))
         {
             if add_to(&mut record.protocols, &crate::js::string(p)) {
                 changed = true;
@@ -1197,7 +1197,11 @@ impl ApplicationRegistry {
                         }
                     })
                     .or_else(|| {
-                        nz(values::did_duplicate_problem(name, &one, &seen_values))
+                        nz(values::did_duplicate_problem(
+                            name,
+                            &one,
+                            &seen_values,
+                        ))
                     });
                 if let Some(p) = problem {
                     did_problems.push(p);
@@ -1307,7 +1311,10 @@ impl ApplicationRegistry {
         };
         if let Some(days) = days {
             let text = super::secrets::given_secret_text(
-                given.fields.get("oauthClientSecret").unwrap_or(&Value::Null),
+                given
+                    .fields
+                    .get("oauthClientSecret")
+                    .unwrap_or(&Value::Null),
             );
             let whole = text.starts_with('{')
                 && self
@@ -1337,7 +1344,8 @@ impl ApplicationRegistry {
                 "oauthTokenEndpointAuthMethod".into(),
                 json!(values::preview_auth_methods(&protocols, &given.fields)),
             );
-            let determination = values::oauth_confidential_of(false, &preview.fields);
+            let determination =
+                values::oauth_confidential_of(false, &preview.fields);
             let problem = values::confidential_disagreement(
                 &crate::js::string(stated),
                 &determination,
@@ -1383,7 +1391,11 @@ impl ApplicationRegistry {
                 .is_empty()
         {
             let method = values::credential_auth_method(&record.fields);
-            self.put(&mut record, "oauthTokenEndpointAuthMethod", json!(method));
+            self.put(
+                &mut record,
+                "oauthTokenEndpointAuthMethod",
+                json!(method),
+            );
         }
         values::record_oauth_confidential(
             &mut record,
@@ -1562,11 +1574,13 @@ impl ApplicationRegistry {
         if attribute == "oauthScope" && mode == "add" {
             return refused(
                 codes::STS_REG_0361,
-                vec!["\"oauthScope\" records the scopes this client has ASKED \
+                vec![
+                    "\"oauthScope\" records the scopes this client has ASKED \
                       FOR, written as its requests arrive, so it cannot be \
                       added by hand. What it may be issued is \
                       oauthAllowedScope."
-                    .to_string()],
+                        .to_string(),
+                ],
             );
         }
         if (attribute == "oauthResponseType"
@@ -1576,8 +1590,7 @@ impl ApplicationRegistry {
             value = values::canonical_response_type(&value);
         }
         if attribute == "appAllowedProtocol" && mode == "add" {
-            if let Err(e) = normalise_protocols(&Value::String(value.clone()))
-            {
+            if let Err(e) = normalise_protocols(&Value::String(value.clone())) {
                 return refused(codes::STS_REG_0005, vec![e]);
             }
         }
@@ -1585,22 +1598,25 @@ impl ApplicationRegistry {
         let set_value = mode == "set" && !value.is_empty();
         let set_or_add_value = set_or_add && !value.is_empty();
         if set_or_add_value {
-            let did = nz(values::did_value_problem(self, &attribute, &value)).or_else(
-                || {
+            let did = nz(values::did_value_problem(self, &attribute, &value))
+                .or_else(|| {
                     if mode == "add" {
-                        nz(values::did_duplicate_problem(&attribute, &value, &held))
+                        nz(values::did_duplicate_problem(
+                            &attribute, &value, &held,
+                        ))
                     } else {
                         None
                     }
-                },
-            );
+                });
             if let Some(p) = did {
                 return refused(codes::STS_REG_0204, vec![p]);
             }
-            if let Some(p) = nz(values::claim_rows_problem(&attribute, &value)) {
+            if let Some(p) = nz(values::claim_rows_problem(&attribute, &value))
+            {
                 return refused(codes::STS_REG_0206, vec![p]);
             }
-            if let Some(p) = nz(values::claim_selection_problem(&attribute, &value))
+            if let Some(p) =
+                nz(values::claim_selection_problem(&attribute, &value))
             {
                 return refused(codes::STS_REG_0215, vec![p]);
             }
@@ -1615,16 +1631,19 @@ impl ApplicationRegistry {
                 return refused(codes::STS_REG_0203, vec![p]);
             }
             if attribute == "oauthAllowedTokenResponseTypes" {
-                if let Some(p) =
-                    nz(values::token_response_types_problem(self, &[value.clone()]))
-                {
+                if let Some(p) = nz(values::token_response_types_problem(
+                    self,
+                    &[value.clone()],
+                )) {
                     return refused(codes::STS_REG_0364, vec![p]);
                 }
             }
             if attribute == "oauthTokenEndpointAuthMethod" && mode == "add" {
                 let mut all = held.clone();
                 all.push(value.clone());
-                if let Some(p) = nz(values::auth_methods_problem(Some(&json!(all)))) {
+                if let Some(p) =
+                    nz(values::auth_methods_problem(Some(&json!(all))))
+                {
                     return refused(codes::STS_REG_0207, vec![p]);
                 }
             }
@@ -1652,9 +1671,11 @@ impl ApplicationRegistry {
             }
         }
         if attribute == "ssfAllowedEvents" && (mode == "add" || set_value) {
-            if let Some(p) = checks::uris::ssf_allowed_event_problem(&value, &|u| {
-                self.effects.ssf_event_known(u)
-            }) {
+            if let Some(p) =
+                checks::uris::ssf_allowed_event_problem(&value, &|u| {
+                    self.effects.ssf_event_known(u)
+                })
+            {
                 return refused(codes::STS_REG_0053, vec![p]);
             }
         }
@@ -1771,8 +1792,7 @@ impl ApplicationRegistry {
             && set_or_add_value
             && !held.contains(&value)
         {
-            if let Some(p) = checks::uris::address_problem(&attribute, &value)
-            {
+            if let Some(p) = checks::uris::address_problem(&attribute, &value) {
                 return refused(codes::STS_REG_0071, vec![p]);
             }
             if attribute == "oauthBackchannelLogoutUri" {
@@ -1780,11 +1800,11 @@ impl ApplicationRegistry {
                     values_of(fields.get("oauthTokenEndpointAuthMethod"))
                         .iter()
                         .any(|m| m == "none");
-                if let Some(p) =
-                    checks::uris::backchannel_scheme_problem(&value, public, &|u| {
-                        self.effects.dial_problem(u)
-                    })
-                {
+                if let Some(p) = checks::uris::backchannel_scheme_problem(
+                    &value,
+                    public,
+                    &|u| self.effects.dial_problem(u),
+                ) {
                     return refused(p.code, vec![p.message]);
                 }
             }
@@ -2005,7 +2025,9 @@ impl ApplicationRegistry {
         {
             value = values::saml_certificate_base64(&value);
             if mode != "remove" {
-                if let Some(p) = nz(values::saml_certificate_problem(self, &value)) {
+                if let Some(p) =
+                    nz(values::saml_certificate_problem(self, &value))
+                {
                     return refused(
                         codes::STS_REG_0160,
                         vec![format!(
@@ -2115,8 +2137,7 @@ impl ApplicationRegistry {
                             ", marked as OBSERVED rather than registered",
                         );
                     }
-                } else if clear_observed_mark(&mut record, &attribute, &value)
-                {
+                } else if clear_observed_mark(&mut record, &attribute, &value) {
                     changed = true;
                     if before.contains(&value) {
                         what = format!(
@@ -2198,7 +2219,9 @@ impl ApplicationRegistry {
             "detail": d,
         }));
         if mode == "remove" {
-            self.announce_scope_removal(identifier, &record, &attribute, &value);
+            self.announce_scope_removal(
+                identifier, &record, &attribute, &value,
+            );
         }
         if GNAP_KEY_ATTRIBUTES.contains(&attribute.as_str()) {
             self.end_gnap_grants(identifier, true, &actor);
@@ -2268,7 +2291,8 @@ impl ApplicationRegistry {
         } else if attribute == "oauthAllowedScope"
             && !self.effects.scope_kept(value, identifier)
         {
-            self.effects.claims_fan_out(identifier, attribute, value, "");
+            self.effects
+                .claims_fan_out(identifier, attribute, value, "");
         }
     }
 
@@ -2417,8 +2441,7 @@ impl ApplicationRegistry {
                         "It is not on the entry either.".to_string()
                     },
                     if marked.is_empty() {
-                        " Nothing on this entry is marked observed."
-                            .to_string()
+                        " Nothing on this entry is marked observed.".to_string()
                     } else {
                         format!(
                             " The addresses marked observed are: {}.",
@@ -2482,12 +2505,12 @@ impl ApplicationRegistry {
         identifier: &str,
         change: &Value,
     ) -> Marked {
-        let (loaded, attribute, value, held) =
-            match self.observed_address_request(identifier, change, "confirm")
-            {
-                Ok(f) => f,
-                Err(m) => return m,
-            };
+        let (loaded, attribute, value, held) = match self
+            .observed_address_request(identifier, change, "confirm")
+        {
+            Ok(f) => f,
+            Err(m) => return m,
+        };
         let mut record = loaded.record;
         clear_observed_mark(&mut record, &attribute, &value);
         let what = if held {
@@ -2523,12 +2546,12 @@ impl ApplicationRegistry {
         identifier: &str,
         change: &Value,
     ) -> Marked {
-        let (loaded, attribute, value, held) =
-            match self.observed_address_request(identifier, change, "discard")
-            {
-                Ok(f) => f,
-                Err(m) => return m,
-            };
+        let (loaded, attribute, value, held) = match self
+            .observed_address_request(identifier, change, "discard")
+        {
+            Ok(f) => f,
+            Err(m) => return m,
+        };
         let mut record = loaded.record;
         clear_observed_mark(&mut record, &attribute, &value);
         let left: Vec<String> = values_of(record.fields.get(&attribute))
@@ -2605,9 +2628,11 @@ impl ApplicationRegistry {
         if wanted.is_empty() {
             return refused(
                 codes::STS_REG_0354,
-                vec!["Who? Send `owner` with a person (a username or DN) or a \
+                vec![
+                    "Who? Send `owner` with a person (a username or DN) or a \
                       group (its cn or DN) of this realm."
-                    .to_string()],
+                        .to_string(),
+                ],
             );
         }
         let resolved = self.resolve_owner(&wanted);
@@ -2896,7 +2921,11 @@ impl ApplicationRegistry {
             }
         }
         if let Some(e) = change.get("enforced") {
-            let enforced = if crate::js::truthy(e) { "TRUE" } else { "FALSE" };
+            let enforced = if crate::js::truthy(e) {
+                "TRUE"
+            } else {
+                "FALSE"
+            };
             let now = first_of(&record.fields, "appFgaEnforced");
             let now = if now.is_empty() {
                 "FALSE".to_string()
@@ -2904,7 +2933,9 @@ impl ApplicationRegistry {
                 now
             };
             if now.to_uppercase() != enforced {
-                record.fields.insert("appFgaEnforced".into(), json!(enforced));
+                record
+                    .fields
+                    .insert("appFgaEnforced".into(), json!(enforced));
                 touched.push("appFgaEnforced");
             }
         }

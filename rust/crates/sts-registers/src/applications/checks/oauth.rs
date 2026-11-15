@@ -122,9 +122,11 @@ fn listed_signing_algs(
 }
 
 // `helpers.offeredJwsAlgs(base)`.
-fn offered_jws_algs(reg: &ApplicationRegistry, base: Vec<String>) -> Vec<String> {
-    let on =
-        reg.env().setting("keys.postQuantumSigning") != Value::Bool(false);
+fn offered_jws_algs(
+    reg: &ApplicationRegistry,
+    base: Vec<String>,
+) -> Vec<String> {
+    let on = reg.env().setting("keys.postQuantumSigning") != Value::Bool(false);
     base.into_iter()
         .filter(|alg| on || !is_pq_jws_alg(alg))
         .collect()
@@ -172,7 +174,10 @@ fn jwe_encs() -> Vec<String> {
 }
 
 // `helpers.offeredJweAlgs(base)`.
-fn offered_jwe_algs(reg: &ApplicationRegistry, base: Vec<String>) -> Vec<String> {
+fn offered_jwe_algs(
+    reg: &ApplicationRegistry,
+    base: Vec<String>,
+) -> Vec<String> {
     let offered =
         reg.env().setting("keys.offerKemEncryption") == Value::Bool(true);
     let legacy = reg.env().mode("allowsLegacyHashes");
@@ -187,7 +192,9 @@ fn kem_algs_configured(reg: &ApplicationRegistry) -> Vec<String> {
     let asymmetric = jwe_asymmetric_algs();
     let mut out: Vec<String> = Vec::new();
     for one in parsed_list(&reg.env().setting("keys.encryptionKemAlgs")) {
-        if !out.contains(&one) && asymmetric.contains(&one) && is_kem_jwe_alg(&one)
+        if !out.contains(&one)
+            && asymmetric.contains(&one)
+            && is_kem_jwe_alg(&one)
         {
             out.push(one);
         }
@@ -211,7 +218,9 @@ fn permitted_encs(reg: &ApplicationRegistry, list: Vec<String>) -> Vec<String> {
     if reg.env().mode("allowsCbcJwe") {
         return list;
     }
-    list.into_iter().filter(|one| !one.contains("CBC")).collect()
+    list.into_iter()
+        .filter(|one| !one.contains("CBC"))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +269,10 @@ fn attribute_of<'t>(table: &[(&str, &'t str)], member: &str) -> &'t str {
 
 // `String(valuesOf(fields[name])[0])`, '' for none.
 fn held(fields: &Fields, name: &str) -> String {
-    values_of(fields.get(name)).into_iter().next().unwrap_or_default()
+    values_of(fields.get(name))
+        .into_iter()
+        .next()
+        .unwrap_or_default()
 }
 
 // `String(value === undefined || value === null ? '' : value).trim()`.
@@ -395,8 +407,14 @@ pub fn introspection_attribute_problem(
 pub const REQUEST_OBJECT_ATTRIBUTES: &[(&str, &str)] = &[
     ("request_uris", "oauthRequestUri"),
     ("request_object_signing_alg", "oauthRequestObjectSigningAlg"),
-    ("request_object_encryption_alg", "oauthRequestObjectEncryptionAlg"),
-    ("request_object_encryption_enc", "oauthRequestObjectEncryptionEnc"),
+    (
+        "request_object_encryption_alg",
+        "oauthRequestObjectEncryptionAlg",
+    ),
+    (
+        "request_object_encryption_enc",
+        "oauthRequestObjectEncryptionEnc",
+    ),
     (
         "require_signed_request_object",
         "oauthRequireSignedRequestObject",
@@ -457,8 +475,8 @@ fn request_object_metadata_problem(
     reg: &ApplicationRegistry,
     values: &Map<String, Value>,
 ) -> Option<Refusal> {
-    let required = values.get("require_signed_request_object")
-        == Some(&Value::Bool(true));
+    let required =
+        values.get("require_signed_request_object") == Some(&Value::Bool(true));
     let sign = str_member(values, "request_object_signing_alg");
     if sign == "none" {
         if !reg.env().mode("acceptsUnsignedRequestObjects") || required {
@@ -590,7 +608,10 @@ pub fn request_object_attribute_problem(
 
 /// `CLIENT_RESPONSE_ATTRIBUTES`.
 pub const CLIENT_RESPONSE_ATTRIBUTES: &[(&str, &str)] = &[
-    ("id_token_signed_response_alg", "oauthIdTokenSignedResponseAlg"),
+    (
+        "id_token_signed_response_alg",
+        "oauthIdTokenSignedResponseAlg",
+    ),
     (
         "id_token_encrypted_response_alg",
         "oauthIdTokenEncryptedResponseAlg",
@@ -599,7 +620,10 @@ pub const CLIENT_RESPONSE_ATTRIBUTES: &[(&str, &str)] = &[
         "id_token_encrypted_response_enc",
         "oauthIdTokenEncryptedResponseEnc",
     ),
-    ("userinfo_signed_response_alg", "oauthUserinfoSignedResponseAlg"),
+    (
+        "userinfo_signed_response_alg",
+        "oauthUserinfoSignedResponseAlg",
+    ),
     (
         "userinfo_encrypted_response_alg",
         "oauthUserinfoEncryptedResponseAlg",
@@ -779,7 +803,9 @@ fn signed_response_alg_problem(
 fn acr_value_shaped(text: &str) -> bool {
     (1..=256).contains(&text.len())
         && text.bytes().all(|b| {
-            b == 0x21 || (0x23..=0x5b).contains(&b) || (0x5d..=0x7e).contains(&b)
+            b == 0x21
+                || (0x23..=0x5b).contains(&b)
+                || (0x5d..=0x7e).contains(&b)
         })
 }
 
@@ -1070,7 +1096,11 @@ pub fn pushed_authorization_attribute_problem(
 
 // `certificateSubject.MEMBERS`: member, attribute, kind.
 const TLS_SUBJECT_MEMBERS: &[(&str, &str, &str)] = &[
-    ("tls_client_auth_subject_dn", "oauthTlsClientAuthSubjectDn", "dn"),
+    (
+        "tls_client_auth_subject_dn",
+        "oauthTlsClientAuthSubjectDn",
+        "dn",
+    ),
     ("tls_client_auth_san_dns", "oauthTlsClientAuthSanDns", "dns"),
     ("tls_client_auth_san_uri", "oauthTlsClientAuthSanUri", "uri"),
     ("tls_client_auth_san_ip", "oauthTlsClientAuthSanIp", "ip"),
@@ -1269,8 +1299,9 @@ pub fn mtls_attribute_problem(
         }
         return None;
     }
-    let (member, _, _) =
-        TLS_SUBJECT_MEMBERS.iter().find(|(_, a, _)| *a == attribute)?;
+    let (member, _, _) = TLS_SUBJECT_MEMBERS
+        .iter()
+        .find(|(_, a, _)| *a == attribute)?;
     if let Some(said) = certificate_value_problem(member, &text) {
         return Some(Coded::new(
             codes::STS_REG_0134,
@@ -1281,12 +1312,16 @@ pub fn mtls_attribute_problem(
             ),
         ));
     }
-    let other = TLS_SUBJECT_MEMBERS.iter().map(|(_, a, _)| *a).find(|name| {
-        *name != attribute
-            && values_of(fields.get(*name))
-                .iter()
-                .any(|one| !js::trim(one).is_empty())
-    })?;
+    let other =
+        TLS_SUBJECT_MEMBERS
+            .iter()
+            .map(|(_, a, _)| *a)
+            .find(|name| {
+                *name != attribute
+                    && values_of(fields.get(*name))
+                        .iter()
+                        .any(|one| !js::trim(one).is_empty())
+            })?;
     Some(Coded::new(
         codes::STS_REG_0135,
         format!(
@@ -1382,7 +1417,9 @@ pub fn step_up_attribute_problem(
     if attribute == "oauthStepUpMaxAge" {
         let ok = (1..=9).contains(&text.len())
             && text.bytes().all(|b| b.is_ascii_digit())
-            && text.parse::<u64>().is_ok_and(|n| n <= STEP_UP_MAX_AGE_LIMIT);
+            && text
+                .parse::<u64>()
+                .is_ok_and(|n| n <= STEP_UP_MAX_AGE_LIMIT);
         if ok {
             return None;
         }
@@ -1456,14 +1493,23 @@ const TYPE_NAMES: &[(&str, &str)] = &[
     ),
     ("anyURI", "http://www.w3.org/2001/XMLSchema#anyURI"),
     ("hexBinary", "http://www.w3.org/2001/XMLSchema#hexBinary"),
-    ("base64Binary", "http://www.w3.org/2001/XMLSchema#base64Binary"),
+    (
+        "base64Binary",
+        "http://www.w3.org/2001/XMLSchema#base64Binary",
+    ),
     (
         "rfc822Name",
         "urn:oasis:names:tc:xacml:1.0:data-type:rfc822Name",
     ),
-    ("x500Name", "urn:oasis:names:tc:xacml:1.0:data-type:x500Name"),
+    (
+        "x500Name",
+        "urn:oasis:names:tc:xacml:1.0:data-type:x500Name",
+    ),
     ("dnsName", "urn:oasis:names:tc:xacml:2.0:data-type:dnsName"),
-    ("ipAddress", "urn:oasis:names:tc:xacml:2.0:data-type:ipAddress"),
+    (
+        "ipAddress",
+        "urn:oasis:names:tc:xacml:2.0:data-type:ipAddress",
+    ),
 ];
 
 // `RESERVED_IDS`.
@@ -1751,7 +1797,9 @@ fn authzen_catalogue_problem(value: &str) -> Option<(ErrorCode, String)> {
         ));
     }
     let multiplicity = text_member(given, "multiplicity");
-    if !multiplicity.is_empty() && multiplicity != "single" && multiplicity != "bag"
+    if !multiplicity.is_empty()
+        && multiplicity != "single"
+        && multiplicity != "bag"
     {
         return Some((bad, "multiplicity must be single or bag".into()));
     }
@@ -1983,7 +2031,12 @@ fn list_problem(name: &str, value: &Value) -> String {
 fn strings_of(value: &Value) -> Vec<String> {
     value
         .as_array()
-        .map(|l| l.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|l| {
+            l.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -2044,7 +2097,9 @@ fn limits_schema_problem(node: &Value, path: &str, depth: usize) -> String {
             return inner;
         }
     }
-    if o.get("additionalProperties").is_some_and(|v| !v.is_boolean()) {
+    if o.get("additionalProperties")
+        .is_some_and(|v| !v.is_boolean())
+    {
         return format!(
             "{}.additionalProperties must be true or false (a schema there \
              is outside the subset)",
@@ -2061,7 +2116,10 @@ fn limits_schema_problem(node: &Value, path: &str, depth: usize) -> String {
 }
 
 // `accessTypeCatalogueProblem(definition, out)`.
-fn catalogue_problem(definition: &Map<String, Value>, own_type: &str) -> String {
+fn catalogue_problem(
+    definition: &Map<String, Value>,
+    own_type: &str,
+) -> String {
     let mut kept: Vec<(&str, Vec<String>)> = Vec::new();
     for name in [
         "actions",
@@ -2082,7 +2140,9 @@ fn catalogue_problem(definition: &Map<String, Value>, own_type: &str) -> String 
         kept.push((name, strings_of(value)));
     }
     let list = |name: &str| -> Option<Vec<String>> {
-        kept.iter().find(|(n, _)| *n == name).map(|(_, v)| v.clone())
+        kept.iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, v)| v.clone())
     };
     if list("required")
         .unwrap_or_default()
@@ -2285,7 +2345,9 @@ fn parse_row(value: &Value, at: &str) -> Result<FgaRow, String> {
         ));
     }
     let multiplicity = text_member(given, "multiplicity");
-    if !multiplicity.is_empty() && multiplicity != "single" && multiplicity != "bag"
+    if !multiplicity.is_empty()
+        && multiplicity != "single"
+        && multiplicity != "bag"
     {
         return Err(format!("{}.multiplicity must be single or bag", at));
     }

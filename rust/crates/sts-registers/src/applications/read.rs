@@ -53,8 +53,7 @@ fn withheld_sentence(value: &str, name: &str) -> String {
         "scimClientPassword"
         | "scimClientOAuthClientSecret"
         | "scimClientTlsPrivateKey" => {
-            "(withheld: a SCIM client credential, set, never shown)"
-                .to_string()
+            "(withheld: a SCIM client credential, set, never shown)".to_string()
         }
         _ => format!(
             "(withheld: Kerberos key material, {} characters, never shown)",
@@ -146,7 +145,8 @@ impl ApplicationRegistry {
     // value is the value opened, where it opens.
     fn open_sealed_fields(&self, fields: &Fields, identifier: &str) -> Fields {
         let mut out = fields.clone();
-        if let Some(Value::String(token)) = out.get("appRegistrationAccessToken")
+        if let Some(Value::String(token)) =
+            out.get("appRegistrationAccessToken")
         {
             if self.env.is_sealed(token) {
                 let opened = self.registration_access_token_of(fields);
@@ -158,7 +158,8 @@ impl ApplicationRegistry {
                 out.insert("appRegistrationAccessToken".into(), json!(shown));
             }
         }
-        if let Some(Value::Array(secrets)) = out.get("oauthClientSecret").cloned()
+        if let Some(Value::Array(secrets)) =
+            out.get("oauthClientSecret").cloned()
         {
             let any = secrets
                 .iter()
@@ -209,13 +210,17 @@ impl ApplicationRegistry {
     /// `view(record, entry)`: what every page and the API show of an
     /// application.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn view(&self, record: &Record, entry: Option<&StoredApplication>) -> Value {
+    pub fn view(
+        &self,
+        record: &Record,
+        entry: Option<&StoredApplication>,
+    ) -> Value {
         let t = Tables::get();
         let observed: Vec<Value> = observed_return_addresses(&record.fields)
             .into_iter()
             .map(|row| {
-                let registered = self
-                    .return_addresses_of(&record.fields, &row.attribute);
+                let registered =
+                    self.return_addresses_of(&record.fields, &row.attribute);
                 let trusted = row.held
                     && registered
                         .get("registered")
@@ -235,8 +240,10 @@ impl ApplicationRegistry {
                 by
             }
         };
-        let mut fields =
-            self.open_sealed_fields(&withhold_fields(&record.fields), &record.identifier);
+        let mut fields = self.open_sealed_fields(
+            &withhold_fields(&record.fields),
+            &record.identifier,
+        );
         if !record.description.is_empty() {
             fields.insert("description".into(), json!(record.description));
         }
@@ -408,7 +415,8 @@ impl ApplicationRegistry {
                 .looked_up(attribute, wanted)
                 .into_iter()
                 .filter(|row| {
-                    row.get("identifier").and_then(Value::as_str) != Some(wanted)
+                    row.get("identifier").and_then(Value::as_str)
+                        != Some(wanted)
                 })
                 .collect();
             if found.is_empty() {
@@ -449,9 +457,10 @@ impl ApplicationRegistry {
         for item in self.listing() {
             let fields = json!({ "fields": item.record.fields });
             let permissions = crate::app_permissions::permissions_of(&fields);
-            let Some(hit) = permissions.iter().find(|p| {
-                p.get("id").and_then(Value::as_str) == Some(wanted)
-            }) else {
+            let Some(hit) = permissions
+                .iter()
+                .find(|p| p.get("id").and_then(Value::as_str) == Some(wanted))
+            else {
                 continue;
             };
             let row = self.view(&item.record, Some(&item.entry));
@@ -540,11 +549,12 @@ impl ApplicationRegistry {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn allowed_scopes_of(&self, client_id: &str) -> Option<Vec<String>> {
         let found = self.client_or_identifier(client_id)?;
-        let held: Vec<String> = values_of(found["fields"].get("oauthAllowedScope"))
-            .iter()
-            .map(|one| crate::js::trim(one).to_string())
-            .filter(|one| !one.is_empty())
-            .collect();
+        let held: Vec<String> =
+            values_of(found["fields"].get("oauthAllowedScope"))
+                .iter()
+                .map(|one| crate::js::trim(one).to_string())
+                .filter(|one| !one.is_empty())
+                .collect();
         if held.is_empty() {
             None
         } else {
@@ -589,8 +599,9 @@ impl ApplicationRegistry {
             .as_ref()
             .and_then(|f| f["fields"].as_object().cloned())
             .unwrap_or_default();
-        let required =
-            first_of(&fields, "oauthHttpSignedRequests").to_uppercase() == "TRUE";
+        let required = first_of(&fields, "oauthHttpSignedRequests")
+            .to_uppercase()
+            == "TRUE";
         json!({ "known": found.is_some(), "required": required,
                 "fields": Value::Object(fields) })
     }

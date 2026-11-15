@@ -169,9 +169,7 @@ fn read_origin(value: &str) -> Result<String, String> {
         return Ok(format!("{}://{}", scheme, host.to_lowercase()));
     }
     let Some(parsed) = js_url(text) else {
-        return Err(
-            "is not an origin: its host or port does not parse".into()
-        );
+        return Err("is not an origin: its host or port does not parse".into());
     };
     if parsed.hostname.is_empty() || parsed.origin == "null" {
         return Err(format!("is an {scheme} origin with no host"));
@@ -339,11 +337,10 @@ impl Reader<'_> {
             }
         }
         let text = String::from_utf16_lossy(&self.s[from..self.i]);
-        let n = text
-            .parse::<i64>()
-            .ok()
-            .map(Number::from)
-            .or_else(|| text.parse::<f64>().ok().and_then(Number::from_f64));
+        let n =
+            text.parse::<i64>().ok().map(Number::from).or_else(|| {
+                text.parse::<f64>().ok().and_then(Number::from_f64)
+            });
         Ok(n.map(Value::Number).unwrap_or(Value::Null))
     }
 
@@ -399,10 +396,9 @@ impl Reader<'_> {
                 continue;
             }
             if c < 0x20 {
-                return Err(self.at(
-                    "Bad control character in string literal",
-                    self.i,
-                ));
+                return Err(
+                    self.at("Bad control character in string literal", self.i)
+                );
             }
             units.push(c);
             self.i += 1;
@@ -424,9 +420,7 @@ impl Reader<'_> {
             let key = self.string()?;
             self.skip_ws();
             if self.peek() != Some(0x3a) {
-                return Err(
-                    self.at("Expected ':' after property name", self.i)
-                );
+                return Err(self.at("Expected ':' after property name", self.i));
             }
             self.i += 1;
             let v = self.value()?;
@@ -517,9 +511,7 @@ pub fn json_parse(text: &str) -> Result<Value, String> {
     let value = r.value()?;
     r.skip_ws();
     if r.i < units.len() {
-        return Err(
-            r.at("Unexpected non-whitespace character after JSON", r.i)
-        );
+        return Err(r.at("Unexpected non-whitespace character after JSON", r.i));
     }
     Ok(value)
 }

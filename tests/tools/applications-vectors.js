@@ -695,7 +695,10 @@ async function child(ROOT, outFile) {
   call('ownerValues', []);
   call('count', []);
   call('list', []);
-  call('isInternalIdentifier', ['sts-admin-console']);
+  ['sts-admin-console', 'sts-resource', 'sts-management-api',
+   'sts-debugger-ui', 'reg-oauth'].forEach(function (one) {
+    call('isInternalIdentifier', [one]);
+  });
 
   // THE /admin-api ACTS.
   act({ action: 'create', identifier: 'api-made', name: 'Made by the API',

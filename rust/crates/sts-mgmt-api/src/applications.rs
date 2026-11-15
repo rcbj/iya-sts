@@ -71,10 +71,7 @@ fn families_of_choices(values: &[String]) -> Vec<String> {
 #[tracing::instrument(level = "debug", skip(setup, query))]
 pub fn list(setup: &Setup<'_>, query: &Query) -> Option<Answered> {
     let registry = setup.ports.applications()?;
-    let one = query
-        .get("application")
-        .map(js_string)
-        .unwrap_or_default();
+    let one = query.get("application").map(js_string).unwrap_or_default();
     if !one.trim().is_empty() {
         return None;
     }

@@ -1127,10 +1127,8 @@ impl Directory {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn restamp_created(&mut self, r: usize, dn: &str, created: &str) {
         let key = normalize_dn(Some(dn));
-        if let Some(stored) = self
-            .realms
-            .get_mut(r)
-            .and_then(|t| t.entries.get_mut(&key))
+        if let Some(stored) =
+            self.realms.get_mut(r).and_then(|t| t.entries.get_mut(&key))
         {
             stored.created_at = Some(created.to_string());
             stored

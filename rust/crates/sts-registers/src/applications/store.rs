@@ -153,7 +153,8 @@ impl ApplicationRegistry {
         r: usize,
         identifier: &str,
     ) -> Option<&'d Entry> {
-        if let Some(direct) = dir.get(r, &self.application_dn(dir, r, identifier))
+        if let Some(direct) =
+            dir.get(r, &self.application_dn(dir, r, identifier))
         {
             return Some(direct);
         }
@@ -241,7 +242,8 @@ impl ApplicationRegistry {
             .map(|e| e.dn.clone())
             .unwrap_or_else(|| self.application_dn(&dir, r, identifier));
         let max = self.env.setting("applications.max").as_i64().unwrap_or(0);
-        if existing.is_none() && Self::entries_under(&dir, r).len() as i64 >= max
+        if existing.is_none()
+            && Self::entries_under(&dir, r).len() as i64 >= max
         {
             tracing::warn!(
                 "{}ldap: not creating {}; ou=applications holds its maximum \
@@ -322,7 +324,8 @@ impl ApplicationRegistry {
             return false;
         };
         drop(dir);
-        let mut names: Vec<String> = stored.attributes.keys().cloned().collect();
+        let mut names: Vec<String> =
+            stored.attributes.keys().cloned().collect();
         names.sort();
         audit_directory(
             self.effects.as_ref(),
@@ -332,7 +335,8 @@ impl ApplicationRegistry {
             false,
         );
         // `noteApplicationRemoved(stored, 'the application registry')`.
-        if let Some(id) = stored.first("appidentifier").filter(|i| !i.is_empty())
+        if let Some(id) =
+            stored.first("appidentifier").filter(|i| !i.is_empty())
         {
             self.effects.application_removed(
                 id,

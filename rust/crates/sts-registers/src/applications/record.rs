@@ -124,7 +124,14 @@ pub fn from_generalized_time(value: &str) -> i64 {
         return 0;
     }
     let n = |a: usize, z: usize| value[a..z].parse::<i64>().unwrap_or(0);
-    date_utc(n(0, 4), n(4, 6) - 1, n(6, 8), n(8, 10), n(10, 12), n(12, 14))
+    date_utc(
+        n(0, 4),
+        n(4, 6) - 1,
+        n(6, 8),
+        n(8, 10),
+        n(10, 12),
+        n(12, 14),
+    )
 }
 
 /// `Date.UTC(y, m, d, h, mi, s)`, overflowing months and days as it does.
@@ -189,8 +196,9 @@ impl Record {
                 Some(other) => vec![crate::js::string(other)],
             }
         };
-        let first =
-            |name: &str| -> String { all(name).into_iter().next().unwrap_or_default() };
+        let first = |name: &str| -> String {
+            all(name).into_iter().next().unwrap_or_default()
+        };
         let int = |name: &str| -> i64 { js_parse_int(&first(name)) };
         let mut fields = Fields::new();
         for row in &Tables::get().schema.attributes {
@@ -332,7 +340,8 @@ pub fn js_parse_int(text: &str) -> i64 {
         Some(rest) => (true, rest),
         None => (false, t.strip_prefix('+').unwrap_or(t)),
     };
-    let lead: String = digits.chars().take_while(char::is_ascii_digit).collect();
+    let lead: String =
+        digits.chars().take_while(char::is_ascii_digit).collect();
     if lead.is_empty() {
         return 0;
     }

@@ -204,35 +204,71 @@ async fn the_applications_operations_answer_within_their_models() {
         r.body(body).unwrap()
     };
     let cases = vec![
-        ("POST", "/admin-api/applications/create",
-         Some(json!({ "identifier": "router-app", "name": "Router app",
+        (
+            "POST",
+            "/admin-api/applications/create",
+            Some(json!({ "identifier": "router-app", "name": "Router app",
                       "protocols": ["oauth2", "oidc"],
                       "fields": { "oauthRedirectUri":
                                   ["https://router.example/cb"] } })),
-         200),
-        ("POST", "/admin-api/applications/create",
-         Some(json!({ "identifier": "router-app" })), 400),
-        ("POST", "/admin-api/applications/set",
-         Some(json!({ "application": "router-app", "attribute": "appName",
-                      "value": "Renamed" })), 200),
-        ("POST", "/admin-api/applications/add-secret",
-         Some(json!({ "application": "router-app" })), 200),
-        ("POST", "/admin-api/applications/update-fields",
-         Some(json!({ "application": "router-app",
+            200,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/create",
+            Some(json!({ "identifier": "router-app" })),
+            400,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/set",
+            Some(json!({ "application": "router-app", "attribute": "appName",
+                      "value": "Renamed" })),
+            200,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/add-secret",
+            Some(json!({ "application": "router-app" })),
+            200,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/update-fields",
+            Some(json!({ "application": "router-app",
                       "fields": { "appHomePageUrl": "https://router.example/" } })),
-         200),
+            200,
+        ),
         ("GET", "/admin-api/applications", None, 200),
         ("GET", "/admin-api/applications?q=router&per=1", None, 200),
-        ("GET", "/admin-api/applications?application=router-app", None, 404),
-        ("POST", "/admin-api/applications/teleport",
-         Some(json!({ "application": "router-app" })), 400),
-        ("POST", "/admin-api/applications/generate-did-key",
-         Some(json!({ "application": "router-app" })), 404),
-        ("POST", "/admin-api/applications/forget",
-         Some(json!({ "application": "router-app" })), 200),
+        (
+            "GET",
+            "/admin-api/applications?application=router-app",
+            None,
+            404,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/teleport",
+            Some(json!({ "application": "router-app" })),
+            400,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/generate-did-key",
+            Some(json!({ "application": "router-app" })),
+            404,
+        ),
+        (
+            "POST",
+            "/admin-api/applications/forget",
+            Some(json!({ "application": "router-app" })),
+            200,
+        ),
     ];
     for (method, url, body, status) in cases {
-        let response = app.clone().oneshot(send(method, url, body)).await.unwrap();
+        let response =
+            app.clone().oneshot(send(method, url, body)).await.unwrap();
         let got = response.status().as_u16();
         let code = sts_http::code_of(&response).map(|c| c.as_str().to_string());
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

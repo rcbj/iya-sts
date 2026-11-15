@@ -83,7 +83,11 @@ impl ApplicationRegistry {
     }
 
     // `openCredentialText(text, label, what)`: '' when it will not open.
-    pub(crate) fn open_credential_text(&self, text: &str, label: &str) -> String {
+    pub(crate) fn open_credential_text(
+        &self,
+        text: &str,
+        label: &str,
+    ) -> String {
         self.env.open(text, label).unwrap_or_default()
     }
 
@@ -116,7 +120,10 @@ impl ApplicationRegistry {
     /// `parseClientSecretValue(value)`: a stored value as a record, or
     /// None for an empty one.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn parse_client_secret_value(&self, value: &str) -> Option<SecretRecord> {
+    pub fn parse_client_secret_value(
+        &self,
+        value: &str,
+    ) -> Option<SecretRecord> {
         let stored = crate::js::trim(value).to_string();
         let opened = if self.env.is_sealed(&stored) {
             self.open_credential_text(&stored, CLIENT_SECRET_LABEL)
@@ -128,7 +135,8 @@ impl ApplicationRegistry {
             return None;
         }
         if text.starts_with('{') {
-            if let Ok(Value::Object(parsed)) = serde_json::from_str::<Value>(&text)
+            if let Ok(Value::Object(parsed)) =
+                serde_json::from_str::<Value>(&text)
             {
                 if let Some(Value::String(secret)) = parsed.get("secret") {
                     if !secret.is_empty() {
@@ -174,14 +182,18 @@ impl ApplicationRegistry {
                 Value::String(record.description.clone()),
             );
         }
-        let text = serde_json::to_string(&Value::Object(out)).unwrap_or_default();
+        let text =
+            serde_json::to_string(&Value::Object(out)).unwrap_or_default();
         self.seal_credential_text(&text, CLIENT_SECRET_LABEL, "A client secret")
     }
 
     /// `clientSecretRecordsOf(fields)`: each distinct secret once, newest
     /// first, ties in stored order.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn client_secret_records_of(&self, fields: &Fields) -> Vec<SecretRecord> {
+    pub fn client_secret_records_of(
+        &self,
+        fields: &Fields,
+    ) -> Vec<SecretRecord> {
         let mut seen: Vec<String> = Vec::new();
         let mut records: Vec<SecretRecord> = Vec::new();
         for one in values_of(fields.get("oauthClientSecret")) {
@@ -349,7 +361,9 @@ impl ApplicationRegistry {
         if identifier == "sts-api-client"
             && sts_core::realm::current_id() == "default"
         {
-            crate::js::or_empty(Some(&self.env.setting("adminApi.clientSecret")))
+            crate::js::or_empty(Some(
+                &self.env.setting("adminApi.clientSecret"),
+            ))
         } else {
             String::new()
         }
@@ -534,7 +548,11 @@ impl ApplicationRegistry {
 
     /// `addClientSecret(identifier, {description, lifetimeDays, actor})`.
     #[tracing::instrument(level = "debug", skip(self, options))]
-    pub fn add_client_secret(&self, identifier: &str, options: &Value) -> Marked {
+    pub fn add_client_secret(
+        &self,
+        identifier: &str,
+        options: &Value,
+    ) -> Marked {
         let loaded = self.load(identifier);
         if !loaded.known {
             return Self::unknown_application(identifier);
@@ -633,8 +651,8 @@ impl ApplicationRegistry {
         let actor = crate::js::or_empty(options.get("actor"));
         let mut record = loaded.record;
         let held = self.client_secret_records_of(&record.fields);
-        let wanted =
-            crate::js::trim(&crate::js::or_empty(options.get("id"))).to_string();
+        let wanted = crate::js::trim(&crate::js::or_empty(options.get("id")))
+            .to_string();
         let Some(target) = held.iter().find(|one| one.id == wanted) else {
             let ids: Vec<String> =
                 held.iter().map(|one| one.id.clone()).collect();
@@ -664,8 +682,11 @@ impl ApplicationRegistry {
                     .to_string()],
             );
         }
-        let left: Vec<SecretRecord> =
-            held.iter().filter(|one| one.id != wanted).cloned().collect();
+        let left: Vec<SecretRecord> = held
+            .iter()
+            .filter(|one| one.id != wanted)
+            .cloned()
+            .collect();
         if let Err(e) = self.write_client_secret_records(&mut record, &left) {
             return refused(e.code, vec![e.message]);
         }

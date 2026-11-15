@@ -22,7 +22,9 @@ const MAX_ROWS: i64 = 300;
 // `parseInt(String(x || ''), 10)`: None for NaN.
 fn parse_int(value: Option<&Value>) -> Option<i64> {
     let text = match value {
-        Some(Value::Array(l)) => l.first().map(crate::js::string).unwrap_or_default(),
+        Some(Value::Array(l)) => {
+            l.first().map(crate::js::string).unwrap_or_default()
+        }
         Some(v) if crate::js::truthy(v) => crate::js::string(v),
         _ => String::new(),
     };
@@ -31,7 +33,8 @@ fn parse_int(value: Option<&Value>) -> Option<i64> {
         Some(r) => (true, r),
         None => (false, t.strip_prefix('+').unwrap_or(t)),
     };
-    let lead: String = digits.chars().take_while(char::is_ascii_digit).collect();
+    let lead: String =
+        digits.chars().take_while(char::is_ascii_digit).collect();
     if lead.is_empty() {
         return None;
     }
@@ -42,16 +45,22 @@ fn parse_int(value: Option<&Value>) -> Option<i64> {
 // A query member as text (`String(req.query.x || '')`).
 fn text(query: &Map<String, Value>, key: &str) -> String {
     match query.get(key) {
-        Some(Value::Array(l)) => {
-            l.iter().map(crate::js::string).collect::<Vec<_>>().join(",")
-        }
+        Some(Value::Array(l)) => l
+            .iter()
+            .map(crate::js::string)
+            .collect::<Vec<_>>()
+            .join(","),
         other => crate::js::or_empty(other),
     }
 }
 
 /// `pagingOf(query, total, {noun})`.
 #[tracing::instrument(level = "debug", skip(query))]
-pub fn paging_of(query: &Map<String, Value>, total: usize, noun: &str) -> Value {
+pub fn paging_of(
+    query: &Map<String, Value>,
+    total: usize,
+    noun: &str,
+) -> Value {
     let asked = parse_int(query.get("per"));
     let per = match asked {
         Some(n) if n > 0 => n.min(MAX_ROWS),
@@ -84,7 +93,9 @@ pub fn paging_json(pg: &Value) -> Value {
 fn masked_credential(value: &Value) -> Value {
     const MASK: &str = "(set — not returned)";
     match value {
-        Value::Array(l) => Value::Array(l.iter().map(|_| json!(MASK)).collect()),
+        Value::Array(l) => {
+            Value::Array(l.iter().map(|_| json!(MASK)).collect())
+        }
         Value::Null => Value::Null,
         Value::String(s) if s.is_empty() => value.clone(),
         _ => json!(MASK),
@@ -97,7 +108,9 @@ pub fn kinds_json() -> Value {
     Value::Array(
         KINDS
             .iter()
-            .map(|k| json!({ "kind": k.kind, "label": k.label, "what": k.what }))
+            .map(
+                |k| json!({ "kind": k.kind, "label": k.label, "what": k.what }),
+            )
             .collect(),
     )
 }
@@ -115,8 +128,14 @@ pub fn protocols_json() -> Value {
                 o.insert("label".into(), json!(p.label));
                 o.insert("kind".into(), json!(p.kind));
                 o.insert("kinds".into(), json!(p.kinds));
-                o.insert("identifierAttribute".into(), json!(p.identifier_attribute));
-                o.insert("redirectAttribute".into(), json!(p.redirect_attribute));
+                o.insert(
+                    "identifierAttribute".into(),
+                    json!(p.identifier_attribute),
+                );
+                o.insert(
+                    "redirectAttribute".into(),
+                    json!(p.redirect_attribute),
+                );
                 for (k, v) in [
                     ("logoutAttribute", p.logout_attribute),
                     ("secretAttribute", p.secret_attribute),
@@ -165,7 +184,10 @@ impl ApplicationRegistry {
             .get(&identifier)
             .and_then(|r| r["fields"].as_object().cloned())
             .unwrap_or_default();
-        let expires = if fields.get("oauthClientSecret").is_some_and(crate::js::truthy) {
+        let expires = if fields
+            .get("oauthClientSecret")
+            .is_some_and(crate::js::truthy)
+        {
             self.secret_expiry_of(&fields)
         } else {
             0
@@ -212,7 +234,9 @@ impl ApplicationRegistry {
         .filter(|one| !one.is_empty())
         .collect();
         let has = |row: &Value, member: &str, kind: &str| -> bool {
-            crate::js::strings(row.get(member)).iter().any(|k| k == kind)
+            crate::js::strings(row.get(member))
+                .iter()
+                .any(|k| k == kind)
         };
         let filtered: Vec<&Value> = all
             .iter()
@@ -252,13 +276,20 @@ impl ApplicationRegistry {
         for k in KINDS {
             let n = all
                 .iter()
-                .filter(|row| has(row, "kinds", k.kind) || has(row, "declaredKinds", k.kind))
+                .filter(|row| {
+                    has(row, "kinds", k.kind)
+                        || has(row, "declaredKinds", k.kind)
+                })
                 .count();
             kind_counts.insert(k.kind.into(), json!(n));
         }
         let authentications: i64 = all
             .iter()
-            .map(|r| r.get("authentications").and_then(Value::as_i64).unwrap_or(0))
+            .map(|r| {
+                r.get("authentications")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(0)
+            })
             .sum();
         let rows: Vec<Value> = shown
             .iter()

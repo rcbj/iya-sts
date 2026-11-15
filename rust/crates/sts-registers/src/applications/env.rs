@@ -17,7 +17,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use sts_core::errors::ErrorCode;
 use sts_core::mode::Mode;
-use sts_core::settings::{self, Settings, SettingValue};
+use sts_core::settings::{self, SettingValue, Settings};
 
 use super::{AppEffects, AppEnv};
 
