@@ -874,13 +874,171 @@ fn tape_realm<R>(_tape: &Arc<Tape>, f: impl FnOnce() -> R) -> R {
 }
 
 mod webauthn {
-    use serde_json::Value as Json;
+    use std::sync::Mutex;
 
-    pub fn check(_v: &Json, _wrong: &mut Vec<String>) -> usize {
-        0
+    use serde_json::{json, Value as Json};
+    use sts_credentials::webauthn::attestation::{verify_statement, Context};
+    use sts_credentials::webauthn::ceremony::{
+        cose_name, insecure_cose_ids, verify_assertion, verify_registration,
+        AssertionInput, RegistrationInput,
+    };
+
+    static WRITTEN: Mutex<Vec<Json>> = Mutex::new(Vec::new());
+
+    fn text(v: &Json) -> String {
+        v.as_str().unwrap_or("").to_string()
+    }
+
+    fn registration_input(i: &Json) -> RegistrationInput {
+        RegistrationInput {
+            attestation_object: text(&i["attestationObject"]),
+            client_data_json: text(&i["clientDataJSON"]),
+            expected_challenge: i["expectedChallenge"].clone(),
+            expected_origin: i["expectedOrigin"].clone(),
+            expected_rp_id: text(&i["expectedRpId"]),
+            require_user_verification: i["requireUserVerification"]
+                == json!(true),
+            expected_algorithms: i["expectedAlgorithms"].as_array().map(|l| {
+                l.iter().map(|n| n.as_f64().unwrap_or(f64::NAN)).collect()
+            }),
+        }
+    }
+
+    fn assertion_input(i: &Json) -> AssertionInput {
+        AssertionInput {
+            authenticator_data: text(&i["authenticatorData"]),
+            client_data_json: text(&i["clientDataJSON"]),
+            signature: text(&i["signature"]),
+            expected_challenge: i["expectedChallenge"].clone(),
+            expected_origin: i["expectedOrigin"].clone(),
+            expected_rp_id: text(&i["expectedRpId"]),
+            require_user_verification: i["requireUserVerification"]
+                == json!(true),
+            previous_sign_count: i["previousSignCount"].as_f64(),
+            public_key_jwk: i["publicKeyJwk"].clone(),
+            allow_insecure: i["allowInsecure"] == json!(true),
+        }
+    }
+
+    /// A thrown sentence: the same, except a JSON parser's own words after
+    /// `clientDataJSON is not JSON: `, which are V8's in Node.
+    fn same_threw(node: &str, rust: &str) -> bool {
+        let prefix = "clientDataJSON is not JSON: ";
+        node == rust || (node.starts_with(prefix) && rust.starts_with(prefix))
+    }
+
+    pub fn check(v: &Json, wrong: &mut Vec<String>) -> usize {
+        if v.is_null() || v.get("registrations").is_none() {
+            wrong.push("webauthn: no vectors".to_string());
+            return 0;
+        }
+        let mut counted = 0;
+        for (id, name) in v["coseAlgs"].as_object().unwrap() {
+            let id: i64 = id.parse().unwrap();
+            if cose_name(id) != name.as_str() {
+                wrong.push(format!("webauthn: COSE {id} is {name} in Node"));
+            }
+        }
+        if json!(insecure_cose_ids()) != v["insecure"] {
+            wrong.push("webauthn: the insecure COSE ids differ".to_string());
+        }
+        for row in v["registrations"].as_array().unwrap() {
+            counted += 1;
+            let name = text(&row["name"]);
+            let got = verify_registration(&registration_input(&row["input"]));
+            match (&got, row["threw"].as_str()) {
+                (Err(e), Some(t)) if same_threw(t, e) => continue,
+                (Err(e), _) => {
+                    wrong.push(format!(
+                        "webauthn {name}: Rust threw {e}, Node {}",
+                        row["threw"]
+                    ));
+                    continue;
+                }
+                (Ok(_), Some(t)) => {
+                    wrong.push(format!("webauthn {name}: Node threw {t}"));
+                    continue;
+                }
+                (Ok(_), None) => {}
+            }
+            let r = got.unwrap();
+            if r.answer != row["answer"] {
+                wrong.push(format!(
+                    "webauthn {name}: Node {} / Rust {}",
+                    row["answer"], r.answer
+                ));
+            }
+            if row["statement"].is_null() {
+                continue;
+            }
+            let ctx = Context {
+                auth_data: r.auth_data.clone(),
+                client_data_hash: r.client_data_hash.clone(),
+                cose: r.credential_public_key.clone(),
+                cose_alg: r.cose_alg,
+                credential_jwk: r.answer["publicKeyJwk"].clone(),
+                aaguid: r.aaguid.clone(),
+                credential_id: r.credential_id.clone(),
+                rp_id_hash: r.rp_id_hash.clone(),
+                allow_insecure: row["insecure"] == json!(true),
+            };
+            let fmt = r.answer["fmt"].as_str().unwrap_or("").to_string();
+            let st = r
+                .att_stmt
+                .clone()
+                .unwrap_or(sts_credentials::webauthn::cbor::Cbor::Null);
+            let mine = verify_statement(&fmt, &st, &ctx).to_json();
+            if mine != row["statement"] {
+                wrong.push(format!(
+                    "webauthn {name} statement: Node {} / Rust {}",
+                    row["statement"], mine
+                ));
+            }
+        }
+        for row in v["assertions"].as_array().unwrap() {
+            counted += 1;
+            let name = text(&row["name"]);
+            match (
+                verify_assertion(&assertion_input(&row["input"])),
+                row["threw"].as_str(),
+            ) {
+                (Err(e), Some(t)) if same_threw(t, &e) => {}
+                (Ok(a), None) if a == row["answer"] => {}
+                (got, _) => wrong.push(format!(
+                    "webauthn assertion {name}: Node {} {} / Rust {:?}",
+                    row["answer"], row["threw"], got
+                )),
+            }
+        }
+        let mut written = Vec::new();
+        for row in v["reverse"].as_array().unwrap() {
+            counted += 1;
+            match verify_registration(&registration_input(&row["registration"]))
+            {
+                Ok(r) => {
+                    let jwk = r.answer["publicKeyJwk"].clone();
+                    let mut input = row["assertion"].clone();
+                    input["publicKeyJwk"] = jwk.clone();
+                    match verify_assertion(&assertion_input(&input)) {
+                        Ok(a) if a["ok"] == json!(true) => {}
+                        other => wrong.push(format!(
+                            "webauthn reverse {}: {:?}",
+                            row["alg"], other
+                        )),
+                    }
+                    written.push(json!({ "alg": row["alg"],
+                                         "publicKeyJwk": jwk }));
+                }
+                Err(e) => {
+                    wrong.push(format!("webauthn reverse {}: {e}", row["alg"]))
+                }
+            }
+        }
+        *WRITTEN.lock().unwrap() = written;
+        counted
     }
 
     pub fn written() -> Json {
-        Json::Null
+        json!({ "reverse": *WRITTEN.lock().unwrap() })
     }
 }

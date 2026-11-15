@@ -970,4 +970,77 @@ async function build(ROOT) {
              .build(ROOT) };
 }
 
-module.exports = { build: build, PENDING: PENDING, PRINTED: PRINTED };
+/**
+ * The other direction: what the crate STORED, held to Node. Every hash
+ * Rust wrote where Node wrote one is verified by Node's
+ * `crypto.verifySecret()` against the plaintext Node hashed; every stored
+ * JSON value Rust wrote is read back by Node's parser; and Node verifies
+ * an assertion with each public key Rust read out of a registration
+ * (`credentials-webauthn.js`).
+ *
+ * @param {string} ROOT - the repository root
+ * @param {any} rust - `credentials-rust.json`
+ * @param {any} node - `credentials-node.json`
+ * @param {Function} check - the runner's check collector
+ */
+function checkRust(ROOT, rust, node, check) {
+  const stsCrypto = require(path.join(ROOT, 'common', 'crypto'));
+  const nodeCases = [].concat(node.totp, node.backup, node.apps,
+                              node.scenarios);
+  const rustCases = rust.cases || [];
+  let hashes = 0;
+  const wrong = [];
+  // Walks Node's and Rust's stored value side by side, JSON inside a
+  // string included, and verifies each hash Rust put where Node put one.
+  const walk = function (a, b, plain, where) {
+    if (typeof a === 'string' && typeof b === 'string') {
+      if (plain[a] !== undefined) {
+        hashes += 1;
+        if (!stsCrypto.verifySecret(plain[a], b)) {
+          wrong.push(where + ': a hash Rust stored does not verify');
+        }
+        return;
+      }
+      let x = null;
+      let y = null;
+      try {
+        x = JSON.parse(a);
+        y = JSON.parse(b);
+      } catch (e) {
+        x = null;
+      }
+      if (x && typeof x === 'object' && y && typeof y === 'object') {
+        walk(x, y, plain, where);
+      }
+      return;
+    }
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      Object.keys(a).forEach(function (k) {
+        walk(a[k], b[k], plain, where + '.' + k);
+      });
+    }
+  };
+  rustCases.forEach(function (row, n) {
+    const mine = nodeCases[n];
+    (row.mutations || []).forEach(function (m, i) {
+      const theirs = (mine && mine.mutations || [])[i];
+      if (!theirs) {
+        wrong.push(row.label + ': a write Node did not make');
+        return;
+      }
+      walk(theirs.value, m.value, (mine && mine.hashes) || {},
+           row.label + ' write ' + i);
+    });
+  });
+  check(rustCases.length === nodeCases.length && wrong.length === 0 &&
+          hashes > 0,
+        'credentials: every one of ' + nodeCases.length + ' cases Rust ' +
+        'replayed is in its place, and Node verifies each of the ' + hashes +
+        ' hashes Rust stored',
+        wrong.slice(0, 5).join('; '));
+  require('./credentials-webauthn.js').checkRust(ROOT, rust.webauthn,
+                                                 node.webauthn, check);
+}
+
+module.exports = { build: build, checkRust: checkRust, PENDING: PENDING,
+                   PRINTED: PRINTED };

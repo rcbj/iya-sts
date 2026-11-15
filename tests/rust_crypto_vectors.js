@@ -82,6 +82,16 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // The credentials' (#444 phase 5): what sts-credentials stored, verified
+  // by Node, and the public keys it read, verified with by Node.
+  if (fs.existsSync(path.join(VECTORS, 'credentials-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'credentials-node.json'))) {
+    require('./tools/credentials-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('credentials-rust.json'),
+      read('credentials-node.json'), function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The registers' role entries (#444, phase 4), which need no other set.
   if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
     registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,
