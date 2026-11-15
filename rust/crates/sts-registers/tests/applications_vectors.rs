@@ -438,7 +438,7 @@ fn run_step(
         "action" => {
             let protocols = a[1]
                 .as_array()
-                .map(|l| l.iter().map(|x| s(x)).collect::<Vec<String>>());
+                .map(|l| l.iter().map(s).collect::<Vec<String>>());
             marked(reg.applications_action(
                 &a[0],
                 protocols,

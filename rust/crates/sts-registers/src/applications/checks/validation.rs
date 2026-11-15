@@ -63,15 +63,14 @@ pub fn js_url(text: &str) -> Option<JsUrl> {
     })
 }
 
-static PRIVATE_USE_SCHEME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$").unwrap()
-});
+static PRIVATE_USE_SCHEME: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"^[a-z][a-z0-9+-]*(?:\.[a-z0-9+-]+)+$").ok());
 
-static HTTP_WITH_HOST: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^https?://[^/]").unwrap());
+static HTTP_WITH_HOST: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"(?i)^https?://[^/]").ok());
 
-static ORIGIN_SHAPE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#\s]+)/?$").unwrap()
+static ORIGIN_SHAPE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(r"^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#\s]+)/?$").ok()
 });
 
 /// `redirectUriProblem(value, {privateUse})`: why a value may not be a
@@ -98,12 +97,18 @@ pub fn redirect_uri_problem(value: &str, private_use: bool) -> Option<String> {
     let scheme = scheme.strip_suffix(':').unwrap_or(&scheme).to_string();
     if scheme == "http" || scheme == "https" {
         // The TEXT, not the parse: `https:/cb` parses with the host `cb`.
-        if !HTTP_WITH_HOST.is_match(value) || parsed.hostname.is_empty() {
+        if !HTTP_WITH_HOST.as_ref().is_some_and(|r| r.is_match(value))
+            || parsed.hostname.is_empty()
+        {
             return Some(format!("is an {scheme} URL with no host"));
         }
         return None;
     }
-    if private_use && PRIVATE_USE_SCHEME.is_match(&scheme) {
+    if private_use
+        && PRIVATE_USE_SCHEME
+            .as_ref()
+            .is_some_and(|r| r.is_match(&scheme))
+    {
         return None;
     }
     Some(if private_use {
@@ -150,7 +155,8 @@ fn read_origin(value: &str) -> Result<String, String> {
                     would allow all of them"
             .into());
     }
-    let Some(shape) = ORIGIN_SHAPE.captures(text) else {
+    let Some(shape) = ORIGIN_SHAPE.as_ref().and_then(|r| r.captures(text))
+    else {
         return Err("is not an origin: it must be scheme://host or \
                     scheme://host:port with no path, query or fragment, \
                     such as https://app.example.com"
@@ -250,11 +256,7 @@ impl Reader<'_> {
                 "Unexpected token '{token}', \"{source}\" is not valid JSON"
             );
         }
-        let start = if pos >= MAX_CONTEXT {
-            pos - MAX_CONTEXT
-        } else {
-            0
-        };
+        let start = pos.saturating_sub(MAX_CONTEXT);
         let end = if pos + MAX_CONTEXT < length {
             pos + MAX_CONTEXT
         } else {

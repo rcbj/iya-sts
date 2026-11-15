@@ -322,6 +322,7 @@ impl ApplicationRegistry {
         items.into_iter().map(|(_, i)| i).collect()
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn listing_records(&self) -> Vec<Record> {
         self.listing().into_iter().map(|i| i.record).collect()
     }

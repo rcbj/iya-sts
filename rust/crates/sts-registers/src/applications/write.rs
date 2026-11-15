@@ -762,6 +762,20 @@ impl ApplicationRegistry {
         Ok(true)
     }
 
+    // `setField()` where a seal failure is only logged, as Node's
+    // `finishClientSecretWrite()` lets it pass.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub(crate) fn set_field_or_log(
+        &self,
+        record: &mut Record,
+        name: &str,
+        value: &Value,
+    ) {
+        if let Err(e) = self.set_field(record, name, value) {
+            tracing::error!("{}{}", sts_core::log::tag(e.code), e.message);
+        }
+    }
+
     // `setField()` where Node cannot fail.
     fn put(&self, record: &mut Record, name: &str, value: Value) -> bool {
         self.set_field(record, name, &value).unwrap_or(false)
@@ -1284,7 +1298,7 @@ impl ApplicationRegistry {
         if !modes.is_empty() {
             return refused(codes::STS_REG_0193, modes);
         }
-        let Ok(days) =
+        let Some(days) =
             Self::client_secret_lifetime_of(detail.get("lifetimeDays"))
         else {
             let d = self

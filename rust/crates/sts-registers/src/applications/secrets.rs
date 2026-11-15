@@ -83,6 +83,7 @@ impl ApplicationRegistry {
     }
 
     // `openCredentialText(text, label, what)`: '' when it will not open.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn open_credential_text(
         &self,
         text: &str,
@@ -206,10 +207,11 @@ impl ApplicationRegistry {
             }
         }
         // A stable sort on createdAt, descending: ties keep their order.
-        records.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        records.sort_by_key(|r| std::cmp::Reverse(r.created_at));
         records
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn now_sec(&self) -> i64 {
         self.env.now_ms().div_euclid(1000)
     }
@@ -380,27 +382,27 @@ impl ApplicationRegistry {
         (n as i64).max(1)
     }
 
-    /// `clientSecretLifetimeOf(raw)`: `Ok(None)` for empty, `Ok(days)` for
-    /// a whole number of days 0..=730, `Err` otherwise.
+    /// `clientSecretLifetimeOf(raw)`: `Some(None)` for empty, `Some(days)`
+    /// for a whole number of days 0..=730, None (not `ok`) otherwise.
     #[tracing::instrument(level = "debug")]
     pub fn client_secret_lifetime_of(
         raw: Option<&Value>,
-    ) -> Result<Option<i64>, ()> {
+    ) -> Option<Option<i64>> {
         let text = match raw {
             None | Some(Value::Null) => String::new(),
             Some(v) => crate::js::trim(&crate::js::string(v)).to_string(),
         };
         if text.is_empty() {
-            return Ok(None);
+            return Some(None);
         }
         let days = js_number(&text);
         if !days.is_finite()
             || !(0.0..=730.0).contains(&days)
             || days.fract() != 0.0
         {
-            return Err(());
+            return None;
         }
-        Ok(Some(days as i64))
+        Some(Some(days as i64))
     }
 
     // `finishClientSecretWrite(identifier, record, opts, detail, summary)`.
@@ -424,7 +426,7 @@ impl ApplicationRegistry {
             if method_before == "none" {
                 record.fields.shift_remove("oauthTokenEndpointAuthMethod");
             }
-            let _ = self.set_field(
+            self.set_field_or_log(
                 record,
                 "oauthTokenEndpointAuthMethod",
                 &Value::String("client_secret_basic".into()),
@@ -464,7 +466,7 @@ impl ApplicationRegistry {
                     }
                     let text =
                         serde_json::to_string(&document).unwrap_or_default();
-                    let _ = self.set_field(
+                    self.set_field_or_log(
                         record,
                         "appRegistrationJson",
                         &Value::String(text),
@@ -564,7 +566,7 @@ impl ApplicationRegistry {
             Self::client_secret_lifetime_of(options.get("lifetimeDays"));
         if crate::js::len_utf16(&description) > 200
             || description.contains(['\r', '\n', '\0'])
-            || lifetime.is_err()
+            || lifetime.is_none()
         {
             return refused(
                 codes::STS_REG_0211,
@@ -575,7 +577,7 @@ impl ApplicationRegistry {
                     .to_string()],
             );
         }
-        let days = lifetime.unwrap_or(None);
+        let days = lifetime.flatten();
         let actor = crate::js::or_empty(options.get("actor"));
         let mut record = loaded.record;
         let held = self.client_secret_records_of(&record.fields);

@@ -50,27 +50,27 @@ pub fn parse_permission_value(value: &str) -> ParsedPermission {
 
 // RFC 6749 section 3.3's scope token: printable ASCII but space, `"` and
 // `\`.
-static SCOPE_TOKEN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[\x21\x23-\x5B\x5D-\x7E]+$").unwrap());
+static SCOPE_TOKEN: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"^[\x21\x23-\x5B\x5D-\x7E]+$").ok());
 
-static OPERATOR_CODE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"STS-[A-Z]+-[0-9]{4}").unwrap());
+static OPERATOR_CODE: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"STS-[A-Z]+-[0-9]{4}").ok());
 
-static COMMAND_ENDPOINT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^https://[^\s#]+$").unwrap());
+static COMMAND_ENDPOINT: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"(?i)^https://[^\s#]+$").ok());
 
-static PLAIN_HTTP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^http:").unwrap());
+static PLAIN_HTTP: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"(?i)^http:").ok());
 
-static DN_SHAPE: LazyLock<Regex> = LazyLock::new(|| {
+static DN_SHAPE: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(
         r"^[A-Za-z][A-Za-z0-9-]*=[^,]+(,\s*[A-Za-z][A-Za-z0-9-]*=[^,]+)*$",
     )
-    .unwrap()
+    .ok()
 });
 
-static IDENTIFIER_SEGMENT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"/\{identifier\}(/|$)").unwrap());
+static IDENTIFIER_SEGMENT: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"/\{identifier\}(/|$)").ok());
 
 /// `permissionBaseProblem(value)`: a base must be an absolute URI.
 #[tracing::instrument(level = "debug")]
@@ -100,7 +100,7 @@ pub fn permission_operator_code_problem(
     description: &str,
 ) -> Option<String> {
     let text = format!("{name}\n{description}");
-    if OPERATOR_CODE.is_match(&text) {
+    if OPERATOR_CODE.as_ref().is_some_and(|r| r.is_match(&text)) {
         return Some(
             "A permission name or description may not contain an operator \
              error code. That value is returned on every page that lists \
@@ -139,7 +139,7 @@ pub fn permission_name_problem(name: &str) -> Option<String> {
                 .into(),
         );
     }
-    if !SCOPE_TOKEN.is_match(name) {
+    if !SCOPE_TOKEN.as_ref().is_some_and(|r| r.is_match(name)) {
         return Some(format!(
             "\"{name}\" is not a legal OAuth scope token. RFC 6749 section \
              3.3 allows any printable ASCII except space, double quote and \
@@ -324,7 +324,9 @@ pub fn owner_lookup_uri_problem(value: &str) -> Option<String> {
     if !once
         || rest.contains('{')
         || rest.contains('}')
-        || !IDENTIFIER_SEGMENT.is_match(text)
+        || !IDENTIFIER_SEGMENT
+            .as_ref()
+            .is_some_and(|r| r.is_match(text))
     {
         return Some(why.into());
     }
@@ -349,7 +351,8 @@ pub fn owner_lookup_uri_problem(value: &str) -> Option<String> {
 // `commandMetadataProblem({command_endpoint})`: an https URL with no
 // fragment (OpenID Provider Commands 1.0).
 fn command_endpoint_problem(value: &str) -> bool {
-    !value.is_empty() && !COMMAND_ENDPOINT.is_match(value)
+    !value.is_empty()
+        && !COMMAND_ENDPOINT.as_ref().is_some_and(|r| r.is_match(value))
 }
 
 /// `addressProblem(attribute, value)`: a return or logout address as its
@@ -384,7 +387,7 @@ pub fn backchannel_scheme_problem(
     public_client: bool,
     dial_problem: &dyn Fn(&str) -> String,
 ) -> Option<Coded> {
-    if !PLAIN_HTTP.is_match(uri) {
+    if !PLAIN_HTTP.as_ref().is_some_and(|r| r.is_match(uri)) {
         return None;
     }
     if public_client {
@@ -468,7 +471,7 @@ pub fn scope_token_problem(value: &str) -> Option<String> {
                 .into(),
         );
     }
-    if !SCOPE_TOKEN.is_match(value) {
+    if !SCOPE_TOKEN.as_ref().is_some_and(|r| r.is_match(value)) {
         return Some(format!(
             "\"{value}\" is not a legal OAuth scope token. RFC 6749 section \
              3.3 allows any printable ASCII except space, double quote and \
@@ -562,7 +565,7 @@ pub fn delegation_attribute_problem(
         ));
     }
     if (attribute == "appDelegationSubjectGroup" || attribute == "appMayAct")
-        && !DN_SHAPE.is_match(text)
+        && !DN_SHAPE.as_ref().is_some_and(|r| r.is_match(text))
     {
         let what = if attribute == "appMayAct" {
             "delegate"
@@ -608,11 +611,13 @@ pub const APPLICATION_REFERENCE_ATTRIBUTES: &[&str] =
 
 // `comparableDn(dn)`.
 fn comparable_dn(dn: &str) -> String {
-    static SPACED_COMMA: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"\s*,\s*").unwrap());
-    SPACED_COMMA
-        .replace_all(&crate::js::lower(crate::js::trim(dn)), ",")
-        .into_owned()
+    static SPACED_COMMA: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"\s*,\s*").ok());
+    let lower = crate::js::lower(crate::js::trim(dn));
+    match SPACED_COMMA.as_ref() {
+        Some(r) => r.replace_all(&lower, ",").into_owned(),
+        None => lower,
+    }
 }
 
 /// One row of `identifiersOf()`: an identifier attribute an entry holds,

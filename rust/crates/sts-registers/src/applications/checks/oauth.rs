@@ -2205,7 +2205,7 @@ fn catalogue_problem(
     }
     if let Some(life) = definition.get("maxLifetimeS") {
         let ok = life.as_f64().is_some_and(|f| {
-            f.fract() == 0.0 && f >= 1.0 && f <= ACCESS_TYPE_MAX_LIFETIME_S
+            f.fract() == 0.0 && (1.0..=ACCESS_TYPE_MAX_LIFETIME_S).contains(&f)
         });
         if !ok {
             return format!(

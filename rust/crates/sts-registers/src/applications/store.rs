@@ -104,6 +104,7 @@ pub struct Owner {
 
 impl ApplicationRegistry {
     // The ambient realm's tree, by index.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn realm_index(dir: &Directory) -> Option<usize> {
         let id = sts_core::realm::current_id();
         dir.realms().iter().position(|t| t.id == id)
