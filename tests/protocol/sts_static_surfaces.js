@@ -537,20 +537,21 @@ async function sectionErrorPage() {
   });
   const box = plain.raw.indexOf("<div class=\"warn\" role=\"alert\">");
   const more = plain.raw.indexOf("<details class=\"prose\">");
-  // A NODE DEFECT, PINNED (found by this job, 2026-11-15): in a realm the
-  // page's portal link carries the realm's prefix TWICE —
-  // `/realm/<id>/realm/<id>/portal`, a 404 — because the link is drawn
-  // with the prefix and `app.js`'s `send()` adds it again. The in-process
-  // file asks the default realm, whose prefix is empty. Pinned so a port
-  // that differs is seen; when Node is fixed this line changes with it.
-  const doubled = "/realm/" + PROD + "/realm/" + PROD + "/portal";
-  const portal = plain.raw.indexOf("href=\"" + doubled + "\"");
+  // A NODE DEFECT, FIXED (found by this job, 2026-11-15; fixed
+  // 2026-11-14): in a realm the page's portal link carried the realm's
+  // prefix TWICE — `/realm/<id>/realm/<id>/portal`, a 404 — because the
+  // link was drawn with the prefix and `app.js`'s `send()` added it again.
+  // It is the realm's portal, its prefix once.
+  const doubled = "/realm/" + PROD + "/realm/" + PROD + "/";
+  const portal = plain.raw.indexOf("href=\"/realm/" + PROD + "/portal\"");
   const diag = plain.raw.indexOf("<section class=\"diagnostics\"");
   check("the shared error page: the error, the RFC 9700 background " +
         "collapsed, the portal, the request's values among the diagnostics, " +
         "the chooser, and no script", function () {
     assert.ok(box > 0 && more > box && portal > more && diag > portal,
               [box, more, portal, diag].join(","));
+    assert.ok(plain.raw.indexOf(doubled) < 0,
+              "a link carries the realm's prefix twice");
     assert.ok(/<form class="language-chooser"/.test(plain.raw));
     assert.ok(/<code>s1<\/code>/.test(plain.raw) &&
               /<code>n1<\/code>/.test(plain.raw) &&

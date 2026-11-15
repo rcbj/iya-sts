@@ -540,9 +540,16 @@ app.use(function (req, res, next) {
 // carrying one posted to the DEFAULT realm from inside any other: the export
 // on /admin/pki, the reset on /admin/config, and Generate Secret on
 // /admin/applications/new, which is where it was noticed.
+//
+// **A LINK THAT ALREADY CARRIES THE PREFIX IS LEFT ALONE (2026-11-14, found
+// by #444's D12)**, as `realms.href()` leaves a redirect target alone. The
+// authorization error page drew its portal link as `currentPrefix() +
+// '/portal'` and this added the prefix again, `/realm/<id>/realm/<id>/portal`,
+// a 404. That page now draws `/portal` like every other page; this is so that
+// the next one written the other way still links where it means to.
 /**
  * Prefixes every root-relative `href`, `action`, `formaction` and `src` in a
- * page with a realm's path prefix.
+ * page with a realm's path prefix, except one that already carries it.
  *
  * @param html - the page
  * @param prefix - the realm's prefix, or '' for the default realm
@@ -554,9 +561,11 @@ function withRealmLinks(html, prefix) {
     log.debug("Leaving withRealmLinks().");
     return html;
   }
+  const own = String(prefix).slice(1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const link = new RegExp('\\b(href|action|formaction|src)="\\/(?!\\/)' +
+                          '(?!' + own + '(?:[/?#"]))', 'g');
   log.debug("Leaving withRealmLinks().");
-  return html.replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                      '$1="' + prefix + '/');
+  return html.replace(link, '$1="' + prefix + '/');
 }
 
 // WHICH REALM IDS ARE ALREADY SPOKEN FOR — the first path segment of every
