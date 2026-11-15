@@ -1182,8 +1182,9 @@ async function test() {
     // Reported after the anchor and the files are gone.
     failure = e;
   }
-  await anchors.settleAnchors(base, addedAnchors, failure);
+  // The files first: settleAnchors() rethrows a failure it is handed.
   fs.rmSync(M.dir, { recursive: true, force: true });
+  await anchors.settleAnchors(base, addedAnchors, failure);
   if (failure) {
     log.debug("Leaving test(). Failed.");
     throw failure;
