@@ -961,10 +961,40 @@ async function build(ROOT) {
   [{ method: 'backupCodeStatus', args: ['quin'] },
    { method: 'verifyBackupCode', args: ['quin', 'ABCDEFGHIJ'] }]);
 
+  // WHAT A CREDENTIAL EARNS: authn.ts's own readers of an `amr`, a step's
+  // first factor, an AAGUID and a key's lane.
+  const Authn = req('authn/authn').Authn;
+  const helpers = req('common/helpers');
+  const self = { deps: { log: helpers.log } };
+  const evidence = {
+    phrases: [[], ['pwd'], ['hwk'], ['pwd', 'hwk'], ['otp'], ['pwd', 'otp'],
+              ['pop', 'pwd'], ['hwk', 'user'], ['swk'], ['otp', 'hwk']]
+      .map(function (amr) {
+        return { amr: amr, phrase: Authn.prototype.methodPhraseFor.call(
+          self, amr) };
+      }),
+    first: [{}, { firstAmr: [] }, { firstAmr: ['pop'] },
+            { firstAmr: ['otp', 'pwd'] }, { firstAmr: 'pwd' }, null]
+      .map(function (step) {
+        return { step: step, amr: Authn.prototype.firstAmrOf.call(self,
+                                                                   step) };
+      }),
+    aaguids: ['', null, '00000000000000000000000000000000',
+              'ADCE0002-35BC-C60A-648B-0B25F1F05503',
+              'adce000235bcc60a648b0b25f1f05503', 'xyz', 'adce0002']
+      .map(function (one) {
+        return { value: one, uuid: Credentials.aaguidString(one) };
+      }),
+    lanes: [{}, { lane: 'pqc' }, { lane: 'PQC' }, null].map(function (key) {
+      return { key: key, lane: Credentials.keyLane(key) };
+    })
+  };
+
   // The handles and secrets a later step uses are what an earlier step of
   // the same scenario answered: filled in as the steps run.
   return { totp: totpCases, backup: backupCases, apps: appCases,
            phishing: phishing, phishingKeys: phishingKeys,
+           evidence: evidence,
            scenarios: scenarios,
            webauthn: await req('tests/tools/credentials-webauthn.js')
              .build(ROOT) };

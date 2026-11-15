@@ -48,7 +48,7 @@ use sts_credentials::ports::{
     Policies, ServiceAccounts,
 };
 use sts_credentials::totp::Totp;
-use sts_credentials::{js, Verdict};
+use sts_credentials::{evidence, js, Verdict};
 use sts_crypto::secrets::{
     hash_secret, is_hashed_secret, verify_secret, ScryptCost,
 };
@@ -846,6 +846,41 @@ fn credentials_answer_what_node_answers() {
         {
             report.wrong.push(format!("phishing key {}", row["key"]));
         }
+    }
+    // What a credential earns.
+    let ev = &v["evidence"];
+    for row in ev["phrases"].as_array().unwrap() {
+        let amr: Vec<String> = row["amr"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(js::string)
+            .collect();
+        if json!(evidence::method_phrase_for(&amr)) != row["phrase"] {
+            report.wrong.push(format!("evidence phrase {}", row["amr"]));
+        }
+        counted += 1;
+    }
+    for row in ev["first"].as_array().unwrap() {
+        if json!(evidence::first_amr_of(&row["step"])) != row["amr"] {
+            report.wrong.push(format!("evidence first {}", row["step"]));
+        }
+        counted += 1;
+    }
+    for row in ev["aaguids"].as_array().unwrap() {
+        let value = js::string_or_empty(Some(&row["value"]));
+        if json!(evidence::aaguid_string(&value)) != row["uuid"] {
+            report
+                .wrong
+                .push(format!("evidence aaguid {}", row["value"]));
+        }
+        counted += 1;
+    }
+    for row in ev["lanes"].as_array().unwrap() {
+        if json!(evidence::key_lane(&row["key"])) != row["lane"] {
+            report.wrong.push(format!("evidence lane {}", row["key"]));
+        }
+        counted += 1;
     }
     counted += webauthn::check(&v["webauthn"], &mut report.wrong);
     if std::env::var("STS_WRITE_VECTORS").is_ok() {
