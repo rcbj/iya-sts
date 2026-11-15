@@ -247,6 +247,11 @@ pub struct TokenEndpoint {
     /// The shared used-assertion history (`common/used_assertions.js`);
     /// `None` leaves the client-assertion verifier to its own.
     pub used: Option<Arc<crate::used_assertions::UsedAssertions>>,
+    /// `stats.recordAuthentication()`: the identity funnel the sign-on
+    /// session records through, told of a password grant before its
+    /// subject is asked for, so the directory creates the person where
+    /// this service creates people; `None` records nothing.
+    pub records: Option<Arc<dyn sts_authn::ports::Records>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -1249,20 +1254,23 @@ impl TokenEndpoint {
                 }
             }
         }
-        if let Err((reason, detail)) = checks.verify(&username, &password) {
-            tracing::info!(
-                "oauth2: the password grant for \"{}\" was refused ({}): {}",
-                username,
-                reason,
-                detail
-            );
-            return self.refusal(
-                codes::STS_OAUTH_0220,
-                400,
-                "invalid_grant",
-                &format!("Authentication failed for user {}.", username),
-            );
-        }
+        let verified = match checks.verify(&username, &password) {
+            Ok(reason) => reason,
+            Err((reason, detail)) => {
+                tracing::info!(
+                    "oauth2: the password grant for \"{}\" was refused ({}): {}",
+                    username,
+                    reason,
+                    detail
+                );
+                return self.refusal(
+                    codes::STS_OAUTH_0220,
+                    400,
+                    "invalid_grant",
+                    &format!("Authentication failed for user {}.", username),
+                );
+            }
+        };
         if verifies {
             let second = checks.second_factor(&username);
             if !second.is_empty() {
@@ -1278,6 +1286,25 @@ impl TokenEndpoint {
                     .succeeded("sign-in", address, &username, false, false)
                     .await;
             }
+        }
+        // A password grant is an authentication: recorded, and the
+        // directory told first, before the subject is asked for. No
+        // session is created — the tokens belong to a person and to no
+        // session.
+        if let Some(records) = &self.records {
+            records.record_authentication(
+                &json!({
+                    "presented": username, "protocol": "OAuth 2.0",
+                    "method": "password grant (RFC 6749 section 4.3)",
+                    "client_id": issuing.client.client_id,
+                    "note": if verified == "verified" {
+                        "The password was verified against the stored userPassword. A password grant creates no browser session."
+                    } else {
+                        "No password is checked here either, except the reserved string \"invalid\". A password grant creates no browser session."
+                    },
+                }),
+                None,
+            );
         }
         // `provisionedPerson(username)`: no entry, no subject.
         let user = self.people.user_for(&username);

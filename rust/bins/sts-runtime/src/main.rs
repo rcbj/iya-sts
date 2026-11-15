@@ -56,6 +56,7 @@
 mod admin_api;
 mod admin_families;
 mod certificates;
+mod identity_funnel;
 mod ldap_listener;
 mod listener;
 mod listeners;

@@ -82,6 +82,9 @@ pub struct OAuthParts {
     pub client_display: Arc<dyn Fn(&str) -> Json + Send + Sync>,
     /// The credential store, for the password grant.
     pub credentials: Arc<sts_credentials::credentials::Credentials>,
+    /// The identity funnel the session core records through, which the
+    /// password grant records through too (`stats.recordAuthentication()`).
+    pub records: Arc<dyn sts_authn::ports::Records>,
 }
 
 /// The authorization server, built.
@@ -711,6 +714,7 @@ impl OAuthStack {
             ))),
             passwords: Some(Arc::new(RopcChecks(parts.credentials.clone()))),
             used: Some(used.clone()),
+            records: Some(parts.records.clone()),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,

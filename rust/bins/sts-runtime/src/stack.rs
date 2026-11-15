@@ -698,9 +698,22 @@ impl Stack {
             revoked,
         );
         let refresh_settings = settings.clone();
+        // THE IDENTITY FUNNEL (`admin_stats.recordAuthentication()`'s
+        // user observer, `autoCreateUser()`): every authentication the
+        // session core and the password grant record is told to the
+        // directory first.
+        let funnel: Arc<dyn sts_authn::ports::Records> =
+            Arc::new(crate::identity_funnel::IdentityFunnel {
+                live: directory.clone(),
+                persistence: persistence.clone(),
+                registry: registry.clone(),
+                settings: settings.clone(),
+                mode: mode.clone(),
+                inner: None,
+            });
         let records: Arc<dyn sts_authn::ports::Records> =
             Arc::new(sts_oauth::minted::SessionTokens {
-                inner: None,
+                inner: Some(funnel),
                 register: tokens.clone(),
                 revoke_refresh_on_logout: Arc::new(move |_client: &str| {
                     refresh_settings
@@ -719,7 +732,7 @@ impl Stack {
                 directory: directory.clone(),
                 persistence: persistence.clone(),
                 version,
-                records: Some(records),
+                records: Some(records.clone()),
             },
         );
         scheduler.register(sts_authn::job::session_expiry_job(
@@ -763,6 +776,7 @@ impl Stack {
                 )),
                 tokens: tokens.clone(),
                 credentials: signin.signin.credentials.clone(),
+                records: records.clone(),
             });
         let authn_routes = signin
             .mount(&http, surfaces.clone(), settings.clone())
