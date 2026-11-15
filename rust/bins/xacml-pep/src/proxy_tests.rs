@@ -2800,3 +2800,274 @@ async fn a_route_without_methods_or_authorization_refuses_the_document() {
         assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
     }
 }
+
+// ===== THE ERROR PAGE A PERSON SEES (proxy_page.rs) =======================
+
+/// A browser's request: it accepts HTML.
+fn as_browser(r: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    r.header("accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+}
+
+/// What a refused browser was answered: the status, and the page, checked
+/// to be the standard one with its Diagnostics pane and nothing more.
+async fn the_page(r: reqwest::Response, status: u16, title: &str) -> String {
+    assert_eq!(r.status(), status, "{}", title);
+    let headers = r.headers().clone();
+    assert_eq!(headers["content-type"], "text/html; charset=utf-8", "{}",
+               title);
+    assert_eq!(headers["cache-control"], "no-store");
+    let csp = headers["content-security-policy"].to_str().unwrap();
+    assert!(csp.starts_with("default-src 'none'; style-src 'sha256-"),
+            "{}", csp);
+    assert!(!csp.contains("script-src") && !csp.contains("unsafe"), "{}",
+            csp);
+    let html = r.text().await.unwrap();
+    for want in [
+        format!("<title>{}</title>", title),
+        format!("<h1>{}</h1>", title),
+        "<div class=\"warn\" role=\"alert\"><span class=\"error\">"
+            .to_string(),
+        "<section class=\"diagnostics\"".to_string(),
+        "<dt>Time (UTC)</dt>".to_string(),
+        "<dt>Incident ID</dt><dd><code>".to_string(),
+        "<a class=\"portal\" href=\"/\">Go to the start page</a>".to_string(),
+    ] {
+        assert!(html.contains(&want), "{}: no {} in {}", title, want, html);
+    }
+    // THE CODE IS RECORDED, NEVER SENT: no STS-… code, no script.
+    assert!(!html.contains("STS-"), "{}: a code on the page: {}", title,
+            html);
+    assert!(!html.contains("<script"), "{}", title);
+    html
+}
+
+/// The incident ID a page shows.
+fn incident_of(html: &str) -> String {
+    let at = html.find("<dt>Incident ID</dt><dd><code>").unwrap() + 30;
+    html[at..].split('<').next().unwrap().to_string()
+}
+
+/// EVERY REFUSAL A BROWSER MEETS IS THE ONE PAGE (rcbj, 2026-11-15), at
+/// its own status, with the headers it always had (a 401's challenges, a
+/// 405's `Allow`).
+#[tokio::test]
+async fn each_refusal_a_browser_meets_is_the_standard_page() {
+    let h = harness().await;
+    let before = hits(&h);
+    // 404, no route.
+    let r = as_browser(h.get("/nowhere")).send().await.unwrap();
+    let html = the_page(r, 404, "Page not found").await;
+    assert!(html.contains("<dt>Address</dt><dd><code>/nowhere</code>"));
+    assert!(html.contains("<dt>error</dt><dd><code>not_found</code>"));
+    // 400, a path that does not normalise.
+    let r = as_browser(h.get("/api/a%2fb")).send().await.unwrap();
+    the_page(r, 400, "This address cannot be used").await;
+    // 405, with its Allow.
+    let r = as_browser(h.http.delete(format!("{}/api/x", h.proxy)))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.headers()["allow"], "GET, POST");
+    the_page(r, 405, "This action is not allowed here").await;
+    // 401, no credential: the challenges are kept.
+    let r = as_browser(h.get("/api/x")).send().await.unwrap();
+    assert!(challenges(&r).iter().any(|c| c.starts_with("Basic ")));
+    the_page(r, 401, "Sign-in required").await;
+    // 403, the policy said Deny (mallory), and who was asking is shown.
+    let r = as_browser(h.get("/api/x"))
+        .basic_auth("mallory", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    let html =
+        the_page(r, 403, "You do not have access to this page").await;
+    assert!(html.contains("<dt>Signed in as</dt><dd><code>mallory</code>"));
+    assert!(html.contains("<dt>Application</dt><dd><code>api-app</code>"));
+    assert!(html.contains("<dt>error</dt><dd><code>access_denied</code>"));
+    assert!(!html.contains("/.iya-pep/"), "a Basic route offers no switch");
+    // 403, deny-all (0116).
+    let r = as_browser(h.get("/closed/x"))
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    let html = the_page(r, 403, "This page is closed").await;
+    assert!(html.contains("deny-all"), "the API's description: {}", html);
+    // 403, the route's policy is not held (0117): the generic description.
+    let r = as_browser(h.get("/missing/x"))
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    let html = the_page(r, 403, "Access cannot be decided now").await;
+    assert!(html.contains("This route cannot be decided now."));
+    assert!(!html.contains("never-pulled"), "the policy's name is logged");
+    // 403, the application is not usable (0093): its reason is logged.
+    let r = as_browser(h.get("/gone/x"))
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    let html = the_page(r, 403, "This application cannot be used now").await;
+    assert!(html.contains("This route cannot be used now."));
+    assert!(!html.contains("was deleted"), "{}", html);
+    // 401, a sign-in callback nobody started (0082).
+    let r = as_browser(h.get("/.iya-pep/callback?code=c&state=nope"))
+        .send()
+        .await
+        .unwrap();
+    the_page(r, 401, "The sign-in could not be completed").await;
+    // 504, the application too slow: a generic sentence.
+    let r = as_browser(h.get("/slow")).send().await.unwrap();
+    the_page(r, 504, "The application did not answer in time").await;
+    assert_eq!(hits(&h), before + 1, "only /slow reached the application");
+    // 502, nobody at the upstream: nothing about where it was.
+    let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead = gone.local_addr().unwrap().port();
+    drop(gone);
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    h.sync.receive_proxy(
+        &configuration(&format!("http://127.0.0.1:{}/pep-app", dead),
+                       &h.service_base, &cert),
+        None,
+    );
+    let r = as_browser(h.get("/public/page")).send().await.unwrap();
+    let html = the_page(r, 502, "The application cannot be reached").await;
+    assert!(!html.contains("127.0.0.1"), "{}", html);
+}
+
+/// A refusal of WHO is asking, on a session route, says what to do: the
+/// account chooser and Add another on a `multipleAccounts` route, a
+/// sign-out on any other.
+#[tokio::test]
+async fn a_refused_person_is_offered_another_account() {
+    let h = harness().await;
+    let (_, to) = h.location_of("/multi/page", "").await;
+    let set = cookie_of(&h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"),
+                                      "sid-m", "mm").await);
+    let r = as_browser(h.get("/multi/page?x=1"))
+        .header("cookie", &set)
+        .send()
+        .await
+        .unwrap();
+    let html =
+        the_page(r, 403, "You do not have access to this page").await;
+    assert!(html.contains(
+        "<a class=\"portal\" href=\"/.iya-pep/accounts?return=\
+         %2Fmulti%2Fpage%3Fx%3D1\">Use a different account</a>"
+    ), "{}", html);
+    assert!(html.contains(
+        "href=\"/.iya-pep/accounts/add?return=%2Fmulti%2Fpage%3Fx%3D1\">\
+         Sign in with another account</a>"
+    ), "{}", html);
+    // One sign-in per browser: a sign-out.
+    let (_, to) = h.location_of("/livehdr/page", "").await;
+    let one = cookie_of(&h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"),
+                                      "sid-n", "mn").await);
+    let r = as_browser(h.get("/livehdr/page"))
+        .header("cookie", &one)
+        .send()
+        .await
+        .unwrap();
+    let html =
+        the_page(r, 403, "You do not have access to this page").await;
+    assert!(html.contains("href=\"/.iya-pep/logout\">Sign out"), "{}", html);
+    assert!(!html.contains("/.iya-pep/accounts"), "{}", html);
+}
+
+/// What a request carried is drawn escaped.
+#[tokio::test]
+async fn the_page_escapes_what_the_request_carried() {
+    let h = harness().await;
+    // Who signed in: a username the service answered.
+    let evil = "<script>alert('x')</script>\"&";
+    let r = as_browser(h.get("/closed/x"))
+        .basic_auth(evil, Some("right"))
+        .send()
+        .await
+        .unwrap();
+    let html = the_page(r, 403, "This page is closed").await;
+    assert!(!html.contains("<script>alert"), "{}", html);
+    assert!(html.contains(
+        "<dt>Signed in as</dt><dd><code>&lt;script&gt;alert(&#39;x&#39;)\
+         &lt;/script&gt;&quot;&amp;</code>"
+    ), "{}", html);
+    // The address, as the request spelled it.
+    let r = as_browser(h.get("/x\"><b>"))
+        .send()
+        .await
+        .unwrap();
+    let html = the_page(r, 404, "Page not found").await;
+    assert!(!html.contains("\"><b>"), "{}", html);
+}
+
+/// THE API ANSWER IS UNCHANGED: a request that does not accept HTML is
+/// answered the JSON it always was, byte for byte.
+#[tokio::test]
+async fn a_request_that_does_not_accept_html_keeps_its_json() {
+    let h = harness().await;
+    let json_of = |r: reqwest::Response| async move {
+        assert_eq!(r.headers()["content-type"], "application/json");
+        assert!(r.headers().get("content-security-policy").is_none());
+        r.text().await.unwrap()
+    };
+    let cases: Vec<(reqwest::RequestBuilder, u16, &str)> = vec![
+        (h.get("/nowhere"), 404,
+         r#"{"error":"not_found","error_description":"no route matches this path"}"#),
+        (h.get("/closed/x").basic_auth("alice", Some("right")), 403,
+         r#"{"error":"access_denied","error_description":"the route allows no method: deny-all"}"#),
+        (h.get("/missing/x").basic_auth("alice", Some("right")), 403,
+         r#"{"error":"access_denied","error_description":"This route cannot be decided now."}"#),
+        (h.get("/gone/x").basic_auth("alice", Some("right")), 403,
+         r#"{"error":"access_denied","error_description":"This route cannot be used now."}"#),
+        (h.get("/api/x").header("accept", "application/json"), 401,
+         r#"{"error":"unauthorized","error_description":"the request carries no credential"}"#),
+        (h.get("/slow"), 504,
+         r#"{"error":"gateway_timeout","error_description":"The application did not answer in time."}"#),
+    ];
+    for (request, status, body) in cases {
+        let r = request.send().await.unwrap();
+        assert_eq!(r.status(), status, "{}", body);
+        assert_eq!(json_of(r).await, body);
+    }
+    let r = h
+        .get("/api/x")
+        .basic_auth("mallory", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let body: Value = serde_json::from_str(&json_of(r).await).unwrap();
+    assert_eq!(body["error"], "access_denied");
+    assert!(body["error_description"].as_str().unwrap()
+        .starts_with("the policy this PEP holds said Deny"));
+}
+
+/// THE INCIDENT ID ON THE PAGE IS IN THE REFUSAL'S LOG LINE, beside the
+/// error code: what an operator searches the log for.
+#[tokio::test]
+async fn the_pages_incident_id_finds_the_log_line() {
+    let h = harness().await;
+    let r = as_browser(h.get("/closed/x"))
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    let html = the_page(r, 403, "This page is closed").await;
+    let incident = incident_of(&html);
+    assert_eq!(incident.len(), 16, "{}", incident);
+    let lines = proxy::logged::holding(&incident);
+    assert_eq!(lines.len(), 1, "one line names {}: {:?}", incident, lines);
+    let line = &lines[0];
+    assert!(line.contains("[STS-XPEP-0116]"), "{}", line);
+    assert!(line.contains(&format!("page incident {}", incident)), "{}",
+            line);
+    // A second refusal is another incident.
+    let r = as_browser(h.get("/closed/x"))
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(incident_of(&the_page(r, 403, "This page is closed").await),
+               incident);
+}

@@ -71,9 +71,11 @@ use crate::proxy_auth::{self, Authenticator, Identity, Refusal};
 use crate::proxy_config::{
     IdentityMode, Mechanism, ProxyConfig, Pulled, Route,
 };
+use crate::proxy_page::{self, Action, ErrorPage, Row};
 use crate::proxy_request::{
     cookie_value, forward_headers, is_browser, normalise_path,
-    response_headers, strip_list, ACCOUNTS_COOKIE, SESSION_COOKIE,
+    response_headers, strip_list, wants_html, ACCOUNTS_COOKIE,
+    SESSION_COOKIE,
 };
 use crate::rp_session::{self, Pending, Session};
 use crate::rp_set::{self, RpLimits, RpSet};
@@ -127,7 +129,13 @@ enum Delivery {
 struct Asked<'a> {
     method: &'a str,
     path: &'a str,
+    query: Option<&'a str>,
     route: Option<&'a Route>,
+    /// It accepts HTML: a refusal is the error page (`proxy_page.rs`).
+    html: bool,
+    /// Who the request was established as, once it was: the page's
+    /// *Signed in as*.
+    who: String,
 }
 
 /// A mechanism's outcome.
@@ -219,6 +227,62 @@ fn error_name(status: u16, token_refused: bool) -> &'static str {
         503 => "temporarily_unavailable",
         504 => "gateway_timeout",
         _ => "bad_gateway",
+    }
+}
+
+/// The `error_description` a refusal is answered with — the JSON answer's
+/// and the error page's alike. A 5xx's is a generic sentence (the reason
+/// may name the service's or the application's addresses), and so are a
+/// route whose application is not usable (its reason carries the service's
+/// own code) and a route whose policy is not held: those are logged.
+fn shown_description(refusal: &Refusal) -> String {
+    match (refusal.status, refusal.code) {
+        (502, _) => "The application or the identity service could not be \
+                     reached, or did not answer usably."
+            .to_string(),
+        (503, _) => "This proxy cannot take the request now.".to_string(),
+        (504, _) => "The application did not answer in time.".to_string(),
+        (_, "STS-XPEP-0093") => "This route cannot be used now.".to_string(),
+        (_, "STS-XPEP-0117") => {
+            "This route cannot be decided now.".to_string()
+        }
+        _ => refusal.why.clone(),
+    }
+}
+
+/// What the person can do about a refusal of WHO they are: on a session
+/// route that holds several accounts, choose or add another; on any other
+/// session route, sign out. A refusal of the request itself offers only
+/// the start page, which every page carries.
+fn refusal_actions(refusal: &Refusal, asked: &Asked) -> Vec<Action> {
+    let about_who = refusal.status == 403
+        && matches!(refusal.code, "STS-XPEP-0086" | "STS-XPEP-0095");
+    let Some(route) = asked.route.filter(|r| {
+        about_who && !asked.who.is_empty() && r.allows(Mechanism::Session)
+    }) else {
+        return Vec::new();
+    };
+    let here = match asked.query {
+        Some(q) => format!("{}?{}", asked.path, q),
+        None => asked.path.to_string(),
+    };
+    if route.multiple_accounts {
+        vec![
+            Action {
+                href: format!("{}?return={}", ACCOUNTS_PATH, encode(&here)),
+                label: "Use a different account".into(),
+            },
+            Action {
+                href: format!("{}?return={}", ACCOUNTS_ADD_PATH,
+                              encode(&here)),
+                label: "Sign in with another account".into(),
+            },
+        ]
+    } else {
+        vec![Action {
+            href: LOGOUT_PATH.into(),
+            label: "Sign out, to sign in with another account".into(),
+        }]
     }
 }
 
@@ -450,7 +514,9 @@ impl Proxy {
         response
     }
 
-    /// A refusal as an answer, logged under its code. A 5xx's body is a
+    /// A refusal as an answer, logged under its code: the JSON answer, or
+    /// for a request that accepts HTML the error page (`proxy_page.rs`),
+    /// whose incident ID the log line carries. A 5xx's description is a
     /// generic sentence: the reason may name the service's addresses.
     fn refuse(
         &self,
@@ -463,42 +529,65 @@ impl Proxy {
             .map(|r| format!(" (route {})", r.id))
             .unwrap_or_default();
         let shown: String = asked.path.chars().take(200).collect();
+        // The page's incident ID, in the line an operator finds it by.
+        let incident = if asked.html {
+            proxy_page::incident_id()
+        } else {
+            String::new()
+        };
+        let noted = if asked.html {
+            format!(
+                ", page incident {}",
+                if incident.is_empty() { "none" } else { &incident }
+            )
+        } else {
+            String::new()
+        };
         // A 5xx, and a route whose policy is not held, are the operator's
         // to see; a refusal of the request itself is information.
-        if refusal.status >= 500 || refusal.code == "STS-XPEP-0117" {
-            tracing::warn!(
-                "{}xacml-pep: proxy answered {} to {} {:?}{}: {}.",
+        let warn = refusal.status >= 500 || refusal.code == "STS-XPEP-0117";
+        let line = if warn {
+            format!(
+                "{}xacml-pep: proxy answered {} to {} {:?}{}{}: {}.",
                 tag(refusal.code),
                 refusal.status,
                 asked.method,
                 shown,
                 route,
+                noted,
                 refusal.why
-            );
+            )
         } else {
-            tracing::info!(
-                "{}xacml-pep: proxy refused {} {:?}{} with {}: {}.",
+            format!(
+                "{}xacml-pep: proxy refused {} {:?}{} with {}{}: {}.",
                 tag(refusal.code),
                 asked.method,
                 shown,
                 route,
                 refusal.status,
+                noted,
                 refusal.why
-            );
-        }
-        let description = match refusal.status {
-            502 => "The application or the identity service could not be \
-                    reached, or did not answer usably."
-                .to_string(),
-            503 => "This proxy cannot take the request now.".to_string(),
-            504 => "The application did not answer in time.".to_string(),
-            _ => refusal.why.clone(),
+            )
         };
-        let mut response = json_answer(
-            refusal.status,
-            json!({ "error": error_name(refusal.status, refusal.token_refused),
-                    "error_description": description }),
-        );
+        if warn {
+            tracing::warn!("{}", line);
+        } else {
+            tracing::info!("{}", line);
+        }
+        #[cfg(test)]
+        logged::note(&line);
+        let description = shown_description(refusal);
+        let error = error_name(refusal.status, refusal.token_refused);
+        let mut response = if asked.html {
+            self.error_page(refusal, asked, &description, incident,
+                            refusal_actions(refusal, asked))
+        } else {
+            json_answer(
+                refusal.status,
+                json!({ "error": error,
+                        "error_description": description }),
+            )
+        };
         let headers = response.headers_mut();
         if refusal.status == 401 {
             if let Some(route) = asked.route {
@@ -521,6 +610,50 @@ impl Proxy {
             headers.insert(header::RETRY_AFTER, after);
         }
         response
+    }
+
+    /// THE ERROR PAGE A PERSON SEES (`proxy_page.rs`): the wording of the
+    /// refusal's kind, what they can do, and the Diagnostics box — the
+    /// time, the incident ID, and only what an API client of the same
+    /// request is answered (the `error` and its description) beside the
+    /// application, the address and who is signed in. **Never the code.**
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn error_page(
+        &self,
+        refusal: &Refusal,
+        asked: &Asked,
+        description: &str,
+        incident: String,
+        actions: Vec<Action>,
+    ) -> Response<Body> {
+        let (title, message, background) =
+            proxy_page::wording(refusal.status, refusal.code);
+        let row = |label: &'static str, value: &str| Row {
+            label,
+            value: value.to_string(),
+        };
+        let shown: String = asked.path.chars().take(200).collect();
+        let error = error_name(refusal.status, refusal.token_refused);
+        ErrorPage {
+            status: refusal.status,
+            title: title.into(),
+            error: error.into(),
+            message: message.into(),
+            actions,
+            background: background.into(),
+            incident,
+            time: proxy_page::now_utc(),
+            diagnostics: vec![
+                row("Application",
+                    asked.route.map_or("", |r| r.application.as_str())),
+                row("Address", &shown),
+                row("Signed in as", &asked.who),
+                row("error", error),
+                row("error_description", description),
+            ],
+            version: self.pep.version.version.clone(),
+        }
+        .response()
     }
 
     /// One `WWW-Authenticate` per mechanism the route allows that has an
@@ -574,7 +707,10 @@ impl Proxy {
         let mut asked = Asked {
             method: &method,
             path: &raw_path,
+            query: query.as_deref(),
             route: None,
+            html: wants_html(&parts.headers),
+            who: String::new(),
         };
         let path = match normalise_path(&raw_path) {
             Ok(path) => path,
@@ -662,13 +798,7 @@ impl Proxy {
                     }
                 ),
             );
-            let mut refused = self.refuse(&refusal, &asked, &pulled);
-            *refused.body_mut() = Body::from(
-                json!({ "error": "access_denied",
-                        "error_description": "This route cannot be used now." })
-                .to_string(),
-            );
-            return (refused, false);
+            return (self.refuse(&refusal, &asked, &pulled), false);
         }
         let declared = parts
             .headers
@@ -711,6 +841,7 @@ impl Proxy {
         // the resource-id and action-id the route's authorization says.
         let authorization = &route.authorization;
         let subject = identity.as_ref().map_or("", |i| i.subject());
+        asked.who = subject.to_string();
         let resource = if authorization.resource.is_empty() {
             path.as_str()
         } else {
@@ -735,14 +866,7 @@ impl Proxy {
                     authorization.policy
                 ),
             );
-            let mut refused = self.refuse(&refusal, &asked, &pulled);
-            *refused.body_mut() = Body::from(
-                json!({ "error": "access_denied",
-                        "error_description":
-                            "This route cannot be decided now." })
-                .to_string(),
-            );
-            return (refused, false);
+            return (self.refuse(&refusal, &asked, &pulled), false);
         };
         if !outcome.allowed {
             let refusal = Refusal::new(
@@ -1238,7 +1362,14 @@ impl Proxy {
             Established::Answer(response) => Some(response),
             Established::Refused(refused) => Some(self.refuse(
                 &refused,
-                &Asked { method, path, route: Some(route) },
+                &Asked {
+                    method,
+                    path,
+                    query,
+                    route: Some(route),
+                    html: wants_html(headers),
+                    who: String::new(),
+                },
                 pulled,
             )),
             Established::Who(_) => None,
@@ -1536,27 +1667,39 @@ impl Proxy {
                         rp_session::AddRefused::Full(n) => n,
                         rp_session::AddRefused::NoRandom => 0,
                     };
-                    tracing::warn!(
+                    // Always the page: the callback is a browser's
+                    // navigation, and this refusal was a page before.
+                    let incident = proxy_page::incident_id();
+                    let line = format!(
                         "{}xacml-pep: proxy: a sign-in was refused: the \
                          browser's set already holds {} account(s) \
-                         (proxyMaxAccounts {}).",
+                         (proxyMaxAccounts {}), page incident {}.",
                         tag("STS-XPEP-0108"),
                         held,
-                        max
+                        max,
+                        if incident.is_empty() { "none" } else { &incident }
                     );
-                    return own_page(
-                        403,
-                        "Too many accounts",
-                        &format!(
-                            "<h1>Too many accounts</h1><p>This browser is \
-                             already signed in to {} account(s) here, the \
-                             most this proxy allows. Sign one out first.</p>\
-                             <p><a href=\"{}?return={}\">Choose an \
-                             account</a></p>",
-                            held,
-                            ACCOUNTS_PATH,
-                            html_escape(&encode(&pending.return_to))
-                        ),
+                    tracing::warn!("{}", line);
+                    #[cfg(test)]
+                    logged::note(&line);
+                    let why = format!(
+                        "this browser is already signed in to {} account(s) \
+                         here, the most this proxy allows",
+                        held
+                    );
+                    return self.error_page(
+                        &Refusal::new(403, "STS-XPEP-0108", &why),
+                        asked,
+                        &why,
+                        incident,
+                        vec![Action {
+                            href: format!(
+                                "{}?return={}",
+                                ACCOUNTS_PATH,
+                                encode(&pending.return_to)
+                            ),
+                            label: "Choose an account".into(),
+                        }],
                     );
                 }
             }
@@ -2421,5 +2564,33 @@ pub async fn serve_https(proxy: Arc<Proxy>, https: Arc<HttpsListener>) {
                 tracing::debug!("proxy connection ended: {}", error);
             }
         });
+    }
+}
+
+/// THE REFUSALS' LOG LINES, AS LOGGED, for the tests: a thread-local
+/// subscriber does not see every task's events reliably (the callsite
+/// interest is cached across the suite's threads), so the line is recorded
+/// beside the macro that writes it.
+#[cfg(test)]
+pub mod logged {
+    use std::sync::Mutex;
+
+    static LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    pub fn note(line: &str) {
+        let mut held = match LINES.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        held.push(line.to_string());
+    }
+
+    /// Every line recorded that holds `needle`.
+    pub fn holding(needle: &str) -> Vec<String> {
+        let held = match LINES.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        held.iter().filter(|l| l.contains(needle)).cloned().collect()
     }
 }

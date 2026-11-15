@@ -269,12 +269,18 @@ pub fn response_headers(incoming: &HeaderMap) -> HeaderMap {
 
 /// A browser: a GET or HEAD that accepts HTML.
 pub fn is_browser(method: &str, headers: &HeaderMap) -> bool {
-    (method == "GET" || method == "HEAD")
-        && headers
-            .get_all("accept")
-            .iter()
-            .filter_map(|v| v.to_str().ok())
-            .any(|v| v.to_ascii_lowercase().contains("text/html"))
+    (method == "GET" || method == "HEAD") && wants_html(headers)
+}
+
+/// A request that accepts HTML, whatever its method: a refusal of it is
+/// the proxy's error page (`proxy_page.rs`) — a form a person posted
+/// included — and anything else keeps the JSON answer.
+pub fn wants_html(headers: &HeaderMap) -> bool {
+    headers
+        .get_all("accept")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .any(|v| v.to_ascii_lowercase().contains("text/html"))
 }
 
 #[cfg(test)]

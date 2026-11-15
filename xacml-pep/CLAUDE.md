@@ -1227,6 +1227,56 @@ whole. The pair is upgraded together.
    request is refused.
 9. **The forward**, below.
 
+### What a refused PERSON sees: the service's error page (2026-11-15)
+
+**rcbj: the proxy's refusals are standardised on iya-sts's error page and
+its diagnostic pane** (`common/error_page.ts`, #1326). Until then every
+refusal was the JSON answer whatever asked, and `STS-XPEP-0108` was a bare
+page of its own. **The rule is one line in `refuse()`: a request whose
+`Accept` holds `text/html` — any method, so a form a person posted too
+(`wants_html()`, `proxy_request.rs`) — gets `proxy_page.rs`'s page; anything
+else gets the JSON it always got, byte for byte** (the
+`error_description` of `STS-XPEP-0093` and `0117` now chosen in
+`shown_description()` rather than written over the body afterwards). The
+status and the headers are the refusal's either way: a 401's
+`WWW-Authenticate`, a 405's `Allow`, a 429's `Retry-After`. A browser on a
+`session` route with no session is still REDIRECTED to sign in, not shown a
+page; `0108` is always the page (the callback is a navigation).
+
+* **The page is the service's, section for section** — title, the yellow
+  box with the `error` as a value and a sentence (`wording()`, by code where
+  the code says more than the status), what the person can do, the
+  background in a `<details>`, the start-over note with a link to `/`, the
+  Diagnostics box, and the copyright and version lines of the footer. **What
+  the person can do** is offered only where the refusal is about WHO is
+  asking (`0086`, `0095` at 403) on a `session` route: *Use a different
+  account* (`/.iya-pep/accounts`) and *Sign in with another account*
+  (`/.iya-pep/accounts/add`) on a `multipleAccounts` route, a sign-out
+  (`/.iya-pep/logout`) on any other. English only: the PEP holds no
+  catalogs, so the service's language chooser is not drawn.
+* **The pane shows what the service's shows, and no code.** The time (UTC),
+  the INCIDENT ID, then the application, the address, who is signed in, the
+  `error` and the `error_description` — exactly what an API client of the
+  same request is answered, so the page sends nothing the JSON did not. A
+  5xx's description is the generic sentence, `0093`'s and `0117`'s too.
+* **THE INCIDENT ID.** The service's is the `seq` of the audit row; this
+  container has no audit log, so its incident ID is 64 random bits in hex,
+  drawn for the page and written into the refusal's log line beside the
+  code (`… with 403, page incident 3f9c…: …`). An operator searches the log
+  for the number the person sends. A request answered JSON draws none and
+  its line is as it was. `proxy.rs`'s `logged` module records each line for
+  the tests, because a thread-local subscriber does not reliably see the
+  server task's events across the suite's threads.
+* **CSP**: no script. The page's one `<style>` element is admitted by its
+  SHA-256 (`style-src 'sha256-…'` on top of the proxy's `default-src
+  'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`),
+  narrower than `'self'` and with no second request through a proxy whose
+  other paths are the application's. **The CSS is a copy** of
+  `error_page.ts`'s and of `web_footer.ts`'s two footer rules, since this
+  image is built from `rust/` alone: change one, change the other.
+* The account chooser (`chooser_html()`) is not an error page and keeps its
+  bare markup.
+
 ### The headers that may not cross
 
 **To the application** (`forward_headers()`): the hop-by-hop headers gone —

@@ -1137,6 +1137,33 @@ certificate names.
   reached, and `504` after `upstreamTimeoutMs`.
 * WebSockets are not proxied, because `Upgrade` is a hop-by-hop header.
 
+### What a person sees when the proxy refuses them
+
+A request whose `Accept` header includes `text/html`, such as a browser
+loading a page or posting a form, is refused with the same error page
+iya-sts shows. The status code and headers stay the same. Any other request
+gets the JSON answer it always got: `{"error": …, "error_description": …}`.
+
+The page has a title and a sentence saying what went wrong: no access under
+the policy, the page closed to every request (a route with no methods), the
+policy not available, a sign-in that failed, the application not reachable,
+and so on. A collapsed note explains why the page appeared, and a link goes
+to the start page. When the policy refused the person signed in on a
+`session` route, the page also offers another account. On a route with
+**Several accounts** that is *Use a different account* and *Sign in with
+another account*; on any other session route it is a sign-out.
+
+At the bottom, a **Diagnostics** box lists the time (UTC), an **incident
+ID**, the application, the address, who is signed in, and the `error` and
+`error_description` an API client would get. Error codes never appear on the
+page. The PEP's log line for that refusal carries the code and the same
+incident ID (`… with 403, page incident 3f9c0d…: …`). When someone sends you
+the diagnostics, search the PEP's log for the incident ID.
+
+The page runs no script. Its `Content-Security-Policy` is the proxy's own,
+plus `style-src` with the hash of its one style sheet. The page is in
+English.
+
 ### What the PEP asks the service
 
 Everything the proxy cannot decide by itself it asks over its mutual TLS, and
@@ -1463,10 +1490,10 @@ active account, adding an account, switching, and signing one or all out.
   sent to the chooser to pick one, and an API client gets a 401.
 * **The bound** is the managed setting `proxyMaxAccounts`
   (`PEP_PROXY_MAX_ACCOUNTS`, 1 to 32, default 5). A sign-in past it is
-  refused with a 403 page (`STS-XPEP-0108`) rather than signing another
-  account out. The same person signing in again replaces their own
+  refused with the error page, status 403 (`STS-XPEP-0108`), rather than
+  signing another account out. The same person signing in again replaces their own
   account's session.
-* **The pages** are the proxy's own: plain forms, no script, and
+* **The account pages** are the proxy's own: plain forms, no script, and
   `Content-Security-Policy: default-src 'none'; form-action 'self';
   frame-ancestors 'none'; base-uri 'none'`, `no-store`. A switch or sign-out
   posted from another site is refused (`STS-XPEP-0109`). The pages are in

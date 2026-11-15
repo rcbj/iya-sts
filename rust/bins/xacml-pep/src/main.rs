@@ -29,6 +29,7 @@ mod pip;
 mod proxy;
 mod proxy_auth;
 mod proxy_config;
+mod proxy_page;
 mod proxy_request;
 #[cfg(test)]
 mod proxy_tests;
