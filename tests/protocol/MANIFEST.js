@@ -2403,6 +2403,12 @@ const JOBS = [
   // D12 (#444): the federation pages' shell and the unconverted ACS
   // (federation_pages).
   { file: 'sts_federation_pages.js', browser: false, local: true },
+  // D12 (#444): who may resolve a SAML 2.0 and SAML 1.1 artifact the
+  // service minted for a signed-in browser, the SourceID rule across
+  // realms, HTTP-POST-SimpleSign both ways, and the artifact stores' bounds
+  // and lifetimes (saml_artifact_and_simplesign, saml_artifact_digests B, C,
+  // E, F).
+  { file: 'sts_saml_artifacts.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
