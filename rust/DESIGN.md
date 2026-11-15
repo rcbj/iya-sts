@@ -303,8 +303,14 @@ rust/
                                  RFC 8414 discovery, the JWKS, the core ID Token;
                                  OpenID discovery, named authorization servers
                                  and the issuer-with-path forms, the shared
-                                 error page and RFC 9700's interstitial, JARM.
+                                 error page and RFC 9700's interstitial, JARM;
+                                 RP-Initiated Logout (/oauth2/logout), the
+                                 password grant, the failed-client-secret limit
+                                 in the shared rate windows, the shared
+                                 used-assertion history, RFC 9470 step-up at the
+                                 authorization endpoint.
                                  Held to Node by tests/tools/oauth-vectors.js
+                                 and used-assertions-vectors.js
                                  both ways (the code flow: 78 requests alike)
                                  and over the wire by rust-console-e2e.sh (the
                                  unchanged console and portal bundles)
