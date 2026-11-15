@@ -102,9 +102,22 @@ management API, with no token, names nobody, so only the last-owner rule
 applies there.
 
 If the person or group that is an account's last owner is **deleted**, the
-deletion is not refused: their DN is taken off the account's owners, and the
-account is left with none. The audit row of the removal says so. Name a new
-owner before deleting the old one.
+deletion is not refused. Their DN is taken off the account's owners and, in
+the same change, **the realm's administrator becomes the owner**: the
+realm's Admin Write group (`admin.writeGroup`, `admin-write` by default),
+or its bootstrap administrator if the realm has no such group (or the group
+is what was deleted). This happens whichever way the entry is deleted: a
+SCIM `DELETE`, an LDAP delete, or a person moved to another cell. The audit
+log has two rows: the removal, and an `admin.service-account.owner-added`
+row by `system` naming the new owner and the deleted one.
+
+If the realm has neither, the account is left with no owner and
+STS-SVCACCT-0068 is logged. Add an owner on the **Service account** tab (or
+with `POST /admin-api/users/add-service-account-owner`, or an LDAP modify
+adding `stsServiceAccountOwner`); nothing refuses that.
+
+Deleting one of several owners only removes that one. An account that had
+no owner before (made with `requireOwner` off) is not changed.
 
 On the console, the **Service account** tab lists the owners in a table. To
 add an owner:

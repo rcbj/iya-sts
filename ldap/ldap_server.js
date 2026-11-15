@@ -28616,6 +28616,23 @@ function moveGroupMemberships(oldDn, newDn, oldName, newName) {
 // which is how a service account under `ou=users` is found without paging
 // the people. A device's `owner` is its holder, not an authority, and is the
 // device register's (`common/devices.ts`); it is left alone.
+//
+// A SERVICE ACCOUNT WHOSE LAST OWNER IS DELETED IS GIVEN THE REALM'S
+// ADMINISTRATOR (2026-11-15, rcbj: "if the last owner is deleted, then the
+// realm admin account should be added as the owner"). #1813 made "once an
+// account has an owner, it always has one" true at every door that WRITES
+// the owners; a delete of the owner's own entry was the one way left to
+// strand an account. So where taking the deleted DN off would empty
+// `stsServiceAccountOwner`, the same write names realmAdministratorOwner()
+// instead — the realm's Admin Write group, else its bootstrap administrator,
+// the choice #1760 makes for a remote PEP's identity, so the two agree —
+// and an `admin.service-account.owner-added` row (actor `system`) names
+// both DNs. With neither the account is left with none, as before, and
+// STS-SVCACCT-0068 says so; an administrator's add-owner (the Service
+// account tab, `add-service-account-owner`, `set-service-account` with
+// `owners`, an LDAP modify adding a value) is what repairs it, and nothing
+// refuses that write. An account that named no owner before (requireOwner
+// off) names nothing to take off, so it is never visited here.
 // ---------------------------------------------------------------------------
 const OWNER_REFERENCE_ATTRIBUTES = ['owner', 'stsserviceaccountowner'];
 // The most entries one store question may answer; past it the line says some
@@ -28646,6 +28663,33 @@ function ownerValuesReplaced(values, key, to) {
   });
   log.debug('Leaving ownerValuesReplaced(). ' + out.length + '.');
   return out;
+}
+
+// Who a service account is given when its last owner is deleted: the
+// ambient realm's Admin Write group (`admin.writeGroup`, resolved in this
+// realm's directory, so its own roster), else its bootstrap administrator —
+// #1760's remotePepOwnerCandidates() order, so the two agree. Neither may be
+// one of `excluded` (normalised DNs: the deleted entry and the account
+// itself). Returns `{ kind, dn, name }`, or null where nothing qualifies.
+function realmAdministratorOwner(excluded) {
+  log.debug('Entering realmAdministratorOwner().');
+  const candidates = [String(config.value('admin.writeGroup') || ''),
+                      String(require('../common/bootstrap_name').current() ||
+                             '')];
+  for (const one of candidates) {
+    const text = one.trim();
+    if (!text) {
+      continue;
+    }
+    const owner = resolveServiceAccountOwner(text);
+    if ((owner.kind === 'group' || owner.kind === 'person') &&
+        (excluded || []).indexOf(normalizeDn(owner.dn)) < 0) {
+      log.debug('Leaving realmAdministratorOwner(). ' + owner.dn);
+      return owner;
+    }
+  }
+  log.debug('Leaving realmAdministratorOwner(). None.');
+  return null;
 }
 
 // The groups and service accounts of the ambient realm naming `key` (a
@@ -28746,6 +28790,12 @@ function rewriteOwnerReferences(oldDn, newDn, origin) {
     if (isPersonEntry(stored) &&
         ownerValuesName(at.stsserviceaccountowner, key)) {
       const owners = ownerValuesReplaced(at.stsserviceaccountowner, key, to);
+      // THE LAST OWNER DELETED: the realm's administrator, in this write.
+      const heir = owners.length ? null
+        : realmAdministratorOwner([key, normalizeDn(stored.dn)]);
+      if (heir) {
+        owners.push(heir.dn);
+      }
       if (writeServiceAccount(stored.dn,
                               { stsServiceAccountOwner: owners })) {
         changed += 1;
@@ -28756,6 +28806,28 @@ function rewriteOwnerReferences(oldDn, newDn, origin) {
                                 'the service account ' + stored.dn + why +
                                 (owners.length ? ''
                                   : '; it names no owner now') });
+        }
+        if (heir) {
+          audit.audit({ action: 'admin.service-account.owner-added',
+                        actor: 'system', target: stored.dn,
+                        channel: 'internal', outcome: 'success',
+                        summary: 'added ' + heir.dn + ', the realm\'s ' +
+                                 'administrator, to the owners of the ' +
+                                 'service account ' + stored.dn + ': its ' +
+                                 'last owner, ' + oldDn + ', was deleted' +
+                                 why,
+                        detail: { owner: heir.dn, deletedOwner: oldDn,
+                                  reason: 'last owner deleted' } });
+          log.info('ldap: the service account ' + stored.dn + ' lost its ' +
+                   'last owner, ' + oldDn + why + ', and is owned by ' +
+                   heir.dn + ' now.');
+        } else if (!to && !owners.length) {
+          log.warn(errorCodes.tag('STS-SVCACCT-0068') + 'ldap: the ' +
+                   'service account ' + stored.dn + ' lost its last ' +
+                   'owner, ' + oldDn + why + ', and names none now: this ' +
+                   'realm has neither an Admin Write group nor a bootstrap ' +
+                   'administrator to own it. An administrator adding an ' +
+                   'owner repairs it.');
         }
       } else {
         log.error(errorCodes.tag('STS-ADMIN-0922') + 'ldap: could not ' +

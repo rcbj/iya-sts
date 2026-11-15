@@ -22597,6 +22597,13 @@ const CODES = [
     summary: 'An LDAP modify took off a service account the group that was ' +
       'the bound DN\'s only way of owning it (rcbj, 2026-11-15).',
     spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0068',
+    summary: 'A service account\'s last owner (a person or a group) was ' +
+      'deleted and the realm has neither an Admin Write group nor a ' +
+      'bootstrap administrator to own it instead, so it names no owner ' +
+      'now. An administrator adding an owner repairs it (rcbj, ' +
+      '2026-11-15).',
+    spec: 'none — a warning in the log' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

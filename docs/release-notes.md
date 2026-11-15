@@ -165,6 +165,13 @@ what 1.0.0 did:
   refused (`STS-SVCACCT-0062`, `STS-SVCACCT-0063`; over LDAP, for the bound
   DN, `STS-SVCACCT-0066`, `STS-SVCACCT-0067`). Another administrator may
   remove you.
+* **Deleting an account's last owner makes the realm's administrator the
+  owner.** When the person or group that is a service account's only owner
+  is deleted (SCIM `DELETE`, an LDAP delete), the realm's Admin Write group
+  becomes its owner, or the realm's bootstrap administrator if there is no
+  such group. An `admin.service-account.owner-added` row by `system` says
+  so. In 1.0.0 the account was left with no owner. If the realm has
+  neither, it still is, and `STS-SVCACCT-0068` is logged.
 
 Existing service accounts are unchanged, and nothing needs a migration
 step. A script that un-made a service account, or emptied its owners,
