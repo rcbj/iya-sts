@@ -2564,6 +2564,11 @@ const JOBS = [
   // tokens a person's grants release (application_claims E, left by
   // phase 7).
   { file: 'sts_gnap_application_claims.js', browser: false, local: true },
+  // D12 (#444): the AuthZEN mapping contract, the tab's acts, the
+  // evaluation and the batch, each refusal by its code (authzen_map,
+  // authzen_evaluation, authzen_admin). Posts three outside test Roots to
+  // the client truststore and removes them (tools/pep-credential.js).
+  { file: 'sts_authzen_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
