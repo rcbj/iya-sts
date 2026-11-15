@@ -4349,6 +4349,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-enroll"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "chrono",
+ "regex",
+ "serde_json",
+ "sts-cluster",
+ "sts-core",
+ "sts-credentials",
+ "sts-crypto",
+ "sts-http",
+ "sts-pki",
+ "sts-store",
+ "sts-tls",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "sts-guards"
 version = "0.1.0"
 dependencies = [
@@ -4806,6 +4829,7 @@ dependencies = [
  "sts-cluster",
  "sts-core",
  "sts-crypto",
+ "sts-enroll",
  "sts-http",
  "sts-ldap",
  "sts-logout",

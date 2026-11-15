@@ -183,6 +183,13 @@ function declarations(t) {
       'application.schema.rust.json'), 'utf8'),
   'rust/crates/sts-registers/src/generated/application.schema.json is ' +
     'what the model generates (tests/tools/regenerate-model-docs.sh)');
+  // sts-enroll's copy of the enrollment model (#444, phase 6).
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-enroll',
+    'src', 'generated', 'enrollment.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'enrollment.json'),
+      'utf8'),
+  'rust/crates/sts-enroll/src/generated/enrollment.json is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   t.check(differ.length === 0, 'every generated Rust file under ' +
     'rust/crates/ is what the model generates ' +
     '(tests/tools/regenerate-model-docs.sh): ' +

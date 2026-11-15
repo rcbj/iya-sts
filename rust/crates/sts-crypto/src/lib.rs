@@ -10,6 +10,7 @@
 
 pub mod algorithms;
 pub mod b64;
+pub mod cms;
 pub mod content_hash;
 pub mod cose;
 pub mod der_lite;

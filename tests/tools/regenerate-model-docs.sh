@@ -88,6 +88,14 @@ docker run --rm --label com.docker.compose.project=none \
    chown $(id -u):$(id -g) /out/mgmt/operations.rs \
      /out/mgmt/openapi.management.json /out/mgmt/openapi.console.json \
      /out/mgmt/openapi.every.json"
+# sts-enroll's copy of the enrollment model (#444, phase 6): the very file
+# common/enrollment_model.ts reads, which the crate reads whole.
+mkdir -p rust/crates/sts-enroll/src/generated
+docker run --rm --label com.docker.compose.project=none \
+  -v "${PWD}/rust/crates/sts-enroll/src/generated:/out/enroll" \
+  "${TAG}" bash -c \
+  "cp models/generated/enrollment.json /out/enroll/enrollment.json && \
+   chown $(id -u):$(id -g) /out/enroll/enrollment.json"
 # sts-oauth's copy of the OAuth model (#444, phase 5): the very file
 # oauth-oidc/oauth_model.ts reads, which the crate reads whole.
 mkdir -p rust/crates/sts-oauth/src/generated

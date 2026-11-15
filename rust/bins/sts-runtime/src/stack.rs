@@ -82,6 +82,12 @@ pub struct Stack {
     pub signin: sts_authn_api::wiring::SignInStack,
     /// `/authn-api`'s router, put behind the HTTP layer.
     pub authn_routes: axum::Router,
+    /// Certificate enrollment's stores (#444 phase 6): ACME, EST's nonces
+    /// and SCEP's transactions, declared before the store opens.
+    pub enroll: sts_enroll::wiring::EnrollStack,
+    /// The cluster claims the enrollment credentials are spent once
+    /// through.
+    pub claims: Arc<dyn sts_cluster::scheduler::Claims>,
     /// The certificate authority (#444 phase 6), made once the store is
     /// open: its rows are the keystore's.
     pub pki: OnceLock<Arc<sts_pki::authority::Authority>>,
@@ -415,6 +421,7 @@ impl Stack {
                 Arc::new(LocalClock),
             ),
         };
+        let enroll_claims = claims.clone();
         let load = RuntimeLoad::new();
         // The threads a cluster run's body is handed to (#408): the tokio
         // runtime's workers, which here serve every request too.
@@ -721,6 +728,8 @@ impl Stack {
             },
         );
         let authn_routes = authn_routes.merge(logout.mount(&signin.api));
+        let enroll =
+            sts_enroll::wiring::EnrollStack::declare(&lifecycle, &handles);
         let barrier_settings = settings.clone();
         let barrier = ReadBarrier::new(
             Arc::new(PersistencePull(Arc::downgrade(&persistence))),
@@ -757,6 +766,8 @@ impl Stack {
             cluster_mode: resolved,
             signin,
             authn_routes,
+            enroll,
+            claims: enroll_claims,
             pki: OnceLock::new(),
             listener_keys,
             node_name,
@@ -838,6 +849,23 @@ impl Stack {
                     .value_of("pki.publishCrlToDirectory")
                     .as_bool(),
             ));
+            // ACME, EST and SCEP (23e-g): one registration, issuing through
+            // the authority's `issue_enrolled()`.
+            let families = self.enroll.families(
+                sts_enroll::wiring::RuntimeParts {
+                    settings: self.settings.clone(),
+                    mode: self.mode.clone(),
+                    registry: self.registry.clone(),
+                    lifecycle: self.lifecycle.clone(),
+                    directory: self.directory.clone(),
+                    persistence: self.persistence.clone(),
+                    credentials: self.signin.signin.credentials.clone(),
+                    claims: self.claims.clone(),
+                    http: self.http.clone(),
+                },
+                authority.clone(),
+            );
+            routes = routes.merge(families.router());
         }
         // OUTSIDE everything else, as Node's request pool and cluster
         // barrier sit in front of the app: the request counts as in flight
