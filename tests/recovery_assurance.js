@@ -465,18 +465,23 @@ function childMain() {
         credentials.setRecoveryPending(BOB, '');
         const emailed = { username: BOB, firstAmr: ['pwd'],
                           authn: { protocol: 'a test', application: '' } };
+        // The child has no logger: what the fake request led to is carried
+        // on the finding instead.
+        let threw = '';
         try {
           authn.finishEmailSecondFactor({ headers: {}, query: {} }, res,
                                         'ra-email-' + kind, emailed, kind);
         } catch (e) {
           // The session the fake request leads to is not this check's;
           // the entry is.
-          log.debug("Caught in E3b: " + ((e && e.message) || e));
+          threw = String((e && e.message) || e);
         }
         note((credentials.recoveryPending(BOB) || {}).door === 'email-' + kind,
              'E3b. an emailed ' + kind + ' at the second-factor step is ' +
              'pending on the entry as a recovery (#31)',
-             JSON.stringify(credentials.recoveryPending(BOB)));
+             JSON.stringify(credentials.recoveryPending(BOB)) +
+             (threw ? ' (after it, the fake request threw: ' + threw + ')'
+                    : ''));
       });
 
       rows('operator-only');
