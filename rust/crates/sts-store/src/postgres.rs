@@ -87,6 +87,15 @@ const ENTRY_COLUMNS: &str = crate::columns!(
     modified_at
 );
 
+/// What a statement writes to `sts_cluster_secrets`.
+const SECRET_WRITE: &str = crate::written!(
+    POSTGRES,
+    "sts_cluster_secrets",
+    name,
+    material,
+    created_by,
+    created_at
+);
 /// What a statement writes to `sts_changes`.
 const CHANGE_WRITE: &str =
     crate::written!(POSTGRES, "sts_changes", origin, kind, realm, key);
@@ -812,6 +821,50 @@ impl Driver for PostgresDriver {
 
     fn merges_keys(&self) -> bool {
         true
+    }
+
+    fn shares_secrets(&self) -> bool {
+        true
+    }
+
+    // FIRST WRITER WINS (`ensureSharedSecret()`): the offer, then the row,
+    // `created_at` the database's clock in milliseconds as Node's
+    // `dialect.now()` writes it.
+    fn ensure_shared_secret<'a>(
+        &'a self,
+        name: &'a str,
+        material: &'a str,
+    ) -> StoreFuture<'a, Option<crate::driver::SharedSecretRow>> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let origin = self.origin.id();
+            let inserted = client
+                .execute(
+                    &format!(
+                        "INSERT INTO sts_cluster_secrets ({}) VALUES ($1, $2, $3, \
+                         (extract(epoch from clock_timestamp()) * 1000)::bigint) \
+                         ON CONFLICT (name) DO NOTHING",
+                        SECRET_WRITE
+                    ),
+                    &[&name, &material, &origin],
+                )
+                .await
+                .map_err(err)?;
+            let rows = client
+                .query(
+                    "SELECT material, created_by, created_at FROM \
+                     sts_cluster_secrets WHERE name = $1",
+                    &[&name],
+                )
+                .await
+                .map_err(err)?;
+            Ok(rows.first().map(|r| crate::driver::SharedSecretRow {
+                material: r.get(0),
+                created_by: r.get(1),
+                created_at: r.get(2),
+                offered: inserted > 0,
+            }))
+        })
     }
 
     fn mints(&self) -> bool {

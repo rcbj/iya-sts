@@ -406,7 +406,14 @@ impl OAuthStack {
         let pairwise = Arc::new(sts_oauth::pairwise::PairwiseSubjects {
             settings: settings.clone(),
             clients: clients.clone(),
-            secret: sts_oauth::pairwise::PairwiseSubjects::process_secret(),
+            // Node's `oidc-pairwise` cluster secret, read at each
+            // derivation: the store's value is known once it has started.
+            secret: {
+                let secrets = parts.persistence.cluster_secrets();
+                Arc::new(move || {
+                    secrets.text("oidc-pairwise").unwrap_or_default()
+                })
+            },
             ephemeral: sts_oauth::pairwise::PairwiseSubjects::declare_ephemeral(
                 &parts.lifecycle,
                 &parts.handles,
@@ -592,9 +599,22 @@ impl OAuthStack {
     /// endpoint signs with it.
     async fn ensure_keys(&self) {
         if let Some(sets) = self.persistence.key_sets() {
-            if let Err(e) =
-                sets.open_or_make(&sts_core::realm::current_id()).await
-            {
+            let realm = sts_core::realm::current_id();
+            // THE POST-QUANTUM HALF TOO, where the realm signs with it
+            // (`pqKeysForAsync()`): an ML-DSA or SLH-DSA ID Token, a
+            // hybrid response's, is signed by a synchronous signer that
+            // cannot wait for eleven keys to be made.
+            let pq = sts_oauth::jwks::JwksPolicy::from_settings(
+                &self.settings,
+                &self.mode,
+            )
+            .post_quantum;
+            let made = if pq {
+                sets.with_pq_keys(&realm).await
+            } else {
+                sets.open_or_make(&realm).await
+            };
+            if let Err(e) = made {
                 tracing::error!(
                     "{}oauth2: the realm's key set could not be read: {}",
                     sts_core::log::tag(sts_core::errors::codes::STS_OAUTH_0184),

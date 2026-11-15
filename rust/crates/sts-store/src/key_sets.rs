@@ -27,6 +27,8 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::Engine;
 use openssl::sha::sha256;
 use serde_json::Value as Json;
 use sts_core::errors::codes;
@@ -102,6 +104,52 @@ impl KeySet {
         generation_of(&self.blob)
     }
 
+    /// Whether the set holds its post-quantum half (`hasMember(blob,
+    /// 'pqKeys')`).
+    pub fn has_pq_keys(&self) -> bool {
+        has_member(&self.blob, "pqKeys")
+    }
+
+    /// `signingKeyFromList(alg, keys.pqKeys)`: the post-quantum signing key
+    /// for `alg` — the stored `privateKey` (base64 of the raw bytes
+    /// `pq_jose.js` signs with: an ML-DSA seed, an SLH-DSA secret key, a
+    /// composite's seed and scalar) as the RFC 9964 `priv` of its AKP JWK —
+    /// and its `kid`. Node's sentence where the realm made none.
+    fn pq_signer_for(
+        &self,
+        alg: &str,
+    ) -> Result<(sts_crypto::keys::JwsKey, String), String> {
+        let found = self
+            .blob
+            .get("pqKeys")
+            .and_then(Json::as_array)
+            .and_then(|list| {
+                list.iter().find(|one| {
+                    one.get("alg").and_then(Json::as_str) == Some(alg)
+                })
+            })
+            .ok_or_else(|| {
+                format!("this realm has not made its {} key yet.", alg)
+            })?;
+        let raw = found
+            .get("privateKey")
+            .and_then(Json::as_str)
+            .and_then(|b| STANDARD.decode(b).ok())
+            .ok_or("a post-quantum key with no private half")?;
+        let mut jwk = found.get("publicJwk").cloned().unwrap_or(Json::Null);
+        let kid = jwk
+            .get("kid")
+            .and_then(Json::as_str)
+            .ok_or("a post-quantum key with no kid")?
+            .to_string();
+        if let Some(map) = jwk.as_object_mut() {
+            map.insert("priv".into(), Json::from(URL_SAFE_NO_PAD.encode(raw)));
+        }
+        let key = sts_crypto::keys::JwsKey::from_jwk(&jwk)
+            .map_err(|e| e.to_string())?;
+        Ok((key, kid))
+    }
+
     /// The curve keys, by JOSE `alg`.
     pub fn curve_keys(&self) -> Vec<CurveKey> {
         self.blob
@@ -126,6 +174,116 @@ impl KeySet {
             })
             .unwrap_or_default()
     }
+}
+
+/// `pq_jose.js`'s `PQ_ALGS`, in Node's order: the three ML-DSA sets, the
+/// two SLH-DSA sets, then the six composites.
+pub const PQ_ALGS: [&str; 11] = [
+    "ML-DSA-44",
+    "ML-DSA-65",
+    "ML-DSA-87",
+    "SLH-DSA-SHA2-128s",
+    "SLH-DSA-SHAKE-128s",
+    "ML-DSA-44-ES256",
+    "ML-DSA-65-ES256",
+    "ML-DSA-87-ES384",
+    "ML-DSA-44-Ed25519",
+    "ML-DSA-65-Ed25519",
+    "ML-DSA-87-Ed448",
+];
+
+/// `isPqJwsAlg()`.
+// Hot path (every signature): no span.
+pub fn is_pq_alg(alg: &str) -> bool {
+    PQ_ALGS.contains(&alg)
+}
+
+/// `KEY_SET_MEMBERS`: the members a set may gain after it was made.
+const KEY_SET_MEMBERS: [&str; 10] = [
+    "pqKeys",
+    "vciRequestEncKey",
+    "refreshTokenEncKeys",
+    "requestObjectEncKeys",
+    "xmlKey",
+    "bbsKey",
+    "signerGroups",
+    "browserDeviceKeys",
+    "kemEncKeys",
+    "vcApiKeys",
+];
+
+/// `hasMember(blob, member)`: an empty list is none.
+fn has_member(blob: &Json, member: &str) -> bool {
+    match blob.get(member) {
+        None | Some(Json::Null) | Some(Json::Bool(false)) => false,
+        Some(Json::Array(list)) => !list.is_empty(),
+        Some(Json::String(s)) => !s.is_empty(),
+        Some(_) => true,
+    }
+}
+
+/// `decideKeys(stored, offered)`'s union for ONE GENERATION OF ONE SET (the
+/// same `certB64`): every member the stored set lacks and the offer has is
+/// taken. `None` where nothing is added, or where the offer is another set
+/// or another generation — the stored one is then kept, as Node keeps it.
+/// The rotation half of `decideKeys()` is [`KeySets::save`]'s.
+pub fn joined_members(stored: &Json, offered: &Json) -> Option<Json> {
+    if generation_of(stored) != generation_of(offered)
+        || stored.get("certB64") != offered.get("certB64")
+    {
+        return None;
+    }
+    let mut joined = stored.clone();
+    let mut added = 0;
+    for member in KEY_SET_MEMBERS {
+        if !has_member(stored, member) && has_member(offered, member) {
+            if let Some(map) = joined.as_object_mut() {
+                map.insert(member.to_string(), offered[member].clone());
+                added += 1;
+            }
+        }
+    }
+    (added > 0).then_some(joined)
+}
+
+/// `pqKeyFrom(alg, generate(alg))` for every one of `PQ_ALGS`: `{ alg,
+/// privateKey, publicJwk }` with the raw private bytes in base64 and the
+/// public half as `akpPublicJwk()` writes it, its `kid` `sts-<alg>-` and
+/// eight hex digits of SHA-256 over the base64 of the public key.
+#[tracing::instrument(level = "debug")]
+pub fn generate_pq_keys() -> Result<Vec<Json>, String> {
+    let mut out = Vec::new();
+    for alg in PQ_ALGS {
+        let key =
+            sts_crypto::jws::generate_key(alg).map_err(|e| e.to_string())?;
+        let sts_crypto::keys::Material::Akp {
+            public,
+            private: Some(private),
+            ..
+        } = key.material
+        else {
+            return Err(format!("{} made no raw key pair", alg));
+        };
+        let material = STANDARD.encode(&public);
+        let digest = sha256(material.as_bytes());
+        let hex: String = digest
+            .iter()
+            .take(4)
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        out.push(serde_json::json!({
+            "alg": alg,
+            "privateKey": STANDARD.encode(&private),
+            "publicJwk": {
+                "kty": "AKP",
+                "alg": alg,
+                "use": "sig",
+                "pub": URL_SAFE_NO_PAD.encode(&public),
+                "kid": format!("sts-{}-{}", alg.to_lowercase(), hex),
+            },
+        }));
+    }
+    Ok(out)
 }
 
 fn generation_of(blob: &Json) -> i64 {
@@ -222,6 +380,128 @@ impl KeySets {
             }
             Saved::Kept(theirs) => Ok(*theirs),
         }
+    }
+
+    /// `pqKeysForAsync()`: the realm's set WITH its post-quantum half,
+    /// made on first use — the eleven keys of `PQ_ALGS`, off the async
+    /// threads — and joined to the stored set under Node's rule
+    /// (`decideKeys()`: the same set at the same generation gains a member
+    /// it lacked). A set another process gave its keys first is the one
+    /// answered: every node signs with, and publishes, one set.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn with_pq_keys(&self, realm: &str) -> Result<KeySet, String> {
+        let set = self.open_or_make(realm).await?;
+        if set.has_pq_keys() {
+            return Ok(set);
+        }
+        let _one = self.making.lock().await;
+        // The store first: another process may have made them meanwhile.
+        if self.durable() {
+            self.adopt(&dek_realm(realm)).await?;
+        }
+        let set = match self.open(realm) {
+            Some(set) => set,
+            None => return Err("no key set is held for this realm".into()),
+        };
+        if set.has_pq_keys() {
+            return Ok(set);
+        }
+        let started = sts_core::time::now_ms_f64();
+        let made = tokio::task::spawn_blocking(generate_pq_keys)
+            .await
+            .map_err(|e| e.to_string())??;
+        let count = made.len();
+        let mut offered = set.blob.clone();
+        if let Some(map) = offered.as_object_mut() {
+            map.insert("pqKeys".into(), Json::Array(made));
+        }
+        let kept = self.join(realm, &offered).await?;
+        tracing::info!(
+            "The post-quantum signing keys were generated for the \"{}\" \
+             realm: {} key(s) in {}ms.",
+            dek_realm(realm),
+            count,
+            (sts_core::time::now_ms_f64() - started) as i64
+        );
+        Ok(kept)
+    }
+
+    /// One set's new members written (`writeKeysNow()` with
+    /// `decideKeys()`): under the row's lock where the driver merges, the
+    /// stored set joined with the offer's members; an upsert where it does
+    /// not, as Node's non-arbitrating store. Answers the set held after.
+    async fn join(
+        &self,
+        realm: &str,
+        offered: &Json,
+    ) -> Result<KeySet, String> {
+        let id = dek_realm(realm);
+        let Some(driver) = self.driver.clone() else {
+            let mut plain = self.plain();
+            let next = match plain.get(&id) {
+                Some(held) => joined_members(held, offered),
+                None => Some(offered.clone()),
+            };
+            if let Some(next) = next {
+                plain.insert(id.clone(), next);
+            }
+            let blob = plain.get(&id).cloned().unwrap_or(Json::Null);
+            return Ok(KeySet { realm: id, blob });
+        };
+        let stored = if driver.merges_keys() {
+            self.keys.load(false).await?;
+            // The data key the joined row is sealed under lands first.
+            if !self.keys.ensure_dek(LABEL, realm) {
+                return Err("no key-encryption key is held".into());
+            }
+            self.keys.settle().await;
+            let keys = self.keys.clone();
+            let mine = offered.clone();
+            let realm_owned = realm.to_string();
+            let merge: KeyMerge = Box::new(move |current: Option<&str>| {
+                let next = match current {
+                    None => Some(mine),
+                    Some(current) => {
+                        let held: Json = keys
+                            .open(current, LABEL)
+                            .ok_or_else(|| format!("{}{}", UNHELD, realm_owned))
+                            .and_then(|plain| {
+                                serde_json::from_str(&plain)
+                                    .map_err(|e| e.to_string())
+                            })?;
+                        joined_members(&held, &mine)
+                    }
+                };
+                match next {
+                    None => Ok(None),
+                    Some(blob) => keys
+                        .seal(&blob.to_string(), LABEL, &realm_owned)
+                        .map(Some)
+                        .ok_or_else(|| {
+                            "the joined key set could not be sealed".into()
+                        }),
+                }
+            });
+            driver
+                .merge_keys(&id, merge)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("the store answered no key set")?
+        } else {
+            let cipher = self
+                .keys
+                .seal(&offered.to_string(), LABEL, realm)
+                .ok_or_else(|| "no key-encryption key is held".to_string())?;
+            self.keys.settle().await;
+            driver
+                .save_keys(&id, &cipher)
+                .await
+                .map_err(|e| e.to_string())?;
+            cipher
+        };
+        let blob = self.open_row(&id, &stored)?;
+        self.held().insert(id.clone(), stored);
+        Ok(KeySet { realm: id, blob })
     }
 
     fn held(&self) -> MutexGuard<'_, BTreeMap<String, String>> {
@@ -685,8 +965,6 @@ impl KeySets {
 // empty here as Node leaves them.
 // ---------------------------------------------------------------------------
 
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
-use base64::Engine;
 use openssl::bn::{BigNum, BigNumContext};
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
@@ -1047,11 +1325,11 @@ impl KeySet {
                 alg
             )
         };
-        if alg.starts_with("HS")
-            || alg.starts_with("ML-DSA")
-            || alg.starts_with("SLH-DSA")
-        {
+        if alg.starts_with("HS") {
             return Err(refused());
+        }
+        if is_pq_alg(alg) {
+            return self.pq_signer_for(alg);
         }
         if alg.starts_with("RS") || alg.starts_with("PS") {
             let pem = self

@@ -238,6 +238,15 @@ const CHANGE_READ: &str =
     crate::columns!(MARIADB, "sts_changes", seq, origin, kind, realm, key);
 const KEY_WRITE: &str =
     crate::written!(MARIADB, "sts_keys", realm, material, written_at);
+/// What a statement writes to `sts_cluster_secrets`.
+const SECRET_WRITE: &str = crate::written!(
+    MARIADB,
+    "sts_cluster_secrets",
+    name,
+    material,
+    created_by,
+    created_at
+);
 const REALM_COLUMNS: &str = crate::written!(
     MARIADB,
     "sts_realms",
@@ -1973,6 +1982,51 @@ impl Driver for MariadbDriver {
 
     fn merges_keys(&self) -> bool {
         true
+    }
+
+    fn shares_secrets(&self) -> bool {
+        true
+    }
+
+    // FIRST WRITER WINS (`ensureSharedSecret()`): knex's `onConflict()
+    // .ignore()` is `INSERT IGNORE` on this engine, and `created_at` is
+    // `dialect.now()`'s milliseconds.
+    fn ensure_shared_secret<'a>(
+        &'a self,
+        name: &'a str,
+        material: &'a str,
+    ) -> StoreFuture<'a, Option<crate::driver::SharedSecretRow>> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            let origin = self.origin.id();
+            conn.exec_drop(
+                format!(
+                    "INSERT IGNORE INTO sts_cluster_secrets ({}) VALUES (?, ?, ?, \
+                     CAST(ROUND(UNIX_TIMESTAMP(SYSDATE(6)) * 1000) AS SIGNED))",
+                    SECRET_WRITE
+                ),
+                (name, material, origin.as_str()),
+            )
+            .await
+            .map_err(err)?;
+            let inserted = conn.affected_rows();
+            let row: Option<(String, String, i64)> = conn
+                .exec_first(
+                    "SELECT material, created_by, created_at FROM \
+                     sts_cluster_secrets WHERE name = ?",
+                    (name,),
+                )
+                .await
+                .map_err(err)?;
+            Ok(row.map(|(material, created_by, created_at)| {
+                crate::driver::SharedSecretRow {
+                    material,
+                    created_by,
+                    created_at,
+                    offered: inserted > 0,
+                }
+            }))
+        })
     }
 
     // `mergeKeys()`: the row locked, the merge deciding; a row nobody has
