@@ -317,10 +317,9 @@ impl DirectoryPorts {
             .to_string();
         let (realm, base) = self.realm();
         let users = format!(",ou=users,{}", base).to_lowercase();
+        // Under the directory's lock, copying only the hit.
         self.directory
-            .realm_entries(&realm)
-            .into_iter()
-            .find(|(k, e)| {
+            .find_in(&realm, &|k: &str, e: &StoredEntry| {
                 k.ends_with(&users)
                     && first(e, "entryUUID")
                         .is_some_and(|u| u.to_lowercase() == wanted)
