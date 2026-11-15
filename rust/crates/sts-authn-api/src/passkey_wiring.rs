@@ -667,6 +667,7 @@ impl PostLogin for LocalPostLogin {
 /// The facts a sign-in step reads of the passkey policy's settings
 /// (`webauthnPolicy.settings()`'s `{ enabled, mfaAllowed,
 /// primaryAllowed, usernameless }`).
+#[tracing::instrument(level = "trace", skip_all)]
 pub fn key_policy_of(webauthn: &WebauthnPolicy) -> Json {
     let s = webauthn.settings();
     let mut out = Map::new();

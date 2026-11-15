@@ -845,6 +845,7 @@ impl SignIn {
     // -------------------------------------------------------------------
 
     /// `postQuantumHelp()` (#946).
+    #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn post_quantum_help(&self) -> Json {
         json!({ "register": if self.webauthn.offered() { "/portal/keys" } else { "" } })
     }

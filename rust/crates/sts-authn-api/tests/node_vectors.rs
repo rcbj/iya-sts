@@ -125,7 +125,8 @@ fn unb64u(text: &str) -> Vec<u8> {
 /// an ES256 signature.
 fn der_of(raw: &[u8]) -> Vec<u8> {
     let int = |b: &[u8]| {
-        let mut v: Vec<u8> = b.iter().copied().skip_while(|x| *x == 0).collect();
+        let mut v: Vec<u8> =
+            b.iter().copied().skip_while(|x| *x == 0).collect();
         if v.is_empty() || v[0] & 0x80 != 0 {
             v.insert(0, 0);
         }
@@ -194,7 +195,13 @@ impl Authenticators {
         &self.keys[who]
     }
 
-    fn assertion(&self, who: &str, count: u32, spoil: &str, bound: &Bound) -> String {
+    fn assertion(
+        &self,
+        who: &str,
+        count: u32,
+        spoil: &str,
+        bound: &Bound,
+    ) -> String {
         let a = self.key(who);
         let flags: u8 = if spoil == "nouv" { 0x01 } else { 0x05 };
         let mut auth = sha256(self.rp_id.as_bytes());
@@ -214,7 +221,9 @@ impl Authenticators {
             signature[last] ^= 0x01;
         }
         let handle = match spoil {
-            "stranger" => a["strangerHandle"].as_str().unwrap_or("").to_string(),
+            "stranger" => {
+                a["strangerHandle"].as_str().unwrap_or("").to_string()
+            }
             "nohandle" => String::new(),
             _ => a["userHandle"].as_str().unwrap_or("").to_string(),
         };
@@ -235,8 +244,14 @@ impl Authenticators {
             (Cbor::Int(1), Cbor::Int(2)),
             (Cbor::Int(3), Cbor::Int(-7)),
             (Cbor::Int(-1), Cbor::Int(1)),
-            (Cbor::Int(-2), Cbor::Bytes(unb64u(jwk["x"].as_str().unwrap()))),
-            (Cbor::Int(-3), Cbor::Bytes(unb64u(jwk["y"].as_str().unwrap()))),
+            (
+                Cbor::Int(-2),
+                Cbor::Bytes(unb64u(jwk["x"].as_str().unwrap())),
+            ),
+            (
+                Cbor::Int(-3),
+                Cbor::Bytes(unb64u(jwk["y"].as_str().unwrap())),
+            ),
         ]);
         let id_text = a["credentialId"].as_str().unwrap_or("");
         let id = unb64u(id_text);
@@ -294,13 +309,21 @@ impl Bound {
         // under; a set-up step's secret.
         let challenge = body
             .get("challenge")
-            .or_else(|| body.get("view").and_then(|v| v.get("webauthn")).and_then(|w| w.get("challenge")))
+            .or_else(|| {
+                body.get("view")
+                    .and_then(|v| v.get("webauthn"))
+                    .and_then(|w| w.get("challenge"))
+            })
             .and_then(Json::as_str)
             .unwrap_or("");
         if !challenge.is_empty() {
             self.values.insert("challenge".into(), challenge.into());
         }
-        if let Some(id) = body.get("user").and_then(|u| u.get("id")).and_then(Json::as_str) {
+        if let Some(id) = body
+            .get("user")
+            .and_then(|u| u.get("id"))
+            .and_then(Json::as_str)
+        {
             if !id.is_empty() {
                 self.values.insert("userid".into(), id.into());
             }
@@ -313,7 +336,8 @@ impl Bound {
             .and_then(Json::as_str)
         {
             self.values.insert("totpgrouped".into(), secret.into());
-            self.values.insert("totpsecret".into(), secret.replace(' ', ""));
+            self.values
+                .insert("totpsecret".into(), secret.replace(' ', ""));
         }
         if let Some(c) = body.get("csrf").and_then(Json::as_str) {
             if !c.is_empty() {
@@ -363,7 +387,9 @@ impl Bound {
         if out.contains("{totpsetup}") {
             out = out.replace(
                 "{totpsetup}",
-                &setup(self.values.get("totpsecret").map_or("", String::as_str)),
+                &setup(
+                    self.values.get("totpsecret").map_or("", String::as_str),
+                ),
             );
         }
         for name in ["mfa", "change", "csrf", "authn"] {

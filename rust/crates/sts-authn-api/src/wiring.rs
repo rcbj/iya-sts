@@ -63,6 +63,7 @@ use crate::pending::PendingStores;
 use crate::ports::SignInFacts;
 
 /// A setting as Node's `config.value()` answers it.
+#[tracing::instrument(level = "trace", skip_all)]
 pub(crate) fn json_of(value: SettingValue) -> Json {
     match value {
         SettingValue::Text(t) => Json::String(t),
@@ -80,10 +81,12 @@ pub struct Environment {
 }
 
 impl Environment {
+    #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn setting(&self, key: &str) -> Json {
         json_of(self.settings.value_of(key))
     }
 
+    #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn predicate(&self, name: &str) -> bool {
         self.mode.predicate(name).unwrap_or(false)
     }
@@ -240,6 +243,7 @@ impl DirectoryPorts {
     }
 
     /// `personAttributeValues(username, attribute)`.
+    #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn person_attribute(
         &self,
         name: &str,
@@ -252,6 +256,7 @@ impl DirectoryPorts {
 
     /// One attribute of a person's entry written, a write marked for the
     /// next flush.
+    #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn write_attribute(
         &self,
         name: &str,
@@ -264,6 +269,7 @@ impl DirectoryPorts {
     /// `webauthnUserHandleOwner(handle)` (#474): the person whose entry
     /// holds the handle, in either lane. A walk of the realm's people
     /// where Node keeps an index (`userHandleIndexes()`).
+    #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn user_handle_owner(&self, handle: &str) -> String {
         if handle.is_empty() {
             return String::new();
