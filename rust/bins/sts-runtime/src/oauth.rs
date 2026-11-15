@@ -71,6 +71,8 @@ pub struct OAuthParts {
     pub persistence: Arc<Persistence>,
     pub live: Arc<MemoryDirectory>,
     pub sessions: Arc<sts_authn::Sessions>,
+    /// The page footer's facts, for the error page (#1326).
+    pub footer: sts_http::footer::Facts,
     pub pending: RealmMap<Json>,
     pub people: Arc<dyn sts_authn::ports::People>,
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
@@ -401,7 +403,12 @@ impl OAuthStack {
             consents: Arc::new(NoConsents),
             pages: Arc::new(CatalogPages {
                 catalogs: parts.catalogs.clone(),
+                footer: parts.footer.clone(),
+                // The runtime writes its audit rows to the log (`LogAudit`):
+                // no ring, so no incident ID to reserve.
+                incident: Arc::new(|| 0),
             }),
+            signer: Some(signer.clone()),
             capabilities: Arc::new(move |base: &str| {
                 let (settings, mode, catalogs) = &for_caps;
                 sts_oauth::metadata::as_metadata(
@@ -632,6 +639,7 @@ impl OAuthStack {
             accept: header_of(&headers, "accept"),
             accept_language: header_of(&headers, "accept-language"),
             base,
+            prefix: http.registry().current_prefix(),
             request: session_request.clone(),
         };
         // `/oauth2/authorize` IS AN ARRIVAL PATH (`ARRIVAL_PATHS`): a

@@ -63,6 +63,7 @@ pub mod dpop_reservation;
 pub mod dpop_stores;
 pub mod grants;
 pub mod id_token;
+pub mod jarm;
 pub mod js;
 pub mod jwks;
 pub mod jwt_access_token;

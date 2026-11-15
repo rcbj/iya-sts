@@ -187,6 +187,31 @@ pub fn form_encode(pairs: &[(String, String)]) -> String {
         .join("&")
 }
 
+/// `encodeURIComponent()`: everything but `A-Za-z0-9-_.!~*'()` escaped
+/// as UTF-8 octets.
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn encode_uri_component(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.as_bytes() {
+        match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => out.push(*byte as char),
+            other => out.push_str(&format!("%{:02X}", other)),
+        }
+    }
+    out
+}
+
 fn form_component(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for byte in text.as_bytes() {

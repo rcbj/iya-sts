@@ -45,23 +45,28 @@
 //!   `id_token`): refused `unsupported_response_type` (`STS-OAUTH-0162`'s
 //!   sentence) until the OIDC slice mints an ID Token here; `none` is
 //!   answered;
-//! * JARM, RFC 9396 details, RFC 9470 step-up, Grant Management, FAPI, the
+//! * RFC 9396 details, RFC 9470 step-up, Grant Management, FAPI, the
 //!   launch window of an application signed into only from here, OpenID4VCI's
 //!   `issuer_state`, OpenID Federation's automatic registration and
 //!   Session Management's `session_state`: the request is answered as Node
 //!   answers one using none of them, and one that names a parameter
 //!   only they read (`authorization_details`, `acr_values`, `max_age`,
 //!   `claims`, `grant_management_action`) is answered as if it had not —
-//!   which is what Node does with the feature switched off — except
-//!   `response_mode=jwt` and its kin, which the advertised modes refuse;
+//!   which is what Node does with the feature switched off;
 //! * the consent screen (the OIDC slice's): a scope still needing consent
 //!   is refused `consent_required` (`STS-OAUTH-0168`) with `prompt=none`, as
 //!   in Node, and `server_error` (`STS-OAUTH-0169`) otherwise; the hosted
 //!   surfaces hold global consent to what they ask for, so they never reach
-//!   it;
-//! * the error PAGE a browser is shown (#1326's `ErrorPage`): a refusal
-//!   that is never redirected is answered as the JSON a client library
-//!   gets, with the same status, error and description.
+//!   it.
+//!
+//! THE PAGES A BROWSER IS SHOWN (#1326's `ErrorPage`, `sts_http::error_page`):
+//! a refusal that is never redirected is the shared error page for a GET
+//! whose `Accept` names `text/html` (`refuseAuthorization()`) and the JSON
+//! a client library gets otherwise; an error RFC 9700 section 4.11.2 will
+//! not bounce is the interstitial (`sendRedirectInterstitial()`) — a link
+//! carrying what the redirect would have, a button POSTing it for
+//! `form_post`, the one JWT-secured `response` for a JARM mode
+//! ([`crate::jarm`]).
 
 use std::sync::Arc;
 
@@ -79,6 +84,7 @@ use crate::scopes::{
     permission_refusal, protocol_scopes, RegisteredTargets, ScopePolicy,
 };
 use crate::signin::{Begin, SignInHandOff};
+use sts_http::error_page::{DiagnosticRow, ErrorPageSpec};
 
 /// What an authorization request is.
 #[derive(Debug, Clone, Default)]
@@ -95,6 +101,9 @@ pub struct AuthorizeAsk {
     pub accept_language: String,
     /// `asBaseOf(req)`: the realm's base URL.
     pub base: String,
+    /// `realms.currentPrefix()`: the realm's path prefix (`''`, or
+    /// `/realm/acme`), for the error page's portal link and return path.
+    pub prefix: String,
     /// The session core's view of the request (cookies, address, the
     /// account marks).
     pub request: Request,
@@ -246,6 +255,18 @@ pub trait Pages: Send + Sync {
         key: &str,
     ) -> String;
     fn html_attributes(&self, ask: &AuthorizeAsk, ui_locales: &str) -> String;
+    /// `ErrorPage.send()`'s document (#1326): `draw` translates the page's
+    /// parts in the page's language, and the page is drawn with the
+    /// incident ID and the footer.
+    fn error_page(
+        &self,
+        ask: &AuthorizeAsk,
+        ui_locales: &str,
+        draw: &dyn Fn(
+            &sts_http::i18n::Translator<'_>,
+            &sts_http::i18n::Catalogs,
+        ) -> ErrorPageSpec,
+    ) -> String;
 }
 
 /// The catalogs under `common/locales/` (`PageLocale.translatorFor()`):
@@ -253,6 +274,11 @@ pub trait Pages: Send + Sync {
 /// `Accept-Language`, English last.
 pub struct CatalogPages {
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
+    /// The page footer's facts (`PageFooter.facts()`).
+    pub footer: sts_http::footer::Facts,
+    /// `audit.reserveIncident(res)`: the incident ID, or 0 where no audit
+    /// ring is held (the page then says none was recorded).
+    pub incident: Arc<dyn Fn() -> i64 + Send + Sync>,
 }
 
 impl CatalogPages {
@@ -291,6 +317,29 @@ impl Pages for CatalogPages {
             if n.rtl { "rtl" } else { "ltr" }
         )
     }
+
+    fn error_page(
+        &self,
+        ask: &AuthorizeAsk,
+        ui_locales: &str,
+        draw: &dyn Fn(
+            &sts_http::i18n::Translator<'_>,
+            &sts_http::i18n::Catalogs,
+        ) -> ErrorPageSpec,
+    ) -> String {
+        let t = self
+            .catalogs
+            .translator(&Self::preferences(ask, ui_locales), "");
+        let spec = draw(&t, &self.catalogs);
+        sts_http::error_page::document(
+            &t,
+            &spec,
+            (self.incident)(),
+            &sts_http::error_page::iso_now(),
+            &ask.prefix,
+            &self.footer,
+        )
+    }
 }
 
 /// `t.html(key, params)`: the message's own markup kept, every parameter
@@ -320,6 +369,39 @@ fn text_of(message: &str) -> String {
     out
 }
 
+/// `oauthPages.authorizeError.auto`: its one plural (`{seconds, plural,
+/// one {# second} other {# seconds}}`) chosen by the page language's
+/// cardinal rule, which the server's translator does not format.
+fn auto_sentence(t: &sts_http::i18n::Translator<'_>, n: i64) -> String {
+    let raw = t.text("oauthPages.authorizeError.auto", &[]);
+    let lang = t.negotiated.catalog.split('-').next().unwrap_or("en");
+    let one = match lang {
+        "zh" => false,
+        "fr" => n == 0 || n == 1,
+        "fil" => n % 10 != 4 && n % 10 != 6 && n % 10 != 9,
+        _ => n == 1,
+    };
+    let Some(open) = raw.find("{seconds, plural,") else {
+        return html_of(&raw, &[("seconds", &n.to_string())]);
+    };
+    // The plural's two arms, `one {…}` and `other {…}`.
+    let body = &raw[open + "{seconds, plural,".len()..];
+    let arm = |name: &str| -> Option<String> {
+        let at = body.find(&format!("{} {{", name))?;
+        let rest = &body[at + name.len() + 2..];
+        rest.find('}').map(|end| rest[..end].to_string())
+    };
+    let chosen = if one { arm("one") } else { arm("other") }
+        .or_else(|| arm("other"))
+        .unwrap_or_default()
+        .replace('#', &n.to_string());
+    let close = body
+        .rfind("}}")
+        .map(|i| open + "{seconds, plural,".len() + i + 2)
+        .unwrap_or(raw.len());
+    format!("{}{}{}", &raw[..open], esc(&chosen), &raw[close..])
+}
+
 /// The endpoint's dependencies.
 pub struct AuthorizationEndpoint {
     pub settings: Arc<Settings>,
@@ -332,6 +414,9 @@ pub struct AuthorizationEndpoint {
     pub gated: Arc<dyn GatedScopes>,
     pub consents: Arc<dyn PersonConsents>,
     pub pages: Arc<dyn Pages>,
+    /// The realm's key, for a JWT-secured response (JARM); `None` refuses
+    /// one as a response that cannot be made (`STS-OAUTH-0588`).
+    pub signer: Option<Arc<dyn crate::token_endpoint::Signer>>,
     /// `capabilityFor(req, member)`: the authorization server's own
     /// metadata, before the named-server overlay.
     pub capabilities: Arc<dyn Fn(&str) -> Json + Send + Sync>,
@@ -352,6 +437,9 @@ struct Vetted {
     code: ErrorCode,
     error: &'static str,
     description: String,
+    /// `pageText.key` (#1326): the error page's sentence where one code
+    /// covers two cases.
+    page_key: Option<String>,
 }
 
 fn s(v: Option<&Json>) -> String {
@@ -485,6 +573,38 @@ impl AuthorizationEndpoint {
             fields.push(("state".into(), st.to_string()));
         }
         fields.push(("iss".into(), ask.base.clone()));
+        if crate::jarm::is_jarm(mode) {
+            // `jarmRedirect()`: the fields as one signed `response`, sent
+            // by the mode's transport; one that cannot be made is a 400
+            // rather than a response sent unsecured.
+            let types: Vec<String> =
+                vec![if fragment { "token" } else { "code" }.to_string()];
+            return match self.jarm_target(
+                ask,
+                client_id,
+                redirect_uri,
+                &fields,
+                mode,
+                &types,
+            ) {
+                Ok((true, jwt, _)) => self.form_post(
+                    ask,
+                    redirect_uri,
+                    &[("response".to_string(), jwt)],
+                    client_id,
+                    ui_locales,
+                ),
+                Ok((false, _, url)) => Answer::redirect(&url),
+                Err((code, why)) => {
+                    tracing::error!(
+                        "{}oauth2: a JARM response could not be made: {}",
+                        sts_core::log::tag(code),
+                        why
+                    );
+                    Answer::refusal(code, 400, "invalid_request", &why)
+                }
+            };
+        }
         if mode == "form_post" {
             return self.form_post(
                 ask,
@@ -664,6 +784,7 @@ impl AuthorizationEndpoint {
                     code,
                     error,
                     description,
+                    page_key: None,
                 },
             ))
         };
@@ -692,7 +813,7 @@ impl AuthorizationEndpoint {
         let client = self.clients.client_config_of(&client_id);
         let redirect_uri = s(q.get("redirect_uri"));
         if redirect_uri.is_empty() {
-            return Err(refuse(
+            let mut r = refuse(
                 codes::STS_OAUTH_0160,
                 "invalid_request",
                 if q.contains_key("redirect_uri") {
@@ -700,7 +821,12 @@ impl AuthorizationEndpoint {
                 } else {
                     "This authorization request has no redirect_uri, and one is required: without it there is nowhere to send the response.".into()
                 },
-            ));
+            );
+            if q.contains_key("redirect_uri") {
+                r.1.page_key =
+                    Some(format!("{}-empty", codes::STS_OAUTH_0160.as_str()));
+            }
+            return Err(r);
         }
         if let Err((code, description)) =
             self.check_redirect_uri(&client, &redirect_uri)
@@ -725,6 +851,7 @@ impl AuthorizationEndpoint {
                         code,
                         error,
                         description,
+                        page_key: None,
                     },
                 ))
             };
@@ -764,7 +891,7 @@ impl AuthorizationEndpoint {
             || types.iter().any(|t| !known.contains(&t.as_str()))
         {
             let named = raw_type.trim().to_string();
-            return Err(redirectable(
+            let mut r = redirectable(
                 &q,
                 codes::STS_OAUTH_0162,
                 "unsupported_response_type",
@@ -773,7 +900,14 @@ impl AuthorizationEndpoint {
                 } else {
                     format!("response_type \"{}\" is not supported.", named)
                 },
-            ));
+            );
+            if !named.is_empty() {
+                r.1.page_key = Some(format!(
+                    "{}-unsupported",
+                    codes::STS_OAUTH_0162.as_str()
+                ));
+            }
+            return Err(r);
         }
         let mut sorted = types.clone();
         sorted.sort();
@@ -1028,14 +1162,14 @@ impl AuthorizationEndpoint {
                 .value_of("oauth2.requireSignedRequestObject")
                 .as_bool();
         if jar || signed_required {
-            let mut a = self.refuse(codes::STS_OAUTH_0340, 400, "request_not_supported",
-                "This authorization server does not yet read a request object (RFC 9101) or a pushed request_uri (RFC 9126): send the parameters on the request itself.");
+            let mut a = self.refuse_on(ask, &input, codes::STS_OAUTH_0340, 400, "request_not_supported",
+                "This authorization server does not yet read a request object (RFC 9101) or a pushed request_uri (RFC 9126): send the parameters on the request itself.", None);
             a.set("Cache-Control", "no-store");
             return a;
         }
         if !s(input.get("id_token_hint")).is_empty() {
-            return self.refuse(codes::STS_OAUTH_0566, 400, "invalid_request",
-                "id_token_hint: this authorization server does not yet verify an id_token_hint; send login_hint instead.");
+            return self.refuse_on(ask, &input, codes::STS_OAUTH_0566, 400, "invalid_request",
+                "id_token_hint: this authorization server does not yet verify an id_token_hint; send login_hint instead.", None);
         }
         // pushedRequestPolicyRefusal(): nothing is pushed here.
         let mut required_by: Vec<String> = Vec::new();
@@ -1056,27 +1190,36 @@ impl AuthorizationEndpoint {
             ));
         }
         if !required_by.is_empty() {
-            return self.refuse(codes::STS_OAUTH_0419, 400, "invalid_request", &format!(
+            return self.refuse_on(ask, &input, codes::STS_OAUTH_0419, 400, "invalid_request", &format!(
                 "this authorization request was not pushed, and {} says pushed authorization requests are the only means of sending one here (RFC 9126 section 4). POST the parameters to {}/oauth2/par first and send the request_uri it answers with.",
-                required_by.join(" and "), ask.base));
+                required_by.join(" and "), ask.base), None);
         }
         let (q, types, client) = match self.vet(ask, &input) {
             Ok(v) => v,
             Err(e) if e.0.is_none() || !e.1.redirect => {
                 let v = e.1;
-                return self.refuse(v.code, v.status, v.error, &v.description);
+                return self.refuse_on(
+                    ask,
+                    &input,
+                    v.code,
+                    v.status,
+                    v.error,
+                    &v.description,
+                    v.page_key.as_deref(),
+                );
             }
             Err(e) => {
                 let (q, v) = *e;
                 let q = q.unwrap_or_default();
                 let session = self.sign_on.session_of(&ask.request);
-                return self.fail(
+                return self.fail_keyed(
                     ask,
                     &q,
                     session.is_some(),
                     v.code,
                     v.error,
                     &v.description,
+                    v.page_key.as_deref(),
                 );
             }
         };
@@ -1095,22 +1238,47 @@ impl AuthorizationEndpoint {
         error: &str,
         description: &str,
     ) -> Answer {
+        self.fail_keyed(ask, q, has_session, code, error, description, None)
+    }
+
+    /// `fail(error, description, pageText)`.
+    #[allow(clippy::too_many_arguments)]
+    fn fail_keyed(
+        &self,
+        ask: &AuthorizeAsk,
+        q: &Map<String, Json>,
+        has_session: bool,
+        code: ErrorCode,
+        error: &str,
+        description: &str,
+        page_key: Option<&str>,
+    ) -> Answer {
         let prompt_none =
             words(&s(q.get("prompt"))).iter().any(|p| p == "none");
         let from_sign_in = !s(q.get("authn_error")).is_empty();
         let redirect =
             !self.bcp_enabled() || has_session || prompt_none || from_sign_in;
-        if !redirect {
-            let mut a = self.refuse(code, 400, error, description);
-            a.set("Cache-Control", "no-store");
-            return a;
-        }
         let types = words(&s(q.get("response_type")));
         let mode = s(q.get("response_mode"));
         let state = q.get("state").map(|v| s(Some(v)));
+        let redirect_uri = s(q.get("redirect_uri"));
+        if !redirect {
+            return self
+                .interstitial(
+                    ask,
+                    q,
+                    code,
+                    error,
+                    description,
+                    page_key,
+                    &types,
+                    &mode,
+                )
+                .marked(code);
+        }
         self.redirect_back(
             ask,
-            &s(q.get("redirect_uri")),
+            &redirect_uri,
             state.as_deref(),
             vec![
                 ("error".into(), error.to_string()),
@@ -1122,6 +1290,373 @@ impl AuthorizationEndpoint {
             &s(q.get("ui_locales")),
         )
         .marked(code)
+    }
+
+    /// `isBrowserRequest(req)`: a GET whose `Accept` names `text/html`.
+    fn is_browser(ask: &AuthorizeAsk) -> bool {
+        ask.method.eq_ignore_ascii_case("GET")
+            && ask.accept.to_ascii_lowercase().contains("text/html")
+    }
+
+    /// `refuseAuthorization()` and `sendRefusalPage()`: a refusal that is
+    /// never redirected — the shared error page for a browser (#1326), the
+    /// JSON a client library gets otherwise, with the same status, error
+    /// and description.
+    #[allow(clippy::too_many_arguments)]
+    fn refuse_on(
+        &self,
+        ask: &AuthorizeAsk,
+        q: &Map<String, Json>,
+        code: ErrorCode,
+        status: u16,
+        error: &str,
+        description: &str,
+        page_key: Option<&str>,
+    ) -> Answer {
+        if !Self::is_browser(ask) {
+            return self.refuse(code, status, error, description);
+        }
+        let ui = s(q.get("ui_locales"));
+        let html = self.pages.error_page(ask, &ui, &|t, catalogs| {
+            let tx = |key: &str| sts_http::error_page::text(t, key, &[]);
+            let hx = |key: &str| sts_http::error_page::html(t, key, &[]);
+            ErrorPageSpec {
+                chooser: self.chooser_of(ask, t, catalogs),
+                status,
+                title: tx("oauthPages.authorizeError.title"),
+                error: error.to_string(),
+                message: Self::refusal_message(t, code, error, q, page_key),
+                background: hx("oauthPages.authorizeError.notSent"),
+                diagnostics: self.diagnostics(ask, t, q, error, description),
+                ..ErrorPageSpec::default()
+            }
+        });
+        Self::page_answer(status, html).marked(code)
+    }
+
+    fn page_answer(status: u16, html: String) -> Answer {
+        let mut a = Answer::new(status, Body::Html(html));
+        a.set("Content-Type", "text/html; charset=utf-8");
+        a.set("Cache-Control", "no-store");
+        a
+    }
+
+    /// `ErrorPage.chooser(t, req)`.
+    fn chooser_of(
+        &self,
+        ask: &AuthorizeAsk,
+        t: &sts_http::i18n::Translator<'_>,
+        catalogs: &sts_http::i18n::Catalogs,
+    ) -> String {
+        let url = format!("{}{}", ask.prefix, ask.request.url);
+        sts_http::error_page::chooser(
+            t,
+            catalogs,
+            &sts_http::error_page::return_path(&ask.method, &url, &ask.prefix),
+        )
+    }
+
+    /// `refusalMessage(t, code, error, q, pageText)`: the refusal's own
+    /// sentence where `oauthPages` has one — by the key it named, then by
+    /// its code — and otherwise the protocol error's general sentence.
+    fn refusal_message(
+        t: &sts_http::i18n::Translator<'_>,
+        code: ErrorCode,
+        error: &str,
+        q: &Map<String, Json>,
+        page_key: Option<&str>,
+    ) -> String {
+        let values: Vec<(&str, String)> = vec![
+            ("uri", s(q.get("redirect_uri"))),
+            ("type", s(q.get("response_type"))),
+            ("mode", s(q.get("response_mode"))),
+            ("method", s(q.get("code_challenge_method"))),
+            ("client", s(q.get("client_id"))),
+            ("requestUri", s(q.get("request_uri"))),
+            ("prompt", s(q.get("prompt"))),
+            ("tenant", s(q.get("tenant"))),
+        ];
+        let params: Vec<(&str, &str)> =
+            values.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let candidates = vec![
+            page_key
+                .map(|k| format!("oauthPages.refusal.{}", k))
+                .unwrap_or_default(),
+            format!("oauthPages.refusal.{}", code.as_str()),
+            format!("oauthPages.oauthError.{}", error),
+            "oauthPages.oauthError.other".to_string(),
+        ];
+        sts_http::error_page::sentence(t, &candidates, &params)
+    }
+
+    /// `authorizationDiagnostics(req, t, q, error, description)`.
+    fn diagnostics(
+        &self,
+        ask: &AuthorizeAsk,
+        t: &sts_http::i18n::Translator<'_>,
+        q: &Map<String, Json>,
+        error: &str,
+        description: &str,
+    ) -> Vec<DiagnosticRow> {
+        let client_id = s(q.get("client_id"));
+        let name = if client_id.is_empty() {
+            String::new()
+        } else {
+            let client = self.clients.client_config_of(&client_id);
+            s(client.get("declared").and_then(|d| d.get("client_name")))
+        };
+        let username = self
+            .sign_on
+            .session_of(&ask.request)
+            .map(|v| s(v.get("user").and_then(|u| u.get("username"))))
+            .unwrap_or_default();
+        let row = |key: &str, value: String| DiagnosticRow {
+            label: sts_http::error_page::text(t, key, &[]),
+            value,
+        };
+        vec![
+            row("errorPages.application", client_id.clone()),
+            row("errorPages.applicationName", name),
+            row("errorPages.redirectUri", s(q.get("redirect_uri"))),
+            row("errorPages.responseType", s(q.get("response_type"))),
+            row("errorPages.responseMode", s(q.get("response_mode"))),
+            row("errorPages.state", s(q.get("state"))),
+            row("errorPages.nonce", s(q.get("nonce"))),
+            row("errorPages.signedInAs", username),
+            row("errorPages.error", error.to_string()),
+            row(
+                "errorPages.errorDescription",
+                sanitize_description(description),
+            ),
+        ]
+    }
+
+    /// `redirectTarget(base, redirectUri, state, params, fragment)`.
+    fn redirect_target(
+        base: &str,
+        redirect_uri: &str,
+        state: Option<&str>,
+        params: &[(String, String)],
+        fragment: bool,
+    ) -> String {
+        let mut pairs: Vec<(String, String)> = params
+            .iter()
+            .map(|(k, v)| {
+                if k == "error_description" {
+                    (k.clone(), sanitize_description(v))
+                } else {
+                    (k.clone(), v.clone())
+                }
+            })
+            .collect();
+        if let Some(st) = state {
+            pairs.push(("state".into(), st.to_string()));
+        }
+        pairs.push(("iss".into(), base.to_string()));
+        let sep = if fragment {
+            "#"
+        } else if redirect_uri.contains('?') {
+            "&"
+        } else {
+            "?"
+        };
+        format!("{}{}{}", redirect_uri, sep, crate::js::form_encode(&pairs))
+    }
+
+    /// `jarmUrl(res, issuer, redirectUri, fields, mode)`: the JWT, and the
+    /// URL carrying it (a form_post.jwt response has one too, in the query,
+    /// for the interstitial's link).
+    fn jarm_target(
+        &self,
+        ask: &AuthorizeAsk,
+        client_id: &str,
+        redirect_uri: &str,
+        fields: &[(String, String)],
+        mode: &str,
+        types: &[String],
+    ) -> Result<(bool, String, String), crate::jarm::Refusal> {
+        let Some(signer) = self.signer.as_ref() else {
+            return Err((
+                codes::STS_OAUTH_0588,
+                "This client's JWT-secured authorization response cannot be                  made: no key is held to sign it."
+                    .into(),
+            ));
+        };
+        let registered = self.clients.client_config_of(client_id);
+        let jwt = crate::jarm::respond(
+            signer.as_ref(),
+            fields,
+            &registered,
+            &ask.base,
+            client_id,
+            ((self.now_ms)() / 1000.0).floor() as i64,
+            self.settings
+                .value_of("oauth2.jarmResponseLifetimeS")
+                .as_int(),
+        )?;
+        let transport = crate::jarm::transport_of(mode, types);
+        let sep = if transport == "fragment" {
+            "#"
+        } else if redirect_uri.contains('?') {
+            "&"
+        } else {
+            "?"
+        };
+        let url = format!(
+            "{}{}response={}",
+            redirect_uri,
+            sep,
+            crate::js::encode_uri_component(&jwt)
+        );
+        Ok((transport == "form_post", jwt, url))
+    }
+
+    /// `sendRedirectInterstitial(req, res, info)`: the page shown instead
+    /// of a redirect a person must decide on (RFC 9700 section 4.11.2) —
+    /// the error, and a plain link (or, for form_post, a button POSTing the
+    /// same fields, #126) to the client. No script: the page is a decision.
+    #[allow(clippy::too_many_arguments)]
+    fn interstitial(
+        &self,
+        ask: &AuthorizeAsk,
+        q: &Map<String, Json>,
+        code: ErrorCode,
+        error: &str,
+        description: &str,
+        page_key: Option<&str>,
+        types: &[String],
+        mode: &str,
+    ) -> Answer {
+        let redirect_uri = s(q.get("redirect_uri"));
+        let client_id = s(q.get("client_id"));
+        let state = q.get("state").map(|v| s(Some(v)));
+        let fields = vec![
+            ("error".to_string(), error.to_string()),
+            ("error_description".to_string(), description.to_string()),
+        ];
+        let mut target = Self::redirect_target(
+            &ask.base,
+            &redirect_uri,
+            state.as_deref(),
+            &fields,
+            Self::uses_fragment(types, mode),
+        );
+        let mut form: Option<Vec<(String, String)>> = None;
+        if mode == "form_post" {
+            let mut posted = vec![
+                ("error".to_string(), error.to_string()),
+                (
+                    "error_description".to_string(),
+                    sanitize_description(description),
+                ),
+            ];
+            if let Some(st) = state.as_ref() {
+                posted.push(("state".into(), st.clone()));
+            }
+            posted.push(("iss".into(), ask.base.clone()));
+            form = Some(posted);
+        }
+        if crate::jarm::is_jarm(mode) {
+            let mut jf = vec![
+                ("error".to_string(), error.to_string()),
+                ("error_description".to_string(), description.to_string()),
+                ("iss".to_string(), ask.base.clone()),
+            ];
+            if let Some(st) = state.as_ref() {
+                jf.push(("state".into(), st.clone()));
+            }
+            match self.jarm_target(
+                ask,
+                &client_id,
+                &redirect_uri,
+                &jf,
+                mode,
+                types,
+            ) {
+                Ok((form_post, jwt, url)) => {
+                    target = url;
+                    if form_post {
+                        form = Some(vec![("response".into(), jwt)]);
+                    }
+                }
+                Err((c, why)) => {
+                    return Answer::refusal(c, 400, "invalid_request", &why);
+                }
+            }
+        }
+        let after_s = self
+            .settings
+            .value_of("oauth2.errorPageAutoRedirectS")
+            .as_int()
+            .max(0);
+        let after_s = if form.is_some() { 0 } else { after_s };
+        let ui = s(q.get("ui_locales"));
+        let html = self.pages.error_page(ask, &ui, &|t, catalogs| {
+            let h = |key: &str, p: &[(&str, &str)]| {
+                sts_http::error_page::html(t, key, p)
+            };
+            let label = h(
+                "oauthPages.authorizeError.continue",
+                &[("uri", &redirect_uri)],
+            );
+            let action = match form.as_ref() {
+                Some(fields) => format!(
+                    "<form method=\"post\" action=\"{}\">{}<p><button \
+                     type=\"submit\" class=\"as-link\">{}</button></p></form>",
+                    esc(&redirect_uri),
+                    fields
+                        .iter()
+                        .map(|(n, v)| format!(
+                            "<input type=\"hidden\" name=\"{}\" \
+                             value=\"{}\">",
+                            esc(n),
+                            esc(v)
+                        ))
+                        .collect::<String>(),
+                    label
+                ),
+                None => {
+                    format!("<p><a href=\"{}\">{}</a></p>", esc(&target), label)
+                }
+            };
+            let auto = if after_s > 0 {
+                format!("<p class=\"sub\">{}</p>", auto_sentence(t, after_s))
+            } else {
+                String::new()
+            };
+            ErrorPageSpec {
+                chooser: self.chooser_of(ask, t, catalogs),
+                status: 400,
+                title: sts_http::error_page::text(
+                    t,
+                    "oauthPages.authorizeError.title",
+                    &[],
+                ),
+                error: error.to_string(),
+                message: Self::refusal_message(t, code, error, q, page_key),
+                after: format!(
+                    "{}{}<p class=\"sub\">{}</p>",
+                    action,
+                    auto,
+                    h("oauthPages.authorizeError.continueNote", &[])
+                ),
+                background: h(
+                    "oauthPages.authorizeError.authenticateFirst",
+                    &[],
+                ),
+                diagnostics: self.diagnostics(ask, t, q, error, description),
+                extra_head: if after_s > 0 {
+                    format!(
+                        "<meta http-equiv=\"refresh\" content=\"{};url={}\">",
+                        after_s,
+                        esc(&target)
+                    )
+                } else {
+                    String::new()
+                },
+            }
+        });
+        Self::page_answer(400, html)
     }
 
     /// `authorizeRequest()` after the vetting.

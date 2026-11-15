@@ -695,7 +695,7 @@ impl Stack {
                 handles: handles.clone(),
                 directory: directory.clone(),
                 persistence: persistence.clone(),
-                version,
+                version: version.clone(),
                 records: Some(records),
             },
         );
@@ -718,6 +718,7 @@ impl Stack {
                 persistence: persistence.clone(),
                 live: directory.clone(),
                 sessions: signin.sessions.clone(),
+                footer: sts_http::footer::facts(&version),
                 pending: signin.signin.stores.pending.clone(),
                 people: Arc::new(sts_authn_api::wiring::DirectoryPorts {
                     directory: directory.clone(),

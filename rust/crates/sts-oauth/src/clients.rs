@@ -215,6 +215,49 @@ fn flag(fields: &Map<String, Json>, name: &str) -> Json {
     )
 }
 
+/// `CLIENT_RESPONSE_ATTRIBUTES` (#290): a registration member and the
+/// attribute that holds it.
+const CLIENT_RESPONSE_ATTRIBUTES: &[(&str, &str)] = &[
+    (
+        "id_token_signed_response_alg",
+        "oauthIdTokenSignedResponseAlg",
+    ),
+    (
+        "id_token_encrypted_response_alg",
+        "oauthIdTokenEncryptedResponseAlg",
+    ),
+    (
+        "id_token_encrypted_response_enc",
+        "oauthIdTokenEncryptedResponseEnc",
+    ),
+    (
+        "userinfo_signed_response_alg",
+        "oauthUserinfoSignedResponseAlg",
+    ),
+    (
+        "userinfo_encrypted_response_alg",
+        "oauthUserinfoEncryptedResponseAlg",
+    ),
+    (
+        "userinfo_encrypted_response_enc",
+        "oauthUserinfoEncryptedResponseEnc",
+    ),
+    (
+        "authorization_signed_response_alg",
+        "oauthAuthorizationSignedResponseAlg",
+    ),
+    (
+        "authorization_encrypted_response_alg",
+        "oauthAuthorizationEncryptedResponseAlg",
+    ),
+    (
+        "authorization_encrypted_response_enc",
+        "oauthAuthorizationEncryptedResponseEnc",
+    ),
+    ("default_acr_values", "oauthDefaultAcrValues"),
+    ("default_max_age", "oauthDefaultMaxAge"),
+];
+
 /// The register's answers.
 pub struct RegisterClients {
     pub registry: Arc<ApplicationRegistry>,
@@ -271,7 +314,7 @@ impl Clients for RegisterClients {
             fields,
             redirects.len() + unconfirmed.len(),
         );
-        json!({
+        let mut config = json!({
             "known": true,
             "registered": loaded.record.registered,
             "declared": declared,
@@ -310,7 +353,52 @@ impl Clients for RegisterClients {
                 text(fields, "oauthTokenEndpointAuthSigningAlg"),
             "certificate_thumbprint":
                 text(fields, "oauthTlsClientCertificateThumbprint"),
-        })
+            "introspection_signed_response_alg":
+                text(fields, "oauthIntrospectionSignedResponseAlg"),
+            "introspection_encrypted_response_alg":
+                text(fields, "oauthIntrospectionEncryptedResponseAlg"),
+            "introspection_encrypted_response_enc":
+                text(fields, "oauthIntrospectionEncryptedResponseEnc"),
+            "request_uris": values_of(fields.get("oauthRequestUri")),
+            "request_object_signing_alg":
+                text(fields, "oauthRequestObjectSigningAlg"),
+            "request_object_encryption_alg":
+                text(fields, "oauthRequestObjectEncryptionAlg"),
+            "request_object_encryption_enc":
+                text(fields, "oauthRequestObjectEncryptionEnc"),
+            "require_signed_request_object":
+                flag(fields, "oauthRequireSignedRequestObject"),
+            "authorization_details_types":
+                values_of(fields.get("oauthAuthorizationDetailsTypes")),
+        });
+        // #290's eleven (`clientResponseMembersOf()`): a member that is not
+        // set is ABSENT, which each reader takes as "not registered".
+        if let Some(out) = config.as_object_mut() {
+            for (member, attribute) in CLIENT_RESPONSE_ATTRIBUTES {
+                let first = values_of(fields.get(*attribute))
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let text = first.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                let value = match *member {
+                    "default_acr_values" => {
+                        json!(text.split_whitespace().collect::<Vec<_>>())
+                    }
+                    "default_max_age"
+                        if text.len() <= 15
+                            && text.bytes().all(|b| b.is_ascii_digit()) =>
+                    {
+                        json!(text.parse::<i64>().unwrap_or(0))
+                    }
+                    _ => json!(text),
+                };
+                out.insert(member.to_string(), value);
+            }
+        }
+        config
     }
 
     #[tracing::instrument(level = "debug", skip(self))]

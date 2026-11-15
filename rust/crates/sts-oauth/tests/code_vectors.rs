@@ -419,7 +419,14 @@ async fn the_code_flow() {
             consents: Arc::new(NoConsents),
             pages: Arc::new(CatalogPages {
                 catalogs: catalogs.clone(),
+                footer: sts_http::footer::Facts {
+                    version: String::new(),
+                    build_info: String::new(),
+                    year: String::new(),
+                },
+                incident: Arc::new(|| 0),
             }),
+            signer: None,
             capabilities: Arc::new(move |_base| metadata.clone()),
             now_ms: Arc::new(move || *n2.lock().unwrap() as f64),
             random_id: Arc::new(|n| {
