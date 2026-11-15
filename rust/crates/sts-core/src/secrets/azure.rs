@@ -58,7 +58,10 @@ use azure_security_keyvault_keys::models::{
 use azure_security_keyvault_keys::{KeyClient, ResourceExt};
 use azure_security_keyvault_secrets::SecretClient;
 
-use super::forms::{azure_body, azure_version_prefix, b64, node_base64};
+use super::forms::{
+    azure_body, azure_version_prefix, b64, is_azure_version, no_bytes,
+    node_base64, rsa_modulus_bits,
+};
 use super::{
     kms_parts, kms_text, BoxFuture, Failure, KmsCrypto, RemoteKek, Secrets,
 };
@@ -330,7 +333,8 @@ pub(super) async fn key_facts(
     let rsa = kty == "RSA" || kty == "RSA-HSM";
     Ok(KeyFacts {
         bits: if rsa {
-            jwk.n.as_ref().map_or(0, |n| n.len() * 8)
+            // `rsaModulusBits()`: Key Vault's `n` carries a leading zero.
+            jwk.n.as_deref().map_or(0, rsa_modulus_bits)
         } else {
             0
         },
@@ -450,6 +454,15 @@ impl RemoteKek for AzureKeys {
     ) -> BoxFuture<'a, Result<String, Failure>> {
         Box::pin(async move {
             let latest = self.latest();
+            // read() and rotate() hold `latest` to the shape; this is the
+            // last line of that guarantee, at the one place the stored form
+            // is made (#1789).
+            if !is_azure_version(&latest) {
+                return Err(Failure::new(
+                    codes::STS_KEYS_0103,
+                    "no Key Vault key version to wrap under",
+                ));
+            }
             let body = if self.symmetric {
                 let mut ask = AzureKeys::params(
                     EncryptionAlgorithm::A256Gcm,
@@ -469,15 +482,23 @@ impl RemoteKek for AzureKeys {
                         )
                         .await,
                 )?;
-                let (Some(ct), Some(iv), Some(tag)) =
-                    (answer.result, answer.iv, answer.authentication_tag)
-                else {
+                let (ct, iv, tag) =
+                    (answer.result, answer.iv, answer.authentication_tag);
+                if no_bytes(ct.as_deref())
+                    || no_bytes(iv.as_deref())
+                    || no_bytes(tag.as_deref())
+                {
                     return Err(Failure::new(
                         codes::STS_KEYS_0103,
                         "Key Vault answered no ciphertext",
                     ));
-                };
-                format!("{}.{}.{}", b64(&iv), b64(&tag), b64(&ct))
+                }
+                format!(
+                    "{}.{}.{}",
+                    b64(&iv.unwrap_or_default()),
+                    b64(&tag.unwrap_or_default()),
+                    b64(&ct.unwrap_or_default())
+                )
             } else {
                 let mut plain = dek.to_vec();
                 plain.extend(self.digest(aad));
@@ -498,13 +519,15 @@ impl RemoteKek for AzureKeys {
                         )
                         .await,
                 )?;
-                let Some(wrapped) = answer.result else {
-                    return Err(Failure::new(
-                        codes::STS_KEYS_0103,
-                        "Key Vault answered no wrapped key",
-                    ));
-                };
-                b64(&wrapped)
+                match answer.result {
+                    Some(wrapped) if !wrapped.is_empty() => b64(&wrapped),
+                    _ => {
+                        return Err(Failure::new(
+                            codes::STS_KEYS_0103,
+                            "Key Vault answered no wrapped key",
+                        ))
+                    }
+                }
             };
             Ok(kms_text(
                 "azure-keys",
@@ -560,12 +583,13 @@ impl RemoteKek for AzureKeys {
                         )
                         .await,
                 )?;
-                return answer.result.ok_or_else(|| {
-                    Failure::new(
+                return match answer.result {
+                    Some(plain) if !plain.is_empty() => Ok(plain),
+                    _ => Err(Failure::new(
                         codes::STS_KEYS_0103,
                         "Key Vault answered no plaintext",
-                    )
-                });
+                    )),
+                };
             }
             let answer = AzureKeys::result(
                 self.client
@@ -582,7 +606,18 @@ impl RemoteKek for AzureKeys {
                     )
                     .await,
             )?;
-            let out = answer.result.unwrap_or_default();
+            // Refused before the digest check, which would refuse it too
+            // but call a vault that answered nothing a row moved from
+            // another (#1789).
+            let out = match answer.result {
+                Some(out) if !out.is_empty() => out,
+                _ => {
+                    return Err(Failure::new(
+                        codes::STS_KEYS_0103,
+                        "Key Vault answered no unwrapped key",
+                    ))
+                }
+            };
             let want = self.digest(aad);
             let cut = out.len().saturating_sub(want.len());
             let (dek, got) = out.split_at(cut);
@@ -627,7 +662,7 @@ impl RemoteKek for AzureKeys {
                 .into_model()
                 .map_err(|e| said(&e))?;
             let version = version_of(&made);
-            if version.is_empty() {
+            if !is_azure_version(&version) {
                 return Err(Failure::new(
                     codes::STS_KEYS_0103,
                     "Key Vault made no new version",

@@ -687,6 +687,58 @@ impl Minted {
         Ok(out)
     }
 
+    /// `onDemandNewestAsync()` (#820): the newest live rows of a store in
+    /// one realm, highest sort value first, as `(key, value)` — the name
+    /// opened and split as `openedRows(handle, rows, true)` splits it, the
+    /// body opened; a row whose name or body will not open is passed over.
+    /// A store that declares no sort value has no sort rows, so its empty
+    /// answer would read as a store with no rows: it is refused instead,
+    /// and the caller says the list was not read.
+    #[tracing::instrument(level = "debug", skip(self, keys))]
+    pub async fn newest(
+        &self,
+        keys: &DataKeys,
+        handle: &str,
+        realm: &str,
+        limit: i64,
+    ) -> Result<Vec<(String, Json)>, String> {
+        if self.hooks_for(handle).sort_of.is_none() {
+            return Err(format!(
+                "persistence: \"{}\" declares no sortBy, so its newest rows \
+                 cannot be asked for",
+                handle
+            ));
+        }
+        let Some(h) = self.handles.handle_for(handle) else {
+            return Err(format!("persistence: \"{}\" is not declared", handle));
+        };
+        let realm = sts_core::realm_store::partition_id(realm);
+        let rows = self
+            .driver
+            .read_minted_newest(
+                handle,
+                realm,
+                sts_core::time::now_ms_f64() as i64,
+                limit,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            let Some(name) = Minted::name_of_row(keys, &row) else {
+                continue;
+            };
+            let Some(text) = keys.open(&row.body, BODY_LABEL) else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<Json>(&text) else {
+                continue;
+            };
+            out.push((split_key(&h, &name).0, value));
+        }
+        Ok(out)
+    }
+
     /// `nullExpiryOnly()`.
     fn null_expiry_only(&self) -> Vec<String> {
         self.null_expiry

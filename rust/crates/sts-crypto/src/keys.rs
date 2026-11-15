@@ -473,6 +473,51 @@ pub fn private_key_from_pem(pem: &str) -> CryptoResult<PrivateKey> {
     Ok(PKey::private_key_from_pem(pem.as_bytes())?)
 }
 
+/// The PKCS#12 an Azure client certificate in PEM is handed to
+/// `azure_identity` as (#444, phase 3). Node's `@azure/identity` reads
+/// `AZURE_CLIENT_CERTIFICATE_PATH` as a PEM itself
+/// (`ClientCertificateCredential`'s `parseCertificate()`): every
+/// CERTIFICATE block, in order, the first the one whose thumbprint is sent
+/// and the rest its chain, and the private key `createPrivateKey({ key,
+/// passphrase })` finds, `AZURE_CLIENT_CERTIFICATE_PASSWORD` decrypting it
+/// when it is encrypted. The Rust SDK takes only PKCS#12, so the same parts
+/// go into one: the first certificate as the bag's own, the rest as its CA
+/// chain in the PEM's order, the key, all under `password` (empty for
+/// none, as the SDK then opens it). A PEM with no certificate is refused
+/// with Node's sentence.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn pkcs12_of_pem(pem: &[u8], password: &str) -> CryptoResult<Vec<u8>> {
+    let certs = X509::stack_from_pem(pem).unwrap_or_default();
+    let Some((leaf, chain)) = certs.split_first() else {
+        return Err(CryptoError::new(
+            "The file at the specified path does not contain a PEM-encoded \
+             certificate."
+                .to_string(),
+        ));
+    };
+    let key = if password.is_empty() {
+        PKey::private_key_from_pem(pem)
+    } else {
+        PKey::private_key_from_pem_passphrase(pem, password.as_bytes())
+    }
+    .map_err(|e| {
+        CryptoError::new(format!("the private key does not read: {}", e))
+    })?;
+    let mut ca = openssl::stack::Stack::new()?;
+    for one in chain {
+        ca.push(one.clone())?;
+    }
+    let mut builder = openssl::pkcs12::Pkcs12::builder();
+    builder.pkey(&key).cert(leaf);
+    if !chain.is_empty() {
+        builder.ca(ca);
+    }
+    let bag = builder.build2(password).map_err(|e| {
+        CryptoError::new(format!("the PKCS#12 was not built: {}", e))
+    })?;
+    Ok(bag.to_der()?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

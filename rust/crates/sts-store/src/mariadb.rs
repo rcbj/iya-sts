@@ -697,6 +697,30 @@ fn marks(n: usize) -> String {
     vec!["?"; n].join(", ")
 }
 
+/// `directory_portable.js`'s `keysMatch()` (#1788): the WHERE text naming
+/// `count` rows by their key columns, `((a = ? AND b = ?) OR …)`, the values
+/// tuple by tuple in the order a row-constructor IN list took them. MariaDB
+/// 11.8 plans a DELETE or UPDATE whose WHERE is `(a, b) IN ((?, ?), …)` as a
+/// scan (`type ALL`, or `type index` for the counts' fold) though the tuple
+/// is the whole key, and a scanning write at READ COMMITTED waits on every
+/// row another transaction holds; this plans a range on the key. A SELECT
+/// keeps the row constructor, which MariaDB plans on the key.
+fn keys_match(columns: &[&str], count: usize) -> String {
+    if count == 0 {
+        // An empty OR would match every row.
+        return "(1 = 0)".to_string();
+    }
+    let one = format!(
+        "({})",
+        columns
+            .iter()
+            .map(|c| format!("{c} = ?"))
+            .collect::<Vec<_>>()
+            .join(" AND ")
+    );
+    format!("({})", vec![one.as_str(); count].join(" OR "))
+}
+
 /// The MariaDB store.
 pub struct MariadbDriver {
     pool: Pool,
@@ -884,8 +908,8 @@ impl MariadbDriver {
             }
             tx.exec_drop(
                 format!(
-                    "DELETE FROM sts_ldap_entry_keys WHERE (realm, dn_key) IN ({})",
-                    vec!["(?, ?)"; chunk.len()].join(", ")
+                    "DELETE FROM sts_ldap_entry_keys WHERE {}",
+                    keys_match(&["realm", "dn_key"], chunk.len())
                 ),
                 values,
             )
@@ -934,8 +958,8 @@ impl MariadbDriver {
         rows: &[(Vec<String>, i64)],
         shard: i64,
     ) -> StoreResult<()> {
-        let width = key_columns.split(", ").count();
-        let tuple = format!("({})", marks(width));
+        let columns: Vec<&str> = key_columns.split(", ").collect();
+        let width = columns.len();
         let matching = key_columns
             .split(", ")
             .map(|c| format!("{} = ?", c))
@@ -946,7 +970,6 @@ impl MariadbDriver {
                 .iter()
                 .flat_map(|(k, _)| k.iter().map(|v| Value::from(v.as_str())))
                 .collect();
-            let in_list = vec![tuple.as_str(); chunk.len()].join(", ");
             // MADE TO EXIST OUTSIDE THE TRANSACTION, so the UPDATE below is
             // the only lock taken on them, in key order with the rest.
             let mut ensure = vec![];
@@ -979,11 +1002,10 @@ impl MariadbDriver {
             values.extend(keys);
             tx.exec_drop(
                 format!(
-                    "UPDATE {} SET n = n + CASE {} ELSE 0 END WHERE shard = ? AND ({}) IN ({})",
+                    "UPDATE {} SET n = n + CASE {} ELSE 0 END WHERE shard = ? AND {}",
                     table,
                     cases.join(" "),
-                    key_columns,
-                    in_list
+                    keys_match(&columns, chunk.len())
                 ),
                 values,
             )
@@ -1355,11 +1377,11 @@ impl MariadbDriver {
             .await
             .map_err(err)?;
         if locked.is_none() {
-            return Err(fenced(&format!(
+            return Err(self.origin.lost(fenced(&format!(
                 "this process no longer holds its origin {} (its fence lock is gone, so another process took the \
                  claim), so it may not write.",
                 held.key
-            )));
+            ))));
         }
         let live = format!(
             "SELECT 1 FROM sts_cluster_claims WHERE scope = ? AND realm = '' AND `key` = ? AND reservation = ? AND \
@@ -1376,11 +1398,11 @@ impl MariadbDriver {
             return Ok(());
         }
         if !OriginEngine::reassert(self, &held).await? {
-            return Err(fenced(&format!(
+            return Err(self.origin.lost(fenced(&format!(
                 "this process no longer holds its origin {} (another process took it after the claim lapsed), \
                  so it may not write.",
                 held.key
-            )));
+            ))));
         }
         if tx
             .exec_first::<i64, _, _>(live.as_str(), args)
@@ -1388,11 +1410,11 @@ impl MariadbDriver {
             .map_err(err)?
             .is_none()
         {
-            return Err(fenced(&format!(
+            return Err(self.origin.lost(fenced(&format!(
                 "this process no longer holds its origin {} (the claim was not live after it was extended), so \
                  it may not write.",
                 held.key
-            )));
+            ))));
         }
         Ok(())
     }
@@ -1434,6 +1456,13 @@ impl MariadbDriver {
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn renew_origin(&self, ttl_ms: i64) -> StoreResult<bool> {
         self.origin.renew(self, ttl_ms).await
+    }
+
+    /// `setOriginLost()`: who is told when a write is refused because
+    /// this process's origin was taken ([`Origin::set_lost`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_origin_lost(&self, f: Option<crate::origin::OriginLost>) {
+        self.origin.set_lost(f);
     }
 
     /// `releaseOrigin()`.
@@ -2300,6 +2329,39 @@ impl Driver for MariadbDriver {
                 out.extend(rows.iter().map(minted_row));
             }
             Ok(out)
+        })
+    }
+
+    // `minted_queries.js`'s MariaDB `minted.newest`: a plain JOIN, since
+    // InnoDB walks `sts_minted_index_sort` and probes the primary key for
+    // each of its rows either way.
+    fn read_minted_newest<'a>(
+        &'a self,
+        handle: &'a str,
+        realm: &'a str,
+        now_ms: i64,
+        limit: i64,
+    ) -> StoreFuture<'a, Vec<MintedRow>> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            let rows: Vec<Row> = conn
+                .exec(
+                    "SELECT m.handle, m.realm, m.`key`, m.body, CAST(ROUND(UNIX_TIMESTAMP(m.written_at) * 1000) AS \
+                     SIGNED) AS written_ms, m.expires_at, m.key_sealed FROM sts_minted_index i JOIN sts_minted m ON \
+                     m.handle = i.handle AND m.realm = i.realm AND m.`key` = i.`key` WHERE i.handle = ? AND \
+                     i.realm = ? AND i.sort_at IS NOT NULL AND m.body <> ? AND (m.expires_at IS NULL OR \
+                     m.expires_at > ?) ORDER BY i.sort_at DESC, i.`key` DESC LIMIT ?",
+                    (
+                        handle,
+                        realm,
+                        TOMBSTONE,
+                        now_ms,
+                        crate::driver::newest_limit(limit),
+                    ),
+                )
+                .await
+                .map_err(err)?;
+            Ok(rows.iter().map(minted_row).collect())
         })
     }
 
@@ -3240,5 +3302,17 @@ mod tests {
         assert!(table_key(&long).starts_with('#'));
         assert_eq!(table_key(&long).len(), 65);
         assert_eq!(parent_of("uid=a,ou=users,dc=x"), "ou=users,dc=x");
+    }
+
+    /// `keysMatch()`'s text, byte for byte (`tests/directory_portable.js`
+    /// A6's pattern).
+    #[test]
+    fn keys_match_is_node_text() {
+        assert_eq!(
+            keys_match(&["realm", "dn_key"], 2),
+            "((realm = ? AND dn_key = ?) OR (realm = ? AND dn_key = ?))"
+        );
+        assert_eq!(keys_match(&["a"], 1), "((a = ?))");
+        assert_eq!(keys_match(&["a", "b"], 0), "(1 = 0)");
     }
 }

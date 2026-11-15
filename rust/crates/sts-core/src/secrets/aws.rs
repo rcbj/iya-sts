@@ -29,7 +29,7 @@ use aws_config::{BehaviorVersion, Region, SdkConfig};
 use aws_sdk_kms::error::{DisplayErrorContext, ProvideErrorMetadata};
 use aws_sdk_kms::primitives::Blob;
 
-use super::forms::{aws_context, b64, node_base64};
+use super::forms::{aws_context, b64, no_bytes, node_base64};
 use super::{kms_parts, kms_text, BoxFuture, Failure, RemoteKek, Secret};
 use crate::errors::codes;
 
@@ -186,13 +186,15 @@ impl RemoteKek for AwsKms {
                 .send()
                 .await
                 .map_err(|e| said(&e))?;
-            let Some(blob) = answer.ciphertext_blob() else {
+            // `noBytes()` (#1789): an empty blob is no ciphertext.
+            let blob = answer.ciphertext_blob().map(|b| b.as_ref());
+            let Some(blob) = blob.filter(|b| !no_bytes(Some(b))) else {
                 return Err(Failure::new(
                     codes::STS_KEYS_0103,
                     "AWS KMS answered no ciphertext",
                 ));
             };
-            Ok(kms_text("aws-kms", &self.key_id, &b64(blob.as_ref())))
+            Ok(kms_text("aws-kms", &self.key_id, &b64(blob)))
         })
     }
 
@@ -223,9 +225,9 @@ impl RemoteKek for AwsKms {
                 .send()
                 .await
                 .map_err(|e| said(&e))?;
-            match answer.plaintext() {
-                Some(plain) => Ok(plain.as_ref().to_vec()),
-                None => Err(Failure::new(
+            match answer.plaintext().map(|p| p.as_ref()) {
+                Some(plain) if !no_bytes(Some(plain)) => Ok(plain.to_vec()),
+                _ => Err(Failure::new(
                     codes::STS_KEYS_0103,
                     "AWS KMS answered no plaintext",
                 )),

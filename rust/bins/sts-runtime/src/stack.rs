@@ -491,6 +491,7 @@ impl Stack {
         // closes, the cluster left and the origin given back (Node's
         // `stop()` chain).
         let opening = origin.clone();
+        let gating = node.clone().map(|n| (n, resolved.0));
         let closing = (origin.clone(), node.clone());
         persistence.set_hooks(StoreHooks {
             after_open: opening.map(|o| {
@@ -498,6 +499,26 @@ impl Stack {
                     Arc::new(move || {
                         let o = o.clone();
                         Box::pin(async move { o.adopt().await })
+                    });
+                step
+            }),
+            // THE CLUSTER GATE (`cluster.gate()`, #46): after the origin
+            // and before anything is read back, this node joins — and in
+            // active-passive mode a standby waits here for the service
+            // lease, restoring nothing and binding nothing until it holds
+            // it.
+            cluster_gate: gating.map(|(n, cluster_mode)| {
+                let step: sts_store::persistence::StoreStep =
+                    Arc::new(move || {
+                        let n = n.clone();
+                        Box::pin(async move {
+                            n.set_mode(cluster_mode);
+                            n.join().await?;
+                            if cluster_mode == ClusterMode::ActivePassive {
+                                n.wait_for_service_lease().await?;
+                            }
+                            Ok(())
+                        })
                     });
                 step
             }),
@@ -668,10 +689,7 @@ impl Stack {
         }
         .check()
         .map_err(|r| format!("{}{}", tag(r.code), r.why))?;
-        if let Some(node) = &self.node {
-            node.set_mode(cluster_mode);
-            node.join().await?;
-        }
+        // The node joined at the store's cluster gate, before the restore.
         // The run rows the store gave back went through the run store's
         // reconcile as they were restored: each shown to the scheduler's
         // watch, a finished interval run not held.

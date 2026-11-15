@@ -1096,6 +1096,41 @@ impl Driver for PostgresDriver {
         })
     }
 
+    // `minted_queries.js`'s NEWEST, the columns a minted row is read with
+    // added: an ordered walk of `sts_minted_index_sort` on the outside and
+    // one primary-key probe per row inside a LATERAL with LIMIT 1, which
+    // keeps the generic plan off a bitmap scan of the whole store (#820).
+    fn read_minted_newest<'a>(
+        &'a self,
+        handle: &'a str,
+        realm: &'a str,
+        now_ms: i64,
+        limit: i64,
+    ) -> StoreFuture<'a, Vec<MintedRow>> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let rows = client
+                .query(
+                    "SELECT m.handle, m.realm, m.key, m.body, m.written_ms, m.expires_at, m.key_sealed FROM \
+                     sts_minted_index i CROSS JOIN LATERAL (SELECT x.handle, x.realm, x.key, x.key_sealed, x.body, \
+                     (extract(epoch from x.written_at) * 1000)::bigint AS written_ms, x.expires_at FROM sts_minted \
+                     x WHERE x.handle = i.handle AND x.realm = i.realm AND x.key = i.key AND x.body <> $3 AND \
+                     (x.expires_at IS NULL OR x.expires_at > $4) LIMIT 1) m WHERE i.handle = $1 AND i.realm = $2 \
+                     AND i.sort_at IS NOT NULL ORDER BY i.sort_at DESC, i.key DESC LIMIT $5",
+                    &[
+                        &handle,
+                        &realm,
+                        &TOMBSTONE,
+                        &now_ms,
+                        &crate::driver::newest_limit(limit),
+                    ],
+                )
+                .await
+                .map_err(err)?;
+            Ok(rows.iter().map(minted_row).collect())
+        })
+    }
+
     fn purge_tombstones(&self, before_ms: i64) -> StoreFuture<'_, u64> {
         Box::pin(async move {
             let client = self.client().await?;
@@ -2163,11 +2198,11 @@ impl PostgresDriver {
             .await
             .map_err(err)?;
         if locked.is_none() {
-            return Err(fenced(&format!(
+            return Err(self.origin.lost(fenced(&format!(
                 "this process no longer holds its origin {} (its fence lock is gone, so another process took \
                  the claim), so it may not write.",
                 held.key
-            )));
+            ))));
         }
         let live = format!(
             "SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = '' AND key = $2 AND reservation = \
@@ -2182,18 +2217,18 @@ impl PostgresDriver {
         // LAPSED IS NOT TAKEN: the lock is still ours, so nobody wrote
         // under this origin in between.
         if !OriginEngine::reassert(self, &held).await? {
-            return Err(fenced(&format!(
+            return Err(self.origin.lost(fenced(&format!(
                 "this process no longer holds its origin {} (another process took it after the claim \
                  lapsed), so it may not write.",
                 held.key
-            )));
+            ))));
         }
         if tx.query_opt(&live, &args).await.map_err(err)?.is_none() {
-            return Err(fenced(&format!(
+            return Err(self.origin.lost(fenced(&format!(
                 "this process no longer holds its origin {} (the claim was not live after it was extended), \
                  so it may not write.",
                 held.key
-            )));
+            ))));
         }
         Ok(())
     }
@@ -2234,6 +2269,13 @@ impl PostgresDriver {
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn renew_origin(&self, ttl_ms: i64) -> StoreResult<bool> {
         self.origin.renew(self, ttl_ms).await
+    }
+
+    /// `setOriginLost()`: who is told when a write is refused because
+    /// this process's origin was taken ([`Origin::set_lost`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_origin_lost(&self, f: Option<crate::origin::OriginLost>) {
+        self.origin.set_lost(f);
     }
 
     /// `releaseOrigin()`.
