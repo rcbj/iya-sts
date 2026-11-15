@@ -93,6 +93,7 @@ function run(t) {
       defaults(k);
       lifecycle(k);
       search(k);
+      parts(k);
       log.debug("Leaving realmBody().");
     });
   } finally {
@@ -607,6 +608,155 @@ function search(k) {
           '7.3 the pull carries each route\'s authorization and no retired ' +
           'member', JSON.stringify(route));
   log.debug("Leaving search().");
+}
+
+// THE ROUTE PAGE'S TABS (rcbj, 2026-11-15): each tab a form of its own,
+// `set-pep-route` with `part`, which reads only that tab's members and
+// keeps every other member of the stored route. Each form below also
+// carries the OTHER tabs' members with wrong values, which must be
+// ignored: a Save on one tab never changes or loses another's.
+function parts(k) {
+  log.debug("Entering parts().");
+  const { t, store, pap } = k;
+  t.log.info('=== 8. the route page\'s tabs, each its own Save ===');
+  const routeOf = function (answer, wanted) {
+    return answer && answer.proxy && answer.proxy.routes.filter(
+      function (one) {
+        return one.id === wanted;
+      })[0];
+  };
+  const made = act(k, { action: 'set-pep-route', id: 'tabs', path: '/tabs',
+    match: 'exact', methods: ['GET', 'POST'], methodsGiven: 'true',
+    mechanisms: ['basic', 'oauth2'], application: 'ppr-api',
+    authzKind: 'simple', authzActionModel: 'read-write',
+    authzActions: ['read'], 'authzRole.read': ['ppr-readers'],
+    forwardCredentials: 'true', signals: 'false', mode: 'headers',
+    headerName: ['X-User'], headerClaim: ['username'], separator: ';' });
+  const before = routeOf(made, 'tabs');
+  t.check(made.ok && !!before && before.identity.headers.length === 1,
+          '8.0 a route to edit tab by tab', JSON.stringify(made));
+  // The wrong values every form carries for the members it does not own.
+  const noise = { path: '/wrong', match: 'prefix', application: '',
+    methods: ['DELETE'], methodsGiven: 'true', mechanisms: [],
+    authzKind: 'public', forwardCredentials: 'false', signals: 'true',
+    multipleAccounts: 'false', mode: 'jwt' };
+  const same = function (after, keep) {
+    return keep.every(function (member) {
+      return JSON.stringify(after[member]) === JSON.stringify(before[member]);
+    });
+  };
+  const ALL = ['path', 'match', 'application', 'methods', 'mechanisms',
+               'authorization', 'forwardCredentials', 'signals',
+               'multipleAccounts', 'identity'];
+  const outside = function (owned) {
+    return ALL.filter(function (one) {
+      return owned.indexOf(one) < 0;
+    });
+  };
+  const authn = act(k, Object.assign({}, noise, { action: 'set-pep-route',
+    from: 'tabs', id: 'tabs', part: 'authentication',
+    mechanisms: ['basic'], signals: 'true' }));
+  const a = routeOf(authn, 'tabs');
+  t.check(authn.ok && a.mechanisms.join() === 'basic' && a.signals === true &&
+          same(a, outside(['mechanisms', 'signals', 'multipleAccounts'])),
+          '8.1 Authentication saves its members and keeps every other ' +
+          'tab\'s', JSON.stringify(a));
+  const authz = act(k, Object.assign({}, noise, { action: 'set-pep-route',
+    from: 'tabs', id: 'tabs', part: 'authorization',
+    methods: ['GET'], methodsGiven: 'true', authzKind: 'policy',
+    authzPolicy: 'ppr-handwritten', authzPolicyActionModel: 'method' }));
+  const z = routeOf(authz, 'tabs');
+  t.check(authz.ok && z.methods.join() === 'GET' &&
+          z.authorization.kind === 'policy' &&
+          z.authorization.policy === 'ppr-handwritten' &&
+          z.mechanisms.join() === 'basic' &&
+          JSON.stringify(z.identity) === JSON.stringify(before.identity) &&
+          z.path === '/tabs' && z.forwardCredentials === true,
+          '8.2 Authorization saves the methods and the choice and keeps the ' +
+          'rest', JSON.stringify(z));
+  const ident = act(k, Object.assign({}, noise, { action: 'set-pep-route',
+    from: 'tabs', id: 'tabs', part: 'identity', authzKind: 'public',
+    forwardCredentials: 'false', mode: 'headers',
+    headerName: ['X-Mail'], headerClaim: ['email'], separator: ',' }));
+  const i = routeOf(ident, 'tabs');
+  t.check(ident.ok && i.forwardCredentials === false &&
+          i.identity.headers.length === 1 &&
+          i.identity.headers[0].name === 'X-Mail' &&
+          i.authorization.kind === 'policy' && i.methods.join() === 'GET' &&
+          i.path === '/tabs' && i.match === 'exact',
+          '8.3 Identity sent to backend saves forwarding and the identity ' +
+          'and keeps the rest', JSON.stringify(i));
+  const settings = act(k, Object.assign({}, noise, {
+    action: 'set-pep-route', from: 'tabs', id: 'tabs2', part: 'settings',
+    path: '/tabs2', match: 'prefix', application: 'ppr-api',
+    mode: 'jwt' }));
+  const st = routeOf(settings, 'tabs2');
+  t.check(settings.ok && !routeOf(settings, 'tabs') && !!st &&
+          st.path === '/tabs2' && st.match === 'prefix' &&
+          st.methods.join() === 'GET' && st.mechanisms.join() === 'basic' &&
+          st.identity.headers[0].name === 'X-Mail' &&
+          st.forwardCredentials === false &&
+          st.authorization.policy === 'ppr-handwritten',
+          '8.4 Settings renames the route and saves its matching, keeping ' +
+          'every other tab\'s', JSON.stringify(st));
+  const whole = act(k, { action: 'set-pep-route', from: 'tabs2',
+    id: 'tabs2', path: '/tabs2', methodsGiven: 'true',
+    mechanisms: ['basic'], application: 'ppr-api', mode: 'headers' });
+  const w = routeOf(whole, 'tabs2');
+  t.check(whole.ok && w.methods.length === 0 && w.forwardCredentials === false &&
+          w.identity.headers.length === 0,
+          '8.5 without `part` the form members are the whole route, as ' +
+          'before', JSON.stringify(w));
+  const unknown = act(k, Object.assign({}, noise, {
+    action: 'set-pep-route', from: 'tabs2', id: 'tabs2', part: 'order' }));
+  const missing = act(k, { action: 'set-pep-route', from: 'nope',
+    id: 'nope', part: 'authentication', mechanisms: ['basic'] });
+  const fresh = act(k, { action: 'set-pep-route', id: 'nope2',
+    part: 'identity', mode: 'headers' });
+  t.check(codeOf(k, unknown) === 'STS-XACML-0256' &&
+          codeOf(k, missing) === 'STS-XACML-0230' &&
+          codeOf(k, fresh) === 'STS-XACML-0230',
+          '8.6 a part that names no tab is STS-XACML-0256, and a part ' +
+          'on a route that does not exist STS-XACML-0230',
+          JSON.stringify([unknown, missing, fresh]));
+  // A GENERATED POLICY IS REWRITTEN BY ANY TAB'S SAVE, which is what the
+  // editor's warning says: hand-edited, then a save of the route's
+  // Authentication tab, which names no authorization member.
+  const simple = act(k, { action: 'set-pep-route', from: 'tabs2',
+    id: 'tabs2', part: 'authorization', methods: ['GET'],
+    methodsGiven: 'true', authzKind: 'simple',
+    authzActionModel: 'read-write', authzActions: ['read'],
+    'authzRole.read': ['ppr-readers'] });
+  const name = 'pep-' + k.peps.read(NAME).name + '-tabs2';
+  const held = store.read(name);
+  const edited = held && held.document.replace('?>',
+    '?><!-- edited by hand -->');
+  const handWritten = held && store.write(name, edited.indexOf('edited') > 0
+    ? edited : '<!-- edited by hand -->' + held.document,
+    { enabled: true, isRoot: false });
+  const stored = store.read(name);
+  const marked = !!stored && stored.document.indexOf('edited by hand') >= 0;
+  const againSaved = act(k, { action: 'set-pep-route', from: 'tabs2',
+    id: 'tabs2', part: 'authentication', mechanisms: ['basic'],
+    signals: 'true' });
+  const after = store.read(name);
+  t.check(simple.ok && !!held && handWritten && handWritten.ok && marked &&
+          againSaved.ok && after.document.indexOf('edited by hand') < 0 &&
+          after.pepRoute === NAME + '/tabs2',
+          '8.7 a hand edit of a route\'s generated policy is replaced by a ' +
+          'save of any of the route\'s tabs, not only Authorization',
+          JSON.stringify({ simple: simple.ok, held: !!held,
+                           hand: handWritten, marked: marked,
+                           saved: againSaved.ok }));
+  const editorOf = pap.editorJson(name);
+  const ordinary = pap.editorJson('ppr-handwritten');
+  t.check(editorOf.policy.pepRoute === NAME + '/tabs2' &&
+          ordinary.policy.pepRoute === null,
+          '8.8 the editor\'s answer names the route a generated policy is ' +
+          'for, and null for an ordinary one',
+          JSON.stringify([editorOf.policy, ordinary.policy]));
+  act(k, { action: 'remove-pep-route', route: 'tabs2', removePolicy: true });
+  log.debug("Leaving parts().");
 }
 
 module.exports = {

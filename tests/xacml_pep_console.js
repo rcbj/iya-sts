@@ -420,7 +420,10 @@ async function run(t) {
                    position: 0, count: 2, servedBy: [],
                    application: { identifier: 'orders-app', name: 'Orders',
                                   found: true } } });
-  const form = page.split('name="action" value="set-pep-route"')[1] || '';
+  // Every set-pep-route form of the page, its four editing tabs in order
+  // (rcbj, 2026-11-15: one form per tab).
+  const form = page.split('name="action" value="set-pep-route"').slice(1)
+    .join('');
   t.check(page.indexOf('<a href="/admin/applications?application=' +
                        'orders-app"><code>orders-app</code></a>') >= 0,
           'R5. the route page links the application it fronts', page);
@@ -645,7 +648,7 @@ async function run(t) {
           (page.match(/<section class="tabpanel/g) || []).length === 2 &&
           page.indexOf('<section class="tabpanel first" ' +
                       'id="xacml-pep-tab-proxy">') >= 0 &&
-          (page.match(/<div class="subpanel/g) || []).length === 4 &&
+          (page.match(/<div class="subpanel/g) || []).length === 7 &&
           page.indexOf('<div class="subpanel first" ' +
                       'id="xacml-pep-proxy-routes">') >= 0 &&
           page.slice(page.indexOf('id="xacml-pep-proxy-routes"'))
@@ -741,8 +744,9 @@ async function run(t) {
     return one.href.indexOf('/admin/xacml') === 0;
   }) && ownTabs.map(function (one) {
     return one.href;
-  }).join() === '#xacml-route-tab-metadata,#xacml-route-tab-edit,' +
-    '#xacml-route-tab-remove',
+  }).join() === '#xacml-route-tab-metadata,#xacml-route-tab-settings,' +
+    '#xacml-route-tab-authentication,#xacml-route-tab-authorization,' +
+    '#xacml-route-tab-identity,#xacml-route-tab-remove',
   'K1. every tab of the route page\'s three rows is a link to another ' +
           'page, the current ones included; the route\'s own row is its ' +
           'fragments', JSON.stringify(routeTabs.concat(ownTabs)));
@@ -786,7 +790,7 @@ async function run(t) {
       done.went[0] === one.href;
   }), 'K3. the runtime navigates on every tab with an href, to its page ' +
           'and fragment');
-  t.check(ownTabs.length === 3 && ownTabs.every(function (one) {
+  t.check(ownTabs.length === 6 && ownTabs.every(function (one) {
     const done = clicked(one.href);
     return done.went.length === 0 && done.hash === one.href;
   }), 'K3b. a tab of the route\'s own row only moves the fragment, so the ' +
@@ -867,16 +871,21 @@ async function run(t) {
     log.debug("Leaving legendsOf().");
     return out.join(' | ');
   };
-  t.equal(fieldsOf(form), 'id | path | match | methods+methodsGiven | ' +
-          'mechanisms | forwardCredentials | signals | multipleAccounts | ' +
-          'application | authzKind | authzResource | authzPolicy | ' +
-          'authzPolicyActionModel | authzActionModel | position | mode | ' +
+  // The route page's four forms, one per tab (rcbj, 2026-11-15): Settings
+  // (id, Matching, the application, Order), Authentication, Authorization
+  // (Methods with the choice), Identity sent to backend (forwarding and
+  // the identity), each its own Save.
+  t.equal(fieldsOf(form), 'id | path | match | application | position | ' +
+          'mechanisms | signals | multipleAccounts | ' +
+          'methods+methodsGiven | authzKind | authzResource | authzPolicy | ' +
+          'authzPolicyActionModel | authzActionModel | ' +
+          'forwardCredentials | mode | ' +
           'headerName+headerClaim | headerName+headerClaim | separator',
-          'F1. the route page\'s form: one field per line, one header ' +
-          '(name, claim) per line');
-  t.equal(legendsOf(form), 'Matching | Authentication | Authorization | ' +
-          'Order | Identity sent to the application',
-          'F2. the route page\'s fields under their legends');
+          'F1. the route page\'s forms: one field per line, one header ' +
+          '(name, claim) per line, each on its tab');
+  t.equal(legendsOf(form), 'Matching | Order',
+          'F2. the route page\'s Settings groups Matching and Order; the ' +
+          'other tabs are one subject each');
   t.equal(fieldsOf(newPanel), 'id | path | match | methods+methodsGiven | ' +
           'mechanisms | forwardCredentials | signals | multipleAccounts | ' +
           'application | authzKind | authzResource | authzPolicy | ' +
@@ -1903,8 +1912,15 @@ async function run(t) {
   // order and by name, Effective state and Listeners that serve it together
   // on Metadata; the rows above keep their tabs marked, the trail ends at
   // the open one, and a save comes back to the tab its form is on.
+  // And (rcbj, 2026-11-15) "Split the 'Edit the route' into a Settings tab
+  // (containing route id, Matching, and Order), Authentication tab,
+  // authorization tab, and Identity Sent To Backend tab".
   const ROUTE_TABS = [['xacml-route-tab-metadata', 'Metadata'],
-                      ['xacml-route-tab-edit', 'Edit the route'],
+                      ['xacml-route-tab-settings', 'Settings'],
+                      ['xacml-route-tab-authentication', 'Authentication'],
+                      ['xacml-route-tab-authorization', 'Authorization'],
+                      ['xacml-route-tab-identity',
+                       'Identity sent to backend'],
                       ['xacml-route-tab-remove', 'Remove the route']];
   const rtBars = page.match(
     /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
@@ -1914,8 +1930,9 @@ async function run(t) {
             return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
               one[0] + '">' + one[1] + '</a>';
           }).join('') + '</nav>',
-          'RT1. a route\'s page draws a fourth row: Metadata, Edit the ' +
-          'route, Remove the route, Metadata first');
+          'RT1. a route\'s page draws a fourth row: Metadata, Settings, ' +
+          'Authentication, Authorization, Identity sent to backend, Remove ' +
+          'the route, Metadata first');
   const routePanel = function (html, id) {
     log.debug("Entering routePanel(). " + id);
     const start = html.indexOf('<div class="subpanel' +
@@ -1926,24 +1943,76 @@ async function run(t) {
     return start < 0 ? '' : html.slice(start, next < 0 ? html.length : next);
   };
   const metaPanel = routePanel(page, 'xacml-route-tab-metadata');
-  const editPanel = routePanel(page, 'xacml-route-tab-edit');
+  const settingsPanel = routePanel(page, 'xacml-route-tab-settings');
+  const authnPanel = routePanel(page, 'xacml-route-tab-authentication');
+  const authzPanel = routePanel(page, 'xacml-route-tab-authorization');
+  const identityPanel = routePanel(page, 'xacml-route-tab-identity');
   const removePanel = routePanel(page, 'xacml-route-tab-remove');
+  // Each editing tab: ONE set-pep-route form, its `part`, its own Save,
+  // and only its own fields (`fieldsOf()`, F above).
+  const partOf = function (html) {
+    log.debug("Entering partOf().");
+    const forms = html.match(/<form method="post"[\s\S]*?<\/form>/g) || [];
+    const saves = forms.filter(function (one) {
+      return one.indexOf('name="action" value="set-pep-route"') >= 0;
+    });
+    const m = saves.length === 1
+      ? /name="part" value="([^"]+)"/.exec(saves[0]) : null;
+    log.debug("Leaving partOf().");
+    return { part: m ? m[1] : '', fields: saves.length === 1
+      ? fieldsOf(saves[0]) : '', saveButton: saves.length === 1 &&
+        /<button type="submit" title="[^"]*">Save the route<\/button>/
+          .test(saves[0]),
+      keepsId: saves.length === 1 &&
+        saves[0].indexOf('name="from" value="orders-api"') >= 0 };
+  };
+  const tabParts = [[settingsPanel, 'settings',
+                     'id | path | match | application | position'],
+                    [authnPanel, 'authentication',
+                     'mechanisms | signals | multipleAccounts'],
+                    [authzPanel, 'authorization',
+                     'methods+methodsGiven | authzKind | authzResource | ' +
+                     'authzPolicy | authzPolicyActionModel | ' +
+                     'authzActionModel'],
+                    [identityPanel, 'identity',
+                     'forwardCredentials | mode | headerName+headerClaim | ' +
+                     'headerName+headerClaim | separator']];
+  const partMisses = tabParts.filter(function (one) {
+    const got = partOf(one[0]);
+    return got.part !== one[1] || got.fields !== one[2] || !got.saveButton ||
+      !got.keepsId;
+  }).map(function (one) {
+    return one[1] + ' => ' + JSON.stringify(partOf(one[0]));
+  });
   t.check(metaPanel.indexOf('>Effective state</h3>') >= 0 &&
           metaPanel.indexOf('>Listeners that serve it</h4>') >= 0 &&
-          metaPanel.indexOf('<form') < 0 &&
-          editPanel.indexOf('value="set-pep-route"') >= 0 &&
-          editPanel.indexOf('Effective state') < 0 &&
-          editPanel.indexOf('remove-pep-route') < 0 &&
+          metaPanel.indexOf('<form') < 0 && partMisses.length === 0 &&
+          settingsPanel.indexOf('Effective state') < 0 &&
+          (settingsPanel + authnPanel + authzPanel + identityPanel)
+            .indexOf('remove-pep-route') < 0 &&
           removePanel.indexOf('value="remove-pep-route"') >= 0 &&
           removePanel.indexOf('set-pep-route') < 0,
-          'RT2. Effective state and the listeners that serve it are both on ' +
-          'Metadata; the edit form on Edit the route; the removal on Remove ' +
-          'the route', metaPanel.slice(0, 400));
+          'RT2. Metadata holds the state and the listeners; Settings, ' +
+          'Authentication, Authorization and Identity sent to backend each ' +
+          'hold one form of their own fields with its own Save and `part`; ' +
+          'the removal on Remove the route', partMisses.join('\n'));
+  t.check(settingsPanel.indexOf('<span id="xacml-route-tab-edit"></span>') >
+            0 &&
+          authzPanel.indexOf('generate-pep-route-policy') >= 0 ===
+            (proxy.routes[0].authorization.kind !== 'policy') &&
+          settingsPanel.indexOf('name="part" value="settings"') >= 0 &&
+          settingsPanel.indexOf('<input type="hidden" name="id"') < 0 &&
+          authnPanel.indexOf('<input type="hidden" name="id" ' +
+                             'value="orders-api">') >= 0,
+          'RT2b. the old Edit the route fragment is an anchor at the top of ' +
+          'Settings; Generate the policy again is on Authorization; only ' +
+          'Settings renames, the other tabs carry the id unchanged',
+          settingsPanel.slice(0, 300));
   const readerRoute = reader.match(
     /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
   t.check(readerRoute.length === 4 && /href="#xacml-route-tab-metadata"/
             .test(readerRoute[3]) &&
-          !/xacml-route-tab-(edit|remove)/.test(reader),
+          !/xacml-route-tab-(edit|settings|authentication|authorization|identity|remove)/.test(reader),
           'RT3. a reader\'s route page: Metadata alone',
           readerRoute[3] || '');
   // THE TRAIL'S TAIL for each fragment: the route a link to its own page,
@@ -1952,25 +2021,28 @@ async function run(t) {
   const routeQ = { pep: 'pep-1', route: 'orders-api' };
   const routeHere = routeTrail.replace(/orders-api$/, 'orders-api -> ' +
     '/admin/xacml/pep/route?pep=pep-1&route=orders-api | ');
-  const editInner = (/ id="([^"]+)"/.exec(editPanel.slice(40)) || [])[1];
+  // An anchor inside Authorization (its policy chooser), and the old
+  // single tab's fragment, which is an anchor inside Settings.
+  const authzInner = (/ id="([^"]+)"/.exec(authzPanel.slice(40)) || [])[1];
   const tails = {
     '': 'Metadata',
     '#no-such-tab': 'Metadata',
-    '#xacml-route-tab-metadata': 'Metadata',
-    '#xacml-route-tab-edit': 'Edit the route',
-    '#xacml-route-tab-remove': 'Remove the route'
+    '#xacml-route-tab-edit': 'Settings'
   };
-  if (editInner) {
-    tails['#' + editInner] = 'Edit the route';
+  ROUTE_TABS.forEach(function (one) {
+    tails['#' + one[0]] = one[1];
+  });
+  if (authzInner) {
+    tails['#' + authzInner] = 'Authorization';
   }
   const tailMisses = Object.keys(tails).filter(function (hash) {
     return runtimeTrail('/admin/xacml/pep/route', routeQ, page, hash) !==
       routeHere + tails[hash];
   });
-  t.check(!!editInner && tailMisses.length === 0,
+  t.check(!!authzInner && tailMisses.length === 0,
           'RT4. the trail ends Configured Routes › <route> › <tab> for every ' +
-          'tab, the first with no fragment or an unknown one, and the tab ' +
-          'holding an anchor', tailMisses.map(function (h) {
+          'tab, Metadata with no fragment or an unknown one, Settings for ' +
+          'the old Edit the route fragment, and the tab holding an anchor', tailMisses.map(function (h) {
             return h + ' => ' + runtimeTrail('/admin/xacml/pep/route',
                                              routeQ, page, h);
           }).join('\n'));
@@ -2088,12 +2160,13 @@ async function run(t) {
   const marks = {
     '': '#xacml-route-tab-metadata',
     '#no-such-tab': '#xacml-route-tab-metadata',
-    '#xacml-route-tab-metadata': '#xacml-route-tab-metadata',
-    '#xacml-route-tab-edit': '#xacml-route-tab-edit',
-    '#xacml-route-tab-remove': '#xacml-route-tab-remove'
+    '#xacml-route-tab-edit': '#xacml-route-tab-settings'
   };
-  if (editInner) {
-    marks['#' + editInner] = '#xacml-route-tab-edit';
+  ROUTE_TABS.forEach(function (one) {
+    marks['#' + one[0]] = '#' + one[0];
+  });
+  if (authzInner) {
+    marks['#' + authzInner] = '#xacml-route-tab-authorization';
   }
   const markMisses = Object.keys(marks).filter(function (hash) {
     return marksFor(hash) !== above + marks[hash];
@@ -2104,25 +2177,128 @@ async function run(t) {
           'one mark per row', markMisses.map(function (h) {
             return h + ' => ' + marksFor(h);
           }).join('\n'));
-  // A SAVE KEEPS ITS TAB: set-pep-route lands on Edit the route, the
-  // route as it is now called; a refused save is drawn where it was (the
-  // runtime keeps the fragment), and so is the regenerate.
+  // A SAVE KEEPS ITS TAB: each tab's set-pep-route lands back on that
+  // tab, the route as it is now called; a form with no part (an older
+  // page) on Settings; a refused save is drawn where it was (the runtime
+  // keeps the fragment), and so is the regenerate.
   const WebAnswersRt = require('../admin-ui/web_answers');
   const routeBackRt = '/admin/xacml/pep/route?pep=pep-1&route=orders-api';
-  t.check(WebAnswersRt.landing('/admin/xacml/peps', 'set-pep-route',
-            { ok: true }, routeBackRt, { from: 'orders-api',
-                                         id: 'orders-v2' }) ===
-            '/admin/xacml/pep/route?pep=pep-1&route=orders-v2' +
-            '#xacml-route-tab-edit' &&
+  const landedRt = function (fields) {
+    log.debug("Entering landedRt().");
+    log.debug("Leaving landedRt().");
+    return WebAnswersRt.landing('/admin/xacml/peps', 'set-pep-route',
+      { ok: true }, routeBackRt, fields);
+  };
+  const landMisses = ['settings', 'authentication', 'authorization',
+                      'identity'].filter(function (part) {
+    return landedRt({ from: 'orders-api', id: part === 'settings'
+      ? 'orders-v2' : 'orders-api', part: part }) !==
+      '/admin/xacml/pep/route?pep=pep-1&route=' +
+      (part === 'settings' ? 'orders-v2' : 'orders-api') +
+      '#xacml-route-tab-' + part;
+  });
+  t.check(landMisses.length === 0 &&
+          landedRt({ from: 'orders-api', id: 'orders-api' }) ===
+            routeBackRt + '#xacml-route-tab-settings' &&
+          landedRt({ from: 'orders-api', id: 'orders-api', part: 'x' }) ===
+            routeBackRt + '#xacml-route-tab-settings' &&
           WebAnswersRt.landing('/admin/xacml/peps', 'set-pep-route',
-            { ok: false }, routeBackRt, { id: 'orders-api' }) === null &&
+            { ok: false }, routeBackRt, { id: 'orders-api',
+                                          part: 'identity' }) === null &&
           WebAnswersRt.landing('/admin/xacml/peps',
             'generate-pep-route-policy', { ok: true }, routeBackRt,
-            { route: 'orders-api' }) === null &&
-          editPanel.indexOf('generate-pep-route-policy') < 0 ===
-            (proxy.routes[0].authorization.kind === 'policy'),
-          'RT6. a save lands on Edit the route, a refusal and a regenerate ' +
-          'stay on the tab they were pressed on');
+            { route: 'orders-api' }) === null,
+          'RT6. each tab\'s save lands back on that tab (a rename on the ' +
+          'new id), one with no part on Settings; a refusal and a ' +
+          'regenerate stay on the tab they were pressed on',
+          landMisses.join());
+  // A PRESS ON ONE TAB'S CHOOSER KEEPS WHAT WAS TYPED ON ANOTHER: the
+  // state holds a draft per tab, each laid over the route for its own
+  // members only.
+  const draftOf = function (part, extra) {
+    log.debug("Entering draftOf().");
+    log.debug("Leaving draftOf().");
+    return Object.assign({ action: 'set-pep-route', name: 'pep-1',
+      from: 'orders-api', id: 'orders-api', part: part }, extra);
+  };
+  const typedSettings = WebAnswersRt.pepRouteState(
+    draftOf('settings', { path: '/typed', match: 'exact',
+                          application: proxy.routes[0].application,
+                          fgsearch: 'application',
+                          'fgfind.application': 'x' }), null, null);
+  const thenAuthz = WebAnswersRt.pepRouteState(
+    draftOf('authorization', { methods: ['GET'], methodsGiven: 'true',
+                               authzKind: 'public',
+                               fgsearch: 'authzPolicy' }),
+    typedSettings, null);
+  const redrawn = XacmlPage.routeOfDraft(proxy.routes[0], thenAuthz);
+  t.check(Object.keys(thenAuthz.drafts).sort().join() ===
+            'authorization,settings' &&
+          redrawn.route.path === '/typed' &&
+          redrawn.route.match === 'exact' &&
+          redrawn.route.methods.join() === 'GET' &&
+          redrawn.route.authorization.kind === 'public' &&
+          JSON.stringify(redrawn.route.mechanisms) ===
+            JSON.stringify(proxy.routes[0].mechanisms) &&
+          redrawn.route.application === proxy.routes[0].application &&
+          redrawn.route.signals === proxy.routes[0].signals &&
+          JSON.stringify(redrawn.identity) ===
+            JSON.stringify(proxy.routes[0].identity),
+          'RT7. a chooser press keeps a draft per tab: what was typed on ' +
+          'Settings survives a press on Authorization, and the tabs never ' +
+          'drafted show the route as stored', JSON.stringify(redrawn.route));
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== PE. the Policy editor: no overall Save, and a route\'s ' +
+             'generated policy ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): a note above the chooser that there is no overall
+  // Save, and for a policy generated for a route, that a regenerate or a
+  // route save replaces what is edited here.
+  const editorAnswer = function (pepRoute) {
+    log.debug("Entering editorAnswer().");
+    log.debug("Leaving editorAnswer().");
+    return { policies: ['p1'], serviceOwn: [], problem: null, tree: [],
+             problems: [], xpathVersionGaps: [], menus: null,
+             document: '<Policy/>', alfa: '',
+             policy: { name: 'p1', enabled: true, isRoot: false,
+                       policyId: 'p1', kind: 'Policy', version: '1.0',
+                       combiningAlgId: '', description: '',
+                       pepRoute: pepRoute } };
+  };
+  const plainEditor = XacmlPage.editorBody(writer, editorAnswer(null));
+  const routeEditor = XacmlPage.editorBody(writer,
+    editorAnswer('pep-1/orders-api'));
+  const readerEditor = XacmlPage.editorBody(kit.context({}, false),
+    editorAnswer(null));
+  const noSaveAt = plainEditor.indexOf('There is no overall Save');
+  t.check(noSaveAt >= 0 &&
+          noSaveAt < plainEditor.indexOf('<form method="get" ' +
+                                         'action="/admin/xacml/editor">') &&
+          /class="note[^"]*"/.test(plainEditor.slice(0, noSaveAt)) &&
+          plainEditor.indexOf('An Update saves only the fields in its own ' +
+                              'row.') > noSaveAt &&
+          plainEditor.indexOf('nudged to pull it') > noSaveAt &&
+          readerEditor.indexOf('There is no overall Save') < 0,
+          'PE1. above the chooser, a note: no overall Save, each Update ' +
+          'writes its own row to the live policy at once and the PEPs are ' +
+          'nudged; a reader, with no Update, is not told',
+          plainEditor.slice(0, 900));
+  const warned = 'Changes made here are replaced whenever the route\'s ' +
+    'policy is generated again';
+  t.check(plainEditor.indexOf(warned) < 0 &&
+          routeEditor.indexOf(warned) >= 0 &&
+          routeEditor.indexOf('route <code>orders-api</code> of remote PEP ' +
+                              '<code>pep-1</code>') >= 0 &&
+          routeEditor.indexOf('<a href="/admin/xacml/pep/route?pep=pep-1' +
+                              '&amp;route=orders-api#xacml-route-tab-' +
+                              'authorization">') >= 0 &&
+          routeEditor.indexOf(warned) <
+            routeEditor.indexOf('<form method="get" ' +
+                                'action="/admin/xacml/editor">'),
+          'PE2. a route\'s generated policy carries the warning, naming the ' +
+          'route and linking its Authorization tab; an ordinary policy ' +
+          'does not', routeEditor.slice(0, 1600));
   log.debug("Leaving run().");
 }
 

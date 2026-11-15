@@ -187,8 +187,15 @@ decides; it is validated the same way.
 * **Policy editor** tab: pick the policy and click **Open**. Each element has
   **Add** and **Remove** controls offering only what XACML allows there; an
   edit that would not type-check is refused and the stored document is left
-  as it was. **Editing is live**: there is no draft, so the next decision
-  uses the change.
+  as it was. **Editing is live**: there is no draft and no overall Save, so
+  each **Update** writes its own row's fields to the stored policy at once,
+  the next decision uses the change, and registered remote PEPs are nudged
+  to pull it (or pick it up on their poll). The tab says so above the
+  chooser. A policy generated for a remote PEP's route (`pep-<pep>-<route>`)
+  carries a warning: it is written again from the route by **Generate the
+  policy again** and by every save of that PEP's routes, so a hand-written
+  policy belongs to the route's **An existing policy** choice
+  ([Remote PEPs](remote-pep.md)).
 * **Policies** tab: **Disable** takes a policy out of the decision without
   deleting it, **Make root** makes it the one the PDP starts from (the old
   root stops being root), and **Delete** removes it. Deleting the root leaves

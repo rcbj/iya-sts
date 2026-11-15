@@ -482,7 +482,26 @@ class WebAnswers {
   // `authzResource` (the application's home page offered as the resource:
   // a Use puts it in the box). `find.attribute` says which chooser a Find
   // answered, so only that one draws results.
+  //
+  // THE ROUTE PAGE'S TABS ARE FORMS OF THEIR OWN (rcbj, 2026-11-15), each
+  // posting `part`: the state keeps the last draft of EACH tab in
+  // `drafts`, by part, so a press on one tab's chooser does not lose what
+  // was typed on another (`XacmlPage.routeOfDraft()`). A form with no
+  // part (Create a New Route) keeps `draft` alone, as before.
   static pepRouteState(fields: Json, prior: Json, found: Json): Json {
+    const state = WebAnswers.pepRouteStateOf(fields, prior, found);
+    const part = WebAnswers.one(fields, 'part');
+    if (!part) {
+      return state;
+    }
+    const before = prior && prior.key === state.key ? prior : null;
+    const drafts = Object.assign({}, (before && before.drafts) || {});
+    drafts[part] = state.draft;
+    return Object.assign(state, { drafts: drafts });
+  }
+
+  // One press's state, `draft` the pressed form's fields.
+  static pepRouteStateOf(fields: Json, prior: Json, found: Json): Json {
     const key = WebAnswers.pepRouteKeyOf(fields);
     const before = prior && prior.key === key ? prior : null;
     if (!WebAnswers.has(fields, 'fgadd')) {
@@ -1249,12 +1268,18 @@ class WebAnswers {
     if (page === '/admin/xacml/peps' &&
         at.pathname === '/admin/xacml/pep/route') {
       const pep = String(at.searchParams.get('pep') || '');
-      // The save lands back on the route's Edit the route tab (rcbj,
-      // 2026-11-15: a form stays in its tab), `XacmlPage.ROUTE_EDIT_TAB`.
+      // The save lands back on the tab its form is on (rcbj, 2026-11-15: a
+      // form stays in its tab): each of the route page's editing tabs posts
+      // `part`, and the tab is `xacml-route-tab-<part>`
+      // (`XacmlPage.ROUTE_*_TAB`). A form with no part (an older page)
+      // lands on Settings, the tab Edit the route became.
       if (action === 'set-pep-route' && fields && fields.id) {
+        const part = WebAnswers.one(fields, 'part');
+        const tab = ['settings', 'authentication', 'authorization',
+                     'identity'].indexOf(part) >= 0 ? part : 'settings';
         return '/admin/xacml/pep/route?' + new URLSearchParams({
           pep: pep, route: String(fields.id) }).toString() +
-          '#xacml-route-tab-edit';
+          '#xacml-route-tab-' + tab;
       }
       if (action === 'remove-pep-route') {
         return '/admin/xacml/pep?' + new URLSearchParams({

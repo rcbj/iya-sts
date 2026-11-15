@@ -297,6 +297,19 @@ class XacmlAdmin {
    * The guided editor's actions.
    */
   static readonly EDITOR_ACTIONS = EDITOR_ACTIONS;
+  /**
+   * The route page's tabs, each a form of `set-pep-route` with `part`
+   * (rcbj, 2026-11-15), and the route members each one states. Every
+   * member a part does not name keeps the stored route's value; the
+   * position is read only where the form sends it, which only Settings
+   * does.
+   */
+  static readonly ROUTE_PARTS: { [part: string]: string[] } = {
+    settings: ['id', 'path', 'match', 'application'],
+    authentication: ['mechanisms', 'signals', 'multipleAccounts'],
+    authorization: ['methods', 'authorization'],
+    identity: ['identity', 'forwardCredentials']
+  };
 
   /**
    * Builds the pages over the dependencies given.
@@ -1156,6 +1169,22 @@ class XacmlAdmin {
       : { mode: mode };
   }
 
+  // The route page's tab a `set-pep-route` names (`part`): null for none,
+  // the part, or '' for a value that names no part, which is refused.
+  private routePartOf(value: unknown): string | null {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.routePartOf().');
+    if (value === undefined || value === null || value === '') {
+      log.debug('Leaving XacmlAdmin.routePartOf(). None.');
+      return null;
+    }
+    const part = String(value);
+    const known = Object.prototype.hasOwnProperty.call(
+      XacmlAdmin.ROUTE_PARTS, part);
+    log.debug('Leaving XacmlAdmin.routePartOf(). ' + (known ? part : '?'));
+    return known ? part : '';
+  }
+
   // A form or API boolean: true, false, or undefined for "not given".
   private flagOf(value: unknown): boolean | undefined {
     const { log } = this.deps;
@@ -1360,7 +1389,8 @@ class XacmlAdmin {
         given = null;
       }
     }
-    if (given === undefined || typeof given === 'string') {
+    const formMembers = given === undefined || typeof given === 'string';
+    if (formMembers) {
       // THE METHODS ARE STATED (#1760): a form's None posts no `methods`
       // at all, so the form says it drew the boxes (`methodsGiven`) and
       // no box ticked is then the empty list, deny-all. A caller sending
@@ -1425,6 +1455,38 @@ class XacmlAdmin {
                'STS-XACML-0230');
     }
     const at = ids.indexOf(from !== null ? from : given.id);
+    // ONE TAB OF THE ROUTE'S PAGE (rcbj, 2026-11-15: "Split the 'Edit the
+    // route' into a Settings tab ..., Authentication tab, authorization
+    // tab, and Identity Sent To Backend tab"). Each tab is a form of its
+    // own and sends `part`: only that part's members are read off the
+    // form, and every other member is the stored route's, so a Save on one
+    // tab cannot change or lose what another tab holds. Without `part` the
+    // form members are the whole route, as they always were.
+    const part = formMembers ? this.routePartOf(body.part) : null;
+    if (part === '') {
+      log.debug('Leaving XacmlAdmin.withRoute(). Unknown part.');
+      return errorCodes.mark({ ok: false,
+               why: '`part` is one of settings, authentication, ' +
+                    'authorization or identity: the route page\'s tab ' +
+                    'whose members the form states.' }, 'STS-XACML-0256');
+    }
+    if (part !== null && at < 0) {
+      log.debug('Leaving XacmlAdmin.withRoute(). No route for a part.');
+      return errorCodes.mark({ ok: false,
+               why: '`part` edits one part of an existing route: name it ' +
+                    'in `from`. "' + name + '" has no route "' +
+                    String(from !== null ? from : given.id) + '".' },
+               'STS-XACML-0230');
+    }
+    if (part !== null) {
+      const merged = JSON.parse(JSON.stringify(proxy.routes[at]));
+      XacmlAdmin.ROUTE_PARTS[part].forEach(function (member: string) {
+        if (given[member] !== undefined) {
+          merged[member] = given[member];
+        }
+      });
+      given = merged;
+    }
     // AN EDIT KEEPS THE ROUTE'S IDENTITY AND ITS AUTHORIZATION where the
     // form says nothing of them: each has an action of its own
     // (`set-pep-route-identity`, `set-pep-route-authorization`).
@@ -2154,7 +2216,10 @@ class XacmlAdmin {
                 kind: parsed ? (parsed.kind || 'Policy') : null,
                 version: parsed ? (parsed.version || '1.0') : null,
                 combiningAlgId: parsed ? parsed.combiningAlgId : null,
-                description: parsed ? parsed.description : '' },
+                description: parsed ? parsed.description : '',
+                // A ROUTE'S GENERATED POLICY (#1760), `<pep>/<route>`, so
+                // the editor can say a route save rewrites it.
+                pepRoute: chosen.pepRoute || null },
       problem: problem,
       tree: parsed ? editor.tree(parsed).map(function (row) {
         return { path: row.path, depth: row.depth, kind: row.kind,

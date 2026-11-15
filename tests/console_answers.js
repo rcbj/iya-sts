@@ -185,11 +185,12 @@ function checkOnce(t) {
   // and the same act from the PEP's own page, stay put.
   const routeBack = '/admin/xacml/pep/route?pep=pep-1&route=orders';
   const renamed = WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
-    { ok: true }, routeBack, { from: 'orders', id: 'orders-api' });
+    { ok: true }, routeBack, { from: 'orders', id: 'orders-api',
+                               part: 'settings' });
   const removed = WebAnswers.landing('/admin/xacml/peps', 'remove-pep-route',
     { ok: true }, routeBack, { route: 'orders' });
   t.check(renamed === '/admin/xacml/pep/route?pep=pep-1&route=orders-api' +
-          '#xacml-route-tab-edit' &&
+          '#xacml-route-tab-settings' &&
           removed === '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes' &&
           WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
             { ok: false }, routeBack, { id: 'orders-api' }) === null &&

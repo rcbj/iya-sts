@@ -1003,14 +1003,28 @@ class XacmlPage {
 
   // A ROUTE'S OWN PAGE IS TABS TOO (rcbj, 2026-11-15), a fourth row under
   // the three it keeps: Metadata (the effective state and the listeners
-  // that serve it, together), Edit the route and Remove the route, the
-  // sections' order and names. Each is a fragment of the route's page, so
-  // the runtime's tab tree names the open one at the end of the trail
-  // (`WebShell.openTabs()`), and a save lands back on Edit the route
-  // (`WebAnswers.landing()`).
+  // that serve it, together), then the route's values split by what they
+  // are about (rcbj: "Split the 'Edit the route' into a Settings tab
+  // (containing route id, Matching, and Order), Authentication tab,
+  // authorization tab, and Identity Sent To Backend tab"), and Remove the
+  // route. Each is a fragment of the route's page, so the runtime's tab
+  // tree names the open one at the end of the trail
+  // (`WebShell.openTabs()`). Each editing tab is a form of its own whose
+  // `part` is the tab's last word, and a save lands back on that tab
+  // (`WebAnswers.landing()`, `'xacml-route-tab-' + part`).
+  //
+  // THE OLD FRAGMENT STILL OPENS: `#xacml-route-tab-edit`, the one tab
+  // these four replaced, is an empty anchor at the top of Settings, so an
+  // old link opens Settings by the runtime's own rule that an anchor
+  // inside a tab names that tab — no alias table.
   static readonly ROUTE_METADATA_TAB = 'xacml-route-tab-metadata';
-  static readonly ROUTE_EDIT_TAB = 'xacml-route-tab-edit';
+  static readonly ROUTE_SETTINGS_TAB = 'xacml-route-tab-settings';
+  static readonly ROUTE_AUTHENTICATION_TAB =
+    'xacml-route-tab-authentication';
+  static readonly ROUTE_AUTHORIZATION_TAB = 'xacml-route-tab-authorization';
+  static readonly ROUTE_IDENTITY_TAB = 'xacml-route-tab-identity';
   static readonly ROUTE_REMOVE_TAB = 'xacml-route-tab-remove';
+  static readonly ROUTE_EDIT_TAB = 'xacml-route-tab-edit';
 
   // The way back from a route's page: the PEP's Reverse proxy tab, on its
   // Configured Routes.
@@ -2172,6 +2186,40 @@ class XacmlPage {
                      listKey: string, isNew: boolean,
                      position?: number | string): string {
     const self = this;
+    const rows = self.routeRows(t, json, r, count, listKey, isNew, position);
+    const group = function (legendKey: string, html: string): string {
+      return XacmlPage.fieldGroup(t, legendKey, html);
+    };
+    return group('consoleXacml.routeForm.legend.matching',
+        rows.path + rows.match + rows.methods) +
+      group('consoleXacml.routeForm.legend.authentication',
+        rows.publicNote + rows.mechanisms + rows.forward + rows.signals +
+        rows.multipleAccounts + rows.application) +
+      group('consoleXacml.routeForm.legend.authorization',
+        rows.authorization) +
+      group('consoleXacml.routeForm.legend.order', rows.position);
+  }
+
+  // EACH OF A ROUTE'S FIELDS AS ITS OWN LINE (rcbj, 2026-11-15), so the
+  // Create a New Route form groups them under its four legends
+  // (`routeFields()`) and the route's own page puts each on the tab it
+  // belongs to (`routeDetail()`): one drawing of every field, never two.
+  /**
+   * Draws each of a route's fields but its id and its identity.
+   *
+   * @param t - the page's translator
+   * @param json - the page's answer
+   * @param r - the route as the form draws it
+   * @param count - the highest position the route may take
+   * @param listKey - the form's key, `new` or `page-<route id>`
+   * @param isNew - whether this is the Create a New Route form
+   * @param position - the position box's value, if any
+   * @returns each field's HTML by name
+   */
+  static routeRows(t: Json, json: Json, r: Json, count: number,
+                   listKey: string, isNew: boolean,
+                   position?: number | string): Json {
+    const self = this;
     const when = 'consoleXacml.tip.route.when';
     const box = function (field: string, value: string,
                           on: boolean): string {
@@ -2221,52 +2269,48 @@ class XacmlPage {
     const row = function (html: string): string {
       return XacmlPage.formRow(html);
     };
-    const group = function (legendKey: string, rows: string): string {
-      return XacmlPage.fieldGroup(t, legendKey, rows);
+    return {
+      path: row(self.labelled(t, 'consoleXacml.routeForm.path',
+        'consoleXacml.tip.route.path', '<input type="text" name="path" ' +
+        'size="28" required placeholder="/api" value="' + esc(r.path) +
+        '">', when)),
+      match: row(self.labelled(t, 'consoleXacml.routeForm.match',
+        'consoleXacml.tip.route.match', self.select('match', [
+          { value: 'prefix',
+            label: t.text('consoleXacml.routeForm.prefix') },
+          { value: 'exact',
+            label: t.text('consoleXacml.routeForm.exact') }],
+          r.match), when)),
+      methods: row(self.checkGroup(t, listId + '-methods',
+        'consoleXacml.routeForm.methods', 'consoleXacml.tip.route.methods',
+        methods) + self.hidden('methodsGiven', 'true') +
+        '<span class="sub">' +
+        t.html('consoleXacml.routeForm.methodsNote') + '</span>'),
+      publicNote: '<p class="sub">' +
+        t.html('consoleXacml.routeForm.publicNote') + '</p>',
+      mechanisms: row(self.checkGroup(t, listId + '-mechanisms',
+        'consoleXacml.routeForm.mechanisms',
+        'consoleXacml.tip.route.mechanisms', mechanisms)),
+      forward: row(self.labelled(t, 'consoleXacml.routeForm.forward',
+        'consoleXacml.tip.route.forward',
+        self.yesNo('forwardCredentials', r.forwardCredentials, t), when)),
+      signals: row(self.labelled(t, 'consoleXacml.routeForm.signals',
+        'consoleXacml.tip.route.signals',
+        self.yesNo('signals', r.signals !== false, t), when)),
+      multipleAccounts: row(self.labelled(t,
+        'consoleXacml.routeForm.multipleAccounts',
+        'consoleXacml.tip.route.multipleAccounts',
+        self.yesNo('multipleAccounts', r.multipleAccounts === true, t),
+        when)),
+      application: self.applicationChooser(t, json, r, listKey),
+      authorization: self.authorizationFields(t, json, r, listKey),
+      position: row(self.labelled(t, 'consoleXacml.routeForm.position',
+        'consoleXacml.tip.route.position', '<input type="number" ' +
+        'name="position" min="0" max="' + count + '" placeholder="' +
+        (isNew ? String(count) : '') + '"' +
+        (position === undefined ? ''
+          : ' value="' + esc(String(position)) + '"') + '>', when))
     };
-    return group('consoleXacml.routeForm.legend.matching',
-        row(self.labelled(t, 'consoleXacml.routeForm.path',
-          'consoleXacml.tip.route.path', '<input type="text" name="path" ' +
-          'size="28" required placeholder="/api" value="' + esc(r.path) +
-          '">', when)) +
-        row(self.labelled(t, 'consoleXacml.routeForm.match',
-          'consoleXacml.tip.route.match', self.select('match', [
-            { value: 'prefix',
-              label: t.text('consoleXacml.routeForm.prefix') },
-            { value: 'exact',
-              label: t.text('consoleXacml.routeForm.exact') }],
-            r.match), when)) +
-        row(self.checkGroup(t, listId + '-methods',
-          'consoleXacml.routeForm.methods', 'consoleXacml.tip.route.methods',
-          methods) + self.hidden('methodsGiven', 'true') +
-          '<span class="sub">' +
-          t.html('consoleXacml.routeForm.methodsNote') + '</span>')) +
-      group('consoleXacml.routeForm.legend.authentication',
-        '<p class="sub">' + t.html('consoleXacml.routeForm.publicNote') +
-        '</p>' +
-        row(self.checkGroup(t, listId + '-mechanisms',
-          'consoleXacml.routeForm.mechanisms',
-          'consoleXacml.tip.route.mechanisms', mechanisms)) +
-        row(self.labelled(t, 'consoleXacml.routeForm.forward',
-          'consoleXacml.tip.route.forward',
-          self.yesNo('forwardCredentials', r.forwardCredentials, t), when)) +
-        row(self.labelled(t, 'consoleXacml.routeForm.signals',
-          'consoleXacml.tip.route.signals',
-          self.yesNo('signals', r.signals !== false, t), when)) +
-        row(self.labelled(t, 'consoleXacml.routeForm.multipleAccounts',
-          'consoleXacml.tip.route.multipleAccounts',
-          self.yesNo('multipleAccounts', r.multipleAccounts === true, t),
-          when)) +
-        self.applicationChooser(t, json, r, listKey)) +
-      group('consoleXacml.routeForm.legend.authorization',
-        self.authorizationFields(t, json, r, listKey)) +
-      group('consoleXacml.routeForm.legend.order',
-        row(self.labelled(t, 'consoleXacml.routeForm.position',
-          'consoleXacml.tip.route.position', '<input type="number" ' +
-          'name="position" min="0" max="' + count + '" placeholder="' +
-          (isNew ? String(count) : '') + '"' +
-          (position === undefined ? ''
-            : ' value="' + esc(String(position)) + '"') + '>', when)));
   }
 
   // ONE FIELD'S LINE: the console's `.formrow`, a label then its control.
@@ -2808,8 +2852,48 @@ class XacmlPage {
   // A ROUTE FORM DRAWN AGAIN FROM ITS DRAFT: the fields the form held when a
   // chooser button was pressed, over the route it was first drawn from, so
   // nothing typed is lost to a search. Without a draft, the route as given.
+  //
+  // ON THE ROUTE'S PAGE EACH TAB IS A FORM OF ITS OWN (rcbj, 2026-11-15),
+  // so a press keeps a draft PER TAB (`search.drafts`, by the form's
+  // `part`, `WebAnswers.pepRouteState()`), and each draft is laid over the
+  // route for that tab's members alone: a Find on Authorization keeps
+  // what was typed on Settings, and a tab never drawn from a draft shows
+  // the route as stored. The members are `XacmlAdmin.ROUTE_PARTS`'.
+  static readonly ROUTE_PART_MEMBERS: Json = {
+    settings: ['path', 'match', 'application'],
+    authentication: ['mechanisms', 'signals', 'multipleAccounts'],
+    authorization: ['methods', 'authorization'],
+    identity: ['forwardCredentials']
+  };
+
   static routeOfDraft(base: Json, search: Json): Json {
-    const fields = search && search.draft;
+    const self = this;
+    const drafts = search && search.drafts;
+    if (drafts && typeof drafts === 'object' && Object.keys(drafts).length) {
+      let out = { route: base, id: String(base.id || ''),
+                  position: undefined as Json, identity: base.identity };
+      Object.keys(self.ROUTE_PART_MEMBERS).forEach(function (part) {
+        if (!drafts[part]) {
+          return;
+        }
+        const over = self.draftOver(out.route, drafts[part]);
+        const route = Object.assign({}, out.route);
+        self.ROUTE_PART_MEMBERS[part].forEach(function (member: string) {
+          route[member] = over.route[member];
+        });
+        out = { route: route,
+                id: part === 'settings' ? over.id : out.id,
+                position: part === 'settings' ? over.position : out.position,
+                identity: part === 'identity' ? over.identity
+                                               : out.identity };
+      });
+      return out;
+    }
+    return self.draftOver(base, search && search.draft);
+  }
+
+  // One form's draft laid over the route: every member the form draws.
+  static draftOver(base: Json, fields: Json): Json {
     if (!fields) {
       return { route: base, id: String(base.id || ''), position: undefined,
                identity: base.identity };
@@ -3155,13 +3239,15 @@ class XacmlPage {
   /**
    * Draws one route's page (#1760, rcbj 2026-11-14: "click on a route name
    * and go to another page and be able to update all the configuration
-   * values"), `/admin/xacml/pep/route?pep=<name>&route=<id>`: the route's
-   * effective state, then ONE form holding every member of the route —
-   * its id (a rename), path and match, methods, public, mechanisms,
-   * application, XACML resource and action, credential forwarding,
-   * signals, its identity and its position — saved by `set-pep-route`
-   * through the document editor's one validator, and Remove behind a
-   * confirmation. The upstream is the PEP's, one per proxy: the page says
+   * values"), `/admin/xacml/pep/route?pep=<name>&route=<id>`: a row of
+   * tabs — Metadata (the route's effective state), Settings (its id, a
+   * rename, path and match, application and position), Authentication
+   * (mechanisms, signals, multiple accounts), Authorization (methods and
+   * the policy choice), Identity sent to backend (credential forwarding
+   * and the identity) and Remove the route, behind a confirmation. Each
+   * editing tab is its own `set-pep-route` form with `part`, saved
+   * through the document editor's one validator and keeping the members
+   * the other tabs hold. The upstream is the PEP's, one per proxy: the page says
    * so and links the document that sets it.
    *
    * @param ctx - the render context
@@ -3240,15 +3326,26 @@ class XacmlPage {
       return '<tr><th' + self.tipOf(t, tipKey) + '>' + t.html(labelKey) +
         '</th><td>' + value + '</td></tr>';
     };
+    // A reader's page has Metadata alone: `kit.panelsShown()` leaves out
+    // a tab whose panel is empty.
     const routeTabs = function (panels: Json): string {
       return kit.subTabbedPanels(
         t.text('consoleXacml.routePage.title', { route: r.id }), [
           { id: self.ROUTE_METADATA_TAB,
             label: t.text('consoleProtocolSettings.metadataHeading'),
             html: panels.metadata },
-          { id: self.ROUTE_EDIT_TAB,
-            label: t.text('consoleXacml.routePage.editHeading'),
-            html: panels.edit || '' },
+          { id: self.ROUTE_SETTINGS_TAB,
+            label: t.text('consoleXacml.routePage.tab.settings'),
+            html: panels.settings || '' },
+          { id: self.ROUTE_AUTHENTICATION_TAB,
+            label: t.text('consoleXacml.routePage.tab.authentication'),
+            html: panels.authentication || '' },
+          { id: self.ROUTE_AUTHORIZATION_TAB,
+            label: t.text('consoleXacml.routePage.tab.authorization'),
+            html: panels.authorization || '' },
+          { id: self.ROUTE_IDENTITY_TAB,
+            label: t.text('consoleXacml.routePage.tab.identity'),
+            html: panels.identity || '' },
           { id: self.ROUTE_REMOVE_TAB,
             label: t.text('consoleXacml.routePage.removeHeading'),
             html: panels.remove || '' }]);
@@ -3300,31 +3397,60 @@ class XacmlPage {
     const edited = drafted.route;
     const identity = drafted.identity || { mode: 'headers', headers: [],
                                            separator: ',' };
-    const editor = '<form method="post" action="/admin/xacml/peps">' +
-      self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
-      self.hidden('from', r.id) +
-      self.defaultSubmit(t.text('consoleXacml.routeForm.update')) +
-      self.formRow(self.labelled(t, 'consoleXacml.routeForm.id',
-        'consoleXacml.tip.routePage.rename', '<input type="text" name="id" ' +
-        'size="20" maxlength="64" required ' +
-        'value="' + esc(drafted.id) + '">', when)) +
-      self.routeFields(t, json, edited, Math.max(detail.count - 1, 0),
-                       'page-' + r.id, false,
-                       drafted.position === undefined ? detail.position
-                                                      : drafted.position) +
-      // THE APPLICATION IS MAPPED HERE (rcbj, 2026-11-14): the Reverse
-      // proxy tab's "Map an application to a route" form left for this
-      // field, the same chooser, saved through the same validator.
-      '<div class="sub">' + t.html('consoleXacml.routePage.applicationNote') +
-      '</div>' +
-      self.fieldGroup(t, 'consoleXacml.routeForm.legend.identity',
-        (edited.authorization && edited.authorization.kind === 'public'
-          ? '<p class="sub">' +
-            t.html('consoleXacml.routePage.publicIdentity') + '</p>'
-          : self.identityFields(t, identity))) +
-      self.formRow('<button type="submit"' +
-        self.tipOf(t, 'consoleXacml.tip.route.when') + '>' +
-        t.html('consoleXacml.routeForm.update') + '</button>') + '</form>';
+    // ONE FORM PER TAB, EACH ITS OWN SAVE (rcbj, 2026-11-15). Every one
+    // posts `set-pep-route` with `from`, the route it edits, and `part`,
+    // the tab: the service reads only that part's members and keeps every
+    // other member of the stored route (`XacmlAdmin.ROUTE_PARTS`), so a
+    // Save on one tab cannot change or lose what another holds. The tabs
+    // that do not rename carry the id unchanged, which the landing reads.
+    const rows = self.routeRows(t, json, edited,
+                                Math.max(detail.count - 1, 0),
+                                'page-' + r.id, false,
+                                drafted.position === undefined
+                                  ? detail.position : drafted.position);
+    const partForm = function (part: string, html: string): string {
+      return '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+        self.hidden('from', r.id) + self.hidden('part', part) +
+        (part === 'settings' ? '' : self.hidden('id', r.id)) +
+        self.defaultSubmit(t.text('consoleXacml.routeForm.update')) + html +
+        self.formRow('<button type="submit"' +
+          self.tipOf(t, 'consoleXacml.tip.route.when') + '>' +
+          t.html('consoleXacml.routeForm.update') + '</button>') + '</form>';
+    };
+    // SETTINGS: the id (a rename), what the route matches, the application
+    // it fronts and where it stands in the list. The application is here
+    // rather than under Authentication: it is what the route IS, a path
+    // mapped to an application (rcbj, #1760: "Map an application object to
+    // a path"), whatever the route then asks of a caller.
+    const settings = '<span id="' + self.ROUTE_EDIT_TAB + '"></span>' +
+      partForm('settings',
+        self.formRow(self.labelled(t, 'consoleXacml.routeForm.id',
+          'consoleXacml.tip.routePage.rename', '<input type="text" ' +
+          'name="id" size="20" maxlength="64" required ' +
+          'value="' + esc(drafted.id) + '">', when)) +
+        self.fieldGroup(t, 'consoleXacml.routeForm.legend.matching',
+          rows.path + rows.match) +
+        rows.application +
+        '<div class="sub">' +
+        t.html('consoleXacml.routePage.applicationNote') + '</div>' +
+        self.fieldGroup(t, 'consoleXacml.routeForm.legend.order',
+          rows.position));
+    const authentication = partForm('authentication',
+      rows.publicNote + rows.mechanisms + rows.signals +
+      rows.multipleAccounts);
+    // AUTHORIZATION: which methods the route allows (None is deny-all, so
+    // it is an authorization question) and the choice of policy.
+    const authorization = partForm('authorization',
+      rows.methods + rows.authorization);
+    // IDENTITY SENT TO BACKEND: what reaches the application — the
+    // identity mode, its headers and separator, and whether the caller's
+    // own credential is forwarded as well.
+    const identityTab = partForm('identity', rows.forward +
+      (edited.authorization && edited.authorization.kind === 'public'
+        ? '<p class="sub">' +
+          t.html('consoleXacml.routePage.publicIdentity') + '</p>'
+        : self.identityFields(t, identity)));
     // REMOVE, BEHIND A CONFIRMATION: an unnamed required checkbox, so the
     // browser holds the submit until it is ticked and the operation's body
     // is the one `remove-pep-route` has always taken.
@@ -3357,8 +3483,10 @@ class XacmlPage {
       : '';
     return self.withinPepTabs(t, name, titled(r,
       kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
-      routeTabs({ metadata: state, edit: editor + regenerate,
-                  remove: remove })), true) + back;
+      routeTabs({ metadata: state, settings: settings,
+                  authentication: authentication,
+                  authorization: authorization + regenerate,
+                  identity: identityTab, remove: remove })), true) + back;
   }
 
   // `/admin/xacml/pep/route` WITHOUT A ROUTE (#1760): every registered
@@ -3982,7 +4110,37 @@ class XacmlPage {
     // not parse answers its `problem` and no tree.
     const parsed = !json.problem;
 
-    const chooser = '<form method="get" action="/admin/xacml/editor">' +
+    // THERE IS NO OVERALL SAVE (rcbj, 2026-11-15), said first, above the
+    // chooser: each Update writes its one row's change to the STORED
+    // policy at once (the draft IS the stored policy, `xacml/CLAUDE.md`),
+    // the realm's PDP decides with it from the next request, and the
+    // registered remote PEPs are nudged to pull it, or pull it on their
+    // poll. Only a writer has Update buttons to be told about.
+    const noSave = ctx.write
+      ? kit.note('<p>' + t.html('consoleXacml.editor.noSave') + '</p>',
+                 t.text('consoleXacml.editor.noSaveLabel'))
+      : '';
+    // A ROUTE'S GENERATED POLICY (#1760, `xacmlPepRoute`) IS REWRITTEN
+    // FROM THE ROUTE: `PepRoutePolicies.write()` writes it again whenever
+    // the text it would generate differs from the stored one — at Generate
+    // the policy again, and at every save of the PEP's routes
+    // (`proxyAction()` writes every simple or public route's policy), so a
+    // Save on any of the route's tabs, or of another route of the same
+    // PEP, or of the manifest. A hand edit here is lost then; a
+    // hand-written policy belongs to the route's "existing policy" choice.
+    const marked = String(json.policy.pepRoute || '');
+    const cut = marked.lastIndexOf('/');
+    const generated = cut > 0
+      ? kit.warn('<p>' + t.html('consoleXacml.editor.generatedRoute', {
+          route: marked.slice(cut + 1), pep: marked.slice(0, cut) }) +
+          '</p><p><a href="' + esc(XacmlPage.routeHref(marked.slice(0, cut),
+            marked.slice(cut + 1)) + '#' +
+            XacmlPage.ROUTE_AUTHORIZATION_TAB) + '">' +
+          t.html('consoleXacml.editor.generatedRouteLink') + '</a></p>',
+          t.text('consoleXacml.editor.generatedRouteLabel'))
+      : '';
+    const chooser = noSave + generated +
+      '<form method="get" action="/admin/xacml/editor">' +
       t.html('consoleXacml.th.policy') + ' ' +
         XacmlPage.select('policy', json.policies.map(function (one) {
         return { value: one, label: one };

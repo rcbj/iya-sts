@@ -3136,6 +3136,7 @@ Scope: `admin:read`.
 | `policy.isRoot` | boolean |  |  |
 | `policy.kind` | string, or null |  |  |
 | `policy.name` | string |  |  |
+| `policy.pepRoute` | string, or null |  | The remote PEP route, &lt;pep>/&lt;route>, this policy was generated for (#1760), or null: a route save or Generate the policy again rewrites it. |
 | `policy.policyId` | string, or null |  |  |
 | `policy.version` | string, or null |  |  |
 | `problem` | string, or null |  |  |
@@ -5361,7 +5362,7 @@ Scope: `admin:write`.
 
 **Add or replace one route of a remote PEP's reverse proxy**
 
-Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them, and its authorization unless they carry `authzKind`; `from` renames the route it names to `id`, and a simple or public route's generated policy with it. Every route states `methods` (STS-XACML-0262; empty is deny-all) and one authorization choice (STS-XACML-0263): see set-pep-route-authorization. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
+Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them, and its authorization unless they carry `authzKind`; `from` renames the route it names to `id`, and a simple or public route's generated policy with it; `part` reads one tab of the route's page and keeps the rest of the route. Every route states `methods` (STS-XACML-0262; empty is deny-all) and one authorization choice (STS-XACML-0263): see set-pep-route-authorization. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -5414,6 +5415,7 @@ Scope: `admin:write`.
 | `mode` | one of `headers`, `saml`, `jwt` |  | With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity. |
 | `multipleAccounts` | boolean, or string |  | true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257). |
 | `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `part` | one of `settings`, `authentication`, `authorization`, `identity`, empty |  | With the form members and an existing route: the route page's tab the form is (2026-11-15). Only that part's members are read — settings: id, path, match, application and position; authentication: mechanisms, signals, multipleAccounts; authorization: methods and the authz members; identity: forwardCredentials and the identity members — and every other member keeps the stored route's value. A route that does not exist is STS-XACML-0230, another value STS-XACML-0256. Empty or absent: the members are the whole route. |
 | `path` | string |  | The path the route matches. |
 | `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |

@@ -378,7 +378,18 @@ grammar is what this whole directory is arranged to avoid.
 edit loads the document, applies one change, serializes and writes back. There
 is nothing to lose when a browser closes and no second copy that could disagree
 with the stored one. The cost is that editing is LIVE, so the page says so and
-puts the disable control one click away.
+puts the disable control one click away — and since 2026-11-15 (rcbj) says
+first, above the chooser, that there is no overall Save: each Update writes
+its own row at once, the PDP decides with it from the next request and the
+remote PEPs are nudged (`editor.noSave`). **A route's generated policy
+(`xacmlPepRoute`) carries a warning** (`editor.generatedRoute`, from the
+answer's `policy.pepRoute`): `PepRoutePolicies.write()` writes it again
+whenever the text it would generate differs — at Generate the policy again
+and at EVERY save of that PEP's routes, since `proxyAction()` writes every
+simple or public route's policy, so a Save on any route tab (not only
+Authorization), another route's save or a manifest save replaces a hand
+edit, and re-enables it. A hand-written policy belongs to the route's
+existing-policy choice.
 
 **An expression edit names an expression.** The six `set-expression-*` actions
 replace the node at the path. A path that resolves to a Match, a rule, a
@@ -1772,11 +1783,30 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   its next poll, which is the rename's one cost. **Its sections are a fourth
   row of tabs** (rcbj 2026-11-15), `kit.subTabbedPanels()` inside the
   Configured Routes panel: Metadata (Effective state and Listeners that
-  serve it), Edit the route, Remove the route (`XacmlPage.ROUTE_*_TAB`).
-  They are fragments of the route's page, so the runtime's tab tree ends
-  the trail at the open one and `markOpenTabs()` marks it while the rows
-  above keep theirs (`tests/xacml_pep_console.js` RT); a save lands on
-  `#xacml-route-tab-edit` (`WebAnswers.landing()`).
+  serve it), Settings (id, Matching's path and match, the application,
+  Order), Authentication (mechanisms, signals, multiple accounts),
+  Authorization (Methods with None/All, the choice and its fields,
+  Generate the policy again), Identity sent to backend (credential
+  forwarding and the identity), Remove the route (`XacmlPage.ROUTE_*_TAB`,
+  rcbj: "Split the 'Edit the route' into a Settings tab ..."). They are
+  fragments of the route's page, so the runtime's tab tree ends the trail
+  at the open one and `markOpenTabs()` marks it while the rows above keep
+  theirs (`tests/xacml_pep_console.js` RT). The old `#xacml-route-tab-edit`
+  is an empty anchor at the top of Settings, so an old link opens Settings
+  by the runtime's anchor-inside-a-tab rule, with no alias table.
+  **EACH EDITING TAB IS ITS OWN FORM, AND SENDS `part`** (`settings`,
+  `authentication`, `authorization`, `identity`): `withRoute()` reads only
+  that part's members off the form (`XacmlAdmin.ROUTE_PARTS`) and keeps
+  every other member of the stored route, so a Save on one tab cannot
+  change or lose another's. Without `part` the members are the whole
+  route, as before (backwards compatible); `part` on a route that does not
+  exist is `0230`, an unknown one `0256`. The tabs other than Settings
+  post the id unchanged, so a rename is Settings' alone and the landing
+  reads `id`. A save lands on `#xacml-route-tab-<part>`
+  (`WebAnswers.landing()`; no part, Settings). A chooser press keeps a
+  draft PER TAB (`state.pepRoute.drafts`, `WebAnswers.pepRouteState()`,
+  laid over the route by `XacmlPage.routeOfDraft()` for that tab's
+  members), so a Find on one tab keeps what was typed on another.
 * **AN XACML TAB IS NEVER A PAGE** (rcbj 2026-11-15: the Deciding policy
   link answered "/admin/xacml/editor is not a page of this console").
   `/admin/xacml/{policies,editor,peps,decide,authzen}` are written as paths

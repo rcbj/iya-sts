@@ -1345,11 +1345,16 @@ at that tab, so **Configured Routes** leads back to the list. Just below
 the tab rows is **← Back to routes**, then the heading **Route detail:
 <id>** with the route's path, and below it a fourth row, the route's own
 tabs: **Metadata** (its effective state and the listeners that serve it),
-**Edit the route** and **Remove the route**; a reader sees Metadata alone.
-With no fragment Metadata is open. The trail ends at the open tab, *›
-Configured Routes › the route › Edit the route*, and follows every tab
-press, Back and Forward and a reload. A Save lands back on Edit the route,
-and a refusal is drawn on the tab the form is on. A
+**Settings**, **Authentication**, **Authorization**, **Identity sent to
+backend** and **Remove the route**; a reader sees Metadata alone. With no
+fragment, or one the page does not have, Metadata is open; an old link to
+`#xacml-route-tab-edit` (the single Edit the route tab these four
+replaced) opens Settings. The trail ends at the open tab, *› Configured
+Routes › the route › Authorization*, and follows every tab press, Back and
+Forward and a reload. Each editing tab is a form of its own with its own
+**Save**, which changes only that tab's values: the others keep what is
+stored. A Save lands back on the tab it came from, and a refusal is drawn
+on the tab the form is on. A
 PEP's own page draws the first two rows the same way.
 The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
 `routeDetail` member holds what the page draws.
@@ -1358,15 +1363,24 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   application linked to the application's page, its position in the list,
   the PEP's upstream, and the reverse-proxy listeners that serve it, each
   with what the PEP last reported. Every proxy listener serves every route.
-* **Edit the route**, one form for every value: the id, path and match, methods, the
-  mechanisms, the application, the authorization, credential
-  forwarding, signals, the position, and the identity (its mode, headers and
-  claims, separator), one field per line, grouped under *Matching*,
-  *Authentication*, *Authorization*, *Order* and *Identity sent to the
-  application*. The Create a New Route form has the same layout and groups,
-  without the identity. **Save** sends `set-pep-route` with the route's current
-  id in `from` and every member of the form. The save goes through the same
-  checks as the document editor and the other forms.
+* **Settings**: the route's id (change it to rename the route), *Matching*
+  (path and match), the application the route fronts, and *Order* (its
+  position in the list).
+* **Authentication**: the mechanisms, signals and multiple accounts.
+* **Authorization**: the methods (with **None** and **All**) and the
+  authorization choice, its policy, resource, action model and roles, and
+  **Generate the policy again** for a simple or public route.
+* **Identity sent to backend**: whether the caller's own credential is
+  forwarded, and the identity (its mode, headers and claims, separator); a
+  public route forwards nobody, and says so.
+* Each tab's **Save** sends `set-pep-route` with the route's current id in
+  `from` and `part` naming the tab (`settings`, `authentication`,
+  `authorization` or `identity`): only that tab's members are read, and
+  every other member of the route is kept as stored. One field per line;
+  the Create a New Route form keeps every field but the identity on one
+  form, grouped under *Matching*, *Authentication*, *Authorization* and
+  *Order*. The save goes through the same checks as the document editor
+  and the other forms.
 * **Methods** has a **None** and an **All** box on both forms, ahead of the
   seven methods. **All** ticks every method, which is how a route takes any
   method: the seven are stored. **None** unticks them all, and a route with
