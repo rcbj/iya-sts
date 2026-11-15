@@ -2181,6 +2181,7 @@ dependencies = [
  "sts-crypto",
  "sts-ldap",
  "sts-model",
+ "sts-store",
  "thiserror",
  "tracing",
 ]

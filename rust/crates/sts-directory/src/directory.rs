@@ -44,7 +44,7 @@ use sts_ldap::service_dn::{
 };
 
 use crate::domain_map::{DomainMap, FromOptions};
-use crate::entry::{Attributes, Entry};
+use crate::entry::{Attributes, Entry, EntryExt};
 use crate::error::LdapError;
 use crate::matching;
 use crate::model::DirectoryModel;
@@ -557,6 +557,26 @@ impl Directory {
             }
             self.realms[r].entries.insert(key, entry);
         }
+    }
+
+    /// What a store driver's `load_directory()` answered, each realm's rows
+    /// restored into the tree of that id (a realm not added is skipped, as
+    /// a row of a removed realm is).
+    #[tracing::instrument(level = "debug", skip(self, loaded))]
+    pub fn load(&mut self, loaded: &sts_store::driver::Directory) {
+        for (realm, entries) in loaded {
+            self.restore(realm, entries.clone());
+        }
+    }
+
+    /// Every realm's entries as a driver's `save_directory()` takes them
+    /// (`DirectoryChange::all`).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn snapshot(&self) -> sts_store::driver::Directory {
+        self.realms
+            .iter()
+            .map(|r| (r.id.clone(), r.entries.values().cloned().collect()))
+            .collect()
     }
 
     /// The realms' trees, default first.
