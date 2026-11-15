@@ -113,6 +113,13 @@ pub fn describe(code: &str) -> Option<&'static Row> {
     BY_CODE.get(code).copied()
 }
 
+/// The constant a code given as text names (a refusal another crate
+/// recorded as its text, `detail.refusedWith`), where the table has it.
+/// A hot path: one lookup per refusal; no span.
+pub fn known(code: &str) -> Option<ErrorCode> {
+    describe(code).map(|row| ErrorCode(row.code))
+}
+
 pub fn is_known(code: &str) -> bool {
     describe(code).is_some()
 }

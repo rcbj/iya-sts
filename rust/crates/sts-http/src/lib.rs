@@ -655,6 +655,37 @@ impl HttpLayer {
         }
     }
 
+    /// `cors.ownOrigins(req)`: the origins this service calls its own for
+    /// a request — what `/authn-api` holds an act's `Origin` to.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn own_origins(
+        &self,
+        headers: &HeaderMap,
+        peer: Option<&client_address::Peer>,
+        over_tls: bool,
+    ) -> Vec<String> {
+        let request = cors::CorsRequest {
+            method: String::new(),
+            path: String::new(),
+            query: String::new(),
+            headers: headers.clone(),
+            scheme: if over_tls { "https" } else { "http" }.to_string(),
+            body: String::new(),
+        };
+        cors::own_origins(&request, &self.cors_context(peer))
+    }
+
+    /// `clientAddress.of(req)`: the address a request came from, as the
+    /// rate limits and the audit log name it.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn client_address_of(
+        &self,
+        headers: &HeaderMap,
+        peer: Option<&client_address::Peer>,
+    ) -> String {
+        self.address_rules().client_address(peer, headers)
+    }
+
     fn wire_rules(&self, over_tls: bool) -> cookie_wire::WireRules {
         let Some(mode) = &self.mode else {
             return cookie_wire::WireRules {
