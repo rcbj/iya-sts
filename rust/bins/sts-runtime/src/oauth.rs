@@ -328,6 +328,242 @@ impl AppEnv for SealingEnv {
     }
 }
 
+/// WHO MAY ACT FOR WHOM over this stack's registers (rule 3az,
+/// `delegation_policy.ts`'s dependencies): the application register, and
+/// the person's entry and groups read off the stack's directory — the one
+/// [`OAuthStack::reload_directory`] refills before each request — as
+/// `ldap_server.js`'s `readDelegationFacts()` reads them.
+struct DelegationEntries {
+    apps: Arc<ApplicationRegistry>,
+    tree: Arc<Mutex<Directory>>,
+    roles: Arc<sts_registers::roles::Roles>,
+}
+
+fn tree_realm(tree: &Directory) -> Option<usize> {
+    let id = sts_core::realm::current_id();
+    tree.realms().iter().position(|t| t.id == id)
+}
+
+/// The cn and DN of every group a person is in, by `member`,
+/// `uniqueMember` or the person's own `memberOf` (`groupsOfUser()`).
+fn groups_of(tree: &Directory, r: usize, dn: &str) -> Vec<(String, String)> {
+    use sts_directory::EntryExt as _;
+    let person = sts_ldap::service_dn::normalize_dn(Some(dn));
+    let claimed: Vec<String> = tree
+        .get(r, dn)
+        .map(|e| {
+            e.values("memberof")
+                .iter()
+                .map(|v| sts_ldap::service_dn::normalize_dn(Some(v)))
+                .collect()
+        })
+        .unwrap_or_default();
+    let Some(t) = tree.realms().get(r) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, String)> = t
+        .entries
+        .iter()
+        .filter(|(key, group)| {
+            !tree.group_rule(r, &group.dn, &group.attributes).is_empty()
+                && (["member", "uniquemember"].iter().any(|a| {
+                    group.values(a).iter().any(|v| {
+                        sts_ldap::service_dn::normalize_dn(Some(v)) == person
+                    })
+                }) || claimed.contains(key))
+        })
+        .map(|(_, g)| (g.dn.clone(), g.first("cn").unwrap_or("").to_string()))
+        .collect();
+    out.sort_by(|a, b| {
+        sts_ldap::service_dn::normalize_dn(Some(&a.0))
+            .cmp(&sts_ldap::service_dn::normalize_dn(Some(&b.0)))
+    });
+    out
+}
+
+impl sts_oauth::delegation_policy::DelegationDirectory for DelegationEntries {
+    fn get(&self, identifier: &str) -> Option<Json> {
+        self.apps.get(identifier)
+    }
+    fn for_client_id(&self, client_id: &str) -> Option<Json> {
+        self.apps.for_client_id(client_id)
+    }
+    fn for_audience(&self, audience: &str) -> Option<Json> {
+        self.apps.for_audience(audience)
+    }
+    fn for_applies_to(&self, applies_to: &str) -> Option<Json> {
+        self.apps.for_applies_to(applies_to)
+    }
+    fn is_resource_server(&self, id: &str) -> bool {
+        self.apps.is_resource_server(id)
+    }
+    fn required_roles_of(&self, identifier: &str) -> Vec<String> {
+        self.apps.required_roles_of(identifier)
+    }
+    fn list(&self) -> Vec<Json> {
+        self.apps.list()
+    }
+    fn roles_of(&self, kind: &str, name: &str) -> Vec<String> {
+        self.roles.roles_of(&sts_registers::roles::Who::subject(
+            kind == "application",
+            name,
+            true,
+        ))
+    }
+    // `readDelegationFacts(key)`.
+    fn delegation_facts(&self, key: &str) -> Json {
+        use sts_directory::EntryExt as _;
+        let tree = self
+            .tree
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let nobody = json!({ "found": false, "person": false, "dn": "",
+                             "username": "", "sub": "",
+                             "notDelegated": false, "mayAct": "",
+                             "delegate": null, "groups": [],
+                             "semantics": [], "defaultSemantics": "" });
+        let Some(r) = tree_realm(&tree) else {
+            return nobody;
+        };
+        let Some(stored) = tree.locate(r, key).cloned() else {
+            return nobody;
+        };
+        let person = tree.is_person_dn(r, &stored.dn);
+        let username = || Directory::username_of_dn(&stored.dn);
+        let may_act = stored.first("stsmayact").unwrap_or("").to_string();
+        let mut delegate = Json::Null;
+        if !may_act.is_empty() {
+            if let Some(named) = tree.locate(r, &may_act) {
+                let applications =
+                    format!("ou=applications,{}", tree.realms()[r].base);
+                if tree.is_person_dn(r, &named.dn) {
+                    delegate = json!({
+                        "kind": "person", "dn": named.dn,
+                        "name": Directory::username_of_dn(&named.dn),
+                        "sub": format!("urn:uuid:{}", named.entry_uuid()),
+                    });
+                } else if sts_ldap::service_dn::normalize_dn(Some(&named.dn))
+                    .ends_with(&format!(
+                        ",{}",
+                        sts_ldap::service_dn::normalize_dn(Some(&applications))
+                    ))
+                {
+                    delegate = json!({ "kind": "application",
+                                       "dn": named.dn, "name": "",
+                                       "sub": "" });
+                }
+            }
+        }
+        let groups: Vec<Json> = groups_of(&tree, r, &stored.dn)
+            .into_iter()
+            .map(|(dn, cn)| json!({ "dn": dn, "cn": cn }))
+            .collect();
+        json!({
+            "found": true, "person": person, "dn": stored.dn,
+            "username": if person { username() } else { String::new() },
+            "sub": if person {
+                format!("urn:uuid:{}", stored.entry_uuid())
+            } else { String::new() },
+            "notDelegated": stored.first("stsnotdelegated")
+                .is_some_and(|v| v.eq_ignore_ascii_case("true")),
+            "mayAct": may_act, "delegate": delegate, "groups": groups,
+            "semantics": stored.values("stsdelegationsemantics"),
+            "defaultSemantics": stored
+                .first("stsdefaultdelegationsemantics").unwrap_or(""),
+        })
+    }
+}
+
+/// `ou=roles` read off the stack's directory, for `roles.rolesOf()`: the
+/// token endpoint reads roles and writes none.
+struct RoleEntries(Arc<Mutex<Directory>>);
+
+impl sts_registers::port::RoleDirectory for RoleEntries {
+    fn all_roles(&self) -> Vec<Json> {
+        use sts_directory::EntryExt as _;
+        let tree = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(r) = tree_realm(&tree) else {
+            return Vec::new();
+        };
+        let roles = format!("ou=roles,{}", tree.realms()[r].base);
+        let key = sts_ldap::service_dn::normalize_dn(Some(&roles));
+        tree.realms()[r]
+            .entries
+            .iter()
+            .filter(|(k, e)| {
+                **k != key
+                    && sts_ldap::service_dn::is_under(Some(&e.dn), Some(&roles))
+            })
+            .map(|(_, e)| {
+                let mut o =
+                    sts_registers::applications::store::StoredApplication::of(
+                        e,
+                    )
+                    .to_json();
+                o["name"] = json!(e.first("cn").unwrap_or(""));
+                o
+            })
+            .collect()
+    }
+    fn write_role(
+        &self,
+        _name: &str,
+        _attributes: &Json,
+    ) -> sts_registers::port::Marked {
+        sts_registers::port::Marked::plain(json!(false))
+    }
+    fn delete_role(&self, _name: &str) -> bool {
+        false
+    }
+    fn resolve_owner(&self, _text: &str) -> Json {
+        json!({ "kind": "", "dn": "", "name": "" })
+    }
+    fn groups_of_user(&self, name: &str) -> Vec<String> {
+        let tree = self
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(r) = tree_realm(&tree) else {
+            return Vec::new();
+        };
+        let dn = tree
+            .locate(r, name)
+            .map(|e| e.dn.clone())
+            .unwrap_or_else(|| format!("uid={},{}", name, tree.users_dn(r)));
+        groups_of(&tree, r, &dn)
+            .into_iter()
+            .map(|(_, cn)| cn)
+            .collect()
+    }
+    fn ensure_group(&self, _name: &str, _options: &Json) -> Json {
+        Json::Null
+    }
+    fn name_for_subject(&self, subject: &str) -> String {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .name_for_subject(&sts_core::realm::current_id(), subject)
+    }
+}
+
+/// The settings, as the role register reads them.
+struct RoleSettings(Arc<Settings>);
+
+impl sts_registers::port::Settings for RoleSettings {
+    fn value(&self, key: &str) -> Json {
+        use sts_core::settings::SettingValue;
+        match self.0.value_of(key) {
+            SettingValue::Text(t) => json!(t),
+            SettingValue::Int(n) => json!(n),
+            SettingValue::Bool(b) => json!(b),
+            SettingValue::List(l) => json!(l),
+        }
+    }
+}
+
 /// The person, from the live directory.
 struct Directories(Arc<dyn sts_authn::ports::People>);
 
@@ -649,7 +885,7 @@ impl OAuthStack {
         let accepts = mode.clone();
         let clients: Arc<dyn sts_oauth::clients::Clients> =
             Arc::new(RegisterClients {
-                registry: apps,
+                registry: apps.clone(),
                 now_s: Arc::new(|| chrono::Utc::now().timestamp()),
                 accepts_unregistered: Arc::new(move || {
                     accepts.accepts_unregistered_addresses()
@@ -715,6 +951,59 @@ impl OAuthStack {
             }),
             Arc::new(|| chrono::Utc::now().timestamp_millis()),
         ));
+        // WHO MAY ACT FOR WHOM (rule 3az) and the register an exchange is
+        // written to (rule 3l), in Node's store.
+        let delegation =
+            Arc::new(sts_oauth::delegation_policy::DelegationPolicy {
+                directory: Arc::new(DelegationEntries {
+                    apps: apps.clone(),
+                    tree: directory.clone(),
+                    roles: Arc::new(sts_registers::roles::Roles::new(
+                        Some(Arc::new(RoleEntries(directory.clone()))),
+                        Arc::new(RoleSettings(settings.clone())),
+                    )),
+                }),
+                settings: settings.clone(),
+                mode: mode.clone(),
+            });
+        let acts = Arc::new(sts_oauth::delegation_acts::DelegationActs {
+            settings: settings.clone(),
+            acts: sts_oauth::delegation_acts::DelegationActs::declare(
+                &parts.lifecycle,
+                &parts.handles,
+            ),
+            // THIS PROCESS'S OWN `seq`, rising from the instant it
+            // started: unique within the process, and told apart from
+            // Node's blocks (`seq_allocator.ts`) by `origin`.
+            seq: {
+                let next = Arc::new(std::sync::atomic::AtomicI64::new(
+                    chrono::Utc::now().timestamp_millis(),
+                ));
+                Arc::new(move || {
+                    next.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                })
+            },
+            origin: {
+                let persistence = parts.persistence.clone();
+                Arc::new(move || {
+                    persistence
+                        .driver()
+                        .and_then(|d| d.change_log().map(|log| log.origin()))
+                        .unwrap_or_default()
+                })
+            },
+            identity_key: {
+                let people = parts.people.clone();
+                Arc::new(move |presented: &str| {
+                    let resolve = |sub: &str| {
+                        Some(people.name_for_subject(sub))
+                            .filter(|n| !n.is_empty())
+                    };
+                    sts_directory::funnel::identity_of(presented, &resolve).key
+                })
+            },
+            now_ms: Arc::new(|| chrono::Utc::now().timestamp_millis()),
+        });
         let tokens = Arc::new(TokenEndpoint {
             settings: settings.clone(),
             mode: mode.clone(),
@@ -770,6 +1059,38 @@ impl OAuthStack {
                         })
                     },
                     now_ms: Arc::new(|| chrono::Utc::now().timestamp_millis()),
+                },
+            )),
+            delegation: Some(delegation),
+            acts: Some(acts),
+            // RFC 8628's device codes, in Node's store (#150), claimed once
+            // across the cluster.
+            devices: Some(
+                sts_oauth::device_authorization::DeviceCodes::declare(
+                    &parts.lifecycle,
+                    &parts.handles,
+                    settings.clone(),
+                    Arc::new(ProcessClaims::default()),
+                    Arc::new(sts_core::time::now_ms_f64),
+                ),
+            ),
+            // CIBA's requests, in Node's store (#131): the grant is
+            // redeemed here; the request and its approval are Node's.
+            ciba: Some(sts_oauth::ciba::CibaRequests::declare(
+                &parts.lifecycle,
+                &parts.handles,
+                settings.clone(),
+                Arc::new(ProcessClaims::default()),
+                Arc::new(sts_core::time::now_ms_f64),
+                {
+                    // `readCibaUserCode()`: `stsCibaUserCode` on the entry.
+                    let ports = parts.directory_ports.clone();
+                    Arc::new(move |username: &str| {
+                        ports
+                            .person_attribute(username, "stsCibaUserCode")
+                            .and_then(|v| v.into_iter().next())
+                            .unwrap_or_default()
+                    })
                 },
             )),
         });
@@ -1015,6 +1336,30 @@ impl OAuthStack {
         );
         // RFC 7662 introspection (with RFC 9701's JWT answer) and RFC 7009
         // revocation.
+        // CIBA's backchannel authentication endpoint (#131).
+        let routes = routes.route(
+            "/oauth2/bc-authorize",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.bc_authorize(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
+        // RFC 8628's device authorization endpoint (#150).
+        let routes = routes.route(
+            "/oauth2/device_authorization",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.device_authorization(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         let routes = routes.route(
             "/oauth2/introspect",
             axum::routing::post({
@@ -1660,6 +2005,64 @@ impl OAuthStack {
                 .await
                 .into_response()
         }
+    }
+
+    /// `POST /oauth2/bc-authorize` (CIBA Core section 7).
+    async fn bc_authorize(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let ask = sts_oauth::introspection::EndpointAsk {
+            base,
+            address,
+            body,
+            authorization: header_of(&headers, "authorization"),
+            accept: header_of(&headers, "accept"),
+            peer: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(self.tokens.bc_authorize(&ask))
+            .await
+            .into_response()
+    }
+
+    /// `POST /oauth2/device_authorization` (RFC 8628 section 3.1).
+    async fn device_authorization(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let htu = format!("{}/oauth2/device_authorization", base);
+        let dpop = headers
+            .get("dpop")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let ask = sts_oauth::introspection::EndpointAsk {
+            base,
+            address,
+            body,
+            authorization: header_of(&headers, "authorization"),
+            accept: header_of(&headers, "accept"),
+            peer: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(
+            self.tokens
+                .device_authorization(&ask, dpop.as_deref(), &htu),
+        )
+        .await
+        .into_response()
     }
 
     async fn token(

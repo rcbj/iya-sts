@@ -177,6 +177,17 @@ pub fn string_of(value: Option<&Json>) -> String {
     }
 }
 
+/// A JavaScript number as JSON writes it: a whole number without a
+/// fraction (`5`, not `5.0`), anything else as it is.
+#[tracing::instrument(level = "trace")]
+pub fn number(value: f64) -> Json {
+    if value.is_finite() && value.fract() == 0.0 && value.abs() < 9.0e15 {
+        Json::from(value as i64)
+    } else {
+        Json::from(value)
+    }
+}
+
 /// `!!value`: JavaScript's truthiness of a JSON value.
 #[tracing::instrument(level = "trace", skip_all)]
 pub fn truthy(value: Option<&Json>) -> bool {

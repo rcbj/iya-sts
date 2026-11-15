@@ -102,6 +102,21 @@ pub trait Clients: Send + Sync {
     fn global_consents_of(&self, _client_id: &str) -> Vec<String> {
         Vec::new()
     }
+    /// `applications.cibaOf(clientId).mode`: `poll`, `ping`, `push` or ''.
+    fn ciba_mode_of(&self, _client_id: &str) -> String {
+        String::new()
+    }
+    /// `applications.cibaOf(clientId)`: `{ mode, endpoint, signingAlg,
+    /// userCode }`.
+    fn ciba_of(&self, client_id: &str) -> Json {
+        json!({ "mode": self.ciba_mode_of(client_id), "endpoint": "",
+                "signingAlg": "", "userCode": false })
+    }
+    /// `registrationOf(clientId).client_name`: the RFC 7591 registration's
+    /// `client_name`, '' for none or a client that was not registered.
+    fn registered_client_name(&self, _client_id: &str) -> String {
+        String::new()
+    }
     /// The entry's display name (`entry.name`), or the client_id.
     fn name_of(&self, client_id: &str) -> String {
         client_id.to_string()
@@ -273,6 +288,78 @@ pub struct RegisterClients {
 }
 
 impl Clients for RegisterClients {
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn ciba_of(&self, client_id: &str) -> Json {
+        let who = client_id.trim();
+        let fields = if who.is_empty() {
+            None
+        } else {
+            self.registry
+                .for_client_id(who)
+                .or_else(|| self.registry.get(who))
+                .map(|f| f["fields"].clone())
+        }
+        .unwrap_or(Json::Null);
+        let one = |k: &str| {
+            values_of(fields.get(k))
+                .into_iter()
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        };
+        json!({
+            "mode": self.ciba_mode_of(client_id),
+            "endpoint": one("oauthBackchannelClientNotificationEndpoint"),
+            "signingAlg": one("oauthBackchannelAuthenticationRequestSigningAlg"),
+            "userCode": one("oauthBackchannelUserCodeParameter")
+                .eq_ignore_ascii_case("TRUE"),
+        })
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn ciba_mode_of(&self, client_id: &str) -> String {
+        let who = client_id.trim();
+        if who.is_empty() {
+            return String::new();
+        }
+        let found = self
+            .registry
+            .for_client_id(who)
+            .or_else(|| self.registry.get(who));
+        let mode = found
+            .map(|f| {
+                values_of(f["fields"].get("oauthBackchannelTokenDeliveryMode"))
+            })
+            .and_then(|v| v.into_iter().next())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if ["poll", "ping", "push"].contains(&mode.as_str()) {
+            mode
+        } else {
+            String::new()
+        }
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn registered_client_name(&self, client_id: &str) -> String {
+        let loaded = self.registry.load(client_id);
+        if !loaded.known || !loaded.record.registered {
+            return String::new();
+        }
+        let raw = crate::js::string_of(
+            loaded.record.fields.get("appRegistrationJson"),
+        );
+        serde_json::from_str::<Json>(&raw)
+            .ok()
+            .and_then(|d| {
+                d.get("client_name")
+                    .and_then(Json::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
+    }
     #[tracing::instrument(level = "debug", skip(self))]
     fn client_config_of(&self, client_id: &str) -> Json {
         let loaded = self.registry.load(client_id);

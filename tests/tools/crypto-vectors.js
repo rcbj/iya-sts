@@ -5630,6 +5630,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./saml-vectors.js').build(ROOT);
                    } },
+                 // The token exchange's types, the `act` chain and who
+                 // may act for whom (#444 phase 5, the `oauth8` slice):
+                 // tests/tools/oauth8-vectors.js.
+                 { file: 'oauth8-node.json',
+                   build: function () {
+                     return require('./oauth8-vectors.js').build(ROOT);
+                   } },
                  // The secrets every node agrees on, the pairwise key
                  // among them (#444 phase 5, the `oauth5` slice):
                  // tests/tools/cluster-secrets-vectors.js.

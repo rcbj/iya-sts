@@ -47,6 +47,10 @@ use crate::jwt_access_token::{
 };
 use crate::minted::{IssuedUnder, TokenRegister};
 
+pub mod ciba_grant;
+pub mod device;
+pub mod exchange;
+
 /// What a token request is.
 #[derive(Debug, Clone, Default)]
 pub struct TokenAsk {
@@ -255,6 +259,19 @@ pub struct TokenEndpoint {
     /// OIDC Core 5.5's claims request (`requestedClaimsOf()`), answered
     /// into the ID Token; `None` answers no claims request.
     pub requested: Option<Arc<crate::requested_claims::RequestedClaims>>,
+    /// Who may act for whom (rule 3az): the token exchange's decision and
+    /// every access token's `may_act`; `None` decides over an empty
+    /// directory.
+    pub delegation: Option<Arc<crate::delegation_policy::DelegationPolicy>>,
+    /// The delegation register an exchange is written to; `None` records
+    /// nothing.
+    pub acts: Option<Arc<crate::delegation_acts::DelegationActs>>,
+    /// RFC 8628's device codes; `None` answers the grant as Node does
+    /// with the device flow off.
+    pub devices: Option<Arc<crate::device_authorization::DeviceCodes>>,
+    /// CIBA's backchannel requests (#131); `None` answers the grant as
+    /// Node does with CIBA off.
+    pub ciba: Option<Arc<crate::ciba::CibaRequests>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -615,6 +632,7 @@ impl TokenEndpoint {
         // cluster first.
         let mut dpop_jkt = ask.dpop_jkt.clone();
         let mut dpop_jwk = Json::Null;
+        let mut dpop_claims = Json::Null;
         if let Some(header) = ask.dpop.as_deref() {
             let skew = sts_oauth_dpop_skew(&self.dpop);
             let reservation = crate::dpop_reservation::Reservation::reserve(
@@ -649,6 +667,7 @@ impl TokenEndpoint {
                 Ok(proof) => {
                     dpop_jkt = proof.jkt;
                     dpop_jwk = proof.jwk;
+                    dpop_claims = Json::Object(proof.claims);
                 }
                 Err(f) if f.need_nonce => {
                     let mut a = self.refusal(
@@ -776,8 +795,15 @@ impl TokenEndpoint {
                 clients: self.clients.as_ref(),
                 settings: &self.settings,
             };
-            let strangers = targets
-                .unregistered(&resources, std::slice::from_ref(&ask.base));
+            // Not for the token exchange, whose `resource` and `audience`
+            // are RFC 8693's targets, resolved and refused by the
+            // delegation policy in its branch.
+            let strangers = if grant == exchange::GRANT {
+                Vec::new()
+            } else {
+                targets
+                    .unregistered(&resources, std::slice::from_ref(&ask.base))
+            };
             if !strangers.is_empty() {
                 return self.refusal(
                     codes::STS_OAUTH_0951,
@@ -825,7 +851,11 @@ impl TokenEndpoint {
                 );
             }
         }
-        if !scope.is_empty() || !resources.is_empty() {
+        // RFC 9068 section 3, NOT for the token exchange, whose audience is
+        // assembled inside its branch; tokenSet()'s plan is its backstop.
+        if grant != exchange::GRANT
+            && (!scope.is_empty() || !resources.is_empty())
+        {
             let plan = plan_for(
                 self.clients.as_ref(),
                 &self.settings,
@@ -932,6 +962,7 @@ impl TokenEndpoint {
             observed_method: observed.method.clone(),
             dpop_jkt,
             dpop_jwk,
+            dpop_claims,
             flows,
             resources: resources.clone(),
         };
@@ -943,6 +974,11 @@ impl TokenEndpoint {
                 self.authorization_code(&issuing, spent).await
             }
             "refresh_token" => self.refresh_grant(&issuing).await,
+            exchange::GRANT => self.token_exchange(&issuing).await,
+            crate::ciba::GRANT_TYPE => self.ciba_grant(&issuing).await,
+            crate::device_authorization::GRANT_TYPE => {
+                self.device_grant(&issuing).await
+            }
             "password" if self.passwords.is_some() => {
                 self.password_grant(&issuing, &scope, &resources).await
             }
@@ -2482,7 +2518,11 @@ impl TokenEndpoint {
             )?;
             body.insert("refresh_token".into(), json!(refresh));
         }
-        if scope.split_whitespace().any(|w| w == "openid") {
+        let exchange_without_openid = opts.id_token_follows_issued
+            && !plan.scope.split_whitespace().any(|w| w == "openid");
+        if scope.split_whitespace().any(|w| w == "openid")
+            && !exchange_without_openid
+        {
             if let Some(ids) = &self.id_tokens {
                 // `opts.sub` only where the grant named a subject of its
                 // own (a token exchange's): Node's code and refresh grants
@@ -2771,6 +2811,30 @@ impl TokenEndpoint {
                 payload.insert("acr".into(), opts.acr.clone());
             }
         }
+        if !opts.act.is_null() {
+            payload.insert("act".into(), opts.act.clone());
+        }
+        // RFC 8693 SECTION 4.4's `may_act` (#108; #186): the one party the
+        // subject named as authorized to act for them — by the `urn:uuid:`
+        // subject where the token has one, by the client for a
+        // client_credentials token, which is about it, by the name
+        // otherwise.
+        if let Some(policy) = &self.delegation {
+            let about = if opts.grant == "client_credentials" {
+                if opts.client_id.is_empty() {
+                    opts.username.clone()
+                } else {
+                    opts.client_id.clone()
+                }
+            } else if opts.sub.to_lowercase().starts_with("urn:uuid:") {
+                opts.sub.clone()
+            } else {
+                opts.username.clone()
+            };
+            if let Some(may_act) = policy.may_act_claim_for(&about) {
+                payload.insert("may_act".into(), may_act);
+            }
+        }
         // OIDC Core 5.5's claims request rides in the access token: UserInfo
         // sees this token and nothing else.
         if opts.claims.is_object() {
@@ -2856,6 +2920,8 @@ struct Issuing<'a> {
     dpop_jkt: String,
     #[allow(dead_code)]
     dpop_jwk: Json,
+    /// The verified DPoP proof's claims (`c_s256`, Key Binding).
+    dpop_claims: Json,
     flows: Option<Json>,
     resources: Vec<String>,
 }
@@ -2978,6 +3044,11 @@ struct Mint {
     /// OIDC Core 5.5's parsed claims request, carried in the access and
     /// refresh tokens; `Null` for none.
     claims: Json,
+    /// RFC 8693 section 4.1's `act`, `Null` for none.
+    act: Json,
+    /// An exchange's ID Token follows the token it issued (#156): one only
+    /// where the access token's scope carries `openid`.
+    id_token_follows_issued: bool,
 }
 
 /// A [`Signer`] over a realm's key set: Node's header order, `alg`, `typ`,

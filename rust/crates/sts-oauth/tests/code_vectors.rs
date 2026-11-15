@@ -691,6 +691,10 @@ async fn the_code_flow() {
             used: None,
             records: None,
             requested: None,
+            delegation: None,
+            acts: None,
+            devices: None,
+            ciba: None,
         };
         // ---- Discovery ---------------------------------------------------
         for case in cases

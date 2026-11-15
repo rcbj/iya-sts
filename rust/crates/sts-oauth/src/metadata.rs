@@ -666,6 +666,14 @@ pub fn as_metadata(inputs: &MetadataInputs<'_>) -> Json {
         "tls_client_certificate_bound_access_tokens",
         json!(inputs.mtls_available),
     );
+    // RFC 8628 section 4 (#150): the device authorization endpoint, only
+    // where it is on.
+    if settings.value_of("oauth2.deviceAuthorization").as_bool() {
+        put(
+            "device_authorization_endpoint",
+            json!(format!("{}/oauth2/device_authorization", at)),
+        );
+    }
     if inputs.mtls_available {
         let mut aliases = Map::new();
         for (name, path) in [
@@ -859,7 +867,7 @@ fn trust_frameworks(settings: &Settings) -> Vec<String> {
 /// already there keeps its place — and the issuer of the path-appended
 /// form where one is given and `oauth2.issuer` is not pinned.
 ///
-/// WHAT IS NOT HERE: CIBA's members (`oauth2.ciba`, off by default), the
+/// WHAT IS NOT HERE: the
 /// FAPI profile's narrowing (FAPI's slice), and the OP iframe's member
 /// (`oauth2.sessionManagement`, off by default) — each absent, as Node's
 /// document is with its feature off.
@@ -962,6 +970,22 @@ pub fn oidc_metadata(
         if settings.value_of("oauth2.issuer").as_str().is_empty() {
             put("issuer", json!(i));
         }
+    }
+    // OPENID CONNECT CIBA section 4 (#131), where it is on.
+    if settings.value_of("oauth2.ciba").as_bool() {
+        put(
+            "backchannel_authentication_endpoint",
+            json!(format!("{}/oauth2/bc-authorize", at)),
+        );
+        put(
+            "backchannel_token_delivery_modes_supported",
+            json!(["poll", "ping", "push"]),
+        );
+        put(
+            "backchannel_authentication_request_signing_alg_values_supported",
+            json!(sts_crypto::jws_alg::asymmetric_algs()),
+        );
+        put("backchannel_user_code_parameter_supported", json!(true));
     }
     let userinfo = format!("{}/oauth2/userinfo", at);
     if let Some(aliases) = m

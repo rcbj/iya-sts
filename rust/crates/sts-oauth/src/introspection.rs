@@ -68,16 +68,16 @@ pub struct EndpointAsk {
 /// How an endpoint words its refusal of a caller that did not
 /// authenticate: the code, the status, whether the Basic challenge goes
 /// with it, and the description — from the verifier's code and why.
-type Refuse = dyn Fn(
+pub(crate) type Refuse = dyn Fn(
         Option<sts_core::errors::ErrorCode>,
         &str,
     ) -> (sts_core::errors::ErrorCode, u16, bool, String)
     + Sync;
 
 /// `authenticateEndpointCaller()`'s answer.
-struct Caller {
-    client_id: String,
-    identified: bool,
+pub(crate) struct Caller {
+    pub(crate) client_id: String,
+    pub(crate) identified: bool,
 }
 
 /// `acceptRanges()` and `qualityOf()`, as `wantsJwt()` reads them.
@@ -132,7 +132,8 @@ pub fn wants_jwt(accept: &str) -> bool {
 
 impl TokenEndpoint {
     /// `authenticateEndpointCaller(req, res, body, opts)`.
-    async fn endpoint_caller(
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub(crate) async fn endpoint_caller(
         &self,
         ask: &EndpointAsk,
         body: &Map<String, Json>,

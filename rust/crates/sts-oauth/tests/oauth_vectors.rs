@@ -497,6 +497,10 @@ async fn token_endpoint() {
                 used: None,
                 records: None,
                 requested: None,
+                delegation: None,
+                acts: None,
+                devices: None,
+                ciba: None,
             };
             let form: Vec<(String, String)> = case["form"]
                 .as_object()
