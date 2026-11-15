@@ -383,7 +383,7 @@ function authorizeUrl(extra) {
   return realmBase(REALM) + "/oauth2/authorize?" + form(Object.assign({
     client_id: APP, response_type: "code", redirect_uri: REDIRECT,
     scope: "openid", state: "s", nonce: "n" + Date.now() +
-    Math.random(), code_challenge: p.challenge,
+    nodeCrypto.randomBytes(8).toString("hex"), code_challenge: p.challenge,
     code_challenge_method: "S256" }, extra || {}));
 }
 
