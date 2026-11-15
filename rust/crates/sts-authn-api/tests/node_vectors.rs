@@ -101,8 +101,244 @@ struct Bound {
     cookies: Vec<String>,
 }
 
+/// The software authenticators the recording names: an ES256 key each,
+/// signed with here as Node signed with it there.
+struct Authenticators {
+    keys: Json,
+    origin: String,
+    rp_id: String,
+}
+
+fn sha256(data: &[u8]) -> Vec<u8> {
+    sts_crypto::jws_alg::Hash::Sha256.digest(data)
+}
+
+fn b64u(data: &[u8]) -> String {
+    sts_crypto::b64::encode(data)
+}
+
+fn unb64u(text: &str) -> Vec<u8> {
+    sts_crypto::b64::decode_loose(text).unwrap()
+}
+
+/// r||s as an ASN.1 `Ecdsa-Sig-Value`, as a WebAuthn authenticator sends
+/// an ES256 signature.
+fn der_of(raw: &[u8]) -> Vec<u8> {
+    let int = |b: &[u8]| {
+        let mut v: Vec<u8> =
+            b.iter().copied().skip_while(|x| *x == 0).collect();
+        if v.is_empty() || v[0] & 0x80 != 0 {
+            v.insert(0, 0);
+        }
+        let mut out = vec![0x02, v.len() as u8];
+        out.extend(v);
+        out
+    };
+    let (r, s) = raw.split_at(raw.len() / 2);
+    let mut body = int(r);
+    body.extend(int(s));
+    let mut out = vec![0x30, body.len() as u8];
+    out.extend(body);
+    out
+}
+
+/// The few CBOR shapes a registration carries.
+enum Cbor {
+    Int(i64),
+    Text(String),
+    Bytes(Vec<u8>),
+    Map(Vec<(Cbor, Cbor)>),
+}
+
+fn cbor_head(major: u8, n: u64) -> Vec<u8> {
+    let m = major << 5;
+    if n < 24 {
+        vec![m | n as u8]
+    } else if n < 256 {
+        vec![m | 24, n as u8]
+    } else if n < 65536 {
+        vec![m | 25, (n >> 8) as u8, n as u8]
+    } else {
+        let mut v = vec![m | 26];
+        v.extend((n as u32).to_be_bytes());
+        v
+    }
+}
+
+fn cbor(value: &Cbor) -> Vec<u8> {
+    match value {
+        Cbor::Int(n) if *n >= 0 => cbor_head(0, *n as u64),
+        Cbor::Int(n) => cbor_head(1, (-1 - *n) as u64),
+        Cbor::Text(t) => {
+            let mut v = cbor_head(3, t.len() as u64);
+            v.extend(t.as_bytes());
+            v
+        }
+        Cbor::Bytes(b) => {
+            let mut v = cbor_head(2, b.len() as u64);
+            v.extend(b);
+            v
+        }
+        Cbor::Map(entries) => {
+            let mut v = cbor_head(5, entries.len() as u64);
+            for (k, x) in entries {
+                v.extend(cbor(k));
+                v.extend(cbor(x));
+            }
+            v
+        }
+    }
+}
+
+impl Authenticators {
+    fn key(&self, who: &str) -> &Json {
+        &self.keys[who]
+    }
+
+    fn assertion(
+        &self,
+        who: &str,
+        count: u32,
+        spoil: &str,
+        bound: &Bound,
+    ) -> String {
+        let a = self.key(who);
+        let flags: u8 = if spoil == "nouv" { 0x01 } else { 0x05 };
+        let mut auth = sha256(self.rp_id.as_bytes());
+        auth.push(flags);
+        auth.extend(count.to_be_bytes());
+        let client = serde_json::to_vec(&json!({
+            "type": "webauthn.get",
+            "challenge": bound.values.get("challenge").cloned().unwrap_or_default(),
+            "origin": self.origin, "crossOrigin": false })).unwrap();
+        let mut signed = auth.clone();
+        signed.extend(sha256(&client));
+        let key = sts_crypto::keys::JwsKey::from_jwk(&a["privateJwk"]).unwrap();
+        let raw = sts_crypto::jws::sign_input("ES256", &key, &signed).unwrap();
+        let mut signature = der_of(&raw);
+        if spoil == "badsig" {
+            let last = signature.len() - 1;
+            signature[last] ^= 0x01;
+        }
+        let handle = match spoil {
+            "stranger" => {
+                a["strangerHandle"].as_str().unwrap_or("").to_string()
+            }
+            "nohandle" => String::new(),
+            _ => a["userHandle"].as_str().unwrap_or("").to_string(),
+        };
+        let id = a["credentialId"].as_str().unwrap_or("");
+        json!({ "id": id, "rawId": id, "type": "public-key",
+            "authenticatorAttachment": "platform",
+            "response": { "authenticatorData": b64u(&auth),
+                "clientDataJSON": b64u(&client),
+                "signature": b64u(&signature), "userHandle": handle },
+            "clientExtensionResults": {} })
+        .to_string()
+    }
+
+    fn registration(&self, who: &str, bound: &Bound) -> String {
+        let a = self.key(who);
+        let jwk = &a["privateJwk"];
+        let cose = Cbor::Map(vec![
+            (Cbor::Int(1), Cbor::Int(2)),
+            (Cbor::Int(3), Cbor::Int(-7)),
+            (Cbor::Int(-1), Cbor::Int(1)),
+            (
+                Cbor::Int(-2),
+                Cbor::Bytes(unb64u(jwk["x"].as_str().unwrap())),
+            ),
+            (
+                Cbor::Int(-3),
+                Cbor::Bytes(unb64u(jwk["y"].as_str().unwrap())),
+            ),
+        ]);
+        let id_text = a["credentialId"].as_str().unwrap_or("");
+        let id = unb64u(id_text);
+        let mut auth = sha256(self.rp_id.as_bytes());
+        auth.push(0x45);
+        auth.extend([0u8; 4]);
+        auth.extend([0u8; 16]);
+        auth.extend((id.len() as u16).to_be_bytes());
+        auth.extend(&id);
+        auth.extend(cbor(&cose));
+        let client = serde_json::to_vec(&json!({
+            "type": "webauthn.create",
+            "challenge": bound.values.get("challenge").cloned().unwrap_or_default(),
+            "origin": self.origin, "crossOrigin": false })).unwrap();
+        let object = cbor(&Cbor::Map(vec![
+            (Cbor::Text("fmt".into()), Cbor::Text("none".into())),
+            (Cbor::Text("attStmt".into()), Cbor::Map(Vec::new())),
+            (Cbor::Text("authData".into()), Cbor::Bytes(auth)),
+        ]));
+        json!({ "id": id_text, "rawId": id_text, "type": "public-key",
+            "authenticatorAttachment": "platform",
+            "response": { "attestationObject": b64u(&object),
+                "clientDataJSON": b64u(&client), "transports": ["internal"] },
+            "clientExtensionResults": { "credProps": { "rk": true } } })
+        .to_string()
+    }
+
+    /// The ceremony placeholders filled, each a JSON text inside the JSON
+    /// string the body carries.
+    fn fill(&self, text: &str, bound: &Bound) -> String {
+        let re = regex::Regex::new(
+            r"\{assert:([a-z0-9]+):([0-9]+)(?::([a-z]+))?\}|\{register:([a-z0-9]+)\}",
+        )
+        .unwrap();
+        re.replace_all(text, |c: &regex::Captures| {
+            let made = match c.get(4) {
+                Some(who) => self.registration(who.as_str(), bound),
+                None => self.assertion(
+                    &c[1],
+                    c[2].parse().unwrap_or(0),
+                    c.get(3).map_or("", |m| m.as_str()),
+                    bound,
+                ),
+            };
+            let quoted = serde_json::to_string(&Json::String(made)).unwrap();
+            quoted[1..quoted.len() - 1].to_string()
+        })
+        .to_string()
+    }
+}
+
 impl Bound {
     fn learn(&mut self, body: &Json, cookies: &[String]) {
+        // A ceremony's challenge and the handle a registration is made
+        // under; a set-up step's secret.
+        let challenge = body
+            .get("challenge")
+            .or_else(|| {
+                body.get("view")
+                    .and_then(|v| v.get("webauthn"))
+                    .and_then(|w| w.get("challenge"))
+            })
+            .and_then(Json::as_str)
+            .unwrap_or("");
+        if !challenge.is_empty() {
+            self.values.insert("challenge".into(), challenge.into());
+        }
+        if let Some(id) = body
+            .get("user")
+            .and_then(|u| u.get("id"))
+            .and_then(Json::as_str)
+        {
+            if !id.is_empty() {
+                self.values.insert("userid".into(), id.into());
+            }
+        }
+        if let Some(secret) = body
+            .get("view")
+            .and_then(|v| v.get("setup"))
+            .and_then(|s| s.get("totp"))
+            .and_then(|t| t.get("secret"))
+            .and_then(Json::as_str)
+        {
+            self.values.insert("totpgrouped".into(), secret.into());
+            self.values
+                .insert("totpsecret".into(), secret.replace(' ', ""));
+        }
         if let Some(c) = body.get("csrf").and_then(Json::as_str) {
             if !c.is_empty() {
                 self.values.insert("csrf".into(), c.into());
@@ -140,8 +376,22 @@ impl Bound {
         }
     }
 
-    fn fill(&self, text: &str, totp: &dyn Fn(f64) -> String) -> String {
-        let mut out = text.to_string();
+    fn fill(
+        &self,
+        text: &str,
+        totp: &dyn Fn(f64) -> String,
+        setup: &dyn Fn(&str) -> String,
+        keys: &Authenticators,
+    ) -> String {
+        let mut out = keys.fill(text, self);
+        if out.contains("{totpsetup}") {
+            out = out.replace(
+                "{totpsetup}",
+                &setup(
+                    self.values.get("totpsecret").map_or("", String::as_str),
+                ),
+            );
+        }
         for name in ["mfa", "change", "csrf", "authn"] {
             out = out.replace(
                 &format!("{{{}}}", name),
@@ -165,9 +415,11 @@ impl Bound {
             regex::Regex::new(r#""(signedInAt|authTime|signedOutAt)":[0-9]+"#)
                 .unwrap();
         let mut out = times.replace_all(text, "\"$1\":<t>").to_string();
-        for (name, value) in &self.values {
+        let mut values: Vec<(&String, &String)> = self.values.iter().collect();
+        values.sort_by_key(|(_, v)| std::cmp::Reverse(v.len()));
+        for (name, value) in values {
             if value.len() > 6 {
-                out = out.replace(value, &format!("<{}>", name));
+                out = out.replace(value.as_str(), &format!("<{}>", name));
             }
         }
         for value in &self.cookies {
@@ -222,6 +474,15 @@ async fn rust_answers_every_step_as_node_did() {
         .unwrap_or("0.0.0")
         .to_string();
     let built = build(&version);
+    let keys = Authenticators {
+        keys: doc["authenticators"].clone(),
+        origin: origin.clone(),
+        rp_id: url::Url::parse(&base)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_string(),
+    };
     let mut failures: Vec<String> = Vec::new();
     let mut compared = 0;
     for case in doc["cases"].as_array().unwrap() {
@@ -292,6 +553,14 @@ async fn rust_answers_every_step_as_node_did() {
                 .code_at(&secret, Some(now_ms + ahead), None, None, None)
                 .unwrap_or_default()
         };
+        let signin2 = built.stack.signin.clone();
+        let setup = move |secret: &str| {
+            signin2
+                .credentials
+                .totp()
+                .code_at(secret, None, None, None, None)
+                .unwrap_or_default()
+        };
         let mut mine = Bound::default();
         mine.values.insert("authn".into(), id.clone());
         let mut theirs = mine.clone();
@@ -299,7 +568,12 @@ async fn rust_answers_every_step_as_node_did() {
         for (n, step) in case["steps"].as_array().unwrap().iter().enumerate() {
             let request = &step["request"];
             let method = request["method"].as_str().unwrap();
-            let raw_path = mine.fill(request["path"].as_str().unwrap(), &totp);
+            let raw_path = mine.fill(
+                request["path"].as_str().unwrap(),
+                &totp,
+                &setup,
+                &keys,
+            );
             let (path, query) = match raw_path.split_once('?') {
                 Some((p, q)) => (p.to_string(), q.to_string()),
                 None => (raw_path.clone(), String::new()),
@@ -309,7 +583,7 @@ async fn rust_answers_every_step_as_node_did() {
             for (k, v) in request["headers"].as_object().into_iter().flatten() {
                 headers.push((
                     k.clone(),
-                    mine.fill(v.as_str().unwrap_or(""), &totp),
+                    mine.fill(v.as_str().unwrap_or(""), &totp, &setup, &keys),
                 ));
             }
             if method == "POST" {
@@ -346,6 +620,8 @@ async fn rust_answers_every_step_as_node_did() {
                 mine.fill(
                     &serde_json::to_string(&request["body"]).unwrap(),
                     &totp,
+                    &setup,
+                    &keys,
                 )
             };
             let header_map = headers_of(&headers);

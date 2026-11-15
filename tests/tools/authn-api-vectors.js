@@ -27,7 +27,15 @@
 // later request (`{mfa}`, `{change}`, `{csrf}`) and is replaced by the
 // value the replaying side's own earlier answer gave; a TOTP code is
 // `{totp}` (or `{totpnext}`, the next step's), made at the moment of the
-// request from the person's secret.
+// request from the person's secret; `{totpsetup}` from the secret a set-up
+// step showed that side.
+//
+// PASSKEYS (the `passkeys` slice) are SOFTWARE AUTHENTICATORS: an ES256 key
+// each, recorded under `authenticators` with its credential id, so the
+// replaying side signs with the same key; `{assert:<name>:<count>}` and
+// `{register:<name>}` are the ceremony's JSON, made at the moment of the
+// request over the challenge and the user handle that side's own answer
+// armed (`badsig`, `nouv`, `nohandle` and `stranger` spoil it one way).
 //
 // THE MODE IS DEVELOPMENT, THE DEFAULT, so the screen checks no password
 // but the reserved `invalid`; the authenticator app's code is checked for
@@ -57,6 +65,8 @@ function childMain() {
     const ldap = require(ROOT_DIR + '/ldap/ldap_server');
     const totp = require(ROOT_DIR + '/common/totp');
     const errorCodes = require(ROOT_DIR + '/common/error_codes');
+    const kit = require(ROOT_DIR + '/tests/webauthn_attestation_kit');
+    const nodeCrypto = require('crypto');
     const server = http.createServer(function (req, res) {
       const writeHead = res.writeHead;
       res.writeHead = function () {
@@ -124,6 +134,88 @@ function childMain() {
     };
 
     const cases = [];
+    // THE SOFTWARE AUTHENTICATORS (#444, the `passkeys` slice): one ES256
+    // key each, made here at run time and recorded in the vector file
+    // (which is never committed) so the replaying side signs with the same
+    // key. A ceremony is built at the moment of the request from the
+    // challenge, the user handle and the RP ID that side's own answers
+    // gave: `{assert:<name>:<count>[:<spoil>]}` and `{register:<name>}`.
+    const authenticators = {};
+    const authenticator = function (name) {
+      const pair = nodeCrypto.generateKeyPairSync('ec',
+        { namedCurve: 'prime256v1' });
+      const jwk = pair.privateKey.export({ format: 'jwk' });
+      authenticators[name] = {
+        privateJwk: jwk,
+        credentialId: nodeCrypto.randomBytes(32).toString('base64url'),
+        // A handle this service never minted, for the unknown-owner case.
+        strangerHandle: nodeCrypto.randomBytes(64).toString('base64url'),
+        key: pair.privateKey };
+      return authenticators[name];
+    };
+    const sha256 = function (data) {
+      return nodeCrypto.createHash('sha256').update(data).digest();
+    };
+    const rpIdOf = function () {
+      return new URL(base).hostname;
+    };
+    const assertion = function (who, count, spoil, bound) {
+      const a = authenticators[who];
+      const flags = spoil === 'nouv' ? 0x01 : 0x05;
+      const counter = Buffer.alloc(4);
+      counter.writeUInt32BE(Number(count) || 0, 0);
+      const authData = Buffer.concat([sha256(Buffer.from(rpIdOf())),
+                                      Buffer.from([flags]), counter]);
+      const clientData = Buffer.from(JSON.stringify({
+        type: 'webauthn.get', challenge: bound.challenge || '',
+        origin: base, crossOrigin: false }));
+      let signature = nodeCrypto.sign('sha256',
+        Buffer.concat([authData, sha256(clientData)]), a.key);
+      if (spoil === 'badsig') {
+        signature = Buffer.from(signature);
+        signature[signature.length - 1] ^= 0x01;
+      }
+      const handle = spoil === 'stranger' ? a.strangerHandle
+        : (spoil === 'nohandle' ? '' : (a.userHandle || ''));
+      return JSON.stringify({
+        id: a.credentialId, rawId: a.credentialId, type: 'public-key',
+        authenticatorAttachment: 'platform',
+        response: { authenticatorData: authData.toString('base64url'),
+                    clientDataJSON: clientData.toString('base64url'),
+                    signature: signature.toString('base64url'),
+                    userHandle: handle },
+        clientExtensionResults: {} });
+    };
+    const registration = function (who, bound) {
+      const a = authenticators[who];
+      const jwk = a.privateJwk;
+      const cose = new Map([[1, 2], [3, -7], [-1, 1],
+                            [-2, Buffer.from(jwk.x, 'base64url')],
+                            [-3, Buffer.from(jwk.y, 'base64url')]]);
+      const id = Buffer.from(a.credentialId, 'base64url');
+      const idLength = Buffer.alloc(2);
+      idLength.writeUInt16BE(id.length, 0);
+      const authData = Buffer.concat([sha256(Buffer.from(rpIdOf())),
+        Buffer.from([0x45]), Buffer.alloc(4), Buffer.alloc(16), idLength, id,
+        kit.cbor(cose)]);
+      const clientData = Buffer.from(JSON.stringify({
+        type: 'webauthn.create', challenge: bound.challenge || '',
+        origin: base, crossOrigin: false }));
+      return JSON.stringify({
+        id: a.credentialId, rawId: a.credentialId, type: 'public-key',
+        authenticatorAttachment: 'platform',
+        response: {
+          attestationObject: kit.cbor(new Map([['fmt', 'none'],
+            ['attStmt', new Map()], ['authData', authData]]))
+            .toString('base64url'),
+          clientDataJSON: clientData.toString('base64url'),
+          transports: ['internal'] },
+        clientExtensionResults: { credProps: { rk: true } } });
+    };
+    // A ceremony's JSON, put inside the JSON string the body carries.
+    const embedded = function (text) {
+      return JSON.stringify(text).slice(1, -1);
+    };
     const person = async function (name, opts) {
       ldap.createUser(name, { invent: false });
       let secret = '';
@@ -135,6 +227,26 @@ function childMain() {
       if (opts.reset) {
         credentials.setPasswordResetRequired(name, true);
       }
+      if (opts.mfaRequired) {
+        credentials.setMfaRequired(name, true);
+      }
+      if (opts.key) {
+        const a = authenticator(opts.key);
+        a.userHandle = credentials.userHandleOf(name, { mint: true });
+        const pub = nodeCrypto.createPublicKey(a.key)
+          .export({ format: 'jwk' });
+        const added = credentials.addKey(name, {
+          credentialId: a.credentialId, publicKeyJwk: pub, signCount: 0,
+          userHandle: a.userHandle, lane: 'classical', algorithm: 'ES256',
+          coseAlg: -7, aaguid: null, attachment: 'platform',
+          discoverable: true, userVerified: true, backupEligible: false,
+          backupState: false, transports: ['internal'],
+          attestation: { format: 'none', verified: false, trusted: false } });
+        if (!added.ok) {
+          throw new Error('the key of ' + name + ' was not added: ' +
+                          JSON.stringify(added));
+        }
+      }
       // A COPY: the directory's attributes object is live, and a later
       // sign-in writes on it.
       const stored = JSON.parse(JSON.stringify(ldap.existingUserEntry(name) ||
@@ -145,8 +257,17 @@ function childMain() {
     };
     // A request's placeholders, from what this side's own answers bound.
     const fill = function (text, bound, who) {
-      return String(text).replace(/\{(mfa|change|csrf|authn|totp|totpnext)\}/g,
+      return String(text).replace(
+        /\{assert:([a-z0-9]+):([0-9]+)(?::([a-z]+))?\}|\{register:([a-z0-9]+)\}/g,
+        function (all, who1, count, spoil, who2) {
+          return embedded(who2 ? registration(who2, bound)
+                               : assertion(who1, count, spoil, bound));
+        }).replace(
+        /\{(mfa|change|csrf|authn|totp|totpnext|totpsetup)\}/g,
         function (all, name) {
+          if (name === 'totpsetup') {
+            return totp.codeAt(bound.totpsecret || '');
+          }
           if (name === 'totp') {
             return totp.codeAt(who.secret);
           }
@@ -196,6 +317,21 @@ function childMain() {
         }
         if (r.json && r.json.next === 'password-change') {
           bound.change = r.json.id;
+        }
+        // A ceremony's challenge and the handle a registration is made
+        // under, from the answer that armed it; a set-up step's secret.
+        const facts = r.json && r.json.view && r.json.view.webauthn;
+        if (r.json && r.json.challenge) {
+          bound.challenge = r.json.challenge;
+        } else if (facts && facts.challenge) {
+          bound.challenge = facts.challenge;
+        }
+        if (r.json && r.json.user && r.json.user.id) {
+          bound.userid = r.json.user.id;
+        }
+        const setup = r.json && r.json.view && r.json.view.setup;
+        if (setup && setup.totp && setup.totp.secret) {
+          bound.totpsecret = String(setup.totp.secret).replace(/ /g, '');
         }
         recorded.push({ request: step, status: r.status, code: r.code,
                         type: r.type.split(';')[0],
@@ -300,13 +436,115 @@ function childMain() {
            { new_password: 'One-New-Password-1',
              confirm_password: 'One-New-Password-1' })]);
 
+    // ---- passkeys (#444, the `passkeys` slice) -------------------------
+    const kay = await person('av-kay', { key: 'k1' });
+    await run('a passkey and no username', kay, [
+      GET('/authn/login?authn={authn}'),
+      GET(screen),
+      POST(screen + '/passkey', { credential: '{assert:k1:1}' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: 'not json' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: '{"error":"NotAllowedError"}' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: '{assert:k1:1:stranger}' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: '{assert:k1:1:nohandle}' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: '{assert:k1:1:badsig}' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: '{assert:k1:1:nouv}' }),
+      POST(screen + '/passkey/options', {}),
+      POST(screen + '/passkey', { credential: '{assert:k1:1}' }),
+      GET('/authn-api/accounts')]);
+
+    const kim = await person('av-kim', { key: 'k2' });
+    await run('a passkey as the second factor', kim, [
+      GET('/authn/login?authn={authn}'),
+      GET(screen),
+      POST(screen + '/password', { username: 'av-kim', password: 'p' }),
+      GET('/authn/webauthn?mfa={mfa}'),
+      GET('/authn-api/mfa/{mfa}'),
+      GET('/authn-api/mfa/{mfa}?page=webauthn'),
+      POST('/authn-api/mfa/{mfa}/webauthn', { credential: '{"foo":1}' }),
+      POST('/authn-api/mfa/{mfa}/webauthn/options', { lane: 'nonsense' }),
+      POST('/authn-api/mfa/{mfa}/webauthn/options', {}),
+      POST('/authn-api/mfa/{mfa}/webauthn',
+           { credential: '{assert:k2:1:badsig}' }),
+      POST('/authn-api/mfa/{mfa}/webauthn', { credential: '{assert:k2:1}' }),
+      GET('/authn-api/accounts')]);
+
+    const kit2 = await person('av-kit', { key: 'k5' });
+    await run('a passkey after a username', kit2, [
+      GET('/authn/login?authn={authn}'),
+      GET(screen),
+      POST(screen + '/password', { username: 'av-kit', webauthn_only: '1' }),
+      GET('/authn-api/mfa/{mfa}?page=webauthn'),
+      POST('/authn-api/mfa/{mfa}/webauthn/options', {}),
+      POST('/authn-api/mfa/{mfa}/webauthn', { credential: '{assert:k5:1}' })]);
+
+    authenticator('k3');
+    const neo = await person('av-neo', {});
+    await run('a passkey registered at first use', neo, [
+      GET('/authn/login?authn={authn}'),
+      GET(screen),
+      POST(screen + '/password', { username: 'av-neo', webauthn_only: '1' }),
+      GET('/authn-api/mfa/{mfa}?page=webauthn'),
+      POST('/authn-api/mfa/{mfa}/webauthn/options', {}),
+      POST('/authn-api/mfa/{mfa}/webauthn', { credential: '{register:k3}' }),
+      GET('/authn-api/accounts')]);
+
+    const must = await person('av-must', { mfaRequired: true });
+    await run('an authenticator app set up at sign-in', must, [
+      GET('/authn/login?authn={authn}'),
+      GET(screen),
+      POST(screen + '/password', { username: 'av-must', password: 'p' }),
+      GET('/authn/mfa-setup?mfa={mfa}'),
+      GET('/authn-api/mfa/{mfa}'),
+      GET('/authn-api/mfa/{mfa}?page=setup'),
+      POST('/authn-api/mfa/{mfa}/skip', {}),
+      POST('/authn-api/mfa/{mfa}/setup/confirm', { code: '123456' }),
+      POST('/authn-api/mfa/{mfa}/setup/totp', {}),
+      GET('/authn-api/mfa/{mfa}?page=setup'),
+      POST('/authn-api/mfa/{mfa}/setup/confirm', { code: '000000' }),
+      POST('/authn-api/mfa/{mfa}/setup/confirm', { code: '{totpsetup}' }),
+      GET('/authn-api/accounts')]);
+
+    authenticator('k4');
+    const mo = await person('av-mo', { mfaRequired: true });
+    await run('a passkey set up at sign-in', mo, [
+      GET('/authn/login?authn={authn}'),
+      GET(screen),
+      POST(screen + '/password', { username: 'av-mo', password: 'p' }),
+      POST('/authn-api/mfa/{mfa}/setup/webauthn', {}),
+      GET('/authn-api/mfa/{mfa}?page=webauthn'),
+      POST('/authn-api/mfa/{mfa}/webauthn/options', {}),
+      POST('/authn-api/mfa/{mfa}/webauthn', { credential: '{register:k4}' }),
+      GET('/authn-api/accounts')]);
+
+    await run('no step after signing in', null, [
+      GET('/authn-api/mfa/nosuchstep?page=post-login'),
+      POST('/authn-api/mfa/nosuchstep/post-login/skip', {}),
+      POST('/authn-api/mfa/nosuchstep/post-login/register', {}),
+      POST('/authn-api/mfa/nosuchstep/webauthn/options', {}),
+      POST('/authn-api/mfa/nosuchstep/setup/totp', {}),
+      GET('/authn-api/mfa/nosuchstep?page=webauthn')]);
+
     await run('unrouted and unknown', null, [
       GET('/authn-api/nothing-here'),
       GET('/authn/login?authn=nosuchsignin'),
       GET('/authn/login?authn=bad*id'),
       GET('/authn/totp?mfa=nosuchstep')]);
 
+    const keys = {};
+    Object.keys(authenticators).forEach(function (name) {
+      const a = authenticators[name];
+      keys[name] = { privateJwk: a.privateJwk, credentialId: a.credentialId,
+                     strangerHandle: a.strangerHandle,
+                     userHandle: a.userHandle || '' };
+    });
     fs.writeFileSync(OUT, JSON.stringify({ base: base, origin: base,
+                                           authenticators: keys,
                                            cases: cases }));
     server.close();
     process.exit(0);

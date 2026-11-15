@@ -26,6 +26,13 @@
 //                                  bundle: the screen, the password, the
 //                                  code where one is asked; prints the
 //                                  `sts_session` cookie the answer set.
+//   passkeys <base> <id,id,id> <user> <password>
+//                                  the passkey person, in one browser with a
+//                                  virtual authenticator (CDP's WebAuthn
+//                                  domain): a passkey registered at sign-in
+//                                  (the security-key box), then the second
+//                                  factor, then with no username; prints the
+//                                  three sessions.
 //   honours <base> <cookie>        Node reads the session the cookie names:
 //                                  the sign-out page's view, for the person.
 //   signout <base> <cookie>        headless Chrome holding that cookie on the
@@ -211,7 +218,7 @@ function totpCode(secret, at) {
  * kept) and, where product asks for a second factor, an authenticator
  * app's enrolment (its secret is kept).
  */
-async function firstSignIn(base, person, name) {
+async function firstSignIn(base, person, name, stopAtEnrol) {
   const jar = {};
   const id = await begin(base, jar);
   await call(base, { method: 'GET', path: '/authn/login', jar: jar });
@@ -225,6 +232,15 @@ async function firstSignIn(base, person, name) {
     r = await act(base, jar, 'password-change', r.json.id, '',
                   { new_password: chosen, confirm_password: chosen }, csrf);
     person.password = chosen;
+  }
+  if (stopAtEnrol) {
+    // THE PASSKEY PERSON: the password chosen, and the set-up step left
+    // for the Rust runtime to finish with a passkey.
+    if (!r.json || r.json.next !== 'mfa' || r.json.step !== 'enrol') {
+      throw new Error(name + ' was not asked to set up a second factor: ' +
+                      r.text);
+    }
+    return;
   }
   if (r.json && r.json.next === 'mfa' && r.json.step === 'enrol') {
     let mfa = r.json.id;
@@ -245,7 +261,7 @@ async function firstSignIn(base, person, name) {
 async function setup(base, secret, out) {
   const token = await adminToken(base, secret);
   const people = {};
-  for (const name of ['e2e.pwd', 'e2e.totp']) {
+  for (const name of ['e2e.pwd', 'e2e.totp', 'e2e.key', 'e2e.key2']) {
     const made = await api(base, token, '/admin-api/users/create', {
       username: name, invent: false, credential: 'generate',
       attributes: { cn: name, sn: 'E2E', givenName: 'E2E',
@@ -256,6 +272,8 @@ async function setup(base, secret, out) {
   // then a second factor made optional, so the first person signs in with
   // a password alone.
   await firstSignIn(base, people['e2e.totp'], 'e2e.totp');
+  await firstSignIn(base, people['e2e.key'], 'e2e.key', true);
+  await firstSignIn(base, people['e2e.key2'], 'e2e.key2', true);
   await api(base, token, '/admin-api/config/set',
             { key: 'authn.allowOptionalSecondFactor', value: true });
   await firstSignIn(base, people['e2e.pwd'], 'e2e.pwd');
@@ -263,11 +281,15 @@ async function setup(base, secret, out) {
     throw new Error('e2e.totp was not asked to set up a second factor');
   }
   fs.writeFileSync(out, JSON.stringify(people));
-  console.log('setup: two people, the second with an authenticator app');
+  console.log('setup: four people, the second with an authenticator app, ' +
+              'the last two with a password and no second factor (the ' +
+              'passkey people, one for each runtime)');
 }
 
 async function beginTwo(base, out) {
-  const ids = { pwd: await begin(base, {}), totp: await begin(base, {}) };
+  const ids = { pwd: await begin(base, {}), totp: await begin(base, {}),
+                key: [await begin(base, {}), await begin(base, {}),
+                      await begin(base, {})].join(',') };
   fs.writeFileSync(out, JSON.stringify(ids));
   console.log('begin: two sign-ins pending');
 }
@@ -275,10 +297,8 @@ async function beginTwo(base, out) {
 /**
  * Headless Chrome over the DevTools protocol.
  */
-async function browser(base, id, user, password, secret) {
+async function openChrome() {
   const WebSocket = require('ws');
-  // Port 0: Chrome picks a free one and names it in DevToolsActivePort —
-  // a fixed port may be another session's listener.
   let port = 0;
   const dir = fs.mkdtempSync(require('os').tmpdir() + '/e2e-chrome-');
   const chrome = childProcess.spawn('google-chrome', ['--headless=new',
@@ -287,6 +307,17 @@ async function browser(base, id, user, password, secret) {
     '--user-agent=' + UA, 'about:blank'], { stdio: 'ignore' });
   const sleep = function (ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
+  };
+  const close = function () {
+    chrome.kill('SIGKILL');
+    try {
+      // Chrome may still be writing its profile as it dies.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10,
+                       retryDelay: 200 });
+    } catch (e) {
+      console.error('the browser profile ' + dir + ' was left: ' +
+                    String((e && e.message) || e));
+    }
   };
   try {
     let target = null;
@@ -341,43 +372,194 @@ async function browser(base, id, user, password, secret) {
       }
       return false;
     };
+    const sessionCookie = async function () {
+      const cookies = (await send('Network.getAllCookies')).result.cookies;
+      const session = cookies.find(function (c) {
+        return /sts_session$/.test(c.name);
+      });
+      return { cookie: session ? session.name + '=' + session.value : '',
+               names: cookies.map(function (c) { return c.name; }) };
+    };
     await send('Network.enable');
-    await send('Page.navigate', { url: base + '/authn/login#authn=' +
-                                       encodeURIComponent(id) });
-    if (!await waitFor("!!document.getElementById('kc-login')")) {
+    return { send: send, evaluate: evaluate, waitFor: waitFor,
+             sessionCookie: sessionCookie,
+             close: function () { ws.close(); close(); } };
+  } catch (e) {
+    close();
+    throw e;
+  }
+}
+
+/**
+ * Headless Chrome over the DevTools protocol.
+ */
+async function browser(base, id, user, password, secret) {
+  const c = await openChrome();
+  try {
+    await c.send('Page.navigate', { url: base + '/authn/login#authn=' +
+                                         encodeURIComponent(id) });
+    if (!await c.waitFor("!!document.getElementById('kc-login')")) {
       throw new Error('the screen was not drawn: ' +
-        await evaluate('document.body.innerText.slice(0, 400)'));
+        await c.evaluate('document.body.innerText.slice(0, 400)'));
     }
-    await evaluate("(function(){var u=document.getElementById('username');" +
+    await c.evaluate("(function(){var u=document.getElementById('username');" +
       "u.value=" + JSON.stringify(user) + ";var p=document.getElementById(" +
       "'password');p.value=" + JSON.stringify(password) + ";document." +
       "getElementById('kc-login').click();return 1;})()");
     let steps = ['the screen'];
     if (secret) {
-      if (!await waitFor("!!document.getElementById('totp-submit')")) {
+      if (!await c.waitFor("!!document.getElementById('totp-submit')")) {
         throw new Error('the code was not asked for: ' +
-          await evaluate('location.href + " " + ' +
-                         'document.body.innerText.slice(0, 400)'));
+          await c.evaluate('location.href + " " + ' +
+                           'document.body.innerText.slice(0, 400)'));
       }
       steps.push('the one-time code page');
-      await evaluate("(function(){document.getElementById('code').value=" +
+      await c.evaluate("(function(){document.getElementById('code').value=" +
         JSON.stringify(totpCode(secret, Date.now())) + ";document." +
         "getElementById('totp-submit').click();return 1;})()");
     }
-    await waitFor("/\\/oauth2\\/authorize|\\/portal/.test(location.href)",
-                  15000);
-    const href = await evaluate('location.href');
-    const cookies = (await send('Network.getAllCookies')).result.cookies;
-    const session = cookies.find(function (c) {
-      return /sts_session$/.test(c.name);
-    });
+    await c.waitFor("/\\/oauth2\\/authorize|\\/portal/.test(location.href)",
+                    15000);
+    const href = await c.evaluate('location.href');
+    const held = await c.sessionCookie();
     console.log(JSON.stringify({ steps: steps, location: href,
-      cookie: session ? session.name + '=' + session.value : '',
-      names: cookies.map(function (c) { return c.name; }) }));
-    ws.close();
+      cookie: held.cookie, names: held.names }));
   } finally {
-    chrome.kill('SIGKILL');
-    fs.rmSync(dir, { recursive: true, force: true });
+    c.close();
+  }
+}
+
+/**
+ * THE PASSKEY PERSON (#444, the `passkeys` slice), in ONE browser with a
+ * virtual authenticator (CDP's WebAuthn domain: CTAP2, internal, resident
+ * keys, user verification), so the passkey registered by the first
+ * sign-in is the one the next two use:
+ *
+ *   1. `enrol` — the password with the screen's security-key box, and
+ *      the passkey page's registration;
+ *   2. `second` — the password, then the passkey as the second factor;
+ *   3. `usernameless` — the screen's *Sign in with a passkey* button, no
+ *      username typed.
+ *
+ * The cookies are cleared between them; the authenticator is kept.
+ *
+ * @param {string} base - the service
+ * @param {string} ids - the three pending ids, comma-separated
+ * @param {string} user - the person
+ * @param {string} password - their password
+ * @returns {Promise<void>} prints `{ enrol, second, usernameless }`
+ */
+async function passkeys(base, ids, user, password) {
+  const c = await openChrome();
+  const out = {};
+  const finished = "/\\/oauth2\\/authorize|\\/portal/.test(location.href)";
+  const click = function (id) {
+    return c.evaluate("(function(){var b=document.getElementById(" +
+      JSON.stringify(id) + ");if(!b){return 0;}b.click();return 1;})()");
+  };
+  const page = function () {
+    return c.evaluate('location.href + " " + ' +
+                      'document.body.innerText.slice(0, 600)');
+  };
+  try {
+    await c.send('WebAuthn.enable', { enableUI: false });
+    const added = await c.send('WebAuthn.addVirtualAuthenticator', {
+      options: { protocol: 'ctap2', ctap2Version: 'ctap2_1',
+                 transport: 'internal', hasResidentKey: true,
+                 hasUserVerification: true, isUserVerified: true,
+                 automaticPresenceSimulation: true } });
+    if (!added.result || !added.result.authenticatorId) {
+      throw new Error('no virtual authenticator: ' + JSON.stringify(added));
+    }
+    // NO AUTOFILL: the screen arms conditional mediation as it loads, and
+    // a virtual authenticator holding a discoverable credential answers it
+    // unasked — every screen would be a usernameless sign-in. Each sign-in
+    // here is the one its step names, so the page is told the browser has
+    // none; the button's own ceremony is unaffected.
+    await c.send('Page.enable');
+    await c.send('Page.addScriptToEvaluateOnNewDocument', { source:
+      'if (window.PublicKeyCredential) { PublicKeyCredential.' +
+      'isConditionalMediationAvailable = function () { return ' +
+      'Promise.resolve(false); }; }' });
+    const [enrolId, secondId, discoverId] = String(ids).split(',');
+    const screen = async function (id) {
+      await c.send('Network.clearBrowserCookies');
+      await c.send('Page.navigate', { url: base + '/authn/login#authn=' +
+                                           encodeURIComponent(id) });
+      if (!await c.waitFor("!!document.getElementById('kc-login')")) {
+        throw new Error('the screen was not drawn: ' + await page());
+      }
+    };
+    const withPassword = async function () {
+      await c.evaluate("(function(){var u=document.getElementById(" +
+        "'username');u.value=" + JSON.stringify(user) + ";var p=document." +
+        "getElementById('password');p.value=" + JSON.stringify(password) +
+        ";document.getElementById('kc-login').click();return 1;})()");
+    };
+    const settle = async function (what, steps) {
+      if (!await c.waitFor(finished, 20000)) {
+        throw new Error(what + ' did not finish: ' + await page());
+      }
+      const held = await c.sessionCookie();
+      out[what] = { steps: steps, location: await c.evaluate('location.href'),
+                    cookie: held.cookie };
+    };
+    // 1. Registered at sign-in: the password with the screen's "use a
+    //    security key" box, which a person holding none answers with the
+    //    passkey page's registration (the set-up step's own door is proved
+    //    by the vectors: product with authn.allowOptionalSecondFactor
+    //    offers it to nobody here).
+    await screen(enrolId);
+    if (!await c.evaluate("(function(){var b=document.getElementById(" +
+        "'use_webauthn');if(!b){return 0;}b.checked=true;return 1;})()")) {
+      throw new Error('the screen offered no security key box: ' +
+                      await page());
+    }
+    await withPassword();
+    if (!await c.waitFor("!!document.getElementById('wa-go')")) {
+      throw new Error('the passkey page was not drawn: ' + await page());
+    }
+    await click('wa-go');
+    await settle('enrol', ['the screen with a security key',
+                           'the passkey registered']);
+    // 2. The passkey as the second factor. The authenticator answers
+    //    nothing while the screen is drawn (an autofill the page armed
+    //    anyway would sign in with no username), and the passkey page's
+    //    own ceremony once its button is pressed.
+    const presence = function (on) {
+      return c.send('WebAuthn.setAutomaticPresenceSimulation',
+        { authenticatorId: added.result.authenticatorId, enabled: on });
+    };
+    await presence(false);
+    await screen(secondId);
+    await withPassword();
+    if (!await c.waitFor("!!document.getElementById('wa-go')")) {
+      throw new Error('the passkey was not asked for: ' + await page());
+    }
+    await presence(true);
+    await click('wa-go');
+    await settle('second', ['the screen', 'the passkey as the second ' +
+                            'factor']);
+    // 3. No username: the passkey names the account.
+    await screen(discoverId);
+    if (!await c.waitFor("!!document.getElementById('wa-passkey-go')")) {
+      throw new Error('the screen offered no passkey: ' + await page());
+    }
+    // The button, unless the screen's autofill answered first: either is
+    // a sign-in with no username.
+    await click('wa-passkey-go');
+    await settle('usernameless', ['the screen', 'a passkey and no ' +
+                                  'username']);
+    const creds = await c.send('WebAuthn.getCredentials',
+      { authenticatorId: added.result.authenticatorId });
+    out.credentials = ((creds.result && creds.result.credentials) || [])
+      .map(function (one) {
+        return { residentKey: one.isResidentCredential,
+                 signCount: one.signCount };
+      });
+    console.log(JSON.stringify(out));
+  } finally {
+    c.close();
   }
 }
 
@@ -493,7 +675,7 @@ async function honours(base, cookie) {
 
 const [cmd, ...args] = process.argv.slice(2);
 const run = { setup: setup, begin: beginTwo, browser: browser,
-              honours: honours, signout: signout }[cmd];
+              passkeys: passkeys, honours: honours, signout: signout }[cmd];
 run.apply(null, args).catch(function (e) {
   console.error(String(e && e.stack || e));
   process.exit(1);

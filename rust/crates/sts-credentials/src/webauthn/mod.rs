@@ -14,7 +14,9 @@
 
 pub mod attestation;
 pub mod cbor;
+pub mod ceremonies;
 pub mod ceremony;
 pub mod enrolment;
 pub mod metadata;
+pub mod policy;
 pub mod trust;

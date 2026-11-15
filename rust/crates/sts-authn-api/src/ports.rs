@@ -79,6 +79,28 @@ pub trait SignInFacts: Send + Sync {
     fn audit(&self, row: &Json);
     /// `stats.recordRefusedAuthentication(row)` (#954).
     fn note_refused(&self, row: &Json);
+    /// `realms.active() || cells.isMulti()`: whether a credential id this
+    /// realm cannot place may be another realm's or cell's, so the browser
+    /// is never told to forget it (`signalsUnknown()`).
+    fn realms_active(&self) -> bool {
+        false
+    }
+    /// `accountSignals.credentialChanged(facts)` (#145): a CAEP
+    /// credential-change, which the SSF slice delivers.
+    fn credential_changed(&self, _facts: &Json) {}
+}
+
+/// `common/post_login.ts`'s progress rows (#1096): what a post-login step
+/// writes about the activity it asks for. The register is the post-login
+/// slice's; a realm with no post-login policy, the default, asks nothing,
+/// so no step is minted and none of these is reached.
+pub trait PostLogin: Send + Sync {
+    /// `noteAsked(username, due)`: the row, `invitedAt` set at the first.
+    fn note_asked(&self, username: &str, due: &Json) -> Json;
+    /// `noteSkipped(username, due)`: `{ ok, snoozedUntil }`.
+    fn note_skipped(&self, username: &str, due: &Json) -> Json;
+    /// `noteDone(username, due)`.
+    fn note_done(&self, username: &str, due: &Json);
 }
 
 /// THE SIGN-OUT'S PAGE OPERATIONS (`logout/logout.ts`'s `signOutView()`,
