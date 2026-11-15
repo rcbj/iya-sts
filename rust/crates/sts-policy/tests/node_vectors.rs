@@ -925,16 +925,25 @@ fn every_policy_answer_is_nodes() {
         ("postLogin", PostLoginPolicy::fields()),
     ];
     for (kind, rows) in mine_fields {
-        let theirs = node["fields"][kind].as_array().cloned().unwrap_or_default();
+        let theirs =
+            node["fields"][kind].as_array().cloned().unwrap_or_default();
         if theirs.len() != rows.len() {
-            wrong.push(format!("{kind}: {} rows, Node {}", rows.len(), theirs.len()));
+            wrong.push(format!(
+                "{kind}: {} rows, Node {}",
+                rows.len(),
+                theirs.len()
+            ));
             continue;
         }
         for (f, t) in rows.iter().zip(theirs.iter()) {
             let mine = field_json(f);
             for (k, v) in t.as_object().unwrap() {
                 if mine.get(k) != Some(v) {
-                    wrong.push(format!("{kind}.{}.{k}: Rust {:?} Node {v}", f.key, mine.get(k)));
+                    wrong.push(format!(
+                        "{kind}.{}.{k}: Rust {:?} Node {v}",
+                        f.key,
+                        mine.get(k)
+                    ));
                 }
             }
         }
