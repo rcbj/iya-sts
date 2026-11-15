@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5485** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5486** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 263
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -622,6 +622,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
 | `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
+| `STS-SCHED-0024` | A run of a cluster job waited because another run of the same job in the same realm was still running, on this node or another (#1757): a manual run waits until that run ends, and a scheduled run until it ends or its slot does, after which the next slot is due. | — |
 
 ## STS-KEYS
 

@@ -749,6 +749,16 @@ class Scheduler {
   // instant that claim cannot outlast. See `attempt()`.
   private readonly claimedByAnotherCell = new Map<string, number>();
   private readonly delegated = new Map<string, Json>();
+  // -------------------------------------------------------------------------
+  // ONE RUN OF A JOB IN A REALM AT A TIME (#1757, rcbj 2026-11-15).
+  // `exclusiveHolders`: `jobId|realm` -> the runId this process is
+  // attempting or running for it, so a second attempt here waits without a
+  // round trip. `exclusiveNoted`: the runIds already recorded as waiting
+  // (STS-SCHED-0024), so a run that waits through many ticks says so once.
+  // See `attempt()`.
+  // -------------------------------------------------------------------------
+  private readonly exclusiveHolders = new Map<string, string>();
+  private readonly exclusiveNoted = new Set<string>();
 
   /**
    * Builds a scheduler from its dependencies.
@@ -2468,6 +2478,11 @@ class Scheduler {
         self.claimedByAnotherCell.delete(runId);
       }
     });
+    Array.from(this.exclusiveNoted).forEach(function (runId: string): void {
+      if (!seen.has(runId) && !self.inFlight.has(runId)) {
+        self.exclusiveNoted.delete(runId);
+      }
+    });
     this.abandonOrphans(at);
     log.debug("Leaving Scheduler.tickOnce().");
   }
@@ -2629,6 +2644,34 @@ class Scheduler {
       log.debug("Leaving Scheduler.attempt(). Running here already.");
       return;
     }
+    // ONE RUN OF A JOB IN A REALM AT A TIME (#1757). A manual run and the
+    // scheduled run of the same job in the same realm have different ids,
+    // so each won its own claim and the two bodies overlapped; a job whose
+    // body is not safe under overlap (`federation.partner-refresh` before
+    // #1756) did its work twice. So beside the run's own claim a run holds
+    // one more claim of the same kind, `exclusive|<job>|<realm>`, for the
+    // run's time limit, and gives it back when it ends. A run that cannot
+    // have it WAITS, as a run waiting for the cap does: it is not claimed,
+    // so it is still due at the next tick — a manual run until it runs, a
+    // scheduled one until its slot ends, after which only the next slot is
+    // due (the scheduler's rule: a missed slot is not run late). Here first,
+    // with no round trip, for a run this process is already attempting or
+    // running; the claim decides between nodes. It lapses with the run's
+    // own claim, so a crashed node's hold ends when its run can be taken
+    // over.
+    const exclusiveKey = String(job.id) + '|' + String(realmId);
+    const holder = this.exclusiveHolders.get(exclusiveKey);
+    if (holder && holder !== row.runId) {
+      this.noteExclusiveWait(job, realmId, row, holder);
+      log.debug("Leaving Scheduler.attempt(). Another run of it is here.");
+      return;
+    }
+    this.exclusiveHolders.set(exclusiveKey, row.runId);
+    const dropHolder = function (): void {
+      if (self.exclusiveHolders.get(exclusiveKey) === row.runId) {
+        self.exclusiveHolders.delete(exclusiveKey);
+      }
+    };
     const timeoutMs = this.timeoutMsOf(job);
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
@@ -2638,6 +2681,7 @@ class Scheduler {
                    realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
+        dropHolder();
         self.inFlight.delete(row.runId);
         // THE CELL THAT LOSES A GLOBAL JOB'S CLAIM NEVER SEES THE RUN END
         // (#98, 2026-11-06). The winner writes the run's row in its OWN
@@ -2660,8 +2704,31 @@ class Scheduler {
         }
         return;
       }
-      return self.runClaimed(job, realmId, row, answer, timeoutMs);
+      return claims.claim({ scope: scope, value: 'exclusive|' + exclusiveKey,
+                            realm: realmId, ttlMs: timeoutMs + 1000 })
+        .then(function (exclusive: Json): Json {
+          if (!exclusive.ok) {
+            // The run's own claim goes back, so the run can be attempted
+            // again once the other run of the job has ended.
+            dropHolder();
+            self.inFlight.delete(row.runId);
+            claims.release(answer.handle);
+            if (exclusive.reason === 'store') {
+              log.warn(errorCodes.tag('STS-SCHED-0008') + 'scheduler: the ' +
+                       'claim store could not be asked about run ' +
+                       row.runId + ' of ' + job.id + ' (' +
+                       (exclusive.why || '') + '). It is not started ' +
+                       'until it can be.');
+            } else {
+              self.noteExclusiveWait(job, realmId, row, '');
+            }
+            return undefined;
+          }
+          return self.runClaimed(job, realmId, row, answer, timeoutMs,
+                                 exclusive.handle);
+        });
     }).catch(function (e: Json): void {
+      dropHolder();
       self.inFlight.delete(row.runId);
       log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
                 row.runId + ' of ' + job.id + ' could not be started: ' +
@@ -2670,11 +2737,55 @@ class Scheduler {
     log.debug("Leaving Scheduler.attempt().");
   }
 
+  // A RUN THAT WAITS FOR ANOTHER RUN OF ITS JOB IN ITS REALM (#1757),
+  // recorded once per run: one info line with STS-SCHED-0024, and on a
+  // manual run's queued row the code and the reason, which the page and the
+  // API show beside it until it runs (the run's own start clears both). A
+  // scheduled run's row is not written while it waits: it is not stored
+  // until it starts, and a queued row its slot left behind would stay for
+  // good. The tick is asked again as soon as a run ends.
+  private noteExclusiveWait(job: JobSpec, realmId: string, row: Json,
+                            holder: string): void {
+    const { log, errorCodes, realms } = this.deps;
+    log.debug("Entering Scheduler.noteExclusiveWait(). " + row.runId);
+    this.waiting = true;
+    const why = 'Another run of ' + job.id +
+      (realmId !== realms.DEFAULT_ID ? ' in "' + realmId + '"' : '') +
+      (holder ? ' (' + holder + ')' : ' on another node') +
+      ' was still running; this run waits until it ends.';
+    if (row.trigger === 'manual' && row.state === 'queued') {
+      const stored = this.storeOf(realmId).get(row.runId);
+      if (stored && stored.state === 'queued' &&
+          stored.errorCode !== 'STS-SCHED-0024') {
+        this.writeRow(realmId, Object.assign({}, stored, {
+          errorCode: 'STS-SCHED-0024', why: why }));
+      }
+    }
+    if (!this.exclusiveNoted.has(row.runId)) {
+      this.exclusiveNoted.add(row.runId);
+      log.info(errorCodes.tag('STS-SCHED-0024') + 'scheduler: run ' +
+               row.runId + ' of ' + job.id + ' waits: ' + why);
+    }
+    log.debug("Leaving Scheduler.noteExclusiveWait().");
+  }
+
   private runClaimed(job: JobSpec, realmId: string, row: Json, answer: Json,
-                     timeoutMs: number): Promise<void> {
+                     timeoutMs: number,
+                     exclusiveHandle?: Json): Promise<void> {
     const { log, audit, realms, setTimer, clearTimer, claims } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.runClaimed(). " + row.runId);
+    // The run's hold on its job in its realm (#1757), given back however
+    // the run ends, so the run that waited for it starts at the next tick.
+    const exclusiveKey = String(job.id) + '|' + String(realmId);
+    const giveBackExclusive = function (): void {
+      if (self.exclusiveHolders.get(exclusiveKey) === row.runId) {
+        self.exclusiveHolders.delete(exclusiveKey);
+      }
+      if (exclusiveHandle) {
+        claims.release(exclusiveHandle);
+      }
+    };
     // A REALM REMOVED BETWEEN THE TICK AND THE CLAIM (#338): nothing is run
     // for it. It used to run in the DEFAULT realm instead (`realms.get()`
     // answering null fell back to it), so a removed realm's krbtgt rotation
@@ -2682,6 +2793,7 @@ class Scheduler {
     if (!this.realmDefined(realmId)) {
       this.inFlight.delete(row.runId);
       claims.release(answer.handle);
+      giveBackExclusive();
       log.info(errorCodes.tag('STS-SCHED-0018') + 'scheduler: run ' +
                row.runId + ' of ' + job.id + ' was not started: the realm "' +
                realmId + '" has been removed.');
@@ -2795,6 +2907,7 @@ class Scheduler {
       clearTimer(flight.watch);
       flight.watch = null;
       self.inFlight.delete(row.runId);
+      giveBackExclusive();
       // A place is free: start what the last tick left waiting, now rather
       // than at the next tick. Only after a run that RAN, so a store that
       // refuses every claim is not asked again in a loop.
