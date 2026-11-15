@@ -42,6 +42,11 @@
 // whose doors (the XACML PDP and AuthZEN over mutual TLS, the policy
 // editor, GNAP) belong to the phase-8 jobs.
 //
+// ITS REALMS ARE REMOVED AT THE END ONLY WHEN ASKED
+// (`STS_TEST_REMOVE_REALMS=1`, which a hand run against a long-lived probe
+// sets so that its directory does not fill): tests/CLAUDE.md's *No job
+// removes a realm* is the rule for a shared run, so by default they stay.
+//
 // OWNED HERE (local: true): this repository's own management API.
 // ---------------------------------------------------------------------------
 
@@ -472,7 +477,38 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-test().catch(function (e) {
+// The realms this job made, removed from the default realm only when
+// STS_TEST_REMOVE_REALMS is "1" (the header says why).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Kept.");
+    return;
+  }
+  for (const id of [REALM]) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("removed the realm " + id + ": " + r.status);
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A removal that fails leaves a realm behind, which is what a run
+      // without the switch does anyway; the job's verdict stands.
+      log.info("could not remove the realm " + id);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+test().then(function () {
+  return true;
+}, function (e) {
   log.error("sts_owners FAILED: " + ((e && e.stack) || e));
-  process.exit(1);
+  return false;
+}).then(async function (passed) {
+  await removeRealms();
+  if (!passed) {
+    process.exit(1);
+  }
 });

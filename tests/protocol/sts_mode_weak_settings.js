@@ -470,6 +470,23 @@ async function theCodes() {
       domain: id + ".example.net", name: "Weak settings " + STAMP },
       "created the realm " + id);
   }
+  try {
+    await sha1Codes(SHA, CA);
+  } finally {
+    // REMOVED ONLY WHEN ASKED (STS_TEST_REMOVE_REALMS=1, a hand run against
+    // a long-lived probe): tests/CLAUDE.md's *No job removes a realm* is the
+    // rule for a shared run.
+    if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+      for (const id of [SHA, CA]) {
+        await call("POST", base + "/admin-api/realms/remove", { id: id });
+      }
+    }
+  }
+  log.debug("Leaving theCodes().");
+}
+
+async function sha1Codes(SHA, CA) {
+  log.debug("Entering sha1Codes().");
   const PERSON = "weak-sha1-signer";
   await ok(realmBase(SHA) + "/admin-api/pki/build",
            { organisation: "Weak settings", country: "US" },
@@ -534,7 +551,7 @@ async function theCodes() {
     assert.ok(buildCodes.indexOf("STS-PKI-0191") >= 0, buildCodes.join(","));
     assert.ok(prodBuild.text.indexOf("STS-") < 0, "a code was sent");
   });
-  log.debug("Leaving theCodes().");
+  log.debug("Leaving sha1Codes().");
 }
 
 async function readSites() {
