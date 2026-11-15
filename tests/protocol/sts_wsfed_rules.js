@@ -50,13 +50,20 @@
 //      m. a password wauth, no wauth, and a multi-factor wauth still issue
 //         what they did before #737.
 //
-// NOT HERE, AND OWED: the in-process sections g, j and n (a software
-// authenticator meeting the key demand, passwordless and as the second
-// factor, and a key's assertion earning phr) — `passkey_wire_kit.js`'s
-// ceremony walks the authorization endpoint's screen, and enrolling the key
-// over `/account-api` is the portal's token flow; they wait for that kit
-// to take a screen it did not open. `step_up.screenDemandFor()` as a
-// function (h, i) is (d).
+//      g. a real WebAuthn ceremony at the screen the key demand sends the
+//         browser to (`passkey_wire_kit.js`'s software authenticator, the
+//         screen's first use enrolling in development): a passwordless key
+//         alone meets it (HardwareToken), a password and a key meets it
+//         (multipleauthn), and the session meets it at once afterwards;
+//      j. a person holding an authenticator app and a passkey enrolled
+//         passwordless, signing in with a password under a key demand, is
+//         sent to an ASSERTION of that passkey, never to an enrolment;
+//      n. a passkey registration under phr earns nothing (STS-WSFED-0030);
+//         an assertion with that key carries the phr URI on both token
+//         types, and a later request that does not ask does not.
+//
+// NOT HERE: `step_up.screenDemandFor()` as a function (h, i), which is
+// (d).
 //
 // OWNED HERE (local: true). Its realm is removed only on a private probe.
 // ===========================================================================
@@ -83,6 +90,9 @@ const PHRH = "http://schemas.openid.net/acr/2016/07/" +
 const PPT = "urn:oasis:names:tc:SAML:2.0:ac:classes:" +
             "PasswordProtectedTransport";
 
+const UNSPECIFIED = "urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified";
+const PK = require("./passkey_wire_kit.js").kit("sts_wsfed_rules",
+                                                { log: K.log });
 let D = null;
 
 function signInUrl(extra) {
@@ -555,6 +565,166 @@ async function stepUp() {
   log.debug("Leaving stepUp().");
 }
 
+// ------------------------------------------------------------- G, J, N
+// A REAL WebAuthn CEREMONY at the sign-in screen a key demand sends the
+// browser to, with `passkey_wire_kit.js`'s software authenticator: the
+// screen's first use in development enrols (create), a later sign-in
+// asserts (get).
+async function withKey(username, wauth, passwordless, auth, extra) {
+  log.debug("Entering withKey(). " + username);
+  const b = K.browser();
+  const start = await b.go(signInUrl(Object.assign({ wauth: wauth },
+                                                   extra || {})));
+  if (!toSignIn(start)) {
+    log.debug("Leaving withKey(). Not sent to sign in.");
+    return { start: start, mode: "", answer: start, b: b };
+  }
+  const rb = K.rb(D);
+  const at = /^https?:/.test(start.location) ? start.location
+                                             : K.base + start.location;
+  const opened = await authnSignin.screen(rb, at, { cookie: cookieOf(b) });
+  keepAll(b, opened.setCookies);
+  const a = await authnSignin.submit(rb, at, { action: "login",
+    username: username, password: passwordless ? "" : "anything",
+    webauthn_only: passwordless ? "1" : "" },
+  { screen: opened, cookie: cookieOf(b) });
+  keepAll(b, a.setCookies);
+  if (!(a.next === "mfa" && a.location)) {
+    log.debug("Leaving withKey(). No key step: " + a.next);
+    return { start: start, mode: "", answer: { status: a.status,
+      text: JSON.stringify(a.json || {}) }, b: b, submitted: a };
+  }
+  const step = await authnSignin.step(a.location, { cookie: cookieOf(b) });
+  keepAll(b, step.setCookies);
+  let mode = "";
+  const ran = await authnSignin.passkeyStep(step, function (c) {
+    mode = c.mode;
+    return c.mode === "create"
+      ? auth.register(c.challenge, (c.user || {}).id, c.rpId)
+      : auth.assert(c.challenge, { rpId: c.rpId });
+  }, { cookie: cookieOf(b) });
+  keepAll(b, ran.setCookies);
+  const answer = ran.next === "redirect" && ran.location
+    ? await b.go(ran.location) : { status: ran.status,
+                                   text: JSON.stringify(ran.json || {}) };
+  log.debug("Leaving withKey(). " + mode);
+  return { start: start, mode: mode, ran: ran, answer: answer, b: b,
+           submitted: a, step: step };
+}
+
+function assertionSays(r, method) {
+  log.debug("Entering assertionSays().");
+  log.debug("Leaving assertionSays().");
+  return r.status === 200 && /wresult/.test(r.text || "") &&
+         String(r.text).indexOf(method) >= 0;
+}
+
+async function keys() {
+  log.debug("Entering keys().");
+  log.info("=== G, J, N. a real WebAuthn ceremony at the screen ===");
+  const k1 = PK.authenticator();
+  const g1 = await withKey("wr-passkey", KEY, true, k1);
+  K.check("Sg1. a PASSWORDLESS security key — one factor, amr hwk — " +
+          "meets a hardware wauth, and the assertion says HardwareToken",
+  function () {
+    assert.strictEqual(g1.mode, "create", K.shown(g1.answer));
+    assert.ok(assertionSays(g1.answer, KEY), K.shown(g1.answer));
+  });
+  const k2 = PK.authenticator();
+  const g2 = await withKey("wr-keypair", KEY, false, k2);
+  K.check("Sg2. and so does a password AND a key — two factors, so the " +
+          "assertion says multipleauthn", function () {
+    assert.strictEqual(g2.mode, "create", K.shown(g2.answer));
+    assert.ok(assertionSays(g2.answer, MFA), K.shown(g2.answer));
+  });
+  const g3 = await g2.b.go(signInUrl({ wauth: KEY }));
+  K.check("Sg3. and the demand is met at once on that session afterwards",
+          function () {
+            assert.ok(assertionSays(g3, MFA), K.shown(g3));
+          });
+  // j: a person holding a second factor and a passkey enrolled
+  // passwordless; a password sign-in under a key demand goes on to an
+  // ASSERTION of that passkey and never to an enrolment (#898, #1135).
+  const primary = "wr-primary";
+  const kp = PK.authenticator();
+  const made = await withKey(primary, KEY, true, kp);
+  const portal = require("./portal_signin.js");
+  const client = await portal.signInToThePortal(K.rb(D), primary, null,
+    { cookie: cookieOf(made.b) });
+  let r = await client.act("/portal/mfa", { action: "start" });
+  const page = await client.page("/portal/mfa");
+  const secret = String(((page.json && page.json.setup) || {}).grouped || "")
+    .replace(/\s+/g, "");
+  r = await client.act("/portal/mfa", { action: "confirm",
+                                        code: totp(secret, 0) });
+  K.check("Sj0. (wr-primary holds a passkey made passwordless and an " +
+          "authenticator app)", function () {
+    assert.strictEqual(made.mode, "create");
+    assert.ok(r.status === 200 && r.json && r.json.ok, K.shown(r));
+  });
+  const dave = K.browser();
+  const first = await dave.go(signInUrl({ wauth: KEY }));
+  const rb = K.rb(D);
+  const at = /^https?:/.test(first.location) ? first.location
+                                             : K.base + first.location;
+  const opened = await authnSignin.screen(rb, at, { cookie: cookieOf(dave) });
+  keepAll(dave, opened.setCookies);
+  const toKey = await authnSignin.submit(rb, at, { action: "login",
+    username: primary, password: "anything" },
+  { screen: opened, cookie: cookieOf(dave) });
+  keepAll(dave, toKey.setCookies);
+  const keyPage = toKey.next === "mfa"
+    ? await authnSignin.step(toKey.location, { cookie: cookieOf(dave) })
+    : {};
+  const keyView = ((keyPage.view || {}).webauthn) || {};
+  K.check("Sj1. a password sign-in by somebody holding a second factor and " +
+          "a passkey enrolled passwordless goes on, under a key demand, to " +
+          "an ASSERTION of that passkey, never to an enrolment", function () {
+    assert.strictEqual(toKey.next, "mfa", JSON.stringify(toKey.json || {})
+      .slice(0, 300));
+    assert.strictEqual(toKey.step, "webauthn");
+    assert.strictEqual(keyView.mode, "get", JSON.stringify(keyPage.view)
+      .slice(0, 300));
+  });
+  // n: phr under a passkey.
+  const kphr = PK.authenticator();
+  const n1 = await coded("STS-WSFED-0030", function () {
+    return withKey("wr-phr", PHR, true, kphr);
+  });
+  K.check("Sn1. a passkey registration under phr earns nothing: one trip, " +
+          "then the class was not earned (400, STS-WSFED-0030), the code " +
+          "not sent", function () {
+    assert.strictEqual(n1.answer.mode, "create");
+    assert.strictEqual(n1.answer.answer.status, 400,
+                       K.shown(n1.answer.answer));
+    assert.ok(/The class was not earned/.test(n1.answer.answer.text));
+    assert.ok(n1.answer.answer.text.indexOf("STS-WSFED-0030") < 0);
+    assert.ok(n1.rose >= 1);
+  });
+  const n2 = await withKey("wr-phr", PHR, true, kphr, { saml2: true });
+  K.check("Sn2. an assertion with the same key earns phr, and the SAML 2.0 " +
+          "class ref is that URI", function () {
+    assert.strictEqual(n2.mode, "get", K.shown(n2.answer));
+    assert.strictEqual(n2.answer.status, 200, K.shown(n2.answer));
+    assert.strictEqual(classRefOf(n2.answer.text), PHR);
+    assert.ok(n2.answer.text.indexOf(PHRH) < 0);
+  });
+  const n3 = await n2.b.go(signInUrl({ wauth: PHR }));
+  K.check("Sn3. the same session meets phr at once, and the SAML 1.1 " +
+          "AuthenticationMethod is that URI", function () {
+    assert.strictEqual(n3.status, 200, K.shown(n3));
+    assert.strictEqual(methodOf(n3.text), PHR);
+  });
+  const n4 = await n2.b.go(signInUrl({ saml2: true }));
+  K.check("Sn4. a request that does not ask keeps unspecified, even though " +
+          "the session earned phr", function () {
+    assert.strictEqual(n4.status, 200, K.shown(n4));
+    assert.strictEqual(classRefOf(n4.text), UNSPECIFIED);
+    assert.ok(n4.text.indexOf(PHR) < 0 && n4.text.indexOf(PHRH) < 0);
+  });
+  log.debug("Leaving keys().");
+}
+
 async function test() {
   log.debug("Entering test().");
   D = await K.realm("wsr-d", "development");
@@ -562,12 +732,14 @@ async function test() {
     identifier: REALM_URI, name: "wsfed rules", protocols: ["wsfed"],
     fields: { wsfedRealm: [REALM_URI], wsfedReplyUrl: [WREPLY] } },
   "created the relying party");
-  for (const who of ["wr-alice", "wr-carol", "wr-dave"]) {
+  for (const who of ["wr-alice", "wr-carol", "wr-dave", "wr-passkey",
+                     "wr-keypair", "wr-primary", "wr-phr"]) {
     await K.person(D, who, "Wr-Passw0rd!-" + K.rand(3));
   }
   await sessionToken();
   await stepUp();
+  await keys();
   log.debug("Leaving test().");
 }
 
-K.main(test, 34);
+K.main(test, 43);
