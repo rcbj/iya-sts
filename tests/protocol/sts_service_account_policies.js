@@ -44,6 +44,9 @@
 // list rule, an unknown reference falling back (it cannot be written over
 // the wire), and the rotation job against a fake destination.
 //
+// Its realms are removed at the end only when STS_TEST_REMOVE_REALMS is
+// "1" (a shared private probe would fill otherwise); the suite leaves them.
+//
 // OWNED HERE (local: true): this repository's own management API and
 // directory.
 // ---------------------------------------------------------------------------
@@ -766,8 +769,8 @@ async function theDelete() {
   log.debug("Leaving theDelete().");
 }
 
-async function test() {
-  log.debug("Entering test().");
+async function testBody() {
+  log.debug("Entering testBody().");
   for (const id of [OWNERS, SELECT, OTHER]) {
     await aRealm(id);
   }
@@ -779,6 +782,32 @@ async function test() {
   await theReaders();
   await theDelete();
   log.info("Test completed successfully. " + checks + " check(s) passed.");
+  log.debug("Leaving testBody().");
+}
+
+// THE REALMS ARE REMOVED ONLY WHEN STS_TEST_REMOVE_REALMS IS "1": a private
+// probe many jobs share fills its directory otherwise, while the suite's own
+// rule (tests/CLAUDE.md, *No job removes a realm*) leaves them standing.
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    for (const id of [OWNERS, SELECT, OTHER]) {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("Removed the realm " + id + ": " + r.status);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+async function test() {
+  log.debug("Entering test().");
+  try {
+    await testBody();
+  } finally {
+    await removeRealms();
+  }
   log.debug("Leaving test().");
 }
 

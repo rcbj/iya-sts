@@ -46,6 +46,9 @@
 //
 // What stays in process (its D12 note): the role tables as modules answer
 // them and the classifier's own hooks.
+// Its realms are removed at the end only when STS_TEST_REMOVE_REALMS is
+// "1" (a shared private probe would fill otherwise); the suite leaves them.
+//
 // `local: true`: the role and the gate are ours.
 // ===========================================================================
 
@@ -321,8 +324,8 @@ async function theKinds(writer) {
   log.debug("Leaving theKinds().");
 }
 
-async function test() {
-  log.debug("Entering test().");
+async function testBody() {
+  log.debug("Entering testBody().");
   log.info("Driving the Security Administrator at " + base + ".");
   const made = await fetch(base + "/admin-api/realms/create", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -453,6 +456,32 @@ async function test() {
             "stopped being called");
   log.info(checks + " checks passed.");
   log.info("Test completed successfully.");
+  log.debug("Leaving testBody().");
+}
+
+// THE REALMS ARE REMOVED ONLY WHEN STS_TEST_REMOVE_REALMS IS "1": a private
+// probe many jobs share fills its directory otherwise, while the suite's own
+// rule (tests/CLAUDE.md, *No job removes a realm*) leaves them standing.
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    for (const id of [REALM]) {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("Removed the realm " + id + ": " + r.status);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+async function test() {
+  log.debug("Entering test().");
+  try {
+    await testBody();
+  } finally {
+    await removeRealms();
+  }
   log.debug("Leaving test().");
 }
 

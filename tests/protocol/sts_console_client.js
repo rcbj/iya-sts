@@ -44,6 +44,9 @@
 // issued to the console (STS-OAUTH-0944) can only be minted in process,
 // because the token endpoint refuses to issue one.
 //
+// Its realms are removed at the end only when STS_TEST_REMOVE_REALMS is
+// "1" (a shared private probe would fill otherwise); the suite leaves them.
+//
 // OWNED HERE (local: true): this repository's own console and management
 // API.
 // ---------------------------------------------------------------------------
@@ -501,8 +504,8 @@ async function roleNeedsPerson() {
   log.debug("Leaving roleNeedsPerson().");
 }
 
-async function test() {
-  log.debug("Entering test().");
+async function testBody() {
+  log.debug("Entering testBody().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Console client " + STAMP },
@@ -511,6 +514,32 @@ async function test() {
   await publicClient();
   await roleNeedsPerson();
   log.info("Test completed successfully. " + checks + " check(s) passed.");
+  log.debug("Leaving testBody().");
+}
+
+// THE REALMS ARE REMOVED ONLY WHEN STS_TEST_REMOVE_REALMS IS "1": a private
+// probe many jobs share fills its directory otherwise, while the suite's own
+// rule (tests/CLAUDE.md, *No job removes a realm*) leaves them standing.
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    for (const id of [REALM]) {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("Removed the realm " + id + ": " + r.status);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+async function test() {
+  log.debug("Entering test().");
+  try {
+    await testBody();
+  } finally {
+    await removeRealms();
+  }
   log.debug("Leaving test().");
 }
 
