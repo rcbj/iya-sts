@@ -18,7 +18,9 @@ use sts_core::realm::{self, RealmRegistry};
 use sts_core::realm_lifecycle::{Overrides, RealmLifecycle};
 use sts_core::settings::{rows, Settings};
 
-use crate::config_view::{is_echo_of_mask, mask_keyed, mask_row, ConfigView, ProcessFacts};
+use crate::config_view::{
+    is_echo_of_mask, mask_keyed, mask_row, ConfigView, ProcessFacts,
+};
 use crate::tables::tables;
 
 /// What an operation answers: a status, a body and the code it records.
@@ -31,11 +33,19 @@ pub struct Answered {
 
 impl Answered {
     fn ok(body: Json) -> Answered {
-        Answered { status: 200, body, code: None }
+        Answered {
+            status: 200,
+            body,
+            code: None,
+        }
     }
 
     fn refused(code: ErrorCode, errors: Vec<String>) -> Answered {
-        Answered { status: 400, body: serde_json::json!({ "ok": false, "errors": errors }), code: Some(code) }
+        Answered {
+            status: 400,
+            body: serde_json::json!({ "ok": false, "errors": errors }),
+            code: Some(code),
+        }
     }
 }
 
@@ -96,10 +106,32 @@ fn str_of(body: &Json, key: &str) -> String {
 /// `numberWord()`.
 fn number_word(n: usize) -> String {
     const WORDS: [&str; 21] = [
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
-        "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+        "twenty",
     ];
-    WORDS.get(n).map(|w| w.to_string()).unwrap_or_else(|| n.to_string())
+    WORDS
+        .get(n)
+        .map(|w| w.to_string())
+        .unwrap_or_else(|| n.to_string())
 }
 
 /// The unknown-action sentence every action resource answers in its
@@ -107,17 +139,31 @@ fn number_word(n: usize) -> String {
 /// what the route declares.
 #[tracing::instrument(level = "debug")]
 pub fn unknown_action(action: &str, known: &[String]) -> String {
-    format!("Unknown action \"{}\". The {} are: {}.", action, number_word(known.len()), known.join(", "))
+    format!(
+        "Unknown action \"{}\". The {} are: {}.",
+        action,
+        number_word(known.len()),
+        known.join(", ")
+    )
 }
 
 /// `JSON.stringify(text(key))`, the message form of a described text.
 fn text_field(described: &Json) -> String {
-    described.get("text").and_then(Json::as_str).unwrap_or("").to_string()
+    described
+        .get("text")
+        .and_then(Json::as_str)
+        .unwrap_or("")
+        .to_string()
 }
 
 impl Setup<'_> {
     fn view(&self) -> ConfigView<'_> {
-        ConfigView { settings: self.settings, mode: self.mode, facts: self.facts, realm: self.realm }
+        ConfigView {
+            settings: self.settings,
+            mode: self.mode,
+            facts: self.facts,
+            realm: self.realm,
+        }
     }
 
     fn in_default(&self) -> bool {
@@ -130,14 +176,26 @@ impl Setup<'_> {
 
     /// `overrideDurability()`.
     fn durability(&self, keys: &[String]) -> String {
-        let realm_wide = if keys.is_empty() { true } else { keys.iter().any(|k| !k.starts_with("realms.")) };
+        let realm_wide = if keys.is_empty() {
+            true
+        } else {
+            keys.iter().any(|k| !k.starts_with("realms."))
+        };
         let in_realm = realm_wide && !self.in_default();
-        let kept = if in_realm { self.facts.persists_realms } else { self.facts.persists_appconfig };
+        let kept = if in_realm {
+            self.facts.persists_realms
+        } else {
+            self.facts.persists_appconfig
+        };
         if kept {
             return format!(
                 "It is written to the {} store{} and kept across restarts.",
                 self.facts.persistence_mode,
-                if in_realm { format!(" with the \"{}\" realm", self.realm) } else { String::new() }
+                if in_realm {
+                    format!(" with the \"{}\" realm", self.realm)
+                } else {
+                    String::new()
+                }
             );
         }
         format!(
@@ -148,19 +206,32 @@ impl Setup<'_> {
     }
 
     /// `checkWrite()` and its code, without writing.
-    fn check_write(&self, key: &str, raw: &Json) -> Option<(String, ErrorCode)> {
-        let in_realm = !self.in_default() && !key.starts_with("realms.") && !Settings::is_per_process(key);
-        if let Some(r) = self.settings.check_override(key, raw, Some(in_realm)) {
+    fn check_write(
+        &self,
+        key: &str,
+        raw: &Json,
+    ) -> Option<(String, ErrorCode)> {
+        let in_realm = !self.in_default()
+            && !key.starts_with("realms.")
+            && !Settings::is_per_process(key);
+        if let Some(r) = self.settings.check_override(key, raw, Some(in_realm))
+        {
             return Some((r.problem, r.code));
         }
-        self.mode.write_problem(key, raw).map(|r| (r.problem, r.code))
+        self.mode
+            .write_problem(key, raw)
+            .map(|r| (r.problem, r.code))
     }
 
     /// `POST /admin-api/config/{action}` (`configAction()`).
     #[tracing::instrument(level = "debug", skip(self, body))]
     pub fn config_action(&self, action: &str, body: &Json) -> Answered {
         let reset_key = str_of(body, "reset").trim().to_string();
-        let action = if body.get("reset").is_some() && !reset_key.is_empty() { "reset" } else { action };
+        let action = if body.get("reset").is_some() && !reset_key.is_empty() {
+            "reset"
+        } else {
+            action
+        };
         let known = |k: &str| sts_core::settings::row(k).is_some();
         match action {
             "set" => {
@@ -269,7 +340,10 @@ impl Setup<'_> {
         let keys: Vec<String> = if self.in_default() {
             self.settings.runtime_overrides().keys().cloned().collect()
         } else {
-            self.lifecycle.overrides(self.realm).map(|o| o.keys().cloned().collect()).unwrap_or_default()
+            self.lifecycle
+                .overrides(self.realm)
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default()
         };
         if keys.iter().any(|k| k == "pki.pinnedSigners") {
             if let Err(r) = self.settings.reset_override("pki.pinnedSigners") {
@@ -297,7 +371,10 @@ impl Setup<'_> {
         let realm_settings = if self.in_default() {
             Vec::new()
         } else {
-            self.lifecycle.overrides(self.realm).map(|o| o.keys().cloned().collect()).unwrap_or_default()
+            self.lifecycle
+                .overrides(self.realm)
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default()
         };
         Answered::ok(self.view().config_json(realm_settings))
     }
@@ -306,9 +383,15 @@ impl Setup<'_> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn mode_json(&self) -> Answered {
         let mut report = self.mode.report();
-        if let Some(Json::Array(list)) = report.get_mut("developmentOnlySettings") {
+        if let Some(Json::Array(list)) =
+            report.get_mut("developmentOnlySettings")
+        {
             for row in list.iter_mut() {
-                let key = row.get("key").and_then(Json::as_str).unwrap_or("").to_string();
+                let key = row
+                    .get("key")
+                    .and_then(Json::as_str)
+                    .unwrap_or("")
+                    .to_string();
                 if let Some(o) = row.as_object_mut() {
                     for member in ["default", "value", "inForce"] {
                         if let Some(v) = o.get(member).cloned() {
@@ -366,7 +449,15 @@ impl Setup<'_> {
     fn realm_json(&self, root: &str, realm: &sts_core::realm::Realm) -> Json {
         let prefix = self.registry.prefix_of(realm);
         let advertised = self.ports.advertised_base(&realm.id);
-        let base = format!("{}{}", if advertised.is_empty() { root.to_string() } else { advertised }, prefix);
+        let base = format!(
+            "{}{}",
+            if advertised.is_empty() {
+                root.to_string()
+            } else {
+                advertised
+            },
+            prefix
+        );
         let retiring = self
             .lifecycle
             .retiring_state(&realm.id)
@@ -409,15 +500,24 @@ impl Setup<'_> {
     /// `GET /admin-api/realms` (`realmsJson()`). `root` is the request's
     /// base with the ambient realm's prefix taken off (`realmRootUrl()`).
     #[tracing::instrument(level = "debug", skip(self, query))]
-    pub fn realms_json(&self, root: &str, query: &crate::request::Query) -> Answered {
+    pub fn realms_json(
+        &self,
+        root: &str,
+        query: &crate::request::Query,
+    ) -> Answered {
         let mut reserved = self.ports.reserved();
         reserved.sort();
         let list = self.registry.list();
-        let realms: Vec<Json> = list.iter().map(|r| self.realm_json(root, r)).collect();
+        let realms: Vec<Json> =
+            list.iter().map(|r| self.realm_json(root, r)).collect();
         let total = realms.len();
         let text = |k: &str| match query.get(k) {
             Some(Json::String(s)) => s.clone(),
-            Some(Json::Array(a)) => a.iter().filter_map(Json::as_str).collect::<Vec<_>>().join(","),
+            Some(Json::Array(a)) => a
+                .iter()
+                .filter_map(Json::as_str)
+                .collect::<Vec<_>>()
+                .join(","),
             _ => String::new(),
         };
         let asked_per = js_parse_int(&text("per"));
@@ -430,15 +530,27 @@ impl Setup<'_> {
         let offset = (page - 1) * per;
         let current = realm::current();
         let mut out = Map::new();
-        out.insert("enabled".into(), Json::Bool(self.settings.value_of("realms.enabled").as_bool()));
+        out.insert(
+            "enabled".into(),
+            Json::Bool(self.settings.value_of("realms.enabled").as_bool()),
+        );
         out.insert("active".into(), Json::Bool(self.registry.active()));
-        out.insert("pathSegment".into(), Json::from(self.registry.path_segment()));
+        out.insert(
+            "pathSegment".into(),
+            Json::from(self.registry.path_segment()),
+        );
         out.insert("current".into(), Json::from(self.realm));
         out.insert("reserved".into(), Json::from(reserved));
         out.insert("realms".into(), Json::Array(realms));
         out.insert("support".into(), tables().realm_support.clone());
-        out.insert("settings".into(), self.view().settings_block("/admin/realms"));
-        out.insert("defaultDomain".into(), Json::from(self.registry.domain_of(&self.registry.default_realm())));
+        out.insert(
+            "settings".into(),
+            self.view().settings_block("/admin/realms"),
+        );
+        out.insert(
+            "defaultDomain".into(),
+            Json::from(self.registry.domain_of(&self.registry.default_realm())),
+        );
         out.insert("count".into(), Json::from(self.registry.count()));
         out.insert("currentName".into(), Json::from(current.name.as_str()));
         out.insert(
@@ -462,7 +574,10 @@ impl Setup<'_> {
     pub fn realms_action(&self, action: &str, body: &Json) -> Answered {
         let id = str_of(body, "id").trim().to_string();
         let refused = |r: sts_core::realm::Refusals| {
-            Answered::refused(r.code.unwrap_or(codes::STS_ADMIN_0562), r.sentences)
+            Answered::refused(
+                r.code.unwrap_or(codes::STS_ADMIN_0562),
+                r.sentences,
+            )
         };
         match action.trim() {
             "create" => {

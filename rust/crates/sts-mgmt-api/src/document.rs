@@ -26,13 +26,11 @@ use serde_json::{Map, Value as Json};
 use crate::operations::Kind;
 use crate::tables::{tables, BASE_MARK, VERSION_MARK};
 
-static MANAGEMENT: LazyLock<Json> = LazyLock::new(|| {
-    parse(include_str!("generated/openapi.management.json"))
-});
+static MANAGEMENT: LazyLock<Json> =
+    LazyLock::new(|| parse(include_str!("generated/openapi.management.json")));
 
-static CONSOLE: LazyLock<Json> = LazyLock::new(|| {
-    parse(include_str!("generated/openapi.console.json"))
-});
+static CONSOLE: LazyLock<Json> =
+    LazyLock::new(|| parse(include_str!("generated/openapi.console.json")));
 
 static EVERY: LazyLock<Json> =
     LazyLock::new(|| parse(include_str!("generated/openapi.every.json")));
@@ -56,22 +54,27 @@ pub fn model(kind: Kind) -> &'static Json {
 
 /// The model's operation object.
 #[tracing::instrument(level = "debug")]
-pub fn operation(kind: Kind, method: &str, path: &str) -> Option<&'static Json> {
+pub fn operation(
+    kind: Kind,
+    method: &str,
+    path: &str,
+) -> Option<&'static Json> {
     model(kind)
         .get("paths")
         .and_then(|p| p.get(path))
         .and_then(|p| p.get(method.to_ascii_lowercase()))
 }
 
-/// The component schemas of a kind's document.
+/// The component schemas of a kind's document. A hot path: read per
+/// request, so it carries no span.
 pub fn components(kind: Kind) -> &'static Json {
-    static EMPTY: LazyLock<Json> =
-        LazyLock::new(|| Json::Object(Map::new()));
+    static EMPTY: LazyLock<Json> = LazyLock::new(|| Json::Object(Map::new()));
     model(kind).get("components").unwrap_or(&EMPTY)
 }
 
 /// What every operation takes without saying so (#1476): `DPoP` and
-/// `cell` (`openapi.every.json`'s `management`).
+/// `cell` (`openapi.every.json`'s `management`). A hot path: read per
+/// request, so it carries no span.
 pub fn implicit_parameters() -> &'static [Json] {
     EVERY
         .get("management")
@@ -171,8 +174,7 @@ pub fn served(
                         .unwrap_or(Json::Object(Map::new())),
                 );
                 for (k, v) in value.as_object().into_iter().flatten() {
-                    components
-                        .insert(k.clone(), substitute(v, base, version));
+                    components.insert(k.clone(), substitute(v, base, version));
                 }
                 out.insert(key.clone(), Json::Object(components));
             }

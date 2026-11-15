@@ -31,9 +31,12 @@ const MAX_SAFE: i64 = 9_007_199_254_740_991;
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn structure_only(node: &Json) -> Json {
     match node {
-        Json::Array(list) => Json::Array(list.iter().map(structure_only).collect()),
+        Json::Array(list) => {
+            Json::Array(list.iter().map(structure_only).collect())
+        }
         Json::Object(map) => {
-            let refused = map.get("x-refused-by-handler") == Some(&Json::Bool(true));
+            let refused =
+                map.get("x-refused-by-handler") == Some(&Json::Bool(true));
             let mut out = Map::new();
             for (key, value) in map {
                 if key == "required" {
@@ -91,7 +94,9 @@ fn type_ok(t: &str, data: &Json) -> bool {
         "number" => data.is_number(),
         "integer" => match data {
             Json::Number(n) => {
-                n.is_i64() || n.is_u64() || n.as_f64().is_some_and(|f| f.fract() == 0.0)
+                n.is_i64()
+                    || n.is_u64()
+                    || n.as_f64().is_some_and(|f| f.fract() == 0.0)
             }
             _ => false,
         },
@@ -106,12 +111,25 @@ fn type_ok(t: &str, data: &Json) -> bool {
 const GROUP_KEYWORDS: &[(&str, &[&str])] = &[
     (
         "number",
-        &["maximum", "minimum", "exclusiveMaximum", "exclusiveMinimum", "multipleOf"],
+        &[
+            "maximum",
+            "minimum",
+            "exclusiveMaximum",
+            "exclusiveMinimum",
+            "multipleOf",
+        ],
     ),
     ("string", &["maxLength", "minLength", "pattern", "format"]),
     (
         "array",
-        &["maxItems", "minItems", "uniqueItems", "additionalItems", "items", "contains"],
+        &[
+            "maxItems",
+            "minItems",
+            "uniqueItems",
+            "additionalItems",
+            "items",
+            "contains",
+        ],
     ),
     (
         "object",
@@ -218,7 +236,13 @@ impl<'a> Walker<'a> {
         self.errors
     }
 
-    fn push(&mut self, path: &str, keyword: &'static str, message: String, data: &Json) {
+    fn push(
+        &mut self,
+        path: &str,
+        keyword: &'static str,
+        message: String,
+        data: &Json,
+    ) {
         self.errors.push(AjvError {
             instance_path: path.to_string(),
             keyword,
@@ -240,7 +264,12 @@ impl<'a> Walker<'a> {
         }
         let Some(s) = schema.as_object() else {
             if schema == &Json::Bool(false) {
-                self.push(path, "false schema", "boolean schema is false".into(), data);
+                self.push(
+                    path,
+                    "false schema",
+                    "boolean schema is false".into(),
+                    data,
+                );
             }
             return;
         };
@@ -252,7 +281,10 @@ impl<'a> Walker<'a> {
         }
         let types: Vec<String> = match s.get("type") {
             Some(Json::String(t)) => vec![t.clone()],
-            Some(Json::Array(ts)) => ts.iter().filter_map(|t| t.as_str().map(String::from)).collect(),
+            Some(Json::Array(ts)) => ts
+                .iter()
+                .filter_map(|t| t.as_str().map(String::from))
+                .collect(),
             _ => Vec::new(),
         };
         // ajv's `schemaHasRulesForType()`: only the four group types have
@@ -263,19 +295,23 @@ impl<'a> Walker<'a> {
                 .find(|(name, _)| *name == t)
                 .is_some_and(|(_, kws)| kws.iter().any(|k| s.contains_key(*k)))
         };
-        let type_error = || {
-            format!("must be {}", types.join(","))
-        };
+        let type_error = || format!("must be {}", types.join(","));
         // coerceAndCheckDataType(): several types, or one type with no
         // rules of its own, is checked up front.
-        let up_front = !types.is_empty() && !(types.len() == 1 && has_rules_for(&types[0]));
+        let up_front = !types.is_empty()
+            && !(types.len() == 1 && has_rules_for(&types[0]));
         if up_front && !types.iter().any(|t| type_ok(t, data)) {
             self.push(path, "type", type_error(), data);
         }
         // The untyped group.
         if let Some(c) = s.get("const") {
             if c != data {
-                self.push(path, "const", "must be equal to constant".into(), data);
+                self.push(
+                    path,
+                    "const",
+                    "must be equal to constant".into(),
+                    data,
+                );
             }
         }
         if let Some(Json::Array(values)) = s.get("enum") {
@@ -283,7 +319,8 @@ impl<'a> Walker<'a> {
                 self.errors.push(AjvError {
                     instance_path: path.to_string(),
                     keyword: "enum",
-                    message: "must be equal to one of the allowed values".into(),
+                    message: "must be equal to one of the allowed values"
+                        .into(),
                     additional_property: None,
                     allowed: Some(values.clone()),
                     data: data.clone(),
@@ -318,7 +355,11 @@ impl<'a> Walker<'a> {
                     collected.extend(inner.errors);
                 }
             }
-            let ok = if keyword == "anyOf" { passing > 0 } else { passing == 1 };
+            let ok = if keyword == "anyOf" {
+                passing > 0
+            } else {
+                passing == 1
+            };
             if !ok {
                 self.errors.extend(collected);
                 self.push(
@@ -367,7 +408,9 @@ impl<'a> Walker<'a> {
             ("exclusiveMaximum", "<"),
             ("exclusiveMinimum", ">"),
         ] {
-            let Some(limit) = s.get(keyword) else { continue };
+            let Some(limit) = s.get(keyword) else {
+                continue;
+            };
             let Some(l) = limit.as_f64() else { continue };
             let ok = match op {
                 "<=" => x <= l,
@@ -382,7 +425,12 @@ impl<'a> Walker<'a> {
                     "exclusiveMaximum" => "exclusiveMaximum",
                     _ => "exclusiveMinimum",
                 };
-                self.push(path, kw, format!("must be {} {}", op, number_text(limit)), data);
+                self.push(
+                    path,
+                    kw,
+                    format!("must be {} {}", op, number_text(limit)),
+                    data,
+                );
             }
         }
     }
@@ -392,55 +440,106 @@ impl<'a> Walker<'a> {
         let length = text.chars().count() as u64;
         if let Some(n) = s.get("maxLength").and_then(Json::as_u64) {
             if length > n {
-                self.push(path, "maxLength", format!("must NOT have more than {} characters", n), data);
+                self.push(
+                    path,
+                    "maxLength",
+                    format!("must NOT have more than {} characters", n),
+                    data,
+                );
             }
         }
         if let Some(n) = s.get("minLength").and_then(Json::as_u64) {
             if length < n {
-                self.push(path, "minLength", format!("must NOT have fewer than {} characters", n), data);
+                self.push(
+                    path,
+                    "minLength",
+                    format!("must NOT have fewer than {} characters", n),
+                    data,
+                );
             }
         }
         if let Some(Json::String(p)) = s.get("pattern") {
             if !pattern_matches(p, text) {
-                self.push(path, "pattern", format!("must match pattern \"{}\"", p), data);
+                self.push(
+                    path,
+                    "pattern",
+                    format!("must match pattern \"{}\"", p),
+                    data,
+                );
             }
         }
         if let Some(Json::String(f)) = s.get("format") {
             if !format_ok(f, text) {
-                self.push(path, "format", format!("must match format \"{}\"", f), data);
+                self.push(
+                    path,
+                    "format",
+                    format!("must match format \"{}\"", f),
+                    data,
+                );
             }
         }
     }
 
-    fn array_group(&mut self, s: &Map<String, Json>, data: &Json, path: &str, depth: usize) {
+    fn array_group(
+        &mut self,
+        s: &Map<String, Json>,
+        data: &Json,
+        path: &str,
+        depth: usize,
+    ) {
         let items = data.as_array().cloned().unwrap_or_default();
         if let Some(n) = s.get("maxItems").and_then(Json::as_u64) {
             if items.len() as u64 > n {
-                self.push(path, "maxItems", format!("must NOT have more than {} items", n), data);
+                self.push(
+                    path,
+                    "maxItems",
+                    format!("must NOT have more than {} items", n),
+                    data,
+                );
             }
         }
         if let Some(n) = s.get("minItems").and_then(Json::as_u64) {
             if (items.len() as u64) < n {
-                self.push(path, "minItems", format!("must NOT have fewer than {} items", n), data);
+                self.push(
+                    path,
+                    "minItems",
+                    format!("must NOT have fewer than {} items", n),
+                    data,
+                );
             }
         }
         if let Some(schema) = s.get("items") {
             if schema.is_object() || schema.is_boolean() {
                 for (i, item) in items.iter().enumerate() {
-                    self.walk(schema, item, &format!("{}/{}", path, i), depth + 1);
+                    self.walk(
+                        schema,
+                        item,
+                        &format!("{}/{}", path, i),
+                        depth + 1,
+                    );
                 }
             }
         }
     }
 
-    fn object_group(&mut self, s: &Map<String, Json>, data: &Json, path: &str, depth: usize) {
-        let Some(object) = data.as_object() else { return };
+    fn object_group(
+        &mut self,
+        s: &Map<String, Json>,
+        data: &Json,
+        path: &str,
+        depth: usize,
+    ) {
+        let Some(object) = data.as_object() else {
+            return;
+        };
         let properties = s.get("properties").and_then(Json::as_object);
         let patterns = s.get("patternProperties").and_then(Json::as_object);
         if let Some(extra) = s.get("additionalProperties") {
             for (key, value) in object {
                 let named = properties.is_some_and(|p| p.contains_key(key));
-                let patterned = patterns.is_some_and(|p| p.keys().any(|re| pattern_matches(re, key)));
+                let patterned = patterns.is_some_and(|p| {
+                    p.keys().any(|re| pattern_matches(re, key))
+                });
                 if named || patterned {
                     continue;
                 }
@@ -454,7 +553,12 @@ impl<'a> Walker<'a> {
                         data: data.clone(),
                     }),
                     Json::Object(_) => {
-                        self.walk(extra, value, &format!("{}/{}", path, escape(key)), depth + 1);
+                        self.walk(
+                            extra,
+                            value,
+                            &format!("{}/{}", path, escape(key)),
+                            depth + 1,
+                        );
                     }
                     _ => {}
                 }
@@ -463,7 +567,12 @@ impl<'a> Walker<'a> {
         if let Some(properties) = properties {
             for (key, schema) in properties {
                 if let Some(value) = object.get(key) {
-                    self.walk(schema, value, &format!("{}/{}", path, escape(key)), depth + 1);
+                    self.walk(
+                        schema,
+                        value,
+                        &format!("{}/{}", path, escape(key)),
+                        depth + 1,
+                    );
                 }
             }
         }
@@ -471,7 +580,12 @@ impl<'a> Walker<'a> {
             for (re, schema) in patterns {
                 for (key, value) in object {
                     if pattern_matches(re, key) {
-                        self.walk(schema, value, &format!("{}/{}", path, escape(key)), depth + 1);
+                        self.walk(
+                            schema,
+                            value,
+                            &format!("{}/{}", path, escape(key)),
+                            depth + 1,
+                        );
                     }
                 }
             }

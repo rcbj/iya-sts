@@ -40,8 +40,12 @@ use sts_crypto::jws::ClaimChecks;
 use sts_crypto::keys::KeyPolicy;
 use sts_oauth::dpop::{verify_proof, ProofContext, ProofRequest};
 use sts_oauth::jwt_access_token::JwtAccessTokens;
-use sts_oauth::mtls::{bound_thumbprint_of, certificate_thumbprint, check_binding};
-use sts_oauth::sender_constraints::{access_token_dpop_required, access_token_refusal, Presented};
+use sts_oauth::mtls::{
+    bound_thumbprint_of, certificate_thumbprint, check_binding,
+};
+use sts_oauth::sender_constraints::{
+    access_token_dpop_required, access_token_refusal, Presented,
+};
 use sts_store::key_sets::KeySet;
 use sts_xacml::access::{Answer, Question};
 
@@ -115,19 +119,39 @@ pub trait GatePorts: Send + Sync {
     /// `scopePolicy.declares()`: whether the client still declares it.
     fn declares(&self, realm: &str, client: &str, scope: &str) -> bool;
     /// `rolePermissions.effectiveRoles()`.
-    fn effective_roles(&self, realm: &str, claims: &Json, scopes: &[String]) -> Effective;
+    fn effective_roles(
+        &self,
+        realm: &str,
+        claims: &Json,
+        scopes: &[String],
+    ) -> Effective;
     /// `SecurityOperations.classify()`'s detail for a write, or `None`. The
     /// configuration page's rule is the gate's own ([`setting_change`]);
     /// this answers the pages whose rules read the directory.
-    fn security_change(&self, realm: &str, operation: &ConsoleOperation, body: &Json) -> Option<String>;
+    fn security_change(
+        &self,
+        realm: &str,
+        operation: &ConsoleOperation,
+        body: &Json,
+    ) -> Option<String>;
     /// `admin_scope.refusalFor()` for a realm administrator: why a realm's
     /// own token may not do this, or `None`.
-    fn realm_refusal(&self, realm: &str, operation: &ConsoleOperation, body: Option<&Json>) -> Option<String>;
+    fn realm_refusal(
+        &self,
+        realm: &str,
+        operation: &ConsoleOperation,
+        body: Option<&Json>,
+    ) -> Option<String>;
 }
 
 /// The access-control policy (`accessGate.check()`).
 pub trait AccessPolicy: Send + Sync {
-    fn check(&self, question: &Question, held: &[String], required: &[String]) -> Answer;
+    fn check(
+        &self,
+        question: &Question,
+        held: &[String],
+        required: &[String],
+    ) -> Answer;
 }
 
 /// The built-in `access-control` document with its default parameters,
@@ -140,8 +164,11 @@ impl BuiltInAccess {
     /// The built-in policy.
     #[tracing::instrument(level = "debug")]
     pub fn new() -> BuiltInAccess {
-        let params = sts_xacml::access::Parameters::from_answers(&Default::default());
-        BuiltInAccess { policy: sts_xacml::access::built_in("access-control", &params).ok() }
+        let params =
+            sts_xacml::access::Parameters::from_answers(&Default::default());
+        BuiltInAccess {
+            policy: sts_xacml::access::built_in("access-control", &params).ok(),
+        }
     }
 }
 
@@ -152,7 +179,12 @@ impl Default for BuiltInAccess {
 }
 
 impl AccessPolicy for BuiltInAccess {
-    fn check(&self, question: &Question, held: &[String], required: &[String]) -> Answer {
+    fn check(
+        &self,
+        question: &Question,
+        held: &[String],
+        required: &[String],
+    ) -> Answer {
         // The embedded PEP's `rolesOf()` for the subject first — the gate
         // names no kind, so the built-ins of an authenticated user — then
         // the roles the caller established, unioned in
@@ -168,7 +200,9 @@ impl AccessPolicy for BuiltInAccess {
             }
         }
         match &self.policy {
-            Some(policy) => sts_xacml::access::decide(policy, question, &all, required),
+            Some(policy) => {
+                sts_xacml::access::decide(policy, question, &all, required)
+            }
             None => Answer {
                 allowed: false,
                 decision: sts_xacml::model::Decision::Indeterminate,
@@ -260,11 +294,21 @@ pub fn presented_token_of(authorization: Option<&str>) -> (String, String) {
 /// process's address of the API, and the request's.
 #[tracing::instrument(level = "debug", skip(settings))]
 pub fn wanted_audiences(settings: &Settings, base: &str) -> Vec<String> {
-    let pinned = settings.value(keys::ADMIN_API_AUDIENCE).as_str().trim().to_string();
-    if !pinned.is_empty() && settings.source_of(keys::ADMIN_API_AUDIENCE) != Source::Default {
+    let pinned = settings
+        .value(keys::ADMIN_API_AUDIENCE)
+        .as_str()
+        .trim()
+        .to_string();
+    if !pinned.is_empty()
+        && settings.source_of(keys::ADMIN_API_AUDIENCE) != Source::Default
+    {
         return vec![pinned];
     }
-    let mut wanted = vec![if pinned.is_empty() { settings.management_api_base_url() } else { pinned }];
+    let mut wanted = vec![if pinned.is_empty() {
+        settings.management_api_base_url()
+    } else {
+        pinned
+    }];
     let from_request = format!("{}{}", base, BASE);
     if !wanted.contains(&from_request) {
         wanted.push(from_request);
@@ -279,13 +323,17 @@ pub fn console_operation_of(path: &str) -> ConsoleOperation {
     let stripped = if path == "/console" {
         ""
     } else {
-        path.strip_prefix("/console").filter(|r| r.starts_with('/')).unwrap_or(path)
+        path.strip_prefix("/console")
+            .filter(|r| r.starts_with('/'))
+            .unwrap_or(path)
     };
     let full = format!("{}{}", BASE, stripped);
     let mut resource = full.clone();
     let mut action = String::new();
     for route in &crate::tables::tables().routes {
-        let Some(prefix) = route.route.strip_suffix(":action") else { continue };
+        let Some(prefix) = route.route.strip_suffix(":action") else {
+            continue;
+        };
         if let Some(rest) = full.strip_prefix(prefix) {
             if !rest.is_empty() && !rest.contains('/') {
                 action = rest.to_string();
@@ -294,7 +342,10 @@ pub fn console_operation_of(path: &str) -> ConsoleOperation {
             }
         }
     }
-    ConsoleOperation { path: format!("/admin{}", resource.get(BASE.len()..).unwrap_or("")), action }
+    ConsoleOperation {
+        path: format!("/admin{}", resource.get(BASE.len()..).unwrap_or("")),
+        action,
+    }
 }
 
 /// `SecurityOperations.settingChange()`: a write naming
@@ -312,7 +363,10 @@ fn invalid(code: ErrorCode, scope: &str, message: String) -> Box<Refused> {
         status: 401,
         error: "invalid_token",
         code,
-        www_authenticate: Some(format!("Bearer error=\"invalid_token\", scope=\"{}\"", scope)),
+        www_authenticate: Some(format!(
+            "Bearer error=\"invalid_token\", scope=\"{}\"",
+            scope
+        )),
         nonce_wanted: false,
         message,
     })
@@ -401,9 +455,19 @@ impl Gate<'_> {
         // `verifyOwnJws()` checks the clock too, so an expired token is
         // refused here as not verifying (STS-API-0002), as in Node; the
         // gate's own expiry check (0003) stands behind it.
-        let checks = ClaimChecks { now: Some(now), ..Default::default() };
-        keys.verify_own_jws(token, None, &checks, KeyPolicy::STRICT, self.eddsa_curve, now as f64 * 1000.0)
-            .ok()
+        let checks = ClaimChecks {
+            now: Some(now),
+            ..Default::default()
+        };
+        keys.verify_own_jws(
+            token,
+            None,
+            &checks,
+            KeyPolicy::STRICT,
+            self.eddsa_curve,
+            now as f64 * 1000.0,
+        )
+        .ok()
     }
 
     /// The whole gate.
@@ -429,7 +493,11 @@ impl Gate<'_> {
         } else if operation.path == "/admin/config" {
             setting_change(arrived.body.unwrap_or(&Json::Null))
         } else {
-            self.ports.security_change(arrived.realm, &operation, arrived.body.unwrap_or(&Json::Null))
+            self.ports.security_change(
+                arrived.realm,
+                &operation,
+                arrived.body.unwrap_or(&Json::Null),
+            )
         };
         let scope = if mdm_feed {
             "device:compliance"
@@ -444,7 +512,11 @@ impl Gate<'_> {
         };
         let (token, scheme) = presented_token_of(arrived.authorization);
         if token.is_empty() {
-            let hint = if mdm_feed || console_op || security_change.is_some() { scope } else { "admin:read admin:write" };
+            let hint = if mdm_feed || console_op || security_change.is_some() {
+                scope
+            } else {
+                "admin:read admin:write"
+            };
             return Err(Box::new(Refused {
                 status: 401,
                 error: "unauthorized",
@@ -481,14 +553,20 @@ impl Gate<'_> {
         };
         if let Some(exp) = claims.get("exp").and_then(Json::as_f64) {
             if exp != 0.0 && exp <= arrived.now as f64 {
-                return Err(invalid(codes::STS_API_0003, scope, format!("That access token expired at {}.", iso_of(exp))));
+                return Err(invalid(
+                    codes::STS_API_0003,
+                    scope,
+                    format!("That access token expired at {}.", iso_of(exp)),
+                ));
             }
         }
         let jti = text_or_empty(claims.get("jti"));
         let person = text_or_empty(claims.get("sub"));
         let client = text_or_empty(claims.get("client_id"));
         if (!jti.is_empty() && self.ports.revoked(&token_realm, &jti))
-            || (!person.is_empty() && person != client && self.ports.disabled(&token_realm, &person))
+            || (!person.is_empty()
+                && person != client
+                && self.ports.disabled(&token_realm, &person))
         {
             return Err(invalid(
                 codes::STS_API_0122,
@@ -522,7 +600,10 @@ impl Gate<'_> {
         let iss_ok = if default_token {
             self.issuer_accepted(&claims, arrived.base)
         } else {
-            self.tokens.is_hosted_issuer(&text_or_empty(claims.get("iss")), arrived.realm_base)
+            self.tokens.is_hosted_issuer(
+                &text_or_empty(claims.get("iss")),
+                arrived.realm_base,
+            )
         };
         if !iss_ok {
             return Err(invalid(
@@ -538,7 +619,9 @@ impl Gate<'_> {
             ));
         }
         let held_aud: Vec<String> = match claims.get("aud") {
-            Some(Json::Array(list)) => list.iter().map(|v| text_or_empty(Some(v))).collect(),
+            Some(Json::Array(list)) => {
+                list.iter().map(|v| text_or_empty(Some(v))).collect()
+            }
             Some(Json::Null) | None => Vec::new(),
             Some(other) => vec![text_or_empty(Some(other))],
         };
@@ -560,12 +643,14 @@ impl Gate<'_> {
                 ),
             ));
         }
-        if let Some(r) = check_binding(&claims, arrived.certificate, true, None) {
+        if let Some(r) = check_binding(&claims, arrived.certificate, true, None)
+        {
             return Err(invalid(codes::STS_API_0110, scope, r.description));
         }
         let bound_thumbprint = bound_thumbprint_of(&claims);
         if bound_thumbprint.is_empty() && !client.is_empty() {
-            let declaration = self.ports.certificate_declaration(&token_realm, &client);
+            let declaration =
+                self.ports.certificate_declaration(&token_realm, &client);
             if !declaration.is_empty() {
                 return Err(invalid(
                     codes::STS_API_0137,
@@ -580,7 +665,10 @@ impl Gate<'_> {
                 ));
             }
         }
-        let bound_jkt = claims.pointer("/cnf/jkt").and_then(Json::as_str).unwrap_or("");
+        let bound_jkt = claims
+            .pointer("/cnf/jkt")
+            .and_then(Json::as_str)
+            .unwrap_or("");
         let mut proof_ok = false;
         if !bound_jkt.is_empty() {
             if scheme != "dpop" {
@@ -611,7 +699,10 @@ impl Gate<'_> {
                     www_authenticate: Some(if f.need_nonce {
                         "DPoP error=\"use_dpop_nonce\"".to_string()
                     } else {
-                        format!("DPoP error=\"invalid_dpop_proof\", scope=\"{}\"", scope)
+                        format!(
+                            "DPoP error=\"invalid_dpop_proof\", scope=\"{}\"",
+                            scope
+                        )
                     }),
                     nonce_wanted: f.need_nonce,
                     message: f.description,
@@ -627,13 +718,16 @@ impl Gate<'_> {
             certificate: arrived.certificate.is_some(),
             certificate_matches: !bound_thumbprint.is_empty()
                 && arrived.certificate_verified
-                && arrived.certificate.map(certificate_thumbprint).as_deref() == Some(bound_thumbprint.as_str()),
+                && arrived.certificate.map(certificate_thumbprint).as_deref()
+                    == Some(bound_thumbprint.as_str()),
             mtls_available: arrived.mtls_available,
-            client_bound: sts_oauth::sender_constraints::DPOP_BOUND_PUBLIC_CLIENTS.contains(&client.as_str())
-                && sts_oauth::sender_constraints::dpop_bound_public_client(
-                    &client,
-                    &self.ports.client_method(&token_realm, &client),
-                ),
+            client_bound:
+                sts_oauth::sender_constraints::DPOP_BOUND_PUBLIC_CLIENTS
+                    .contains(&client.as_str())
+                    && sts_oauth::sender_constraints::dpop_bound_public_client(
+                        &client,
+                        &self.ports.client_method(&token_realm, &client),
+                    ),
         };
         if let Some(r) = access_token_refusal(self.settings, &presented) {
             return Err(Box::new(Refused {
@@ -642,7 +736,11 @@ impl Gate<'_> {
                 code: r.code,
                 www_authenticate: Some(format!(
                     "{} error=\"{}\", scope=\"{}\"",
-                    if access_token_dpop_required(self.settings) { "DPoP" } else { "Bearer" },
+                    if access_token_dpop_required(self.settings) {
+                        "DPoP"
+                    } else {
+                        "Bearer"
+                    },
                     r.error,
                     scope
                 )),
@@ -650,7 +748,16 @@ impl Gate<'_> {
                 message: r.description,
             }));
         }
-        self.decision(arrived, &operation, scope, mdm_feed, console_op, security_change, claims, token_realm)
+        self.decision(
+            arrived,
+            &operation,
+            scope,
+            mdm_feed,
+            console_op,
+            security_change,
+            claims,
+            token_realm,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -669,7 +776,10 @@ impl Gate<'_> {
         let read = arrived.method == "GET";
         let person = text_or_empty(claims.get("sub"));
         let client = text_or_empty(claims.get("client_id"));
-        let carried: Vec<String> = text_or_empty(claims.get("scope")).split_whitespace().map(str::to_string).collect();
+        let carried: Vec<String> = text_or_empty(claims.get("scope"))
+            .split_whitespace()
+            .map(str::to_string)
+            .collect();
         let who = if !client.is_empty() {
             client.clone()
         } else if !person.is_empty() {
@@ -679,11 +789,19 @@ impl Gate<'_> {
         };
         let undeclared: Vec<String> = carried
             .iter()
-            .filter(|s| ADMIN_SCOPES.contains(&s.as_str()) && !self.ports.declares(&token_realm, &client, s))
+            .filter(|s| {
+                ADMIN_SCOPES.contains(&s.as_str())
+                    && !self.ports.declares(&token_realm, &client, s)
+            })
             .cloned()
             .collect();
-        let scopes: Vec<String> = carried.iter().filter(|s| !undeclared.contains(s)).cloned().collect();
-        let effective = self.ports.effective_roles(&token_realm, &claims, &scopes);
+        let scopes: Vec<String> = carried
+            .iter()
+            .filter(|s| !undeclared.contains(s))
+            .cloned()
+            .collect();
+        let effective =
+            self.ports.effective_roles(&token_realm, &claims, &scopes);
         let owner_scope = if read { "owner:read" } else { "owner:write" };
         let owner_path = !mdm_feed
             && !console_op
@@ -728,7 +846,9 @@ impl Gate<'_> {
             ));
         }
         if effective.withdrawn.iter().any(|s| s == needed) {
-            let grant = if effective.subject_kind != "application" && needed != "device:compliance" {
+            let grant = if effective.subject_kind != "application"
+                && needed != "device:compliance"
+            {
                 "Grant the console role on /admin/rbac (or POST /admin-api/rbac/grant)".to_string()
             } else {
                 format!(
@@ -753,8 +873,16 @@ impl Gate<'_> {
             ));
         }
         if let Some(detail) = &security_change {
-            if !scopes.iter().any(|s| s == "admin:security") || !effective.roles.iter().any(|r| r == "SECURITY_ADMIN") {
-                tracing::info!("admin-api: refusing {} {} for {}: {}.", arrived.method, arrived.original_url, who, detail);
+            if !scopes.iter().any(|s| s == "admin:security")
+                || !effective.roles.iter().any(|r| r == "SECURITY_ADMIN")
+            {
+                tracing::info!(
+                    "admin-api: refusing {} {} for {}: {}.",
+                    arrived.method,
+                    arrived.original_url,
+                    who,
+                    detail
+                );
                 return Err(forbidden(
                     codes::STS_API_0138,
                     format!(
@@ -770,7 +898,10 @@ impl Gate<'_> {
             }
         }
         if token_realm != DEFAULT_REALM {
-            if let Some(detail) = self.ports.realm_refusal(arrived.realm, operation, arrived.body) {
+            if let Some(detail) =
+                self.ports
+                    .realm_refusal(arrived.realm, operation, arrived.body)
+            {
                 return Err(forbidden(
                     codes::STS_API_0112,
                     format!(
@@ -796,7 +927,9 @@ impl Gate<'_> {
             ));
         }
         let held = effective.roles.clone();
-        let frame_only = path == "/console" || path == "/console/operations" || path == "/console/language";
+        let frame_only = path == "/console"
+            || path == "/console/operations"
+            || path == "/console/language";
         let required: Vec<String> = if mdm_feed {
             vec!["DEVICE_COMPLIANCE".into()]
         } else if console_op {
@@ -811,7 +944,11 @@ impl Gate<'_> {
             vec!["ADMIN_WRITE".into()]
         };
         let required_all: Vec<String> = if console_op && !frame_only {
-            vec![if read { "ADMIN_READ".into() } else { "ADMIN_WRITE".into() }]
+            vec![if read {
+                "ADMIN_READ".into()
+            } else {
+                "ADMIN_WRITE".into()
+            }]
         } else {
             Vec::new()
         };
@@ -847,7 +984,8 @@ impl Gate<'_> {
                         }
                     )
                 } else if security_change.is_some() {
-                    "This change needs admin:security (SECURITY_ADMIN)".to_string()
+                    "This change needs admin:security (SECURITY_ADMIN)"
+                        .to_string()
                 } else if read {
                     "A read needs admin:read (ADMIN_READ)".to_string()
                 } else {
@@ -867,15 +1005,26 @@ impl Gate<'_> {
             }
         }
         Ok(Caller {
-            kind: if effective.subject_kind == "application" { "application".into() } else { "person".into() },
+            kind: if effective.subject_kind == "application" {
+                "application".into()
+            } else {
+                "person".into()
+            },
             name: effective.subject_name.clone(),
             sub: person,
-            auth_time: claims.get("auth_time").and_then(Json::as_f64).map(|f| f as i64).unwrap_or(0),
+            auth_time: claims
+                .get("auth_time")
+                .and_then(Json::as_f64)
+                .map(|f| f as i64)
+                .unwrap_or(0),
             client_id: client,
             realm: token_realm,
             scopes,
             roles: held,
-            expires_at: claims.get("exp").and_then(Json::as_f64).map(|f| f as i64),
+            expires_at: claims
+                .get("exp")
+                .and_then(Json::as_f64)
+                .map(|f| f as i64),
             owner: false,
             claims,
         })

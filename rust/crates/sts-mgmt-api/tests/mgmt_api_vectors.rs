@@ -36,7 +36,9 @@ use sts_core::realm_store::StoreHandles;
 use sts_core::settings::Settings;
 use sts_core::version::VersionInfo;
 use sts_mgmt_api::config_view::ProcessFacts;
-use sts_mgmt_api::gate::{BuiltInAccess, ConsoleOperation, Effective, GatePorts};
+use sts_mgmt_api::gate::{
+    BuiltInAccess, ConsoleOperation, Effective, GatePorts,
+};
 use sts_mgmt_api::router::{router, KeySource, Services};
 use sts_mgmt_api::setup::{Listener, Seeded, SetupPorts};
 use sts_oauth::dpop_stores::DpopStores;
@@ -63,7 +65,7 @@ impl Fake {
     /// The Node answer of the last case named `name`, parsed.
     fn answer_of(&self, name: &str) -> Json {
         let cases = self.v["cases"].as_array().unwrap();
-        let found = cases.iter().filter(|c| c["name"] == name).last().unwrap();
+        let found = cases.iter().rfind(|c| c["name"] == name).unwrap();
         serde_json::from_str(found["answer"]["body"].as_str().unwrap()).unwrap()
     }
 }
@@ -79,17 +81,38 @@ impl GatePorts for Fake {
         false
     }
     fn client_method(&self, realm: &str, client: &str) -> String {
-        self.port("clientMethod", &format!("{} {}", realm, client)).as_str().unwrap_or("").to_string()
+        self.port("clientMethod", &format!("{} {}", realm, client))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     }
     fn certificate_declaration(&self, realm: &str, client: &str) -> String {
-        self.port("certificate", &format!("{} {}", realm, client)).as_str().unwrap_or("").to_string()
+        self.port("certificate", &format!("{} {}", realm, client))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     }
     fn declares(&self, realm: &str, client: &str, scope: &str) -> bool {
-        self.port("declares", &format!("{} {}", realm, client))[scope].as_bool().unwrap_or(false)
+        self.port("declares", &format!("{} {}", realm, client))[scope]
+            .as_bool()
+            .unwrap_or(false)
     }
-    fn effective_roles(&self, _realm: &str, claims: &Json, _scopes: &[String]) -> Effective {
+    fn effective_roles(
+        &self,
+        _realm: &str,
+        claims: &Json,
+        _scopes: &[String],
+    ) -> Effective {
         let e = self.port("effective", claims["jti"].as_str().unwrap_or(""));
-        let list = |v: &Json| v.as_array().map(|a| a.iter().map(|x| x.as_str().unwrap_or("").to_string()).collect()).unwrap_or_default();
+        let list = |v: &Json| {
+            v.as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|x| x.as_str().unwrap_or("").to_string())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
         Effective {
             roles: list(&e["roles"]),
             withdrawn: list(&e["withdrawn"]),
@@ -98,17 +121,32 @@ impl GatePorts for Fake {
             subject_name: e["subjectName"].as_str().unwrap_or("").to_string(),
         }
     }
-    fn security_change(&self, _realm: &str, _operation: &ConsoleOperation, _body: &Json) -> Option<String> {
+    fn security_change(
+        &self,
+        _realm: &str,
+        _operation: &ConsoleOperation,
+        _body: &Json,
+    ) -> Option<String> {
         None
     }
-    fn realm_refusal(&self, _realm: &str, operation: &ConsoleOperation, _body: Option<&Json>) -> Option<String> {
-        self.port("realmRefusal", &operation.path).as_str().map(str::to_string)
+    fn realm_refusal(
+        &self,
+        _realm: &str,
+        operation: &ConsoleOperation,
+        _body: Option<&Json>,
+    ) -> Option<String> {
+        self.port("realmRefusal", &operation.path)
+            .as_str()
+            .map(str::to_string)
     }
 }
 
 impl SetupPorts for Fake {
     fn seed_administrator(&self, _realm: &str) -> Seeded {
-        let answer: Json = serde_json::from_str(self.case()["answer"]["body"].as_str().unwrap()).unwrap();
+        let answer: Json = serde_json::from_str(
+            self.case()["answer"]["body"].as_str().unwrap(),
+        )
+        .unwrap();
         let b = &answer["bootstrap"];
         Seeded {
             ran: b.is_object(),
@@ -177,16 +215,26 @@ fn first_difference(a: &Json, b: &Json, at: &str) -> Option<String> {
             if xk != yk {
                 return Some(format!("{}: keys {:?} vs {:?}", at, xk, yk));
             }
-            x.iter().find_map(|(k, v)| first_difference(v, &y[k], &format!("{}/{}", at, k)))
+            x.iter().find_map(|(k, v)| {
+                first_difference(v, &y[k], &format!("{}/{}", at, k))
+            })
         }
         (Json::Array(x), Json::Array(y)) => {
             if x.len() != y.len() {
-                return Some(format!("{}: length {} vs {}", at, x.len(), y.len()));
+                return Some(format!(
+                    "{}: length {} vs {}",
+                    at,
+                    x.len(),
+                    y.len()
+                ));
             }
-            x.iter().zip(y).enumerate().find_map(|(i, (p, q))| first_difference(p, q, &format!("{}/{}", at, i)))
+            x.iter().zip(y).enumerate().find_map(|(i, (p, q))| {
+                first_difference(p, q, &format!("{}/{}", at, i))
+            })
         }
         _ => (a != b).then(|| {
-            let s = |v: &Json| v.to_string().chars().take(300).collect::<String>();
+            let s =
+                |v: &Json| v.to_string().chars().take(300).collect::<String>();
             format!("{}: {} vs {}", at, s(a), s(b))
         }),
     }
@@ -200,13 +248,17 @@ async fn admin_api_answers_as_node_does() {
     };
     let path = std::path::Path::new(&dir).join("mgmt-api-node.json");
     let Ok(text) = std::fs::read_to_string(&path) else {
-        eprintln!("{} is absent; the /admin-api vectors were not checked.", path.display());
+        eprintln!(
+            "{} is absent; the /admin-api vectors were not checked.",
+            path.display()
+        );
         return;
     };
     let v: Json = serde_json::from_str(&text).unwrap();
 
     // The committed routing rows are Node's.
-    let committed: Json = serde_json::from_str(sts_mgmt_api::tables::text()).unwrap();
+    let committed: Json =
+        serde_json::from_str(sts_mgmt_api::tables::text()).unwrap();
     assert_eq!(
         first_difference(&committed, &v["tables"], ""),
         None,
@@ -221,15 +273,31 @@ async fn admin_api_answers_as_node_does() {
         .collect();
     let settings = Arc::new(Settings::new(v["operator"].clone(), env));
     let mode = Mode::shared(settings.clone());
-    let registry = Arc::new(RealmRegistry::new(Arc::new(SettingsEnvironment::new(settings.clone(), Vec::new()))));
-    let lifecycle = RealmLifecycle::new(registry.clone(), settings.clone(), mode.clone());
+    let registry = Arc::new(RealmRegistry::new(Arc::new(
+        SettingsEnvironment::new(settings.clone(), Vec::new()),
+    )));
+    let lifecycle =
+        RealmLifecycle::new(registry.clone(), settings.clone(), mode.clone());
     let now = v["now"].as_i64().unwrap();
-    let dpop = DpopStores::new(&lifecycle, &StoreHandles::new(), settings.clone(), Arc::new(move || now));
+    let dpop = DpopStores::new(
+        &lifecycle,
+        &StoreHandles::new(),
+        settings.clone(),
+        Arc::new(move || now),
+    );
     let keys: HashMap<String, KeySet> = v["keySets"]
         .as_object()
         .unwrap()
         .iter()
-        .map(|(realm, blob)| (realm.clone(), KeySet { realm: realm.clone(), blob: blob.clone() }))
+        .map(|(realm, blob)| {
+            (
+                realm.clone(),
+                KeySet {
+                    realm: realm.clone(),
+                    blob: blob.clone(),
+                },
+            )
+        })
         .collect();
     let f = &v["facts"];
     let facts = ProcessFacts {
@@ -237,11 +305,18 @@ async fn admin_api_answers_as_node_does() {
         defaults_file: f["defaultsFile"].as_str().unwrap_or("").to_string(),
         persists_appconfig: f["persistsAppconfig"].as_bool().unwrap_or(false),
         persists_realms: f["persistsRealms"].as_bool().unwrap_or(false),
-        persistence_mode: f["persistenceMode"].as_str().unwrap_or("").to_string(),
+        persistence_mode: f["persistenceMode"]
+            .as_str()
+            .unwrap_or("")
+            .to_string(),
         persistence_enabled: f["persistenceEnabled"].as_bool().unwrap_or(false),
     };
-    let version: VersionInfo = serde_json::from_value(v["version"].clone()).unwrap();
-    let fake = Arc::new(Fake { v: v.clone(), case: Mutex::new(0) });
+    let version: VersionInfo =
+        serde_json::from_value(v["version"].clone()).unwrap();
+    let fake = Arc::new(Fake {
+        v: v.clone(),
+        case: Mutex::new(0),
+    });
     let services = Arc::new(Services {
         settings: settings.clone(),
         mode: mode.clone(),
@@ -258,7 +333,11 @@ async fn admin_api_answers_as_node_does() {
         eddsa_curve: String::new(),
         now: Arc::new(move || now),
     });
-    let layer = sts_http::HttpLayer::new(registry.clone(), settings.clone(), mode.clone());
+    let layer = sts_http::HttpLayer::new(
+        registry.clone(),
+        settings.clone(),
+        mode.clone(),
+    );
     let app = layer.wrap(router(services));
     let host = format!("127.0.0.1:{}", v["port"]);
     let tokens = v["tokens"].clone();
@@ -268,7 +347,9 @@ async fn admin_api_answers_as_node_does() {
         *fake.case.lock().unwrap() = at;
         let name = case["name"].as_str().unwrap();
         if name.starts_with("open:") {
-            settings.set_override("adminApi.authRequired", json!(false)).unwrap();
+            settings
+                .set_override("adminApi.authRequired", json!(false))
+                .unwrap();
         }
         let mut request = Request::builder()
             .method(case["method"].as_str().unwrap())
@@ -276,26 +357,45 @@ async fn admin_api_answers_as_node_does() {
             .header("host", &host)
             .header("accept", "application/json");
         if let Some(t) = case["token"].as_str() {
-            request = request.header("authorization", format!("Bearer {}", tokens[t].as_str().unwrap()));
+            request = request.header(
+                "authorization",
+                format!("Bearer {}", tokens[t].as_str().unwrap()),
+            );
         }
         for (k, x) in case["headers"].as_object().unwrap() {
             request = request.header(k.as_str(), x.as_str().unwrap());
         }
         let body = match case["body"].as_str() {
             Some(b) => {
-                request = request.header("content-type", "application/json").header("content-length", b.len());
+                request = request
+                    .header("content-type", "application/json")
+                    .header("content-length", b.len());
                 Body::from(b.to_string())
             }
             None => Body::empty(),
         };
-        let response = app.clone().oneshot(request.body(body).unwrap()).await.unwrap();
+        let response = app
+            .clone()
+            .oneshot(request.body(body).unwrap())
+            .await
+            .unwrap();
         let status = response.status().as_u16();
-        let code = sts_http::code_of(&response).map(|c| c.as_str().to_string()).unwrap_or_default();
-        let header = |n: &str| response.headers().get(n).and_then(|h| h.to_str().ok()).map(str::to_string);
+        let code = sts_http::code_of(&response)
+            .map(|c| c.as_str().to_string())
+            .unwrap_or_default();
+        let header = |n: &str| {
+            response
+                .headers()
+                .get(n)
+                .and_then(|h| h.to_str().ok())
+                .map(str::to_string)
+        };
         let content_type = header("content-type");
         let www = header("www-authenticate");
         let cache = header("cache-control");
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let text = String::from_utf8_lossy(&bytes).to_string();
         let node = &case["answer"];
         let mut problems = Vec::new();
@@ -305,7 +405,11 @@ async fn admin_api_answers_as_node_does() {
         if code != node["code"].as_str().unwrap_or("") {
             problems.push(format!("code {:?} vs {}", code, node["code"]));
         }
-        for (h, mine) in [("content-type", &content_type), ("www-authenticate", &www), ("cache-control", &cache)] {
+        for (h, mine) in [
+            ("content-type", &content_type),
+            ("www-authenticate", &www),
+            ("cache-control", &cache),
+        ] {
             let theirs = node["headers"][h].as_str().map(str::to_string);
             if h == "cache-control" && theirs.is_none() {
                 continue;
@@ -315,7 +419,10 @@ async fn admin_api_answers_as_node_does() {
             }
         }
         let node_body = node["body"].as_str().unwrap_or("");
-        match (serde_json::from_str::<Json>(&text), serde_json::from_str::<Json>(node_body)) {
+        match (
+            serde_json::from_str::<Json>(&text),
+            serde_json::from_str::<Json>(node_body),
+        ) {
             (Ok(mine), Ok(theirs)) => {
                 if let Some(d) = first_difference(&mine, &theirs, "") {
                     problems.push(format!("body {}", d));
@@ -325,13 +432,16 @@ async fn admin_api_answers_as_node_does() {
             }
             _ => {
                 if text != node_body {
-                    problems.push(format!("text {:?} vs {:?}", text.chars().take(200).collect::<String>(),
-                                          node_body.chars().take(200).collect::<String>()));
+                    problems.push(format!(
+                        "text {:?} vs {:?}",
+                        text.chars().take(200).collect::<String>(),
+                        node_body.chars().take(200).collect::<String>()
+                    ));
                 }
             }
         }
         if name.starts_with("open:") {
-            let _ = settings.reset_override("adminApi.authRequired");
+            settings.reset_override("adminApi.authRequired").unwrap();
         }
         if !problems.is_empty() {
             failures.push(format!("{}: {}", name, problems.join("; ")));
@@ -352,6 +462,12 @@ async fn admin_api_answers_as_node_does() {
         .unwrap();
     }
     let total = v["cases"].as_array().unwrap().len();
-    assert!(failures.is_empty(), "{} of {} cases differ from Node:\n{}", failures.len(), total, failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} of {} cases differ from Node:\n{}",
+        failures.len(),
+        total,
+        failures.join("\n")
+    );
     eprintln!("{} /admin-api cases answered as Node answers them.", total);
 }

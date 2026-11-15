@@ -14,7 +14,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Map, Value as Json};
 use sts_core::mode::Mode;
-use sts_core::settings::{keys, rows, DefaultValue, SettingRow, SettingType, SettingValue, Settings};
+use sts_core::settings::{
+    keys, rows, DefaultValue, SettingRow, SettingType, SettingValue, Settings,
+};
 
 use crate::tables::tables;
 
@@ -97,14 +99,16 @@ static TEXT_RULES: LazyLock<Vec<(Regex, String)>> = LazyLock::new(|| {
     .collect()
 });
 
-static JWK_PRIVATE: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r#"("(?:d|p|q|dp|dq|qi|k|oth|priv|seed)"\s*:\s*)"[^"]*""#).ok());
+static JWK_PRIVATE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(r#"("(?:d|p|q|dp|dq|qi|k|oth|priv|seed)"\s*:\s*)"[^"]*""#).ok()
+});
 
 /// `ConfigDump.nameIsSensitive()`.
 #[tracing::instrument(level = "debug")]
 pub fn name_is_sensitive(key: &str) -> bool {
     let last = key.rsplit('.').next().unwrap_or("");
-    SENSITIVE.as_ref().is_some_and(|re| re.is_match(last)) && !POINTER.as_ref().is_some_and(|re| re.is_match(last))
+    SENSITIVE.as_ref().is_some_and(|re| re.is_match(last))
+        && !POINTER.as_ref().is_some_and(|re| re.is_match(last))
 }
 
 fn mask_text(text: &str) -> String {
@@ -114,7 +118,9 @@ fn mask_text(text: &str) -> String {
     }
     if out.contains("\"kty\"") {
         if let Some(re) = JWK_PRIVATE.as_ref() {
-            out = re.replace_all(&out, format!("${{1}}\"{}\"", MASK).as_str()).into_owned();
+            out = re
+                .replace_all(&out, format!("${{1}}\"{}\"", MASK).as_str())
+                .into_owned();
         }
     }
     out
@@ -122,8 +128,14 @@ fn mask_text(text: &str) -> String {
 
 fn mask_value(value: &Json, whole: bool) -> Json {
     match value {
-        Json::Array(list) => Json::Array(list.iter().map(|v| mask_value(v, whole)).collect()),
-        Json::String(s) if !s.is_empty() => Json::String(if whole { MASK.to_string() } else { mask_text(s) }),
+        Json::Array(list) => {
+            Json::Array(list.iter().map(|v| mask_value(v, whole)).collect())
+        }
+        Json::String(s) if !s.is_empty() => Json::String(if whole {
+            MASK.to_string()
+        } else {
+            mask_text(s)
+        }),
         other => other.clone(),
     }
 }
@@ -136,12 +148,14 @@ pub fn mask_row(row: &Json) -> Json {
         return row.clone();
     }
     let key = row.get("key").and_then(Json::as_str).unwrap_or("");
-    let whole = sts_core::settings::row(key).is_some_and(|r| r.secret) || name_is_sensitive(key);
+    let whole = sts_core::settings::row(key).is_some_and(|r| r.secret)
+        || name_is_sensitive(key);
     let null = Json::Null;
     let value = mask_value(row.get("value").unwrap_or(&null), whole);
     let dflt = mask_value(row.get("default").unwrap_or(&null), whole);
     let text = mask_value(row.get("text").unwrap_or(&null), whole);
-    let changed = Some(&value) != row.get("value") || Some(&dflt) != row.get("default");
+    let changed =
+        Some(&value) != row.get("value") || Some(&dflt) != row.get("default");
     let mut out = row.as_object().cloned().unwrap_or_default();
     if row.get("value").is_some() {
         out.insert("value".into(), value);
@@ -162,11 +176,16 @@ pub fn mask_row(row: &Json) -> Json {
 #[tracing::instrument(level = "debug", skip(value))]
 pub fn mask_keyed(key: &str, value: &Json) -> Json {
     let row = sts_core::settings::row(key);
-    let free = row.is_none_or(|r| matches!(r.kind, SettingType::String | SettingType::Csv));
+    let free = row.is_none_or(|r| {
+        matches!(r.kind, SettingType::String | SettingType::Csv)
+    });
     if !free {
         return value.clone();
     }
-    mask_value(value, row.is_some_and(|r| r.secret) || name_is_sensitive(key))
+    mask_value(
+        value,
+        row.is_some_and(|r| r.secret) || name_is_sensitive(key),
+    )
 }
 
 /// `isEchoOfMask()`: the mask posted back, which says "leave it".
@@ -176,11 +195,15 @@ pub fn is_echo_of_mask(described: &Json, posted: &Json) -> bool {
     let text = |v: &Json| match v {
         Json::String(s) => s.clone(),
         Json::Null => "null".into(),
-        Json::Array(list) => list.iter().map(|x| match x {
-            Json::String(s) => s.clone(),
-            Json::Null => String::new(),
-            o => o.to_string(),
-        }).collect::<Vec<_>>().join(","),
+        Json::Array(list) => list
+            .iter()
+            .map(|x| match x {
+                Json::String(s) => s.clone(),
+                Json::Null => String::new(),
+                o => o.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(","),
         other => other.to_string(),
     };
     shown.get("masked") == Some(&Json::Bool(true))
@@ -194,30 +217,50 @@ impl ConfigView<'_> {
 
     /// `realmFor(key)`: whether a write here lands in the ambient realm.
     fn realm_for(&self, key: &str) -> bool {
-        !self.in_default() && !key.starts_with("realms.") && !Settings::is_per_process(key)
+        !self.in_default()
+            && !key.starts_with("realms.")
+            && !Settings::is_per_process(key)
             && self.settings.ambient_realm()
     }
 
     fn default_of(&self, row: &SettingRow) -> Json {
         if let Some(pair) = row.by_mode {
-            let product = self.settings.value(keys::GLOBAL_MODE).as_str() == "product";
-            return raw_default(if product { pair.product } else { pair.development });
+            let product =
+                self.settings.value(keys::GLOBAL_MODE).as_str() == "product";
+            return raw_default(if product {
+                pair.product
+            } else {
+                pair.development
+            });
         }
         match row.default {
             DefaultValue::Derived => match row.key {
                 "global.https" => {
                     let fapi = self.settings.process_value(keys::OAUTH2_FAPI);
                     Json::from(
-                        self.settings.process_value(keys::OAUTH2_RFC9700).as_bool()
-                            || self.settings.process_value(keys::OAUTH2_OAUTH21).as_bool()
-                            || !(fapi.as_str().is_empty() || fapi.as_str() == "off"),
+                        self.settings
+                            .process_value(keys::OAUTH2_RFC9700)
+                            .as_bool()
+                            || self
+                                .settings
+                                .process_value(keys::OAUTH2_OAUTH21)
+                                .as_bool()
+                            || !(fapi.as_str().is_empty()
+                                || fapi.as_str() == "off"),
                     )
                 }
-                "adminApi.audience" => Json::from(self.settings.management_api_base_url()),
-                "oid4vp.walletUrl" => Json::from(self.settings.value(keys::OID4VCI_WALLET_URL).as_str()),
+                "adminApi.audience" => {
+                    Json::from(self.settings.management_api_base_url())
+                }
+                "oid4vp.walletUrl" => Json::from(
+                    self.settings.value(keys::OID4VCI_WALLET_URL).as_str(),
+                ),
                 "krb5.serviceDomains" => Json::from(format!(
                     "{},localhost,sts,127.0.0.1",
-                    self.settings.value(keys::KRB5_REALM).as_str().to_lowercase()
+                    self.settings
+                        .value(keys::KRB5_REALM)
+                        .as_str()
+                        .to_lowercase()
                 )),
                 _ => Json::Null,
             },
@@ -230,7 +273,8 @@ impl ConfigView<'_> {
     pub fn describe(&self, row: &SettingRow) -> Json {
         let key = row.key;
         let locked = key == "realms.maxCount" && !self.in_default();
-        let runtime_here = row.runtime || (row.realm_runtime && self.realm_for(key));
+        let runtime_here =
+            row.runtime || (row.realm_runtime && self.realm_for(key));
         let mut out = Map::new();
         out.insert("key".into(), Json::from(key));
         out.insert("group".into(), Json::from(row.group));
@@ -238,7 +282,10 @@ impl ConfigView<'_> {
         out.insert("description".into(), Json::from(row.description));
         out.insert("type".into(), Json::from(row.kind.as_str()));
         if !row.enum_values.is_empty() {
-            out.insert("enumValues".into(), Json::from(row.enum_values.to_vec()));
+            out.insert(
+                "enumValues".into(),
+                Json::from(row.enum_values.to_vec()),
+            );
         }
         if let Some(values) = row.csv_values {
             out.insert("csvValues".into(), Json::from(values.to_vec()));
@@ -247,8 +294,11 @@ impl ConfigView<'_> {
             out.insert("ordered".into(), Json::Bool(true));
         }
         if !row.csv_value_notes.is_empty() {
-            let notes: Map<String, Json> =
-                row.csv_value_notes.iter().map(|(k, v)| (k.to_string(), Json::from(*v))).collect();
+            let notes: Map<String, Json> = row
+                .csv_value_notes
+                .iter()
+                .map(|(k, v)| (k.to_string(), Json::from(*v)))
+                .collect();
             out.insert("csvValueNotes".into(), Json::Object(notes));
         }
         if let Some(select) = &row.select_all {
@@ -256,13 +306,22 @@ impl ConfigView<'_> {
                 Json::Array(
                     list.iter()
                         .map(|(setting, values)| {
-                            let can = self.mode.allows_value(setting, &SettingValue::Bool(true));
+                            let can = self.mode.allows_value(
+                                setting,
+                                &SettingValue::Bool(true),
+                            );
                             let mut one = Map::new();
                             one.insert("setting".into(), Json::from(*setting));
-                            one.insert("values".into(), Json::from(values.to_vec()));
+                            one.insert(
+                                "values".into(),
+                                Json::from(values.to_vec()),
+                            );
                             one.insert(
                                 "on".into(),
-                                Json::Bool(can && self.settings.value_of(setting) == SettingValue::Bool(true)),
+                                Json::Bool(
+                                    can && self.settings.value_of(setting)
+                                        == SettingValue::Bool(true),
+                                ),
                             );
                             one.insert("canBeOn".into(), Json::Bool(can));
                             Json::Object(one)
@@ -286,7 +345,10 @@ impl ConfigView<'_> {
         }
         out.insert("value".into(), value_json(&self.settings.value_of(key)));
         out.insert("text".into(), Json::from(self.settings.text_named(key)));
-        out.insert("source".into(), Json::from(self.settings.source_named(key).as_str()));
+        out.insert(
+            "source".into(),
+            Json::from(self.settings.source_named(key).as_str()),
+        );
         out.insert("editable".into(), Json::Bool(!locked && runtime_here));
         if !locked && !runtime_here {
             out.insert("restartReason".into(), Json::from(row.restart_reason));
@@ -311,35 +373,49 @@ impl ConfigView<'_> {
         out.insert("default".into(), dflt);
         out.insert(
             "realmSettable".into(),
-            Json::Bool(!Settings::is_per_process(key) && !key.starts_with("realms.")),
+            Json::Bool(
+                !Settings::is_per_process(key) && !key.starts_with("realms."),
+            ),
         );
-        out.insert("overridden".into(), Json::Bool(self.settings.runtime_overrides().contains_key(key)));
+        out.insert(
+            "overridden".into(),
+            Json::Bool(self.settings.runtime_overrides().contains_key(key)),
+        );
         Json::Object(out)
     }
 
     /// `describe()` of a key the caller has checked.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn describe_key(&self, key: &str) -> Json {
-        sts_core::settings::row(key).map(|row| self.describe(row)).unwrap_or(Json::Null)
+        sts_core::settings::row(key)
+            .map(|row| self.describe(row))
+            .unwrap_or(Json::Null)
     }
 
     /// `groups()`.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn groups(&self) -> Vec<Json> {
         let mut order: Vec<&str> = Vec::new();
-        let mut bucket: std::collections::HashMap<&str, Vec<Json>> = std::collections::HashMap::new();
+        let mut bucket: std::collections::HashMap<&str, Vec<Json>> =
+            std::collections::HashMap::new();
         for row in rows() {
             if !bucket.contains_key(row.group) {
                 order.push(row.group);
             }
-            bucket.entry(row.group).or_default().push(self.describe(row));
+            bucket
+                .entry(row.group)
+                .or_default()
+                .push(self.describe(row));
         }
         order
             .into_iter()
             .map(|g| {
                 let mut one = Map::new();
                 one.insert("group".into(), Json::from(g));
-                one.insert("settings".into(), Json::Array(bucket.remove(g).unwrap_or_default()));
+                one.insert(
+                    "settings".into(),
+                    Json::Array(bucket.remove(g).unwrap_or_default()),
+                );
                 Json::Object(one)
             })
             .collect()
@@ -366,12 +442,28 @@ impl ConfigView<'_> {
         let mut out = Map::new();
         out.insert(
             "configFile".into(),
-            self.facts.config_file.clone().map(Json::from).unwrap_or(Json::Null),
+            self.facts
+                .config_file
+                .clone()
+                .map(Json::from)
+                .unwrap_or(Json::Null),
         );
-        out.insert("defaultsFile".into(), Json::from(self.facts.defaults_file.as_str()));
-        out.insert("persistsAppconfig".into(), Json::Bool(self.facts.persists_appconfig));
-        out.insert("persistsRealms".into(), Json::Bool(self.facts.persists_realms));
-        out.insert("persistenceMode".into(), Json::from(self.facts.persistence_mode.as_str()));
+        out.insert(
+            "defaultsFile".into(),
+            Json::from(self.facts.defaults_file.as_str()),
+        );
+        out.insert(
+            "persistsAppconfig".into(),
+            Json::Bool(self.facts.persists_appconfig),
+        );
+        out.insert(
+            "persistsRealms".into(),
+            Json::Bool(self.facts.persists_realms),
+        );
+        out.insert(
+            "persistenceMode".into(),
+            Json::from(self.facts.persistence_mode.as_str()),
+        );
         out.insert("inRealm".into(), Json::Bool(!self.in_default()));
         out.insert("realmId".into(), Json::from(self.realm));
         Json::Object(out)
@@ -381,22 +473,38 @@ impl ConfigView<'_> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn settings_block(&self, page: &str) -> Json {
         let home = tables().page_settings.get(page);
-        let wanted: Vec<String> = home.map(|h| h.groups.clone()).unwrap_or_default();
+        let wanted: Vec<String> =
+            home.map(|h| h.groups.clone()).unwrap_or_default();
         let groups: Vec<Json> = self
             .groups()
             .into_iter()
-            .filter(|g| g.get("group").and_then(Json::as_str).is_some_and(|n| wanted.iter().any(|w| w == n)))
+            .filter(|g| {
+                g.get("group")
+                    .and_then(Json::as_str)
+                    .is_some_and(|n| wanted.iter().any(|w| w == n))
+            })
             .collect();
         let groups = ConfigView::masked_groups(groups);
-        let all: Vec<&Json> =
-            groups.iter().flat_map(|g| g.get("settings").and_then(Json::as_array).into_iter().flatten()).collect();
+        let all: Vec<&Json> = groups
+            .iter()
+            .flat_map(|g| {
+                g.get("settings")
+                    .and_then(Json::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .collect();
         let mut out = Map::new();
         out.insert("page".into(), Json::from(page));
         out.insert("groups".into(), Json::Array(groups.clone()));
         out.insert("settingCount".into(), Json::from(all.len()));
         out.insert(
             "editableCount".into(),
-            Json::from(all.iter().filter(|s| s.get("editable") == Some(&Json::Bool(true))).count()),
+            Json::from(
+                all.iter()
+                    .filter(|s| s.get("editable") == Some(&Json::Bool(true)))
+                    .count(),
+            ),
         );
         out.insert(
             "overridden".into(),
@@ -407,11 +515,15 @@ impl ConfigView<'_> {
                     .collect(),
             ),
         );
-        out.insert("setWith".into(), Json::from("POST /admin-api/config/set-many"));
+        out.insert(
+            "setWith".into(),
+            Json::from("POST /admin-api/config/set-many"),
+        );
         out.insert("context".into(), self.context());
         out.insert(
             "sharedWith".into(),
-            home.map(|h| h.shared_with.clone()).unwrap_or(Json::Object(Map::new())),
+            home.map(|h| h.shared_with.clone())
+                .unwrap_or(Json::Object(Map::new())),
         );
         Json::Object(out)
     }
@@ -425,16 +537,36 @@ impl ConfigView<'_> {
         out.insert("realmSettings".into(), Json::from(realm_settings));
         out.insert(
             "configFile".into(),
-            self.facts.config_file.clone().map(Json::from).unwrap_or(Json::Null),
+            self.facts
+                .config_file
+                .clone()
+                .map(Json::from)
+                .unwrap_or(Json::Null),
         );
-        out.insert("defaultsFile".into(), Json::from(self.facts.defaults_file.as_str()));
+        out.insert(
+            "defaultsFile".into(),
+            Json::from(self.facts.defaults_file.as_str()),
+        );
         out.insert("settingCount".into(), Json::from(rows().len()));
-        out.insert("editableCount".into(), Json::from(rows().iter().filter(|r| r.runtime).count()));
+        out.insert(
+            "editableCount".into(),
+            Json::from(rows().iter().filter(|r| r.runtime).count()),
+        );
         out.insert(
             "overridden".into(),
-            Json::Array(self.settings.runtime_overrides().keys().cloned().map(Json::from).collect()),
+            Json::Array(
+                self.settings
+                    .runtime_overrides()
+                    .keys()
+                    .cloned()
+                    .map(Json::from)
+                    .collect(),
+            ),
         );
-        out.insert("groups".into(), Json::Array(ConfigView::masked_groups(self.groups())));
+        out.insert(
+            "groups".into(),
+            Json::Array(ConfigView::masked_groups(self.groups())),
+        );
         out.insert("homes".into(), tables().homes.clone());
         out.insert("homeProblems".into(), tables().home_problems.clone());
         out.insert("settings".into(), self.settings_block("/admin/config"));

@@ -45,7 +45,9 @@ use sts_store::key_sets::KeySet;
 use crate::answer;
 use crate::config_view::ProcessFacts;
 use crate::document;
-use crate::gate::{self, AccessPolicy, Arrived, Caller, Gate, GatePorts, Outcome, BASE};
+use crate::gate::{
+    self, AccessPolicy, Arrived, Caller, Gate, GatePorts, Outcome, BASE,
+};
 use crate::operations::{self, Kind, OperationRow};
 use crate::request::{self, parse_query, Query};
 use crate::routing::{handler_of, handler_of_route, Handler};
@@ -101,20 +103,36 @@ fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 /// scheme and host the request arrived on (the forwarded ones where
 /// `global.trustProxy` believes them), and the ambient realm's prefix.
 fn base_of(services: &Services, headers: &HeaderMap, over_tls: bool) -> String {
-    let pinned = services.settings.value_of("global.publicBaseUrl").as_str().trim().trim_end_matches('/').to_string();
+    let pinned = services
+        .settings
+        .value_of("global.publicBaseUrl")
+        .as_str()
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
     if !pinned.is_empty() {
         return pinned;
     }
     let trust = services.settings.value_of("global.trustProxy").as_bool();
     let first = |v: &str| v.split(',').next().unwrap_or("").trim().to_string();
     let scheme = if trust {
-        header_text(headers, "x-forwarded-proto").map(first).filter(|s| !s.is_empty())
+        header_text(headers, "x-forwarded-proto")
+            .map(first)
+            .filter(|s| !s.is_empty())
     } else {
         None
     }
-    .unwrap_or_else(|| if over_tls { "https".into() } else { "http".into() });
+    .unwrap_or_else(|| {
+        if over_tls {
+            "https".into()
+        } else {
+            "http".into()
+        }
+    });
     let host = if trust {
-        header_text(headers, "x-forwarded-host").map(first).filter(|s| !s.is_empty())
+        header_text(headers, "x-forwarded-host")
+            .map(first)
+            .filter(|s| !s.is_empty())
     } else {
         None
     }
@@ -124,10 +142,18 @@ fn base_of(services: &Services, headers: &HeaderMap, over_tls: bool) -> String {
 }
 
 /// `sendJson()` and the model's check: the response, marked.
-fn send(method: &Method, path: &str, row: Option<&OperationRow>, answered: Answered) -> Response {
+fn send(
+    method: &Method,
+    path: &str,
+    row: Option<&OperationRow>,
+    answered: Answered,
+) -> Response {
     let mut body = answered.body;
     if answered.status == 200 && body.is_object() {
-        if let Some(members) = row.and_then(|r| tables::row(r.id)).and_then(|r| r.console_members.as_ref()) {
+        if let Some(members) = row
+            .and_then(|r| tables::row(r.id))
+            .and_then(|r| r.console_members.as_ref())
+        {
             if let Some(o) = body.as_object_mut() {
                 for m in members {
                     o.shift_remove(m);
@@ -140,12 +166,22 @@ fn send(method: &Method, path: &str, row: Option<&OperationRow>, answered: Answe
     }
     let text = pretty(&body);
     let mut response = Response::new(Body::from(text.clone()));
-    *response.status_mut() = StatusCode::from_u16(answered.status).unwrap_or(StatusCode::OK);
+    *response.status_mut() =
+        StatusCode::from_u16(answered.status).unwrap_or(StatusCode::OK);
     let h = response.headers_mut();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=utf-8"));
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     h.insert(header::VARY, HeaderValue::from_static("Accept-Language"));
-    if let Some(problem) = answer::problem_of(method.as_str(), path, answered.status, "application/json", text.as_bytes()) {
+    if let Some(problem) = answer::problem_of(
+        method.as_str(),
+        path,
+        answered.status,
+        "application/json",
+        text.as_bytes(),
+    ) {
         answer::report(&problem);
         return failed();
     }
@@ -159,7 +195,10 @@ fn failed() -> Response {
     let mut response = Response::new(Body::from(answer::FAILED_BODY));
     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
     let h = response.headers_mut();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=utf-8"));
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     sts_http::mark(response, codes::STS_API_0139)
 }
@@ -174,21 +213,32 @@ pub fn pretty(body: &Json) -> String {
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn strip_codes(body: Json) -> Json {
     match body {
-        Json::Array(list) => Json::Array(list.into_iter().map(strip_codes).collect()),
+        Json::Array(list) => {
+            Json::Array(list.into_iter().map(strip_codes).collect())
+        }
         Json::Object(map) => Json::Object(
-            map.into_iter().filter(|(k, _)| k != "errorCode").map(|(k, v)| (k, strip_codes(v))).collect(),
+            map.into_iter()
+                .filter(|(k, _)| k != "errorCode")
+                .map(|(k, v)| (k, strip_codes(v)))
+                .collect(),
         ),
         other => other,
     }
 }
 
 fn refusal(status: u16, code: ErrorCode, errors: Vec<String>) -> Answered {
-    Answered { status, body: serde_json::json!({ "ok": false, "errors": errors }), code: Some(code) }
+    Answered {
+        status,
+        body: serde_json::json!({ "ok": false, "errors": errors }),
+        code: Some(code),
+    }
 }
 
 /// The body as `parseBody()` reads it: JSON, a form, or nothing.
 fn parse_body(headers: &HeaderMap, text: &str) -> Json {
-    let kind = header_text(headers, "content-type").unwrap_or("").to_ascii_lowercase();
+    let kind = header_text(headers, "content-type")
+        .unwrap_or("")
+        .to_ascii_lowercase();
     if text.trim().is_empty() {
         return Json::Object(Map::new());
     }
@@ -198,9 +248,12 @@ fn parse_body(headers: &HeaderMap, text: &str) -> Json {
     }
     match serde_json::from_str::<Json>(text) {
         Ok(Json::Object(o)) => Json::Object(o),
-        Ok(Json::Array(list)) => {
-            Json::Object(list.into_iter().enumerate().map(|(i, v)| (i.to_string(), v)).collect())
-        }
+        Ok(Json::Array(list)) => Json::Object(
+            list.into_iter()
+                .enumerate()
+                .map(|(i, v)| (i.to_string(), v))
+                .collect(),
+        ),
         _ => Json::Object(Map::new()),
     }
 }
@@ -217,7 +270,10 @@ pub fn summaries(all: bool) -> Vec<Json> {
             let mut one = Map::new();
             one.insert("method".into(), Json::from(r.method.as_str()));
             one.insert("path".into(), Json::from(r.path.as_str()));
-            one.insert("operationId".into(), Json::from(r.operation_id.as_str()));
+            one.insert(
+                "operationId".into(),
+                Json::from(r.operation_id.as_str()),
+            );
             one.insert("mirrors".into(), Json::from(r.mirrors.as_str()));
             one.insert("kind".into(), Json::from(r.kind.as_str()));
             if r.route.is_none() {
@@ -230,7 +286,9 @@ pub fn summaries(all: bool) -> Vec<Json> {
                         .map(request::parameters_of)
                         .unwrap_or_default()
                         .into_iter()
-                        .filter(|p| p.get("in").and_then(Json::as_str) == Some("query"))
+                        .filter(|p| {
+                            p.get("in").and_then(Json::as_str) == Some("query")
+                        })
                         .filter_map(|p| p.get("name").cloned())
                         .collect();
                     one.insert("query".into(), Json::Array(names));
@@ -241,7 +299,10 @@ pub fn summaries(all: bool) -> Vec<Json> {
         .collect()
 }
 
-async fn serve(State(services): State<Arc<Services>>, request: Request) -> Response {
+async fn serve(
+    State(services): State<Arc<Services>>,
+    request: Request,
+) -> Response {
     let (parts, body) = request.into_parts();
     let text = match parts.extensions.get::<sts_http::body::ParsedBody>() {
         Some(parsed) => parsed.text.clone().unwrap_or_default(),
@@ -253,16 +314,31 @@ async fn serve(State(services): State<Arc<Services>>, request: Request) -> Respo
             }
         },
     };
-    let over_tls = parts.extensions.get::<sts_http::cookie_wire::OverTls>().is_some();
+    let over_tls = parts
+        .extensions
+        .get::<sts_http::cookie_wire::OverTls>()
+        .is_some();
     let original = parts
         .extensions
         .get::<sts_http::OriginalPath>()
         .map(|p| p.0.clone())
         .unwrap_or_else(|| parts.uri.path().to_string());
     let query_text = parts.uri.query().unwrap_or("").to_string();
-    let original_url =
-        if query_text.is_empty() { original.clone() } else { format!("{}?{}", original, query_text) };
-    let response = handle(&services, &parts.method, parts.uri.path(), &query_text, &original_url, &parts.headers, &text, over_tls);
+    let original_url = if query_text.is_empty() {
+        original.clone()
+    } else {
+        format!("{}?{}", original, query_text)
+    };
+    let response = handle(
+        &services,
+        &parts.method,
+        parts.uri.path(),
+        &query_text,
+        &original_url,
+        &parts.headers,
+        &text,
+        over_tls,
+    );
     response
 }
 
@@ -284,12 +360,23 @@ pub fn handle(
     let root = base_of(services, headers, over_tls);
     let prefix = services.registry.prefix_of(&ambient);
     let realm_base = format!("{}{}", root, prefix);
-    let body = if *method == Method::GET || *method == Method::HEAD { Json::Null } else { parse_body(headers, text) };
+    let body = if *method == Method::GET || *method == Method::HEAD {
+        Json::Null
+    } else {
+        parse_body(headers, text)
+    };
     let under = path.strip_prefix(BASE).unwrap_or("");
     let htu = format!("{}{}", realm_base, path);
     let default_keys = services.keys.key_set(gate::DEFAULT_REALM);
-    let realm_keys = if realm_id == gate::DEFAULT_REALM { None } else { services.keys.key_set(&realm_id) };
-    let empty = KeySet { realm: gate::DEFAULT_REALM.into(), blob: Json::Null };
+    let realm_keys = if realm_id == gate::DEFAULT_REALM {
+        None
+    } else {
+        services.keys.key_set(&realm_id)
+    };
+    let empty = KeySet {
+        realm: gate::DEFAULT_REALM.into(),
+        blob: Json::Null,
+    };
     let g = Gate {
         settings: &services.settings,
         mode: &services.mode,
@@ -331,11 +418,17 @@ pub fn handle(
                     code: Some(r.code),
                 },
             );
-            if let Some(w) = r.www_authenticate.as_deref().and_then(|w| HeaderValue::from_str(w).ok()) {
+            if let Some(w) = r
+                .www_authenticate
+                .as_deref()
+                .and_then(|w| HeaderValue::from_str(w).ok())
+            {
                 response.headers_mut().insert(header::WWW_AUTHENTICATE, w);
             }
             if r.nonce_wanted {
-                if let Ok(v) = HeaderValue::from_str(&services.keys.issue_nonce()) {
+                if let Ok(v) =
+                    HeaderValue::from_str(&services.keys.issue_nonce())
+                {
                     response.headers_mut().insert("dpop-nonce", v);
                 }
             }
@@ -343,14 +436,27 @@ pub fn handle(
         }
     };
     let query = parse_query(query_text);
-    let trimmed = if path.len() > 1 { path.trim_end_matches('/') } else { path };
+    let trimmed = if path.len() > 1 {
+        path.trim_end_matches('/')
+    } else {
+        path
+    };
     let found = operations::find(method.as_str(), trimmed);
     let action_route = tables::action_route(method.as_str(), trimmed);
     let mut response = match (found, &action_route) {
-        (Some(row), _) => run(services, method, row, &query, headers, &body, &root, caller.as_deref()),
-        (None, Some((route, action))) => {
-            unknown_action(services, method, route, action, &query, headers, &body)
-        }
+        (Some(row), _) => run(
+            services,
+            method,
+            row,
+            &query,
+            headers,
+            &body,
+            &root,
+            caller.as_deref(),
+        ),
+        (None, Some((route, action))) => unknown_action(
+            services, method, route, action, &query, headers, &body,
+        ),
         (None, None) => express_404(method, &original_url_path(original_url)),
     };
     response.extensions_mut().insert(ApiCaller(caller));
@@ -362,11 +468,9 @@ fn original_url_path(url: &str) -> String {
 }
 
 fn express_404(method: &Method, path: &str) -> Response {
-    let mut response = sts_http::html(sts_http::express::error_document(&format!(
-        "Cannot {} {}",
-        method,
-        sts_http::express::escape_html(path)
-    )));
+    let mut response = sts_http::html(sts_http::express::error_document(
+        &format!("Cannot {} {}", method, sts_http::express::escape_html(path)),
+    ));
     *response.status_mut() = StatusCode::NOT_FOUND;
     response
 }
@@ -401,8 +505,15 @@ fn unknown_action(
         operations::find(&route.method, &route.route.replace(":action", a))
     });
     if let Some(row) = shared {
-        if let Err(r) = request::check_shape(row, query, headers.keys().map(|k| k.as_str())) {
-            return send(method, &path, None, refusal(r.status, r.code, r.errors));
+        if let Err(r) =
+            request::check_shape(row, query, headers.keys().map(|k| k.as_str()))
+        {
+            return send(
+                method,
+                &path,
+                None,
+                refusal(r.status, r.code, r.errors),
+            );
         }
     }
     if let Some(helpers) = &route.console_actions {
@@ -423,15 +534,27 @@ fn unknown_action(
             method,
             &path,
             None,
-            refusal(400, codes::STS_API_0130, vec![crate::setup::unknown_action(action, &route.actions)]),
+            refusal(
+                400,
+                codes::STS_API_0130,
+                vec![crate::setup::unknown_action(action, &route.actions)],
+            ),
         );
     }
     let realm_id = realm::current_id();
     let answered = match handler_of_route(&route.route) {
-        Some(Handler::ConfigAction) => setup(services, &realm_id).config_action(action, body),
-        Some(Handler::RealmsAction) => setup(services, &realm_id).realms_action(action, body),
+        Some(Handler::ConfigAction) => {
+            setup(services, &realm_id).config_action(action, body)
+        }
+        Some(Handler::RealmsAction) => {
+            setup(services, &realm_id).realms_action(action, body)
+        }
         _ => {
-            tracing::info!("admin-api: {} {} is not ported to this runtime yet.", method, path);
+            tracing::info!(
+                "admin-api: {} {} is not ported to this runtime yet.",
+                method,
+                path
+            );
             return express_404(method, &path);
         }
     };
@@ -465,24 +588,67 @@ fn run(
             }
         }
     }
-    if let Err(r) = request::check_shape(row, query, headers.keys().map(|k| k.as_str())) {
-        return send(method, row.path, Some(row), refusal(r.status, r.code, r.errors));
+    if let Err(r) =
+        request::check_shape(row, query, headers.keys().map(|k| k.as_str()))
+    {
+        return send(
+            method,
+            row.path,
+            Some(row),
+            refusal(r.status, r.code, r.errors),
+        );
     }
     if *method != Method::GET {
         if let Some(r) = request::check_body(row, body) {
-            return send(method, row.path, Some(row), refusal(r.status, r.code, r.errors));
+            return send(
+                method,
+                row.path,
+                Some(row),
+                refusal(r.status, r.code, r.errors),
+            );
+        }
+        // THE BODY AS ITS MODEL TYPE (D15). A body the schema admitted may
+        // still not read as the model's `Body` — Node enforces no
+        // `required` at the door (`structureOnly()`), and the handler
+        // refuses a missing member in its own words — so a miss is noted,
+        // not answered.
+        let mut typed = body.clone();
+        if let Some(o) = typed.as_object_mut() {
+            o.shift_remove("action");
+        }
+        let read = match row.kind {
+            Kind::Management => {
+                sts_model::api::management::read_body(row.id, &typed)
+            }
+            Kind::Console => sts_model::api::console::read_body(row.id, &typed),
+        };
+        if let Some(Err(e)) = read {
+            tracing::debug!(
+                "admin-api: {}'s body does not read as its model type: {}",
+                row.id,
+                e
+            );
         }
     }
     let realm_id = realm::current_id();
     let Some(handler) = handler_of(row.operation) else {
-        tracing::info!("admin-api: {} {} ({}) is not ported to this runtime yet.", method, row.path, row.id);
+        tracing::info!(
+            "admin-api: {} {} ({}) is not ported to this runtime yet.",
+            method,
+            row.path,
+            row.id
+        );
         return express_404(method, row.path);
     };
     let action = table_row.and_then(|r| r.action.clone()).unwrap_or_default();
     let s = setup(services, &realm_id);
     let realm_base = format!("{}{}", root, services.registry.current_prefix());
     let answered = match handler {
-        Handler::Index => Answered { status: 200, body: index(services, &realm_base), code: None },
+        Handler::Index => Answered {
+            status: 200,
+            body: index(services, &realm_base),
+            code: None,
+        },
         Handler::OpenApi => Answered {
             status: 200,
             body: document::served(
@@ -495,12 +661,19 @@ fn run(
         },
         Handler::ConsoleOpenApi => Answered {
             status: 200,
-            body: document::served(Kind::Console, &realm_base, &services.version.version, gate_required(services)),
+            body: document::served(
+                Kind::Console,
+                &realm_base,
+                &services.version.version,
+                gate_required(services),
+            ),
             code: None,
         },
-        Handler::ConsoleOperations => {
-            Answered { status: 200, body: serde_json::json!({ "operations": summaries(true) }), code: None }
-        }
+        Handler::ConsoleOperations => Answered {
+            status: 200,
+            body: serde_json::json!({ "operations": summaries(true) }),
+            code: None,
+        },
         Handler::Config => s.config_json(),
         Handler::ConfigAction => s.config_action(&action, body),
         Handler::Mode => s.mode_json(),
@@ -512,7 +685,10 @@ fn run(
 }
 
 fn gate_required(services: &Services) -> bool {
-    services.mode.value_in_force("adminApi.authRequired").as_bool()
+    services
+        .mode
+        .value_in_force("adminApi.authRequired")
+        .as_bool()
 }
 
 /// `GET /admin-api`: what this API is and every operation it offers.
@@ -530,9 +706,15 @@ fn index(services: &Services, base: &str) -> Json {
     }
     out.insert("builtAt".into(), Json::from(v.built_at.as_str()));
     out.insert("stamped".into(), Json::Bool(v.stamped));
-    out.insert("openapi".into(), Json::from(format!("{}{}/openapi.json", base, BASE)));
+    out.insert(
+        "openapi".into(),
+        Json::from(format!("{}{}/openapi.json", base, BASE)),
+    );
     out.insert("protected".into(), Json::Bool(gate_required(services)));
-    out.insert("docs".into(), Json::from(format!("{}/admin/api-explorer", base)));
+    out.insert(
+        "docs".into(),
+        Json::from(format!("{}/admin/api-explorer", base)),
+    );
     out.insert("console".into(), Json::from(format!("{}/admin", base)));
     out.insert("operations".into(), Json::Array(summaries(false)));
     Json::Object(out)

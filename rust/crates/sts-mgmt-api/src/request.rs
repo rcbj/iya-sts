@@ -90,7 +90,9 @@ pub fn parameters_of(row: &OperationRow) -> Vec<Json> {
         .unwrap_or_default();
     let mut out = own.clone();
     for one in document::implicit_parameters() {
-        let same = own.iter().any(|p| p.get("in") == one.get("in") && p.get("name") == one.get("name"));
+        let same = own.iter().any(|p| {
+            p.get("in") == one.get("in") && p.get("name") == one.get("name")
+        });
         if !same {
             out.push(one.clone());
         }
@@ -112,7 +114,8 @@ pub fn closed_sentence(field: &str, value: &Json, values: &[Json]) -> String {
     )
 }
 
-/// `JSON.stringify()` of a value, as a sentence names it.
+/// `JSON.stringify()` of a value, as a sentence names it. A hot path:
+/// called per value of a sentence, so it carries no span.
 pub fn js_stringify(value: &Json) -> String {
     serde_json::to_string(value).unwrap_or_default()
 }
@@ -130,7 +133,9 @@ fn check_enums(parameters: &[Json], query: &Query) -> Option<String> {
         if p.get("in").and_then(Json::as_str) != Some("query") {
             continue;
         }
-        let (Some(name), Some(schema)) = (p.get("name").and_then(Json::as_str), p.get("schema")) else {
+        let (Some(name), Some(schema)) =
+            (p.get("name").and_then(Json::as_str), p.get("schema"))
+        else {
             continue;
         };
         if schema.get("x-refused-by-handler") == Some(&Json::Bool(true)) {
@@ -143,8 +148,13 @@ fn check_enums(parameters: &[Json], query: &Query) -> Option<String> {
         let Some(values) = values else { continue };
         let Some(raw) = query.get(name) else { continue };
         let each: Vec<Json> = match raw {
-            Json::String(s) if schema.get("type").and_then(Json::as_str) == Some("array") => {
-                s.split(',').map(|x| Json::String(x.trim().to_string())).collect()
+            Json::String(s)
+                if schema.get("type").and_then(Json::as_str)
+                    == Some("array") =>
+            {
+                s.split(',')
+                    .map(|x| Json::String(x.trim().to_string()))
+                    .collect()
             }
             Json::Array(list) => list.clone(),
             other => vec![other.clone()],
@@ -153,7 +163,9 @@ fn check_enums(parameters: &[Json], query: &Query) -> Option<String> {
             if one.is_null() || one == Json::String(String::new()) {
                 continue;
             }
-            let hit = values.iter().any(|v| v == &one || text_of(v) == text_of(&one));
+            let hit = values
+                .iter()
+                .any(|v| v == &one || text_of(v) == text_of(&one));
             if !hit {
                 return Some(closed_sentence(name, &one, values));
             }
@@ -169,7 +181,9 @@ fn fits(schema: Option<&Json>, raw: &Json) -> bool {
         return true;
     }
     if kind.is_none() {
-        if let Some(branches) = schema.and_then(|s| s.get("anyOf")).and_then(Json::as_array) {
+        if let Some(branches) =
+            schema.and_then(|s| s.get("anyOf")).and_then(Json::as_array)
+        {
             return branches.iter().any(|b| fits(Some(b), raw));
         }
     }
@@ -180,13 +194,19 @@ fn fits(schema: Option<&Json>, raw: &Json) -> bool {
     if let Json::Array(list) = raw {
         return list.iter().all(|one| fits(schema, one));
     }
-    let Json::String(text) = raw else { return false };
+    let Json::String(text) = raw else {
+        return false;
+    };
     let t = text.trim();
     match kind {
         "array" => {
-            let items = schema.and_then(|s| s.get("items")).filter(|i| i.get("type").is_some());
+            let items = schema
+                .and_then(|s| s.get("items"))
+                .filter(|i| i.get("type").is_some());
             items.is_none_or(|items| {
-                text.split(',').all(|one| fits(Some(items), &Json::String(one.trim().to_string())))
+                text.split(',').all(|one| {
+                    fits(Some(items), &Json::String(one.trim().to_string()))
+                })
             })
         }
         "integer" => {
@@ -231,12 +251,21 @@ pub fn said_name(name: &str) -> String {
         units += n;
         text.push(c);
     }
-    let plain = !text.chars().any(|c| "\"'<>`\\".contains(c) || (c as u32) < 0x20 || c as u32 == 0x7f);
-    js_stringify(&Json::String(if plain { text.clone() } else { encode_uri_component(&text) }))
+    let plain = !text.chars().any(|c| {
+        "\"'<>`\\".contains(c) || (c as u32) < 0x20 || c as u32 == 0x7f
+    });
+    js_stringify(&Json::String(if plain {
+        text.clone()
+    } else {
+        encode_uri_component(&text)
+    }))
 }
 
 /// `checkQueryDeclared()`.
-fn check_declared(parameters: &[Json], query: &Query) -> Option<(ErrorCode, String)> {
+fn check_declared(
+    parameters: &[Json],
+    query: &Query,
+) -> Option<(ErrorCode, String)> {
     let declared: HashMap<&str, &Json> = parameters
         .iter()
         .filter(|p| p.get("in").and_then(Json::as_str) == Some("query"))
@@ -255,11 +284,16 @@ fn check_declared(parameters: &[Json], query: &Query) -> Option<(ErrorCode, Stri
             ));
         };
         let schema = p.get("schema");
-        if schema.and_then(|s| s.get("x-refused-by-handler")) == Some(&Json::Bool(true)) {
+        if schema.and_then(|s| s.get("x-refused-by-handler"))
+            == Some(&Json::Bool(true))
+        {
             continue;
         }
         if !fits(schema, value) {
-            let kind = schema.and_then(|s| s.get("type")).and_then(Json::as_str).unwrap_or("declared");
+            let kind = schema
+                .and_then(|s| s.get("type"))
+                .and_then(Json::as_str)
+                .unwrap_or("declared");
             return Some((
                 codes::STS_API_0143,
                 format!(
@@ -278,40 +312,136 @@ fn check_declared(parameters: &[Json], query: &Query) -> Option<(ErrorCode, Stri
 }
 
 const STANDARD: &[&str] = &[
-    "accept", "accept-charset", "accept-datetime", "accept-encoding", "accept-language", "accept-signature",
-    "access-control-request-headers", "access-control-request-method", "access-control-request-private-network",
-    "alt-used", "authorization", "cache-control", "cdn-loop", "connection", "content-digest",
-    "content-disposition", "content-encoding", "content-language", "content-length", "content-location",
-    "content-md5", "content-range", "content-type", "cookie", "date", "device-memory", "dnt", "downlink", "dpr",
-    "early-data", "ect", "expect", "from", "host", "http2-settings", "if-match", "if-modified-since",
-    "if-none-match", "if-range", "if-unmodified-since", "keep-alive", "link", "max-forwards", "mime-version",
-    "origin", "pragma", "prefer", "priority", "proxy-authorization", "proxy-connection", "purpose", "range",
-    "referer", "repr-digest", "rtt", "save-data", "service-worker", "signature", "signature-input", "te",
-    "timing-allow-origin", "trailer", "transfer-encoding", "upgrade", "upgrade-insecure-requests",
-    "user-agent", "viewport-width", "want-content-digest", "want-repr-digest", "warning", "width",
+    "accept",
+    "accept-charset",
+    "accept-datetime",
+    "accept-encoding",
+    "accept-language",
+    "accept-signature",
+    "access-control-request-headers",
+    "access-control-request-method",
+    "access-control-request-private-network",
+    "alt-used",
+    "authorization",
+    "cache-control",
+    "cdn-loop",
+    "connection",
+    "content-digest",
+    "content-disposition",
+    "content-encoding",
+    "content-language",
+    "content-length",
+    "content-location",
+    "content-md5",
+    "content-range",
+    "content-type",
+    "cookie",
+    "date",
+    "device-memory",
+    "dnt",
+    "downlink",
+    "dpr",
+    "early-data",
+    "ect",
+    "expect",
+    "from",
+    "host",
+    "http2-settings",
+    "if-match",
+    "if-modified-since",
+    "if-none-match",
+    "if-range",
+    "if-unmodified-since",
+    "keep-alive",
+    "link",
+    "max-forwards",
+    "mime-version",
+    "origin",
+    "pragma",
+    "prefer",
+    "priority",
+    "proxy-authorization",
+    "proxy-connection",
+    "purpose",
+    "range",
+    "referer",
+    "repr-digest",
+    "rtt",
+    "save-data",
+    "service-worker",
+    "signature",
+    "signature-input",
+    "te",
+    "timing-allow-origin",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "upgrade-insecure-requests",
+    "user-agent",
+    "viewport-width",
+    "want-content-digest",
+    "want-repr-digest",
+    "warning",
+    "width",
     // ADDED_IN_TRANSIT's exact names.
-    "forwarded", "via", "x-real-ip", "x-request-id", "traceparent", "tracestate", "baggage", "x-client-cert",
-    "x-origin-verify", "x-cloud-trace-context",
+    "forwarded",
+    "via",
+    "x-real-ip",
+    "x-request-id",
+    "traceparent",
+    "tracestate",
+    "baggage",
+    "x-client-cert",
+    "x-origin-verify",
+    "x-cloud-trace-context",
     // INTERNAL.
-    "x-sts-cell-client", "x-sts-cell-from", "x-sts-cell-hops", "x-sts-cell-reason", "x-sts-ldap-drop",
-    "x-sts-listener", "x-sts-peer-authorized", "x-sts-peer-certificate", "x-sts-pool-phases",
-    "x-sts-pool-phases-wanted", "x-sts-pool-protocol-worker", "x-sts-pool-revoking", "x-sts-pool-ticket",
+    "x-sts-cell-client",
+    "x-sts-cell-from",
+    "x-sts-cell-hops",
+    "x-sts-cell-reason",
+    "x-sts-ldap-drop",
+    "x-sts-listener",
+    "x-sts-peer-authorized",
+    "x-sts-peer-certificate",
+    "x-sts-pool-phases",
+    "x-sts-pool-phases-wanted",
+    "x-sts-pool-protocol-worker",
+    "x-sts-pool-revoking",
+    "x-sts-pool-ticket",
     "x-sts-tls-client-hello",
 ];
 
 const FAMILIES: &[&str] = &[
-    "x-forwarded-", "sec-", "x-ssl-client-", "cloudfront-", "x-amz-", "x-amzn-", "x-goog-", "x-appgw-",
-    "x-arr-", "x-azure-", "x-fd-", "x-ms-", "x-original-",
+    "x-forwarded-",
+    "sec-",
+    "x-ssl-client-",
+    "cloudfront-",
+    "x-amz-",
+    "x-amzn-",
+    "x-goog-",
+    "x-appgw-",
+    "x-arr-",
+    "x-azure-",
+    "x-fd-",
+    "x-ms-",
+    "x-original-",
 ];
 
 /// `RequestHeaders.check()`: the first header neither declared nor
 /// defined anywhere, by its lower-cased name.
 #[tracing::instrument(level = "debug", skip_all)]
-pub fn check_headers<'a>(parameters: &[Json], names: impl Iterator<Item = &'a str>) -> Option<String> {
+pub fn check_headers<'a>(
+    parameters: &[Json],
+    names: impl Iterator<Item = &'a str>,
+) -> Option<String> {
     let declared: Vec<String> = parameters
         .iter()
         .filter(|p| p.get("in").and_then(Json::as_str) == Some("header"))
-        .filter_map(|p| p.get("name").and_then(Json::as_str).map(str::to_ascii_lowercase))
+        .filter_map(|p| {
+            p.get("name")
+                .and_then(Json::as_str)
+                .map(str::to_ascii_lowercase)
+        })
         .collect();
     for name in names {
         let lower = name.to_ascii_lowercase();
@@ -340,13 +470,25 @@ pub fn check_shape<'a>(
 ) -> Result<(), Refused> {
     let parameters = parameters_of(row);
     if let Some(sentence) = check_enums(&parameters, query) {
-        return Err(Refused { status: 400, code: codes::STS_API_0124, errors: vec![sentence] });
+        return Err(Refused {
+            status: 400,
+            code: codes::STS_API_0124,
+            errors: vec![sentence],
+        });
     }
     if let Some((code, sentence)) = check_declared(&parameters, query) {
-        return Err(Refused { status: 400, code, errors: vec![sentence] });
+        return Err(Refused {
+            status: 400,
+            code,
+            errors: vec![sentence],
+        });
     }
     if let Some(sentence) = check_headers(&parameters, headers) {
-        return Err(Refused { status: 400, code: codes::STS_API_0144, errors: vec![sentence] });
+        return Err(Refused {
+            status: 400,
+            code: codes::STS_API_0144,
+            errors: vec![sentence],
+        });
     }
     Ok(())
 }
@@ -356,11 +498,13 @@ struct Compiled {
     validator: Option<jsonschema::Validator>,
 }
 
-static STRUCTURED: LazyLock<Mutex<HashMap<&'static str, std::sync::Arc<Json>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static STRUCTURED: LazyLock<
+    Mutex<HashMap<&'static str, std::sync::Arc<Json>>>,
+> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-static COMPILED: LazyLock<Mutex<HashMap<&'static str, std::sync::Arc<Compiled>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static COMPILED: LazyLock<
+    Mutex<HashMap<&'static str, std::sync::Arc<Compiled>>>,
+> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn structured_components(kind: Kind) -> std::sync::Arc<Json> {
     let mut cache = match STRUCTURED.lock() {
@@ -369,7 +513,9 @@ fn structured_components(kind: Kind) -> std::sync::Arc<Json> {
     };
     cache
         .entry(kind.as_str())
-        .or_insert_with(|| std::sync::Arc::new(structure_only(document::components(kind))))
+        .or_insert_with(|| {
+            std::sync::Arc::new(structure_only(document::components(kind)))
+        })
         .clone()
 }
 
@@ -408,7 +554,10 @@ fn compiled(row: &'static OperationRow) -> Option<std::sync::Arc<Compiled>> {
             );
         })
         .ok();
-    let made = std::sync::Arc::new(Compiled { schema: root, validator });
+    let made = std::sync::Arc::new(Compiled {
+        schema: root,
+        validator,
+    });
     cache.insert(row.id, made.clone());
     Some(made)
 }
@@ -445,7 +594,8 @@ pub fn sentences(errors: &[AjvError]) -> Vec<String> {
         })
         .collect();
     if out.is_empty() {
-        vec!["The request body did not match this operation's schema.".to_string()]
+        vec!["The request body did not match this operation's schema."
+            .to_string()]
     } else {
         out
     }
@@ -471,5 +621,9 @@ pub fn check_body(row: &'static OperationRow, body: &Json) -> Option<Refused> {
     }
     let components = structured_components(row.kind);
     let errors = Walker::new(&components).errors(&compiled.schema, &subject);
-    Some(Refused { status: 400, code: codes::STS_API_0009, errors: sentences(&errors) })
+    Some(Refused {
+        status: 400,
+        code: codes::STS_API_0009,
+        errors: sentences(&errors),
+    })
 }
