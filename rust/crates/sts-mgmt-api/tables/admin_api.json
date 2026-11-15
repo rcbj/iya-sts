@@ -17567,6 +17567,13 @@
     "Group claim"
    ],
    "sharedWith": {}
+  },
+  "/admin/rbac": {
+   "groups": [
+    "Admin console",
+    "Management API"
+   ],
+   "sharedWith": {}
   }
  },
  "consolePages": [
@@ -20760,6 +20767,1726 @@
      "route": "/spiffe/federated/:trustDomain"
     }
    ]
+  }
+ },
+ "newUserForm": {
+  "fields": [
+   {
+    "attribute": "givenName",
+    "label": "Given name",
+    "schema": "RFC 4519 2.12",
+    "claim": [
+     "given_name"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "sn",
+    "label": "Family name",
+    "schema": "RFC 4519 2.32",
+    "claim": [
+     "family_name"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "mail",
+    "label": "Email address",
+    "schema": "RFC 4524 2.16",
+    "claim": [
+     "email"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "schacDateOfBirth",
+    "label": "Date of birth",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "claim": [
+     "birthdate"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "schacCountryOfCitizenship",
+    "label": "Nationalities",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "claim": [
+     "nationalities"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "street",
+    "label": "Street address",
+    "schema": "RFC 4519 2.34",
+    "claim": [
+     "address",
+     "street_address"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "l",
+    "label": "Locality",
+    "schema": "RFC 4519 2.16",
+    "claim": [
+     "address",
+     "locality"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "st",
+    "label": "Region",
+    "schema": "RFC 4519 2.33",
+    "claim": [
+     "address",
+     "region"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "postalCode",
+    "label": "Postal code",
+    "schema": "RFC 4519 2.24",
+    "claim": [
+     "address",
+     "postal_code"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "c",
+    "label": "Country",
+    "schema": "RFC 4519 2.2",
+    "claim": [
+     "address",
+     "country"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "postalAddress",
+    "label": "Formatted address",
+    "schema": "RFC 4519 2.23",
+    "claim": [
+     "address",
+     "formatted"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "cn",
+    "label": "Full name",
+    "schema": "RFC 4519 2.3",
+    "claim": [
+     "name"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "displayName",
+    "label": "Display name",
+    "schema": "RFC 2798 2.3",
+    "claim": [
+     "nickname"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "telephoneNumber",
+    "label": "Telephone number",
+    "schema": "RFC 4519 2.35",
+    "claim": [
+     "phone_number"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "mobile",
+    "label": "Mobile number (MSISDN)",
+    "schema": "RFC 4524 2.18",
+    "claim": [
+     "msisdn"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "title",
+    "label": "Job title",
+    "schema": "RFC 4519 2.38",
+    "claim": [
+     "job_title"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "schacPersonalTitle",
+    "label": "Title (honorific)",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "claim": [
+     "title"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "salutation",
+    "label": "Salutation",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "salutation"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "birthFamilyName",
+    "label": "Family name at birth",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "birth_family_name"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "birthGivenName",
+    "label": "Given name at birth",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "birth_given_name"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "birthMiddleName",
+    "label": "Middle name at birth",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "birth_middle_name"
+    ],
+    "invented": false
+   },
+   {
+    "attribute": "alsoKnownAs",
+    "label": "Also known as",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "also_known_as"
+    ],
+    "invented": false
+   },
+   {
+    "attribute": "placeOfBirthCountry",
+    "label": "Country of birth",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "place_of_birth",
+     "country"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "placeOfBirthRegion",
+    "label": "Region of birth",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "place_of_birth",
+     "region"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "placeOfBirthLocality",
+    "label": "Locality of birth",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "place_of_birth",
+     "locality"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "o",
+    "label": "Organization",
+    "schema": "RFC 4519 2.19",
+    "claim": [
+     "organization"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "ou",
+    "label": "Organizational unit",
+    "schema": "RFC 4519 2.20",
+    "claim": [
+     "organizational_unit"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "departmentNumber",
+    "label": "Department",
+    "schema": "RFC 2798 2.2",
+    "claim": [
+     "department"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "employeeNumber",
+    "label": "Employee number",
+    "schema": "RFC 2798 2.4",
+    "claim": [
+     "employee_number"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "employeeType",
+    "label": "Employee type",
+    "schema": "RFC 2798 2.5",
+    "claim": [
+     "employee_type"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "preferredLanguage",
+    "label": "Locale",
+    "schema": "RFC 2798 2.7",
+    "claim": [
+     "locale"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "labeledURI",
+    "label": "Web page",
+    "schema": "RFC 2079",
+    "claim": [
+     "website"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "middleName",
+    "label": "Middle name",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "middle_name"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "schacGender",
+    "label": "Gender",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "claim": [
+     "gender"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "timeZone",
+    "label": "Time zone",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "zoneinfo"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "pictureUrl",
+    "label": "Picture URL",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "picture"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "profileUrl",
+    "label": "Profile page URL",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "profile"
+    ],
+    "invented": true
+   },
+   {
+    "attribute": "description",
+    "label": "Description",
+    "schema": "RFC 4519 2.5",
+    "claim": [
+     "description"
+    ],
+    "invented": false
+   },
+   {
+    "attribute": "employeeStatus",
+    "label": "Employee status",
+    "schema": "this service's own (no standard type)",
+    "claim": [
+     "employee_status"
+    ],
+    "invented": true
+   }
+  ],
+  "fieldGroups": [
+   {
+    "id": "name",
+    "label": "Name",
+    "what": "What the person is called: the two names every person must hold (cn and sn), the parts of them, and the names they were known by."
+   },
+   {
+    "id": "contact",
+    "label": "Contact",
+    "what": "How to reach them, and in which language. The email address is set by its own control, because an address an administrator sets is marked verified and the former one is told."
+   },
+   {
+    "id": "organization",
+    "label": "Organization",
+    "what": "Where they sit in the organization."
+   },
+   {
+    "id": "address",
+    "label": "Address",
+    "what": "Postal addresses, work and home."
+   },
+   {
+    "id": "identity",
+    "label": "Identity",
+    "what": "Facts an identity-assurance verification is about: birth and citizenship."
+   },
+   {
+    "id": "policies",
+    "label": "Policies",
+    "what": "The named policy of each kind that this person names: `default`, or one of this realm's named policies of that kind (Directory > Policies). It competes on precedence with the policy the application names and the policies the person's groups name."
+   },
+   {
+    "id": "custom",
+    "label": "Custom",
+    "what": "This realm's own attributes, defined on Directory > Policies > Attribute policy."
+   },
+   {
+    "id": "other",
+    "label": "Other",
+    "what": "Everything else the schema gives a person."
+   }
+  ],
+  "gridFields": [
+   {
+    "attribute": "cn",
+    "label": "Common name",
+    "group": "name",
+    "multi": true,
+    "example": "Alice Smith",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "sn",
+    "label": "Surname",
+    "group": "name",
+    "multi": true,
+    "example": "Smith",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "telephoneNumber",
+    "label": "Telephone number",
+    "group": "contact",
+    "multi": true,
+    "example": "+1 555 0100",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "seeAlso",
+    "label": "See also",
+    "group": "other",
+    "multi": true,
+    "example": "cn=staff,ou=groups,dc=example,dc=com",
+    "simple": false,
+    "takes": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+    "custom": false
+   },
+   {
+    "attribute": "description",
+    "label": "Description",
+    "group": "other",
+    "multi": true,
+    "example": "Joined in 2026",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "title",
+    "label": "Job title",
+    "group": "organization",
+    "multi": true,
+    "example": "Principal Engineer",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "ou",
+    "label": "Organizational unit",
+    "group": "organization",
+    "multi": true,
+    "example": "Engineering",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "l",
+    "label": "Locality",
+    "group": "address",
+    "multi": true,
+    "example": "Springfield",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "st",
+    "label": "State or province",
+    "group": "address",
+    "multi": true,
+    "example": "Illinois",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "street",
+    "label": "Street address",
+    "group": "address",
+    "multi": true,
+    "example": "1 Main Street",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "postalAddress",
+    "label": "Postal address",
+    "group": "address",
+    "multi": true,
+    "example": "1 Main Street$Springfield",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "postalCode",
+    "label": "Postal code",
+    "group": "address",
+    "multi": true,
+    "example": "62701",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "postOfficeBox",
+    "label": "Post office box",
+    "group": "address",
+    "multi": true,
+    "example": "PO Box 42",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "physicalDeliveryOfficeName",
+    "label": "Delivery office",
+    "group": "organization",
+    "multi": true,
+    "example": "Headquarters",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "registeredAddress",
+    "label": "Registered address",
+    "group": "address",
+    "multi": true,
+    "example": "1 Main Street$Springfield",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "destinationIndicator",
+    "label": "Destination indicator",
+    "group": "address",
+    "multi": true,
+    "example": "USNYC",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "preferredDeliveryMethod",
+    "label": "Preferred delivery method",
+    "group": "address",
+    "multi": true,
+    "example": "telephone",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "facsimileTelephoneNumber",
+    "label": "Fax number",
+    "group": "contact",
+    "multi": true,
+    "example": "+1 555 0104",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "internationalISDNNumber",
+    "label": "ISDN number",
+    "group": "other",
+    "multi": true,
+    "example": "+1 555 0105",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "telexNumber",
+    "label": "Telex number",
+    "group": "other",
+    "multi": true,
+    "example": "123456 ACME US",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "teletexTerminalIdentifier",
+    "label": "Teletex terminal",
+    "group": "other",
+    "multi": true,
+    "example": "ACME-01",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "x121Address",
+    "label": "X.121 address",
+    "group": "other",
+    "multi": true,
+    "example": "31102100000123",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "displayName",
+    "label": "Display name",
+    "group": "name",
+    "multi": false,
+    "example": "Alice Smith",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "givenName",
+    "label": "Given name",
+    "group": "name",
+    "multi": true,
+    "example": "Alice",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "initials",
+    "label": "Initials",
+    "group": "name",
+    "multi": true,
+    "example": "A. J.",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "o",
+    "label": "Organization",
+    "group": "organization",
+    "multi": true,
+    "example": "Example Corp",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "businessCategory",
+    "label": "Business category",
+    "group": "organization",
+    "multi": true,
+    "example": "Software",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "departmentNumber",
+    "label": "Department number",
+    "group": "organization",
+    "multi": true,
+    "example": "4711",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "employeeNumber",
+    "label": "Employee number",
+    "group": "organization",
+    "multi": false,
+    "example": "E-10042",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "employeeType",
+    "label": "Employee type",
+    "group": "organization",
+    "multi": true,
+    "example": "Employee",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "roomNumber",
+    "label": "Room number",
+    "group": "organization",
+    "multi": true,
+    "example": "3.14",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "manager",
+    "label": "Manager",
+    "group": "organization",
+    "multi": true,
+    "example": "uid=bob,ou=users,dc=example,dc=com",
+    "simple": true,
+    "takes": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+    "custom": false
+   },
+   {
+    "attribute": "secretary",
+    "label": "Secretary",
+    "group": "organization",
+    "multi": true,
+    "example": "uid=carol,ou=users,dc=example,dc=com",
+    "simple": false,
+    "takes": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+    "custom": false
+   },
+   {
+    "attribute": "homePhone",
+    "label": "Home phone",
+    "group": "contact",
+    "multi": true,
+    "example": "+1 555 0102",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "homePostalAddress",
+    "label": "Home address",
+    "group": "address",
+    "multi": true,
+    "example": "9 Elm Road$Springfield",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "mobile",
+    "label": "Mobile number",
+    "group": "contact",
+    "multi": true,
+    "example": "+1 555 0101",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "pager",
+    "label": "Pager number",
+    "group": "contact",
+    "multi": true,
+    "example": "+1 555 0103",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "carLicense",
+    "label": "Car licence",
+    "group": "organization",
+    "multi": true,
+    "example": "ABC 123",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "preferredLanguage",
+    "label": "Preferred language",
+    "group": "contact",
+    "multi": false,
+    "example": "en-GB",
+    "simple": true,
+    "takes": "a language range, such as en-GB or \"da, en-gb;q=0.8\"",
+    "custom": false
+   },
+   {
+    "attribute": "labeledURI",
+    "label": "Labelled URI",
+    "group": "contact",
+    "multi": true,
+    "example": "https://example.com/~alice Alice's page",
+    "simple": false,
+    "takes": "an http or https URL, optionally followed by a space and a label",
+    "custom": false
+   },
+   {
+    "attribute": "x500UniqueIdentifier",
+    "label": "X.500 unique identifier",
+    "group": "identity",
+    "multi": true,
+    "example": "#'0101'B",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "schacPersonalTitle",
+    "label": "Title (honorific)",
+    "group": "name",
+    "multi": true,
+    "example": "Dr",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "salutation",
+    "label": "Salutation",
+    "group": "name",
+    "multi": true,
+    "example": "Dear Dr Smith",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "schacCountryOfCitizenship",
+    "label": "Nationalities",
+    "group": "identity",
+    "multi": true,
+    "example": "US",
+    "simple": true,
+    "takes": "an ISO 3166-1 alpha-2 country code, such as SE",
+    "custom": false
+   },
+   {
+    "attribute": "birthFamilyName",
+    "label": "Family name at birth",
+    "group": "name",
+    "multi": true,
+    "example": "Jones",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "birthGivenName",
+    "label": "Given name at birth",
+    "group": "name",
+    "multi": true,
+    "example": "Alice",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "birthMiddleName",
+    "label": "Middle name at birth",
+    "group": "name",
+    "multi": true,
+    "example": "Jane",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "alsoKnownAs",
+    "label": "Also known as",
+    "group": "name",
+    "multi": true,
+    "example": "Ally Smith",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "placeOfBirthCountry",
+    "label": "Country of birth",
+    "group": "identity",
+    "multi": false,
+    "example": "US",
+    "simple": true,
+    "takes": "an ISO 3166-1 alpha-2 country code, such as SE",
+    "custom": false
+   },
+   {
+    "attribute": "placeOfBirthRegion",
+    "label": "Region of birth",
+    "group": "identity",
+    "multi": false,
+    "example": "Illinois",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "placeOfBirthLocality",
+    "label": "Locality of birth",
+    "group": "identity",
+    "multi": false,
+    "example": "Springfield",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "schacDateOfBirth",
+    "label": "Date of birth",
+    "group": "identity",
+    "multi": false,
+    "example": "19800131",
+    "simple": true,
+    "takes": "a date, YYYYMMDD or YYYY-MM-DD",
+    "custom": false
+   },
+   {
+    "attribute": "c",
+    "label": "Country",
+    "group": "address",
+    "multi": false,
+    "example": "US",
+    "simple": true,
+    "takes": "an ISO 3166-1 alpha-2 country code, such as SE",
+    "custom": false
+   },
+   {
+    "attribute": "middleName",
+    "label": "Middle name",
+    "group": "name",
+    "multi": false,
+    "example": "Jane",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "schacGender",
+    "label": "Gender",
+    "group": "name",
+    "multi": false,
+    "example": "2",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "timeZone",
+    "label": "Time zone",
+    "group": "contact",
+    "multi": false,
+    "example": "Europe/Stockholm",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "pictureUrl",
+    "label": "Picture URL",
+    "group": "contact",
+    "multi": false,
+    "example": "https://example.com/~alice/photo.jpg",
+    "simple": false,
+    "takes": "an http or https URL, optionally followed by a space and a label",
+    "custom": false
+   },
+   {
+    "attribute": "profileUrl",
+    "label": "Profile page URL",
+    "group": "contact",
+    "multi": false,
+    "example": "https://example.com/~alice/",
+    "simple": false,
+    "takes": "an http or https URL, optionally followed by a space and a label",
+    "custom": false
+   },
+   {
+    "attribute": "employeeStatus",
+    "label": "Employee status",
+    "group": "organization",
+    "multi": false,
+    "example": "active",
+    "simple": false,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "stsServiceAccountPolicy",
+    "label": "The service-account policy this person names",
+    "group": "policies",
+    "multi": false,
+    "example": "default",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   },
+   {
+    "attribute": "stsAttributePolicy",
+    "label": "The attribute policy this person names",
+    "group": "policies",
+    "multi": false,
+    "example": "default",
+    "simple": true,
+    "takes": "text",
+    "custom": false
+   }
+  ],
+  "credentials": [
+   {
+    "id": "none",
+    "label": "No credential at all",
+    "what": "The entry exists and nothing is set on it. <strong>In development mode this is enough to sign in</strong> — no password is checked anywhere in this service — so it is the right choice for a test subject. In PRODUCT mode a person with no credential cannot sign in at all, and the way to give them one afterwards is an activation link."
+   },
+   {
+    "id": "password",
+    "label": "A password I type",
+    "what": "Hashed with scrypt by <code>credentials.js</code> and written to <code>userPassword</code> on the entry. <strong>It is never shown again by anything</strong>, including this console and an <code>ldapsearch</code>, because what is stored is the hash. Typed twice, because a mistyped password that nobody can read back is a person who cannot sign in and nobody who can say why."
+   },
+   {
+    "id": "generate",
+    "label": "A password generated for me (the default)",
+    "what": "Drawn from node's cryptographically secure generator, each character uniformly, until it satisfies this realm's <a href=\"/admin/policies\">password policy</a>, set the same way, and <strong>shown to you exactly once</strong> on the page that comes back. This service cannot produce it a second time — only replace it. It is the same generator the product-mode bootstrap account uses."
+   },
+   {
+    "id": "activation",
+    "label": "No credential, and an activation link",
+    "what": "The person holds nothing, and you are given a single-use, time-limited URL <strong>once</strong> to send them by whatever channel you already use. At it they choose a password, a security key, or both. <strong>Anybody holding that link can complete this account</strong>, so it is a credential and is treated as one: this service stores only a hash of it, issuing another invalidates the first, and it is spent when the setup FINISHES rather than when the link is opened — a link burned by a mail scanner would strand the person it was for."
+   }
+  ],
+  "rows": [
+   {
+    "name": "cn",
+    "label": "Common name",
+    "schema": "RFC 4519 2.3",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Alice Smith",
+    "simple": true,
+    "claim": "name"
+   },
+   {
+    "name": "sn",
+    "label": "Surname",
+    "schema": "RFC 4519 2.32",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Smith",
+    "simple": true,
+    "claim": "family_name"
+   },
+   {
+    "name": "telephoneNumber",
+    "label": "Telephone number",
+    "schema": "RFC 4519 2.35",
+    "multi": true,
+    "note": "",
+    "group": "contact",
+    "example": "+1 555 0100",
+    "simple": true,
+    "claim": "phone_number"
+   },
+   {
+    "name": "seeAlso",
+    "label": "See also",
+    "schema": "RFC 4519 2.30",
+    "multi": true,
+    "note": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+    "group": "other",
+    "example": "cn=staff,ou=groups,dc=example,dc=com",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "description",
+    "label": "Description",
+    "schema": "RFC 4519 2.5",
+    "multi": true,
+    "note": "",
+    "group": "other",
+    "example": "Joined in 2026",
+    "simple": true,
+    "claim": "description"
+   },
+   {
+    "name": "title",
+    "label": "Job title",
+    "schema": "RFC 4519 2.38",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "Principal Engineer",
+    "simple": true,
+    "claim": "job_title"
+   },
+   {
+    "name": "ou",
+    "label": "Organizational unit",
+    "schema": "RFC 4519 2.20",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "Engineering",
+    "simple": true,
+    "claim": "organizational_unit"
+   },
+   {
+    "name": "l",
+    "label": "Locality",
+    "schema": "RFC 4519 2.16",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "Springfield",
+    "simple": true,
+    "claim": "address.locality"
+   },
+   {
+    "name": "st",
+    "label": "State or province",
+    "schema": "RFC 4519 2.33",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "Illinois",
+    "simple": true,
+    "claim": "address.region"
+   },
+   {
+    "name": "street",
+    "label": "Street address",
+    "schema": "RFC 4519 2.34",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "1 Main Street",
+    "simple": true,
+    "claim": "address.street_address"
+   },
+   {
+    "name": "postalAddress",
+    "label": "Postal address",
+    "schema": "RFC 4519 2.23",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "1 Main Street$Springfield",
+    "simple": false,
+    "claim": "address.formatted"
+   },
+   {
+    "name": "postalCode",
+    "label": "Postal code",
+    "schema": "RFC 4519 2.24",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "62701",
+    "simple": true,
+    "claim": "address.postal_code"
+   },
+   {
+    "name": "postOfficeBox",
+    "label": "Post office box",
+    "schema": "RFC 4519 2.25",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "PO Box 42",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "physicalDeliveryOfficeName",
+    "label": "Delivery office",
+    "schema": "RFC 4519 2.22",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "Headquarters",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "registeredAddress",
+    "label": "Registered address",
+    "schema": "RFC 4519 2.27",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "1 Main Street$Springfield",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "destinationIndicator",
+    "label": "Destination indicator",
+    "schema": "RFC 4519 2.6",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "USNYC",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "preferredDeliveryMethod",
+    "label": "Preferred delivery method",
+    "schema": "RFC 4519 2.26",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "telephone",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "facsimileTelephoneNumber",
+    "label": "Fax number",
+    "schema": "RFC 4519 2.10",
+    "multi": true,
+    "note": "",
+    "group": "contact",
+    "example": "+1 555 0104",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "internationalISDNNumber",
+    "label": "ISDN number",
+    "schema": "RFC 4519 2.15",
+    "multi": true,
+    "note": "",
+    "group": "other",
+    "example": "+1 555 0105",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "telexNumber",
+    "label": "Telex number",
+    "schema": "RFC 4519 2.37",
+    "multi": true,
+    "note": "",
+    "group": "other",
+    "example": "123456 ACME US",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "teletexTerminalIdentifier",
+    "label": "Teletex terminal",
+    "schema": "RFC 4519 2.36",
+    "multi": true,
+    "note": "",
+    "group": "other",
+    "example": "ACME-01",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "x121Address",
+    "label": "X.121 address",
+    "schema": "RFC 4519 2.42",
+    "multi": true,
+    "note": "",
+    "group": "other",
+    "example": "31102100000123",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "displayName",
+    "label": "Display name",
+    "schema": "RFC 2798 2.3",
+    "multi": false,
+    "note": "",
+    "group": "name",
+    "example": "Alice Smith",
+    "simple": true,
+    "claim": "nickname"
+   },
+   {
+    "name": "givenName",
+    "label": "Given name",
+    "schema": "RFC 4519 2.12",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Alice",
+    "simple": true,
+    "claim": "given_name"
+   },
+   {
+    "name": "initials",
+    "label": "Initials",
+    "schema": "RFC 4519 2.14",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "A. J.",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "o",
+    "label": "Organization",
+    "schema": "RFC 4519 2.19",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "Example Corp",
+    "simple": true,
+    "claim": "organization"
+   },
+   {
+    "name": "businessCategory",
+    "label": "Business category",
+    "schema": "RFC 4519 2.1",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "Software",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "departmentNumber",
+    "label": "Department number",
+    "schema": "RFC 2798 2.2",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "4711",
+    "simple": true,
+    "claim": "department"
+   },
+   {
+    "name": "employeeNumber",
+    "label": "Employee number",
+    "schema": "RFC 2798 2.4",
+    "multi": false,
+    "note": "",
+    "group": "organization",
+    "example": "E-10042",
+    "simple": true,
+    "claim": "employee_number"
+   },
+   {
+    "name": "employeeType",
+    "label": "Employee type",
+    "schema": "RFC 2798 2.5",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "Employee",
+    "simple": true,
+    "claim": "employee_type"
+   },
+   {
+    "name": "roomNumber",
+    "label": "Room number",
+    "schema": "RFC 4524 2.22",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "3.14",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "manager",
+    "label": "Manager",
+    "schema": "RFC 4524 2.17",
+    "multi": true,
+    "note": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+    "group": "organization",
+    "example": "uid=bob,ou=users,dc=example,dc=com",
+    "simple": true,
+    "claim": ""
+   },
+   {
+    "name": "secretary",
+    "label": "Secretary",
+    "schema": "RFC 4524 2.23",
+    "multi": true,
+    "note": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+    "group": "organization",
+    "example": "uid=carol,ou=users,dc=example,dc=com",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "homePhone",
+    "label": "Home phone",
+    "schema": "RFC 4524 2.12",
+    "multi": true,
+    "note": "",
+    "group": "contact",
+    "example": "+1 555 0102",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "homePostalAddress",
+    "label": "Home address",
+    "schema": "RFC 4524 2.13",
+    "multi": true,
+    "note": "",
+    "group": "address",
+    "example": "9 Elm Road$Springfield",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "mobile",
+    "label": "Mobile number",
+    "schema": "RFC 4524 2.18",
+    "multi": true,
+    "note": "",
+    "group": "contact",
+    "example": "+1 555 0101",
+    "simple": true,
+    "claim": "msisdn"
+   },
+   {
+    "name": "pager",
+    "label": "Pager number",
+    "schema": "RFC 4524 2.20",
+    "multi": true,
+    "note": "",
+    "group": "contact",
+    "example": "+1 555 0103",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "carLicense",
+    "label": "Car licence",
+    "schema": "RFC 2798 2.1",
+    "multi": true,
+    "note": "",
+    "group": "organization",
+    "example": "ABC 123",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "preferredLanguage",
+    "label": "Preferred language",
+    "schema": "RFC 2798 2.7",
+    "multi": false,
+    "note": "a language range, such as en-GB or \"da, en-gb;q=0.8\"",
+    "group": "contact",
+    "example": "en-GB",
+    "simple": true,
+    "claim": "locale"
+   },
+   {
+    "name": "labeledURI",
+    "label": "Labelled URI",
+    "schema": "RFC 2079",
+    "multi": true,
+    "note": "an http or https URL, optionally followed by a space and a label",
+    "group": "contact",
+    "example": "https://example.com/~alice Alice's page",
+    "simple": false,
+    "claim": "website"
+   },
+   {
+    "name": "x500UniqueIdentifier",
+    "label": "X.500 unique identifier",
+    "schema": "RFC 4519 2.43",
+    "multi": true,
+    "note": "",
+    "group": "identity",
+    "example": "#'0101'B",
+    "simple": false,
+    "claim": ""
+   },
+   {
+    "name": "schacPersonalTitle",
+    "label": "Title (honorific)",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Dr",
+    "simple": false,
+    "claim": "title"
+   },
+   {
+    "name": "salutation",
+    "label": "Salutation",
+    "schema": "this service's own (no standard type)",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Dear Dr Smith",
+    "simple": false,
+    "claim": "salutation"
+   },
+   {
+    "name": "schacCountryOfCitizenship",
+    "label": "Nationalities",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "multi": true,
+    "note": "an ISO 3166-1 alpha-2 country code, such as SE",
+    "group": "identity",
+    "example": "US",
+    "simple": true,
+    "claim": "nationalities"
+   },
+   {
+    "name": "birthFamilyName",
+    "label": "Family name at birth",
+    "schema": "this service's own (no standard type)",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Jones",
+    "simple": false,
+    "claim": "birth_family_name"
+   },
+   {
+    "name": "birthGivenName",
+    "label": "Given name at birth",
+    "schema": "this service's own (no standard type)",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Alice",
+    "simple": false,
+    "claim": "birth_given_name"
+   },
+   {
+    "name": "birthMiddleName",
+    "label": "Middle name at birth",
+    "schema": "this service's own (no standard type)",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Jane",
+    "simple": false,
+    "claim": "birth_middle_name"
+   },
+   {
+    "name": "alsoKnownAs",
+    "label": "Also known as",
+    "schema": "this service's own (no standard type)",
+    "multi": true,
+    "note": "",
+    "group": "name",
+    "example": "Ally Smith",
+    "simple": false,
+    "claim": "also_known_as"
+   },
+   {
+    "name": "placeOfBirthCountry",
+    "label": "Country of birth",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "an ISO 3166-1 alpha-2 country code, such as SE",
+    "group": "identity",
+    "example": "US",
+    "simple": true,
+    "claim": "place_of_birth.country"
+   },
+   {
+    "name": "placeOfBirthRegion",
+    "label": "Region of birth",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "",
+    "group": "identity",
+    "example": "Illinois",
+    "simple": false,
+    "claim": "place_of_birth.region"
+   },
+   {
+    "name": "placeOfBirthLocality",
+    "label": "Locality of birth",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "",
+    "group": "identity",
+    "example": "Springfield",
+    "simple": false,
+    "claim": "place_of_birth.locality"
+   },
+   {
+    "name": "schacDateOfBirth",
+    "label": "Date of birth",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "multi": false,
+    "note": "a date, YYYYMMDD or YYYY-MM-DD",
+    "group": "identity",
+    "example": "19800131",
+    "simple": true,
+    "claim": "birthdate"
+   },
+   {
+    "name": "c",
+    "label": "Country",
+    "schema": "RFC 4519 2.2",
+    "multi": false,
+    "note": "an ISO 3166-1 alpha-2 country code, such as SE",
+    "group": "address",
+    "example": "US",
+    "simple": true,
+    "claim": "address.country"
+   },
+   {
+    "name": "middleName",
+    "label": "Middle name",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "",
+    "group": "name",
+    "example": "Jane",
+    "simple": false,
+    "claim": "middle_name"
+   },
+   {
+    "name": "schacGender",
+    "label": "Gender",
+    "schema": "SCHAC 1.5.0 (not RFC 4519)",
+    "multi": false,
+    "note": "",
+    "group": "name",
+    "example": "2",
+    "simple": false,
+    "claim": "gender"
+   },
+   {
+    "name": "timeZone",
+    "label": "Time zone",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "",
+    "group": "contact",
+    "example": "Europe/Stockholm",
+    "simple": false,
+    "claim": "zoneinfo"
+   },
+   {
+    "name": "pictureUrl",
+    "label": "Picture URL",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "an http or https URL, optionally followed by a space and a label",
+    "group": "contact",
+    "example": "https://example.com/~alice/photo.jpg",
+    "simple": false,
+    "claim": "picture"
+   },
+   {
+    "name": "profileUrl",
+    "label": "Profile page URL",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "an http or https URL, optionally followed by a space and a label",
+    "group": "contact",
+    "example": "https://example.com/~alice/",
+    "simple": false,
+    "claim": "profile"
+   },
+   {
+    "name": "employeeStatus",
+    "label": "Employee status",
+    "schema": "this service's own (no standard type)",
+    "multi": false,
+    "note": "",
+    "group": "organization",
+    "example": "active",
+    "simple": false,
+    "claim": "employee_status"
+   },
+   {
+    "name": "mail",
+    "label": "Email address",
+    "schema": "RFC 4524 2.16",
+    "multi": false,
+    "note": "",
+    "group": "contact",
+    "example": "alice@example.com",
+    "simple": true,
+    "claim": "email"
+   }
+  ],
+  "longTextAttributes": [
+   "oauthJwks",
+   "samlSpMetadata",
+   "samlEncryptionCertificate",
+   "samlSpMetadataSigningCertificate",
+   "oauthSamlAssertionSigningCertificate",
+   "gnapKey",
+   "gnapJweKey",
+   "oauthResourceMetadata",
+   "secretDestCaCertificates",
+   "scimClientTlsCertificate",
+   "scimClientCaCertificates"
+  ],
+  "defaultCredential": "generate",
+  "passwordSentences": {
+   "minLength": "at least {{n}} characters",
+   "history": "not your current password or any of the {{n}} before it"
   }
  }
 }

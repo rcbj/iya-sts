@@ -229,6 +229,10 @@ fn bump(map: &mut Json, key: &str) {
 pub struct Views {
     pub mode: Arc<sts_core::mode::Mode>,
     pub roster: Arc<super::RosterRoles>,
+    /// `adminActions.rolesAction()`, over the role register.
+    pub role_actions: Arc<sts_registers::role_actions::RoleActions>,
+    /// `adminActions.permissionsAction()`, over the application register.
+    pub app_permissions: Arc<sts_registers::app_permissions::AppPermissions>,
     pub apps: Arc<sts_registers::applications::ApplicationRegistry>,
     pub dir: Arc<LiveDir>,
     pub settings: Arc<Settings>,
@@ -268,6 +272,31 @@ impl Views {
             "grantGlobalConsent" => return Some(self.grant_global(asked)),
             "grantAdminRole" | "revokeAdminRole" => {
                 return Some(self.rbac_action(asked))
+            }
+            "getAdminRoles" => self.rbac_list_json(asked, setup),
+            "getNewUserForm" => self.new_user_json(asked),
+            "createRole"
+            | "deleteRole"
+            | "describeRole"
+            | "addRoleMember"
+            | "removeRoleMember"
+            | "addRolePermission"
+            | "removeRolePermission"
+            | "addRoleConferringClient"
+            | "removeRoleConferringClient"
+            | "addRoleOwner"
+            | "removeRoleOwner" => {
+                let o = self
+                    .role_actions
+                    .act(&self.with_action(asked), &actor_of(asked));
+                return Some(answered_of(o, codes::STS_API_0059));
+            }
+            "setPermissionBase" | "definePermission" | "removePermission"
+            | "grantPermission" | "revokePermission" => {
+                let o = self
+                    .app_permissions
+                    .act(&self.with_action(asked), &actor_of(asked));
+                return Some(answered_of(o, codes::STS_API_0058));
             }
             _ => return None,
         };
@@ -540,6 +569,524 @@ impl Views {
             },
             body: outcome.answer,
         }
+    }
+
+    /// `withAction(req, body)`: the body with the path's action forced
+    /// over whatever it carried.
+    fn with_action(&self, asked: &Asked<'_>) -> Json {
+        let mut body = asked.body.as_object().cloned().unwrap_or_default();
+        body.insert("action".into(), json!(asked.action));
+        Json::Object(body)
+    }
+
+    /// `apiGateStateOf(caller)`: who is asking, in `gateStateFor()`'s
+    /// shape, from the `/admin-api` token's caller.
+    fn api_gate_state_of(&self, asked: &Asked<'_>) -> Json {
+        let Some(caller) = asked.caller else {
+            return json!({ "username": "", "roles": [], "read": false,
+                           "write": false, "open": false });
+        };
+        let identity_realm = if caller.realm.is_empty() {
+            realm::DEFAULT_ID.to_string()
+        } else {
+            caller.realm.clone()
+        };
+        let outside = identity_realm != realm::DEFAULT_ID
+            && realm::current_id() != identity_realm;
+        let roles: Vec<String> = caller
+            .roles
+            .iter()
+            .map(|r| match r.as_str() {
+                "ADMIN_READ" => "read".to_string(),
+                "ADMIN_WRITE" => "write".to_string(),
+                "SECURITY_ADMIN" => "security".to_string(),
+                other => other.to_lowercase(),
+            })
+            .collect();
+        let has = |id: &str| !outside && roles.iter().any(|r| r == id);
+        json!({
+            "username": caller.name,
+            "roles": if outside { Vec::new() } else { roles.clone() },
+            "read": has("read") || has("write") || has("security"),
+            "write": has("write"),
+            "open": false,
+        })
+    }
+
+    /// `GET /admin-api/rbac` (`adminViews.rbacListJson(req)`, and
+    /// `windowedRbacList()` where the directory is a window over the
+    /// store): the realm's roster as `rbac.describe()` gives it, one row
+    /// per grant, filtered by `q` and `role` and paged, and the people a
+    /// role could be granted to, searched by `personq` and paged by
+    /// `candidatesPage` (or the pane's `personfrom`).
+    ///
+    /// Held in memory the candidates are the directory's people and who
+    /// has signed in (`rbac.candidates()`); windowed they are the direct
+    /// children of `ou=users` in RDN order, a page at a time, the
+    /// username the lower-cased RDN (`candidatePageAsync()`).
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn rbac_list_json(
+        &self,
+        asked: &Asked<'_>,
+        setup: &sts_mgmt_api::setup::Setup<'_>,
+    ) -> Json {
+        let realm_id = realm::current_id();
+        let rbac = self.roster.rbac(&realm_id);
+        let info = rbac.describe();
+        let state = self.api_gate_state_of(asked);
+        let lower = |v: &Json| v.as_str().unwrap_or("").to_lowercase();
+        let mut grants: Vec<Json> = Vec::new();
+        for role in info["roles"].as_array().cloned().unwrap_or_default() {
+            for m in role["members"].as_array().cloned().unwrap_or_default() {
+                grants.push(json!({
+                    "username": m["username"], "role": role["role"],
+                    "roleLabel": role["label"], "cn": role["cn"],
+                    "dn": role["dn"], "value": m["value"],
+                    "attribute": m["attribute"], "holds": m["holds"],
+                    "memberDn": m["dn"], "present": m["present"],
+                    "kind": m["kind"], "userKey": m["userKey"],
+                }));
+            }
+        }
+        grants.sort_by(|a, b| {
+            let (an, bn) = (lower(&a["username"]), lower(&b["username"]));
+            if an != bn {
+                return an.cmp(&bn);
+            }
+            // `a.role < b.role ? -1 : 1`: never equal.
+            if a["role"].as_str() < b["role"].as_str() {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+        let wanted_text = text_of(asked.query, "q").trim().to_string();
+        let needle = wanted_text.to_lowercase();
+        let wanted_role = text_of(asked.query, "role").trim().to_lowercase();
+        let filtered: Vec<Json> = grants
+            .iter()
+            .filter(|row| {
+                if !wanted_role.is_empty()
+                    && row["role"].as_str() != Some(wanted_role.as_str())
+                {
+                    return false;
+                }
+                needle.is_empty()
+                    || lower(&row["username"]).contains(&needle)
+                    || lower(&row["value"]).contains(&needle)
+            })
+            .cloned()
+            .collect();
+        let paging = Paging::of(
+            asked.query,
+            filtered.len(),
+            Options {
+                noun: "grants",
+                ..Options::default()
+            },
+        );
+        let shown = paging.slice(&filtered);
+        let known: std::collections::BTreeSet<String> =
+            self.register.user_keys();
+        let folded: std::collections::BTreeSet<String> =
+            known.iter().map(|k| k.to_lowercase()).collect();
+        let seen = |name: &str| -> bool {
+            !name.is_empty() && folded.contains(&name.to_lowercase())
+        };
+        let person_wanted = text_of(asked.query, "personq").trim().to_string();
+        let person_asked = text_of(asked.query, "person").trim().to_string();
+        let candidate_options = Options {
+            name: "candidates",
+            noun: "people",
+            default_per: Some(CHOOSER_HITS),
+            ..Options::default()
+        };
+        // Every candidate this process can list, as `{username,
+        // inDirectory, seen}`, and how many the walk counted.
+        let windowed = self.windowed();
+        let usable = |name: &str| {
+            !name.is_empty() && !name.chars().any(|c| ",=+<>#;\"\\".contains(c))
+        };
+        let (all, total) = self.dir.with(|t| {
+            let Some(r) = t.realms().iter().position(|x| x.id == realm_id)
+            else {
+                return (Vec::new(), 0usize);
+            };
+            let users =
+                sts_ldap::service_dn::normalize_dn(Some(&t.users_dn(r)));
+            let mut rdns: Vec<String> = Vec::new();
+            for e in t.realms()[r].entries.values() {
+                let dn = &e.dn;
+                let parent = dn.split_once(',').map(|x| x.1).unwrap_or("");
+                let direct =
+                    sts_ldap::service_dn::normalize_dn(Some(parent)) == users;
+                if windowed && !direct {
+                    continue;
+                }
+                if !windowed && !t.is_person_dn(r, dn) {
+                    continue;
+                }
+                let first = dn.split(',').next().unwrap_or("");
+                let value = first.split_once('=').map(|x| x.1).unwrap_or("");
+                rdns.push(value.to_string());
+            }
+            let total = rdns.len();
+            (rdns, total)
+        });
+        let mut rows: Vec<Json> = Vec::new();
+        if windowed {
+            let mut names: Vec<String> =
+                all.iter().map(|v| v.to_lowercase()).collect();
+            names.sort_by(|a, b| store_order(a, b));
+            for name in names {
+                if !usable(&name) {
+                    continue;
+                }
+                rows.push(json!({ "username": name, "inDirectory": true,
+                                  "seen": seen(&name) }));
+            }
+        } else {
+            // `rbac.candidates(seen)`: by lower-cased name, the
+            // directory's first, then who has signed in.
+            let mut by: Vec<(String, Json)> = Vec::new();
+            let mut add = |name: &str, source: &str| {
+                let value = name.trim();
+                if value.is_empty() {
+                    return;
+                }
+                let key = value.to_lowercase();
+                let at = match by.iter().position(|(k, _)| *k == key) {
+                    Some(i) => i,
+                    None => {
+                        by.push((
+                            key,
+                            json!({ "username": value,
+                            "inDirectory": false, "seen": false }),
+                        ));
+                        by.len() - 1
+                    }
+                };
+                by[at].1[source] = json!(true);
+            };
+            for name in &all {
+                add(name, "inDirectory");
+            }
+            for key in &known {
+                add(key, "seen");
+            }
+            let mut list: Vec<Json> = by
+                .into_iter()
+                .map(|(_, v)| v)
+                .filter(|v| usable(v["username"].as_str().unwrap_or("")))
+                .collect();
+            list.sort_by(|a, b| {
+                sts_registers::js::locale_compare(
+                    a["username"].as_str().unwrap_or(""),
+                    b["username"].as_str().unwrap_or(""),
+                )
+            });
+            rows = list;
+        }
+        let pw = person_wanted.to_lowercase();
+        let matched: Vec<Json> = rows
+            .iter()
+            .filter(|row| {
+                pw.is_empty()
+                    || row["username"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&pw)
+            })
+            .cloned()
+            .collect();
+        let mut candidate_paging =
+            Paging::of(asked.query, matched.len(), candidate_options);
+        let offset_asked: Option<i64> =
+            text_of(asked.query, "personfrom").trim().parse().ok();
+        if text_of(asked.query, "candidatesPage").is_empty() {
+            if let Some(off) =
+                offset_asked.filter(|o| *o > 0 && (*o as usize) < matched.len())
+            {
+                let mut as_page = asked.query.clone();
+                as_page.insert(
+                    "candidatesPage".into(),
+                    json!(((off / candidate_paging.per_page) + 1).to_string()),
+                );
+                candidate_paging =
+                    Paging::of(&as_page, matched.len(), candidate_options);
+            }
+        }
+        let pane_from = offset_asked
+            .filter(|o| *o >= 0 && (*o as usize) < matched.len())
+            .unwrap_or(0) as usize;
+        let page_rows = candidate_paging.slice(&matched);
+        let pane_rows: Vec<Json> = matched
+            .iter()
+            .skip(pane_from)
+            .take(CHOOSER_HITS as usize)
+            .cloned()
+            .collect();
+        let picked = if person_asked.is_empty() {
+            Json::Null
+        } else {
+            let wanted = person_asked.to_lowercase();
+            let hit = rows
+                .iter()
+                .find(|row| {
+                    row["username"].as_str().unwrap_or("").to_lowercase()
+                        == wanted
+                })
+                .cloned();
+            let hit = hit.or_else(|| {
+                (windowed && seen(&person_asked)).then(|| {
+                    let key = known
+                        .iter()
+                        .find(|k| k.to_lowercase() == wanted)
+                        .cloned()
+                        .unwrap_or_default();
+                    json!({ "username": key, "inDirectory": false,
+                            "seen": true })
+                })
+            });
+            json!({ "asked": person_asked,
+                    "candidate": hit.unwrap_or(Json::Null) })
+        };
+        let mut known_here = Map::new();
+        for row in &shown {
+            if let Some(k) = row["userKey"].as_str().filter(|k| !k.is_empty()) {
+                if known.contains(k) {
+                    known_here.insert(k.to_string(), json!(true));
+                }
+            }
+        }
+        let roles: Vec<Json> = info["roles"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|mut role| {
+                if let Some(o) = role.as_object_mut() {
+                    o.remove("members");
+                    o.remove("claimed");
+                }
+                role
+            })
+            .collect();
+        let choices: Vec<Json> = sts_registers::roles::ROSTER_ROLES
+            .iter()
+            .map(|r| {
+                json!({ "id": r.id, "label": r.label, "setting": r.setting,
+                        "implies": r.implies, "what": r.what })
+            })
+            .collect();
+        let or_null = |s: &str| {
+            if s.is_empty() {
+                Json::Null
+            } else {
+                json!(s)
+            }
+        };
+        json!({
+            "enforced": info["enforced"],
+            "openWhenEmpty": info["openWhenEmpty"],
+            "openToAnyone": info["openToAnyone"],
+            "closedToEveryone": info["closedToEveryone"],
+            "windowOpens": info["windowOpens"],
+            "bootstrapPasswordRequired": info["bootstrapPasswordRequired"],
+            "bootstrap": info["bootstrap"],
+            "available": info["available"], "groupsDn": info["groupsDn"],
+            "usersDn": info["usersDn"], "grantCount": info["grantCount"],
+            "matched": filtered.len(), "shown": shown.len(),
+            "settings": setup.page_settings("/admin/rbac"),
+            "filter": { "q": or_null(&wanted_text),
+                        "role": or_null(&wanted_role) },
+            "page": paging.page, "pages": paging.pages,
+            "perPage": paging.per_page, "firstRow": paging.first_row,
+            "lastRow": paging.last_row,
+            "you": { "username": state["username"], "roles": state["roles"],
+                     "read": state["read"], "write": state["write"],
+                     "viaEmptyRoster": state["open"] },
+            "roles": roles,
+            "grants": shown,
+            "candidates": page_rows,
+            "candidatesPaging": candidate_paging.to_json(),
+            "candidateSearch": {
+                "q": or_null(&person_wanted),
+                "total": if windowed { total } else { rows.len() },
+                "matched": matched.len(), "countCapped": false,
+                "countCap": WINDOWED_PAGE_CAP, "complete": true,
+                "incomplete": Json::Null,
+            },
+            "picked": picked,
+            "paging": paging.to_json(),
+            "candidatePane": { "from": pane_from, "matched": matched.len(),
+                               "countCapped": false, "shown": pane_rows },
+            "known": known_here,
+            "roleChoices": choices,
+        })
+    }
+
+    /// `GET /admin-api/users/new` (`adminViews.newUserJson(req)`): the
+    /// form a person is created from — the credential catalogue a create's
+    /// `attributes` are checked against, the field grid, what the realm's
+    /// attribute policy requires and whether it is enforced (product), the
+    /// credential choices, the rows the form draws (`newUserFieldRows()`)
+    /// and the password rules a typed or generated password meets.
+    ///
+    /// The constant members are Node's own, exported for a realm with no
+    /// custom attribute (`tables/admin_api.json`'s `newUserForm`); what the
+    /// realm's policy requires is this process's. The password rules are
+    /// the default profile's (`passwordPolicy.describe()`): no group names
+    /// a password policy in this runtime, whose policy registers are not
+    /// wired yet.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn new_user_json(&self, asked: &Asked<'_>) -> Json {
+        let form = &sts_mgmt_api::tables::tables().new_user_form;
+        let realm_now = realm::current();
+        let realm_id = realm::current_id();
+        let username = text_of(asked.query, "user").trim().to_string();
+        let container = self.dir.with(|t| {
+            t.realms()
+                .iter()
+                .position(|x| x.id == realm_id)
+                .map(|r| t.users_dn(r))
+        });
+        let credentials = |with_what: bool| -> Json {
+            Json::Array(
+                form["credentials"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|mut c| {
+                        if !with_what {
+                            if let Some(o) = c.as_object_mut() {
+                                o.remove("what");
+                            }
+                        }
+                        c
+                    })
+                    .collect(),
+            )
+        };
+        let realm_json =
+            json!({ "id": realm_id, "name": realm_now.name.as_str() });
+        let Some(container) = container else {
+            return json!({ "directory": false, "container": Json::Null,
+                           "realm": realm_json, "fields": [],
+                           "credentials": credentials(false) });
+        };
+        let required = sts_directory::ports::default_required_attributes();
+        let required_lower: Vec<String> =
+            required.iter().map(|r| r.to_lowercase()).collect();
+        let field_rows: Vec<Json> = form["rows"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| {
+                let s = |k: &str| row[k].as_str().unwrap_or("").to_string();
+                let name = s("name");
+                let multi = row["multi"].as_bool().unwrap_or(false);
+                let claim = s("claim");
+                let is_required = required_lower.contains(&name.to_lowercase());
+                let mut what = format!("{} — {}.", s("label"), s("schema"));
+                if !s("note").is_empty() {
+                    what.push_str(&format!(" It takes {}.", s("note")));
+                }
+                if !multi {
+                    what.push_str(" It holds one value.");
+                }
+                if !claim.is_empty() {
+                    what.push_str(&format!(
+                        " It reaches a credential as {claim}."
+                    ));
+                }
+                json!({
+                    "attribute": name,
+                    "type": if multi { "array" } else { "string" },
+                    "what": what, "example": row["example"],
+                    "forText": row["label"], "families": [],
+                    "everyFamily": true, "group": row["group"],
+                    "simple": row["simple"].as_bool().unwrap_or(false)
+                        || is_required,
+                    "required": is_required,
+                })
+            })
+            .collect();
+        let transport = self.settings.value_of("mail.transport");
+        let captures = self.mode.predicate("capturesMail").unwrap_or(false);
+        let transport = match transport.as_str() {
+            "" | "default" => {
+                if captures {
+                    "capture"
+                } else {
+                    "off"
+                }
+            }
+            other => other,
+        }
+        .to_string();
+        let mail_available =
+            transport != "off" && !(transport == "capture" && !captures);
+        let status = self.register.persistence.status();
+        // `passwordPolicy.describe(profile)`: the default profile's two
+        // sentences, filled (`serverProse.fill()`).
+        let sentences = &form["passwordSentences"];
+        let profile = sts_policy::kinds::password::PasswordPolicy::defaults();
+        let number = |k: &str| {
+            profile
+                .get(k)
+                .and_then(Json::as_f64)
+                .map(|n| n.to_string())
+                .unwrap_or_default()
+        };
+        let fill = |k: &str, n: &str| {
+            sentences[k].as_str().unwrap_or("").replace("{{n}}", n)
+        };
+        let mut rules = vec![fill("minLength", &number("minLength"))];
+        if profile.get("history").and_then(Json::as_f64).unwrap_or(0.0) > 0.0 {
+            rules.push(fill("history", &number("history")));
+        }
+        let credential = text_of(asked.query, "credential");
+        let default_credential =
+            form["defaultCredential"].as_str().unwrap_or("generate");
+        json!({
+            "directory": true,
+            "container": container,
+            "realm": realm_json,
+            "mode": self.mode.current(),
+            "offersExampleData": self.mode.current() == "development",
+            "fields": form["fields"],
+            "fieldGroups": form["fieldGroups"],
+            "gridFields": form["gridFields"],
+            "requiredAttributes": required,
+            "requiredEnforced":
+                !self.mode.predicate("createsIncompletePeople").unwrap_or(false),
+            "credentials": credentials(true),
+            "username": username,
+            "fieldRows": field_rows,
+            "longTextAttributes": form["longTextAttributes"],
+            "mailAvailable": mail_available,
+            "persistence": {
+                "persistsDirectory":
+                    status["persistsDirectory"].as_bool().unwrap_or(false),
+                "mode": status["mode"],
+            },
+            "defaultCredential": default_credential,
+            "credential": if credential.is_empty() {
+                default_credential.to_string()
+            } else {
+                credential
+            },
+            "passwordPolicy": {
+                "enforced":
+                    self.mode.predicate("verifiesCredentials").unwrap_or(false),
+                "profile": "default",
+                "rules": rules,
+            },
+        })
     }
 
     /// `tokenStateOf(record, now)`.
@@ -816,6 +1363,36 @@ impl Views {
         }))
     }
 }
+
+/// The act's caller, for the audit row (`callerNameOf(res)`).
+fn actor_of(asked: &Asked<'_>) -> String {
+    asked.caller.map(|c| c.name.clone()).unwrap_or_default()
+}
+
+/// An act's answer: 200 for `ok`, 400 otherwise, marked with the act's
+/// code or the door's.
+fn answered_of(
+    o: sts_registers::outcome::Outcome,
+    fallback: ErrorCode,
+) -> Answered {
+    let ok = o.answer.get("ok") == Some(&Json::Bool(true));
+    Answered {
+        status: if ok { 200 } else { 400 },
+        code: if ok {
+            None
+        } else {
+            Some(o.code.unwrap_or(fallback))
+        },
+        body: o.answer,
+    }
+}
+
+/// `CHOOSER_HITS`: how many results a chooser pane shows at a time.
+const CHOOSER_HITS: i64 = 20;
+
+/// `WINDOWED_PAGE_CAP`, `CANDIDATE_COUNT_CAP`: the furthest the pager
+/// reaches.
+const WINDOWED_PAGE_CAP: i64 = 100_000;
 
 /// `DIRECTORY_SEARCH_SCAN`: how far a windowed search looks.
 const DIRECTORY_SEARCH_SCAN: usize = 5000;

@@ -117,6 +117,12 @@ pub struct Tables {
     /// (#444, phase 5, the `apis2` slice).
     #[serde(default)]
     pub family_views: Json,
+    /// `GET /admin-api/users/new`'s constant members, in a realm with no
+    /// custom attribute: the credential catalogue, the field grid, the
+    /// credential choices and the form's rows before the attribute policy
+    /// marks what it requires (#444, phase 5, the `apis5` slice).
+    #[serde(default)]
+    pub new_user_form: Json,
 }
 
 /// What the frames write for the base URL and the version.
@@ -155,6 +161,7 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
             service_setting_prefixes: Vec::new(),
             inet_org_person_classes: Json::Array(Vec::new()),
             family_views: Json::Object(Default::default()),
+            new_user_form: Json::Object(Default::default()),
         }
     })
 });

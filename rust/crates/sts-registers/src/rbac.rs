@@ -693,6 +693,206 @@ impl Rbac {
         Value::Object(out)
     }
 
+    /// `usernameOfMember(member)`: the local name a membership value is
+    /// shown and revoked by — the value itself for a `memberUid`, else the
+    /// RDN value of what it resolved to, RFC 4514's escaping undone.
+    fn username_of_member(member: &Value) -> String {
+        if member.get("holds") == Some(&json!("uid")) {
+            return js::or_empty(member.get("value"));
+        }
+        let dn = js::or_empty(member.get("dn"));
+        let rdn = dn.split(',').next().unwrap_or("");
+        let value = match rdn.find('=') {
+            Some(eq) if eq > 0 => &rdn[eq + 1..],
+            _ => "",
+        };
+        // `/\\([,+"\\<>;=#]|20|22|23|2B|2C|3B|3C|3D|3E|5C)/g`: a hex pair
+        // matches in upper case only, as the regex spells it.
+        const HEX: [&str; 10] =
+            ["20", "22", "23", "2B", "2C", "3B", "3C", "3D", "3E", "5C"];
+        let mut out = String::new();
+        let mut rest = value;
+        while let Some(at) = rest.find('\\') {
+            out.push_str(&rest[..at]);
+            let after = &rest[at + 1..];
+            let pair = after.get(..2).unwrap_or("");
+            if HEX.contains(&pair) {
+                let code = u32::from_str_radix(pair, 16).unwrap_or(0);
+                out.push(char::from_u32(code).unwrap_or('\u{fffd}'));
+                rest = &after[2..];
+            } else if let Some(c) =
+                after.chars().next().filter(|c| ",+\"\\<>;=#".contains(*c))
+            {
+                out.push(c);
+                rest = &after[c.len_utf8()..];
+            } else {
+                out.push('\\');
+                rest = after;
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// `rosterFor(roleId)`: one role's group, every member value with
+    /// what it resolved to, and the people who claim it through their own
+    /// `memberOf` merged in and marked `claimed` (`addClaimedMembers()`).
+    /// Every member of the shape is present on every branch.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn roster_for(&self, id: &str) -> Value {
+        let Some(role) = Rbac::role_for(id) else {
+            return Value::Null;
+        };
+        let mut out = json!({
+            "role": role.id, "label": role.label, "what": role.what,
+            "implies": role.implies, "cn": self.cn_for(role), "dn": "",
+            "exists": false, "members": [], "memberCount": 0,
+            "presentCount": 0, "danglingCount": 0, "claimed": [],
+            "claimedCount": 0,
+        });
+        let Some(d) = self.directory.as_deref() else {
+            return out;
+        };
+        let dn = self.dn_for(d, role);
+        out["dn"] = json!(dn);
+        let entry = d.read_group_entry(&dn);
+        if !js::truthy(&entry) {
+            return out;
+        }
+        out["exists"] = json!(true);
+        out["origin"] = entry.get("origin").cloned().unwrap_or(Value::Null);
+        out["modifiedAt"] =
+            entry.get("modifiedAt").cloned().unwrap_or(Value::Null);
+        let mut members: Vec<Value> = Rbac::members(&entry)
+            .iter()
+            .map(|m| {
+                let at = |k: &str| m.get(k).cloned().unwrap_or(Value::Null);
+                json!({
+                    "value": at("value"), "attribute": at("attribute"),
+                    "holds": at("holds"), "dn": at("dn"),
+                    "present": at("present"), "kind": at("kind"),
+                    "userKey": at("userKey"),
+                    "username": Rbac::username_of_member(m),
+                })
+            })
+            .collect();
+        let claimed = d.claimed_members_of(&dn);
+        out["claimed"] = Value::Array(
+            claimed
+                .iter()
+                .map(|row| {
+                    let at =
+                        |k: &str| row.get(k).cloned().unwrap_or(Value::Null);
+                    json!({ "dn": at("dn"), "userKey": at("userKey"),
+                            "cn": at("cn"), "mail": at("mail") })
+                })
+                .collect(),
+        );
+        out["claimedCount"] = json!(claimed.len());
+        for row in &claimed {
+            let dn = row.get("dn").cloned().unwrap_or(Value::Null);
+            let username = Rbac::username_of_member(
+                &json!({ "holds": "dn", "dn": dn, "value": dn }),
+            );
+            members.push(json!({
+                "value": dn, "attribute": "memberOf (on their own entry)",
+                "holds": "dn", "dn": dn, "present": true, "kind": "claimed",
+                "userKey": row.get("userKey").cloned().unwrap_or(Value::Null),
+                "username": username,
+            }));
+        }
+        let present = members
+            .iter()
+            .filter(|m| m.get("present").is_some_and(js::truthy))
+            .count();
+        out["memberCount"] = json!(members.len());
+        out["presentCount"] = json!(present);
+        out["danglingCount"] = json!(members.len() - present);
+        out["members"] = Value::Array(members);
+        out
+    }
+
+    /// `roster()`: every console role's `rosterFor()`, in `ROLE_IDS`'
+    /// order.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn roster(&self) -> Vec<Value> {
+        ROSTER_ROLES.iter().map(|r| self.roster_for(r.id)).collect()
+    }
+
+    /// `bootstrapState()`: the configured name, whether it was seeded,
+    /// when it claimed the console, and its DN, from its own entry.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn bootstrap_state(&self) -> Value {
+        let name = self.bootstrap.current();
+        let mut out = json!({ "username": name, "seeded": false,
+                              "claimedAt": "", "dn": "" });
+        let Some(d) = self.directory.as_deref() else {
+            return out;
+        };
+        if name.is_empty() {
+            return out;
+        }
+        let flags = d.read_person_flags(&name);
+        if js::truthy(&flags) {
+            out["seeded"] = json!(flags
+                .get("bootstrapAdministrator")
+                .is_some_and(js::truthy));
+            out["claimedAt"] =
+                json!(js::or_empty(flags.get("consoleClaimedAt")));
+            out["dn"] = flags.get("dn").cloned().unwrap_or(Value::Null);
+        }
+        out
+    }
+
+    /// `describe()`: the whole feature as one object, for `GET
+    /// /admin-api/rbac` — whether the roles are enforced, the roster, the
+    /// grant count, the bootstrap state, and whether the console is open
+    /// to anyone (only where the mode opens the window, #103).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn describe(&self) -> Value {
+        let rows = self.roster();
+        let realm = self.bound_realm();
+        let grant_count: i64 = rows
+            .iter()
+            .map(|r| r.get("memberCount").and_then(Value::as_i64).unwrap_or(0))
+            .sum();
+        let (groups_dn, users_dn) = match self.directory.as_deref() {
+            Some(d) => (d.groups_dn(), d.users_dn()),
+            None => (String::new(), String::new()),
+        };
+        // `mode.gatesConsole()`: cannot be turned off in either mode.
+        let enforced = true;
+        let open_when_empty =
+            js::truthy(&self.settings.value("admin.openWhenEmpty"));
+        let empty = grant_count == 0;
+        let bootstrap = self.bootstrap_state();
+        let seeded = bootstrap.get("seeded").is_some_and(js::truthy);
+        let claimed = !js::or_empty(bootstrap.get("claimedAt")).is_empty();
+        let unclaimed = if seeded { !claimed } else { empty };
+        let window_opens = self.mode.opens_console_to_anyone(&realm);
+        let open_to_anyone =
+            enforced && unclaimed && open_when_empty && window_opens;
+        let authority = if realm == sts_core::realm::DEFAULT_ID {
+            "service"
+        } else {
+            "realm"
+        };
+        json!({
+            "enforced": enforced, "openWhenEmpty": open_when_empty,
+            "available": self.directory.is_some(),
+            "groupsDn": groups_dn, "usersDn": users_dn,
+            "realm": realm, "authority": authority,
+            "roles": rows, "grantCount": grant_count, "empty": empty,
+            "bootstrap": { "username": bootstrap["username"],
+                           "seeded": seeded,
+                           "claimedAt": bootstrap["claimedAt"] },
+            "windowOpens": window_opens, "openToAnyone": open_to_anyone,
+            "closedToEveryone": enforced && empty && !open_to_anyone,
+            "bootstrapPasswordRequired":
+                enforced && !window_opens && seeded && !claimed,
+        })
+    }
+
     /// `rbacAction(body, context)`: `grant` and `revoke`; a code the roster
     /// put on its refusal wins over this door's `STS-ADMIN-0539`.
     #[tracing::instrument(level = "debug", skip(self, body))]

@@ -156,6 +156,16 @@ function runKerberos(t) {
         t.check(ok, what);
       });
   }
+  // The invented person and the typed-attribute check (sts-registers,
+  // #444 phase 5, the `apis5` slice): synchronous.
+  if (fs.existsSync(path.join(VECTORS, 'people-rust.json'))) {
+    require('./tools/people-vectors.js').checkRust(path.join(__dirname, '..'),
+      read('people-rust.json'),
+      function (/** @type {boolean} */ ok, /** @type {string} */ what,
+                /** @type {string} */ detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The management API (sts-mgmt-api, #444 phase 4): synchronous, and it
   // needs no other Rust vector. In a child process of its own, which loads
   // the protocol stack this process may have loaded already.

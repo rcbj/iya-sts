@@ -82,7 +82,6 @@ macro_rules! not_yet_ported {
         | Operation::GetUserSelfIssuedSubjects
         | Operation::GetUserPublishedDids
         | Operation::GetUserVerifications
-        | Operation::GetNewUserForm
         | Operation::IssueActivationLink
         | Operation::SetUserPassword
         | Operation::ClearUserAuthenticatorApp
@@ -90,7 +89,6 @@ macro_rules! not_yet_ported {
         | Operation::ClearUserEmailFactor
         | Operation::SetUserAudSub
         | Operation::SetUserMail
-        | Operation::SetUserPseudonyms
         | Operation::SetUserAttribute
         | Operation::AddUserAttributeValue
         | Operation::RemoveUserAttributeValue
@@ -154,7 +152,6 @@ macro_rules! not_yet_ported {
         | Operation::GetDirectoryPolicies
         | Operation::GetDirectoryPeps
         | Operation::GetDirectoryDevices
-        | Operation::GetAdminRoles
         | Operation::GetMultiFactor
         | Operation::ClearAuthenticatorApp
         | Operation::ClearSecurityKey
@@ -450,24 +447,8 @@ macro_rules! not_yet_ported {
         | Operation::GetDelegationPolicy
         | Operation::GetPermissions
         | Operation::GetPermissionGroups
-        | Operation::SetPermissionBase
-        | Operation::DefinePermission
-        | Operation::RemovePermission
-        | Operation::GrantPermission
-        | Operation::RevokePermission
         | Operation::GetRoles
         | Operation::PreviewRoleIssuance
-        | Operation::CreateRole
-        | Operation::DeleteRole
-        | Operation::DescribeRole
-        | Operation::AddRoleMember
-        | Operation::RemoveRoleMember
-        | Operation::AddRolePermission
-        | Operation::RemoveRolePermission
-        | Operation::AddRoleConferringClient
-        | Operation::RemoveRoleConferringClient
-        | Operation::AddRoleOwner
-        | Operation::RemoveRoleOwner
         | Operation::GetOwnership
         | Operation::SetOwnerProtected
         | Operation::GetPolicies

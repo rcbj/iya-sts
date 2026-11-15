@@ -97,11 +97,30 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         Operation::GetConsoleAnnouncements => Some(Handler::Announcements),
         Operation::CreateUser
         | Operation::DisableUserAccount
-        | Operation::EnableUserAccount => Some(Handler::UsersAction),
+        | Operation::EnableUserAccount
+        | Operation::SetUserPseudonyms => Some(Handler::UsersAction),
         Operation::GetGroups
         | Operation::GetUsers
         | Operation::GrantGlobalConsent
         | Operation::GrantAdminRole
+        | Operation::GetAdminRoles
+        | Operation::GetNewUserForm
+        | Operation::RevokePermission
+        | Operation::GrantPermission
+        | Operation::RemovePermission
+        | Operation::DefinePermission
+        | Operation::SetPermissionBase
+        | Operation::RemoveRoleOwner
+        | Operation::AddRoleOwner
+        | Operation::RemoveRoleConferringClient
+        | Operation::AddRoleConferringClient
+        | Operation::RemoveRolePermission
+        | Operation::AddRolePermission
+        | Operation::RemoveRoleMember
+        | Operation::AddRoleMember
+        | Operation::DescribeRole
+        | Operation::DeleteRole
+        | Operation::CreateRole
         | Operation::RevokeAdminRole
         | Operation::GetDirectoryEntries
         | Operation::GetDirectoryService => Some(Handler::View),

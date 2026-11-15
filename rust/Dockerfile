@@ -57,7 +57,9 @@ RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip
 # /usr/src/sts (sts-http's `WebRoot`, `STS_WEB_ROOT`): every file the build
 # packed — each surface's runtime and the map data, found by the `.br`
 # beside it — with its `.br` and `.gz`, the catalogs the browser
-# translates from (/web/locales), the favicon, and version.json, stamped
+# translates from (/web/locales), the server prose `/admin-api` translates
+# by `Accept-Language` (#543, common/prose_locales), the favicon, and
+# version.json, stamped
 # here as the Node image stamps it (`common/version.js --stamp`).
 ARG GIT_COMMIT=
 ARG STS_RELEASE=
@@ -80,7 +82,8 @@ RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
       test -s "/out/$f" || { test -s "$f" && cp "$f" "/out/$f"; } \
         || { echo "rust/Dockerfile: no $f" >&2; exit 1; }; \
     done \
- && cp -r common/locales /out/common/locales
+ && cp -r common/locales /out/common/locales \
+ && cp -r common/prose_locales /out/common/prose_locales
 
 FROM rust:1.97-bookworm AS build
 WORKDIR /usr/src/rust

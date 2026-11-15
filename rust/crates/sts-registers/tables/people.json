@@ -1,0 +1,1070 @@
+{
+ "persona": {
+  "givenNames": [
+   "Ada",
+   "Kwame",
+   "Ingrid",
+   "Hiroshi",
+   "Rosa",
+   "Tariq",
+   "Mei",
+   "Olof",
+   "Priya",
+   "Diego",
+   "Yusuf",
+   "Freya",
+   "Nadia",
+   "Emeka",
+   "Sofia",
+   "Jonas"
+  ],
+  "familyNames": [
+   "Lovelace",
+   "Osei",
+   "Lindqvist",
+   "Tanaka",
+   "Marquez",
+   "Haddad",
+   "Chen",
+   "Nilsen",
+   "Raman",
+   "Duarte",
+   "Demir",
+   "Halvorsen",
+   "Farouk",
+   "Okonkwo",
+   "Ferrari",
+   "Weber"
+  ],
+  "streets": [
+   "Fictitious Way",
+   "Placeholder Street",
+   "Example Avenue",
+   "Sample Road",
+   "Mock Lane",
+   "Nowhere Terrace",
+   "Specimen Close",
+   "Dummy Boulevard"
+  ],
+  "places": [
+   {
+    "locality": "Springfield",
+    "region": "IL",
+    "country": "US",
+    "postal": "#####"
+   },
+   {
+    "locality": "Fairview",
+    "region": "OR",
+    "country": "US",
+    "postal": "#####"
+   },
+   {
+    "locality": "Riverton",
+    "region": "NJ",
+    "country": "US",
+    "postal": "#####"
+   },
+   {
+    "locality": "Kingsford",
+    "region": "ON",
+    "country": "CA",
+    "postal": "@#@ #@#"
+   },
+   {
+    "locality": "Eastgate",
+    "region": "Greater Manchester",
+    "country": "GB",
+    "postal": "@@# #@@"
+   },
+   {
+    "locality": "Nordhavn",
+    "region": "Hovedstaden",
+    "country": "DK",
+    "postal": "####"
+   },
+   {
+    "locality": "Sudbury",
+    "region": "Victoria",
+    "country": "AU",
+    "postal": "####"
+   },
+   {
+    "locality": "Westerveld",
+    "region": "Utrecht",
+    "country": "NL",
+    "postal": "#### @@"
+   }
+  ],
+  "titles": [
+   "Principal Engineer",
+   "Support Analyst",
+   "Directory Administrator",
+   "Field Technician",
+   "Product Manager",
+   "Security Architect",
+   "Staff Researcher",
+   "Service Desk Lead"
+  ],
+  "honorifics": [
+   "Dr",
+   "Prof",
+   "Dr",
+   "Prof Dr"
+  ],
+  "salutations": [
+   "Mx",
+   "Ms",
+   "Mr"
+  ],
+  "departments": [
+   "0001",
+   "0042",
+   "1120",
+   "3300",
+   "7250",
+   "8800"
+  ],
+  "units": [
+   "Engineering",
+   "Operations",
+   "Research",
+   "Support",
+   "Security"
+  ],
+  "employeeTypes": [
+   "Full time",
+   "Contractor",
+   "Intern",
+   "Part time"
+  ],
+  "employeeStatuses": [
+   "Active",
+   "On leave",
+   "Probation"
+  ],
+  "locales": [
+   "en-US",
+   "en-GB",
+   "sv-SE",
+   "ja-JP",
+   "pt-BR",
+   "nl-NL"
+  ],
+  "timeZones": [
+   "America/New_York",
+   "Europe/London",
+   "Europe/Stockholm",
+   "Asia/Tokyo",
+   "America/Sao_Paulo",
+   "Europe/Amsterdam"
+  ],
+  "genderCodes": [
+   "2",
+   "1",
+   "2",
+   "1",
+   "9"
+  ],
+  "mailDomains": [
+   "example.com",
+   "example.org",
+   "example.net"
+  ]
+ },
+ "catalogue": [
+  {
+   "ldap": "givenName",
+   "from": "given",
+   "byDefault": true
+  },
+  {
+   "ldap": "sn",
+   "from": "family",
+   "byDefault": true
+  },
+  {
+   "ldap": "mail",
+   "from": "email",
+   "byDefault": true
+  },
+  {
+   "ldap": "schacDateOfBirth",
+   "from": "birth",
+   "byDefault": true
+  },
+  {
+   "ldap": "schacCountryOfCitizenship",
+   "from": "country",
+   "byDefault": true
+  },
+  {
+   "ldap": "street",
+   "from": "street",
+   "byDefault": true
+  },
+  {
+   "ldap": "l",
+   "from": "locality",
+   "byDefault": true
+  },
+  {
+   "ldap": "st",
+   "from": "region",
+   "byDefault": true
+  },
+  {
+   "ldap": "postalCode",
+   "from": "postalCode",
+   "byDefault": true
+  },
+  {
+   "ldap": "c",
+   "from": "country",
+   "byDefault": true
+  },
+  {
+   "ldap": "postalAddress",
+   "from": "formatted",
+   "byDefault": false
+  },
+  {
+   "ldap": "cn",
+   "from": "display",
+   "byDefault": false
+  },
+  {
+   "ldap": "displayName",
+   "from": "given",
+   "byDefault": false
+  },
+  {
+   "ldap": "uid",
+   "from": "username",
+   "byDefault": false
+  },
+  {
+   "ldap": "telephoneNumber",
+   "from": "phone",
+   "byDefault": false
+  },
+  {
+   "ldap": "mobile",
+   "from": "mobile",
+   "byDefault": false
+  },
+  {
+   "ldap": "title",
+   "from": "title",
+   "byDefault": false
+  },
+  {
+   "ldap": "schacPersonalTitle",
+   "from": "honorific",
+   "byDefault": false
+  },
+  {
+   "ldap": "salutation",
+   "from": "salutation",
+   "byDefault": false
+  },
+  {
+   "ldap": "birthFamilyName",
+   "from": "family",
+   "byDefault": false
+  },
+  {
+   "ldap": "birthGivenName",
+   "from": "given",
+   "byDefault": false
+  },
+  {
+   "ldap": "birthMiddleName",
+   "from": "",
+   "byDefault": false
+  },
+  {
+   "ldap": "alsoKnownAs",
+   "from": "",
+   "byDefault": false
+  },
+  {
+   "ldap": "placeOfBirthCountry",
+   "from": "country",
+   "byDefault": false
+  },
+  {
+   "ldap": "placeOfBirthRegion",
+   "from": "region",
+   "byDefault": false
+  },
+  {
+   "ldap": "placeOfBirthLocality",
+   "from": "locality",
+   "byDefault": false
+  },
+  {
+   "ldap": "o",
+   "from": "organization",
+   "byDefault": false
+  },
+  {
+   "ldap": "ou",
+   "from": "unit",
+   "byDefault": false
+  },
+  {
+   "ldap": "departmentNumber",
+   "from": "department",
+   "byDefault": false
+  },
+  {
+   "ldap": "employeeNumber",
+   "from": "employeeNumber",
+   "byDefault": false
+  },
+  {
+   "ldap": "employeeType",
+   "from": "employeeType",
+   "byDefault": false
+  },
+  {
+   "ldap": "preferredLanguage",
+   "from": "locale",
+   "byDefault": false
+  },
+  {
+   "ldap": "labeledURI",
+   "from": "website",
+   "byDefault": false
+  },
+  {
+   "ldap": "middleName",
+   "from": "middle",
+   "byDefault": false
+  },
+  {
+   "ldap": "schacGender",
+   "from": "gender",
+   "byDefault": false
+  },
+  {
+   "ldap": "timeZone",
+   "from": "zoneinfo",
+   "byDefault": false
+  },
+  {
+   "ldap": "pictureUrl",
+   "from": "picture",
+   "byDefault": false
+  },
+  {
+   "ldap": "profileUrl",
+   "from": "profile",
+   "byDefault": false
+  },
+  {
+   "ldap": "description",
+   "from": "",
+   "byDefault": false
+  },
+  {
+   "ldap": "employeeStatus",
+   "from": "employeeStatus",
+   "byDefault": false
+  }
+ ],
+ "defaultSelection": [
+  "givenName",
+  "sn",
+  "mail",
+  "schacDateOfBirth",
+  "schacCountryOfCitizenship",
+  "street",
+  "l",
+  "st",
+  "postalCode",
+  "c"
+ ],
+ "personFields": [
+  "givenName",
+  "sn",
+  "mail",
+  "schacDateOfBirth",
+  "schacCountryOfCitizenship",
+  "street",
+  "l",
+  "st",
+  "postalCode",
+  "c",
+  "postalAddress",
+  "cn",
+  "displayName",
+  "telephoneNumber",
+  "mobile",
+  "title",
+  "schacPersonalTitle",
+  "salutation",
+  "birthFamilyName",
+  "birthGivenName",
+  "birthMiddleName",
+  "alsoKnownAs",
+  "placeOfBirthCountry",
+  "placeOfBirthRegion",
+  "placeOfBirthLocality",
+  "o",
+  "ou",
+  "departmentNumber",
+  "employeeNumber",
+  "employeeType",
+  "preferredLanguage",
+  "labeledURI",
+  "middleName",
+  "schacGender",
+  "timeZone",
+  "pictureUrl",
+  "profileUrl",
+  "description",
+  "employeeStatus"
+ ],
+ "editable": [
+  {
+   "name": "cn",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "sn",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "telephoneNumber",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "seeAlso",
+   "multi": true,
+   "format": "dn",
+   "choices": null
+  },
+  {
+   "name": "description",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "title",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "ou",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "l",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "st",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "street",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "postalAddress",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "postalCode",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "postOfficeBox",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "physicalDeliveryOfficeName",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "registeredAddress",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "destinationIndicator",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "preferredDeliveryMethod",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "facsimileTelephoneNumber",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "internationalISDNNumber",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "telexNumber",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "teletexTerminalIdentifier",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "x121Address",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "displayName",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "givenName",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "initials",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "o",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "businessCategory",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "departmentNumber",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "employeeNumber",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "employeeType",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "roomNumber",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "manager",
+   "multi": true,
+   "format": "dn",
+   "choices": null
+  },
+  {
+   "name": "secretary",
+   "multi": true,
+   "format": "dn",
+   "choices": null
+  },
+  {
+   "name": "homePhone",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "homePostalAddress",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "mobile",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "pager",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "carLicense",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "preferredLanguage",
+   "multi": false,
+   "format": "language",
+   "choices": null
+  },
+  {
+   "name": "labeledURI",
+   "multi": true,
+   "format": "uri",
+   "choices": null
+  },
+  {
+   "name": "x500UniqueIdentifier",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "schacPersonalTitle",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "salutation",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "schacCountryOfCitizenship",
+   "multi": true,
+   "format": "country",
+   "choices": null
+  },
+  {
+   "name": "birthFamilyName",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "birthGivenName",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "birthMiddleName",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "alsoKnownAs",
+   "multi": true,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "placeOfBirthCountry",
+   "multi": false,
+   "format": "country",
+   "choices": null
+  },
+  {
+   "name": "placeOfBirthRegion",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "placeOfBirthLocality",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "schacDateOfBirth",
+   "multi": false,
+   "format": "date",
+   "choices": null
+  },
+  {
+   "name": "c",
+   "multi": false,
+   "format": "country",
+   "choices": null
+  },
+  {
+   "name": "middleName",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "schacGender",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "timeZone",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "pictureUrl",
+   "multi": false,
+   "format": "uri",
+   "choices": null
+  },
+  {
+   "name": "profileUrl",
+   "multi": false,
+   "format": "uri",
+   "choices": null
+  },
+  {
+   "name": "employeeStatus",
+   "multi": false,
+   "format": "",
+   "choices": null
+  },
+  {
+   "name": "stsServiceAccountPolicy",
+   "multi": false,
+   "format": "",
+   "choices": [
+    "default"
+   ]
+  },
+  {
+   "name": "stsAttributePolicy",
+   "multi": false,
+   "format": "",
+   "choices": [
+    "default"
+   ]
+  }
+ ],
+ "formatHints": {
+  "country": "an ISO 3166-1 alpha-2 country code, such as SE",
+  "date": "a date, YYYYMMDD or YYYY-MM-DD",
+  "language": "a language range, such as en-GB or \"da, en-gb;q=0.8\"",
+  "uri": "an http or https URL, optionally followed by a space and a label",
+  "dn": "a distinguished name, such as uid=bob,ou=users,dc=example,dc=com",
+  "integer": "a whole number, such as 42 or -7",
+  "boolean": "TRUE or FALSE",
+  "email": "an email address, such as alice@example.com"
+ },
+ "maxValueLength": 1024,
+ "shapes": {
+  "email": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+  "control": "[\\u0000-\\u001f\\u007f-\\u009f]",
+  "language": "^(\\*|[A-Za-z]{1,8}(-[A-Za-z0-9]{1,8})*)(\\s*;\\s*q\\s*=\\s*(0(\\.\\d{0,3})?|1(\\.0{0,3})?))?$",
+  "dn": "^\\s*[A-Za-z][A-Za-z0-9-]*\\s*=\\s*[^,=\\s][^,=]*(,\\s*[A-Za-z][A-Za-z0-9-]*\\s*=\\s*[^,=\\s][^,=]*)*$"
+ },
+ "countries": [
+  "AD",
+  "AE",
+  "AF",
+  "AG",
+  "AI",
+  "AL",
+  "AM",
+  "AO",
+  "AQ",
+  "AR",
+  "AS",
+  "AT",
+  "AU",
+  "AW",
+  "AX",
+  "AZ",
+  "BA",
+  "BB",
+  "BD",
+  "BE",
+  "BF",
+  "BG",
+  "BH",
+  "BI",
+  "BJ",
+  "BL",
+  "BM",
+  "BN",
+  "BO",
+  "BQ",
+  "BR",
+  "BS",
+  "BT",
+  "BV",
+  "BW",
+  "BY",
+  "BZ",
+  "CA",
+  "CC",
+  "CD",
+  "CF",
+  "CG",
+  "CH",
+  "CI",
+  "CK",
+  "CL",
+  "CM",
+  "CN",
+  "CO",
+  "CR",
+  "CU",
+  "CV",
+  "CW",
+  "CX",
+  "CY",
+  "CZ",
+  "DE",
+  "DJ",
+  "DK",
+  "DM",
+  "DO",
+  "DZ",
+  "EC",
+  "EE",
+  "EG",
+  "EH",
+  "ER",
+  "ES",
+  "ET",
+  "FI",
+  "FJ",
+  "FK",
+  "FM",
+  "FO",
+  "FR",
+  "GA",
+  "GB",
+  "GD",
+  "GE",
+  "GF",
+  "GG",
+  "GH",
+  "GI",
+  "GL",
+  "GM",
+  "GN",
+  "GP",
+  "GQ",
+  "GR",
+  "GS",
+  "GT",
+  "GU",
+  "GW",
+  "GY",
+  "HK",
+  "HM",
+  "HN",
+  "HR",
+  "HT",
+  "HU",
+  "ID",
+  "IE",
+  "IL",
+  "IM",
+  "IN",
+  "IO",
+  "IQ",
+  "IR",
+  "IS",
+  "IT",
+  "JE",
+  "JM",
+  "JO",
+  "JP",
+  "KE",
+  "KG",
+  "KH",
+  "KI",
+  "KM",
+  "KN",
+  "KP",
+  "KR",
+  "KW",
+  "KY",
+  "KZ",
+  "LA",
+  "LB",
+  "LC",
+  "LI",
+  "LK",
+  "LR",
+  "LS",
+  "LT",
+  "LU",
+  "LV",
+  "LY",
+  "MA",
+  "MC",
+  "MD",
+  "ME",
+  "MF",
+  "MG",
+  "MH",
+  "MK",
+  "ML",
+  "MM",
+  "MN",
+  "MO",
+  "MP",
+  "MQ",
+  "MR",
+  "MS",
+  "MT",
+  "MU",
+  "MV",
+  "MW",
+  "MX",
+  "MY",
+  "MZ",
+  "NA",
+  "NC",
+  "NE",
+  "NF",
+  "NG",
+  "NI",
+  "NL",
+  "NO",
+  "NP",
+  "NR",
+  "NU",
+  "NZ",
+  "OM",
+  "PA",
+  "PE",
+  "PF",
+  "PG",
+  "PH",
+  "PK",
+  "PL",
+  "PM",
+  "PN",
+  "PR",
+  "PS",
+  "PT",
+  "PW",
+  "PY",
+  "QA",
+  "RE",
+  "RO",
+  "RS",
+  "RU",
+  "RW",
+  "SA",
+  "SB",
+  "SC",
+  "SD",
+  "SE",
+  "SG",
+  "SH",
+  "SI",
+  "SJ",
+  "SK",
+  "SL",
+  "SM",
+  "SN",
+  "SO",
+  "SR",
+  "SS",
+  "ST",
+  "SV",
+  "SX",
+  "SY",
+  "SZ",
+  "TC",
+  "TD",
+  "TF",
+  "TG",
+  "TH",
+  "TJ",
+  "TK",
+  "TL",
+  "TM",
+  "TN",
+  "TO",
+  "TR",
+  "TT",
+  "TV",
+  "TW",
+  "TZ",
+  "UA",
+  "UG",
+  "UM",
+  "US",
+  "UY",
+  "UZ",
+  "VA",
+  "VC",
+  "VE",
+  "VG",
+  "VI",
+  "VN",
+  "VU",
+  "WF",
+  "WS",
+  "YE",
+  "YT",
+  "ZA",
+  "ZM",
+  "ZW"
+ ]
+}

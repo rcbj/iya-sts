@@ -327,32 +327,17 @@ impl rp::RosterDirectory for Roster {
             .with(|t| format!("cn={},{}", cn, t.groups_dn(self.r(t))))
     }
     fn read_group_entry(&self, dn: &str) -> Json {
+        // `readGroupEntry(dn)`: the group's entry with every member value
+        // RESOLVED (`resolveMember()`: what it holds, the DN it names,
+        // whether that is present, and its console name), as the roster
+        // view (`rosterFor()`) and the grant's `memberIndex()` read it.
         self.dir.with(|t| {
-            let r = self.r(t);
-            let Some(stored) = t.get(r, dn) else {
-                return Json::Null;
-            };
-            let rule = t.group_rule(r, &stored.dn, &stored.attributes);
-            if rule.is_empty() {
-                return Json::Null;
+            groups::Groups {
+                tree: t,
+                r: self.r(t),
             }
-            let mut object =
-                sts_registers::applications::store::StoredApplication::of(
-                    stored,
-                )
-                .to_json();
-            let members: Vec<Json> = ["member", "uniquemember"]
-                .into_iter()
-                .flat_map(|a| {
-                    stored
-                        .values(a)
-                        .iter()
-                        .map(move |v| json!({ "value": v, "attribute": a }))
-                })
-                .collect();
-            object["rule"] = json!(rule);
-            object["members"] = Json::Array(members);
-            object
+            .read_group_entry(dn)
+            .unwrap_or(Json::Null)
         })
     }
     fn write_group_entry(
@@ -886,11 +871,14 @@ impl rp::RosterRoles for RosterRoles {
 /// into the live directory at once, so a password set in the same act
 /// (`sts-credentials`, over the live directory) finds it.
 ///
-/// NOT PORTED: the persona `namePlan()` and `applyVcAttributes()` invent
-/// in development mode (`mode.inventsClaimValues()`), so a person made here
-/// in development carries only what was typed — product's behaviour; the
-/// attribute catalogue's check of each typed name (STS-LDAP-0047, 0106);
-/// the account observer's notice and the identity register's row.
+/// In a mode that invents claim values (development) and unless the create
+/// said `invent: false`, the person behind the name is written onto the
+/// entry under what was typed (`namePlan()`, `applyVcAttributes()`, the
+/// `apis5` slice, `sts_registers::persona`); every typed attribute is held
+/// to the catalogue and the editor's rows first (STS-LDAP-0047, 0106).
+///
+/// NOT PORTED: the account observer's notice and the identity register's
+/// row.
 struct PersonWriter {
     dir: Arc<LiveDir>,
     mode: Arc<Mode>,
@@ -1015,31 +1003,51 @@ impl rp::PersonWriter for PersonWriter {
                     .collect(),
             );
             attributes.insert("uid".into(), vec![wanted.clone()]);
-            let mut typed: Vec<String> = Vec::new();
-            if let Some(given) = options["attributes"].as_object() {
-                for (k, v) in given {
-                    let values: Vec<String> = match v {
-                        Json::Array(l) => l
-                            .iter()
-                            .map(|x| match x {
-                                Json::String(t) => t.trim().to_string(),
-                                other => other.to_string(),
-                            })
-                            .filter(|t| !t.is_empty())
-                            .collect(),
-                        Json::Null => Vec::new(),
-                        Json::String(t) => vec![t.trim().to_string()]
-                            .into_iter()
-                            .filter(|t| !t.is_empty())
-                            .collect(),
-                        other => vec![other.to_string()],
-                    };
-                    if values.is_empty() {
-                        continue;
+            // `personAttributesFrom(opts.attributes)`: every name held to
+            // the catalogue and the editor's rows (STS-LDAP-0047, 0106).
+            let supplied = match sts_registers::persona::person_attributes_from(
+                &options["attributes"],
+            ) {
+                Ok(s) => s,
+                Err((code, value)) => {
+                    return rp::Marked {
+                        value,
+                        code: Some(code),
                     }
-                    typed.push(k.clone());
-                    attributes.insert(k.to_lowercase(), values);
                 }
+            };
+            // `namePlan(wanted)` and `invent`: in a mode that invents claim
+            // values, and unless the create said `invent: false`, the
+            // person behind the name — cn, sn, givenName, displayName and
+            // mail from `personaFor()` — under what was typed.
+            let invent = options.get("invent").is_none_or(|v| {
+                !matches!(v, Json::Null | Json::Bool(false))
+                    && v != &json!(0)
+                    && v != &json!("")
+            }) && self
+                .mode
+                .predicate("inventsClaimValues")
+                .unwrap_or(false);
+            let key = sts_registers::persona::plain_identity_key(&wanted);
+            if invent {
+                let persona = sts_registers::persona::Persona::for_name(&key);
+                let text =
+                    |k: &str| persona[k].as_str().unwrap_or("").to_string();
+                attributes.insert("cn".into(), vec![text("display")]);
+                attributes.insert("sn".into(), vec![text("family")]);
+                attributes.insert("givenname".into(), vec![text("given")]);
+                attributes.insert(
+                    "displayname".into(),
+                    vec![format!("{} (mock)", text("display"))],
+                );
+                attributes.insert("mail".into(), vec![text("email")]);
+            }
+            let mut typed: Vec<String> = Vec::new();
+            let mut typed_mail = false;
+            for (k, values) in supplied {
+                typed_mail |= k.eq_ignore_ascii_case("mail");
+                typed.push(k.clone());
+                attributes.insert(k.to_lowercase(), values);
             }
             if !attributes.contains_key("description") {
                 let note = options["note"].as_str().unwrap_or("").trim();
@@ -1088,14 +1096,25 @@ impl rp::PersonWriter for PersonWriter {
                     };
                 }
             }
+            // `applyVcAttributes(created, wanted)`: what the realm's
+            // credential claim set asks for and the entry does not hold.
+            if invent {
+                for (attribute, value) in
+                    sts_registers::persona::Persona::generated_for(&key)
+                {
+                    if attributes.get(&attribute).is_none_or(Vec::is_empty) {
+                        attributes.insert(attribute, vec![value]);
+                    }
+                }
+            }
             let mail = attributes
                 .get("mail")
                 .and_then(|v| v.first())
                 .cloned()
                 .unwrap_or_default();
-            if !mail.is_empty() {
+            if typed_mail && !mail.is_empty() {
                 // `verifyWrittenMail()`: an address an administrator typed
-                // is verified.
+                // is verified; an invented one is not.
                 attributes.insert("stsmailverified".into(), vec![mail]);
             }
             let dn = format!("uid={},{}", wanted, tree.users_dn(r));
@@ -1110,10 +1129,11 @@ impl rp::PersonWriter for PersonWriter {
                         sts_registers::applications::store::StoredApplication::of(e)
                     }),
                     typed,
+                    invent,
                 )),
             }
         };
-        let (dn, stored, typed) = match outcome {
+        let (dn, stored, typed, invent) = match outcome {
             Err(e) => {
                 return rp::Marked {
                     value: json!({ "ok": false, "errors": [e.message.clone()] }),
@@ -1132,9 +1152,279 @@ impl rp::PersonWriter for PersonWriter {
             json!({ "dn": s.dn, "origin": s.origin, "attributes": s.attributes })
         });
         rp::Marked::plain(json!({ "ok": true, "dn": dn, "username": wanted,
-                                  "typed": typed, "invented": false,
+                                  "typed": typed, "invented": invent,
                                   "entry": entry }))
     }
+
+    /// `writePseudonyms(entryOrUsername, spec)`, for the administrator's
+    /// door (`source: admin`): `cancel` clears a pending address, `remove`
+    /// takes one live name off, `add` makes one live at once after the
+    /// shape rules (`pseudonymProblem()`) and the realm's other people
+    /// (`existingUserEntry()`, `peopleByMail()`) allow it. The name index
+    /// folds the change in on the write (`usernameKeysOf()` reads
+    /// `stsPseudonym`).
+    ///
+    /// NOT PORTED: the cluster's name claim (`createClaims.claim()`) and
+    /// the cells' (`cell_routing.claimName()`), which this single-node
+    /// runtime has no peer to ask; the `self` and `link` sources (the
+    /// pending link a person confirms by mail), which only the portal's
+    /// door reaches.
+    fn write_pseudonyms(
+        &self,
+        who: &str,
+        op: &str,
+        value: &str,
+        source: &str,
+    ) -> Json {
+        use sts_core::errors::codes;
+        let _ = source;
+        let refuse = |code: sts_core::errors::ErrorCode, sentence: &str| {
+            tracing::info!(
+                "{}ldap: a pseudonym was refused.",
+                sts_core::log::tag(code)
+            );
+            json!({ "ok": false, "code": code.as_str(), "sentence": sentence })
+        };
+        let realm_id = realm::current_id();
+        let mut tree =
+            self.dir.tree.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(r) = LiveDir::realm_index(&tree, &realm_id) else {
+            return json!({ "ok": false, "code": "" });
+        };
+        let Some(mut stored) = tree
+            .locate(r, who)
+            .filter(|e| tree.is_person_dn(r, &e.dn))
+            .cloned()
+        else {
+            return json!({ "ok": false, "code": "" });
+        };
+        let list = |e: &sts_directory::Entry| -> Vec<String> {
+            e.values("stspseudonym").to_vec()
+        };
+        let pending_of = |e: &sts_directory::Entry| -> String {
+            e.first("stspseudonymverifyaddress")
+                .unwrap_or("")
+                .to_string()
+        };
+        let answer = |e: &sts_directory::Entry| {
+            let pending = pending_of(e);
+            json!({ "ok": true,
+                    "username": sts_directory::Directory::person_name_of(e),
+                    "pseudonyms": list(e),
+                    "pending": if pending.is_empty() { Json::Null }
+                               else { json!(pending) } })
+        };
+        let clear_pending = |e: &mut sts_directory::Entry, fold: &str| {
+            let pending = pending_of(e).trim().to_lowercase();
+            if fold.is_empty() || pending == fold {
+                for a in [
+                    "stspseudonymverifytoken",
+                    "stspseudonymverifyexpires",
+                    "stspseudonymverifyaddress",
+                ] {
+                    e.attributes.shift_remove(a);
+                }
+            }
+        };
+        let fold = value.trim().to_lowercase();
+        match op {
+            "cancel" => {
+                if pending_of(&stored).is_empty() {
+                    return answer(&stored);
+                }
+                clear_pending(&mut stored, "");
+            }
+            "remove" => {
+                let before = list(&stored);
+                let kept: Vec<String> = before
+                    .iter()
+                    .filter(|one| one.trim().to_lowercase() != fold)
+                    .cloned()
+                    .collect();
+                if kept.len() == before.len() {
+                    return answer(&stored);
+                }
+                if kept.is_empty() {
+                    stored.attributes.shift_remove("stspseudonym");
+                } else {
+                    stored.attributes.insert("stspseudonym".into(), kept);
+                }
+            }
+            "add" => {
+                let text = value.trim().to_string();
+                let held = |e: &sts_directory::Entry| {
+                    list(e).iter().any(|one| one.trim().to_lowercase() == fold)
+                };
+                if held(&stored) {
+                    return answer(&stored);
+                }
+                let email =
+                    sts_mail::transports::address_problem(&text).is_empty();
+                let mut own: Vec<String> = Vec::new();
+                for v in stored.values("uid").iter().cloned().chain([
+                    sts_directory::Directory::username_of_dn(&stored.dn),
+                ]) {
+                    let k = v.trim().to_lowercase();
+                    if !k.is_empty() && !own.contains(&k) {
+                        own.push(k);
+                    }
+                }
+                if let Some((code, sentence)) =
+                    pseudonym_problem(&text, &own, list(&stored).len())
+                {
+                    return refuse(code, sentence);
+                }
+                let same = |dn: &str| {
+                    sts_ldap::service_dn::normalize_dn(Some(dn))
+                        == sts_ldap::service_dn::normalize_dn(Some(&stored.dn))
+                };
+                if email
+                    && tree.realms()[r].entries.values().any(|e| {
+                        tree.is_person_dn(r, &e.dn)
+                            && !same(&e.dn)
+                            && e.values("mail")
+                                .iter()
+                                .any(|m| m.trim().to_lowercase() == fold)
+                    })
+                {
+                    return refuse(
+                        codes::STS_LDAP_0202,
+                        "That address is already somebody else's.",
+                    );
+                }
+                if tree
+                    .existing_user_entry(r, &text)
+                    .is_some_and(|other| !same(&other.dn))
+                {
+                    return refuse(
+                        codes::STS_LDAP_0200,
+                        "Somebody else in this realm already answers to that \
+                         name.",
+                    );
+                }
+                let mut next: Vec<String> = list(&stored)
+                    .into_iter()
+                    .filter(|one| one.trim().to_lowercase() != fold)
+                    .collect();
+                next.push(text);
+                stored.attributes.insert("stspseudonym".into(), next);
+                clear_pending(&mut stored, &fold);
+            }
+            _ => {
+                return refuse(
+                    codes::STS_LDAP_0199,
+                    "A pseudonym change is add, remove or cancel.",
+                );
+            }
+        }
+        // `commitPseudonymChange()`: the entry written back, its creation
+        // instant kept, the name index folding the change in.
+        let created = stored.created_at.clone();
+        let pairs: Vec<(String, Vec<String>)> = stored
+            .attributes
+            .iter()
+            .filter(|(k, _)| {
+                !sts_directory::directory::OPERATIONAL.contains(&k.as_str())
+            })
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let origin = stored.origin.clone();
+        if let Err(e) =
+            tree.put_entry(r, &stored.dn, &pairs, origin.as_deref(), None)
+        {
+            tracing::debug!("the pseudonym was not written: {}", e.message);
+            return refuse(
+                codes::STS_LDAP_0093,
+                "Whether that name is already taken could not be decided.",
+            );
+        }
+        if let Some(c) = created {
+            tree.restamp_created(r, &stored.dn, &c);
+        }
+        let written = tree.get(r, &stored.dn).cloned().unwrap_or(stored);
+        drop(tree);
+        self.dir.write_back();
+        answer(&written)
+    }
+
+    fn is_email(&self, text: &str) -> bool {
+        sts_mail::transports::address_problem(text).is_empty()
+    }
+}
+
+/// `pseudonym_rules.js`'s `pseudonymProblem(value, options)`: what is wrong
+/// with one pseudonym before any directory lookup, or None. Its length is
+/// counted in UTF-16 code units, as `text.length` counts it.
+fn pseudonym_problem(
+    text: &str,
+    own: &[String],
+    live: usize,
+) -> Option<(sts_core::errors::ErrorCode, &'static str)> {
+    use sts_core::errors::codes;
+    let fold = text.to_lowercase();
+    let units = text.encode_utf16().count();
+    if text.is_empty() || units > 254 {
+        return Some((
+            codes::STS_LDAP_0199,
+            "A pseudonym is one name of at most 254 characters.",
+        ));
+    }
+    if text.chars().any(|c| ",=+<>#;\"\\".contains(c)) {
+        return Some((
+            codes::STS_LDAP_0199,
+            "A pseudonym cannot contain a character a distinguished name \
+             reserves.",
+        ));
+    }
+    let dn_shaped = text.split_once('=').is_some_and(|(a, _)| {
+        a.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    });
+    let did = regex_lite_did(&fold);
+    if dn_shaped
+        || fold.starts_with("urn:uuid:")
+        || sts_directory::uuid::uuid_shaped(&fold)
+        || did
+        || fold.starts_with("spiffe://")
+    {
+        return Some((
+            codes::STS_LDAP_0199,
+            "A pseudonym cannot be a distinguished name, a subject, a DID, \
+             or a SPIFFE identity.",
+        ));
+    }
+    // `/\+(ml-dsa(-[0-9]+)?|pqc)$/i`: a sign-in lane's name.
+    let lane = fold.ends_with("+pqc")
+        || fold.ends_with("+ml-dsa")
+        || fold.rsplit_once("+ml-dsa-").is_some_and(|(_, n)| {
+            !n.is_empty() && n.chars().all(|c| c.is_ascii_digit())
+        });
+    if fold == "invalid" || lane {
+        return Some((codes::STS_LDAP_0199, "That name is reserved."));
+    }
+    if own.contains(&fold) {
+        return Some((
+            codes::STS_LDAP_0201,
+            "That name is already this person's uid.",
+        ));
+    }
+    if live >= 8 {
+        return Some((
+            codes::STS_LDAP_0199,
+            "A person holds at most eight pseudonyms.",
+        ));
+    }
+    None
+}
+
+/// `/^did:[a-z0-9]+:/i`.
+fn regex_lite_did(fold: &str) -> bool {
+    fold.strip_prefix("did:").is_some_and(|rest| {
+        rest.split_once(':').is_some_and(|(method, _)| {
+            !method.is_empty()
+                && method.chars().all(|c| c.is_ascii_alphanumeric())
+        })
+    })
 }
 
 /// `common/credentials.ts` as the users acts ask it, over `sts-credentials`.
@@ -1918,7 +2208,7 @@ impl AdminStack {
         let permissions =
             Arc::new(sts_registers::role_permissions::RolePermissions::new(
                 sts_registers::role_permissions::RolePermissionsDeps {
-                    roles,
+                    roles: roles.clone(),
                     applications: Arc::new(RegApps(apps.clone())),
                     audit: Arc::new(LogAudit),
                     roster: roster.clone(),
@@ -2043,6 +2333,18 @@ impl AdminStack {
                 views: Arc::new(views::Views {
                     mode: mode.clone(),
                     roster: roster.clone(),
+                    role_actions: Arc::new(
+                        sts_registers::role_actions::RoleActions::new(
+                            roles.clone(),
+                            Arc::new(RegApps(apps.clone())),
+                            Arc::new(LogAudit),
+                        ),
+                    ),
+                    app_permissions: Arc::new(
+                        sts_registers::app_permissions::AppPermissions::new(
+                            Arc::new(RegApps(apps.clone())),
+                        ),
+                    ),
                     apps: apps.clone(),
                     dir: dir.clone(),
                     settings: settings.clone(),
