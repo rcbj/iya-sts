@@ -226,7 +226,7 @@ impl AuthnApi {
     /// `AuthnApi.consent()`: `GET` and `POST /authn-api/consent/{id}` — the
     /// id's shape, the binding of an act, the body; the record's three
     /// checks and what an answer does are the screen's.
-    fn consent_door(
+    async fn consent_door(
         &self,
         op: &Operation,
         id: &str,
@@ -271,7 +271,9 @@ impl AuthnApi {
             }
         };
         let action = text(body.get("action"));
-        done(match pages.act(call, id, &action) {
+        let acted = pages.act(call, id, &action);
+        pages.settle().await;
+        done(match acted {
             crate::ports::ConsentAnswer::Refused { code, why } => Answer::json(
                 400,
                 json!({ "ok": false, "next": "refused", "errors": [why],
@@ -1107,7 +1109,7 @@ impl AuthnApi {
                     pages.accounts_act(call, &asked, &body)
                 })
             }
-            Handler::Consent => self.consent_door(op, id, arrived, call),
+            Handler::Consent => self.consent_door(op, id, arrived, call).await,
         }
     }
 

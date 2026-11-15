@@ -181,4 +181,13 @@ pub trait ConsentPages: Send + Sync {
         id: &str,
         action: &str,
     ) -> ConsentAnswer;
+    /// What the answer wrote, committed before it is sent (Node's barrier
+    /// holds a response until its writes are in the store, so the next
+    /// request — on any node — reads them).
+    fn settle(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>
+    {
+        Box::pin(async {})
+    }
 }

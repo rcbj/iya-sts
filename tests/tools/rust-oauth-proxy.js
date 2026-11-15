@@ -47,7 +47,7 @@ fs.rmSync(dir, { recursive: true, force: true });
 // device and CIBA endpoints — each under a named authorization server too.
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
   '/oauth2/(register|introspect|revoke|logout|userinfo|' +
-  'par|oauth21|rfc9700|fapi|challenge|device_authorization|' +
+  'oauth21|rfc9700|fapi|challenge|device_authorization|' +
   'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
 const counts = { rust: 0, node: 0 };

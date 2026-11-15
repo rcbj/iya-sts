@@ -400,6 +400,42 @@ impl Clients for RegisterClients {
                     }
                     _ => json!(text),
                 };
+                // `requestDefaultsProblem()`: a request default the grammar
+                // refuses — only an `ldapmodify` can leave one — is ignored
+                // with a warning rather than handed to a reader.
+                let unusable = match *member {
+                    "default_max_age" => !value.is_i64(),
+                    "default_acr_values" => {
+                        !value.as_array().is_some_and(|l| {
+                            l.iter().all(|one| {
+                                one.as_str().is_some_and(|a| {
+                                    !a.is_empty()
+                                        && a.len() <= 256
+                                        && a.bytes().all(|b| {
+                                            b == 0x21
+                                                || (0x23..=0x5b).contains(&b)
+                                                || (0x5d..=0x7e).contains(&b)
+                                        })
+                                })
+                            })
+                        })
+                    }
+                    _ => false,
+                };
+                if unusable {
+                    tracing::warn!(
+                        "{}applications: \"{}\" holds {} in {}, which is not \
+                         a usable {}; it is ignored.",
+                        sts_core::log::tag(
+                            sts_core::errors::codes::STS_REG_0341
+                        ),
+                        client_id,
+                        json!(text.chars().take(60).collect::<String>()),
+                        attribute,
+                        member
+                    );
+                    continue;
+                }
                 out.insert(member.to_string(), value);
             }
         }

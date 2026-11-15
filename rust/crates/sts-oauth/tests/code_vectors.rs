@@ -416,6 +416,9 @@ async fn the_code_flow() {
             }),
             gated: Arc::new(NoGatedScopes),
             consent: None,
+            request_objects: None,
+            tokens: None,
+            pairwise: None,
             pages: Arc::new(CatalogPages {
                 catalogs: catalogs.clone(),
                 footer: sts_http::footer::Facts {

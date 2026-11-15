@@ -496,6 +496,22 @@ impl OAuthStack {
             }),
             gated: Arc::new(NoGatedScopes),
             consent: Some(consent.clone()),
+            request_objects: Some(Arc::new(
+                sts_oauth::request_object::RequestObjects {
+                    settings: settings.clone(),
+                    mode: mode.clone(),
+                    pushed: sts_oauth::par::PushedRequests::declare(
+                        &parts.lifecycle,
+                        &parts.handles,
+                        settings.clone(),
+                        Arc::new(sts_core::time::now_ms_f64),
+                    ),
+                    now_s: Arc::new(|| chrono::Utc::now().timestamp()),
+                    seen: Mutex::new(std::collections::HashMap::new()),
+                },
+            )),
+            pairwise: Some(pairwise.clone()),
+            tokens: Some(tokens.clone()),
             pages: Arc::new(CatalogPages {
                 catalogs: parts.catalogs.clone(),
                 footer: parts.footer.clone(),
@@ -636,6 +652,17 @@ impl OAuthStack {
             .fallback(unrouted),
         );
         let routes = routes.route(
+            "/oauth2/par",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.par(h, r).await }
+                }
+            })
+            .fallback(par_method_not_allowed),
+        );
+        let routes = routes.route(
             "/.well-known/oauth-authorization-server",
             axum::routing::get({
                 let (me, h) = (me.clone(), h.clone());
@@ -756,6 +783,20 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        let routes = routes.route(
+            "/{as}/oauth2/par",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |Path(server): Path<String>, r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move {
+                        let inner = me.clone();
+                        me.for_profile(server, move || inner.par(h, r)).await
+                    }
+                }
+            })
+            .fallback(par_method_not_allowed),
+        );
         // `/docs`, `/policy`, `/tos`: the documents the metadata links to.
         let routes = routes.route(
             "/docs",
@@ -863,6 +904,7 @@ impl OAuthStack {
             base,
             prefix: http.registry().current_prefix(),
             request: session_request.clone(),
+            ..AuthorizeAsk::default()
         };
         // `/oauth2/authorize` IS AN ARRIVAL PATH (`ARRIVAL_PATHS`): a
         // browser that arrives with no `sts_session` is given an arrival
@@ -906,6 +948,38 @@ impl OAuthStack {
             }
         }
         response
+    }
+
+    /// `POST /oauth2/par` (RFC 9126).
+    async fn par(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let ask = AuthorizeAsk {
+            method: "POST".into(),
+            content_type: header_of(&headers, "content-type"),
+            body,
+            accept: header_of(&headers, "accept"),
+            base,
+            prefix: http.registry().current_prefix(),
+            request: sts_authn::ports::Request {
+                address,
+                ..sts_authn::ports::Request::default()
+            },
+            ..AuthorizeAsk::default()
+        };
+        self.authorize
+            .push(
+                &ask,
+                &self.tokens,
+                &header_of(&headers, "authorization"),
+                None,
+            )
+            .into_response()
     }
 
     async fn token(
@@ -1130,6 +1204,21 @@ impl OAuthStack {
     }
 }
 
+/// `parMethodNotAllowed()`: 405, `Allow: POST`.
+async fn par_method_not_allowed() -> Response {
+    let mut a = sts_oauth::answer::Answer::refusal(
+        sts_core::errors::codes::STS_OAUTH_0401,
+        405,
+        "invalid_request",
+        "The pushed authorization request endpoint accepts POST only (RFC \
+         9126 section 2), with the authorization request in an \
+         application/x-www-form-urlencoded body.",
+    );
+    a.set("Allow", "POST");
+    a.set("Cache-Control", "no-store");
+    a.into_response()
+}
+
 /// `res.type('text/plain').send(text)`.
 fn text_document(text: &str) -> Response {
     (
@@ -1160,7 +1249,7 @@ fn offered(catalogs: &sts_http::i18n::Catalogs) -> Vec<String> {
 
 /// The consent screen's operations behind `/authn-api/consent`
 /// (`consent_screen.ts`'s, reached by the door's late binding).
-struct ConsentDoor(Arc<sts_oauth::consent::ConsentScreen>);
+struct ConsentDoor(Arc<sts_oauth::consent::ConsentScreen>, Arc<Persistence>);
 
 impl sts_authn_api::ports::ConsentPages for ConsentDoor {
     fn claim(
@@ -1210,6 +1299,21 @@ impl sts_authn_api::ports::ConsentPages for ConsentDoor {
             },
         }
     }
+
+    fn settle(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>
+    {
+        Box::pin(async move {
+            if let Err(e) = self.1.flush().await {
+                tracing::warn!(
+                    "consent: the answer's write was not committed before \
+                     the answer was sent: {}",
+                    e
+                );
+            }
+        })
+    }
 }
 
 impl OAuthStack {
@@ -1225,7 +1329,10 @@ impl OAuthStack {
         surfaces: Arc<sts_http::surfaces::SurfaceHost>,
         api: &sts_authn_api::door::AuthnApi,
     ) -> axum::Router {
-        api.set_consent(Arc::new(ConsentDoor(self.consent.clone())));
+        api.set_consent(Arc::new(ConsentDoor(
+            self.consent.clone(),
+            self.persistence.clone(),
+        )));
         let me = self.clone();
         axum::Router::new().route(
             sts_oauth::consent::CONSENT_PATH,

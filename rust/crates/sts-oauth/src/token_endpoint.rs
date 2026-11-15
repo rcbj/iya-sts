@@ -458,6 +458,41 @@ impl TokenEndpoint {
                 client.client_id.trim()));
             return self.with_basic_challenge(a, client.basic);
         }
+        // OAUTH 2.1 — THE SHAPE OF THE REQUEST, before anything in it is
+        // believed: a repeated parameter (sections 3.1 and 3.2; product
+        // refuses it too, ASVS 5.0.0 15.3.7) and more than one client
+        // authentication method (section 2.4).
+        let oauth21 = self.settings.value_of("oauth2.oauth21").as_bool();
+        if oauth21 || self.mode.refuses_repeated_token_parameters() {
+            if let Some((code, description)) = crate::oauth21::repeated_refusal(
+                &crate::oauth21::repeated_names(&ask.body),
+                "token request",
+            ) {
+                return self.refusal(
+                    code,
+                    400,
+                    "invalid_request",
+                    &description,
+                );
+            }
+        }
+        if oauth21 {
+            let bod_secret = body.contains_key("client_secret");
+            if let Some((code, description)) =
+                crate::oauth21::multiple_methods_refusal(
+                    client.basic,
+                    bod_secret,
+                    !s(body.get("client_assertion")).is_empty(),
+                )
+            {
+                return self.refusal(
+                    code,
+                    400,
+                    "invalid_request",
+                    &description,
+                );
+            }
+        }
         // THE DPoP PROOF (RFC 9449 section 4.3), verified here against the
         // nonce store and the replay history, the jti reserved across the
         // cluster first.
@@ -567,6 +602,26 @@ impl TokenEndpoint {
             let a = self.refusal(r.code, r.status, &r.error, &r.description);
             return self.with_basic_challenge(a, client.basic);
         }
+        if let Some((code, description)) =
+            crate::oauth21::token_client_declaration_refusal(
+                oauth21,
+                &grant,
+                &client.client_id,
+                &registered,
+                &client.assertion_type,
+            )
+            .or_else(|| {
+                crate::oauth21::assertion_client_refusal(
+                    oauth21,
+                    &grant,
+                    &client.client_id,
+                    &registered,
+                )
+            })
+        {
+            let a = self.refusal(code, 401, "invalid_client", &description);
+            return self.with_basic_challenge(a, client.basic);
+        }
         let scope = s(body.get("scope"));
         let resources = match crate::scopes::parse_resource_indicators(
             &values_of(body.get("resource")),
@@ -660,6 +715,20 @@ impl TokenEndpoint {
         }
         let observed =
             bcp::observe_client_authentication(&self.auth, &q, &memo);
+        if let Some((code, description)) =
+            crate::oauth21::token_client_authentication_refusal(
+                oauth21,
+                &grant,
+                observed.authenticated,
+                &observed.why,
+                client.basic
+                    || body.contains_key("client_secret")
+                    || !client.assertion.is_empty(),
+            )
+        {
+            let a = self.refusal(code, 401, "invalid_client", &description);
+            return self.with_basic_challenge(a, client.basic);
+        }
         let flows = if client.client_id.is_empty() {
             None
         } else {
@@ -733,6 +802,197 @@ impl TokenEndpoint {
                 &format!("grant_type \"{}\" is not supported.", grant),
             ),
         }
+    }
+
+    /// THE CLIENT AT `/oauth2/par` (`parRequest()`'s authentication, RFC
+    /// 9126 section 2): authenticated as at the token endpoint — RFC 9700
+    /// mode's policy, then the observation, and product mode's rule that a
+    /// confidential client must authenticate. `(authenticated, method)`,
+    /// or the refusal (401).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn authenticate_push(
+        &self,
+        base: &str,
+        authorization: &str,
+        body: &Map<String, Json>,
+        peer: Option<PeerCertificate>,
+    ) -> Result<(bool, String), Answer> {
+        let client = client_from(authorization, body);
+        let registered = self.clients.client_config_of(&client.client_id);
+        let issuer = crate::jwt_access_token::JwtAccessTokens::new(
+            self.settings.clone(),
+        )
+        .issuer_for(base);
+        let presented = Presented {
+            client_id: client.client_id.clone(),
+            presented_secret: client.client_secret.clone(),
+            assertion: client.assertion.clone(),
+            assertion_type: client.assertion_type.clone(),
+            audiences: vec![
+                issuer.clone(),
+                format!("{}/oauth2/token", base),
+                format!("{}/oauth2/par", base),
+                base.to_string(),
+            ],
+            issuer: base.to_string(),
+            peer: peer.clone(),
+            ..Presented::default()
+        };
+        let hints = MethodHints {
+            assertion: client.assertion.clone(),
+            assertion_type: client.assertion_type.clone(),
+            client_secret: client.client_secret.clone(),
+            basic: client.basic,
+            certificate_self_issued: peer.as_ref().map(|p| p.self_issued),
+            ..MethodHints::default()
+        };
+        let q = Question {
+            presented: &presented,
+            hints: &hints,
+            registered: &registered,
+        };
+        let memo = Verified::default();
+        if let Err(r) = bcp::check_client_authentication(
+            self.bcp_mode(),
+            &self.auth,
+            &q,
+            &memo,
+        ) {
+            let a = self.refusal(r.code, r.status, &r.error, &r.description);
+            return Err(self.with_basic_challenge(a, client.basic));
+        }
+        let observed =
+            bcp::observe_client_authentication(&self.auth, &q, &memo);
+        if self.mode.requires_confidential_client_authentication()
+            && !bcp::declared_public(&registered)
+            && !observed.authenticated
+        {
+            let a = self.refusal(
+                observed.code.unwrap_or(codes::STS_OAUTH_0423),
+                401,
+                "invalid_client",
+                &format!(
+                    "This service is in product mode, where an application \
+                     that registered a confidential token_endpoint_auth_method \
+                     must authenticate — at the pushed authorization request \
+                     endpoint as at the token endpoint (RFC 9126 section 2). \
+                     A public client may push without one. {}",
+                    observed.why
+                ),
+            );
+            return Err(self.with_basic_challenge(a, client.basic));
+        }
+        Ok((
+            observed.authenticated,
+            if observed.authenticated {
+                observed.method
+            } else {
+                String::new()
+            },
+        ))
+    }
+
+    /// THE TOKENS OF AN IMPLICIT OR HYBRID RESPONSE
+    /// (`issueAuthorizationResponse()`'s `token` and `id_token` branches):
+    /// an access token as the token endpoint mints one, recorded in the
+    /// register, no refresh token; and the ID Token, with `c_hash`,
+    /// `at_hash` and `s_hash`, and the section 5.4 claims where it is the
+    /// only thing issued (`response_type=id_token`).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn front_channel(
+        &self,
+        base: &str,
+        f: &FrontChannel,
+    ) -> Result<FrontTokens, Answer> {
+        let set_id = sts_crypto::b64::encode(
+            &sts_crypto::random::random_bytes(12).unwrap_or_default(),
+        );
+        let mut out = FrontTokens::default();
+        if f.with_access {
+            let opts = Mint {
+                sub: s(f.user.get("sub")),
+                username: s(f.user.get("username")),
+                user: f.user.clone(),
+                client_id: f.client_id.clone(),
+                scope: f.scope.clone(),
+                audience: f.resources.clone(),
+                resources: f.resources.clone(),
+                grant: f.grant.clone(),
+                session_id: f.session_id.clone(),
+                session_authenticated: f.session_authenticated,
+                nonce: f.nonce.clone(),
+                auth_time: f.auth_time,
+                amr: f.amr.clone(),
+                acr: f.acr.clone(),
+                with_refresh: false,
+                ..Mint::default()
+            };
+            let plan = plan_for(
+                self.clients.as_ref(),
+                &self.settings,
+                &self.scopes,
+                base,
+                &f.scope,
+                &f.client_id,
+                &f.resources,
+            );
+            if let Some(r) = plan.refusal {
+                return Err(self.refusal(r.code, 400, r.error, &r.description));
+            }
+            let under = IssuedUnder {
+                grant: f.grant.clone(),
+                session_id: f.session_id.clone(),
+                session_authenticated: f.session_authenticated,
+                set_id: set_id.clone(),
+                grant_id: set_id.clone(),
+                ..IssuedUnder::default()
+            };
+            let (access, payload) = self.access_token(
+                base,
+                &opts,
+                &plan.scope,
+                &plan.audiences,
+                &under,
+            )?;
+            let expires = js::to_number(&payload["exp"]) as i64
+                - js::to_number(&payload["iat"]) as i64;
+            out.access_token = access;
+            out.expires_in = expires;
+            out.scope = plan.scope.clone();
+        }
+        if f.with_id {
+            if let Some(ids) = &self.id_tokens {
+                let mut facts = json!({
+                    "user": f.user, "client_id": f.client_id,
+                    "nonce": f.nonce, "auth_time": f.auth_time,
+                    "amr": f.amr, "acr": f.acr,
+                    "session_id": f.session_id, "grant": f.grant,
+                    "set_id": set_id, "access_token": out.access_token,
+                    "code": f.code, "scope": f.scope,
+                });
+                if let Some(state) = &f.state {
+                    facts["state"] = json!(state);
+                }
+                if f.scope_claims {
+                    facts["scope_claims"] =
+                        Json::Object(scope_claims_of(&f.user, &f.scope));
+                }
+                match ids.id_token(base, &facts) {
+                    Some(id) => out.id_token = id,
+                    None => {
+                        return Err(self.refusal(
+                            codes::STS_OAUTH_0169,
+                            500,
+                            "server_error",
+                            "The ID Token could not be issued for this \
+                             client: its registered signing algorithm or \
+                             subject type cannot be honoured.",
+                        ))
+                    }
+                }
+            }
+        }
+        Ok(out)
     }
 
     fn client_credentials(
@@ -2231,6 +2491,93 @@ struct Issuing<'a> {
     dpop_jwk: Json,
     flows: Option<Json>,
     resources: Vec<String>,
+}
+
+/// What an implicit or hybrid response asks to be minted.
+#[derive(Debug, Clone, Default)]
+pub struct FrontChannel {
+    pub user: Json,
+    pub client_id: String,
+    pub scope: String,
+    pub resources: Vec<String>,
+    pub session_id: String,
+    pub session_authenticated: bool,
+    pub auth_time: f64,
+    pub amr: Json,
+    pub acr: Json,
+    pub nonce: String,
+    /// `implicit` or `hybrid (authorization endpoint)`.
+    pub grant: String,
+    pub code: String,
+    pub state: Option<String>,
+    pub with_access: bool,
+    pub with_id: bool,
+    /// `scopeClaims`: the response issues the ID Token alone.
+    pub scope_claims: bool,
+}
+
+/// What an implicit or hybrid response carries.
+#[derive(Debug, Clone, Default)]
+pub struct FrontTokens {
+    pub access_token: String,
+    pub expires_in: i64,
+    pub scope: String,
+    pub id_token: String,
+}
+
+/// `SCOPE_CLAIMS` (`common/scope_claims.ts`).
+pub const SCOPE_CLAIMS: [(&str, &[&str]); 4] = [
+    (
+        "profile",
+        &[
+            "name",
+            "family_name",
+            "given_name",
+            "middle_name",
+            "nickname",
+            "preferred_username",
+            "profile",
+            "picture",
+            "website",
+            "gender",
+            "birthdate",
+            "zoneinfo",
+            "locale",
+            "updated_at",
+        ],
+    ),
+    ("email", &["email", "email_verified"]),
+    ("address", &["address"]),
+    ("phone", &["phone_number", "phone_number_verified"]),
+];
+
+/// `scopeClaimsOf(user, scope)` over the person's claims: each claim a
+/// granted scope covers that the person holds. The directory fallback
+/// (`claimAttributes.requestedClaimsFor()`) is not read here.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn scope_claims_of(user: &Json, scope: &str) -> Map<String, Json> {
+    let granted: Vec<&str> = scope.split_whitespace().collect();
+    let mut out = Map::new();
+    for (name, claims) in SCOPE_CLAIMS {
+        if !granted.contains(&name) {
+            continue;
+        }
+        for claim in claims {
+            match user.get(*claim) {
+                None | Some(Json::Null) => {}
+                Some(Json::String(t)) if t.is_empty() => {}
+                Some(v) => {
+                    out.insert(claim.to_string(), v.clone());
+                }
+            }
+        }
+    }
+    if out.contains_key("phone_number")
+        && !out.contains_key("phone_number_verified")
+    {
+        out.insert("phone_number_verified".into(), Json::Bool(false));
+    }
+    out
 }
 
 /// What `issue()` hands `tokenSet()`.

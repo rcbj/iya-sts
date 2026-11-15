@@ -106,6 +106,11 @@ pub struct AuthorizeAsk {
     /// The session core's view of the request (cookies, address, the
     /// account marks).
     pub request: Request,
+    /// How a JWT-secured request arrived (`req.stsJar`), once resolved.
+    pub jar: Option<crate::request_object::Jar>,
+    /// The id_token_hint's verdict (`req.stsIdTokenHint`): `{ ok, sub,
+    /// claims }` or `{ ok: false, why }`.
+    pub hint: Option<Json>,
 }
 
 /// The session core's doors the endpoint uses (`sts_authn::Sessions`).
@@ -120,6 +125,19 @@ pub trait SignOn: Send + Sync {
     fn note_client(&self, sid: &str, client_id: &str, iss: &str, sub: &str);
     /// `authn.hintAccount(req, { loginHint, sub, sid })`.
     fn hint_account(&self, request: &Request, login_hint: &str);
+    /// The same, with an id_token_hint's subject and session.
+    fn hint_account_with(
+        &self,
+        request: &Request,
+        login_hint: &str,
+        sub: &str,
+        sid: &str,
+    ) {
+        let _ = (sub, sid);
+        if !login_hint.is_empty() {
+            self.hint_account(request, login_hint);
+        }
+    }
     /// `authn.accountChoiceNeeded(req)`.
     fn account_choice_needed(&self, request: &Request) -> Option<Json>;
     /// `authn.noteAccountAmbiguous(req, via, why)`.
@@ -185,6 +203,23 @@ impl SignOn for sts_authn::Sessions {
             self,
             request,
             &json!({ "loginHint": login_hint }),
+        );
+    }
+
+    fn hint_account_with(
+        &self,
+        request: &Request,
+        login_hint: &str,
+        sub: &str,
+        sid: &str,
+    ) {
+        if login_hint.is_empty() && sub.is_empty() && sid.is_empty() {
+            return;
+        }
+        sts_authn::Sessions::hint_account(
+            self,
+            request,
+            &json!({ "loginHint": login_hint, "sub": sub, "sid": sid }),
         );
     }
 
@@ -429,6 +464,14 @@ pub struct AuthorizationEndpoint {
     /// `consent_screen.ts`); `None` asks nobody and records nothing, as
     /// `oauth2.consentRequired` off does.
     pub consent: Option<Arc<crate::consent::ConsentScreen>>,
+    /// RFC 9101 and RFC 9126 (`request_object.ts`, `par.ts`); `None`
+    /// refuses every JWT-secured request `request_not_supported`.
+    pub request_objects: Option<Arc<crate::request_object::RequestObjects>>,
+    /// The token endpoint, for an implicit or hybrid response's tokens;
+    /// `None` refuses those response types.
+    pub tokens: Option<Arc<crate::token_endpoint::TokenEndpoint>>,
+    /// The client-facing subject, for an id_token_hint.
+    pub pairwise: Option<Arc<crate::pairwise::PairwiseSubjects>>,
     pub pages: Arc<dyn Pages>,
     /// The realm's key, for a JWT-secured response (JARM); `None` refuses
     /// one as a response that cannot be made (`STS-OAUTH-0588`).
@@ -840,6 +883,19 @@ impl AuthorizationEndpoint {
             }
         }
         let client = self.clients.client_config_of(&client_id);
+        // A REPEATED PARAMETER (RFC 6749 section 3.1; OAuth 2.1 sections
+        // 3.1 and 3.2): product refuses it as OAuth 2.1 mode does (ASVS
+        // 5.0.0 15.3.7). Answered here, never redirected.
+        if self.settings.value_of("oauth2.oauth21").as_bool()
+            || self.mode.refuses_repeated_token_parameters()
+        {
+            if let Some((code, description)) = crate::oauth21::repeated_refusal(
+                &crate::oauth21::repeated_in_query(input),
+                "authorization request",
+            ) {
+                return Err(refuse(code, "invalid_request", description));
+            }
+        }
         // OAUTH 2.1: THE CLIENT FIRST, AND A DEFAULT redirect_uri (section
         // 4.1.1: OPTIONAL where exactly one is registered). Both refusals
         // are answered here, as a 400: there is no validated address yet.
@@ -850,6 +906,16 @@ impl AuthorizationEndpoint {
             if s(q.get("redirect_uri")).is_empty() {
                 let own = values(client.get("redirect_uris"));
                 if own.len() == 1 {
+                    // The ONE registered URI comes off the entry, which an
+                    // `ldapmodify` reaches without any check: held to the
+                    // schema's test before it is used.
+                    if let Some(problem) =
+                        crate::model::redirect_uri_problem(&own[0], true)
+                    {
+                        return Err(refuse(codes::STS_OAUTH_0274, "invalid_request", format!(
+                            "OAuth 2.1 ({}) section 4.1.1: this request named no redirect_uri, and the one client \"{}\" has registered cannot be used — it {}. Correct the entry on /admin/applications.",
+                            OAUTH21_DRAFT, client_id, problem)));
+                    }
                     q.insert("redirect_uri".into(), Json::from(own[0].clone()));
                 } else if own.len() > 1 {
                     return Err(refuse(codes::STS_OAUTH_0273, "invalid_request", format!(
@@ -1239,25 +1305,72 @@ impl AuthorizationEndpoint {
         };
         let client_id = s(input.get("client_id"));
         let client = self.clients.client_config_of(&client_id);
-        let jar = !s(input.get("request")).is_empty()
+        // authorizeWithClient(): a JWT-secured request is resolved first,
+        // and its parameters are the request from here on.
+        let mut ask = ask.clone();
+        let mut input = input;
+        let secured = !s(input.get("request")).is_empty()
             || !s(input.get("request_uri")).is_empty();
-        let signed_required = client.get("require_signed_request_object")
-            == Some(&Json::Bool(true))
-            || self
-                .settings
-                .value_of("oauth2.requireSignedRequestObject")
-                .as_bool();
-        if jar || signed_required {
-            let mut a = self.refuse_on(ask, &input, codes::STS_OAUTH_0340, 400, "request_not_supported",
-                "This authorization server does not yet read a request object (RFC 9101) or a pushed request_uri (RFC 9126): send the parameters on the request itself.", None);
-            a.set("Cache-Control", "no-store");
-            return a;
+        match &self.request_objects {
+            None if secured => {
+                let mut a = self.refuse_on(&ask, &input, codes::STS_OAUTH_0340, 400, "request_not_supported",
+                    "This authorization server does not yet read a request object (RFC 9101) or a pushed request_uri (RFC 9126): send the parameters on the request itself.", None);
+                a.set("Cache-Control", "no-store");
+                return a;
+            }
+            Some(objects) if secured || objects.signed_required(&client) => {
+                let issuer = crate::jwt_access_token::JwtAccessTokens::new(
+                    self.settings.clone(),
+                )
+                .issuer_for(&ask.base);
+                match objects.resolve(
+                    &input,
+                    &client,
+                    &issuer,
+                    &ask.base,
+                    &crate::authorization_servers::current(),
+                ) {
+                    Err((code, error, description)) => {
+                        tracing::info!(
+                            "oauth2: an authorization request from \"{}\" \
+                                 was refused ({}): {}",
+                            if client_id.is_empty() {
+                                "(no client_id)"
+                            } else {
+                                &client_id
+                            },
+                            error,
+                            description
+                        );
+                        let mut a = self.refuse_on(
+                            &ask,
+                            &input,
+                            code,
+                            400,
+                            error,
+                            &description,
+                            None,
+                        );
+                        a.set("Cache-Control", "no-store");
+                        return a;
+                    }
+                    Ok(Some(resolved)) => {
+                        input = resolved.params;
+                        ask.jar = Some(resolved.jar);
+                    }
+                    Ok(None) => {}
+                }
+            }
+            _ => {}
         }
-        if !s(input.get("id_token_hint")).is_empty() {
-            return self.refuse_on(ask, &input, codes::STS_OAUTH_0566, 400, "invalid_request",
-                "id_token_hint: this authorization server does not yet verify an id_token_hint; send login_hint instead.", None);
+        // withIdTokenHint(): its verdict, which the request reads later.
+        let hint = s(input.get("id_token_hint"));
+        if !hint.is_empty() {
+            ask.hint = Some(self.verify_id_token_hint(&ask, &hint, &client_id));
         }
-        // pushedRequestPolicyRefusal(): nothing is pushed here.
+        let ask = &ask;
+        // pushedRequestPolicyRefusal(): a realm or client requiring PAR.
+        let pushed = ask.jar.as_ref().is_some_and(|j| j.source == "par");
         let mut required_by: Vec<String> = Vec::new();
         if self
             .settings
@@ -1275,7 +1388,7 @@ impl AuthorizationEndpoint {
                 client_id
             ));
         }
-        if !required_by.is_empty() {
+        if !pushed && !required_by.is_empty() {
             return self.refuse_on(ask, &input, codes::STS_OAUTH_0419, 400, "invalid_request", &format!(
                 "this authorization request was not pushed, and {} says pushed authorization requests are the only means of sending one here (RFC 9126 section 4). POST the parameters to {}/oauth2/par first and send the request_uri it answers with.",
                 required_by.join(" and "), ask.base), None);
@@ -1310,6 +1423,109 @@ impl AuthorizationEndpoint {
             }
         };
         self.authorize(ask, q, types, client)
+    }
+
+    /// `verifyIdTokenHint(req, hint, clientId)`: an ID Token this service
+    /// issued to this client — the realm's own key, or the client's secret
+    /// for an HMAC one — or why not.
+    fn verify_id_token_hint(
+        &self,
+        ask: &AuthorizeAsk,
+        hint: &str,
+        client_id: &str,
+    ) -> Json {
+        let refused = |why: String| json!({ "ok": false, "why": why });
+        let parts: Vec<&str> = hint.split('.').collect();
+        if parts.len() == 5 {
+            return refused("the id_token_hint is encrypted (a JWE), and this service reads only the signed ID Token it issued — send that, as section 3.1.2.1 has the client do.".into());
+        }
+        let Ok(header) = crate::js::segment_json(hint, 0) else {
+            return refused("the id_token_hint is not a JWT.".into());
+        };
+        let alg = s(header.get("alg"));
+        if alg.is_empty() || alg.eq_ignore_ascii_case("none") {
+            return refused(format!(
+                "the id_token_hint is unsigned (alg {}), and every ID Token this service issues is signed, so it is not one this service issued.",
+                if alg.is_empty() { "missing" } else { &alg }));
+        }
+        let now = ((self.now_ms)() / 1000.0).floor() as i64;
+        let verified: Result<Json, String> = if alg.starts_with("HS") {
+            let registered = self.clients.client_config_of(client_id);
+            let secret = s(registered.get("client_secret"));
+            if secret.is_empty() {
+                return refused(format!(
+                    "the id_token_hint is signed with {} and client \"{}\" has no client_secret to verify it with.",
+                    alg, client_id));
+            }
+            sts_crypto::keys::JwsKey::from_jwk(&json!({
+                "kty": "oct",
+                "k": sts_crypto::b64::encode(secret.as_bytes()),
+            }))
+            .map_err(|e| e.to_string())
+            .and_then(|key| {
+                let algs = [alg.as_str()];
+                sts_crypto::jws::verify_compact(
+                    hint,
+                    &key,
+                    &sts_crypto::jws::VerifyOptions {
+                        algorithms: &algs,
+                        empty_payload: false,
+                        policy: sts_crypto::keys::KeyPolicy::LENIENT,
+                    },
+                )
+                .map(|v| v.claims.unwrap_or(Json::Null))
+                .map_err(|e| e.to_string())
+            })
+        } else {
+            match self.signer.as_ref() {
+                None => Err("no key is held to verify it".into()),
+                Some(signer) => signer.verify_own(hint, now),
+            }
+        };
+        let claims = match verified {
+            Ok(c) => c,
+            Err(e) => {
+                return refused(format!(
+                    "the id_token_hint did not verify as an ID Token this service issued: {}.",
+                    e.trim_end_matches('.')));
+            }
+        };
+        let issuer = crate::jwt_access_token::JwtAccessTokens::new(
+            self.settings.clone(),
+        )
+        .issuer_for(&ask.base);
+        let iss = s(claims.get("iss"));
+        if iss != issuer {
+            return refused(format!(
+                "{}, and this authorization server is \"{}\".",
+                if iss.is_empty() {
+                    "the id_token_hint names no issuer (no iss)".to_string()
+                } else {
+                    format!("the id_token_hint was issued by \"{}\"", iss)
+                },
+                issuer
+            ));
+        }
+        let audiences: Vec<String> = match claims.get("aud") {
+            Some(Json::Array(l)) => l.iter().map(|a| s(Some(a))).collect(),
+            Some(one) => vec![s(Some(one))],
+            None => Vec::new(),
+        };
+        if !audiences.iter().any(|a| a == client_id) {
+            return refused(format!(
+                "the id_token_hint was issued to {}, not to client \"{}\".",
+                crate::js::stringify(claims.get("aud").unwrap_or(&Json::Null)),
+                client_id
+            ));
+        }
+        let typ = s(header.get("typ")).to_ascii_lowercase();
+        if claims.get("events").is_some()
+            || typ.contains("logout+jwt")
+            || typ.contains("at+jwt")
+        {
+            return refused("the id_token_hint is not an ID Token.".into());
+        }
+        json!({ "ok": true, "sub": s(claims.get("sub")), "claims": claims })
     }
 
     /// `fail(error, description)`: redirected to the client, or — in RFC
@@ -1579,6 +1795,7 @@ impl AuthorizationEndpoint {
             self.settings
                 .value_of("oauth2.jarmResponseLifetimeS")
                 .as_int(),
+            self.mode.allows_cbc_jwe(),
         )?;
         let transport = crate::jarm::transport_of(mode, types);
         let sep = if transport == "fragment" {
@@ -1754,6 +1971,17 @@ impl AuthorizationEndpoint {
         client: Json,
     ) -> Answer {
         let client_id = s(q.get("client_id"));
+        if let Some(h) = ask.hint.as_ref().filter(|h| h["ok"] != json!(true)) {
+            let session = self.sign_on.session_of(&ask.request);
+            return self.fail(
+                ask,
+                &q,
+                session.is_some(),
+                codes::STS_OAUTH_0566,
+                "invalid_request",
+                &format!("id_token_hint: {}", s(h.get("why"))),
+            );
+        }
         let authn_error = s(q.get("authn_error"));
         if !authn_error.is_empty() {
             let session = self.sign_on.session_of(&ask.request);
@@ -1789,9 +2017,23 @@ impl AuthorizationEndpoint {
             );
         }
         let login_hint = s(q.get("login_hint"));
-        if !login_hint.is_empty() {
-            self.sign_on.hint_account(&ask.request, &login_hint);
-        }
+        let hinted = ask.hint.as_ref().filter(|h| h["ok"] == json!(true));
+        let hint_sub = hinted.map(|h| s(h.get("sub"))).unwrap_or_default();
+        let local_sub = match &self.pairwise {
+            Some(p) if !hint_sub.is_empty() => match p.local_for(&hint_sub) {
+                l if l.is_empty() => hint_sub.clone(),
+                l => l,
+            },
+            _ => hint_sub.clone(),
+        };
+        self.sign_on.hint_account_with(
+            &ask.request,
+            &login_hint,
+            &local_sub,
+            &hinted
+                .map(|h| s(h["claims"].get("sid")))
+                .unwrap_or_default(),
+        );
         let session = self.sign_on.session_of(&ask.request);
         let starts = self
             .clients
@@ -1809,8 +2051,28 @@ impl AuthorizationEndpoint {
                 client_id));
         }
         let prompt = words(&s(q.get("prompt")));
+        let hint_mismatch = hinted.is_some()
+            && session.as_ref().is_some_and(|sn| {
+                let local = s(sn.get("user").and_then(|u| u.get("sub")));
+                let theirs = match &self.pairwise {
+                    Some(p) => p
+                        .subject_for(&client_id, &local, &s(sn.get("id")))
+                        .unwrap_or(local),
+                    None => local,
+                };
+                theirs != hint_sub
+            });
+        let outer = ask.jar.as_ref().map(|j| &j.outer).unwrap_or(&q);
+        let hint_prompted = s(outer.get("hint_prompted")) == "1";
+        if hint_mismatch
+            && (prompt.iter().any(|p| p == "none") || hint_prompted)
+        {
+            return self.fail(ask, &q, session.is_some(), codes::STS_OAUTH_0567, "login_required",
+                "The id_token_hint names a different person from the one signed in here, and prompt=none forbids asking them to sign in (OIDC Core section 3.1.2.1).");
+        }
         let force =
-            prompt.iter().any(|p| p == "login" || p == "select_account");
+            prompt.iter().any(|p| p == "login" || p == "select_account")
+                || hint_mismatch;
         let prompt_none = prompt.iter().any(|p| p == "none");
         if let (Some(session), false) = (&session, force) {
             let sid = s(session.get("id"));
@@ -1838,8 +2100,18 @@ impl AuthorizationEndpoint {
                 "No session, and prompt=none forbids showing the login screen.",
             );
         }
-        let return_to =
-            format!("/oauth2/authorize?{}", query_string(&q, &["prompt"]));
+        let return_to = format!(
+            "{}/oauth2/authorize?{}{}",
+            crate::authorization_servers::path_of(
+                &crate::authorization_servers::current()
+            ),
+            self.return_query(ask, &q),
+            if hint_mismatch {
+                "&hint_prompted=1"
+            } else {
+                ""
+            }
+        );
         let shown_scope = match s(q.get("scope")) {
             sc if sc.is_empty() => "(none requested)".to_string(),
             sc => sc,
@@ -1956,7 +2228,7 @@ impl AuthorizationEndpoint {
                 crate::authorization_servers::path_of(
                     &crate::authorization_servers::current()
                 ),
-                self.return_query(q)
+                self.return_query(ask, q)
             );
             self.sign_on.hold_presentation(&s(session.get("id")));
             let already: Vec<Json> = decision
@@ -2028,9 +2300,31 @@ impl AuthorizationEndpoint {
     }
 
     /// `authorizationReturnQuery(req, q)`: the request with `prompt`
-    /// dropped, for the sign-in and consent hops to return to.
-    fn return_query(&self, q: &Map<String, Json>) -> String {
-        query_string(q, &["prompt"])
+    /// dropped, for the sign-in and consent hops to return to — or, for a
+    /// JWT-secured one, the request object again as it arrived (with
+    /// `client_id`), so the second pass verifies it a second time and
+    /// `jar_prompt_honoured` says the first honoured its `prompt`.
+    fn return_query(
+        &self,
+        ask: &AuthorizeAsk,
+        q: &Map<String, Json>,
+    ) -> String {
+        let Some(jar) = ask.jar.as_ref() else {
+            return query_string(q, &["prompt"]);
+        };
+        let mut back = Map::new();
+        back.insert("client_id".into(), json!(s(jar.outer.get("client_id"))));
+        for name in ["request", "request_uri"] {
+            if let Some(v) = jar.outer.get(name) {
+                back.insert(name.into(), v.clone());
+            }
+        }
+        if q.contains_key("prompt")
+            || jar.outer.contains_key("jar_prompt_honoured")
+        {
+            back.insert("jar_prompt_honoured".into(), json!("1"));
+        }
+        query_string(&back, &[])
     }
 
     /// `consent.globalConsentsOf(clientId)`: `oauthGlobalConsent` on the
@@ -2068,7 +2362,9 @@ impl AuthorizationEndpoint {
             )
             .marked(code)
         };
-        if types.iter().any(|t| t == "token" || t == "id_token") {
+        let front_channel =
+            types.iter().any(|t| t == "token" || t == "id_token");
+        if front_channel && self.tokens.is_none() {
             return back(
                 codes::STS_OAUTH_0162,
                 "unsupported_response_type",
@@ -2251,6 +2547,82 @@ impl AuthorizationEndpoint {
             out.push(("code".into(), code));
             completed = false;
         }
+        if let (true, Some(tokens)) = (front_channel, self.tokens.as_ref()) {
+            let code = out
+                .iter()
+                .find(|(k, _)| k == "code")
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            let made = tokens.front_channel(
+                &ask.base,
+                &crate::token_endpoint::FrontChannel {
+                    user: user.clone(),
+                    client_id: client_id.clone(),
+                    scope: scope.clone(),
+                    resources: resources.clone(),
+                    session_id: session_id.clone(),
+                    session_authenticated: signed_in,
+                    auth_time: crate::js::to_number(&json!(view.auth_time)),
+                    amr: json!(view.methods),
+                    acr: json!(view.assurance_level),
+                    nonce: s(q.get("nonce")),
+                    grant: if code.is_empty() {
+                        "implicit".into()
+                    } else {
+                        "hybrid (authorization endpoint)".into()
+                    },
+                    code,
+                    state: state.clone(),
+                    with_access: types.iter().any(|t| t == "token"),
+                    with_id: types.iter().any(|t| t == "id_token"),
+                    scope_claims: types.len() == 1,
+                },
+            );
+            match made {
+                Err(a) => {
+                    let body = a.json_body().cloned().unwrap_or(Json::Null);
+                    return back(
+                        a.code.unwrap_or(codes::STS_OAUTH_0169),
+                        &s(body.get("error")),
+                        &s(body.get("error_description")),
+                    );
+                }
+                Ok(made) => {
+                    if !made.access_token.is_empty() {
+                        out.push(("access_token".into(), made.access_token));
+                        out.push(("token_type".into(), "Bearer".into()));
+                        out.push((
+                            "expires_in".into(),
+                            made.expires_in.to_string(),
+                        ));
+                        if !made.scope.is_empty() {
+                            out.push(("scope".into(), made.scope));
+                        }
+                    }
+                    if !made.id_token.is_empty() {
+                        out.push(("id_token".into(), made.id_token));
+                    }
+                }
+            }
+        }
+        // A PUSHED REQUEST IS SPENT when a response is issued on it, and a
+        // request object's `jti` noted (`par.spend()`,
+        // `requestObject.spend()`).
+        if let (Some(jar), Some(objects)) =
+            (ask.jar.as_ref(), self.request_objects.as_ref())
+        {
+            if let Some(uri) = jar
+                .pushed
+                .as_ref()
+                .map(|p| s(p.get("requestUri")))
+                .filter(|u| !u.is_empty())
+            {
+                objects.pushed.spend(&uri);
+            }
+            if let Some(once) = jar.once.as_ref() {
+                objects.spend(once);
+            }
+        }
         self.grants.remember_transaction_values(
             self.bcp_enabled(),
             &Json::Object(q.clone()),
@@ -2334,4 +2706,214 @@ pub fn hide_step(location: &str, application: &str) -> String {
 fn is_loopback(host: &str) -> bool {
     let h = host.to_ascii_lowercase();
     h == "127.0.0.1" || h == "::1" || h == "[::1]" || h == "localhost"
+}
+
+/// `PAR_NOT_PARAMETERS`: client authentication, never kept.
+const PAR_NOT_PARAMETERS: [&str; 3] =
+    ["client_secret", "client_assertion", "client_assertion_type"];
+
+/// `PAR_PRIVATE_FIELDS`: what only this service puts on a request.
+const PAR_PRIVATE_FIELDS: [&str; 5] = crate::request_object::ROUND_TRIP_FIELDS;
+
+impl AuthorizationEndpoint {
+    /// `POST /oauth2/par` (`parRequest()`, RFC 9126 section 2): the client
+    /// authenticated as at the token endpoint, the parameters — or a
+    /// request object, verified — vetted as the authorization endpoint
+    /// vets them, and kept under a `request_uri`. `201 { request_uri,
+    /// expires_in }`, or the refusal as JSON.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn push(
+        &self,
+        ask: &AuthorizeAsk,
+        tokens: &crate::token_endpoint::TokenEndpoint,
+        authorization: &str,
+        peer: Option<crate::client_auth::PeerCertificate>,
+    ) -> Answer {
+        let refuse = |status: u16, error: &str, description: &str, code| {
+            tracing::info!(
+                "par: a push was refused {} {}: {}",
+                status,
+                error,
+                description
+            );
+            let mut a = Answer::refusal(code, status, error, description);
+            a.set("Cache-Control", "no-store");
+            a
+        };
+        let Some(objects) = self.request_objects.as_ref() else {
+            return refuse(404, "invalid_request", "This authorization server does not offer pushed authorization requests (oauth2.pushedAuthorizationRequests is off), and its metadata carries no pushed_authorization_request_endpoint. Send the authorization request to the authorization endpoint instead.", codes::STS_OAUTH_0400);
+        };
+        if !self
+            .settings
+            .value_of("oauth2.pushedAuthorizationRequests")
+            .as_bool()
+        {
+            return refuse(404, "invalid_request", "This authorization server does not offer pushed authorization requests (oauth2.pushedAuthorizationRequests is off), and its metadata carries no pushed_authorization_request_endpoint. Send the authorization request to the authorization endpoint instead.", codes::STS_OAUTH_0400);
+        }
+        let max = self.settings.value_of("oauth2.parMaxBodyBytes").as_int();
+        if max > 0 && ask.body.len() as i64 > max {
+            return refuse(413, "invalid_request", &format!(
+                "The pushed authorization request is {} bytes, and this authorization server accepts at most {} (oauth2.parMaxBodyBytes; RFC 9126 section 2.3).",
+                ask.body.len(), max), codes::STS_OAUTH_0402);
+        }
+        let kind = ask
+            .content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        if kind != "application/x-www-form-urlencoded" {
+            return refuse(400, "invalid_request", &format!(
+                "A pushed authorization request is sent as application/x-www-form-urlencoded (RFC 9126 section 2), and this one is \"{}\".",
+                if kind.is_empty() { "(no Content-Type)" } else { &kind }), codes::STS_OAUTH_0403);
+        }
+        let folded = crate::js::fold(&crate::js::form_decode(&ask.body));
+        let body = match crate::model::check("par", &folded, "body") {
+            Ok(b) => b,
+            Err(r) => {
+                return refuse(
+                    400,
+                    "invalid_request",
+                    &r.detail,
+                    codes::STS_OAUTH_0403,
+                )
+            }
+        };
+        let client = crate::token_endpoint::client_from(authorization, &body);
+        let client_id = client.client_id.clone();
+        let named = s(body.get("client_id"));
+        if !named.is_empty() && !client_id.is_empty() && named != client_id {
+            return refuse(400, "invalid_request", &format!(
+                "The pushed request names client_id \"{}\" and its client authentication names \"{}\". A pushed authorization request is bound to the client that authenticated (RFC 9126 section 2.2), so the two must be the same client.",
+                named, client_id), codes::STS_OAUTH_0406);
+        }
+        if client_id.is_empty() {
+            return refuse(400, "invalid_request", "A pushed authorization request requires client_id (RFC 9126 section 2.1: \"as a required authorization request parameter, it is similarly required in a pushed authorization request\"), and this one carries none — no client_id parameter, no Authorization: Basic header and no client assertion.", codes::STS_OAUTH_0405);
+        }
+        let registered = self.clients.client_config_of(&client_id);
+        if !self.mode.issues_to_unregistered_applications()
+            && self.clients.registered_by(&client_id).is_empty()
+        {
+            return refuse(401, "invalid_client", &format!(
+                "The client \"{}\" is not registered in this realm. In product mode this authorization server serves only a client registered ahead of time (the console, /admin-api, RFC 7591, an LDAP add under ou=applications or an OpenID Federation); one that was only seen is not registered.",
+                client_id), codes::STS_OAUTH_0947);
+        }
+        let (authenticated, method) = match tokens.authenticate_push(
+            &ask.base,
+            authorization,
+            &body,
+            peer,
+        ) {
+            Ok(v) => v,
+            Err(mut a) => {
+                a.set("Cache-Control", "no-store");
+                return a;
+            }
+        };
+        if !s(body.get("request_uri")).is_empty() {
+            return refuse(400, "invalid_request", "A pushed authorization request may not carry request_uri (RFC 9126 section 2.1: \"it MUST NOT be provided\") — the request_uri is what this endpoint answers with.", codes::STS_OAUTH_0404);
+        }
+        let issuer = crate::jwt_access_token::JwtAccessTokens::new(
+            self.settings.clone(),
+        )
+        .issuer_for(&ask.base);
+        let mut params = Map::new();
+        let mut source = "form";
+        let mut alg = String::new();
+        let mut once = None;
+        if !s(body.get("request")).is_empty() {
+            let outside: Vec<String> = body
+                .keys()
+                .filter(|n| {
+                    *n != "request"
+                        && *n != "client_id"
+                        && !PAR_NOT_PARAMETERS.contains(&n.as_str())
+                })
+                .cloned()
+                .collect();
+            if !outside.is_empty() {
+                return refuse(400, "invalid_request", &format!(
+                    "This push carries a request object and also {}. RFC 9126 section 3: beside `request`, the form body holds only what client authentication needs, and every authorization request parameter MUST be a claim of the request object.",
+                    outside.join(", ")), codes::STS_OAUTH_0409);
+            }
+            match objects.verify_object(
+                &s(body.get("request")),
+                &registered,
+                &client_id,
+                &Map::new(),
+                &issuer,
+                &ask.base,
+            ) {
+                Err((code, error, description)) => {
+                    return refuse(400, error, &description, code)
+                }
+                Ok((p, a, o)) => {
+                    let claims_client =
+                        crate::js::segment_json(&s(body.get("request")), 1)
+                            .ok()
+                            .and_then(|c| c.get("client_id").cloned());
+                    if authenticated && claims_client.is_none() {
+                        return refuse(400, "invalid_request_object", &format!(
+                            "The pushed request object carries no client_id claim, and client \"{}\" authenticated: RFC 9126 section 3 requires the authenticated client_id to match the client_id claim of the request object.",
+                            client_id), codes::STS_OAUTH_0424);
+                    }
+                    params = p;
+                    alg = a;
+                    once = o;
+                    source = "request";
+                }
+            }
+        } else {
+            if objects.signed_required(&registered) {
+                return refuse(400, "invalid_request", "This push carries plain parameters, and a signed request object is required here (RFC 9101 section 10.5 — oauth2.requireSignedRequestObject, this client's require_signed_request_object or this authorization server's metadata). RFC 9126 section 2.3: such a client \"MUST\" push a `request` object.", codes::STS_OAUTH_0415);
+            }
+            for (name, value) in &body {
+                if !PAR_NOT_PARAMETERS.contains(&name.as_str())
+                    && name != "request"
+                {
+                    params.insert(name.clone(), value.clone());
+                }
+            }
+        }
+        for name in PAR_PRIVATE_FIELDS {
+            params.remove(name);
+        }
+        params.insert("client_id".into(), json!(client_id));
+        let q = match self.vet(ask, &params) {
+            Ok((q, _, _)) => q,
+            Err(e) => {
+                let v = e.1;
+                return refuse(400, v.error, &v.description, v.code);
+            }
+        };
+        if let Some(o) = once.as_ref() {
+            objects.spend(o);
+        }
+        match objects.pushed.push(&crate::par::Push {
+            client_id: client_id.clone(),
+            authorization_server: crate::authorization_servers::current(),
+            params: q,
+            client_authenticated: authenticated,
+            method,
+            source: source.into(),
+            alg,
+            dpop_jkt: String::new(),
+            redirect_relaxed: false,
+        }) {
+            Err((code, error, description)) => {
+                refuse(503, error, &description, code)
+            }
+            Ok((request_uri, expires_in)) => {
+                let mut a = Answer::new(
+                    201,
+                    Body::Json(json!({ "request_uri": request_uri,
+                                       "expires_in": expires_in })),
+                );
+                a.set("Content-Type", "application/json; charset=utf-8");
+                a.set("Cache-Control", "no-store");
+                a
+            }
+        }
+    }
 }
