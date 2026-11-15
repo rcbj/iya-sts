@@ -149,3 +149,202 @@ pub fn build_response(
         }
     }
 }
+
+/// `soapEnvelope(inner)`: the SOAP 1.1 envelope the back channel answers.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn soap_envelope(inner: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?><soap:Envelope \
+         xmlns:soap=\"{}\"><soap:Body>{}</soap:Body></soap:Envelope>",
+        model::term("saml2.namespace", "soap"),
+        inner
+    )
+}
+
+/// `buildArtifactResponse(idp, inResponseTo, status, message, payload)`:
+/// DELIBERATELY NOT SIGNED — what a service provider verifies is the
+/// Response inside, with its own signatures; the back channel's integrity
+/// is TLS's.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn artifact_response(
+    id: &str,
+    issue_instant: &str,
+    idp_entity_id: &str,
+    in_response_to: &str,
+    status: &str,
+    status_message: &str,
+    payload: &str,
+) -> String {
+    format!(
+        "<samlp:ArtifactResponse xmlns:samlp=\"{}\" xmlns:saml=\"{}\"{}>{}\
+         </samlp:ArtifactResponse>",
+        model::ns::samlp(),
+        model::ns::saml(),
+        model::attributes(
+            "saml2.ArtifactResponse",
+            &[
+                ("id", id),
+                ("issueInstant", issue_instant),
+                ("inResponseTo", in_response_to)
+            ]
+        ),
+        model::children(
+            "saml2.ArtifactResponse",
+            &[
+                (
+                    "issuer",
+                    &format!(
+                        "<saml:Issuer>{}</saml:Issuer>",
+                        escape(idp_entity_id)
+                    )
+                ),
+                ("status", &status_element(status, "", status_message)),
+                ("message", payload),
+            ]
+        )
+    )
+}
+
+fn signed_or_not(
+    xml: String,
+    id: &str,
+    signer: Option<&XmlSigner>,
+    what: &str,
+) -> String {
+    let Some(signer) = signer else {
+        return xml;
+    };
+    match signer.sign_referenced(
+        &xml,
+        Placement::AfterIssuer,
+        &format!("#{}", id),
+    ) {
+        Ok(signed) => signed,
+        Err(e) => {
+            tracing::error!(
+                "{}the {} could not be signed, sending it unsigned: {}",
+                sts_core::log::tag(
+                    sts_core::errors::codes::STS_SAML_0013.as_str()
+                ),
+                what,
+                e
+            );
+            xml
+        }
+    }
+}
+
+/// `buildLogoutResponse(idp, destination, inResponseTo, status, message,
+/// sp, subStatus)`: signed where `saml2.signResponse` holds for the service
+/// provider (`signer`).
+#[allow(clippy::too_many_arguments)] // Node's arguments, one each
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn logout_response(
+    id: &str,
+    issue_instant: &str,
+    idp_entity_id: &str,
+    destination: &str,
+    in_response_to: &str,
+    status: &str,
+    message: &str,
+    sub_status: &str,
+    signer: Option<&XmlSigner>,
+) -> String {
+    let xml = format!(
+        "<samlp:LogoutResponse xmlns:samlp=\"{}\" xmlns:saml=\"{}\"{}>{}\
+         </samlp:LogoutResponse>",
+        model::ns::samlp(),
+        model::ns::saml(),
+        model::attributes(
+            "saml2.LogoutResponse",
+            &[
+                ("id", id),
+                ("issueInstant", issue_instant),
+                ("destination", destination),
+                ("inResponseTo", in_response_to)
+            ]
+        ),
+        model::children(
+            "saml2.LogoutResponse",
+            &[
+                (
+                    "issuer",
+                    &format!(
+                        "<saml:Issuer>{}</saml:Issuer>",
+                        escape(idp_entity_id)
+                    )
+                ),
+                ("status", &status_element(status, sub_status, message)),
+            ]
+        )
+    );
+    signed_or_not(xml, id, signer, "LogoutResponse")
+}
+
+/// `subjectFor(sp, nameId, format)` in the clear: the `<saml:NameID>` of a
+/// LogoutRequest (the encrypted form is the caller's, `encryptFor()`).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn logout_name_id(name_id: &str, format: &str) -> String {
+    format!(
+        "<saml:NameID{}>{}</saml:NameID>",
+        if format.is_empty() {
+            String::new()
+        } else {
+            format!(" Format=\"{}\"", escape(format))
+        },
+        escape(name_id)
+    )
+}
+
+/// `buildLogoutRequest(idp, destination, nameId, format, sessionIndex,
+/// sp)`, with the subject element already made ([`logout_name_id`], or an
+/// `<saml:EncryptedID>`).
+#[allow(clippy::too_many_arguments)] // Node's arguments, one each
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn logout_request(
+    id: &str,
+    issue_instant: &str,
+    idp_entity_id: &str,
+    destination: &str,
+    subject: &str,
+    session_index: &str,
+    signer: Option<&XmlSigner>,
+) -> String {
+    let index = if session_index.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<samlp:SessionIndex>{}</samlp:SessionIndex>",
+            escape(session_index)
+        )
+    };
+    let xml = format!(
+        "<samlp:LogoutRequest xmlns:samlp=\"{}\" xmlns:saml=\"{}\"{}>{}\
+         </samlp:LogoutRequest>",
+        model::ns::samlp(),
+        model::ns::saml(),
+        model::attributes(
+            "saml2.LogoutRequest",
+            &[
+                ("id", id),
+                ("issueInstant", issue_instant),
+                ("destination", destination)
+            ]
+        ),
+        model::children(
+            "saml2.LogoutRequest",
+            &[
+                (
+                    "issuer",
+                    &format!(
+                        "<saml:Issuer>{}</saml:Issuer>",
+                        escape(idp_entity_id)
+                    )
+                ),
+                ("nameId", subject),
+                ("sessionIndex", &index),
+            ]
+        )
+    );
+    signed_or_not(xml, id, signer, "LogoutRequest")
+}

@@ -338,6 +338,67 @@ fn node_saml_vectors_both_ways() {
     let mut signed_out = Vec::new();
     let mut checked = 0;
 
+    // The back channel and Single Logout's messages.
+    for l in v["logout"].as_array().unwrap() {
+        checked += 1;
+        let signed = l["signed"].as_bool().unwrap_or(false);
+        let signer_opt = signed.then_some(&signer);
+        let ours = match s(&l["kind"]) {
+            "artifact" => {
+                let x = response::artifact_response(
+                    s(&l["id"]),
+                    s(&l["issueInstant"]),
+                    "https://idp.vectors.example",
+                    s(&l["inResponseTo"]),
+                    s(&l["status"]),
+                    s(&l["message"]),
+                    s(&l["payload"]),
+                );
+                checked += 1;
+                if response::soap_envelope(&x) != s(&l["soap"]) {
+                    fail("soap envelope".to_string());
+                }
+                x
+            }
+            "logoutResponse" => response::logout_response(
+                s(&l["id"]),
+                s(&l["issueInstant"]),
+                "https://idp.vectors.example",
+                s(&l["destination"]),
+                s(&l["inResponseTo"]),
+                "urn:oasis:names:tc:SAML:2.0:status:Success",
+                s(&l["message"]),
+                s(&l["sub"]),
+                signer_opt,
+            ),
+            _ => response::logout_request(
+                s(&l["id"]),
+                s(&l["issueInstant"]),
+                "https://idp.vectors.example",
+                s(&l["destination"]),
+                &response::logout_name_id(s(&l["nameId"]), s(&l["format"])),
+                s(&l["sessionIndex"]),
+                signer_opt,
+            ),
+        };
+        if ours != s(&l["xml"]) {
+            fail(format!(
+                "{}:\n  node {}\n  rust {}",
+                l["kind"], l["xml"], ours
+            ));
+        }
+        if signed {
+            let element = if s(&l["kind"]) == "logoutResponse" {
+                "LogoutResponse"
+            } else {
+                "LogoutRequest"
+            };
+            signed_out.push(json!({ "name": l["kind"], "element": element,
+                                    "xml": ours,
+                                    "certPem": signer.cert_pem }));
+        }
+    }
+
     // The metadata, from the inputs Node read.
     for m in v["metadata"].as_array().unwrap() {
         checked += 2;

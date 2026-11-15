@@ -149,6 +149,52 @@ function build(ROOT) {
                    status: 'urn:oasis:names:tc:SAML:2.0:status:Success',
                    assertion: assertions[3].signed });
 
+  // THE BACK CHANNEL AND SINGLE LOGOUT: buildArtifactResponse(),
+  // soapEnvelope(), buildLogoutResponse() and buildLogoutRequest() (the
+  // NameID in the clear), signed where saml2.signResponse holds.
+  const logout = [];
+  const idOf = function (xml) {
+    return /^<[^>]* ID="([^"]+)"/.exec(xml)[1];
+  };
+  const instantOf = function (xml) {
+    return /^<[^>]* IssueInstant="([^"]+)"/.exec(xml)[1];
+  };
+  const ar = direct.buildArtifactResponse('https://idp.vectors.example',
+    '_res1', 'urn:oasis:names:tc:SAML:2.0:status:Success', '', built.xml);
+  logout.push({ kind: 'artifact', xml: ar, id: idOf(ar),
+                issueInstant: instantOf(ar), inResponseTo: '_res1',
+                status: 'urn:oasis:names:tc:SAML:2.0:status:Success',
+                message: '', payload: built.xml,
+                soap: direct.soapEnvelope(ar) });
+  const ar2 = direct.buildArtifactResponse('https://idp.vectors.example',
+    '_res2', 'urn:oasis:names:tc:SAML:2.0:status:Requester', 'no <such>',
+    '');
+  logout.push({ kind: 'artifact', xml: ar2, id: idOf(ar2),
+                issueInstant: instantOf(ar2), inResponseTo: '_res2',
+                status: 'urn:oasis:names:tc:SAML:2.0:status:Requester',
+                message: 'no <such>', payload: '',
+                soap: direct.soapEnvelope(ar2) });
+  [['', ''], ['urn:oasis:names:tc:SAML:2.0:status:PartialLogout',
+              'some & not all']].forEach(function (row) {
+    const lr = direct.buildLogoutResponse('https://idp.vectors.example', ACS,
+      '_lq1', 'urn:oasis:names:tc:SAML:2.0:status:Success', row[1], SP,
+      row[0]);
+    const unsigned = lr.replace(/<ds:Signature[\s\S]*<\/ds:Signature>/, '');
+    logout.push({ kind: 'logoutResponse', xml: lr, id: idOf(unsigned),
+                  issueInstant: instantOf(unsigned), destination: ACS,
+                  inResponseTo: '_lq1', sub: row[0], message: row[1],
+                  signed: lr !== unsigned });
+  });
+  [['alice', 'urn:x:fmt', '_s1'], ['b&b', '', '']].forEach(function (row) {
+    const lq = direct.buildLogoutRequest('https://idp.vectors.example', ACS,
+                                         row[0], row[1], row[2], SP);
+    const unsigned = lq.replace(/<ds:Signature[\s\S]*<\/ds:Signature>/, '');
+    logout.push({ kind: 'logoutRequest', xml: lq, id: idOf(unsigned),
+                  issueInstant: instantOf(unsigned), destination: ACS,
+                  nameId: row[0], format: row[1], sessionIndex: row[2],
+                  signed: lq !== unsigned });
+  });
+
   // THE BINDINGS.
   const bindings = { decoded: [], stripped: [], redirects: [],
                      simpleSign: [], pages: [] };
@@ -327,6 +373,7 @@ function build(ROOT) {
   const signatures = signatureVectors(ROOT, request);
 
   return { signer: signer, signatures: signatures, metadata: metadata,
+           logout: logout,
            assertions: assertions, responses: responses,
            bindings: bindings, requests: requests, artifacts: artifacts,
            idpEntityId: direct.idpEntityId() };
