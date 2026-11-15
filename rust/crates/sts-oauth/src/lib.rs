@@ -49,6 +49,7 @@ pub mod id_token;
 pub mod js;
 pub mod jwks;
 pub mod jwt_access_token;
+pub mod metadata;
 pub mod minted;
 pub mod model;
 pub mod mtls;

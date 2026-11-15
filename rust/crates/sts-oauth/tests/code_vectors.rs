@@ -37,9 +37,10 @@ use sts_oauth::signin::{AccountChoices, EveryMechanism, PendingSignIns};
 
 fn vectors() -> Option<Json> {
     let dir = std::env::var("STS_CRYPTO_VECTORS").ok()?;
-    let text =
-        std::fs::read_to_string(std::path::Path::new(&dir).join("oauth-node.json"))
-            .ok()?;
+    let text = std::fs::read_to_string(
+        std::path::Path::new(&dir).join("oauth-node.json"),
+    )
+    .ok()?;
     Some(serde_json::from_str(&text).unwrap())
 }
 
@@ -147,7 +148,9 @@ impl sts_oauth::clients::Clients for Facts {
             .unwrap_or_default()
     }
     fn is_client_id(&self, name: &str) -> bool {
-        self.of(name).get("config").is_some_and(|c| c["known"] == json!(true))
+        self.of(name)
+            .get("config")
+            .is_some_and(|c| c["known"] == json!(true))
     }
     fn registered_by(&self, client_id: &str) -> String {
         s(&self.of(client_id)["entry"]["registeredBy"])
@@ -309,7 +312,9 @@ fn decode(jwt: &str) -> Json {
 #[tokio::test]
 async fn the_code_flow() {
     let Some(v) = vectors() else {
-        eprintln!("STS_CRYPTO_VECTORS is not set: the code flow is not checked");
+        eprintln!(
+            "STS_CRYPTO_VECTORS is not set: the code flow is not checked"
+        );
         return;
     };
     let Some(cases) = v["code"].as_array() else {
@@ -374,7 +379,8 @@ async fn the_code_flow() {
             .find(|c| {
                 c["kind"] == "metadata"
                     && s(&c["realm"]) == realm
-                    && s(&c["name"]) == "/.well-known/oauth-authorization-server"
+                    && s(&c["name"])
+                        == "/.well-known/oauth-authorization-server"
             })
             .map(|c| c["body"].clone())
             .unwrap_or(Json::Null);
@@ -415,9 +421,10 @@ async fn the_code_flow() {
         };
         // ---- The authorization endpoint ----------------------------------
         let mut rust_codes: HashMap<String, String> = HashMap::new();
-        for case in cases.iter().filter(|c| {
-            c["kind"] == "authorize" && s(&c["realm"]) == realm
-        }) {
+        for case in cases
+            .iter()
+            .filter(|c| c["kind"] == "authorize" && s(&c["realm"]) == realm)
+        {
             let name = s(&case["name"]);
             *now.lock().unwrap() = case["nowMs"].as_i64().unwrap();
             let query: Vec<(String, String)> = case["query"]
@@ -448,10 +455,14 @@ async fn the_code_flow() {
                         location.contains("error=server_error")
                             || location.contains("error=invalid_scope")
                     }
-                    "implicit" => location.contains("error=unsupported_response_type"),
+                    "implicit" => {
+                        location.contains("error=unsupported_response_type")
+                    }
                     "http" => true,
-                    "refusal-page" => answer.status == case["status"].as_u64().unwrap() as u16
-                        || location.contains("error="),
+                    "refusal-page" => {
+                        answer.status == case["status"].as_u64().unwrap() as u16
+                            || location.contains("error=")
+                    }
                     _ => false,
                 };
                 if !known
@@ -460,7 +471,11 @@ async fn the_code_flow() {
                 {
                     failures.push(format!(
                         "{}: known difference, but\n  rust {} {}\n  node {} {}",
-                        label, answer.status, location, case["status"], node_location
+                        label,
+                        answer.status,
+                        location,
+                        case["status"],
+                        node_location
                     ));
                 }
                 continue;
@@ -469,7 +484,10 @@ async fn the_code_flow() {
                 sts_oauth::answer::Body::Json(j) => j.clone(),
                 // The HTTP layer puts the realm's prefix on a page's links.
                 sts_oauth::answer::Body::Html(h) => {
-                    json!(sts_http::with_realm_links(h, &format!("/realm/{}", realm)))
+                    json!(sts_http::with_realm_links(
+                        h,
+                        &format!("/realm/{}", realm)
+                    ))
                 }
                 sts_oauth::answer::Body::Empty => Json::Null,
             };
@@ -501,7 +519,10 @@ async fn the_code_flow() {
                 "location": steady_location(&s(&case["location"]), &realm),
                 "body": want_body });
             if got != want {
-                failures.push(format!("{}\n  rust {}\n  node {}", label, got, want));
+                failures.push(format!(
+                    "{}\n  rust {}\n  node {}",
+                    label, got, want
+                ));
             }
             // The code's record, member for member.
             if let (Some(c), Some(node_record)) =
@@ -519,7 +540,9 @@ async fn the_code_flow() {
                 }
             }
             // The pending sign-in.
-            if let Some(node_pending) = case.get("pending").filter(|p| !p.is_null()) {
+            if let Some(node_pending) =
+                case.get("pending").filter(|p| !p.is_null())
+            {
                 let id = location
                     .split(['?', '#', '&'])
                     .find_map(|p| p.strip_prefix("authn="))
@@ -557,7 +580,9 @@ async fn the_code_flow() {
         let clock = Arc::new(Pinned(now.clone()));
         let n3 = now.clone();
         let signer: Arc<dyn sts_oauth::token_endpoint::Signer> =
-            Arc::new(sts_oauth::token_endpoint::KeySetSigner { set: set.clone() });
+            Arc::new(sts_oauth::token_endpoint::KeySetSigner {
+                set: set.clone(),
+            });
         let tokens = sts_oauth::token_endpoint::TokenEndpoint {
             settings: settings.clone(),
             mode: mode.clone(),
@@ -570,7 +595,9 @@ async fn the_code_flow() {
                 clock.clone(),
             )),
             register,
-            status: Arc::new(sts_oauth::token_endpoint::LocalStatusList::default()),
+            status: Arc::new(
+                sts_oauth::token_endpoint::LocalStatusList::default(),
+            ),
             signer: signer.clone(),
             clock,
             id_tokens: Some(Arc::new(sts_oauth::id_token::CoreIdTokens {
@@ -592,6 +619,80 @@ async fn the_code_flow() {
             people: Arc::new(Person(realm_row["user"].clone())),
             sessions: Arc::new(Live),
         };
+        // ---- Discovery ---------------------------------------------------
+        for case in cases.iter().filter(|c| {
+            c["kind"] == "metadata"
+                && s(&c["realm"]) == realm
+                && s(&c["name"]) == "/.well-known/oauth-authorization-server"
+        }) {
+            compared += 1;
+            let ui: Vec<String> =
+                catalogs.offered().iter().map(|o| s(&o["tag"])).collect();
+            let doc = sts_oauth::metadata::as_metadata(
+                &sts_oauth::metadata::MetadataInputs {
+                    settings: &settings,
+                    mode: &mode,
+                    base: &s(&case["base"]),
+                    ui_locales: ui,
+                    grant_types: tokens.grant_types_supported(),
+                    mtls_available: true,
+                },
+            );
+            let mut want = case["body"].clone();
+            let signed = want
+                .as_object_mut()
+                .unwrap()
+                .remove("signed_metadata")
+                .unwrap_or(Json::Null);
+            if doc != want {
+                for (k, v) in want.as_object().unwrap() {
+                    if doc.get(k) != Some(v) {
+                        failures.push(format!(
+                            "metadata [{}] {}\n  rust {}\n  node {}",
+                            mode_name,
+                            k,
+                            doc.get(k).unwrap_or(&Json::Null),
+                            v
+                        ));
+                    }
+                }
+                let extra: Vec<&String> = doc
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .filter(|k| want.get(k.as_str()).is_none())
+                    .collect();
+                if !extra.is_empty() {
+                    failures.push(format!(
+                        "metadata [{}] extra {:?}",
+                        mode_name, extra
+                    ));
+                }
+                let order: Vec<&String> =
+                    doc.as_object().unwrap().keys().collect();
+                let node_order: Vec<&String> =
+                    want.as_object().unwrap().keys().collect();
+                if order != node_order {
+                    failures.push(format!(
+                        "metadata [{}] order\n  rust {:?}\n  node {:?}",
+                        mode_name, order, node_order
+                    ));
+                }
+            }
+            let claims = sts_oauth::metadata::signed_metadata_claims(&doc, 0);
+            let node_claims = decode(&s(&signed));
+            let mine: Vec<&String> = claims.keys().collect();
+            let theirs: Vec<&String> = node_claims
+                .as_object()
+                .map(|o| o.keys().collect())
+                .unwrap_or_default();
+            if mine != theirs {
+                failures.push(format!(
+                    "signed_metadata [{}] members\n  rust {:?}\n  node {:?}",
+                    mode_name, mine, theirs
+                ));
+            }
+        }
         let mut swapped: HashMap<String, String> = HashMap::new();
         for case in cases
             .iter()
@@ -601,8 +702,13 @@ async fn the_code_flow() {
             let label = format!("{} [{}]", name, mode_name);
             *now.lock().unwrap() = case["nowMs"].as_i64().unwrap();
             // Node's code record, seeded under its digest.
-            if let Some(record) = case.get("codeRecord").filter(|r| !r.is_null()) {
-                let key = sts_crypto::secrets::credential_digest(&s(&case["form"]["code"])).unwrap();
+            if let Some(record) =
+                case.get("codeRecord").filter(|r| !r.is_null())
+            {
+                let key = sts_crypto::secrets::credential_digest(&s(
+                    &case["form"]["code"]
+                ))
+                .unwrap();
                 grants.codes.set(&key, record.clone());
             }
             let mut form: Vec<(String, String)> = case["form"]
@@ -634,7 +740,9 @@ async fn the_code_flow() {
             let mut got = got_body.clone();
             let mut want = want_body.clone();
             for b in [&mut got, &mut want] {
-                if let Some(d) = b.get("error_description").and_then(Json::as_str) {
+                if let Some(d) =
+                    b.get("error_description").and_then(Json::as_str)
+                {
                     if let Some(at) = d.find("(it has been up ") {
                         let end = d[at..].find(')').map_or(d.len(), |e| at + e);
                         let cut = format!("{}(uptime{}", &d[..at], &d[end..]);
@@ -647,7 +755,9 @@ async fn the_code_flow() {
                     }
                 }
             }
-            if answer.status != case["status"].as_u64().unwrap() as u16 || got != want {
+            if answer.status != case["status"].as_u64().unwrap() as u16
+                || got != want
+            {
                 failures.push(format!(
                     "{}\n  rust {} {}\n  node {} {}",
                     label, answer.status, got, case["status"], want
@@ -655,17 +765,24 @@ async fn the_code_flow() {
                 continue;
             }
             for (k, node_claims) in [
-                ("access_token", case.get("accessToken").map(|t| t["claims"].clone())),
+                (
+                    "access_token",
+                    case.get("accessToken").map(|t| t["claims"].clone()),
+                ),
                 ("id_token", case.get("idToken").map(|t| t["claims"].clone())),
             ] {
-                let Some(node_claims) = node_claims.filter(|c| !c.is_null()) else {
+                let Some(node_claims) = node_claims.filter(|c| !c.is_null())
+                else {
                     continue;
                 };
                 let rust_claims = decode(&s(&got_body[k]));
                 if steady_claims(&rust_claims) != steady_claims(&node_claims) {
                     failures.push(format!(
                         "{} ({})\n  rust {}\n  node {}",
-                        label, k, steady_claims(&rust_claims), steady_claims(&node_claims)
+                        label,
+                        k,
+                        steady_claims(&rust_claims),
+                        steady_claims(&node_claims)
                     ));
                 }
             }
@@ -675,28 +792,37 @@ async fn the_code_flow() {
             ) {
                 swapped.insert(node_rt.clone(), rust_rt.clone());
                 let keys = &realm_row["blob"]["refreshTokenEncKeys"];
-                let rust_jws = sts_oauth::refresh_crypto::open(&rust_rt, keys).unwrap();
+                let rust_jws =
+                    sts_oauth::refresh_crypto::open(&rust_rt, keys).unwrap();
                 let rust_claims = decode(&rust_jws);
                 let node_claims = case["refreshClaims"].clone();
                 if steady_claims(&rust_claims) != steady_claims(&node_claims) {
                     failures.push(format!(
                         "{} (refresh_token)\n  rust {}\n  node {}",
-                        label, steady_claims(&rust_claims), steady_claims(&node_claims)
+                        label,
+                        steady_claims(&rust_claims),
+                        steady_claims(&node_claims)
                     ));
                 }
                 // NODE'S refresh token opens and verifies here.
-                let node_jws = sts_oauth::refresh_crypto::open(&node_rt, keys).unwrap();
-                let verified = signer.verify_own(&node_jws, case["nowMs"].as_i64().unwrap() / 1000);
+                let node_jws =
+                    sts_oauth::refresh_crypto::open(&node_rt, keys).unwrap();
+                let verified = signer.verify_own(
+                    &node_jws,
+                    case["nowMs"].as_i64().unwrap() / 1000,
+                );
                 assert_eq!(
                     verified.as_ref().map(|c| c["jti"].clone()).ok(),
                     Some(node_claims["jti"].clone()),
                     "{}: Node's refresh token verifies here",
                     label
                 );
-                written.push(json!({ "realm": realm, "blob": realm_row["blob"],
+                written.push(
+                    json!({ "realm": realm, "blob": realm_row["blob"],
                     "jws": rust_jws, "sealed": rust_rt,
                     "accessToken": s(&got_body["access_token"]),
-                    "claims": decode(&s(&got_body["access_token"])) }));
+                    "claims": decode(&s(&got_body["access_token"])) }),
+                );
             }
         }
     }
@@ -704,12 +830,23 @@ async fn the_code_flow() {
         let dir = std::env::var("STS_CRYPTO_VECTORS").unwrap();
         std::fs::write(
             std::path::Path::new(&dir).join("oauth-code-rust.json"),
-            serde_json::to_string_pretty(&json!({ "realms": written })).unwrap(),
+            serde_json::to_string_pretty(&json!({ "realms": written }))
+                .unwrap(),
         )
         .unwrap();
     }
-    assert!(failures.is_empty(), "{} of {} differ:\n{}", failures.len(), compared, failures.join("\n"));
-    assert!(compared > 50, "every recorded request is compared ({})", compared);
+    assert!(
+        failures.is_empty(),
+        "{} of {} differ:\n{}",
+        failures.len(),
+        compared,
+        failures.join("\n")
+    );
+    assert!(
+        compared > 50,
+        "every recorded request is compared ({})",
+        compared
+    );
 }
 
 /// The code the answer carries: in its address, or a form_post's field.
@@ -720,7 +857,8 @@ fn rust_location_code(location: &str, body: &Json) -> Option<String> {
         }
     }
     let html = body.as_str()?;
-    let at = html.find("name=\"code\" value=\"")? + "name=\"code\" value=\"".len();
+    let at =
+        html.find("name=\"code\" value=\"")? + "name=\"code\" value=\"".len();
     let end = html[at..].find('"')? + at;
     Some(html[at..end].to_string())
 }

@@ -136,7 +136,8 @@ pub fn node_base64url(text: &str) -> Vec<u8> {
 /// value, or V8's message.
 pub fn node_segment_json(segment: &str) -> Result<Json, String> {
     let text = String::from_utf8_lossy(&node_base64url(segment)).to_string();
-    serde_json::from_str::<Json>(&text).map_err(|e| json_parse_message(&text, &e))
+    serde_json::from_str::<Json>(&text)
+        .map_err(|e| json_parse_message(&text, &e))
 }
 
 /// A compact JWT's segment `index`, decoded leniently and parsed, or the
