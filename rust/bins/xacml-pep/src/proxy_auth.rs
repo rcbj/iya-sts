@@ -136,24 +136,37 @@ pub struct Authenticator {
     jwks: Mutex<Option<JwksCache>>,
 }
 
+/// An empty string is no value. A session's identity is built from what
+/// the ID Token gave (`identity(sub, username)` below), and the service's
+/// ID Token carries no `preferred_username` (#395), so the username is ""
+/// there. Held as "", it counted as a claim the subject HAS: mode
+/// `headers` never asked the service for it and sent `X-Remote-User: ""`
+/// (found on the 8081 demo, 2026-11-14). Left out, it is asked for.
+fn text_of<'a>(said: &'a Value, name: &str) -> Option<&'a str> {
+    said[name].as_str().filter(|s| !s.is_empty())
+}
+
 fn identity_of(said: &Value, mechanism: Mechanism) -> Option<Identity> {
-    let sub = said["sub"]
-        .as_str()
-        .or_else(|| said["subject"].as_str())
+    let sub = text_of(said, "sub")
+        .or_else(|| text_of(said, "subject"))
         .unwrap_or("")
         .to_string();
-    let username = said["username"]
-        .as_str()
-        .or_else(|| said["preferred_username"].as_str())
+    let username = text_of(said, "username")
+        .or_else(|| text_of(said, "preferred_username"))
         .unwrap_or("")
         .to_string();
     let mut claims = Map::new();
     for name in crate::proxy_config::IDENTITY_CLAIMS {
-        if let Some(value) = said.get(name).filter(|v| !v.is_null()) {
+        if let Some(value) = said
+            .get(name)
+            .filter(|v| !v.is_null() && v.as_str() != Some(""))
+        {
             claims.insert(name.to_string(), value.clone());
         }
     }
-    claims.insert("sub".into(), json!(sub));
+    if !sub.is_empty() {
+        claims.insert("sub".into(), json!(sub));
+    }
     if !username.is_empty() {
         claims.insert("username".into(), json!(username));
     }
@@ -713,5 +726,32 @@ impl Authenticator {
             said["sub"].as_str().unwrap_or("").to_string(),
             said["username"].as_str().unwrap_or("").to_string(),
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A session knows only `sub` from the ID Token: the username must be a
+    // claim the subject LACKS, so mode `headers` asks the service for it.
+    #[test]
+    fn an_empty_username_is_not_a_held_claim() {
+        let who = identity("urn:uuid:1", "", Mechanism::Session);
+        assert_eq!(who.sub, "urn:uuid:1");
+        assert_eq!(who.claims.get("sub"), Some(&json!("urn:uuid:1")));
+        assert!(who.claims.get("username").is_none());
+        let named = identity("urn:uuid:1", "alice", Mechanism::Session);
+        assert_eq!(named.claims.get("username"), Some(&json!("alice")));
+    }
+
+    // An empty `username` falls back to `preferred_username`.
+    #[test]
+    fn an_empty_username_falls_back_to_preferred_username() {
+        let said = json!({ "sub": "urn:uuid:1", "username": "",
+                           "preferred_username": "alice", "email": "" });
+        let who = identity_of(&said, Mechanism::OAuth2).expect("an identity");
+        assert_eq!(who.username, "alice");
+        assert!(who.claims.get("email").is_none());
     }
 }
