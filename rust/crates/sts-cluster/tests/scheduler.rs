@@ -506,7 +506,7 @@ async fn a_manual_run_is_queued_once_and_run_once() {
     assert_eq!(row["result"], json!(r#"{"x":1}"#));
 
     let code = |r: Result<_, sts_cluster::scheduler::Refusal>| {
-        r.err().map(|e| e.error_code)
+        r.err().map(|e| e.error_code.as_str())
     };
     assert_eq!(
         code(s.request_run("test.nosuch", None, Json::Null, "", "")),

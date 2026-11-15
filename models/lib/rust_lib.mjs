@@ -14,17 +14,22 @@
 // to one model rather than to two copies of it (rcbj, 2026-11-14: "we need
 // rust data object classes generated rather than typescript classes").
 //
-// Two files, both committed as `rust/crates/sts-model/src/generated/*.rs` by
+// The files are committed under `rust/crates/` by
 // tests/tools/regenerate-model-docs.sh and held there by
 // tests/model_domain.js, as the TypeScript ones are:
 //
-//   domain.rs   a struct per concept (`renderRustDomain()`), with the
+//   sts-model/src/generated/domain.rs
+//               a struct per concept (`renderRustDomain()`), with the
 //               entry or record it is made from and where each field comes
 //               from, as constants a Rust DomainMap reads
-//   api.rs      a module per document and an operation module per
+//   the API     a module per document and an operation module per
 //               operationId (`renderRustApi()`): its method and path, and
 //               its Body, Query and AnswerNNN types, every nested shape
-//               named after the member that holds it
+//               named after the member that holds it — written into the
+//               crates `planCrates()` chooses (each one's Cargo.toml,
+//               src/lib.rs and src/generated/api.rs), with sts-model's
+//               src/generated/api.rs gathering them under one path and
+//               sts-model-base's src/generated/unions.rs the shared unions
 //
 // THE RULES THE TYPES FOLLOW, each the TypeScript renderer's read again:
 //
@@ -86,6 +91,22 @@ const UNION_VARIANT = {
 
 const HEADER = ['// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, ' +
   'LLC', '// SPDX-License-Identifier: BUSL-1.1', '//'];
+
+// The crate every generated crate reads the shared unions and
+// `double_option` from.
+const BASE = 'sts_model_base';
+
+// What stands either side of a component's key in a line written before the
+// plan says which crate the component is in (`resolve()`).
+const TOKEN = '\u0001';
+
+// The documents written across several crates, and into how many of each
+// kind (`planCrates()`); any other document is one crate. The counts are
+// mirrored in rust/Cargo.toml and sts-model's Cargo.toml.
+const SPLIT = {
+  console: { components: 3, operations: 1 },
+  management: { components: 4, operations: 8 }
+};
 
 const DERIVES = '#[derive(Debug, Clone, PartialEq, serde::Serialize, ' +
   'serde::Deserialize)]';
@@ -482,6 +503,8 @@ class ApiWriter {
       self.componentNames.set(key, self.claim(pascal(key)));
     });
     this.componentScope = new Set(this.used);
+    // The components the item being written references, by schema key.
+    this.refs = new Set();
   }
 
   /**
@@ -593,7 +616,8 @@ class ApiWriter {
       return UNION_VARIANT[kind][0];
     }).join('Or');
     this.unions.set(unionName, ordered);
-    return { type: 'crate::unions::' + unionName, nullable: found.nullable };
+    return { type: BASE + '::unions::' + unionName,
+      nullable: found.nullable };
   }
 
   /**
@@ -607,9 +631,18 @@ class ApiWriter {
    */
   shapeType(schema, name, out, fixed) {
     if (schema.$ref) {
+      // A REFERENCE IS WRITTEN AS A TOKEN, not a path: which crate the
+      // component lands in is decided only once every component has been
+      // written and weighed (`planCrates()`), and `resolve()` then puts the
+      // path in. The reference is noted, so the plan knows what each
+      // component and each operation needs.
       const target = schema.$ref.split('/').pop();
-      const type = 'super::components::' +
-        (this.componentNames.get(target) || pascal(target));
+      if (!this.componentNames.has(target)) {
+        throw new Error('A reference to ' + target + ', which the document ' +
+          'does not declare.');
+      }
+      this.refs.add(target);
+      const type = TOKEN + target + TOKEN;
       return this.cyclic.has(target) ? 'Box<' + type + '>' : type;
     }
     if (schema.type === 'array') {
@@ -745,7 +778,7 @@ class ApiWriter {
       if (member.nullable && optional) {
         type = 'Option<Option<' + type + '>>';
         attributes.push('default', 'skip_serializing_if = "Option::is_none"',
-          'with = "crate::double_option"');
+          'with = "' + BASE + '::double_option"');
       } else if (member.nullable || optional) {
         type = 'Option<' + type + '>';
         if (optional) {
@@ -819,16 +852,20 @@ class ApiWriter {
   }
 
   /**
-   * The document's reusable schemas, as `components`.
+   * The document's reusable schemas, each written on its own so that the
+   * plan can weigh it and place it: its key, its lines, and the components
+   * it references.
    *
-   * @returns the module's lines
+   * @returns one `{ key, lines, refs }` per schema, in key order
    */
   components() {
     log.debug("Entering ApiWriter.components().");
     const self = this;
-    const out = [];
-    Object.keys(this.schemas).sort().forEach(function (key) {
-      self.writeNamed(self.schemas[key], self.componentNames.get(key), out);
+    const out = Object.keys(this.schemas).sort().map(function (key) {
+      const lines = [];
+      self.refs = new Set();
+      self.writeNamed(self.schemas[key], self.componentNames.get(key), lines);
+      return { key: key, lines: lines, refs: self.refs };
     });
     log.debug("Leaving ApiWriter.components().");
     return out;
@@ -845,6 +882,7 @@ class ApiWriter {
    */
   operation(method, path, operation) {
     const out = [];
+    this.refs = new Set();
     this.used = new Set(['Body', 'Query'].concat(
       Object.keys(operation.responses || {}).map(function (status) {
         return 'Answer' + status;
@@ -893,30 +931,464 @@ class ApiWriter {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The crates the API is written into (2026-11-14).
+//
+// ONE FILE OF EVERY API TYPE TOOK ONE RUSTC TO 12.5 GB. api.rs was about
+// 145,000 lines and 7,500 serde types, `cargo check` alone peaked at 12.2 GB
+// (the front end, not codegen: debuginfo was already off), and builds of it
+// took the laptop down twice that day. So the documents are written into
+// several crates, none holding more than a fraction of the whole:
+//
+//   sts-model-base        the shared unions and `double_option` (its lib.rs
+//                         is hand-written; only unions.rs is generated)
+//   a split document      its components in `components` crates, and its
+//                         operations in `operations` crates grouped by tag
+//                         (`SPLIT` says how many of each)
+//   any other document    one crate, laid out as one module was before
+//   sts-model             `domain`, and `api`: re-exports and the dispatch
+//                         across a split document's operation crates, so
+//                         `sts_model::api::<document>::...` is unchanged
+//
+// THE PLAN IS A FUNCTION OF THE MODEL ALONE (`planCrates()`):
+//
+// * An OPERATION goes where its first tag goes. The tags, in name order,
+//   are cut into as many contiguous runs as the document has operation
+//   crates, so that the heaviest run is as light as it can be. A new
+//   operation lands with the rest of its tag; only a tag at the edge of a
+//   run can move, and then to the neighbouring crate.
+// * A COMPONENT goes with the components it reaches and that reach it: the
+//   references form strongly connected groups (a cycle must be one crate,
+//   since crates cannot depend on each other in a circle), the groups are
+//   ordered so that what is referenced comes first, and that order is cut
+//   the same way. A components crate then depends only on earlier ones.
+// * The weight is the number of lines an item writes, which is what the
+//   compiler's front end pays for.
+//
+// The number of crates is fixed here, not computed, because each is a
+// workspace member and has a `debug = 0` profile in rust/Cargo.toml, and
+// sts-model depends on each: a change to `SPLIT` owes those three edits,
+// and tests/model_domain.js and sts-guards' workspace_lints fail until
+// they are made.
+// ---------------------------------------------------------------------------
+
+/**
+ * A contiguous cut of weighted items into `parts` runs, the heaviest run as
+ * light as it can be; of the cuts that achieve it, the one whose runs end
+ * earliest.
+ *
+ * @param weights - the items' weights, in order
+ * @param parts - how many runs
+ * @returns the run of each item, from 0
+ */
+function partition(weights, parts) {
+  log.debug("Entering partition(). " + weights.length + " into " + parts);
+  const n = weights.length;
+  if (n < parts) {
+    log.debug("Leaving partition(). Too few items.");
+    throw new Error(n + ' item(s) cannot fill ' + parts + ' crates.');
+  }
+  const prefix = [0];
+  weights.forEach(function (one) {
+    prefix.push(prefix[prefix.length - 1] + one);
+  });
+  const best = [];
+  const cut = [];
+  for (let k = 0; k <= parts; k = k + 1) {
+    best.push(new Array(n + 1).fill(Infinity));
+    cut.push(new Array(n + 1).fill(0));
+  }
+  best[0][0] = 0;
+  for (let k = 1; k <= parts; k = k + 1) {
+    for (let i = k; i <= n; i = i + 1) {
+      for (let j = k - 1; j < i; j = j + 1) {
+        const value = Math.max(best[k - 1][j], prefix[i] - prefix[j]);
+        if (value < best[k][i]) {
+          best[k][i] = value;
+          cut[k][i] = j;
+        }
+      }
+    }
+  }
+  const run = new Array(n);
+  let end = n;
+  for (let k = parts; k >= 1; k = k - 1) {
+    const from = cut[k][end];
+    for (let i = from; i < end; i = i + 1) {
+      run[i] = k - 1;
+    }
+    end = from;
+  }
+  log.debug("Leaving partition(). Heaviest " + best[parts][n]);
+  return run;
+}
+
+/**
+ * The strongly connected groups of the components' references, each group's
+ * keys sorted, in an order where a group comes after every group it
+ * references (Tarjan's, which finishes a group only after all it reaches).
+ *
+ * @param items - from `ApiWriter.components()`
+ * @returns the groups, as arrays of keys
+ */
+function referenceGroups(items) {
+  log.debug("Entering referenceGroups().");
+  const edges = new Map(items.map(function (item) {
+    return [item.key, Array.from(item.refs).sort()];
+  }));
+  const index = new Map();
+  const low = new Map();
+  const stack = [];
+  const onStack = new Set();
+  const groups = [];
+  let counter = 0;
+  function visit(key) {
+    log.debug("Entering visit(). " + key);
+    index.set(key, counter);
+    low.set(key, counter);
+    counter = counter + 1;
+    stack.push(key);
+    onStack.add(key);
+    (edges.get(key) || []).forEach(function (next) {
+      if (!index.has(next)) {
+        visit(next);
+        low.set(key, Math.min(low.get(key), low.get(next)));
+      } else if (onStack.has(next)) {
+        low.set(key, Math.min(low.get(key), index.get(next)));
+      }
+    });
+    if (low.get(key) === index.get(key)) {
+      const group = [];
+      let one;
+      do {
+        one = stack.pop();
+        onStack.delete(one);
+        group.push(one);
+      } while (one !== key);
+      groups.push(group.sort());
+    }
+    log.debug("Leaving visit().");
+  }
+  Array.from(edges.keys()).sort().forEach(function (key) {
+    if (!index.has(key)) {
+      visit(key);
+    }
+  });
+  log.debug("Leaving referenceGroups(). " + groups.length + " group(s).");
+  return groups;
+}
+
+/**
+ * A name's words joined by hyphens, for a crate name.
+ *
+ * @param name - the name as the model writes it
+ * @returns the kebab-case name
+ */
+function kebab(name) {
+  log.debug("Entering kebab().");
+  log.debug("Leaving kebab().");
+  return wordsOf(name).join('-');
+}
+
+/**
+ * A crate name as Rust code names it.
+ *
+ * @param crate - the package name
+ * @returns the identifier
+ */
+function identOf(crate) {
+  log.debug("Entering identOf().");
+  log.debug("Leaving identOf().");
+  return crate.replace(/-/g, '_');
+}
+
+/**
+ * Where one document's components and operations go.
+ *
+ * @param name - the document's name
+ * @param components - from `ApiWriter.components()`
+ * @param operations - `{ module, tag, lines, refs, ... }`, in path order
+ * @returns `{ split, home, operationCrate, crates }`: `home` the crate of
+ *   each component key, `operationCrate` that of each operation's index,
+ *   and `crates` each crate's name, kind and members, in order
+ */
+function planCrates(name, components, operations) {
+  log.debug("Entering planCrates(). " + name);
+  const split = SPLIT[name];
+  const home = new Map();
+  const operationCrate = [];
+  const crates = [];
+  if (!split) {
+    const crate = 'sts-model-' + kebab(name);
+    components.forEach(function (item) {
+      home.set(item.key, crate);
+    });
+    operations.forEach(function () {
+      operationCrate.push(crate);
+    });
+    crates.push({ name: crate, kind: 'whole', components: components,
+      operations: operations });
+    log.debug("Leaving planCrates(). One crate.");
+    return { split: false, home: home, operationCrate: operationCrate,
+      crates: crates };
+  }
+  const byKey = new Map(components.map(function (item) {
+    return [item.key, item];
+  }));
+  const groups = referenceGroups(components);
+  const groupRun = partition(groups.map(function (group) {
+    return group.reduce(function (sum, key) {
+      return sum + byKey.get(key).lines.length;
+    }, 0);
+  }), split.components);
+  for (let i = 0; i < split.components; i = i + 1) {
+    crates.push({ name: 'sts-model-' + kebab(name) + '-components-' + (i + 1),
+      kind: 'components', components: [], operations: [] });
+  }
+  groups.forEach(function (group, index) {
+    group.forEach(function (key) {
+      home.set(key, crates[groupRun[index]].name);
+    });
+  });
+  components.forEach(function (item) {
+    crates.find(function (crate) {
+      return crate.name === home.get(item.key);
+    }).components.push(item);
+  });
+  const tags = Array.from(new Set(operations.map(function (one) {
+    return one.tag;
+  }))).sort();
+  const tagRun = partition(tags.map(function (tag) {
+    return operations.filter(function (one) {
+      return one.tag === tag;
+    }).reduce(function (sum, one) {
+      return sum + one.lines.length;
+    }, 0);
+  }), split.operations);
+  const first = crates.length;
+  for (let i = 0; i < split.operations; i = i + 1) {
+    crates.push({ name: split.operations === 1 ?
+      'sts-model-' + kebab(name) :
+      'sts-model-' + kebab(name) + '-operations-' + (i + 1),
+    kind: 'operations', components: [], operations: [] });
+  }
+  operations.forEach(function (one) {
+    const crate = crates[first + tagRun[tags.indexOf(one.tag)]];
+    operationCrate.push(crate.name);
+    crate.operations.push(one);
+  });
+  log.debug("Leaving planCrates(). " + crates.length + " crates.");
+  return { split: true, home: home, operationCrate: operationCrate,
+    crates: crates };
+}
+
+/**
+ * Lines with each reference token replaced by the path the component has
+ * from `crate`.
+ *
+ * @param lines - the lines, with tokens
+ * @param crate - the crate they are written into
+ * @param plan - from `planCrates()`
+ * @param names - the components' Rust names, by key
+ * @returns the lines, with paths
+ */
+function resolve(lines, crate, plan, names) {
+  log.debug("Entering resolve(). " + crate);
+  const pattern = new RegExp(TOKEN + '([^' + TOKEN + ']+)' + TOKEN, 'g');
+  const out = lines.map(function (line) {
+    return line.replace(pattern, function (whole, key) {
+      const where = plan.home.get(key);
+      const type = names.get(key);
+      if (!plan.split) {
+        return 'crate::components::' + type;
+      }
+      return (where === crate ? 'crate' : identOf(where)) + '::' + type;
+    });
+  });
+  log.debug("Leaving resolve().");
+  return out;
+}
+
+/**
+ * The crates a crate's references reach, besides itself.
+ *
+ * @param crate - one of `planCrates()`'s crates
+ * @param plan - the plan
+ * @returns their names, sorted
+ */
+function dependenciesOf(crate, plan) {
+  log.debug("Entering dependenciesOf(). " + crate.name);
+  const out = new Set();
+  crate.components.concat(crate.operations).forEach(function (item) {
+    item.refs.forEach(function (key) {
+      out.add(plan.home.get(key));
+    });
+  });
+  out.delete(crate.name);
+  log.debug("Leaving dependenciesOf(). " + out.size);
+  return Array.from(out).sort();
+}
+
+/**
+ * The dispatch by operation over some operations: a JSON value read as an
+ * operation's body, or as its answer for a status, by the operationId a
+ * route carries. The runtime reads a request through it, and sts-model's
+ * tests hold every example in the documents to it.
+ *
+ * @param operations - `{ module, operation }`
+ * @param indent - what goes before each line
+ * @returns the two functions' lines
+ */
+function dispatchLines(operations, indent) {
+  log.debug("Entering dispatchLines(). " + operations.length);
+  const body = [];
+  body.push('/// Reads `value` as the JSON body of `operation_id`; `None` ' +
+    'when the', '/// operation takes no JSON body.');
+  body.push('pub fn read_body(operation_id: &str, value: ' +
+    '&serde_json::Value)', '    -> Option<Result<(), ' +
+    'serde_json::Error>> {', '    match operation_id {');
+  operations.forEach(function (one) {
+    const content = one.operation.requestBody &&
+      one.operation.requestBody.content;
+    if (content && content['application/json']) {
+      body.push('        ' + literal(one.operation.operationId) + ' => ' +
+        'Some(serde_json::from_value::<' + one.module +
+        '::Body>(value.clone()).map(|_| ())),');
+    }
+  });
+  body.push('        _ => None,', '    }', '}', '');
+  body.push('/// Reads `value` as the JSON answer of `operation_id` for ' +
+    '`status`;', '/// `None` when the model gives that status no JSON ' +
+    'answer.');
+  body.push('pub fn read_answer(operation_id: &str, status: u16, ' +
+    'value: &serde_json::Value)', '    -> Option<Result<(), ' +
+    'serde_json::Error>> {', '    match (operation_id, status) {');
+  operations.forEach(function (one) {
+    Object.keys(one.operation.responses || {}).sort().forEach(
+      function (status) {
+        const media = /^2[0-9][0-9]$/.test(status) &&
+          one.operation.responses[status].content &&
+          one.operation.responses[status].content['application/json'];
+        if (media) {
+          body.push('        (' + literal(one.operation.operationId) + ', ' +
+            status + ') => Some(serde_json::from_value::<' + one.module +
+            '::Answer' + status + '>(value.clone()).map(|_| ())),');
+        }
+      });
+  });
+  body.push('        _ => None,', '    }', '}');
+  log.debug("Leaving dispatchLines().");
+  return body.map(function (line) {
+    return line ? indent + line : '';
+  });
+}
+
+/**
+ * An operation module's lines.
+ *
+ * @param one - `{ module, operation }`
+ * @param indent - what goes before each line
+ * @param lines - the module's body, its paths resolved
+ * @returns the lines
+ */
+function operationModule(one, indent, lines) {
+  log.debug("Entering operationModule(). " + one.module);
+  const out = docLines(one.operation.summary, '');
+  out.push('pub mod ' + one.module + ' {');
+  lines.forEach(function (line) {
+    out.push(line);
+  });
+  while (out[out.length - 1] === '') {
+    out.pop();
+  }
+  out.push('}', '');
+  log.debug("Leaving operationModule().");
+  return out.map(function (line) {
+    return line ? indent + line : '';
+  });
+}
+
+const NOTICE = [
+  '// GENERATED from models/api/ (#1390, #444) by models/lib/rust_lib.mjs.',
+  '// Do not edit: change the model and run',
+  '// tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails when',
+  '// this differs.', ''];
+
+/**
+ * A generated crate's manifest.
+ *
+ * @param crate - the crate
+ * @param what - a sentence for its description
+ * @param dependencies - the other generated crates it uses
+ * @returns the text of its Cargo.toml
+ */
+function manifestOf(crate, what, dependencies) {
+  log.debug("Entering manifestOf(). " + crate);
+  const lines = ['# SPDX-FileCopyrightText: 2026 Iya CyberSecurity ' +
+    'Solutions, LLC', '# SPDX-License-Identifier: BUSL-1.1', '#'];
+  NOTICE.forEach(function (line) {
+    lines.push(line ? line.replace(/^\/\//, '#') : '');
+  });
+  lines.push('[package]', 'name = ' + literal(crate), 'version = "0.1.0"',
+    'description = ' + literal(what), 'edition.workspace = true',
+    'license.workspace = true', 'rust-version.workspace = true',
+    'publish.workspace = true', '', '[dependencies]',
+    'serde.workspace = true', 'serde_json.workspace = true',
+    'sts-model-base = { path = "../sts-model-base" }');
+  dependencies.forEach(function (one) {
+    lines.push(one + ' = { path = "../' + one + '" }');
+  });
+  lines.push('', '[lints]', 'workspace = true', '');
+  log.debug("Leaving manifestOf().");
+  return lines.join('\n');
+}
+
+/**
+ * A generated crate's root: the lints it is exempt from, and its one
+ * included file. rustfmt does not follow `include!`, so the generated
+ * source is left as written and this file is already formatted.
+ *
+ * @param what - a sentence for its documentation
+ * @returns the text of its src/lib.rs
+ */
+function crateRootOf(what) {
+  log.debug("Entering crateRootOf().");
+  const lines = HEADER.concat(NOTICE);
+  lines.push.apply(lines, docLines(what, '').map(function (line) {
+    return line.replace(/^\/\/\//, '//!');
+  }));
+  lines.push('//!', '//! One of the crates `sts_model::api` is split across ' +
+    '(the plan is', '//! `planCrates()` in models/lib/rust_lib.mjs), so that ' +
+    'no one rustc', '//! holds the whole API. Read it through ' +
+    '`sts_model::api`.', '',
+  '#![forbid(unsafe_code)]',
+  '#![allow(clippy::all, clippy::pedantic, missing_docs, ' +
+    'non_camel_case_types)]', '', 'include!("generated/api.rs");', '');
+  log.debug("Leaving crateRootOf().");
+  return lines.join('\n');
+}
+
 /**
  * Every request and answer of every document as Rust: a module per
  * document, `components` for its reusable schemas, and a module per
- * operation by its operationId, which every operation carries since #1579.
+ * operation by its operationId, which every operation carries since #1579,
+ * written into the crates `planCrates()` chooses.
  *
  * @param served - the documents, by name
- * @returns the text of `rust/crates/sts-model/src/generated/api.rs`
+ * @returns `{ files, crates }`: every file's text by its path under
+ *   rust/crates/, and each crate's name with its type and line counts
  */
 export function renderRustApi(served) {
   log.debug("Entering renderRustApi().");
   const unions = new Map();
-  const body = [];
+  const files = {};
+  const summary = [];
+  const top = [];
   Object.keys(served).sort().forEach(function (name) {
     const document = served[name];
     const writer = new ApiWriter(document, unions);
-    body.push.apply(body, docLines((document.info && document.info.title) ||
-      name, ''));
-    body.push('pub mod ' + snake(name) + ' {');
-    body.push('    pub mod components {');
-    writer.components().forEach(function (line) {
-      body.push(line ? '        ' + line : '');
-    });
-    body.push('    }', '');
-    const operations = [];
+    const components = writer.components();
+    const found = [];
     Object.keys(document.paths || {}).sort().forEach(function (path) {
       Object.keys(document.paths[path]).sort().forEach(function (method) {
         const operation = document.paths[path][method];
@@ -930,76 +1402,129 @@ export function renderRustApi(served) {
           throw new Error('The ' + name + ' document\'s ' +
             method.toUpperCase() + ' ' + path + ' has no operationId.');
         }
-        operations.push([method, path, operation]);
+        found.push([method, path, operation]);
       });
     });
-    const modules = distinct(operations.map(function (one) {
+    const modules = distinct(found.map(function (one) {
       return snake(one[2].operationId);
     }));
-    operations.forEach(function (one, index) {
-      body.push.apply(body, docLines(one[2].summary, '    '));
-      body.push('    pub mod ' + modules[index] + ' {');
-      body.push('        #[allow(unused_imports)]');
-      body.push('        use super::components;', '');
-      writer.operation(one[0], one[1], one[2]).forEach(function (line) {
-        body.push(line ? '    ' + line : '');
-      });
-      while (body[body.length - 1] === '') {
-        body.pop();
-      }
-      body.push('    }', '');
+    const operations = found.map(function (one, index) {
+      const lines = writer.operation(one[0], one[1], one[2]);
+      return { module: modules[index], operation: one[2],
+        tag: (one[2].tags && one[2].tags[0]) || '', lines: lines,
+        refs: writer.refs };
     });
-    // THE DISPATCH BY OPERATION: a JSON value read as an operation's body,
-    // or as its answer for a status, by the operationId a route carries.
-    // The runtime reads a request through it, and sts-model's tests hold
-    // every example in the documents to it.
-    body.push('    /// Reads `value` as the JSON body of `operation_id`; `None` ' +
-      'when the', '    /// operation takes no JSON body.');
-    body.push('    pub fn read_body(operation_id: &str, value: ' +
-      '&serde_json::Value)', '        -> Option<Result<(), ' +
-      'serde_json::Error>> {', '        match operation_id {');
-    operations.forEach(function (one, index) {
-      const content = one[2].requestBody && one[2].requestBody.content;
-      if (content && content['application/json']) {
-        body.push('            ' + literal(one[2].operationId) + ' => ' +
-          'Some(serde_json::from_value::<' + modules[index] +
-          '::Body>(value.clone()).map(|_| ())),');
-      }
-    });
-    body.push('            _ => None,', '        }', '    }', '');
-    body.push('    /// Reads `value` as the JSON answer of `operation_id` for ' +
-      '`status`;', '    /// `None` when the model gives that status no JSON ' +
-      'answer.');
-    body.push('    pub fn read_answer(operation_id: &str, status: u16, ' +
-      'value: &serde_json::Value)', '        -> Option<Result<(), ' +
-      'serde_json::Error>> {', '        match (operation_id, status) {');
-    operations.forEach(function (one, index) {
-      Object.keys(one[2].responses || {}).sort().forEach(function (status) {
-        const media = /^2[0-9][0-9]$/.test(status) &&
-          one[2].responses[status].content &&
-          one[2].responses[status].content['application/json'];
-        if (media) {
-          body.push('            (' + literal(one[2].operationId) + ', ' +
-            status + ') => Some(serde_json::from_value::<' + modules[index] +
-            '::Answer' + status + '>(value.clone()).map(|_| ())),');
+    const plan = planCrates(name, components, operations);
+    const title = (document.info && document.info.title) || name;
+    plan.crates.forEach(function (crate) {
+      const lines = HEADER.concat(NOTICE);
+      let what;
+      if (crate.kind === 'components') {
+        what = 'Part of the components of the ' + title + ' (#444, D15).';
+        crate.components.forEach(function (item) {
+          lines.push.apply(lines, resolve(item.lines, crate.name, plan,
+            writer.componentNames));
+        });
+      } else {
+        what = crate.kind === 'whole' ?
+          'The requests and answers of the ' + title + ' (#444, D15).' :
+          'Operations of the ' + title + ' (#444, D15).';
+        if (crate.kind === 'whole') {
+          lines.push('pub mod components {');
+          crate.components.forEach(function (item) {
+            resolve(item.lines, crate.name, plan, writer.componentNames)
+              .forEach(function (line) {
+                lines.push(line ? '    ' + line : '');
+              });
+          });
+          lines.push('}', '');
         }
-      });
+        crate.operations.forEach(function (one) {
+          operationModule(one, '', resolve(one.lines, crate.name, plan,
+            writer.componentNames)).forEach(function (line) {
+            lines.push(line);
+          });
+        });
+        dispatchLines(crate.operations, '').forEach(function (line) {
+          lines.push(line);
+        });
+      }
+      while (lines[lines.length - 1] === '') {
+        lines.pop();
+      }
+      lines.push('');
+      files[crate.name + '/src/generated/api.rs'] = lines.join('\n');
+      files[crate.name + '/src/lib.rs'] = crateRootOf(what);
+      files[crate.name + '/Cargo.toml'] = manifestOf(crate.name, what,
+        dependenciesOf(crate, plan));
+      summary.push({ name: crate.name, lines: lines.length,
+        types: lines.filter(function (line) {
+          return /^\s*pub (struct|enum|type) /.test(line);
+        }).length });
     });
-    body.push('            _ => None,', '        }', '    }');
-    body.push('}', '');
+    // sts-model's view of the document: the one crate under the document's
+    // name, or a module that gathers the split crates and dispatches across
+    // the operation crates in turn.
+    top.push.apply(top, docLines(title, ''));
+    if (!plan.split) {
+      top.push('pub use ' + identOf(plan.crates[0].name) + ' as ' +
+        snake(name) + ';', '');
+      return;
+    }
+    top.push('pub mod ' + snake(name) + ' {');
+    top.push('    /// The reusable schemas, held across several crates.');
+    top.push('    pub mod components {');
+    plan.crates.filter(function (crate) {
+      return crate.kind === 'components';
+    }).forEach(function (crate) {
+      top.push('        pub use ' + identOf(crate.name) + '::*;');
+    });
+    top.push('    }', '');
+    const operationCrates = plan.crates.filter(function (crate) {
+      return crate.kind === 'operations';
+    });
+    operationCrates.forEach(function (crate) {
+      top.push('    pub use ' + identOf(crate.name) + '::{');
+      crate.operations.forEach(function (one) {
+        top.push('        ' + one.module + ',');
+      });
+      top.push('    };');
+    });
+    top.push('');
+    [['read_body', 'operation_id: &str, value: &serde_json::Value',
+      'operation_id, value', 'body'],
+     ['read_answer', 'operation_id: &str, status: u16, ' +
+      'value: &serde_json::Value', 'operation_id, status, value',
+      'answer for `status`']].forEach(function (one) {
+      top.push('    /// Reads `value` as the JSON ' + one[3] + ' of ' +
+        '`operation_id`, from', '    /// whichever crate holds the ' +
+        'operation; `None` when none gives it one.');
+      top.push('    pub fn ' + one[0] + '(' + one[1] + ')',
+        '        -> Option<Result<(), serde_json::Error>> {');
+      operationCrates.forEach(function (crate, index) {
+        const call = identOf(crate.name) + '::' + one[0] + '(' + one[2] + ')';
+        top.push(index === 0 ? '        ' + call :
+          '            .or_else(|| ' + call + ')');
+      });
+      top.push('    }', '');
+    });
+    while (top[top.length - 1] === '') {
+      top.pop();
+    }
+    top.push('}', '');
   });
-  const lines = HEADER.concat([
+  files['sts-model/src/generated/api.rs'] = HEADER.concat([
     '// GENERATED from models/api/ (#1390, #444). Do not edit: change the',
     '// model and run tests/tools/regenerate-model-docs.sh.',
     '// tests/model_domain.js fails when this differs.', '',
     '// Every request and answer of the five published APIs, as',
-    '// `types/api.generated.d.ts` holds them for the Node service. Included',
-    '// by sts-model\'s lib.rs.', '']);
-  // Concatenated, not pushed: the body runs to more lines than a call may
-  // take arguments.
-  log.debug("Leaving renderRustApi(). " + unions.size + " union(s).");
-  return { api: lines.concat(body).join('\n'),
-    unions: renderUnions(unions) };
+    '// `types/api.generated.d.ts` holds them for the Node service, gathered',
+    '// from the crates they are written into (`planCrates()`). Included by',
+    '// sts-model\'s lib.rs.', '']).concat(top).join('\n');
+  files['sts-model-base/src/generated/unions.rs'] = renderUnions(unions);
+  log.debug("Leaving renderRustApi(). " + unions.size + " union(s), " +
+    summary.length + " crate(s).");
+  return { files: files, crates: summary };
 }
 
 /**
@@ -1007,7 +1532,8 @@ export function renderRustApi(served) {
  * its kinds.
  *
  * @param unions - by name: their kinds, in the order serde tries them
- * @returns the text of `rust/crates/sts-model/src/generated/unions.rs`
+ * @returns the text of
+ *   `rust/crates/sts-model-base/src/generated/unions.rs`
  */
 function renderUnions(unions) {
   log.debug("Entering renderUnions().");
@@ -1017,7 +1543,7 @@ function renderUnions(unions) {
     '// tests/model_domain.js fails when this differs.', '',
     '// The unions of scalars the five documents use (`number | string`',
     '// and the like), each an untagged enum named by its kinds. Included by',
-    '// sts-model\'s lib.rs.', '']);
+    '// sts-model-base\'s lib.rs.', '']);
   Array.from(unions.keys()).sort().forEach(function (name) {
     lines.push(DERIVES, '#[serde(untagged)]', 'pub enum ' + name + ' {');
     unions.get(name).forEach(function (kind) {
@@ -1077,5 +1603,87 @@ export function renderRustSchemas(objects, schemaOf) {
   });
   lines.push('];', '');
   log.debug("Leaving renderRustSchemas().");
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// The persistence model (#444, phase 3).
+// ---------------------------------------------------------------------------
+
+/**
+ * One engine's tables, objects and added columns as a Rust constant.
+ *
+ * @param constant - the constant's name
+ * @param engine - `postgres` or `mariadb`
+ * @param persistence - what `readPersistence()` answered for the engine
+ * @returns the lines
+ */
+function rustSchema(constant, engine, persistence) {
+  log.debug("Entering rustSchema().");
+  const tableNames = new Set(persistence.tables.map(function (table) {
+    return table.name;
+  }));
+  const lines = ['/// The ' + engine + ' schema, version ' +
+    persistence.version + '.', 'pub const ' + constant + ': Schema = Schema {',
+    '    engine: ' + literal(engine) + ',',
+    '    version: ' + Number(persistence.version) + ',', '    tables: &['];
+  persistence.tables.forEach(function (table) {
+    lines.push('        Table {', '            name: ' + literal(table.name) +
+      ',', '            columns: &[');
+    table.columns.forEach(function (column) {
+      lines.push('                Column { name: ' + literal(column.name) +
+        ', sql: ' + literal(column.sqlType) + ', required: ' +
+        (column.required === true) + ', generated: ' +
+        (column.generated === true) + ', primary_key: ' +
+        (column.primaryKey === true) + ', added: ' +
+        (column.added === true) + ' },');
+    });
+    lines.push('            ],', '        },');
+  });
+  lines.push('    ],', '    objects: &[');
+  persistence.objects.forEach(function (object) {
+    lines.push('        SchemaObject { name: ' + literal(object.name) +
+      ', table: ' + tableNames.has(object.name) + ' },');
+  });
+  lines.push('    ],', '    added: &[');
+  (persistence.added || []).forEach(function (one) {
+    lines.push('        (' + literal(one.table) + ', ' + literal(one.column) +
+      '),');
+  });
+  lines.push('    ],', '};', '');
+  log.debug("Leaving rustSchema().");
+  return lines;
+}
+
+/**
+ * The persistence model's tables and columns as Rust constants, for
+ * `sts-store` to build its statements against (#444, phase 3): every table
+ * and column of `persistence.postgres.json` and `persistence.mariadb.json`,
+ * the driver's objects in their order, the columns added after a table
+ * first shipped, and each engine's schema version. The DDL stays the Node
+ * service's (`postgres/schema.sql`, `mariadb/schema.sql`); this is only what
+ * a driver may name.
+ *
+ * @param postgres - `readPersistence(program)`
+ * @param mariadb - `readPersistence(program, 'mariadb')`
+ * @returns the text of `rust/crates/sts-store/src/generated/persistence.rs`
+ */
+export function renderRustPersistence(postgres, mariadb) {
+  log.debug("Entering renderRustPersistence().");
+  const lines = HEADER.concat([
+    '// GENERATED from models/persistence/ (#1390, #444). Do not edit: change',
+    '// the model and run tests/tools/regenerate-model-docs.sh.',
+    '// tests/model_domain.js fails when this differs.', '',
+    '// Every table and column of the two engines\' schemas, as the model',
+    '// holds them. Included by sts-store\'s schema.rs, whose const checks',
+    '// refuse to build a statement naming a column that is not here.', '',
+    'use crate::schema::{Column, Schema, SchemaObject, Table};', '']);
+  rustSchema('POSTGRES', 'postgres', postgres).forEach(function (line) {
+    lines.push(line);
+  });
+  rustSchema('MARIADB', 'mariadb', mariadb).forEach(function (line) {
+    lines.push(line);
+  });
+  log.debug("Leaving renderRustPersistence().");
   return lines.join('\n');
 }

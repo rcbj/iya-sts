@@ -65,6 +65,7 @@ pub enum Role {
 
 impl Role {
     /// Node's role check, with its sentence.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn parse(role: &str) -> Krb5Result<Role> {
         match role {
             "initiator" => Ok(Role::Initiator),
@@ -86,6 +87,7 @@ pub enum Purpose {
 }
 
 /// Node's `usageFor()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn usage_for(role: Role, purpose: Purpose) -> u32 {
     match (role, purpose) {
         (Role::Initiator, Purpose::Sign) => key_usage::GSS_INITIATOR_SIGN,
@@ -236,6 +238,7 @@ pub fn parse_gss_checksum(b: &[u8]) -> Krb5Result<GssChecksum> {
 /// RFC 2743 section 3.1's framing: `[APPLICATION 0]` round the mechanism
 /// OID and the token id and inner bytes. Node's
 /// `encodeInitialContextToken()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn encode_initial_context_token(tok_id: [u8; 2], inner: &[u8]) -> Vec<u8> {
     let mut body = KRB5_MECH_OID_DER.to_vec();
     body.extend_from_slice(&tok_id);
@@ -513,6 +516,7 @@ pub fn unwrap(key: &[u8], etype: i64, token: &[u8]) -> Krb5Result<Unwrapped> {
 }
 
 /// Node's `rotateRight()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn rotate_right(b: &[u8], count: usize) -> Vec<u8> {
     if b.is_empty() || count == 0 || count % b.len() == 0 {
         return b.to_vec();
@@ -524,6 +528,7 @@ pub fn rotate_right(b: &[u8], count: usize) -> Vec<u8> {
 }
 
 /// Node's `rotateLeft()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn rotate_left(b: &[u8], count: usize) -> Vec<u8> {
     if b.is_empty() || count == 0 || count % b.len() == 0 {
         return b.to_vec();
