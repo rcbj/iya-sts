@@ -39,6 +39,15 @@
 //   S4, product: a SAML 1.1 browser flow for a seen-only relying party is a
 //      403 page (STS-SAML-0105).
 //
+// And tests/sourced_attributes.js A and B (#94), in the same realm: a
+// federation relationship's `fedAttributeMap` refuses a mapping onto
+// membership, account state, a credential or an identity attribute — by name
+// and by prefix, case-insensitively — saying why, and a value that is not
+// `<incoming>=<attribute>`; a person's own attribute, `mail` included, is
+// mapped. Its C, D and E (the map at a partner's sign-in, the federated
+// write and the names nothing wrote) need a partner signing a person in,
+// which phase 7's federation jobs stage.
+//
 // What stays in process (its D12 note): the mode predicate's own table
 // (U1), Validate and Cancel (U5), the delegation policy's resolution (O3),
 // a request-started Metadata Query lookup (S5, `sts_saml_unregistered.js`
@@ -489,6 +498,50 @@ async function product() {
   log.debug("Leaving product().");
 }
 
+async function sourcedAttributes() {
+  log.debug("Entering sourcedAttributes().");
+  log.info("=== F. what an outside source may write onto a person ===");
+  await ok(API + "/federation/create", { id: "unr-partner",
+    role: "service-provider", protocol: "oidc" },
+    "created a federation relationship");
+  const add = function (value) {
+    return postJson(API + "/federation/add-value", { id: "unr-partner",
+      field: "fedAttributeMap", value: value });
+  };
+  const refused = [["groups=memberOf", "membership"],
+                   ["lock=pwdAccountLockedTime", "a disable"],
+                   ["otp=stsTotpCredential", "a second factor"],
+                   ["pw=userPassword", "a credential"],
+                   ["id=entryUUID", "an identity attribute"],
+                   ["new=STSNEWCREDENTIAL", "a credential added later, by " +
+                    "prefix in any case"]];
+  for (const pair of refused) {
+    const r = await add(pair[0]);
+    check(pair[0] + " is refused (" + pair[1] + "), and says why",
+          function () {
+      assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+      assert.ok(/may not write/.test((r.body.errors || []).join(" ")),
+                r.raw.slice(0, 300));
+    });
+  }
+  const notOne = await add("not a mapping");
+  check("a value that is not <incoming>=<attribute> is refused", function () {
+    assert.strictEqual(notOne.status, 400, notOne.raw.slice(0, 300));
+    assert.ok(/is not a mapping/.test(notOne.raw), notOne.raw.slice(0, 300));
+  });
+  for (const value of ["dept=departmentNumber", "email=mail",
+                       "title=title"]) {
+    const r = await add(value);
+    check(value + " is mapped: a person's own attribute", function () {
+      assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+      assert.ok((r.body.relationship.fedAttributeMap || [])
+        .indexOf(value) >= 0, JSON.stringify(r.body.relationship
+          .fedAttributeMap));
+    });
+  }
+  log.debug("Leaving sourcedAttributes().");
+}
+
 // Opt-in: see the header.
 async function removeRealm() {
   log.debug("Entering removeRealm().");
@@ -506,6 +559,7 @@ async function test() {
     await setUp();
     await development();
     await product();
+    await sourcedAttributes();
   } finally {
     await removeRealm();
   }
