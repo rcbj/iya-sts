@@ -5172,7 +5172,7 @@ nothing** now.
 | `mirror` | `.github/scripts/mirror-images.sh missing` — the one job with `packages: write`, for the PRIVATE mirror | 30 |
 | `build` | `./run-tests.sh --build-only` (every image, the SAML peers' profile on), then `.github/scripts/stack-images.sh save` → the artifact `stack-images`, one day | 50 |
 | `unit` | the tests image, `run-report.js --no-protocol --unit-concurrency=4`, no stack | 90 |
-| `mode` (matrix) | `./run-tests.sh --no-build --modes=<mode> --protocol=only`, all six modes of `STS_ALL_MODES` (memory / single-node / mariadb / cluster / cells / fuzz), one runner each, fail-fast off; the matrix hands each its bound (6000 / 11400 / 13200 / 13200 / 12000 / 18000 s), from run 43622250478's measurements (memory 69 min, single-node 133, both within minutes of the first bounds) or the laptop's times ×1.5 plus about 40% | 150 / 240 / 250 / 250 / 230 / 330 |
+| `mode` (matrix) | `./run-tests.sh --no-build --modes=<mode> --protocol=only`, all six modes of `STS_ALL_MODES` (memory / single-node / mariadb / cluster / cells / fuzz), one runner each, fail-fast off; the matrix hands each its bound (6000 / 11400 / 13200 / 16200 / 12000 / 18000 s), from run 43622250478's measurements (memory 69 min, single-node 133, both within minutes of the first bounds) or the laptop's times ×1.5 plus about 40%; `cluster`'s from runs 43642810770 (150 min) and 43735265596 (cut off at 220, about 228 needed) | 150 / 240 / 250 / 300 / 230 / 330 |
 | `openid-conformance`, `-oidcc` | the plans, by lane, `--no-build` | 355 |
 | `openapi-breaking` | pull requests: `tests/tools/oasdiff-gate.sh`, logged in (it was a 401 on every PR) | 75 |
 | `dependency-windows` | the lockfile's advisory windows | 10 |
