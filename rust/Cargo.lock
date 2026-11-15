@@ -2526,6 +2526,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sts-core",
+ "sts-model",
  "sts-xacml",
  "tracing",
 ]

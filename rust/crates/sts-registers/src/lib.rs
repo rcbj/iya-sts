@@ -11,3 +11,5 @@
 pub mod js;
 pub mod port;
 pub mod schema;
+pub mod outcome;
+pub mod roles;
