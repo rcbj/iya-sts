@@ -816,7 +816,8 @@ namespace IyaSts.Api.Console {
       `owners`?: (WithDnKindNameEtc4)[];
       `maxOwners`?: numeric;
       `ownership`?: WithKindNameMarkedEtc5;
-      `krb5Across`?: NullableObject75
+      `krb5Across`?: NullableObject75;
+      @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
     }
   }
 
