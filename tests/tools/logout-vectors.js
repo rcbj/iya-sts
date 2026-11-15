@@ -158,7 +158,12 @@ function world() {
         events: [{ at: NOW / 1000 - 60, amr: ['hwk'],
                    context: { credential: { kind: 'webauthn',
                      fingerprint: 'fp-key-1' } } }] }),
-      e1: s('e1', 'emil', EMIL, NOW / 1000 - 30)
+      // A REALM WITH TWO SIGN-OUT ADDRESSES (#747; 78b92db20): one sign-in,
+      // a row per address, and whichever row ends tells both.
+      e1: s('e1', 'emil', EMIL, NOW / 1000 - 30, {
+        wsfedRealms: { 'urn:rp:many': { wreplies: ['https://rpa.example/',
+                                                   'https://rpb.example/'] } }
+      })
     },
     tokens: [
       { jti: 'at-1', kind: 'access_token', typ: 'Bearer', sub: DORA,
@@ -452,10 +457,14 @@ function fakes(rec, w, on) {
   };
   const wsfed = {
     cleanupTargetsFor: f('wsfed', 'cleanupTargetsFor', function (one) {
-      return Object.keys(one.wsfedRealms || {}).map(function (realm) {
-        return { realm: realm, url: one.wsfedRealms[realm].wreply +
-          '?wa=wsignoutcleanup1.0' };
+      const out = [];
+      Object.keys(one.wsfedRealms || {}).forEach(function (realm) {
+        const held = one.wsfedRealms[realm];
+        [].concat(held.wreplies || [held.wreply]).forEach(function (to) {
+          out.push({ realm: realm, url: to + '?wa=wsignoutcleanup1.0' });
+        });
       });
+      return out;
     })
   };
   const saml2Sso = {
@@ -841,6 +850,18 @@ function build(ROOT) {
               'token:at-2', 'issued:art-2', 'krb5:dora@STS.MOCK', 'ldap:c-7',
               'no-such:row'], { by: 'the person', initiatingEntity: 'user' });
           }),
+          inventory
+        ]);
+      caseOf(m + ': a realm with two sign-out addresses', { product: product },
+        [
+          step('the later row first, then the first', 'terminate',
+            { key: 'emil', selection: ['wsfed-rp:e1|urn:rp:many|1',
+              'wsfed-rp:e1|urn:rp:many'], opts: { by: 'the person',
+              initiatingEntity: 'user' } }, function (l) {
+              return l.terminate('emil', ['wsfed-rp:e1|urn:rp:many|1',
+                'wsfed-rp:e1|urn:rp:many'], { by: 'the person',
+                initiatingEntity: 'user' });
+            }),
           inventory
         ]);
       caseOf(m + ': the page and its view', { product: product }, [

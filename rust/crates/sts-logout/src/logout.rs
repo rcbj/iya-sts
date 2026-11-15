@@ -1909,8 +1909,81 @@ impl Logout {
         })
     }
 
+    /// `wsfed-rp.terminate()` (Node's 78b92db20, 2026-11-15).
+    ///
+    /// WHICH REALM THE HANDLE NAMES: `collect()` gives a realm's first
+    /// address `<sid>|<realm>` and each later one `<sid>|<realm>|<n>`
+    /// (#747), so the remainder is the realm when the session holds that
+    /// name (a realm may itself carry a `|`), and otherwise that less a
+    /// trailing row index. EVERY ADDRESS THE REALM DECLARED IS TOLD: the
+    /// rows of one realm are one sign-in, so whichever row is ended first
+    /// sends a cleanup to all of them (read before the delete) and forgets
+    /// the realm once; a sibling row ended afterwards says it was already
+    /// forgotten and sends nothing, so no address is told twice.
     fn end_wsfed(&self, r: &Object, ctx: &mut Ctx) -> Outcome {
-        self.end_rider(r, ctx, "wsfedRealms", "realm", false)
+        let handle = string_of(r.get("handle"));
+        let parts: Vec<&str> = handle.split('|').collect();
+        let Some(mut session) = self.deps.authn.session_by_id(parts[0]) else {
+            return no(
+                "the session that realm was signed into on has already \
+                 ended, which took its cleanup list with it",
+            );
+        };
+        let held = |session: &Value, name: &str| {
+            matches!(session.get("wsfedRealms"),
+                     Some(Value::Object(m)) if m.contains_key(name))
+        };
+        let named = parts[1..].join("|");
+        let last = parts.last().copied().unwrap_or("");
+        let indexed = parts.len() >= 3
+            && !last.is_empty()
+            && last.bytes().all(|b| b.is_ascii_digit());
+        let realm = if held(&session, &named) || !indexed {
+            named
+        } else {
+            parts[1..parts.len() - 1].join("|")
+        };
+        let id = string_of(session.get("id"));
+        if !held(&session, &realm) {
+            return ok(format!(
+                "{} was already forgotten on session {}, with a cleanup \
+                 request to each of its addresses",
+                realm, id
+            ));
+        }
+        let targets: Vec<Value> = self
+            .deps
+            .wsfed
+            .cleanup_targets_for(&session)
+            .into_iter()
+            .filter(|one| string_of(one.get("realm")) == realm)
+            .collect();
+        let sent = targets.first().is_some_and(|t| truthy(t.get("url")));
+        let count = targets.len();
+        ctx.cleanups.extend(targets);
+        if let Some(Value::Object(list)) = session.get_mut("wsfedRealms") {
+            list.shift_remove(&realm);
+            // AND THE STORE IS TOLD, through `noteSessionChanged()` (Node's
+            // fix of 2026-11-15, #444 D12).
+            self.deps.authn.note_session_changed(&session);
+            Logout::mirror(ctx, &session);
+        }
+        ok(format!(
+            "{} was forgotten on session {}{}",
+            realm,
+            id,
+            if !sent {
+                " (there was nowhere to send a cleanup request)".to_string()
+            } else if count > 1 {
+                format!(
+                    " and a cleanup request was sent to each of its {} \
+                     addresses",
+                    count
+                )
+            } else {
+                " and a cleanup request was sent".to_string()
+            }
+        ))
     }
 
     fn end_saml2(&self, r: &Object, ctx: &mut Ctx) -> Outcome {
