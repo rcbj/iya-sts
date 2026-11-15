@@ -44,13 +44,13 @@
 // person out of report-users — /admin-api has no remove-member for a group
 // (an ldapmodify or a SCIM PATCH, phase 4 and 9), so the role-taken-away
 // case is a direct REPORT_USE member's; D, the schedule's question for an
-// owner whose role went (STS-REPORT-0028) — a scheduled definition never runs on a running
-// service (see sts_report_query.js, section 4b, a Node defect); F2-F10, a
-// default-realm service administrator reaching another realm's report API
-// and a default-realm report user refused there (STS-REPORT-0045) — they
-// need the DEFAULT realm's console claimed and its roster changed, which is
-// process-wide state every job shares (owed: an exclusive job, or a stack
-// whose default console is claimed).
+// owner whose role went (STS-REPORT-0028) — a scheduled definition never
+// runs on a running service (see sts_report_query.js, section 4b, a Node
+// defect); F2-F10, a default-realm service administrator reaching
+// another realm's report API and a default-realm report user refused
+// there (STS-REPORT-0045) — they need the DEFAULT realm's console claimed
+// and its roster changed, which is process-wide state every job shares
+// (owed: an exclusive job, or a stack whose default console is claimed).
 //
 // OWNED HERE (local: true): this repository's own reports API.
 // ---------------------------------------------------------------------------
