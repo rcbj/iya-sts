@@ -436,9 +436,11 @@ jobs:
       # org.opencontainers.image.revision label names the commit.
       #
       # NOT ghcr.io/rcbj/iya-sts/<name>. That namespace is the test stack's
-      # (tests.yml pushes ghcr.io/rcbj/iya-sts/sts and its siblings under the
-      # commit and the branch, built for the test stacks) and the mirror's;
-      # sharing a name would let one workflow overwrite the other's tag.
+      # (run-tests.sh names ghcr.io/rcbj/iya-sts/sts and its siblings; tests.yml
+      # pushed them under the commit and the branch until 2026-11-14 and now
+      # hands them between its jobs as an artifact, pushing nothing) and the
+      # mirror's; sharing a name would let one workflow overwrite the other's
+      # tag.
       #
       # A NEW ghcr.io PACKAGE STARTS PRIVATE. The image's
       # org.opencontainers.image.source label links it to this repository,
