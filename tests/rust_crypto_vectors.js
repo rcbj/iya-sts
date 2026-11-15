@@ -86,6 +86,12 @@ function run(t) {
         t.check(ok, what, detail);
       });
   }
+  // The directory's model and operations (sts-directory): what it ended
+  // with, read by Node's DomainMap. Synchronous too.
+  if (fs.existsSync(path.join(VECTORS, 'directory-rust.json'))) {
+    require('./tools/directory-vectors.js').checkRust(t,
+      read('directory-rust.json'));
+  }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
     log.debug("Leaving run(). No Kerberos vectors.");
     return runSigned(t);
@@ -795,6 +801,7 @@ module.exports = {
             'with, and every XML Encryption cipher, transport and ' +
             'agreement — and what sts-kerberos made is read by the ' +
             'Kerberos codec, and what sts-ldap made is answered by ' +
-            'node-ldapjs as by Rust',
+            'node-ldapjs as by Rust, and what sts-directory ended with ' +
+            'is read by Node\'s DomainMap',
   run: run
 };

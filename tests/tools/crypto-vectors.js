@@ -5496,6 +5496,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'policy-node.json',
                    build: function () {
                      return require('./policy-vectors.js').build(ROOT);
+                   } },
+                 // The directory's model and operations (sts-directory):
+                 // tests/tools/directory-vectors.js, in a child of its own.
+                 { file: 'directory-node.json',
+                   build: function () {
+                     return require('./directory-vectors.js').build(ROOT);
                    } }];
 
 // A PRIVATE KEY MADE PKCS#8 (#444, phase 3): the conversion `sts-core`'s
