@@ -103,6 +103,14 @@ pub trait SetupPorts: Send + Sync {
     fn people(&self) -> Option<std::sync::Arc<sts_registers::people::People>> {
         None
     }
+    /// A read answered over what the runtime holds (`GET /admin-api/groups`
+    /// and the views ported after it, #444 phase 5's `apis3` slice): the
+    /// answer, or None where this process has nothing to answer it with,
+    /// when it answers as an operation not yet ported.
+    fn view(&self, asked: &crate::families::Asked<'_>) -> Option<Answered> {
+        let _ = asked;
+        None
+    }
 }
 
 /// `realms.retiringState(id)`: a realm being removed, as the realm's row
@@ -764,6 +772,34 @@ fn js_parse_int(text: &str) -> Option<i64> {
         return None;
     }
     run.parse::<i64>().ok().map(|n| n * sign)
+}
+
+/// `POST /admin-api/groups/{action}` (`adminActions.groupsAction()`):
+/// 200 for `ok` and 400 otherwise, marked with the act's code or
+/// STS-API-0033, as the route marks it. The actor is the caller's name
+/// (`callerNameOf(res)`). None where there is no register.
+#[tracing::instrument(level = "debug", skip(setup, body, caller))]
+pub fn groups_action(
+    setup: &Setup<'_>,
+    action: &str,
+    body: &Json,
+    caller: Option<&crate::gate::Caller>,
+) -> Option<Answered> {
+    let people = setup.ports.people()?;
+    let mut asked = body.as_object().cloned().unwrap_or_default();
+    asked.insert("action".into(), Json::from(action));
+    let actor = caller.map(|c| c.name.clone()).unwrap_or_default();
+    let outcome = people.groups(&Json::Object(asked), &actor);
+    let ok = outcome.answer.get("ok") == Some(&Json::Bool(true));
+    Some(Answered {
+        status: if ok { 200 } else { 400 },
+        code: if ok {
+            None
+        } else {
+            Some(outcome.code.unwrap_or(codes::STS_API_0033))
+        },
+        body: outcome.answer,
+    })
 }
 
 /// Every setting row's key, for the index of what a body may name.

@@ -178,8 +178,16 @@ docker rm "$cid" >/dev/null; chmod 0644 "$OUT/version.json"
 # URL, and the same views are read from it and held to Node's, member for
 # member. `since` and `processes` are left out: they say when and in how
 # many processes the counters were kept, which a restart changes.
-VIEWS_READ=(pki acme acme/monitor est est/monitor scep scep/monitor)
+VIEWS_READ=(${VIEWS_LIST:-pki acme acme/monitor est est/monitor scep scep/monitor groups})
+# The `apis3` slice: every group's drill-down is read too (the first ten of
+# each realm), its two members not yet ported in Rust left out of both
+# sides — `policyReferences` (no policy kind declares a group reference in
+# that runtime yet) and `ownership`.
+VIEWS_DETAIL_DEL='del(.since, .processes, .policyReferences, .ownership)'
+
 read_views() {
+  # `head` closing a pipe is not a failure here.
+  set +o pipefail
   local label="$1" base="$2" token dir="$OUT/views-$1"
   rm -rf "$dir"; mkdir -p "$dir"
   token="$(docker run --rm --network host \
@@ -199,8 +207,36 @@ read_views() {
       printf '%s %s\n' "$(cat "$dir/status")" "${prefix:-}/$v" \
         >> "$dir/statuses.txt"
     done
+    if [ -s "$dir/$(echo "${prefix:-/default}groups" | tr '/' '_').json" ]; then
+      jq -r '.groups[]?.dn' \
+        "$dir/$(echo "${prefix:-/default}groups" | tr '/' '_').json" \
+        2>/dev/null | head -10 | while read -r gdn; do
+        enc="$(jq -rn --arg v "$gdn" '$v|@uri')"
+        curl -sk -o "$dir/raw" -H "Authorization: Bearer $token" \
+          "$base$prefix/admin-api/groups?group=$enc"
+        jq -S "$VIEWS_DETAIL_DEL" "$dir/raw" > "$dir/$(echo \
+          "${prefix:-/default}group-$gdn" | tr '/,= ' '____').json" \
+          2>/dev/null || true
+      done
+    fi
+    # One person's drill-down, for the members Rust ports
+    # (`GET /admin-api/users?user=`): the first five people the realm's
+    # groups list. The register row's artifacts are not counted in Rust.
+    cat "$dir"/$(echo "${prefix:-/default}group-" | tr '/,= ' '____')*.json \
+      2>/dev/null | jq -r '.group.members[]?.userKey // empty' 2>/dev/null \
+      | sort -u | head -5 | while read -r who; do
+      enc="$(jq -rn --arg v "$who" '$v|@uri')"
+      curl -sk -o "$dir/raw" -H "Authorization: Bearer $token" \
+        "$base$prefix/admin-api/users?user=$enc"
+      jq -S '{known, subject, ldap, user: (.user | if type == "object"
+               then del(.artifacts, .artifactKinds, .lastActivityAt)
+               else . end)}' "$dir/raw" > "$dir/$(echo \
+        "${prefix:-/default}user-$who" | tr '/,= ' '____').json" \
+        2>/dev/null || true
+    done
   done < "$dir/realms.txt"
   rm -f "$dir/raw" "$dir/status"
+  set -o pipefail
 }
 
 say "== Node alone =="

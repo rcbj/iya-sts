@@ -161,6 +161,18 @@ impl TokenRegister {
         (self.tokens.in_realm(realm).len(), self.revoked.len())
     }
 
+    /// Every record the register holds in a realm (`tokens.forEach()`), for
+    /// the console's views (#444, phase 5, the `apis3` slice).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn records_in(&self, realm: &str) -> Vec<Json> {
+        self.tokens
+            .in_realm(realm)
+            .entries()
+            .into_iter()
+            .map(|(_, v)| v)
+            .collect()
+    }
+
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn record_jwt(
         &self,

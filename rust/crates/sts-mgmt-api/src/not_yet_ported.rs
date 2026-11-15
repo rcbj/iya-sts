@@ -76,7 +76,6 @@ macro_rules! not_yet_ported {
         | Operation::RotateSigningKeys
         | Operation::RotateSigningKeysEmergency
         | Operation::GetMetrics
-        | Operation::GetUsers
         | Operation::GetUserAppPasswords
         | Operation::GetUserCertificates
         | Operation::GetUserDevices
@@ -144,9 +143,6 @@ macro_rules! not_yet_ported {
         | Operation::RetryBackchannelDelivery
         | Operation::RestoreLoggedOutToken
         | Operation::ClearKerberosSignOut
-        | Operation::GetGroups
-        | Operation::CreateGroup
-        | Operation::AddGroupMember
         | Operation::SetGroupMail
         | Operation::SetGroupPolicy
         | Operation::AddGroupOwner
@@ -161,8 +157,6 @@ macro_rules! not_yet_ported {
         | Operation::GetDirectoryDevices
         | Operation::GetDirectoryService
         | Operation::GetAdminRoles
-        | Operation::GrantAdminRole
-        | Operation::RevokeAdminRole
         | Operation::GetMultiFactor
         | Operation::ClearAuthenticatorApp
         | Operation::ClearSecurityKey
@@ -505,7 +499,6 @@ macro_rules! not_yet_ported {
         | Operation::SavePostLoginPolicy
         | Operation::ResetPostLoginPolicy
         | Operation::GetConsent
-        | Operation::GrantGlobalConsent
         | Operation::RevokeGlobalConsent
         | Operation::RevokeConsent
         | Operation::RevokeApplicationConsent

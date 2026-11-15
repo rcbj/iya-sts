@@ -583,6 +583,17 @@ fn unknown_action(
                 None => return express_404(method, &path),
             }
         }
+        Some(Handler::GroupsAction) => {
+            match crate::setup::groups_action(
+                &setup(services, &realm_id),
+                action,
+                body,
+                None,
+            ) {
+                Some(a) => a,
+                None => return express_404(method, &path),
+            }
+        }
         Some(Handler::ApplicationsAction) => {
             match crate::applications::action(
                 &setup(services, &realm_id),
@@ -771,6 +782,37 @@ fn run(
         }
         Handler::UsersAction => {
             match crate::setup::users_action(&s, &action, body, caller) {
+                Some(a) => a,
+                None => return express_404(method, row.path),
+            }
+        }
+        Handler::View => {
+            let asked = crate::families::Asked {
+                operation_id: row.id,
+                family: "",
+                action: &action,
+                query,
+                body,
+                caller,
+                base: &realm_base,
+                setup: Some(&s),
+            };
+            match s.ports.view(&asked) {
+                Some(a) => a,
+                None => {
+                    tracing::info!(
+                        "admin-api: {} {} ({}) has nothing to answer it in \
+                         this process.",
+                        method,
+                        row.path,
+                        row.id
+                    );
+                    return express_404(method, row.path);
+                }
+            }
+        }
+        Handler::GroupsAction => {
+            match crate::setup::groups_action(&s, &action, body, caller) {
                 Some(a) => a,
                 None => return express_404(method, row.path),
             }

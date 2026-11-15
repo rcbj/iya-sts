@@ -823,11 +823,13 @@ pub fn scep_monitor_view(f: &Families, asked: &Asked<'_>) -> Json {
 // published actions, the subject kinds and purposes, the person key-pair
 // constants, the page's defaults and the settings block.
 //
+// `issued` with its paging, search and shown rows (the `apis3` slice) and
+// `personsStorable` are ported.
+//
 // NOT PORTED, and absent from the answer rather than answered empty (each
 // member is optional in the model, and an empty list would say "none"):
-// `issued` and `persons` with their paging, searches and shown rows (the
-// key pairs on application and person entries — the issue acts are not in
-// this runtime either), `tree`, `workbench` (the Certificate Workbench,
+// `persons` with its paging, search and shown rows (a person's key pairs,
+// `personAssertions.holders()`, are not in this runtime), `tree`, `workbench` (the Certificate Workbench,
 // `common/pki_authoring.ts`), `pinnedSigners` and `personsStorable`. A
 // post-quantum tier's `pqc` is null here (`pqcSupport.of()` is not ported;
 // a classical one is null in Node too). `revocationNote` is the sentence
@@ -1140,7 +1142,12 @@ fn listener_default_key_alg(a: &Authority, f: &Families) -> String {
 
 /// `pkiJson(req)`: what `GET /admin-api/pki` answers.
 #[tracing::instrument(level = "debug", skip_all)]
-pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
+pub fn pki_view(
+    a: &Authority,
+    f: &Families,
+    asked: &Asked<'_>,
+    applications: Vec<Json>,
+) -> Json {
     let p = &t()["pki"];
     // `realmLabel()`: the realm's id.
     let label = realm::current_id();
@@ -1151,7 +1158,16 @@ pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
         SettingValue::Bool(b) => Json::Bool(b),
         other => Json::from(other.as_str()),
     };
+    let (issued, issued_paging, issued_search, issued_shown) =
+        issued_rows(p, &applications, asked);
     json!({
+        "issued": issued,
+        "issuedPaging": issued_paging,
+        "issuedSearch": issued_search,
+        "issuedShown": issued_shown,
+        // `personAssertions.storable()`: `!!directory`, and the directory
+        // is always loaded here.
+        "personsStorable": true,
         "realm": label,
         "chain": chain,
         "keyAlgorithms": p["keyAlgorithms"],
@@ -1185,6 +1201,156 @@ pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
         "tierLabels": p["tierLabels"],
         "serviceScope": p["serviceScope"],
     })
+}
+
+/// `KEY_PAIR_ATTRIBUTES[purpose]`: the issuer, handle, private key,
+/// expiry, certificate, source and registered-key attributes.
+fn key_pair_attributes(purpose: &str) -> [&'static str; 7] {
+    if purpose == "saml" {
+        [
+            "oauthSamlAssertionIssuer",
+            "oauthSamlAssertionThumbprint",
+            "oauthSamlAssertionPrivateKey",
+            "oauthSamlAssertionExpiresAt",
+            "oauthSamlAssertionCertificate",
+            "oauthSamlAssertionKeySource",
+            "oauthSamlAssertionSigningCertificate",
+        ]
+    } else {
+        [
+            "oauthAssertionIssuer",
+            "oauthAssertionKid",
+            "oauthAssertionPrivateKey",
+            "oauthAssertionExpiresAt",
+            "oauthAssertionCertificate",
+            "oauthAssertionKeySource",
+            "oauthJwks",
+        ]
+    }
+}
+
+/// `String(value)` of a field: an array joined with commas.
+fn js_text(value: &Json) -> String {
+    match value {
+        Json::Null => "null".into(),
+        Json::String(s) => s.clone(),
+        Json::Array(l) => l
+            .iter()
+            .map(|v| match v {
+                Json::Null => String::new(),
+                other => js_text(other),
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        other => other.to_string(),
+    }
+}
+
+/// `!!value`, as a field holds one.
+fn js_truthy(value: Option<&Json>) -> bool {
+    match value {
+        None | Some(Json::Null) | Some(Json::Bool(false)) => false,
+        Some(Json::String(s)) => !s.is_empty(),
+        Some(Json::Number(n)) => n.as_f64().is_some_and(|f| f != 0.0),
+        Some(_) => true,
+    }
+}
+
+/// `pkiJson()`'s `issued` — every application holding a managed key pair,
+/// an assertion issuer or a key registered by value, per purpose — and
+/// `keyPairPaging()`'s page of it: searched by `issuedq` (the identifier,
+/// the purpose's label, the handle and the issuers), five a page, the shown
+/// rows by index. Each row's `pqc` is null, as a classical certificate's
+/// is in Node (`pqcSupport.of()` is not ported).
+fn issued_rows(
+    p: &Json,
+    applications: &[Json],
+    asked: &Asked<'_>,
+) -> (Vec<Json>, Json, Json, Json) {
+    let mut rows: Vec<Json> = Vec::new();
+    for purpose in ["jwt", "saml"] {
+        let [issuer, handle, private_key, expires, certificate, source, registered] =
+            key_pair_attributes(purpose);
+        let label = p["purposes"]
+            .as_array()
+            .and_then(|l| l.iter().find(|one| one["id"] == purpose))
+            .map_or(Json::from(""), |one| one["label"].clone());
+        for one in applications {
+            let fields = &one["fields"];
+            let field = |k: &str| fields.get(k).filter(|v| js_truthy(Some(v)));
+            let text = |k: &str| field(k).map(js_text).unwrap_or_default();
+            let issuers: Vec<String> = match fields.get(issuer) {
+                None | Some(Json::Null) => Vec::new(),
+                Some(Json::Array(l)) => l.iter().map(js_text).collect(),
+                Some(v) => vec![js_text(v)],
+            }
+            .into_iter()
+            .filter(|v| !v.is_empty())
+            .collect();
+            let has_key_pair =
+                field(private_key).is_some() || field(certificate).is_some();
+            let registered_own = field(registered).is_some();
+            if !(has_key_pair || !issuers.is_empty() || registered_own) {
+                continue;
+            }
+            rows.push(json!({
+                "identifier": one["identifier"],
+                "name": one["name"],
+                "purpose": purpose,
+                "purposeLabel": label,
+                "handleLabel": if purpose == "saml" { "thumbprint" }
+                               else { "kid" },
+                "handle": text(handle),
+                "expiresAt": text(expires),
+                "hasKeyPair": has_key_pair,
+                "privateKeyHeld": field(private_key).is_some(),
+                "source": if field(source).is_some() { text(source) }
+                          else if field(private_key).is_some() {
+                              "issued".to_string() }
+                          else { String::new() },
+                "assertionIssuers": issuers,
+                "registeredOwnKeys": registered_own,
+                "pqc": Json::Null,
+            }));
+        }
+    }
+    let search = term_of(asked, "issuedq");
+    let matched = search_rows(search.as_deref(), rows.clone(), |one| {
+        let mut texts = vec![
+            one["identifier"].clone(),
+            one["purposeLabel"].clone(),
+            one["handle"].clone(),
+        ];
+        texts.extend(
+            one["assertionIssuers"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+        );
+        texts
+    });
+    let paging = Paging::of(
+        asked.query,
+        matched.len(),
+        Options {
+            name: "issued",
+            noun: "application rows",
+            default_per: Some(PKI_MAX_PER_PAGE),
+            max_per: Some(PKI_MAX_PER_PAGE),
+        },
+    );
+    let shown: Vec<Json> = paging
+        .slice(&matched)
+        .iter()
+        .filter_map(|row| rows.iter().position(|r| r == row))
+        .map(Json::from)
+        .collect();
+    (
+        rows,
+        paging.to_json(),
+        search.map_or(Json::Null, Json::from),
+        Json::Array(shown),
+    )
 }
 
 /// `protocolEndpoints` (`forPage()`), appended to a successful GET that

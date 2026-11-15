@@ -47,9 +47,7 @@ use sts_core::realm_store::{RealmMap, StoreHandles};
 use sts_core::settings::Settings;
 use sts_directory::Directory;
 use sts_oauth::authorization_servers::{self as named, AuthorizationServers};
-use sts_oauth::authorize::{
-    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoGatedScopes,
-};
+use sts_oauth::authorize::{AuthorizationEndpoint, AuthorizeAsk, CatalogPages};
 use sts_oauth::client_auth::{ClientAuth, MemoryAssertionHistory, SystemClock};
 use sts_oauth::clients::RegisterClients;
 use sts_oauth::token_endpoint::{Signer, TokenAsk, TokenEndpoint};
@@ -102,6 +100,9 @@ pub struct OAuthStack {
     pub consent: Arc<sts_oauth::consent::ConsentScreen>,
     /// `/oauth2/userinfo` (OIDC Core section 5.3).
     pub userinfo: Arc<sts_oauth::userinfo::UserInfo>,
+    /// The bootstrap administrator's claim at the authorization endpoint,
+    /// handed its work when `/admin-api` is built.
+    pub console_claim: Arc<crate::admin_api::ConsoleClaim>,
 }
 
 /// The person's entry for UserInfo's claims: the live directory's person
@@ -361,6 +362,7 @@ impl OAuthStack {
     /// opens).
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn declare(parts: OAuthParts) -> Arc<OAuthStack> {
+        let console_claim = Arc::new(crate::admin_api::ConsoleClaim::default());
         let settings = parts.settings.clone();
         let mode = parts.mode.clone();
         let domain = settings.value_of("global.domain");
@@ -464,7 +466,7 @@ impl OAuthStack {
             grants: grants.clone(),
             claims: Arc::new(ProcessClaims::default()),
             dpop,
-            gated: Arc::new(NoGatedScopes),
+            gated: console_claim.clone(),
             people: Arc::new(Directories(parts.people.clone())),
             sessions: Arc::new(GrantSessionsOf(parts.sessions.clone())),
         });
@@ -517,7 +519,7 @@ impl OAuthStack {
                 random_id: Arc::new(random_id),
                 now_ms: Arc::new(sts_core::time::now_ms_f64),
             }),
-            gated: Arc::new(NoGatedScopes),
+            gated: console_claim.clone(),
             consent: Some(consent.clone()),
             request_objects: Some(Arc::new(
                 sts_oauth::request_object::RequestObjects {
@@ -578,6 +580,7 @@ impl OAuthStack {
             pairwise: Some(pairwise.clone()),
         });
         Arc::new(OAuthStack {
+            console_claim,
             settings,
             mode,
             registry: parts.registry,
