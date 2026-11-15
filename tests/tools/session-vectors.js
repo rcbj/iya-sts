@@ -883,8 +883,99 @@ function build(ROOT) {
   pure.push({ fn: 'clearSessionCookie', https: true,
               answer: secureRes.cookies });
 
+  // ---- whether a second factor is required (#1490, #246, #221) ---------
+  const Credentials = req('common/credentials').Credentials;
+  const AuthnPolicyClass = req('common/authn_policy').AuthnPolicy;
+  const bootstrapName = req('common/bootstrap_name');
+  const realBootstrap = bootstrapName.current;
+  const realEveryone = mode.requiresSecondFactorOfEveryone;
+  const profiles = [
+    { requireSecondFactor: 'if-held',
+      requireSecondFactorForAdministrators: 'offer' },
+    { requireSecondFactor: 'always',
+      requireSecondFactorForAdministrators: 'always' },
+    { requireSecondFactor: 'if-held',
+      requireSecondFactorForAdministrators: 'if-held' }
+  ];
+  const facts = {
+    people: ['', 'dora', 'mfa-person', 'svc-exempt', 'svc-held', 'admin',
+             'bootstrap', 'reader'],
+    mfaRequired: { 'mfa-person': true },
+    serviceAccounts: { 'svc-exempt': true, 'svc-held': true },
+    exempt: { 'svc-exempt': true },
+    roles: { admin: { read: true, write: true },
+             bootstrap: { read: true, write: true },
+             reader: { read: true, write: false } },
+    bootstrap: 'bootstrap'
+  };
+  [false, true].forEach(function (everyone) {
+    profiles.forEach(function (profile) {
+      mode.requiresSecondFactorOfEveryone = function () {
+        return everyone;
+      };
+      bootstrapName.current = function () {
+        return facts.bootstrap;
+      };
+      const policyThis = { deps: { log: helpers.log },
+                           read: function () {
+                             return profile;
+                           } };
+      const rules = {
+        require: AuthnPolicyClass.prototype.requireSecondFactor
+          .call(policyThis),
+        configured: AuthnPolicyClass.prototype.configuredSecondFactor
+          .call(policyThis),
+        forAdministrators: AuthnPolicyClass.prototype
+          .requireSecondFactorForAdministrators.call(policyThis)
+      };
+      pure.push({ fn: 'secondFactorRules', args: [profile, everyone],
+                  answer: rules });
+      facts.people.forEach(function (name) {
+        const fake = {
+          directory: { readMfaRequired: function (n) {
+            return !!facts.mfaRequired[n];
+          } },
+          deps: {
+            log: helpers.log, config: config, realms: realms,
+            serviceAccounts: { isServiceAccountName: function (n) {
+              return !!facts.serviceAccounts[n];
+            } },
+            serviceAccountPolicy: {
+              profileFor: function (n) {
+                return n;
+              },
+              exemptFromSecondFactor: function (n) {
+                return !!facts.exempt[n];
+              }
+            },
+            authnPolicy: {
+              requireSecondFactor: function () {
+                return rules.require;
+              },
+              configuredSecondFactor: function () {
+                return rules.configured;
+              },
+              requireSecondFactorForAdministrators: function () {
+                return rules.forAdministrators;
+              }
+            },
+            consoleRolesOf: function (n) {
+              return facts.roles[n] || { read: false, write: false };
+            }
+          }
+        };
+        pure.push({ fn: 'mfaRequirementFor', args: [name, everyone, profile],
+                    answer: Credentials.prototype.mfaRequirementFor.call(
+                      fake, name) });
+      });
+    });
+  });
+  mode.requiresSecondFactorOfEveryone = realEveryone;
+  bootstrapName.current = realBootstrap;
+
   Date.now = realNow;
-  return { steps: steps, pure: pure, observed: observed.length };
+  return { steps: steps, pure: pure, observed: observed.length,
+           secondFactorFacts: facts };
 }
 
 /**

@@ -30,6 +30,7 @@ use replay::{normal, Replay};
 use serde_json::{json, Value};
 use sts_authn::js::Object;
 use sts_authn::ports::{Request, Response};
+use sts_authn::requirement::{self, SecondFactorFacts, SecondFactorRules};
 use sts_authn::{cookie, merge, record, Sessions, SessionsDeps};
 use sts_core::mode::Mode;
 use sts_core::realm::RealmRegistry;
@@ -320,6 +321,38 @@ fn every_door_answers_as_node_does() {
     );
 }
 
+/// The people `mfaRequirementFor()` was asked about, as the builder held
+/// them.
+struct Facts {
+    doc: Value,
+    rules: SecondFactorRules,
+}
+
+impl SecondFactorFacts for Facts {
+    fn is_service_account_name(&self, name: &str) -> bool {
+        self.doc["serviceAccounts"][name] == json!(true)
+    }
+    fn service_account_exempt(&self, name: &str) -> bool {
+        self.doc["exempt"][name] == json!(true)
+    }
+    fn read_mfa_required(&self, name: &str) -> Option<Result<bool, String>> {
+        Some(Ok(self.doc["mfaRequired"][name] == json!(true)))
+    }
+    fn rules(&self) -> SecondFactorRules {
+        self.rules.clone()
+    }
+    fn console_roles_of(&self, name: &str) -> (bool, bool) {
+        let r = &self.doc["roles"][name];
+        (r["read"] == json!(true), r["write"] == json!(true))
+    }
+    fn current_realm(&self) -> String {
+        "default".into()
+    }
+    fn bootstrap_name(&self) -> String {
+        self.doc["bootstrap"].as_str().unwrap_or("").to_string()
+    }
+}
+
 /// The pure functions: the merge, the cookie parser, the phrases, the
 /// clocks, the subject, the policy question and the cookie clearing.
 fn pure(doc: &Value, replay: &Arc<Replay>) -> Vec<String> {
@@ -392,6 +425,24 @@ fn pure(doc: &Value, replay: &Arc<Replay>) -> Vec<String> {
                     s.clear_session_cookie(&mut r, "sts_portal");
                 }
                 json!(r.cookies)
+            }
+            "secondFactorRules" => {
+                let r = SecondFactorRules::of(&args[0], args[1] == json!(true));
+                json!({"require": r.require, "configured": r.configured,
+                       "forAdministrators": r.for_administrators})
+            }
+            "mfaRequirementFor" => {
+                let facts = Facts {
+                    doc: doc["secondFactorFacts"].clone(),
+                    rules: SecondFactorRules::of(
+                        &args[2],
+                        args[1] == json!(true),
+                    ),
+                };
+                requirement::mfa_requirement_for(
+                    &facts,
+                    args[0].as_str().unwrap(),
+                )
             }
             other => {
                 failures.push(format!("pure {i}: no such function {other}"));

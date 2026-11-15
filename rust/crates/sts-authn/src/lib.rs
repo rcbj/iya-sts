@@ -16,6 +16,8 @@
 //! * [`sessions`] — the doors: `startSession()`, `sessionOf()`, the
 //!   re-authentication, `dropSession()` and the ends over it, the expiry
 //!   and the sweep, the caps, the arrival sessions, presented and held;
+//! * [`requirement`] — whether a second factor is required at sign-in
+//!   (`mfaRequirementFor()`), product mode's "everybody" (#1490) included;
 //! * [`job`] — `authn.session-expiry` on the one scheduler;
 //! * [`ports`] — what it reaches beyond itself, and the observer slot.
 //!
@@ -46,6 +48,7 @@ pub mod js;
 pub mod merge;
 pub mod ports;
 pub mod record;
+pub mod requirement;
 pub mod sessions;
 
 pub use sessions::{Sessions, SessionsDeps};
