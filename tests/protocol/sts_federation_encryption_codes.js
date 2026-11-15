@@ -327,7 +327,7 @@ async function oidcPost(w, wrap, code) {
     w.oidcKey.privateKey).toString("base64url");
   const act = function () {
     return b.go(w.oidcAcs, { form: { id_token: wrap(signed),
-                                     state: asked.searchParams.get("state") } });
+      state: asked.searchParams.get("state") } });
   };
   const got = code ? await K.coded(w.SP, code, act)
                    : { answer: await act(), rose: 0 };

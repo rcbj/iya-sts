@@ -2471,6 +2471,17 @@ const JOBS = [
   // keys, as every product and store stack does.
   { file: 'sts_federation_encryption_codes.js', browser: false,
     local: true },
+  // D12 (#444): which people a partner may assert — the product profile
+  // form and its refusals, another browser, one link per person,
+  // any-existing (federation_subject_policy 1i-00, 1m-0, 3c, 5;
+  // federation_consumer_providers N3-N8).
+  { file: 'sts_federation_subject_codes.js', browser: false, local: true },
+  // D12 (#444): Discord, GitHub and Google through their own profiles
+  // against provider-shaped servers on the runner, and the portal's
+  // disconnect of the only way in (federation_consumer_providers A, D, E,
+  // F, N11-N12). Dialled at OUTBOUND_TEST_HOST.
+  { file: 'sts_federation_consumer_providers.js', browser: false,
+    local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
