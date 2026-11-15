@@ -2249,11 +2249,17 @@ dependencies = [
 name = "sts-mail"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "indexmap",
+ "regex",
  "serde",
  "serde_json",
+ "sts-cluster",
  "sts-core",
  "sts-crypto",
  "thiserror",
+ "tokio",
  "tracing",
 ]
 
