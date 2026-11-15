@@ -1292,7 +1292,9 @@ function restorableOverrides(id, overrides) {
   log.debug("Entering restorableOverrides(). id=" + id);
   const kept = {};
   Object.keys(overrides || {}).forEach(function (key) {
-    const problem = checkRealmOverride(key, overrides[key]);
+    // `true`: what the value IS, not what is beside it (run #300) — see
+    // config.js's checkStoredOverride().
+    const problem = checkRealmOverride(key, overrides[key], true);
     if (problem) {
       log.warn(errorCodes.tag('STS-CORE-0008') + 'realms: the saved ' +
                'override "' + key + '" of the realm "' + id + '" was not ' +
@@ -1338,7 +1340,13 @@ function create(given) {
     return errorCodes.mark({ ok: false, errors: textErrors },
                            errorCodes.codeOf(textErrors));
   }
-  const overrideErrors = checkOverrides((spec || {}).overrides);
+  // A REALM READ BACK OR REPLICATED IS NOT RE-JUDGED AS A WHOLE (run #300):
+  // restorableOverrides() above has checked each value for what it is, and
+  // the rules between settings were the writing door's to ask. Asked again
+  // here, a pair that door took one at a time — a chosen algorithm, then a
+  // list without it — refused the REALM, so a replica or a restart lost it.
+  const overrideErrors = given && (given.restored || given.replicated)
+    ? [] : checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
     log.debug("Leaving create(). Refused for its overrides.");
     return errorCodes.mark({ ok: false, errors: overrideErrors },
@@ -1461,7 +1469,19 @@ function update(id, changes) {
                            errorCodes.codeOf(textErrors));
   }
   if (spec.overrides !== undefined) {
-    const overrideErrors = checkOverrides(spec.overrides);
+    // A REPLICATED UPDATE IS NOT RE-JUDGED AS A WHOLE (2026-11-15, GitHub
+    // Actions run #300), for the reason the mode and Kerberos rules below
+    // are not asked of it: the process that took the write judged it.
+    // restorableOverrides() has checked each value for what it is. The rule
+    // between settings that cfa8ca851 made this check apply (#444's D12)
+    // judged a pair the writer had taken one setting at a time —
+    // `oauth2.accessTokenSigningAlg=ES256`, then `keys.signingAlgorithms=
+    // PS256,RS256` — refused it STS-KEYS-0192, and the replica kept its old
+    // overrides with nothing said: a client_credentials token signed RS256
+    // there, and its stale copy was later written back over the store
+    // (sts_signature_policy H, in every mode with request workers).
+    const overrideErrors = spec.replicated ? []
+      : checkOverrides(spec.overrides);
     if (overrideErrors.length) {
       log.debug("Leaving update(). Refused for its overrides.");
       return errorCodes.mark({ ok: false, errors: overrideErrors },
@@ -1549,7 +1569,7 @@ function update(id, changes) {
 // `isPerProcess()` and not a copy of it, for the reason this whole function
 // exists: the reading end and the writing end of one rule, written separately,
 // disagreed within the hour.
-function checkRealmOverride(key, raw) {
+function checkRealmOverride(key, raw, stored) {
   log.debug("Entering checkRealmOverride().");
   if (String(key || '').indexOf('realms.') === 0) {
     log.debug("Leaving checkRealmOverride().");
@@ -1577,8 +1597,10 @@ function checkRealmOverride(key, raw) {
   // restart-only (it derives `global.https`, and a listener's scheme is
   // settled when it is bound) is not a reason a realm cannot carry it.
   // Everything else that is restart-only is still refused here, in the same
-  // sentence as before.
-  return config.checkOverride(key, raw, true);
+  // sentence as before. `stored`: a value read back or replicated, checked
+  // without the rules between settings (restorableOverrides()).
+  return stored ? config.checkStoredOverride(key, raw, true)
+                : config.checkOverride(key, raw, true);
 }
 
 // WHICH CONDITION checkRealmOverride() REFUSED FOR, in its order: the two rules

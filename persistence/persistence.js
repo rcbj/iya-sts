@@ -3919,7 +3919,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       // the wholesale write used to delete it at the first flush.
       rows.forEach(function (row) {
         if (realms.get(row.id)) {
-          realmShadow.set(row.id, shadowRowOf(row));
+          realmShadow.set(row.id, heldShadowRowOf(row, null));
         }
       });
     }
@@ -4087,7 +4087,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
 // `xacml.enforceAccess` turned off and still refusing, `oauth2.consentRequired`
 // set and the consent screen still drawn — settings that reported success and
 // did nothing anywhere but the process that took the call.
-function restoreRealms(rows, replicated) {
+function restoreRealms(rows, replicated, refused) {
   log.debug('Entering restoreRealms(). ' + rows.length + ' row(s).');
   let made = 0;
   rows.forEach(function (row) {
@@ -4110,10 +4110,25 @@ function restoreRealms(rows, replicated) {
       // kerberosOverrideProblem()).
       // `retiringSince` too (#262): another process's `retire()` marked
       // the realm, and this one must refuse new sign-ins in it as well.
-      realms.update(row.id, { name: row.name, description: row.description,
-                              overrides: row.overrides || {},
-                              retiringSince: row.retiringSince || null,
-                              replicated: true });
+      const updated = realms.update(row.id, {
+        name: row.name, description: row.description,
+        overrides: row.overrides || {},
+        retiringSince: row.retiringSince || null,
+        replicated: true });
+      // A REFUSED UPDATE WAS DROPPED WITH NOTHING SAID until GitHub Actions
+      // run #300 (2026-11-15), and this process went on holding the realm
+      // as it was. Said now, and handed back so the caller keeps this
+      // realm's shadow where it was: see applyRealmsChange().
+      if (updated && updated.ok === false) {
+        log.error(errorCodes.tag('STS-STORE-0174') + 'persistence: the "' +
+                  row.id + '" realm another process changed could not be ' +
+                  'applied here: ' + (updated.errors || []).join(' ') +
+                  ' This process keeps the realm as it was and does not ' +
+                  'write it back.');
+        if (refused) {
+          refused.add(row.id);
+        }
+      }
       return;
     }
     const result = realms.create({
@@ -4165,6 +4180,36 @@ function restoreRealms(rows, replicated) {
   });
   log.debug('Leaving restoreRealms(). ' + made + ' restored.');
   return made;
+}
+
+// ---------------------------------------------------------------------------
+// THE SHADOW OF A ROW THIS PROCESS HAS JUST TAKEN, LESS WHAT IT LEFT OUT
+// (2026-11-15, GitHub Actions run #300).
+//
+// The shadow is what a flush diffs the live realm against, so a stored
+// override the live realm does not hold reads as one CLEARED HERE, and the
+// next flush deletes it from the store for every process. A value
+// restorableOverrides() left out (STS-CORE-0008, "left in the store") was
+// deleted that way; so was every override of a replicated update the realm
+// registry refused, the moment this process flushed anything in that realm
+// — run #300 measured `oauth2.accessTokenSigningAlg` gone from the writer
+// too, and a reset of it refused STS-CORE-0007. So the shadow keeps a stored
+// override only where the realm holds it, or where this process cleared it
+// and has not written that yet (`cleared`).
+// ---------------------------------------------------------------------------
+function heldShadowRowOf(row, cleared) {
+  log.debug("Entering heldShadowRowOf().");
+  const live = realms.get(row.id);
+  const held = (live && live.overrides) || {};
+  const overrides = {};
+  Object.keys(row.overrides || {}).forEach(function (key) {
+    if (Object.prototype.hasOwnProperty.call(held, key) ||
+        (cleared && cleared.indexOf(key) >= 0)) {
+      overrides[key] = row.overrides[key];
+    }
+  });
+  log.debug("Leaving heldShadowRowOf().");
+  return shadowRowOf(Object.assign({}, row, { overrides: overrides }));
 }
 
 // One stored realm row as the realm shadow holds it.
@@ -4867,6 +4912,8 @@ function applyRealmsChange() {
       return !storedIds.has(id) && !!realms.get(id);
     });
     const was = restoring;
+    // The realms whose replicated update was refused (STS-STORE-0174).
+    const refused = new Set();
     restoring = true;
     try {
       // THROUGH `restoreRealms()`, the same function the startup restore uses,
@@ -4874,7 +4921,7 @@ function applyRealmsChange() {
       // another process created — including ldap_server.js's, which seeds the
       // subtree. A second way to make a realm is the one that is missing a
       // step, and this service already learnt that once.
-      restoreRealms(merged, true);
+      restoreRealms(merged, true, refused);
       gone.forEach(function (id) {
         log.info('persistence: the "' + id + '" realm was removed by another ' +
                  'node; removing it here.');
@@ -4908,8 +4955,17 @@ function applyRealmsChange() {
     } finally {
       restoring = was;
     }
+    // A REFUSED REALM KEEPS ITS SHADOW (run #300): its live copy is the old
+    // one, and a shadow advanced to the stored row made the next flush write
+    // that old copy back over the store. Every other realm's shadow is the
+    // stored row, less what this process left out (heldShadowRowOf()).
     stored.forEach(function (row) {
-      realmShadow.set(row.id, shadowRowOf(row));
+      if (refused.has(row.id)) {
+        return;
+      }
+      const mine = pendingById.get(row.id);
+      realmShadow.set(row.id,
+                      heldShadowRowOf(row, mine ? mine.cleared : null));
     });
     gone.forEach(function (id) {
       realmShadow.delete(id);
