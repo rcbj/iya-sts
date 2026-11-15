@@ -217,6 +217,40 @@ const WRITTEN = {
   'throws-value.js': "throw 'a plain string';\n",
   'missing-require.js': "module.exports = require('./not-here');\n",
   'not-an-object.js': "module.exports = 'just a string';\n",
+  // `require('path')`, the one node module an appconfig file may use in
+  // the Rust runtime (#444 phase 3): every function it offers, over the
+  // inputs node's own path tests use, so the two agree byte for byte.
+  // resolve() is given an absolute first argument: the two runs have
+  // different working directories.
+  'uses-path.js': [
+    "'use strict';",
+    "const path = require('path');",
+    "const same = path === require('node:path') && path.posix === path;",
+    "const inputs = ['', '.', '..', '/', '//', '///', 'a', '/a', 'a/',",
+    "  '/a/b/', 'a//b', './a', '../a', 'a/./b', 'a/../b', 'a/b/..',",
+    "  '/..', '/../a', 'a/../../b', '.a', 'a.', 'a.b.c', '/a/.b', '..b',",
+    "  'a/b.c/', 'file.tar.gz', '//a//b//', '.../x', 'a/...'];",
+    "const each = function (f) { return inputs.map(function (one) {",
+    "  return f(one); }); };",
+    "module.exports = { logLevel: 'warn',",
+    "  keys: { kekFile: path.join(__dirname, 'secrets', '..', 'kek') },",
+    "  theirOwn: { same: same, sep: path.sep, delimiter: path.delimiter,",
+    "    normalize: each(path.normalize), dirname: each(path.dirname),",
+    "    basename: each(function (p) { return path.basename(p); }),",
+    "    basenameExt: each(function (p) { return path.basename(p, '.c'); }),",
+    "    basenameWhole: path.basename('a.c', 'a.c'),",
+    "    extname: each(path.extname), isAbsolute: each(path.isAbsolute),",
+    "    join: [path.join(), path.join(''), path.join('a', '', 'b'),",
+    "      path.join('/a', '../..', 'b/'), path.join('a', '/b'),",
+    "      path.join(__dirname, 'certs', './tls.pem')],",
+    "    resolve: [path.resolve('/a/b', './c'), path.resolve('/a', '/b', 'c'),",
+    "      path.resolve('/', '..'), path.resolve(__dirname, '../x/'),",
+    "      path.resolve('/a/b', '', '../c/')],",
+    "    file: path.basename(__filename, path.extname(__filename)),",
+    "    refused: (function () { try { path.join('a', 1); return 'no'; }",
+    "      catch (e) { return e.code + ' ' + e.message; } })() } };",
+    ''
+  ].join('\n'),
   'empty.js': ''
 };
 
