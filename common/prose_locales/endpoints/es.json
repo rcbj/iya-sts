@@ -311,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "Los puntos de aplicación remotos en JSON"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "Los clústeres de PEP remotos en JSON"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "Lo que está haciendo la autorización, en JSON"

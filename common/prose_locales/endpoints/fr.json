@@ -311,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "Les points d’application distants, en JSON"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "Les clusters de PEP distants en JSON"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "Ce que fait l’autorisation, en JSON"

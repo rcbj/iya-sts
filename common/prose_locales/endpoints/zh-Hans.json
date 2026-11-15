@@ -311,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "以 JSON 形式提供的远程执行点"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "以 JSON 表示的远程 PEP 集群"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "授权正在做什么（JSON 形式）"

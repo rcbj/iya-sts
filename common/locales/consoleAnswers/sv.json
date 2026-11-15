@@ -111,5 +111,9 @@
   "person.certificate": "Certifikatet, som är publikt och också finns på posten:",
   "once.signingCertificate": "Certifikat för meddelandesignering",
   "signing.warn": "<strong>Det här är enda gången filerna kan laddas ned.</strong> Tjänsten sparar inte den privata nyckeln — inte på innehavarens post, inte i certifikatregistret — och ingenting i konsolen eller i <code>/admin-api</code> lämnar ut den igen. Om den går förlorad, återkalla certifikatet och utfärda ett nytt.",
-  "signing.how": "<strong>Så används det.</strong> Signera varje WS-Trust-begäran med nyckeln i <code>{key}</code> (eller PKCS#12-filen): en WS-Security 1.1-signatur över SOAP-Body och Timestamp, med certifikatet i en BinarySecurityToken och <code>{chain}</code> som kedja. Begäran autentiseras då som <code>{name}</code>, eftersom sfären utfärdade certifikatet till det namnet, utan att något annat registrerats."
+  "signing.how": "<strong>Så används det.</strong> Signera varje WS-Trust-begäran med nyckeln i <code>{key}</code> (eller PKCS#12-filen): en WS-Security 1.1-signatur över SOAP-Body och Timestamp, med certifikatet i en BinarySecurityToken och <code>{chain}</code> som kedja. Begäran autentiseras då som <code>{name}</code>, eftersom sfären utfärdade certifikatet till det namnet, utan att något annat registrerats.",
+  "cluster.back": "Tillbaka till klustret",
+  "cluster.discardedDownload": "Ladda ned det som kastades",
+  "cluster.discardedLead": "PEP:en har inte längre egen omvänd proxy, egna inställningar eller lyssnare: den hämtar klustrets. Detta är vad den hade, en gång.",
+  "cluster.discardedTitle": "En PEP gick med i ett kluster"
 }

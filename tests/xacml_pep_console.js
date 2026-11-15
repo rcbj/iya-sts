@@ -620,6 +620,7 @@ async function run(t) {
     '<a href="' + x + 'xacml-tab-policies">Policies</a>' +
     '<a href="' + x + 'xacml-tab-editor">Policy editor</a>' +
     '<a class="first" href="' + x + 'xacml-tab-peps">Remote PEPs</a>' +
+    '<a href="' + x + 'xacml-tab-pep-clusters">PEP clusters</a>' +
     '<a href="' + x + 'xacml-tab-decide">Try a decision</a>' +
     '<a href="' + x + 'xacml-tab-authzen">AuthZEN</a></nav>';
   t.equal(bars[0] || '', xacmlBar,
@@ -747,7 +748,7 @@ async function run(t) {
   const ownTabs = tabHrefs(page).filter(function (one) {
     return one.href.charAt(0) === '#';
   });
-  t.check(routeTabs.length === 17 && routeTabs.every(function (one) {
+  t.check(routeTabs.length === 18 && routeTabs.every(function (one) {
     return one.href.indexOf('/admin/xacml') === 0;
   }) && ownTabs.map(function (one) {
     return one.href;
@@ -2371,6 +2372,154 @@ async function run(t) {
           'PE2. a route\'s generated policy carries the warning, naming the ' +
           'route and linking its Authorization tab; an ordinary policy ' +
           'does not', routeEditor.slice(0, 1600));
+  // -------------------------------------------------------------------------
+  t.log.info('=== CL. remote PEP clusters (#1760) ===');
+  // -------------------------------------------------------------------------
+  const cl_clusterView = { name: 'orders', cluster: 'orders',
+    description: 'The orders proxies', proxy: proxy,
+    proxyRoutes: [], settings: null, listeners: [
+      { id: 'proxy-alt', protocol: 'https', purpose: 'proxy',
+        address: '0.0.0.0', port: 9544, dnsNames: ['orders.example'],
+        ipAddresses: [], keyAlg: 'ec-p256', renew: 0 }],
+    listenerRows: [], membersProblem: null,
+    members: [
+      { pep: 'pep-1', registered: true, publicBaseUrl: 'https://p1.test',
+        notifyUrl: '', listeners: { 'proxy-alt': { port: 9545 } },
+        effectivePublicBaseUrl: 'https://p1.test', code: null, why: null },
+      { pep: 'pep-new', registered: false, publicBaseUrl: '',
+        notifyUrl: '', listeners: {}, effectivePublicBaseUrl: '',
+        code: 'STS-XACML-0221', why: 'Member "pep-new": no callback' }] };
+  const cl_clusterJson = { cluster: 'orders', found: true,
+    clusters: [cl_clusterView],
+    peps: [{ name: 'pep-1', cluster: 'orders', ownConfiguration: false },
+           { name: 'pep-3', cluster: null, ownConfiguration: true },
+           { name: 'pep-4', cluster: null, ownConfiguration: false }],
+    settingsCatalogue: { settings: [], bootstrap: [] },
+    listenersCatalogue: {}, applicationChoices: [] };
+  const cl_clusterPage = XacmlPage.clusterDetail(writer, cl_clusterJson);
+  const cl_ids = ['xacml-pep-tab-overview', 'xacml-cluster-tab-members',
+               'xacml-pep-tab-settings', 'xacml-pep-tab-listener',
+               'xacml-pep-tab-proxy', 'xacml-cluster-tab-visual'];
+  const cl_at = cl_ids.map(function (id) {
+    return cl_clusterPage.indexOf('href="#' + id + '"');
+  });
+  t.check(cl_at.every(function (n, i) { return n >= 0 && (i === 0 ||
+                                                       n > cl_at[i - 1]); }),
+          'CL1. a cluster\'s page has six tabs in order: Overview, ' +
+          'Members, Settings, Listener, Reverse proxy, Visual',
+          JSON.stringify(cl_at));
+  t.check(cl_clusterPage.indexOf('<a href="/admin/xacml#xacml-tab-peps">') >=
+            0 &&
+          cl_clusterPage.indexOf('<a class="first" href="/admin/xacml#' +
+                                 'xacml-tab-pep-clusters">') >= 0 &&
+          cl_clusterPage.indexOf('id="xacml-tab-pep-clusters"') >= 0,
+          'CL2. its first row is the XACML page\'s tabs with PEP clusters ' +
+          'current (drawn here) and Remote PEPs a link', '');
+  t.check(cl_clusterPage.indexOf('value="set-pep-cluster-route"') >= 0 &&
+          cl_clusterPage.indexOf('value="set-pep-cluster-proxy"') >= 0 &&
+          cl_clusterPage.indexOf('value="set-pep-cluster-settings"') >= 0 &&
+          cl_clusterPage.indexOf('value="set-pep-cluster-listener"') >= 0 &&
+          cl_clusterPage.indexOf('<input type="hidden" name="cluster" ' +
+                              'value="orders">') >= 0 &&
+          !/value="(set|remove|clear|generate)-pep-(route|proxy|settings|listener)/
+            .test(cl_clusterPage) &&
+          cl_clusterPage.indexOf('<input type="hidden" name="name" ' +
+                              'value="orders">') < 0,
+          'CL3. every form on it is the cluster\'s action naming the ' +
+          'cluster, none a PEP\'s', '');
+  t.check(cl_clusterPage.indexOf('/admin/xacml/pep-cluster/route?cluster=' +
+                              'orders&amp;route=orders-api') >= 0 &&
+          cl_clusterPage.indexOf('/admin/xacml/pep/route?') < 0,
+          'CL4. its routes link to the cluster route page', '');
+  const cl_members = XacmlPage.clusterMembers(writer, cl_clusterJson,
+                                              cl_clusterView);
+  const cl_p3 = cl_members.split('value="pep-3"')[1] || '';
+  const cl_p4 = cl_members.split('value="pep-4"')[1] || '';
+  t.check(cl_members.indexOf('listed, not registered yet') >= 0 &&
+          cl_members.indexOf('no callback') >= 0 &&
+          /name="discard" value="true" required/
+            .test(cl_p3.split('</form>')[0]) &&
+          cl_p4.split('</form>')[0].indexOf('discard') < 0 &&
+          cl_members.indexOf('value="pep-1"') >= 0 &&
+          cl_members.indexOf('proxy-alt :9545') >= 0,
+          'CL5. Members: the unregistered member and the problem said, a ' +
+          'required discard where the PEP holds its own configuration and ' +
+          'none where it does not, and the member\'s listener lines',
+          cl_members.slice(0, 3000));
+  const cl_afterCluster = XacmlPage.routeHref('pep-1', 'r');
+  t.check(cl_afterCluster === '/admin/xacml/pep/route?pep=pep-1&route=r' &&
+          !XacmlPage.isCluster(),
+          'CL6. drawing a cluster leaves the owner a PEP again',
+          cl_afterCluster);
+  const cl_clusterRoute = XacmlPage.clusterRouteDetail(writer, {
+    cluster: 'orders', route: 'orders-api', found: true,
+    clusters: [cl_clusterView], applicationChoices: [],
+    routeDetail: { found: true, route: proxy.routes[0], usable: true,
+                   position: 0, count: 2, servedBy: [],
+                   application: { identifier: 'orders-app', name: 'Orders',
+                                  found: true } } });
+  t.check(cl_clusterRoute.indexOf('value="set-pep-cluster-route"') >= 0 &&
+          cl_clusterRoute.indexOf('value="remove-pep-cluster-route"') >= 0 &&
+          cl_clusterRoute.indexOf('href="/admin/xacml/pep-cluster?cluster=' +
+                               'orders#xacml-pep-proxy-routes"') >= 0 &&
+          cl_clusterRoute.indexOf('value="set-pep-route"') < 0,
+          'CL7. the cluster route page is the PEP route page drawn for the ' +
+          'cluster: its forms and its way back are the cluster\'s', '');
+  const cl_memberPage = XacmlPage.pepDetail(writer, { pep: 'pep-1',
+    found: true, settingsCatalogue: { settings: [], bootstrap: [] },
+    listenersCatalogue: {},
+    peps: [{ name: 'pep-1', cluster: 'orders', proxy: proxy,
+             clusterMember: { publicBaseUrl: 'https://p1.test',
+                              notifyUrl: '', listeners: {} },
+             listenerRows: [], enabled: true }] });
+  t.check(cl_memberPage.indexOf('Member of cluster orders') >= 0 &&
+          cl_memberPage.indexOf('Edit on the cluster') >= 0 &&
+          cl_memberPage.indexOf('value="set-pep-route"') < 0 &&
+          cl_memberPage.indexOf('value="set-pep-proxy"') < 0 &&
+          cl_memberPage.indexOf('value="set-pep-cluster-member"') >= 0 &&
+          cl_memberPage.indexOf('Create a cluster from this PEP') < 0,
+          'CL8. a member\'s PEP page: the banner, the inherited tabs ' +
+          'read-only with Edit on the cluster, and its own addresses ' +
+          'editable', '');
+  const cl_lonePage = XacmlPage.pepDetail(writer, { pep: 'pep-9',
+    found: true, settingsCatalogue: { settings: [], bootstrap: [] },
+    listenersCatalogue: {},
+    peps: [{ name: 'pep-9', proxy: proxy, listenerRows: [],
+             enabled: true }] });
+  t.check(cl_lonePage.indexOf('Create a cluster from this PEP') >= 0 &&
+          cl_lonePage.indexOf('<input type="hidden" name="from" ' +
+                           'value="pep-9">') >= 0 &&
+          cl_lonePage.indexOf('Member of cluster') < 0 &&
+          cl_lonePage.indexOf('value="set-pep-route"') >= 0,
+          'CL9. a PEP in no cluster offers Create a cluster from this PEP ' +
+          'and is edited as before', '');
+  const cl_tab = XacmlPage.clustersBody(writer, cl_clusterJson);
+  t.check(cl_tab.indexOf('href="/admin/xacml/pep-cluster?cluster=orders"') >=
+            0 && cl_tab.indexOf('value="create-pep-cluster"') >= 0 &&
+          cl_tab.indexOf('<option value="pep-3">') >= 0 &&
+          cl_tab.indexOf('<option value="pep-1">') < 0,
+          'CL10. the PEP clusters tab lists each cluster as a link, and ' +
+          'its create form offers the PEPs in no cluster', '');
+  const cl_tabs = XacmlPage.xacmlTabs(tr).map(function (one) {
+    return one.id;
+  });
+  t.check(cl_tabs.indexOf('xacml-tab-pep-clusters') ===
+            cl_tabs.indexOf('xacml-tab-peps') + 1,
+          'CL11. PEP clusters is the XACML tab after Remote PEPs',
+          cl_tabs.join(','));
+  const cl_clusterEditor = XacmlPage.editorBody(writer,
+    editorAnswer('@orders/orders-api'));
+  t.check(cl_clusterEditor.indexOf('remote PEP cluster <code>orders</code>') >=
+            0 &&
+          cl_clusterEditor.indexOf('/admin/xacml/pep-cluster/route?cluster=' +
+                                'orders&amp;route=orders-api#xacml-route-' +
+                                'tab-authorization') >= 0,
+          'CL12. the editor\'s warning recognises a cluster\'s policy and ' +
+          'links the cluster route', '');
+  t.check(WebPages.xacmlTabLinks('<a href="/admin/xacml/pep-clusters">x</a>',
+                                 false)
+            .indexOf('href="/admin/xacml#xacml-tab-pep-clusters"') >= 0,
+          'CL13. /admin/xacml/pep-clusters is a tab, not a page');
   log.debug("Leaving run().");
 }
 

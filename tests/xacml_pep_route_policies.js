@@ -253,6 +253,26 @@ function grammar(k) {
             'pep-' + NAME + '-p',
           '1.22 another PEP\'s generated name (a loaded file) becomes this ' +
           'PEP\'s', JSON.stringify(other));
+  // REMOTE PEP CLUSTERS (#1760): a cluster's owner is `@<cluster>`, its one
+  // policy per route `pepc-<cluster>-<route>`, marked `@<cluster>/<route>`.
+  const ours = pepProxy.validate(doc({ id: 'p', path: '/p',
+    methods: ['GET'], authorization: { kind: 'public',
+      policy: 'pep-' + NAME + '-p', resource: BASE + '/p' } }), '@orders');
+  t.check(ours.ok && ours.proxy.routes[0].authorization.policy ===
+            'pepc-orders-p' &&
+          pepProxy.generatedPolicyName('@a b', 'r') === 'pepc-a_b-r' &&
+          pepProxy.generatedPolicyName('@' + 'x'.repeat(200), 'r').length ===
+            128 &&
+          k.routePolicies.markOf('@orders', 'p') === '@orders/p' &&
+          k.routePolicies.ownerLabel('@orders') ===
+            'remote PEP cluster orders' &&
+          k.routePolicies.ownerLabel(NAME) === 'remote PEP ' + NAME &&
+          pepProxy.ownerOf({ name: 'pep-1', cluster: 'orders' }) ===
+            '@orders' &&
+          pepProxy.ownerOf({ name: 'pep-1' }) === 'pep-1',
+          '1.23 a cluster\'s owner names its policy pepc-<cluster>-<route> ' +
+          'and marks it @<cluster>/<route>; a PEP\'s is unchanged',
+          JSON.stringify(ours));
   log.debug("Leaving grammar().");
 }
 

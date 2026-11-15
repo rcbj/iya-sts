@@ -1652,6 +1652,113 @@ the switch set on the Reverse proxy tab's Manifest sub-tab); and `PEP_AUTHZEN_CA
 operator's own narrowing of the callers the service sends, which the service
 could not set and still narrow anything.
 
+## Remote PEP clusters
+
+Several remote PEPs can share one configuration. A **PEP cluster** holds the
+reverse proxy and its routes, the managed settings and the listener
+definitions once, and every member pulls them as its own. The members differ
+only in their name and their addresses. Configure one PEP, then apply its
+configuration to the others.
+
+The clusters are on the XACML page's **PEP clusters** tab, after Remote PEPs.
+Each cluster has a page of its own, `/admin/xacml/pep-cluster?cluster=<name>`,
+with six tabs: Overview, Members, Settings, Listener, Reverse proxy (the same
+sub-tabs as a PEP's: Configured Routes, Create a New Route and Manifest) and
+Visual. A cluster's route has its own page too, with the same tabs as a PEP's
+route page.
+
+### Making one
+
+* **From a PEP.** On a PEP's Overview, **Create a cluster from this PEP**
+  copies that PEP's reverse proxy, settings and listeners to a new cluster and
+  makes the PEP its first member. Its public base URL and notify URL stay its
+  own. The routes' generated policies are written again under the cluster's
+  names; the PEP's old `pep-<pep>-<route>` policies are left in the
+  repository, and the answer names them.
+* **Empty.** On the PEP clusters tab, name a cluster and choose no PEP.
+
+### What is shared, and what is each member's
+
+| Shared by every member | Each member's own |
+|---|---|
+| the routes and everything in them: order, methods, mechanisms, application, identity, multiple accounts, signals, credential forwarding, authorization | its name |
+| the upstream, the timeouts, the body bound, `enabled` | `publicBaseUrl`, the origin a browser reaches it at |
+| the managed settings, the bias among them | its notify URL |
+| the listener definitions: id, protocol, purpose, key algorithm | each listener's address and port, and extra certificate names |
+| | its listener certificates, each issued for its own key |
+| | its service account, client certificate and `REMOTE_PEPS` membership |
+| | its state: enabled, its counters, what it reports |
+
+**One policy per route for the whole cluster.** A simple or public route's
+generated policy is `pepc-<cluster>-<route>`, marked `@<cluster>/<route>`, and
+every member is sent it and decides with it. Its resource is built from the
+cluster's own `publicBaseUrl`, its **logical base URL**; a cluster without one
+must give each simple or public route its resource (`STS-XACML-0274`).
+
+**Each member's callback.** A session route signs a browser in and back to
+`<publicBaseUrl>/.iya-pep/callback` at the member it reached. Every member's
+callback must be registered on the route's application, and a save of the
+cluster names the member whose is not.
+
+### Members
+
+* **Add a member** on the Members tab: a registered PEP in no cluster, or a
+  name not registered yet (it pulls the cluster's configuration once it
+  registers). A PEP is a member of one cluster at most (`STS-XACML-0271`).
+* **A PEP with a configuration of its own** replaces it with the cluster's when
+  it joins, so the console asks you to confirm, and the management API wants
+  `discard: true` (`STS-XACML-0272`). What it held is offered once as a
+  download.
+* **Its addresses** are edited on its Members row, or on the member's own PEP
+  page: the public base URL, the notify URL and one line per listener,
+  `<id> <address>:<port> <name> ...` (`proxy-alt :9544 pep-2.example.com`
+  keeps the address and adds a name).
+* **Remove a member**: by default it keeps a copy of the configuration as its
+  own, its routes' policies generated again as `pep-<pep>-<route>`, and goes on
+  enforcing; or it is left with none.
+* **A member's own PEP page** says it is a member and draws the inherited
+  Settings, Listener and Reverse proxy read-only, each with **Edit on the
+  cluster**. The PEP's own configuration actions are refused on a member
+  (`STS-XACML-0276`).
+* **Delete a cluster** with members only by saying what they keep: a copy, or
+  nothing (`STS-XACML-0273`). Its generated policies go with it.
+
+Every change to a cluster is pulled by every member on its next poll, and every
+member is nudged once the change is saved.
+
+### Signal streams, in this release
+
+The members of a cluster would share one CAEP/RISC stream per client, so a
+sign-out could be consumed by a member that does not hold the session. A
+session route with `signals` on is therefore refused in a cluster of more than
+one member, and a second member is refused while such a route exists
+(`STS-XACML-0275`): turn the route's signals off, and its sign-out reaches the
+proxy by `POST /xacml/pep/session`.
+
+### Over the management API
+
+`GET /admin-api/xacml/pep-clusters` (`?cluster=`, `&route=`) answers what the
+pages draw. The actions are `POST /admin-api/xacml/<action>`:
+`create-pep-cluster`, `delete-pep-cluster`, `add-pep-cluster-member`,
+`remove-pep-cluster-member`, `set-pep-cluster-member`, `set-pep-cluster-proxy`,
+`set-pep-cluster-settings`, `set-pep-cluster-route`,
+`remove-pep-cluster-route`, `generate-pep-cluster-route-policy`,
+`set-pep-cluster-listener` and `remove-pep-cluster-listener`. They take the
+cluster's name as `cluster` and a member's as `pep`; the shared documents'
+actions take what the PEP's own do.
+
+```bash
+curl -s -X POST "$STS/admin-api/xacml/create-pep-cluster" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"cluster": "orders", "from": "pep-1"}'
+curl -s -X POST "$STS/admin-api/xacml/add-pep-cluster-member" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"cluster": "orders", "pep": "pep-2",
+       "publicBaseUrl": "https://pep-2.example.com:9543", "discard": true}'
+```
+
+Nothing changes for a PEP in no cluster.
+
 ## Configuration
 
 From the environment, and — for every variable marked *managed* below — from

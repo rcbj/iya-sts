@@ -186,6 +186,8 @@ const CONSOLE: Record<string, string> = {
   // One remote PEP's page (#1760); its tabs follow the page's slug.
   '/admin/xacml/pep': 'remote-pep.html#its-page-on-the-console',
   '/admin/xacml/pep/route': 'remote-pep.html#a-routes-own-page',
+  '/admin/xacml/pep-cluster': 'remote-pep.html#remote-pep-clusters',
+  '/admin/xacml/pep-cluster/route': 'remote-pep.html#remote-pep-clusters',
   '/admin/xacml/pep/listener': 'remote-pep.html#a-listeners-own-page',
   '/admin/backup-codes': 'authentication.html#recovery-codes',
   '/admin/persistence': 'persistence.html',
@@ -227,6 +229,7 @@ const EXACT: Record<string, string> = {
     'admin-console.html#verifier-request-tab--adminvcvc-tab-verifier-request',
   'xacml-tab-settings': 'configure-xacml.html',
   'xacml-tab-peps': 'remote-pep.html',
+  'xacml-tab-pep-clusters': 'remote-pep.html#remote-pep-clusters',
   // An application's page: the remote PEP routes in front of it (#1760).
   'tab-pep-routes': 'remote-pep.html',
   // A remote PEP's page (#1760): its settings and its reverse proxy.

@@ -1063,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "Le registre, et ce que chaque PEP a signalé en dernier : s’il détient le référentiel à jour, quand il a donné signe de vie pour la dernière fois, le biais avec lequel il dit fonctionner, et ce qu’il est advenu de la dernière relance — le seul endroit où une relance échouée est enregistrée, car elle est par définition invisible du côté du destinataire."
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Chaque cluster de PEP distants qui partagent une configuration : son proxy inverse, ses paramètres et ses définitions d’écouteurs tels que chaque membre les récupère, et chaque membre avec ses propres adresses et la raison pour laquelle un enregistrement le refuserait maintenant."
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "Ce qu’affiche GET /admin/xacml/monitor : les chiffres globaux des décisions et une ligne par point d’application, intégré et distant. Les trois totaux sont séparés à dessein — `here` est ce que ce processus a compté au fil de l’eau, `remote` est ce que d’autres processus signalent lors d’un battement de cœur et DIMINUE lorsque l’un d’eux redémarre, et `combined` est un calcul sur les deux. Sur la ligne `pdp`, `allowed` et `refused` valent null plutôt que 0, car ce service a produit cette décision sans jamais voir son application. Il n’y a pas de POST à côté : la page n’a aucune commande, et une remise à zéro a été refusée plutôt qu’oubliée."

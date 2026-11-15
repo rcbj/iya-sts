@@ -214,7 +214,8 @@ async function childBody() {
               store.read('pepc-orders-orders') &&
               store.read('pepc-orders-orders').pepRoute === '@orders/orders',
               'B3. one policy per route for the cluster, pepc-orders-<route> ' +
-              'marked @orders/<route>', JSON.stringify(shared && shared.pepRoute));
+              'marked @orders/<route>',
+              JSON.stringify(shared && shared.pepRoute));
       t.check(JSON.parse(c1.settings).bias === 'deny-biased' &&
               JSON.parse(c1.settings).notifyUrl === undefined &&
               JSON.parse(c1.listeners)[0].id === 'proxy-alt',
@@ -245,7 +246,8 @@ async function childBody() {
       t.check(e1.cluster === 'orders' && pulled.body.configured &&
               policies.join(',') === 'pepc-orders-health,pepc-orders-orders' &&
               pulled.body.proxy.publicBaseUrl === BASE1,
-              'C1. a member pulls the cluster\'s routes naming the cluster\'s ' +
+              'C1. a member pulls the cluster\'s routes naming the ' +
+              'cluster\'s ' +
               'policies, at its own publicBaseUrl', JSON.stringify(policies));
       const sentNames = surface.pepPull().policies.map(function (p) {
         return p.name;
@@ -278,7 +280,8 @@ async function childBody() {
         cluster: 'orders', pep: 'pep-2', publicBaseUrl: BASE2,
         discard: true });
       t.check(noCallback.ok, 'E2. pep-2 joins with discard (no session ' +
-              'route yet, so no callback is needed)', JSON.stringify(noCallback));
+              'route yet, so no callback is needed)',
+              JSON.stringify(noCallback));
       t.check(noCallback.discarded && noCallback.discarded.settings &&
               noCallback.discarded.settings.pollIntervalMs === 5000 &&
               !peps.read('pep-2').settings,
@@ -434,7 +437,8 @@ async function childBody() {
                 return p.name === 'pep-solo';
               })[0].cluster === null,
               'I1. the cluster\'s view: its members, the one not registered, ' +
-              'its routes, and every PEP\'s cluster', JSON.stringify(v.members));
+              'its routes, and every PEP\'s cluster',
+              JSON.stringify(v.members));
       const pv = pap.pepsJson('pep-2');
       t.check(pv.peps[0].cluster === 'orders' && pv.peps[0].proxy &&
               pv.peps[0].proxy.routes.length === 4 &&

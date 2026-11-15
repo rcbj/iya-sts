@@ -4480,6 +4480,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'says it is running with, and what happened to the last nudge — ' +
           'which is the only place a failed nudge is recorded, because it ' +
           'is invisible from the receiving end by definition.' },
+  { path: '/admin-api/xacml/pep-clusters', group: 'XACML',
+    name: 'The remote PEP clusters over JSON', specs: ['xacml30'],
+    what: 'Each cluster of remote PEPs that share one configuration: its ' +
+          'reverse proxy, settings and listener definitions as every member ' +
+          'pulls them, and each member with its own addresses and why a ' +
+          'save would refuse it now.' },
   { path: '/admin-api/xacml/monitor', group: 'XACML',
     name: 'What authorization is doing, over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml/monitor draws: the global decision figures ' +

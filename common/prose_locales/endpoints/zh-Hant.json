@@ -311,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "遠端執行點，以 JSON 提供"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "以 JSON 表示的遠端 PEP 叢集"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "授權正在做什麼，以 JSON 提供"

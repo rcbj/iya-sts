@@ -205,5 +205,6 @@
   "shell.menu.another.title": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
   "nav.broadcast": "Broadcast Announcement",
   "nav.sign-in-appearance": "Sign-in appearance",
-  "nav.post-login-activities": "Post-login activities"
+  "nav.post-login-activities": "Post-login activities",
+  "nav.xacml-pep-clusters": "PEP clusters"
 }

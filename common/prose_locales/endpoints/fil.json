@@ -311,6 +311,10 @@
     "en": "7f8ea0c37cf4776c",
     "text": "Ang mga remote enforcement point sa JSON"
   },
+  "endpoints.route./admin-api/xacml/pep-clusters.name": {
+    "en": "eb3f571462b2ef4a",
+    "text": "Ang mga remote PEP cluster sa JSON"
+  },
   "endpoints.route./admin-api/xacml/monitor.name": {
     "en": "c31e79f61be7e43b",
     "text": "Ang ginagawa ng authorization, sa JSON"

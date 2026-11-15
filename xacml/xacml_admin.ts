@@ -714,6 +714,15 @@ class XacmlAdmin {
       // its row, unchanged.
       const row = clusters.effectiveRow(raw);
       const view = Object.assign({}, row);
+      // A MEMBER'S OWN ADDRESSES, for its page's form (#1760).
+      if (row.cluster) {
+        const held = clusters.read(row.cluster);
+        const member = held ? held.members.filter(function (m: any) {
+          return m.pep === row.name;
+        })[0] : null;
+        view.clusterMember = member ? { publicBaseUrl: member.publicBaseUrl,
+          notifyUrl: member.notifyUrl, listeners: member.listeners } : null;
+      }
       // THE IDENTITY ENTRY AS A SERVICE ACCOUNT (#1760): the person the
       // certificate resolves to, whether it is a service account, and its
       // owners — read where it is, never stored on the row. Null where the

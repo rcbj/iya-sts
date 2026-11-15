@@ -111,5 +111,9 @@
   "person.certificate": "Ang certificate, na public at nasa entry din:",
   "once.signingCertificate": "Message-signing certificate",
   "signing.warn": "<strong>Ito lang ang pagkakataong mada-download ang mga file na ito.</strong> Hindi iniingatan ng serbisyong ito ang private key — wala sa entry ng may-hawak, wala sa certificate register — at walang anuman sa console na ito o sa <code>/admin-api</code> ang magbibigay nito ulit. Kung mawala ito, bawiin ang certificate at maglabas ng iba.",
-  "signing.how": "<strong>Paano ito ginagamit.</strong> Lagdaan ang bawat WS-Trust request gamit ang key sa <code>{key}</code> (o ang PKCS#12): isang WS-Security 1.1 signature sa SOAP Body at sa Timestamp, na nasa isang BinarySecurityToken ang certificate na ito at <code>{chain}</code> ang chain nito. Pagkatapos ay napapatunayan ang request bilang <code>{name}</code>, dahil inilabas ng realm na ito ang certificate sa pangalang iyon, nang walang ibang nirehistro."
+  "signing.how": "<strong>Paano ito ginagamit.</strong> Lagdaan ang bawat WS-Trust request gamit ang key sa <code>{key}</code> (o ang PKCS#12): isang WS-Security 1.1 signature sa SOAP Body at sa Timestamp, na nasa isang BinarySecurityToken ang certificate na ito at <code>{chain}</code> ang chain nito. Pagkatapos ay napapatunayan ang request bilang <code>{name}</code>, dahil inilabas ng realm na ito ang certificate sa pangalang iyon, nang walang ibang nirehistro.",
+  "cluster.back": "Bumalik sa cluster",
+  "cluster.discardedDownload": "I-download ang itinapon",
+  "cluster.discardedLead": "Wala nang sariling reverse proxy, setting o listener ang PEP: kinukuha nito ang sa cluster. Ito ang hawak nito dati, isang beses lang.",
+  "cluster.discardedTitle": "Sumali ang isang PEP sa isang cluster"
 }

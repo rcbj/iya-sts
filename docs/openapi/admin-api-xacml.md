@@ -405,6 +405,395 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/add-pep-cluster-member
+
+`addXacmlPepClusterMember`
+
+**Add a member to a remote PEP cluster**
+
+Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. A second member while a session route has `signals` on is refused (STS-XACML-0275): the members would share one signal stream. The member's routes must resolve with its own callback, &lt;publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `discard` | boolean, or string |  | true confirms that the PEP's own configuration is replaced by the cluster's. |
+| `listeners` | map, or string |  |  |
+| `listeners.{key}` | any JSON |  |  |
+| `notifyUrl` | string |  | The member's own notify URL, which the nudge dials; empty for the one it registered with. |
+| `pep` | string | yes | The member's name: a registered PEP's, or one not registered yet. |
+| `publicBaseUrl` | string |  | The member's own public base URL, the origin a browser reaches it at; empty for the cluster's. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
 ## POST /admin-api/xacml/add-policy
 
 `addXacmlPolicyToSet`
@@ -2176,6 +2565,391 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/create-pep-cluster
+
+`createXacmlPepCluster`
+
+**Create a remote PEP cluster, empty or from a registered PEP**
+
+Creates a logical cluster of remote PEPs that share one configuration (#1760). With `from`, the PEP's reverse proxy, managed settings and listener definitions are copied to the cluster, the PEP becomes its first member (its publicBaseUrl and notify URL kept as its own addresses), its own documents are cleared, and the routes' generated policies are written again as pepc-&lt;cluster>-&lt;route>, marked @&lt;cluster>/&lt;route>; the PEP's old pep-&lt;pep>-&lt;route> policies are left in the repository, unreferenced. A name that is not 1 to 64 letters, digits, dots, dashes or underscores, or one already taken, is STS-XACML-0270; a PEP not registered STS-XACML-0038, one already a member STS-XACML-0271.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `description` | string |  |  |
+| `from` | string |  | The registered PEP whose configuration the cluster starts from; omitted for an empty cluster. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
 ## GET /admin-api/xacml/decide
 
 `getXacmlDecision`
@@ -2307,6 +3081,390 @@ Scope: `admin:write`.
 | `problems[]` | string |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+
+## POST /admin-api/xacml/delete-pep-cluster
+
+`deleteXacmlPepCluster`
+
+**Delete a remote PEP cluster**
+
+Deletes a cluster and the policies generated for its routes (#1760). A cluster that still has members is refused unless `release` says what they keep: keep, and each registered member keeps a copy of the configuration as its own (its routes' policies generated again as pep-&lt;pep>-&lt;route>), or empty, and each is left with none (STS-XACML-0273). Every member is nudged.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `release` | one of `keep`, `empty` |  | keep or empty; required while the cluster has members. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
 
 ## POST /admin-api/xacml/disable
 
@@ -3411,6 +4569,390 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/generate-pep-cluster-route-policy
+
+`generateXacmlPepClusterRoutePolicy`
+
+**Generate a cluster route's simple or public policy again**
+
+The cluster's generate-pep-route-policy (#1760): pepc-&lt;cluster>-&lt;route> written again from the route as stored.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `route` | string | yes |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
 ## POST /admin-api/xacml/generate-pep-route-policy
 
 `generateXacmlPepRoutePolicy`
@@ -3854,6 +5396,297 @@ Scope: `admin:read`.
 | `since` | string |  |  |
 | `xacml` | boolean |  |  |
 
+## GET /admin-api/xacml/pep-clusters
+
+`getXacmlPepClusters`
+
+**The realm's remote PEP clusters: each one's shared configuration and its members**
+
+Everything the PEP clusters tab on /admin/xacml and a cluster's own pages draw (#1760). A cluster's reverse proxy, managed settings and listener definitions are held once and every member pulls them as its own, differing only in its name and addresses. Each cluster carries its documents as the pull reads them, its routes' resolution and policy state, and each member's addresses, whether it is registered, and why a write would refuse it now (`code`, `why`). `peps` lists every registered PEP and its cluster, for the Members tab's chooser. With `cluster`, one cluster and `found`; with `route` as well, `routeDetail`.
+
+**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep-cluster and GET /admin/xacml/pep-cluster/route` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `cluster` | query | string |  | One cluster, by its name exactly. The answer then lists that cluster alone and says `found`. |
+| `route` | query | string |  | With `cluster`: one route of the cluster's reverse proxy, by its id. The answer then carries `routeDetail`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The clusters and their members.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `applicationChoices` | list |  |  |
+| `applicationChoices[].identifier` | string |  |  |
+| `applicationChoices[].name` | string |  |  |
+| `cluster` | string |  |  |
+| `clusters` | list |  |  |
+| `clusters[].cluster` | string |  |  |
+| `clusters[].description` | string |  |  |
+| `clusters[].listenerRows` | list |  |  |
+| `clusters[].listenerRows[].defaultPort` | integer |  |  |
+| `clusters[].listenerRows[].definition` | object |  |  |
+| `clusters[].listenerRows[].definition.address` | string |  |  |
+| `clusters[].listenerRows[].definition.dnsNames` | list |  |  |
+| `clusters[].listenerRows[].definition.dnsNames[]` | string |  |  |
+| `clusters[].listenerRows[].definition.id` | string |  |  |
+| `clusters[].listenerRows[].definition.ipAddresses` | list |  |  |
+| `clusters[].listenerRows[].definition.ipAddresses[]` | string |  |  |
+| `clusters[].listenerRows[].definition.keyAlg` | string |  |  |
+| `clusters[].listenerRows[].definition.port` | integer |  |  |
+| `clusters[].listenerRows[].definition.protocol` | one of `http`, `https` |  |  |
+| `clusters[].listenerRows[].definition.purpose` | one of `api`, `proxy` |  |  |
+| `clusters[].listenerRows[].definition.renew` | integer |  |  |
+| `clusters[].listenerRows[].enable` | string |  |  |
+| `clusters[].listenerRows[].env` | string |  |  |
+| `clusters[].listenerRows[].id` | string |  |  |
+| `clusters[].listenerRows[].issued` | object |  |  |
+| `clusters[].listenerRows[].issued.dnsNames` | list |  |  |
+| `clusters[].listenerRows[].issued.dnsNames[]` | string |  |  |
+| `clusters[].listenerRows[].issued.expired` | boolean |  |  |
+| `clusters[].listenerRows[].issued.ipAddresses` | list |  |  |
+| `clusters[].listenerRows[].issued.ipAddresses[]` | string |  |  |
+| `clusters[].listenerRows[].issued.notAfter` | string |  |  |
+| `clusters[].listenerRows[].issued.notBefore` | string |  |  |
+| `clusters[].listenerRows[].issued.serialHex` | string |  |  |
+| `clusters[].listenerRows[].issued.subject` | string |  |  |
+| `clusters[].listenerRows[].issued.thumbprint` | string |  |  |
+| `clusters[].listenerRows[].protocol` | one of `http`, `https` |  |  |
+| `clusters[].listenerRows[].purpose` | one of `api`, `proxy` |  |  |
+| `clusters[].listenerRows[].reported` | object |  |  |
+| `clusters[].listenerRows[].reported.address` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate` | object |  |  |
+| `clusters[].listenerRows[].reported.certificate.fingerprint256` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate.issuer` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate.serialHex` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate.subject` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate.subjectAltName` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate.validFrom` | string |  |  |
+| `clusters[].listenerRows[].reported.certificate.validTo` | string |  |  |
+| `clusters[].listenerRows[].reported.id` | string |  |  |
+| `clusters[].listenerRows[].reported.port` | integer |  |  |
+| `clusters[].listenerRows[].reported.protocol` | one of `http`, `https` |  |  |
+| `clusters[].listenerRows[].reported.purpose` | one of `api`, `proxy` |  |  |
+| `clusters[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `crl-only`, `other` |  |  |
+| `clusters[].listenerRows[].reported.renew` | integer |  |  |
+| `clusters[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
+| `clusters[].listenerRows[].reported.state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
+| `clusters[].listenerRows[].source` | one of `environment`, `service` |  |  |
+| `clusters[].listeners` | list |  |  |
+| `clusters[].listeners[].address` | string |  |  |
+| `clusters[].listeners[].dnsNames` | list |  |  |
+| `clusters[].listeners[].dnsNames[]` | string |  |  |
+| `clusters[].listeners[].id` | string |  |  |
+| `clusters[].listeners[].ipAddresses` | list |  |  |
+| `clusters[].listeners[].ipAddresses[]` | string |  |  |
+| `clusters[].listeners[].keyAlg` | string |  |  |
+| `clusters[].listeners[].port` | integer |  |  |
+| `clusters[].listeners[].protocol` | one of `http`, `https` |  |  |
+| `clusters[].listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `clusters[].listeners[].renew` | integer |  |  |
+| `clusters[].listenersProblem` | string, or null |  |  |
+| `clusters[].members` | list |  |  |
+| `clusters[].members[].code` | string, or null |  | Why a write of the cluster would refuse this member now (its callback, its listeners' clash, its addresses), with the code; null for none. |
+| `clusters[].members[].effectivePublicBaseUrl` | string |  |  |
+| `clusters[].members[].enabled` | boolean |  |  |
+| `clusters[].members[].hostname` | string |  |  |
+| `clusters[].members[].lastSeen` | string |  |  |
+| `clusters[].members[].listeners` | map |  | The member's own listener addresses, by listener id: { address, port, names }. |
+| `clusters[].members[].listeners.{key}.address` | string |  |  |
+| `clusters[].members[].listeners.{key}.names` | list |  |  |
+| `clusters[].members[].listeners.{key}.names[]` | string |  |  |
+| `clusters[].members[].listeners.{key}.port` | integer |  |  |
+| `clusters[].members[].notifyUrl` | string |  |  |
+| `clusters[].members[].pep` | string |  |  |
+| `clusters[].members[].publicBaseUrl` | string |  |  |
+| `clusters[].members[].registered` | boolean |  |  |
+| `clusters[].members[].stale` | boolean |  |  |
+| `clusters[].members[].why` | string, or null |  |  |
+| `clusters[].membersProblem` | string, or null |  |  |
+| `clusters[].name` | string |  |  |
+| `clusters[].proxy` | object |  |  |
+| `clusters[].proxy.enabled` | boolean |  |  |
+| `clusters[].proxy.maxBodyBytes` | integer |  |  |
+| `clusters[].proxy.publicBaseUrl` | string |  |  |
+| `clusters[].proxy.routes` | list |  |  |
+| `clusters[].proxy.routes[].application` | string |  |  |
+| `clusters[].proxy.routes[].authorization` | object |  |  |
+| `clusters[].proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `clusters[].proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `clusters[].proxy.routes[].authorization.policy` | string |  |  |
+| `clusters[].proxy.routes[].authorization.resource` | string |  |  |
+| `clusters[].proxy.routes[].authorization.roles` | map |  |  |
+| `clusters[].proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `clusters[].proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `clusters[].proxy.routes[].forwardCredentials` | boolean |  |  |
+| `clusters[].proxy.routes[].id` | string |  |  |
+| `clusters[].proxy.routes[].identity` | object |  |  |
+| `clusters[].proxy.routes[].identity.headers` | list |  |  |
+| `clusters[].proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `clusters[].proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `clusters[].proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `clusters[].proxy.routes[].identity.separator` | string |  |  |
+| `clusters[].proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `clusters[].proxy.routes[].mechanisms` | list |  |  |
+| `clusters[].proxy.routes[].mechanisms[]` | string |  |  |
+| `clusters[].proxy.routes[].methods` | list |  |  |
+| `clusters[].proxy.routes[].methods[]` | string |  |  |
+| `clusters[].proxy.routes[].multipleAccounts` | boolean |  |  |
+| `clusters[].proxy.routes[].path` | string |  |  |
+| `clusters[].proxy.routes[].signals` | boolean |  |  |
+| `clusters[].proxy.upstream` | string |  |  |
+| `clusters[].proxy.upstreamTimeoutMs` | integer |  |  |
+| `clusters[].proxyProblem` | string, or null |  |  |
+| `clusters[].proxyResourceBase` | object |  |  |
+| `clusters[].proxyResourceBase.base` | string |  |  |
+| `clusters[].proxyResourceBase.resource` | string |  |  |
+| `clusters[].proxyResourceBase.source` | one of `publicBaseUrl`, `listener` |  |  |
+| `clusters[].proxyRoutes` | list |  |  |
+| `clusters[].proxyRoutes[].application` | string |  |  |
+| `clusters[].proxyRoutes[].authorization` | one of `policy`, `simple`, `public` |  |  |
+| `clusters[].proxyRoutes[].policy` | string |  |  |
+| `clusters[].proxyRoutes[].policyProblem` | string, or null |  |  |
+| `clusters[].proxyRoutes[].route` | string |  |  |
+| `clusters[].proxyRoutes[].usable` | boolean |  |  |
+| `clusters[].proxyRoutes[].why` | string, or null |  |  |
+| `clusters[].settings` | object |  |  |
+| `clusters[].settings.authzen` | boolean |  |  |
+| `clusters[].settings.authzenForwardTimeoutMs` | integer |  |  |
+| `clusters[].settings.authzenPdpIdentifier` | string |  |  |
+| `clusters[].settings.backoffMaxMs` | integer |  |  |
+| `clusters[].settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `clusters[].settings.description` | string |  |  |
+| `clusters[].settings.heartbeatIntervalMs` | integer |  |  |
+| `clusters[].settings.httpsReloadIntervalMs` | integer |  |  |
+| `clusters[].settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `clusters[].settings.maxBodyBytes` | integer |  |  |
+| `clusters[].settings.notifyUrl` | string |  |  |
+| `clusters[].settings.pip` | boolean |  |  |
+| `clusters[].settings.pollIntervalMs` | integer |  |  |
+| `clusters[].settings.proxyJwksTtlMs` | integer |  |  |
+| `clusters[].settings.proxyMaxAccounts` | integer |  |  |
+| `clusters[].settings.proxyMaxSessions` | integer |  |  |
+| `clusters[].settings.proxyRpAllowInsecure` | boolean |  |  |
+| `clusters[].settings.proxySessionRecheckMs` | integer |  |  |
+| `clusters[].settings.proxySessionTtlMs` | integer |  |  |
+| `clusters[].settings.proxySignalsPollMs` | integer |  |  |
+| `clusters[].settings.proxySignalsStaleMs` | integer |  |  |
+| `clusters[].settings.proxyStripCookies` | string |  |  |
+| `clusters[].settings.proxyUpstreamInsecure` | boolean |  |  |
+| `clusters[].settings.resource` | string |  |  |
+| `clusters[].settings.timeoutMs` | integer |  |  |
+| `clusters[].settingsProblem` | string, or null |  |  |
+| `enabled` | boolean |  |  |
+| `found` | boolean |  |  |
+| `listenersCatalogue` | object |  |  |
+| `listenersCatalogue.bootstrap` | list |  |  |
+| `listenersCatalogue.bootstrap[].enable` | string |  |  |
+| `listenersCatalogue.bootstrap[].env` | string |  |  |
+| `listenersCatalogue.bootstrap[].id` | string |  |  |
+| `listenersCatalogue.bootstrap[].port` | integer |  |  |
+| `listenersCatalogue.bootstrap[].protocol` | string |  |  |
+| `listenersCatalogue.bootstrap[].purpose` | string |  |  |
+| `listenersCatalogue.defaultKeyAlg` | string |  |  |
+| `listenersCatalogue.keyAlgorithms` | list |  |  |
+| `listenersCatalogue.keyAlgorithms[]` | string |  |  |
+| `listenersCatalogue.maxListeners` | integer |  |  |
+| `listenersCatalogue.plainHttpProxyAllowed` | boolean |  |  |
+| `listenersCatalogue.protocols` | list |  |  |
+| `listenersCatalogue.protocols[]` | string |  |  |
+| `listenersCatalogue.purposes` | list |  |  |
+| `listenersCatalogue.purposes[]` | string |  |  |
+| `message` | string |  |  |
+| `peps` | list |  |  |
+| `peps[].cluster` | string, or null |  |  |
+| `peps[].name` | string |  |  |
+| `peps[].ownConfiguration` | boolean |  |  |
+| `route` | string |  |  |
+| `routeDetail` | object |  |  |
+| `routeDetail.application` | object |  |  |
+| `routeDetail.application.found` | boolean |  |  |
+| `routeDetail.application.identifier` | string |  |  |
+| `routeDetail.application.name` | string |  |  |
+| `routeDetail.authorization` | object |  |  |
+| `routeDetail.authorization.applicationUrl` | object |  |  |
+| `routeDetail.authorization.applicationUrl.attribute` | string |  |  |
+| `routeDetail.authorization.applicationUrl.mismatch` | boolean |  |  |
+| `routeDetail.authorization.applicationUrl.resource` | string |  |  |
+| `routeDetail.authorization.applicationUrl.url` | string |  |  |
+| `routeDetail.authorization.defaultResource` | string |  |  |
+| `routeDetail.authorization.defaultSource` | one of `publicBaseUrl`, `listener` |  |  |
+| `routeDetail.authorization.policy` | object |  |  |
+| `routeDetail.authorization.policy.enabled` | boolean |  |  |
+| `routeDetail.authorization.policy.found` | boolean |  |  |
+| `routeDetail.authorization.policy.generated` | boolean |  |  |
+| `routeDetail.authorization.policy.generatedFor` | string, or null |  |  |
+| `routeDetail.authorization.policy.name` | string |  |  |
+| `routeDetail.authorization.policy.problem` | string, or null |  |  |
+| `routeDetail.authorization.policy.withheld` | boolean |  |  |
+| `routeDetail.count` | integer |  |  |
+| `routeDetail.found` | boolean |  |  |
+| `routeDetail.position` | integer |  |  |
+| `routeDetail.route` | object, or null |  |  |
+| `routeDetail.route.application` | string |  |  |
+| `routeDetail.route.authorization` | object |  |  |
+| `routeDetail.route.authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `routeDetail.route.authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `routeDetail.route.authorization.policy` | string |  |  |
+| `routeDetail.route.authorization.resource` | string |  |  |
+| `routeDetail.route.authorization.roles` | map |  |  |
+| `routeDetail.route.authorization.roles.{key}` | list |  |  |
+| `routeDetail.route.authorization.roles.{key}[]` | string |  |  |
+| `routeDetail.route.forwardCredentials` | boolean |  |  |
+| `routeDetail.route.id` | string |  |  |
+| `routeDetail.route.identity` | object |  |  |
+| `routeDetail.route.identity.headers` | list |  |  |
+| `routeDetail.route.identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `routeDetail.route.identity.headers[].name` | string |  |  |
+| `routeDetail.route.identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `routeDetail.route.identity.separator` | string |  |  |
+| `routeDetail.route.match` | one of `prefix`, `exact` |  |  |
+| `routeDetail.route.mechanisms` | list |  |  |
+| `routeDetail.route.mechanisms[]` | string |  |  |
+| `routeDetail.route.methods` | list |  |  |
+| `routeDetail.route.methods[]` | string |  |  |
+| `routeDetail.route.multipleAccounts` | boolean |  |  |
+| `routeDetail.route.path` | string |  |  |
+| `routeDetail.route.signals` | boolean |  |  |
+| `routeDetail.servedBy` | list |  |  |
+| `routeDetail.servedBy[].id` | string |  |  |
+| `routeDetail.servedBy[].port` | integer |  |  |
+| `routeDetail.servedBy[].protocol` | one of `http`, `https` |  |  |
+| `routeDetail.servedBy[].reason` | string, or null |  |  |
+| `routeDetail.servedBy[].source` | one of `environment`, `service` |  |  |
+| `routeDetail.servedBy[].state` | string, or null |  |  |
+| `routeDetail.usable` | boolean, or null |  |  |
+| `routeDetail.why` | string, or null |  |  |
+| `settingsCatalogue` | object |  |  |
+| `settingsCatalogue.bootstrap` | list |  |  |
+| `settingsCatalogue.bootstrap[].default` | string |  |  |
+| `settingsCatalogue.bootstrap[].env` | string |  |  |
+| `settingsCatalogue.bootstrap[].reason` | one of `connect`, `bind`, `file`, `listeners`, `narrowing` |  |  |
+| `settingsCatalogue.precedence` | list |  |  |
+| `settingsCatalogue.precedence[]` | one of `service`, `environment`, `default` |  |  |
+| `settingsCatalogue.settings` | list |  |  |
+| `settingsCatalogue.settings[].applies` | one of `now`, `nextRound`, `nextReload`, `nextReconcile` |  |  |
+| `settingsCatalogue.settings[].default` | string or integer or boolean |  |  |
+| `settingsCatalogue.settings[].env` | string |  |  |
+| `settingsCatalogue.settings[].group` | one of `registration`, `enforcement`, `sync`, `listener`, `logging`, `authzen`, `proxy` |  |  |
+| `settingsCatalogue.settings[].key` | string |  |  |
+| `settingsCatalogue.settings[].max` | integer |  |  |
+| `settingsCatalogue.settings[].maxLength` | integer |  |  |
+| `settingsCatalogue.settings[].min` | integer |  |  |
+| `settingsCatalogue.settings[].refusedInProduct` | boolean |  |  |
+| `settingsCatalogue.settings[].type` | one of `integer`, `boolean`, `enum`, `text`, `url`, `origin` |  |  |
+| `settingsCatalogue.settings[].values` | list |  |  |
+| `settingsCatalogue.settings[].values[]` | string |  |  |
+| `xacml` | boolean |  |  |
+
 ## GET /admin-api/xacml/peps
 
 `getXacmlPeps`
@@ -3938,6 +5771,16 @@ Scope: `admin:read`.
 | `peps[].authenticated` | boolean |  |  |
 | `peps[].bias` | string |  |  |
 | `peps[].certificateSubject` | string |  |  |
+| `peps[].cluster` | string |  | The remote PEP cluster this PEP is a member of (#1760), present only on a member: its proxy, settings and listeners are then the cluster's, with its own addresses. |
+| `peps[].clusterMember` | object, or null |  |  |
+| `peps[].clusterMember.listeners` | map |  |  |
+| `peps[].clusterMember.listeners.{key}.address` | string |  |  |
+| `peps[].clusterMember.listeners.{key}.names` | list |  |  |
+| `peps[].clusterMember.listeners.{key}.names[]` | string |  |  |
+| `peps[].clusterMember.listeners.{key}.port` | integer |  |  |
+| `peps[].clusterMember.notifyUrl` | string |  |  |
+| `peps[].clusterMember.pep` | string |  |  |
+| `peps[].clusterMember.publicBaseUrl` | string |  |  |
 | `peps[].current` | boolean |  |  |
 | `peps[].decisions` | number, or null |  |  |
 | `peps[].description` | string |  |  |
@@ -4507,6 +6350,1160 @@ Scope: `admin:write`.
 | `problems[]` | string |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+
+## POST /admin-api/xacml/remove-pep-cluster-listener
+
+`removeXacmlPepClusterListener`
+
+**Remove one listener of a remote PEP cluster**
+
+The cluster's remove-pep-listener (#1760).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `listener` | string | yes |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+## POST /admin-api/xacml/remove-pep-cluster-member
+
+`removeXacmlPepClusterMember`
+
+**Remove a member from a remote PEP cluster**
+
+Removes a member (#1760). By default (`keep` true) a registered member keeps a copy of the configuration it pulled as its own, its routes' policies generated again as pep-&lt;pep>-&lt;route>, and goes on enforcing it; with `keep` false it is left with none. Not a member is STS-XACML-0269.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `keep` | boolean, or string |  | Whether the member keeps a copy; true by default. |
+| `pep` | string | yes | The member's name: a registered PEP's, or one not registered yet. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+## POST /admin-api/xacml/remove-pep-cluster-route
+
+`removeXacmlPepClusterRoute`
+
+**Remove one route of a remote PEP cluster's reverse proxy**
+
+The cluster's remove-pep-route (#1760): a route with a generated policy needs `removePolicy` true (STS-XACML-0268).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `removePolicy` | boolean, or string |  |  |
+| `route` | string | yes |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
 
 ## POST /admin-api/xacml/remove-pep-listener
 
@@ -5125,6 +8122,1937 @@ Scope: `admin:write`.
 | `problems[]` | string |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-cluster-listener
+
+`setXacmlPepClusterListener`
+
+**Define or replace one listener of a remote PEP cluster**
+
+The cluster's set-pep-listener (#1760): the same grammar; each member's copy, with its own address, port and names, is checked against what that member reported (STS-XACML-0247 names the member).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `listener` | map, or string |  |  |
+| `listener.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+## POST /admin-api/xacml/set-pep-cluster-member
+
+`setXacmlPepClusterMember`
+
+**Set a member's own addresses**
+
+Replaces a member's own addresses (#1760): its publicBaseUrl, notify URL and listener addresses, each member given replacing the stored one. Checked as a cluster write is, for this member (STS-XACML-0277 for a shape, the grammar's and the resolution's own codes otherwise).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `listeners` | map, or string |  |  |
+| `listeners.{key}` | any JSON |  |  |
+| `notifyUrl` | string |  | The member's own notify URL, which the nudge dials; empty for the one it registered with. |
+| `pep` | string | yes | The member's name: a registered PEP's, or one not registered yet. |
+| `publicBaseUrl` | string |  | The member's own public base URL, the origin a browser reaches it at; empty for the cluster's. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+## POST /admin-api/xacml/set-pep-cluster-proxy
+
+`setXacmlPepClusterProxy`
+
+**Set a remote PEP cluster's reverse-proxy configuration**
+
+The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-&lt;cluster>-&lt;route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is refused in a cluster of more than one member (STS-XACML-0275). Every member is nudged.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `proxy` | map, or string | yes |  |
+| `proxy.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+## POST /admin-api/xacml/set-pep-cluster-route
+
+`setXacmlPepClusterRoute`
+
+**Add or replace one route of a remote PEP cluster's reverse proxy**
+
+The cluster's set-pep-route (#1760): `route` or the form's members, `from` for a rename, `part` for one tab of the route's page. Saved through set-pep-cluster-proxy's checks.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `from` | string |  |  |
+| `part` | string |  |  |
+| `position` | integer, or string |  |  |
+| `route` | map, or string |  |  |
+| `route.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+## POST /admin-api/xacml/set-pep-cluster-settings
+
+`setXacmlPepClusterSettings`
+
+**Set a remote PEP cluster's managed settings**
+
+The cluster's set-pep-settings (#1760): the same table, replacing what is set; every member pulls them. The notify URL is a member's address and is refused here (STS-XACML-0278).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string | yes | The cluster's name. |
+| `settings` | map, or string |  |  |
+| `settings.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string |  | The cluster acted on. |
+| `discarded` | object, or null |  |  |
+| `discarded.listeners` | list |  |  |
+| `discarded.listeners[].address` | string |  |  |
+| `discarded.listeners[].dnsNames` | list |  |  |
+| `discarded.listeners[].dnsNames[]` | string |  |  |
+| `discarded.listeners[].id` | string |  |  |
+| `discarded.listeners[].ipAddresses` | list |  |  |
+| `discarded.listeners[].ipAddresses[]` | string |  |  |
+| `discarded.listeners[].keyAlg` | string |  |  |
+| `discarded.listeners[].port` | integer |  |  |
+| `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
+| `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `discarded.listeners[].renew` | integer |  |  |
+| `discarded.proxy` | object |  |  |
+| `discarded.proxy.enabled` | boolean |  |  |
+| `discarded.proxy.maxBodyBytes` | integer |  |  |
+| `discarded.proxy.publicBaseUrl` | string |  |  |
+| `discarded.proxy.routes` | list |  |  |
+| `discarded.proxy.routes[].application` | string |  |  |
+| `discarded.proxy.routes[].authorization` | object |  |  |
+| `discarded.proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `discarded.proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `discarded.proxy.routes[].authorization.policy` | string |  |  |
+| `discarded.proxy.routes[].authorization.resource` | string |  |  |
+| `discarded.proxy.routes[].authorization.roles` | map |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `discarded.proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].forwardCredentials` | boolean |  |  |
+| `discarded.proxy.routes[].id` | string |  |  |
+| `discarded.proxy.routes[].identity` | object |  |  |
+| `discarded.proxy.routes[].identity.headers` | list |  |  |
+| `discarded.proxy.routes[].identity.headers[].claim` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.headers[].name` | object |  | Nested deeper than this page draws. |
+| `discarded.proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `discarded.proxy.routes[].identity.separator` | string |  |  |
+| `discarded.proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `discarded.proxy.routes[].mechanisms` | list |  |  |
+| `discarded.proxy.routes[].mechanisms[]` | string |  |  |
+| `discarded.proxy.routes[].methods` | list |  |  |
+| `discarded.proxy.routes[].methods[]` | string |  |  |
+| `discarded.proxy.routes[].multipleAccounts` | boolean |  |  |
+| `discarded.proxy.routes[].path` | string |  |  |
+| `discarded.proxy.routes[].signals` | boolean |  |  |
+| `discarded.proxy.upstream` | string |  |  |
+| `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
+| `discarded.settings` | object |  |  |
+| `discarded.settings.authzen` | boolean |  |  |
+| `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
+| `discarded.settings.authzenPdpIdentifier` | string |  |  |
+| `discarded.settings.backoffMaxMs` | integer |  |  |
+| `discarded.settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `discarded.settings.description` | string |  |  |
+| `discarded.settings.heartbeatIntervalMs` | integer |  |  |
+| `discarded.settings.httpsReloadIntervalMs` | integer |  |  |
+| `discarded.settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `discarded.settings.maxBodyBytes` | integer |  |  |
+| `discarded.settings.notifyUrl` | string |  |  |
+| `discarded.settings.pip` | boolean |  |  |
+| `discarded.settings.pollIntervalMs` | integer |  |  |
+| `discarded.settings.proxyJwksTtlMs` | integer |  |  |
+| `discarded.settings.proxyMaxAccounts` | integer |  |  |
+| `discarded.settings.proxyMaxSessions` | integer |  |  |
+| `discarded.settings.proxyRpAllowInsecure` | boolean |  |  |
+| `discarded.settings.proxySessionRecheckMs` | integer |  |  |
+| `discarded.settings.proxySessionTtlMs` | integer |  |  |
+| `discarded.settings.proxySignalsPollMs` | integer |  |  |
+| `discarded.settings.proxySignalsStaleMs` | integer |  |  |
+| `discarded.settings.proxyStripCookies` | string |  |  |
+| `discarded.settings.proxyUpstreamInsecure` | boolean |  |  |
+| `discarded.settings.resource` | string |  |  |
+| `discarded.settings.timeoutMs` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `from` | string, or null |  | create-pep-cluster: the PEP it was created from, or null. |
+| `kept` | boolean |  | remove-pep-cluster-member: whether the member kept a copy. |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `member` | object |  | set-pep-cluster-member: the member as saved. |
+| `member.listeners` | map |  |  |
+| `member.listeners.{key}.address` | string |  |  |
+| `member.listeners.{key}.names` | list |  |  |
+| `member.listeners.{key}.names[]` | string |  |  |
+| `member.listeners.{key}.port` | integer |  |  |
+| `member.notifyUrl` | string |  |  |
+| `member.pep` | string |  |  |
+| `member.publicBaseUrl` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The member acted on. |
+| `policies` | object |  | What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `registered` | boolean |  | add-pep-cluster-member: whether the PEP is registered yet. |
+| `released` | list |  | delete-pep-cluster: the members that kept a copy. |
+| `released[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  |  |
 
 ## POST /admin-api/xacml/set-pep-listener
 

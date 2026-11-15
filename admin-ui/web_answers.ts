@@ -1301,6 +1301,47 @@ class WebAnswers {
           pep: pep }).toString() + '#xacml-pep-listeners-configured';
       }
     }
+    // REMOTE PEP CLUSTERS (#1760): a cluster created lands on its page, a
+    // cluster deleted on the PEP clusters tab, and a cluster route's page
+    // the PEP route page's way.
+    if (page === '/admin/xacml/peps' && action === 'create-pep-cluster' &&
+        answer.cluster) {
+      return '/admin/xacml/pep-cluster?' + new URLSearchParams({
+        cluster: String(answer.cluster) }).toString();
+    }
+    if (page === '/admin/xacml/peps' && action === 'delete-pep-cluster') {
+      return '/admin/xacml#xacml-tab-pep-clusters';
+    }
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep-cluster/route') {
+      const cluster = String(at.searchParams.get('cluster') || '');
+      if (action === 'set-pep-cluster-route' && fields && fields.id) {
+        const part = WebAnswers.one(fields, 'part');
+        const tab = ['settings', 'authentication', 'authorization',
+                     'identity'].indexOf(part) >= 0 ? part : 'settings';
+        return '/admin/xacml/pep-cluster/route?' + new URLSearchParams({
+          cluster: cluster, route: String(fields.id) }).toString() +
+          '#xacml-route-tab-' + tab;
+      }
+      if (action === 'remove-pep-cluster-route') {
+        return '/admin/xacml/pep-cluster?' + new URLSearchParams({
+          cluster: cluster }).toString() + '#xacml-pep-proxy-routes';
+      }
+    }
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep-cluster') {
+      const cluster = String(at.searchParams.get('cluster') ||
+                             (fields && fields.cluster) || '');
+      if (action === 'set-pep-cluster-route' && fields && fields.id &&
+          !fields.from) {
+        return '/admin/xacml/pep-cluster/route?' + new URLSearchParams({
+          cluster: cluster, route: String(fields.id) }).toString();
+      }
+      if (action === 'remove-pep-cluster-route') {
+        return '/admin/xacml/pep-cluster?' + new URLSearchParams({
+          cluster: cluster }).toString() + '#xacml-pep-proxy-routes';
+      }
+    }
     if (page === '/admin/xacml/peps' && at.pathname === '/admin/xacml/pep') {
       const pep = String(at.searchParams.get('pep') ||
                          (fields && fields.name) || '');
@@ -1445,6 +1486,19 @@ class WebAnswers {
                        ? via.concat([{ label: pep, href: back }])
                        : via },
                html: WebAnswers.pepCertificate(answer, t) };
+    }
+    // A JOIN THAT DISCARDED A PEP'S OWN CONFIGURATION (#1760): the
+    // documents it held, offered once as a download, since the PEP no
+    // longer holds them.
+    if (page === '/admin/xacml/peps' &&
+        action === 'add-pep-cluster-member' && answer.discarded) {
+      const title = t.text('consoleAnswers.cluster.discardedTitle');
+      return { title: title,
+               active: '/admin/xacml',
+               up: { href: '/admin/xacml', leaf: title,
+                     via: [{ label: t.text('console.nav.xacml-pep-clusters'),
+                             href: '/admin/xacml#xacml-tab-pep-clusters' }] },
+               html: WebAnswers.clusterDiscarded(answer, back, t) };
     }
     if ((page === '/admin/pki/person' ||
          WebAnswers.one(fields, 'target') === 'person') &&
@@ -1989,6 +2043,28 @@ class WebAnswers {
       kit.esc(result.anchorPem) + '</pre>' +
       WebAnswers.backButton('/admin/xacml#xacml-tab-peps',
                             t.text('consoleAnswers.pep.back'));
+  }
+
+  /**
+   * What a join discarded (#1760): the PEP's own proxy, settings and
+   * listeners as one JSON file to save, with the answer's sentence.
+   *
+   * @param result - the add-pep-cluster-member answer
+   * @param back - the page the form was on
+   * @param t - the translator
+   * @returns the page body
+   */
+  static clusterDiscarded(result: Json, back: string, t?: Json): string {
+    t = t || kit.context().t;
+    const file = String(result.pep || 'pep') + '-discarded.json';
+    const text = JSON.stringify(result.discarded, null, 2) + '\n';
+    return kit.note('<p>' + kit.esc(result.what) + '</p><p>' +
+        t.html('consoleAnswers.cluster.discardedLead') + '</p>') +
+      '<p><a class="btn" download="' + kit.esc(file) + '" href="' +
+      kit.esc('data:application/json;base64,' + kit.base64Utf8(text)) +
+      '">' + t.html('consoleAnswers.cluster.discardedDownload') + '</a></p>' +
+      '<pre>' + kit.esc(text) + '</pre>' +
+      WebAnswers.backButton(back, t.text('consoleAnswers.cluster.back'));
   }
 
   /**

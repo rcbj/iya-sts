@@ -111,5 +111,9 @@
   "person.certificate": "El certificado, que es público y también está en la entrada:",
   "once.signingCertificate": "Certificado de firma de mensajes",
   "signing.warn": "<strong>Esta es la única vez que se pueden descargar estos archivos.</strong> Este servicio no guarda la clave privada — ni en la entrada del titular ni en el registro de certificados — y nada en esta consola ni en <code>/admin-api</code> la vuelve a entregar. Si se pierde, revoque el certificado y emita otro.",
-  "signing.how": "<strong>Cómo se usa.</strong> Firme cada solicitud WS-Trust con la clave de <code>{key}</code> (o el PKCS#12): una firma WS-Security 1.1 sobre el Body SOAP y el Timestamp, con este certificado en un BinarySecurityToken y <code>{chain}</code> como su cadena. La solicitud se autentica entonces como <code>{name}</code>, porque este dominio emitió el certificado a ese nombre, sin registrar nada más."
+  "signing.how": "<strong>Cómo se usa.</strong> Firme cada solicitud WS-Trust con la clave de <code>{key}</code> (o el PKCS#12): una firma WS-Security 1.1 sobre el Body SOAP y el Timestamp, con este certificado en un BinarySecurityToken y <code>{chain}</code> como su cadena. La solicitud se autentica entonces como <code>{name}</code>, porque este dominio emitió el certificado a ese nombre, sin registrar nada más.",
+  "cluster.back": "Volver al clúster",
+  "cluster.discardedDownload": "Descargar lo descartado",
+  "cluster.discardedLead": "El PEP ya no tiene su propio proxy inverso, ajustes ni escuchas: obtiene los del clúster. Esto es lo que tenía, una sola vez.",
+  "cluster.discardedTitle": "Un PEP se unió a un clúster"
 }

@@ -1063,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "Registret, och vad varje PEP senast rapporterade: om den har det aktuella förrådet, när den senast hördes av, vilken bias den säger att den kör med och vad som hände med den senaste knuffen — vilket är det enda stället där en misslyckad knuff registreras, eftersom den per definition är osynlig från mottagarsidan."
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Varje kluster av fjärr-PEP:er som delar en konfiguration: dess omvända proxy, inställningar och lyssnardefinitioner så som varje medlem hämtar dem, och varje medlem med sina egna adresser och varför ett sparande skulle neka den nu."
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "Det som GET /admin/xacml/monitor ritar: de globala beslutssiffrorna och en rad per upprätthållandepunkt, inbäddad och fjärr. De tre summorna hålls isär med avsikt — `here` är vad den här processen räknade när det hände, `remote` är vad andra processer rapporterar i ett hjärtslag och går NER när en startar om, och `combined` är aritmetik över de två. På raden `pdp` är `allowed` och `refused` null snarare än 0, eftersom den här tjänsten fattade det beslutet och aldrig såg upprätthållandet. Det finns ingen POST bredvid: sidan har ingen kontroll, och en nollställning avvisades snarare än glömdes bort."

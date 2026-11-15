@@ -7538,7 +7538,7 @@ namespace IyaSts.Api.Management {
     @js(#{`description`:"remove-pep-cluster-member: whether the member kept a copy."}) `kept`?: boolean;
     @js(#{`description`:"delete-pep-cluster: the members that kept a copy."}) `released`?: (string)[];
     @js(#{`description`:"add-pep-cluster-member with discard: the PEP's own documents that joining replaced, for the console to offer as a download; null when it held none."}) `discarded`?: XacmlPepClusterDiscarded | null;
-    @js(#{`description`:"set-pep-cluster-member: the member as saved."}) `member`?: Record<unknown>;
+    @js(#{`description`:"set-pep-cluster-member: the member as saved."}) `member`?: XacmlPepClusterMemberAddresses;
     `proxy`?: NullableXacmlPepProxy;
     `settings`?: NullableXacmlPepSettings;
     `listeners`?: NullableXacmlPepListeners;

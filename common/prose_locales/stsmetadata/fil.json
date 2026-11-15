@@ -1063,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "Ang register, at ang huling iniulat ng bawat PEP: kung hawak nito ang kasalukuyang repository, kailan ito huling narinig, ang bias na sinasabi nitong pinapatakbo nito, at kung ano ang nangyari sa huling nudge — na siyang nag-iisang lugar kung saan itinatala ang nabigong nudge, dahil hindi ito nakikita mula sa tumatanggap na dulo ayon sa kahulugan."
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Bawat cluster ng mga remote PEP na may iisang configuration: ang reverse proxy, mga setting at mga depinisyon ng listener nito gaya ng pagkuha ng bawat miyembro, at bawat miyembro kasama ang sarili nitong mga address at kung bakit ito tatanggihan ngayon ng isang pag-save."
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "Ang iginuguhit ng GET /admin/xacml/monitor: ang mga global na bilang ng desisyon at isang row bawat enforcement point, embedded at remote. Sadyang pinaghihiwalay ang tatlong total — ang `here` ay ang binilang ng process na ito habang nangyayari, ang `remote` ay ang iniuulat ng ibang mga process sa heartbeat at BUMABABA kapag nag-restart ang isa, at ang `combined` ay aritmetika sa dalawa. Sa row na `pdp`, null ang `allowed` at `refused` sa halip na 0, dahil ginawa ng serbisyong ito ang desisyong iyon at hindi kailanman nakita ang pagpapatupad. Walang POST sa tabi nito: walang control ang page, at sadyang tinanggihan ang reset sa halip na nakalimutan."

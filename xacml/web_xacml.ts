@@ -991,10 +991,70 @@ class XacmlPage {
   }
 
   // ONE ROUTE's PAGE (#1760): a route id on the Reverse proxy tab drills
-  // down to `/admin/xacml/pep/route`.
+  // down to `/admin/xacml/pep/route`, or, drawn for a cluster, to
+  // `/admin/xacml/pep-cluster/route`.
   static routeHref(name: string, route: string): string {
-    return '/admin/xacml/pep/route?pep=' + encodeURIComponent(name) +
-      '&route=' + encodeURIComponent(route);
+    return (XacmlPage.isCluster()
+      ? '/admin/xacml/pep-cluster/route?cluster='
+      : '/admin/xacml/pep/route?pep=') +
+      encodeURIComponent(name) + '&route=' + encodeURIComponent(route);
+  }
+
+  // ===========================================================================
+  // WHOSE PAGE IS BEING DRAWN (#1760, Remote PEP clusters). A cluster's
+  // page draws its reverse proxy, settings and listeners with the PEP
+  // page's own functions; what differs — the page a link goes to, the
+  // field a form names its owner in, the action it sends and the XACML tab
+  // that is current — is asked of the owner, which a cluster's drawing sets
+  // for the time it draws (`withOwner()`) and which is a PEP otherwise, so
+  // every PEP page is drawn exactly as before.
+  // ===========================================================================
+  static owner: { kind: string } = { kind: 'pep' };
+
+  static isCluster(): boolean {
+    return XacmlPage.owner.kind === 'cluster';
+  }
+
+  // Draws `fn` for a cluster's page, and puts the owner back after.
+  static withOwner(kind: string, fn: () => string): string {
+    const held = XacmlPage.owner;
+    XacmlPage.owner = { kind: kind };
+    try {
+      return fn();
+    } finally {
+      XacmlPage.owner = held;
+    }
+  }
+
+  // The owner's own page: a PEP's, or a cluster's.
+  static ownerHref(name: string): string {
+    return XacmlPage.isCluster() ? XacmlPage.clusterHref(name)
+      : XacmlPage.pepHref(name);
+  }
+
+  // The field a form names its owner in: a PEP's `name`, a cluster's
+  // `cluster`.
+  static ownerField(name: string): string {
+    return XacmlPage.isCluster() ? XacmlPage.hidden('cluster', name)
+      : XacmlPage.hidden('name', name);
+  }
+
+  // The action a form sends: a PEP's, or the cluster's same action
+  // (`set-pep-route` is `set-pep-cluster-route`).
+  static act(action: string): string {
+    return XacmlPage.isCluster()
+      ? action.replace(/^([a-z]+)-pep-/, '$1-pep-cluster-') : action;
+  }
+
+  // ONE CLUSTER's PAGE (#1760): `/admin/xacml/pep-cluster?cluster=`.
+  static clusterHref(name: string): string {
+    return '/admin/xacml/pep-cluster?cluster=' + encodeURIComponent(name);
+  }
+
+  // THE PEP CLUSTERS TAB AS A CRUMB, the Remote PEPs tab's arrangement.
+  static clustersTabCrumb(t: Json): { label: string; href: string } {
+    return { label: t.text('console.nav.xacml-pep-clusters'),
+             href: '/admin/xacml#' + XacmlPage.CLUSTERS_TAB };
   }
 
   // THE REVERSE PROXY TAB'S FOUR SUB-TABS (rcbj, 2026-11-14; Visual,
@@ -1034,13 +1094,13 @@ class XacmlPage {
   // The way back from a route's page: the PEP's Reverse proxy tab, on its
   // Configured Routes.
   static proxyTabHref(name: string): string {
-    return XacmlPage.pepHref(name) + '#' + XacmlPage.PROXY_ROUTES_TAB;
+    return XacmlPage.ownerHref(name) + '#' + XacmlPage.PROXY_ROUTES_TAB;
   }
 
   // The PEP's Reverse proxy tab itself, the trail's crumb for it (rcbj,
   // 2026-11-15), which opens on its first sub-tab.
   static proxyHref(name: string): string {
-    return XacmlPage.pepHref(name) + '#' + XacmlPage.PROXY_TAB;
+    return XacmlPage.ownerHref(name) + '#' + XacmlPage.PROXY_TAB;
   }
 
   // THE LISTENER TAB'S TWO SUB-TABS (rcbj, 2026-11-15: "Organize the UIs,
@@ -1062,13 +1122,13 @@ class XacmlPage {
 
   // The PEP's Listener tab, the trail's crumb for it.
   static listenerTabHref(name: string): string {
-    return XacmlPage.pepHref(name) + '#' + XacmlPage.LISTENER_TAB;
+    return XacmlPage.ownerHref(name) + '#' + XacmlPage.LISTENER_TAB;
   }
 
   // The way back from a listener's page: the Listener tab, on its
   // Configured Listeners.
   static listenersHref(name: string): string {
-    return XacmlPage.pepHref(name) + '#' + XacmlPage.LISTENERS_CONFIGURED_TAB;
+    return XacmlPage.ownerHref(name) + '#' + XacmlPage.LISTENERS_CONFIGURED_TAB;
   }
 
   // THE REMOTE PEPS TAB AS A CRUMB (rcbj, 2026-11-14): a PEP's page and a
@@ -1285,8 +1345,9 @@ class XacmlPage {
           : t.html('consoleXacml.proxy.no')) + '</td>' +
         (ctx && ctx.write && name
           ? '<td><form method="post" action="/admin/xacml/peps" ' +
-            'class="inline">' + self.hidden('action', 'remove-pep-route') +
-            self.hidden('name', name) + self.hidden('route', route.id) +
+            'class="inline">' +
+            self.hidden('action', self.act('remove-pep-route')) +
+            self.ownerField(name) + self.hidden('route', route.id) +
             // A GENERATED POLICY GOES WITH ITS ROUTE (#1760): the remove
             // is held until the box naming it is ticked.
             (choice.kind && choice.kind !== 'policy'
@@ -1466,8 +1527,8 @@ class XacmlPage {
     const editor = ctx.write
       ? '<form method="post" action="/admin/xacml/peps" ' +
         'id="pep-proxy-edit">' +
-        self.hidden('action', 'set-pep-proxy') +
-        self.hidden('name', row.name) +
+        self.hidden('action', self.act('set-pep-proxy')) +
+        self.ownerField(row.name) +
         '<label' + self.tipOf(t, 'consoleXacml.tip.proxy.document') + '>' +
         t.html('consoleXacml.proxy.editLabel') +
         '<br><textarea name="proxy" id="pep-proxy-doc" rows="18" ' +
@@ -1503,7 +1564,7 @@ class XacmlPage {
           html[XacmlPage.PROXY_MANIFEST_TAB] = '<p class="sub">' +
             t.html('consoleXacml.proxy.documentHeading') + '</p>' + editor;
           html[XacmlPage.PROXY_VISUAL_TAB] = PepPicture.panel(t, row, {
-            pep: self.pepHref(row.name) + '#xacml-pep-tab-overview',
+            pep: self.ownerHref(row.name) + '#xacml-pep-tab-overview',
             proxy: self.proxyTabHref(row.name),
             route: function (id: string): string {
               return self.routeHref(row.name, id);
@@ -1649,7 +1710,8 @@ class XacmlPage {
     const https = d.protocol !== 'http';
     return '<form method="post" action="/admin/xacml/peps" ' +
       'class="pep-listener-form">' +
-      self.hidden('action', 'set-pep-listener') + self.hidden('name', name) +
+      self.hidden('action', self.act('set-pep-listener')) +
+      self.ownerField(name) +
       self.defaultSubmit(t.text(submit)) +
       self.fieldGroup(t, 'consoleXacml.listeners.legend.listener',
         idRow +
@@ -1719,7 +1781,7 @@ class XacmlPage {
     return '<form method="post" action="/admin/xacml/peps" ' +
       'class="pep-envpair-form">' +
       self.hidden('action', 'issue-pep-certificate') +
-      self.hidden('name', row.name) + self.defaultSubmit(t.text(label)) +
+      self.ownerField(row.name) + self.defaultSubmit(t.text(label)) +
       self.fieldGroup(t, 'consoleXacml.listeners.envPair.legendHeld',
                       current) +
       self.fieldGroup(t, 'consoleXacml.listeners.envPair.legendIssue',
@@ -2049,8 +2111,8 @@ class XacmlPage {
         (https
           ? '<h3>' + t.html('consoleXacml.listenerPage.renewHeading') +
             '</h3><form method="post" action="/admin/xacml/peps">' +
-            self.hidden('action', 'renew-pep-listener-certificate') +
-            self.hidden('name', name) + self.hidden('listener', one.id) +
+            self.hidden('action', self.act('renew-pep-listener-certificate')) +
+            self.ownerField(name) + self.hidden('listener', one.id) +
             '<button type="submit">' +
             t.html('consoleXacml.listeners.renew') + '</button></form>'
           : '') +
@@ -2058,8 +2120,8 @@ class XacmlPage {
         // the route page's, so the operation's body is unchanged.
         '<h3>' + t.html('consoleXacml.listenerPage.removeHeading') +
         '</h3><form method="post" action="/admin/xacml/peps">' +
-        self.hidden('action', 'remove-pep-listener') +
-        self.hidden('name', name) + self.hidden('listener', one.id) +
+        self.hidden('action', self.act('remove-pep-listener')) +
+        self.ownerField(name) + self.hidden('listener', one.id) +
         '<label><input type="checkbox" required> ' +
         t.html('consoleXacml.listenerPage.removeConfirm',
                { listener: one.id }) +
@@ -2126,7 +2188,7 @@ class XacmlPage {
     const r = drafted.route;
     const when = 'consoleXacml.tip.route.when';
     return '<form method="post" action="/admin/xacml/peps">' +
-      self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+      self.hidden('action', self.act('set-pep-route')) + self.ownerField(name) +
       self.defaultSubmit(t.text('consoleXacml.routeForm.add')) +
       self.formRow(self.labelled(t, 'consoleXacml.routeForm.id',
         'consoleXacml.tip.route.id', '<input type="text" name="id" ' +
@@ -2177,9 +2239,11 @@ class XacmlPage {
       t.html('consoleXacml.proxy.load') + '</button>' +
       '<input type="file" id="pep-proxy-file" hidden ' +
       'accept=".json,application/json" data-load-into="pep-proxy-doc">';
-    const remove = proxy
+    // A cluster has no Clear (#1760): its document is its members' too.
+    const remove = proxy && !XacmlPage.isCluster()
       ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
-        self.hidden('action', 'clear-pep-proxy') + self.hidden('name', name) +
+        self.hidden('action', self.act('clear-pep-proxy')) +
+        self.ownerField(name) +
         '<label' + self.tipOf(t, 'consoleXacml.tip.proxy.clear') +
         '><input type="checkbox" required> ' +
         t.html('consoleXacml.proxy.clearConfirm') + '</label> ' +
@@ -3221,14 +3285,14 @@ class XacmlPage {
       '</table>');
     const form = ctx.write
       ? '<form method="post" action="/admin/xacml/peps">' +
-        self.hidden('action', 'set-pep-settings') +
-        self.hidden('name', row.name) + table +
+        self.hidden('action', self.act('set-pep-settings')) +
+        self.ownerField(row.name) + table +
         '<button type="submit">' + t.html('consoleXacml.pepSettings.save') +
         '</button></form>' +
-        (row.settings
+        (row.settings && !XacmlPage.isCluster()
           ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
-            self.hidden('action', 'clear-pep-settings') +
-            self.hidden('name', row.name) +
+            self.hidden('action', self.act('clear-pep-settings')) +
+            self.ownerField(row.name) +
             '<button type="submit">' +
             t.html('consoleXacml.pepSettings.clear') + '</button></form>'
           : '')
@@ -3384,7 +3448,7 @@ class XacmlPage {
            '<code>' + esc(proxy.upstream || '') + '</code>' +
            '<div class="sub">' + self.linkedSentence(t,
              'consoleXacml.routePage.upstreamNote', 'manifest',
-             self.pepHref(name) + '#' + self.PROXY_MANIFEST_TAB,
+             self.ownerHref(name) + '#' + self.PROXY_MANIFEST_TAB,
              'consoleXacml.proxy.tab.manifest') + '</div>') +
       '</table>') + '<h4' +
       self.tipOf(t, 'consoleXacml.tip.routePage.servedBy') +
@@ -3429,7 +3493,8 @@ class XacmlPage {
                                   ? detail.position : drafted.position);
     const partForm = function (part: string, html: string): string {
       return '<form method="post" action="/admin/xacml/peps">' +
-        self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+        self.hidden('action', self.act('set-pep-route')) +
+        self.ownerField(name) +
         self.hidden('from', r.id) + self.hidden('part', part) +
         (part === 'settings' ? '' : self.hidden('id', r.id)) +
         self.defaultSubmit(t.text('consoleXacml.routeForm.update')) + html +
@@ -3478,7 +3543,8 @@ class XacmlPage {
     const policyState = detail.authorization && detail.authorization.policy;
     const withPolicy = !!policyState && !!policyState.generated;
     const remove = '<form method="post" action="/admin/xacml/peps">' +
-      self.hidden('action', 'remove-pep-route') + self.hidden('name', name) +
+      self.hidden('action', self.act('remove-pep-route')) +
+      self.ownerField(name) +
       self.hidden('route', r.id) + '<label' +
       self.tipOf(t, 'consoleXacml.tip.routes.actions') +
       '><input type="checkbox"' + (withPolicy
@@ -3494,8 +3560,8 @@ class XacmlPage {
     // `generate-pep-route-policy`, rule 7's operation for it.
     const regenerate = r.authorization && r.authorization.kind !== 'policy'
       ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
-        self.hidden('action', 'generate-pep-route-policy') +
-        self.hidden('name', name) + self.hidden('route', r.id) +
+        self.hidden('action', self.act('generate-pep-route-policy')) +
+        self.ownerField(name) + self.hidden('route', r.id) +
         '<button type="submit" class="secondary"' +
         self.tipOf(t, 'consoleXacml.tip.authz.regenerate') + '>' +
         t.html('consoleXacml.authz.regenerate') + '</button></form>'
@@ -3626,6 +3692,409 @@ class XacmlPage {
       ' ' + link;
   }
 
+  // ===========================================================================
+  // REMOTE PEP CLUSTERS (#1760, phase 1): the XACML page's PEP clusters tab,
+  // a cluster's own page and a cluster route's page. The shared panels —
+  // Settings, the route forms, the Manifest, the route page — are the PEP
+  // page's own functions drawn for the cluster (`withOwner()`).
+  // ===========================================================================
+  /**
+   * Draws the PEP clusters tab from `GET /admin-api/xacml/pep-clusters`:
+   * every cluster with its members and routes, each a link to its page,
+   * and the create form.
+   *
+   * @param ctx - the render context
+   * @param json - the clusters' answer
+   * @returns the body as HTML
+   */
+  static clustersBody(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const view = json || {};
+    const rows = (view.clusters || []).map(function (c: Json) {
+      const problems = (c.members || []).filter(function (m: Json) {
+        return m.why || !m.registered;
+      }).length;
+      return '<tr><td><a href="' + esc(self.clusterHref(c.name)) +
+        '"><code>' + esc(c.name) + '</code></a>' +
+        (c.description ? '<div class="sub">' + esc(c.description) +
+                         '</div>' : '') +
+        '</td><td>' + (c.members || []).map(function (m: Json) {
+          return '<code>' + esc(m.pep) + '</code>';
+        }).join(', ') + '</td><td>' +
+        (c.proxy ? t.html('consoleXacml.pepPage.proxySummary',
+                          { n: c.proxy.routes.length })
+                 : '<span class="sub">' +
+                   t.html('consoleXacml.pepPage.proxyNone') + '</span>') +
+        '</td><td>' + (problems
+          ? '<span class="xacml-alert">' +
+            t.html('consoleXacml.cluster.problems', { n: problems }) +
+            '</span>'
+          : '<span class="sub">' + t.html('consoleXacml.cluster.noProblem') +
+            '</span>') + '</td></tr>';
+    }).join('') || '<tr><td colspan="4"><span class="sub">' +
+      t.html('consoleXacml.cluster.none') + '</span></td></tr>';
+    const free = (view.peps || []).filter(function (p: Json) {
+      return !p.cluster;
+    });
+    const create = ctx.write
+      ? '<h3>' + t.html('consoleXacml.cluster.createHeading') + '</h3>' +
+        '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'create-pep-cluster') +
+        self.formRow(self.labelled(t, 'consoleXacml.cluster.name',
+          'consoleXacml.tip.cluster.name',
+          '<input type="text" name="cluster" required ' +
+          'pattern="[A-Za-z0-9._-]{1,64}" size="32">')) +
+        self.formRow(self.labelled(t, 'consoleXacml.cluster.description',
+          'consoleXacml.tip.cluster.description',
+          self.textField('description', '', 48))) +
+        self.formRow(self.labelled(t, 'consoleXacml.cluster.from',
+          'consoleXacml.tip.cluster.from',
+          '<select name="from"><option value="">' +
+          t.html('consoleXacml.cluster.fromNone') + '</option>' +
+          free.map(function (p: Json) {
+            return '<option value="' + esc(p.name) + '">' + esc(p.name) +
+              '</option>';
+          }).join('') + '</select>')) +
+        '<button type="submit">' + t.html('consoleXacml.cluster.create') +
+        '</button></form>'
+      : '';
+    return kit.note('<p>' + t.html('consoleXacml.cluster.p1') + '</p><p>' +
+                    t.html('consoleXacml.cluster.p2') + '</p>',
+                    t.text('consoleXacml.whatThisPageIs')) +
+      self.wide(t, 'console.nav.xacml-pep-clusters', '<table><tr>' +
+        self.th(t, 'consoleXacml.cluster.th.cluster',
+                'consoleXacml.tip.cluster.name') +
+        self.th(t, 'consoleXacml.cluster.th.members',
+                'consoleXacml.tip.cluster.members') +
+        self.th(t, 'consoleXacml.pepPage.th.proxy',
+                'consoleXacml.tip.peps.proxy') +
+        self.th(t, 'consoleXacml.cluster.th.state',
+                'consoleXacml.tip.cluster.state') +
+        '</tr>' + rows + '</table>') + create;
+  }
+
+  // One member's own addresses as a form (#1760): its publicBaseUrl, its
+  // notify URL and its listener addresses, one `<id> <address>:<port>
+  // <name> …` per line. On the cluster's Members tab and on the member's
+  // own PEP page, which edit the same fields.
+  static memberForm(t: Json, cluster: string, m: Json): string {
+    const self = this;
+    const lines = Object.keys(m.listeners || {}).map(function (id: string) {
+      const o = m.listeners[id] || {};
+      return id + ' ' + (o.address || '') + (o.port ? ':' + o.port : '') +
+        ((o.names || []).length ? ' ' + o.names.join(' ') : '');
+    }).join('\n');
+    return '<form method="post" action="/admin/xacml/peps" ' +
+      'class="pep-cluster-member">' +
+      self.defaultSubmit(t.text('consoleXacml.cluster.memberSave')) +
+      self.hidden('action', 'set-pep-cluster-member') +
+      self.hidden('cluster', cluster) + self.hidden('pep', m.pep) +
+      self.formRow(self.labelled(t, 'consoleXacml.cluster.publicBaseUrl',
+        'consoleXacml.tip.cluster.publicBaseUrl',
+        self.textField('publicBaseUrl', m.publicBaseUrl, 48))) +
+      self.formRow(self.labelled(t, 'consoleXacml.cluster.notifyUrl',
+        'consoleXacml.tip.cluster.notifyUrl',
+        self.textField('notifyUrl', m.notifyUrl, 48))) +
+      self.formRow(self.labelled(t, 'consoleXacml.cluster.listeners',
+        'consoleXacml.tip.cluster.listeners',
+        '<textarea name="listeners" rows="3" cols="48">' + esc(lines) +
+        '</textarea>')) +
+      '<button type="submit">' + t.html('consoleXacml.cluster.memberSave') +
+      '</button></form>';
+  }
+
+  // The Members tab (#1760): every member with its addresses and its
+  // problem, its own form, Remove with keep or empty, and the add forms —
+  // one per registered PEP in no cluster (a required checkbox where it
+  // holds its own configuration, which joining discards) and one for a
+  // name not registered yet.
+  static clusterMembers(ctx: Json, json: Json, c: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const signals = c.proxy && (c.proxy.routes || []).some(function (r: Json) {
+      return r.mechanisms.indexOf('session') >= 0 && r.signals === true;
+    });
+    const rows = (c.members || []).map(function (m: Json) {
+      const who = m.registered
+        ? '<a href="' + esc(self.pepHref(m.pep)) + '"><code>' +
+          esc(m.pep) + '</code></a>'
+        : '<code>' + esc(m.pep) + '</code><div class="sub warn">' +
+          t.html('consoleXacml.cluster.notRegistered') + '</div>';
+      const problem = m.why
+        ? '<div class="xacml-alert">' + esc(m.why) + '</div>'
+        : '<span class="sub">' + t.html('consoleXacml.cluster.noProblem') +
+          '</span>';
+      const remove = ctx.write
+        ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
+          self.hidden('action', 'remove-pep-cluster-member') +
+          self.hidden('cluster', c.name) + self.hidden('pep', m.pep) +
+          '<select name="keep"><option value="true">' +
+          t.html('consoleXacml.cluster.keepCopy') + '</option>' +
+          '<option value="false">' +
+          t.html('consoleXacml.cluster.keepEmpty') + '</option></select> ' +
+          '<button type="submit" class="danger">' +
+          t.html('consoleXacml.cluster.removeMember') + '</button></form>'
+        : '';
+      return '<tr><td>' + who + '</td><td><code>' +
+        esc(m.effectivePublicBaseUrl || '') + '</code></td><td>' +
+        (m.notifyUrl ? '<code>' + esc(m.notifyUrl) + '</code>'
+                     : '<span class="sub">' +
+                       t.html('consoleXacml.cluster.registeredNotify') +
+                       '</span>') +
+        '</td><td>' + problem + '</td><td>' +
+        (ctx.write ? '<details><summary>' +
+          t.html('consoleXacml.cluster.editMember') + '</summary>' +
+          self.memberForm(t, c.name, m) + '</details>' : '') + remove +
+        '</td></tr>';
+    }).join('') || '<tr><td colspan="5"><span class="sub">' +
+      t.html('consoleXacml.cluster.noMembers') + '</span></td></tr>';
+    const table = self.wide(t, 'consoleXacml.cluster.tab.members',
+      '<table><tr>' +
+      self.th(t, 'consoleXacml.cluster.th.member',
+              'consoleXacml.tip.cluster.member') +
+      self.th(t, 'consoleXacml.cluster.publicBaseUrl',
+              'consoleXacml.tip.cluster.publicBaseUrl') +
+      self.th(t, 'consoleXacml.cluster.notifyUrl',
+              'consoleXacml.tip.cluster.notifyUrl') +
+      self.th(t, 'consoleXacml.cluster.th.problem',
+              'consoleXacml.tip.cluster.problem') +
+      self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
+      '</tr>' + rows + '</table>');
+    if (!ctx.write) {
+      return table;
+    }
+    const free = (json.peps || []).filter(function (p: Json) {
+      return !p.cluster;
+    });
+    const candidates = free.map(function (p: Json) {
+      return '<tr><td><code>' + esc(p.name) + '</code></td><td>' +
+        '<form method="post" action="/admin/xacml/peps" class="inline">' +
+        self.hidden('action', 'add-pep-cluster-member') +
+        self.hidden('cluster', c.name) + self.hidden('pep', p.name) +
+        self.textField('publicBaseUrl', '', 32) + ' ' +
+        (p.ownConfiguration
+          ? '<label class="warn"' +
+            self.tipOf(t, 'consoleXacml.tip.cluster.discard') + '>' +
+            '<input type="checkbox" name="discard" value="true" required> ' +
+            t.html('consoleXacml.cluster.discard') + '</label> '
+          : '') +
+        '<button type="submit">' + t.html('consoleXacml.cluster.add') +
+        '</button></form></td></tr>';
+    }).join('') || '<tr><td colspan="2"><span class="sub">' +
+      t.html('consoleXacml.cluster.noFree') + '</span></td></tr>';
+    return table + '<h3>' + t.html('consoleXacml.cluster.addHeading') +
+      '</h3>' +
+      (signals && (c.members || []).length
+        ? '<p class="xacml-alert">' + t.html('consoleXacml.cluster.signals') +
+          '</p>' : '') +
+      '<p class="sub">' + t.html('consoleXacml.cluster.addLead') + '</p>' +
+      self.wide(t, 'consoleXacml.cluster.addHeading', '<table><tr>' +
+        self.th(t, 'consoleXacml.cluster.th.member',
+                'consoleXacml.tip.cluster.member') +
+        self.th(t, 'consoleXacml.cluster.publicBaseUrl',
+                'consoleXacml.tip.cluster.publicBaseUrl') +
+        '</tr>' + candidates + '</table>') +
+      '<h4>' + t.html('consoleXacml.cluster.addUnregistered') + '</h4>' +
+      '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'add-pep-cluster-member') +
+      self.hidden('cluster', c.name) +
+      self.formRow(self.labelled(t, 'consoleXacml.cluster.th.member',
+        'consoleXacml.tip.cluster.member',
+        '<input type="text" name="pep" required ' +
+        'pattern="[A-Za-z0-9._-]{1,128}" size="32">')) +
+      self.formRow(self.labelled(t, 'consoleXacml.cluster.publicBaseUrl',
+        'consoleXacml.tip.cluster.publicBaseUrl',
+        self.textField('publicBaseUrl', '', 48))) +
+      '<button type="submit">' + t.html('consoleXacml.cluster.add') +
+      '</button></form>';
+  }
+
+  // The Listener tab (#1760): the cluster's definitions, each with Remove,
+  // and the PEP page's own definition form drawn for the cluster (one of
+  // the same id replaces it). The environment's four are each member's.
+  static clusterListeners(ctx: Json, json: Json, c: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const rows = (c.listeners || []).map(function (l: Json) {
+      return '<tr><td><code>' + esc(l.id) + '</code></td><td>' +
+        (l.protocol === 'https' ? 'HTTPS' : 'HTTP') + '</td><td>' +
+        esc(l.purpose) + '</td><td><code>' + esc(l.address + ':' + l.port) +
+        '</code></td><td>' + esc((l.dnsNames || []).join(', ')) + '</td><td>' +
+        (ctx.write
+          ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
+            self.hidden('action', 'remove-pep-cluster-listener') +
+            self.hidden('cluster', c.name) + self.hidden('listener', l.id) +
+            '<button type="submit" class="danger">' +
+            t.html('consoleXacml.cluster.removeListener') + '</button></form>'
+          : '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="6"><span class="sub">' +
+      t.html('consoleXacml.cluster.noListeners') + '</span></td></tr>';
+    return kit.note('<p>' + t.html('consoleXacml.cluster.listenersLead') +
+                    '</p>') +
+      (c.listenersProblem ? '<div class="sub xacml-alert">' +
+        t.html('consoleXacml.listeners.problem') + ' ' +
+        esc(c.listenersProblem) + '</div>' : '') +
+      self.wide(t, 'consoleXacml.listeners.tab.configured', '<table><tr>' +
+        self.th(t, 'consoleXacml.listeners.th.listener',
+                'consoleXacml.tip.listeners.listener') +
+        self.th(t, 'consoleXacml.listeners.th.protocol',
+                'consoleXacml.tip.listener.protocol') +
+        self.th(t, 'consoleXacml.listeners.th.purpose',
+                'consoleXacml.tip.listener.purpose') +
+        self.th(t, 'consoleXacml.listeners.th.address',
+                'consoleXacml.tip.listeners.address') +
+        self.th(t, 'consoleXacml.cluster.th.names',
+                'consoleXacml.tip.cluster.names') +
+        self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
+        '</tr>' + rows + '</table>') +
+      (ctx.write ? '<h3>' + t.html('consoleXacml.listeners.addHeading') +
+        '</h3>' + self.listenerForm(t, json, c.name, null) : '');
+  }
+
+  /**
+   * Draws one cluster's page (#1760), `/admin/xacml/pep-cluster?cluster=`:
+   * Overview, Members, Settings, Listener, Reverse proxy and Visual,
+   * inside the XACML page's tabs with PEP clusters current.
+   *
+   * @param ctx - the render context
+   * @param json - `GET /admin-api/xacml/pep-clusters?cluster=`'s answer
+   * @returns the body as HTML
+   */
+  static clusterDetail(ctx: Json, json: Json): string {
+    const self = this;
+    return XacmlPage.withOwner('cluster', function () {
+      return self.clusterDetailDrawn(ctx, json);
+    });
+  }
+
+  static clusterDetailDrawn(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const c = (json.clusters || [])[0];
+    const back = '<p><a href="/admin/xacml#' + self.CLUSTERS_TAB + '">' +
+      t.html('consoleXacml.cluster.back') + '</a></p>';
+    if (!json.found || !c) {
+      return '<p class="warn">' + t.html('consoleXacml.cluster.notFound',
+        { name: String(json.cluster || '') }) + '</p>' + back;
+    }
+    const line = function (label: string, value: string): string {
+      return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
+    };
+    const remove = ctx.write
+      ? '<h3>' + t.html('consoleXacml.cluster.deleteHeading') + '</h3>' +
+        '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'delete-pep-cluster') +
+        self.hidden('cluster', c.name) +
+        ((c.members || []).length
+          ? self.formRow(self.labelled(t, 'consoleXacml.cluster.release',
+              'consoleXacml.tip.cluster.release',
+              '<select name="release"><option value="keep">' +
+              t.html('consoleXacml.cluster.keepCopy') + '</option>' +
+              '<option value="empty">' +
+              t.html('consoleXacml.cluster.keepEmpty') + '</option>' +
+              '</select>'))
+          : '') +
+        '<label><input type="checkbox" required> ' +
+        t.html('consoleXacml.cluster.deleteConfirm') + '</label> ' +
+        '<button type="submit" class="danger">' +
+        t.html('consoleXacml.cluster.delete') + '</button></form>'
+      : '';
+    const overview = kit.note('<p>' + t.html('consoleXacml.cluster.lead') +
+                              '</p>') +
+      (c.membersProblem ? '<div class="xacml-alert">' +
+        esc(c.membersProblem) + '</div>' : '') +
+      self.wide(t, 'consoleXacml.pepPage.tab.overview', '<table>' +
+        line(t.html('consoleXacml.cluster.name'),
+             '<code>' + esc(c.name) + '</code>') +
+        line(t.html('consoleXacml.cluster.description'),
+             esc(c.description || '')) +
+        line(t.html('consoleXacml.cluster.th.members'),
+             String((c.members || []).length)) +
+        line(t.html('consoleXacml.cluster.logicalBase'),
+             c.proxy && c.proxy.publicBaseUrl
+               ? '<code>' + esc(c.proxy.publicBaseUrl) + '</code>'
+               : '<span class="sub">' +
+                 t.html('consoleXacml.cluster.noLogicalBase') + '</span>') +
+        '</table>') + remove;
+    const picture = '<p class="sub">' +
+      t.html('consoleXacml.cluster.visualLead') + '</p>' +
+      PepPicture.panel(t, c, {
+        pep: self.clusterHref(c.name) + '#xacml-pep-tab-overview',
+        proxy: self.proxyTabHref(c.name),
+        route: function (id: string): string {
+          return self.routeHref(c.name, id);
+        },
+        listener: function (): string {
+          return self.listenerTabHref(c.name);
+        } }) +
+      '<h4>' + t.html('consoleXacml.cluster.tab.members') + '</h4><ul>' +
+      (c.members || []).map(function (m: Json) {
+        return '<li><code>' + esc(m.pep) + '</code> <span class="sub">' +
+          esc(m.effectivePublicBaseUrl || '') + '</span></li>';
+      }).join('') + '</ul>';
+    const html: Json = {
+      'xacml-pep-tab-overview': overview,
+      'xacml-pep-tab-settings': self.settingsBody(ctx, json, c),
+      'xacml-pep-tab-proxy': self.proxySection(
+        Object.assign({}, ctx, { json: json }), c)
+    };
+    html[self.CLUSTER_MEMBERS_TAB] = self.clusterMembers(ctx, json, c);
+    html[self.LISTENER_TAB] = self.clusterListeners(ctx, json, c);
+    html[self.CLUSTER_VISUAL_TAB] = picture;
+    return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
+      self.clusterTabs(t).map(function (one: Json) {
+        return Object.assign({}, one, { html: html[one.id] });
+      }))) + back;
+  }
+
+  /**
+   * Draws one route of a cluster's reverse proxy (#1760),
+   * `/admin/xacml/pep-cluster/route?cluster=&route=`: the PEP route page,
+   * drawn for the cluster.
+   *
+   * @param ctx - the render context
+   * @param json - the clusters' answer with `cluster` and `route`
+   * @returns the body as HTML
+   */
+  static clusterRouteDetail(ctx: Json, json: Json): string {
+    const self = this;
+    const shaped = Object.assign({}, json, { pep: json.cluster,
+                                            peps: json.clusters || [] });
+    return XacmlPage.withOwner('cluster', function () {
+      return self.routeDetail(ctx, shaped);
+    });
+  }
+
+  // `/admin/xacml/pep-cluster/route` with no route: every cluster's routes.
+  static clusterRouteIndex(ctx: Json, json: Json): string {
+    const self = this;
+    const shaped = Object.assign({}, json, { peps: json.clusters || [] });
+    return XacmlPage.withOwner('cluster', function () {
+      return self.routeIndex(ctx, shaped);
+    });
+  }
+
+  // A MEMBER'S PEP PAGE SAYS SO (#1760): its configuration is the
+  // cluster's, drawn read-only with "Edit on the cluster", and its own
+  // addresses are the one thing edited here.
+  static memberBanner(ctx: Json, json: Json, row: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const href = self.clusterHref(row.cluster);
+    return '<div class="note pep-cluster-banner"><p><strong>' +
+      t.html('consoleXacml.cluster.banner', { cluster: row.cluster }) +
+      '</strong> <a href="' + esc(href) + '">' +
+      t.html('consoleXacml.cluster.editOnCluster') + '</a></p></div>';
+  }
+
+  // The read-only panel's note on a member's page, with its link.
+  static inheritedNote(t: Json, row: Json, tab: string): string {
+    return '<p class="sub">' + t.html('consoleXacml.cluster.inherited') +
+      ' <a href="' + esc(XacmlPage.clusterHref(row.cluster) + '#' + tab) +
+      '">' + t.html('consoleXacml.cluster.editOnCluster') + '</a></p>';
+  }
+
   /**
    * Draws one remote PEP's page (#1760), `/admin/xacml/pep?pep=<name>`:
    * tabs for its overview, its decisions, the settings this service sets
@@ -3696,7 +4165,7 @@ class XacmlPage {
            'consoleXacml.tip.peps.notify') +
       line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
            'consoleXacml.tip.peps.actions') +
-      '</table>');
+      '</table>') + self.pepClusterPart(ctx, row);
     const decisions = self.wide(t, 'consoleXacml.pepPage.tab.decisions',
       '<table>' +
       line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row),
@@ -3707,26 +4176,66 @@ class XacmlPage {
       kit.note('<p>' + t.html('consoleXacml.peps.numbers1') + '</p><p>' +
                t.html('consoleXacml.peps.numbers2') + '</p>',
                t.text('consoleXacml.peps.numbersLabel'));
-    const listener = self.listenersBody(ctx, json, row);
+    // A MEMBER OF A CLUSTER (#1760): its Settings, Listener and Reverse
+    // proxy are the cluster's, drawn read-only with "Edit on the cluster".
+    const member = !!row.cluster;
+    const shown = member ? Object.assign({}, ctx, { write: false }) : ctx;
+    const inherited = function (tab: string): string {
+      return member ? self.inheritedNote(t, row, tab) : '';
+    };
+    const listener = inherited(self.LISTENER_TAB) +
+      self.listenersBody(shown, json, row);
     const html: Json = {
       'xacml-pep-tab-overview': overview,
       'xacml-pep-tab-decisions': decisions,
-      'xacml-pep-tab-settings': self.settingsBody(ctx, json, row),
+      'xacml-pep-tab-settings': inherited('xacml-pep-tab-settings') +
+        self.settingsBody(shown, json, row),
       'xacml-pep-tab-listener': listener,
-      'xacml-pep-tab-proxy': self.proxySection(
-        Object.assign({}, ctx, { json: json }), row),
+      'xacml-pep-tab-proxy': inherited(self.PROXY_TAB) + self.proxySection(
+        Object.assign({}, shown, { json: json }), row),
       'xacml-pep-tab-signals': self.signalsPanel(t, row.signals)
     };
-    return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
+    return (member ? self.memberBanner(ctx, json, row) : '') +
+      self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
       self.pepTabs(t).map(function (one: Json) {
         return Object.assign({}, one, { html: html[one.id] });
       }))) + back;
+  }
+
+  // THE PEP'S CLUSTER, ON ITS OVERVIEW (#1760): a member's own addresses,
+  // the one thing edited on a member's page; or, for a PEP in no cluster,
+  // "Create a cluster from this PEP".
+  static pepClusterPart(ctx: Json, row: Json): string {
+    const t = ctx.t;
+    const self = this;
+    if (row.cluster) {
+      return '<h3>' + t.html('consoleXacml.cluster.ownAddresses') + '</h3>' +
+        (ctx.write && row.clusterMember
+          ? self.memberForm(t, row.cluster, Object.assign(
+              { pep: row.name }, row.clusterMember))
+          : '<span class="sub">' + t.html('consoleXacml.readOnly') +
+            '</span>');
+    }
+    return ctx.write
+      ? '<h3>' + t.html('consoleXacml.cluster.fromThisHeading') + '</h3>' +
+        '<p class="sub">' + t.html('consoleXacml.cluster.fromThisLead') +
+        '</p><form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'create-pep-cluster') +
+        self.hidden('from', row.name) +
+        self.formRow(self.labelled(t, 'consoleXacml.cluster.name',
+          'consoleXacml.tip.cluster.name',
+          '<input type="text" name="cluster" required ' +
+          'pattern="[A-Za-z0-9._-]{1,64}" size="32">')) +
+        '<button type="submit">' + t.html('consoleXacml.cluster.fromThis') +
+        '</button></form>'
+      : '';
   }
 
   // THE XACML PAGE'S TABS, in order: drawn by `/admin/xacml`
   // (`WebPages.render()`), and as the first row of a PEP's page and a
   // route's page, which keep them (`withinXacmlTabs()`).
   static readonly PEPS_TAB = 'xacml-tab-peps';
+  static readonly CLUSTERS_TAB = 'xacml-tab-pep-clusters';
   static xacmlTabs(t: Json): Array<{ id: string; label: string }> {
     return [
       { id: 'xacml-tab-metadata',
@@ -3737,6 +4246,10 @@ class XacmlPage {
         label: t.text('console.nav.xacml-policies') },
       { id: 'xacml-tab-editor', label: t.text('console.nav.xacml-editor') },
       { id: XacmlPage.PEPS_TAB, label: t.text('console.nav.xacml-peps') },
+      // REMOTE PEP CLUSTERS (#1760): PEPs sharing one configuration, the
+      // tab after the PEPs it is made of.
+      { id: XacmlPage.CLUSTERS_TAB,
+        label: t.text('console.nav.xacml-pep-clusters') },
       { id: 'xacml-tab-decide', label: t.text('console.nav.xacml-decide') },
       // AUTHZEN (#563): the API decided by this page's engine, on a tab of
       // its own beside the PEPs that pull the repository.
@@ -3759,7 +4272,9 @@ class XacmlPage {
     return kit.tabbedPanels('xacml-pages',
       XacmlPage.xacmlTabs(t).map(function (one: Json) {
         return Object.assign({}, one, { href: '/admin/xacml#' + one.id },
-          one.id === XacmlPage.PEPS_TAB ? { html: html } : {});
+          one.id === (XacmlPage.isCluster() ? XacmlPage.CLUSTERS_TAB
+                                            : XacmlPage.PEPS_TAB)
+            ? { html: html } : {});
       }));
   }
 
@@ -3782,6 +4297,36 @@ class XacmlPage {
     ];
   }
 
+  // THE OWNER'S TABS: a PEP's, or a cluster's (#1760).
+  static ownerTabs(t: Json): Array<{ id: string; label: string }> {
+    return XacmlPage.isCluster() ? XacmlPage.clusterTabs(t)
+      : XacmlPage.pepTabs(t);
+  }
+
+  // A CLUSTER PAGE'S TABS, in order (#1760): Overview, Members, Settings,
+  // Listener, Reverse proxy and Visual. The ids are the PEP page's where
+  // the panel is the same, so a sub-tab's link and the trail's tab tree
+  // read the same.
+  static clusterTabs(t: Json): Array<{ id: string; label: string }> {
+    return [
+      { id: 'xacml-pep-tab-overview',
+        label: t.text('consoleXacml.pepPage.tab.overview') },
+      { id: XacmlPage.CLUSTER_MEMBERS_TAB,
+        label: t.text('consoleXacml.cluster.tab.members') },
+      { id: 'xacml-pep-tab-settings',
+        label: t.text('consoleXacml.pepPage.tab.settings') },
+      { id: XacmlPage.LISTENER_TAB,
+        label: t.text('consoleXacml.pepPage.tab.listener') },
+      { id: XacmlPage.PROXY_TAB,
+        label: t.text('consoleXacml.pepPage.tab.proxy') },
+      { id: XacmlPage.CLUSTER_VISUAL_TAB,
+        label: t.text('consolePepPicture.tab') }
+    ];
+  }
+
+  static readonly CLUSTER_MEMBERS_TAB = 'xacml-cluster-tab-members';
+  static readonly CLUSTER_VISUAL_TAB = 'xacml-cluster-tab-visual';
+
   // THE REVERSE PROXY TAB'S SUB-TABS, in order, by their labels.
   static proxySubTabs(t: Json): Array<{ id: string; label: string }> {
     return [
@@ -3793,7 +4338,10 @@ class XacmlPage {
         label: t.text('consoleXacml.proxy.tab.manifest') },
       { id: XacmlPage.PROXY_VISUAL_TAB,
         label: t.text('consolePepPicture.tab') }
-    ];
+    ].filter(function (one) {
+      // A cluster's Visual is a tab of its own (#1760).
+      return !XacmlPage.isCluster() || one.id !== XacmlPage.PROXY_VISUAL_TAB;
+    });
   }
 
   // A ROUTE'S PAGE KEEPS THE TABS IT WAS OPENED FROM (rcbj, 2026-11-14):
@@ -3844,8 +4392,8 @@ class XacmlPage {
                          subTabs: Array<{ id: string; label: string }>,
                          subId: string, html: string): string {
     const self = this;
-    const pep = self.pepHref(name);
-    const label = (self.pepTabs(t).filter(function (one: Json) {
+    const pep = self.ownerHref(name);
+    const label = (self.ownerTabs(t).filter(function (one: Json) {
       return one.id === tabId;
     })[0] || { label: '' }).label;
     const sub = kit.subTabbedPanels(label,
@@ -3854,7 +4402,7 @@ class XacmlPage {
           one.id === subId ? { html: html } : {});
       }));
     return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
-      self.pepTabs(t).map(function (one: Json) {
+      self.ownerTabs(t).map(function (one: Json) {
         return Object.assign({}, one, { href: pep + '#' + one.id },
           one.id === tabId ? { html: sub } : {});
       })));
@@ -4149,13 +4697,24 @@ class XacmlPage {
     // Save on any of the route's tabs, or of another route of the same
     // PEP, or of the manifest. A hand edit here is lost then; a
     // hand-written policy belongs to the route's "existing policy" choice.
+    // A CLUSTER'S POLICY (#1760) is marked `@<cluster>/<route>`: every
+    // member's, generated again at every save of the cluster's routes.
     const marked = String(json.policy.pepRoute || '');
     const cut = marked.lastIndexOf('/');
+    const ofCluster = marked.charAt(0) === '@';
+    const owner = marked.slice(ofCluster ? 1 : 0, cut);
+    const routeLink = cut > 0 ? (ofCluster
+      ? XacmlPage.withOwner('cluster', function () {
+          return XacmlPage.routeHref(owner, marked.slice(cut + 1));
+        })
+      : XacmlPage.routeHref(owner, marked.slice(cut + 1))) : '';
     const generated = cut > 0
-      ? kit.warn('<p>' + t.html('consoleXacml.editor.generatedRoute', {
-          route: marked.slice(cut + 1), pep: marked.slice(0, cut) }) +
-          '</p><p><a href="' + esc(XacmlPage.routeHref(marked.slice(0, cut),
-            marked.slice(cut + 1)) + '#' +
+      ? kit.warn('<p>' + (ofCluster
+          ? t.html('consoleXacml.editor.generatedClusterRoute', {
+              route: marked.slice(cut + 1), cluster: owner })
+          : t.html('consoleXacml.editor.generatedRoute', {
+              route: marked.slice(cut + 1), pep: owner })) +
+          '</p><p><a href="' + esc(routeLink + '#' +
             XacmlPage.ROUTE_AUTHORIZATION_TAB) + '">' +
           t.html('consoleXacml.editor.generatedRouteLink') + '</a></p>',
           t.text('consoleXacml.editor.generatedRouteLabel'))

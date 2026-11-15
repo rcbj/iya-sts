@@ -1231,11 +1231,68 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.listenerIndex(ctx || WebKit.context(), view);
     } },
+  // ONE REMOTE PEP CLUSTER (#1760), reached from a row of the PEP clusters
+  // tab: `/admin-api/xacml/pep-clusters` asked with `cluster`.
+  { path: '/admin/xacml/pep-cluster', title: 'Remote PEP cluster',
+    operation: '/admin-api/xacml/pep-clusters',
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      return [XacmlPage.clustersTabCrumb(t)];
+    },
+    drill: {
+      param: 'cluster',
+      sample: function (list: Json): string | null {
+        const rows = list.clusters || [];
+        return rows[0] ? rows[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.clusterDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.clustersBody(ctx || WebKit.context(), view);
+    } },
+  // ONE ROUTE OF A CLUSTER'S REVERSE PROXY (#1760): the PEP route page's
+  // arrangement, its trail XACML › PEP clusters › the cluster › Reverse
+  // proxy › Configured Routes.
+  { path: '/admin/xacml/pep-cluster/route', title: 'Remote PEP cluster route',
+    operation: '/admin-api/xacml/pep-clusters',
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      const cluster = String((query && query.cluster) || '');
+      return [XacmlPage.clustersTabCrumb(t)].concat(cluster
+        ? [{ label: cluster, href: XacmlPage.clusterHref(cluster) },
+           { label: t.text('consoleXacml.pepPage.tab.proxy'),
+             href: XacmlPage.clusterHref(cluster) + '#' +
+                   XacmlPage.PROXY_TAB },
+           { label: t.text('consoleXacml.proxy.tab.routes'),
+             href: XacmlPage.clusterHref(cluster) + '#' +
+                   XacmlPage.PROXY_ROUTES_TAB }]
+        : []);
+    },
+    drill: {
+      param: 'route',
+      sample: function (list: Json): string | null {
+        const held = (list.clusters || []).filter(function (one: Json) {
+          return one.proxy && one.proxy.routes && one.proxy.routes.length;
+        })[0];
+        return held ? held.proxy.routes[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.clusterRouteDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.clusterRouteIndex(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
     compose: {
       xacmlPolicies: '/admin-api/xacml/policies',
       xacmlEditor: '/admin-api/xacml/editor',
       xacmlPeps: '/admin-api/xacml/peps',
+      xacmlPepClusters: '/admin-api/xacml/pep-clusters',
       xacmlDecide: '/admin-api/xacml/decide',
       xacmlAuthzen: '/admin-api/xacml/authzen'
     },
@@ -1246,7 +1303,7 @@ const PAGES: WebPage[] = [
     },
     composeAlways: [
       'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide',
-      'xacmlAuthzen'
+      'xacmlAuthzen', 'xacmlPepClusters'
     ],
     render: XacmlPage.render },
   { path: '/admin/xacml/monitor', title: 'XACML decisions',
@@ -2144,6 +2201,8 @@ class WebPages {
           XacmlPage.policiesBody(context, view.xacmlPolicies),
         'xacml-tab-editor': XacmlPage.editorBody(context, view.xacmlEditor),
         'xacml-tab-peps': XacmlPage.pepsBody(context, view.xacmlPeps),
+        'xacml-tab-pep-clusters':
+          XacmlPage.clustersBody(context, view.xacmlPepClusters || {}),
         'xacml-tab-decide': XacmlPage.decideBody(context, view.xacmlDecide),
         'xacml-tab-authzen':
           XacmlPage.authzenBody(context, view.xacmlAuthzen)
@@ -2221,6 +2280,7 @@ class WebPages {
       '/admin/xacml/policies': 'xacml-tab-policies',
       '/admin/xacml/editor': 'xacml-tab-editor',
       '/admin/xacml/peps': 'xacml-tab-peps',
+      '/admin/xacml/pep-clusters': 'xacml-tab-pep-clusters',
       '/admin/xacml/decide': 'xacml-tab-decide',
       // The AuthZEN tab's forms (#563) name it so, and are moved onto it.
       '/admin/xacml/authzen': 'xacml-tab-authzen'

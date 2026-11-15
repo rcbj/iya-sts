@@ -1063,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "登錄，以及每個 PEP 最後回報的內容：是否持有目前的存放庫、最後一次收到其訊息的時間、它所稱正在使用的偏向，以及最後一次推送通知的結果——這是唯一記錄失敗推送通知的地方，因為依定義，從接收端是看不到它的。"
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "每個共用同一組態的遠端 PEP 叢集：每個成員拉取的反向代理、設定和接聽程式定義，以及每個成員自己的位址和儲存現在會拒絕它的原因。"
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "GET /admin/xacml/monitor 所繪製的內容：全域決策數字，以及每個強制執行點（內嵌與遠端）一列。三個總計刻意分開——`here` 是此程序在發生當下計數的、`remote` 是其他程序在心跳中回報的，並會在某個程序重新啟動時「下降」，而 `combined` 是兩者的算術結果。在 `pdp` 列上，`allowed` 與 `refused` 為 null 而非 0，因為本服務產生了該決策卻從未看到其強制執行。旁邊沒有 POST：此頁面沒有控制項，而重設是刻意拒絕的，並非遺漏。"

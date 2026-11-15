@@ -111,5 +111,9 @@
   "person.certificate": "证书（它是公开的，也在条目上）：",
   "once.signingCertificate": "消息签名证书",
   "signing.warn": "<strong>这是唯一一次可以下载这些文件。</strong>本服务不保留私钥——既不在持有者的条目中，也不在证书登记册中——此控制台和 <code>/admin-api</code> 上也没有任何地方会再次提供它。如果丢失，请吊销该证书并签发新的。",
-  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的密钥签名每个 WS-Trust 请求：对 SOAP Body 和 Timestamp 的 WS-Security 1.1 签名，此证书放在 BinarySecurityToken 中，<code>{chain}</code> 为其证书链。请求随后以 <code>{name}</code> 的身份认证，因为此领域将证书签发给了该名称，无需注册其他任何内容。"
+  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的密钥签名每个 WS-Trust 请求：对 SOAP Body 和 Timestamp 的 WS-Security 1.1 签名，此证书放在 BinarySecurityToken 中，<code>{chain}</code> 为其证书链。请求随后以 <code>{name}</code> 的身份认证，因为此领域将证书签发给了该名称，无需注册其他任何内容。",
+  "cluster.back": "返回集群",
+  "cluster.discardedDownload": "下载被丢弃的内容",
+  "cluster.discardedLead": "该 PEP 不再拥有自己的反向代理、设置或侦听器：它拉取集群的配置。以下是它原有的内容，仅显示一次。",
+  "cluster.discardedTitle": "一个 PEP 加入了集群"
 }

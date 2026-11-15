@@ -1063,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "El registro, y lo que cada PEP informó por última vez: si tiene el repositorio actual, cuándo se supo de él por última vez, el sesgo con el que dice estar funcionando y qué pasó con el último aviso, que es el único lugar donde se registra un aviso fallido, porque por definición es invisible desde el extremo receptor."
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Cada clúster de PEP remotos que comparten una configuración: su proxy inverso, sus ajustes y sus definiciones de escuchas tal como los obtiene cada miembro, y cada miembro con sus propias direcciones y por qué un guardado lo rechazaría ahora."
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "Lo que dibuja GET /admin/xacml/monitor: las cifras globales de decisiones y una fila por punto de aplicación, integrado y remoto. Los tres totales se mantienen separados a propósito: `here` es lo que este proceso contó a medida que ocurría, `remote` es lo que otros procesos informan en un latido y BAJA cuando uno se reinicia, y `combined` es aritmética sobre ambos. En la fila `pdp`, `allowed` y `refused` son null en lugar de 0, porque este servicio produjo esa decisión y nunca vio su aplicación. No hay ningún POST a su lado: la página no tiene controles, y un reinicio se rechazó, no se olvidó."

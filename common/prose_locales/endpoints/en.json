@@ -77,6 +77,7 @@
   "endpoints.route./admin-api/xacml/editor.name": "One policy as an editable tree",
   "endpoints.route./admin-api/xacml/decide.name": "Ask the PDP a question over JSON",
   "endpoints.route./admin-api/xacml/peps.name": "The remote enforcement points over JSON",
+  "endpoints.route./admin-api/xacml/pep-clusters.name": "The remote PEP clusters over JSON",
   "endpoints.route./admin-api/xacml/monitor.name": "What authorization is doing, over JSON",
   "endpoints.route./admin-api/xacml/:action.name": "Change a policy, the repository or a remote PEP",
   "endpoints.route./.well-known/ssf-configuration.name": "Transmitter configuration metadata",

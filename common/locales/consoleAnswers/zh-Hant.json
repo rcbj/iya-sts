@@ -111,5 +111,9 @@
   "person.certificate": "憑證是公開的，也在項目上：",
   "once.signingCertificate": "訊息簽章憑證",
   "signing.warn": "<strong>這是唯一一次可以下載這些檔案。</strong>本服務不保留私密金鑰——既不在持有者的條目中，也不在憑證登記冊中——此主控台和 <code>/admin-api</code> 上也沒有任何地方會再次提供它。如果遺失，請撤銷該憑證並簽發新的。",
-  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的金鑰簽署每個 WS-Trust 請求：對 SOAP Body 和 Timestamp 的 WS-Security 1.1 簽章，此憑證放在 BinarySecurityToken 中，<code>{chain}</code> 為其憑證鏈。請求隨後以 <code>{name}</code> 的身分驗證，因為此領域將憑證簽發給了該名稱，無需註冊其他任何內容。"
+  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的金鑰簽署每個 WS-Trust 請求：對 SOAP Body 和 Timestamp 的 WS-Security 1.1 簽章，此憑證放在 BinarySecurityToken 中，<code>{chain}</code> 為其憑證鏈。請求隨後以 <code>{name}</code> 的身分驗證，因為此領域將憑證簽發給了該名稱，無需註冊其他任何內容。",
+  "cluster.back": "返回叢集",
+  "cluster.discardedDownload": "下載被丟棄的內容",
+  "cluster.discardedLead": "該 PEP 不再擁有自己的反向代理、設定或接聽程式：它拉取叢集的組態。以下是它原有的內容，僅顯示一次。",
+  "cluster.discardedTitle": "一個 PEP 加入了叢集"
 }

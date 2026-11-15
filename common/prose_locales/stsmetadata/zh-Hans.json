@@ -1063,6 +1063,10 @@
     "en": "102e5302d8a29ce7",
     "text": "登记册，以及每个 PEP 最近报告的内容：它是否持有当前存储库、最后一次联系的时间、它声称所用的偏向，以及最近一次提醒的结果——这是唯一记录提醒失败的地方，因为按定义，接收端看不到失败的提醒。"
   },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "每个共享同一配置的远程 PEP 集群：每个成员拉取的反向代理、设置和侦听器定义，以及每个成员自己的地址和保存现在会拒绝它的原因。"
+  },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",
     "text": "GET /admin/xacml/monitor 所绘制的内容：全局决策数据，以及每个执行点（嵌入式和远程）一行。三个总数刻意分开——`here` 是本进程在发生时计数的，`remote` 是其他进程在心跳中报告的，当某个进程重启时会下降，`combined` 是二者的算术结果。在 `pdp` 行上，`allowed` 和 `refused` 为 null 而不是 0，因为本服务作出了该决策，却从未看到执行情况。旁边没有 POST：该页面没有控件，而重置是被拒绝的，并非被遗忘。"
