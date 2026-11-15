@@ -425,16 +425,23 @@ class GeolocationAdmin {
                  (c.people === 1 ? 'person' : 'people') + ', ' + c.signIns +
                  ' sign-in(s)' };
     });
+    // THE MAP AS DATA (#444 phase 2b, 2026-11-14): everything `render()` is
+    // handed but `linkFor`, which the browser works out the same way from
+    // the outlines it fetches (`web_geolocation.ts`). The console draws the
+    // map from this with `web_geo_map.ts`, the code `picture` is drawn
+    // with here.
+    const map = {
+      level: v.level, continent: (v.continent && v.continent.continent) || '',
+      iso: (v.country && v.country.iso) || '', areas: areas,
+      labels: labels, cities: cities,
+      title: 'Where people signed in from: ' + (v.country
+        ? v.country.name : (v.continent ? v.continent.name : 'the world')) +
+        ', ' + WINDOW_LABELS[v.window].toLowerCase() };
     log.debug("Leaving GeolocationAdmin.drawing().");
     return {
-      picture: geo.render({
-        level: v.level, continent: v.continent && v.continent.continent,
-        iso: v.country && v.country.iso, areas: areas, linkFor: linkFor,
-        labels: labels, cities: cities,
-        title: 'Where people signed in from: ' + (v.country
-          ? v.country.name : (v.continent ? v.continent.name : 'the world')) +
-          ', ' + WINDOW_LABELS[v.window].toLowerCase() }),
-      legend: geo.legendOf(max)
+      picture: geo.render(Object.assign({}, map, { linkFor: linkFor })),
+      legend: geo.legendOf(max),
+      map: map
     };
   }
 

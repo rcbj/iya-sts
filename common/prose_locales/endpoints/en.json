@@ -132,6 +132,7 @@
   "endpoints.route./admin/signals/receive.name": "The console's Shared Signals receive endpoint",
   "endpoints.route./admin/console.js.name": "The console's script",
   "endpoints.route./admin/console.css.name": "The console's stylesheet",
+  "endpoints.route./admin/geo-outlines.json.name": "The country outlines of the console's map",
   "endpoints.route./portal.name": "A person's own account",
   "endpoints.route./portal/*.name": "Every portal page",
   "endpoints.route./portal/portal.js.name": "The portal's script",

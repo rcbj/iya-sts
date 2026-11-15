@@ -700,6 +700,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3da | `audit_export.ts` (#641): this process delivers its own audit ring to operator-configured destinations, at-least-once | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 3dc | `response_models.ts`, `response_model_kit.ts` (#1353): every answer of a published API held to a closed model, always | `common/CLAUDE.md` |
 | 3dd | `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` section 18 (#1360): one validation door, paranoid PKI mode | `common/CLAUDE.md`, `tls/CLAUDE.md` |
+| 3de | `crypto_impl/algorithm_registry.js`, `signature_policy.ts` (#1368): every signature algorithm once, and which a realm signs with and accepts, per surface | `common/CLAUDE.md`, `common/crypto_impl/CLAUDE.md` |
 | 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
@@ -871,7 +872,7 @@ own file:
 | Refused | Because | Argued in |
 |---|---|---|
 | federation's outbound HTTP-POST binding | a person LEAVING this service gets a real form and a real button | `federation/CLAUDE.md` |
-| the delegation and federation pictures | laid out on the server, arriving as ordinary markup | `admin-ui/CLAUDE.md` |
+| the delegation and federation pictures | ~~laid out on the server~~ — since #444's phase 2b (2026-11-14) laid out by the console's own bundle, a static surface, so no argument is owed | `admin-ui/CLAUDE.md` |
 | the console's collapsible prose | a `<details>` needs no script | `admin-ui/CLAUDE.md` |
 | the console's account menu | `<details>`/`<summary>`; the cost (it does not close on an outside click) is stated on the page | `admin-ui/CLAUDE.md` |
 | the certificate details dialog | a link and a server-drawn overlay, a round trip per open | `admin-ui/CLAUDE.md` |

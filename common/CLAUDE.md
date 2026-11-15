@@ -2275,8 +2275,9 @@ each mode guarantees, exactly:
   the workers converge** (0.5–1 s). A suite job that writes as one client and
   reads as another at once needs `global`.
 * **Kept as they were**: the reaper, the 2,000 ms ticket bound and the
-  5,000 ms barrier bound (a keyed waiter times out and reaps exactly as a
-  global one), client-gone handling, both pools, and `runOperation()` with
+  barrier bound (a keyed waiter times out and reaps exactly as a
+  global one — since 2026-11-14 that bound is `workers.readBarrierTimeoutMs`
+  and a reader past it is REFUSED, below), client-gone handling, both pools, and `runOperation()` with
   #626's narrowing, which still waits globally.
 * **Bounded without a timer**: at most 20,000 keys, least recently used
   first; each dispatch drops up to four of the oldest that hold no ticket and
@@ -2286,6 +2287,48 @@ each mode guarantees, exactly:
   read. A sync round now stamps the worker with the generation at the round's
   START (`startSyncRound()`), which the sharing rule already allowed, so a
   keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
+
+**A RUN-OUT BARRIER IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).**
+The barrier gave up at a hard-coded 5,000 ms and SERVED the request "from what
+that worker has", on the argument that reaching it meant the store was unwell.
+GitHub Actions run 43622250478 (single-node, a slower runner) disproved it: a
+worker spent 7–22 s applying a global logout's 8,000 minted rows, missed
+fifteen barriers (STS-WORKER-0027), and `sts_realm_administrators` got a 404
+for a realm created a moment before while `sts_scope_policy` got a SCIM 403
+for a scope just declared. The store was well; the worker was behind — the
+case this repository's rule names: dispatch without coordination answers
+WRONGLY rather than slowly. **A second path served stale silently**: the
+worker answers a round with `syncNow()`'s result, which gives up at 4.6 s
+with `caughtUp: false`, and the front read only `ok` — so it stamped the
+worker current, proxied the request, and sent every later reader at that
+generation there with no barrier at all. Now:
+
+* **A round counts only when the worker says it caught up**
+  (`roundCaughtUp()`: `ok`, and not `caughtUp: false` from a store that
+  coordinates); `request_worker.ts` sends `coordinating` beside `caughtUp`.
+* **A reader asks again**, a round at a time (still one round per worker
+  shared by every reader it covers; BARRIER_ROUND_MS, 5 s, bounds one reply
+  and decides no answer), for up to `workers.readBarrierTimeoutMs` (30 s by
+  default, read per request, 1,000 to 600,000; no 0, because "never wait" is
+  the stale answer). Each missed round is STS-WORKER-0027, sparingly.
+* **Then it is refused**: `proxyAfterBarrier()` answers 503 with
+  `Retry-After: 5` (STS-WORKER-0053) and drops the ticket, since no byte
+  reached a worker; `runOperation()` rejects with the same code, which LDAP,
+  the KDC and SPIFFE already answer as their protocol's unavailable reply.
+  A client that left while it waited is handed to `proxy()`, which drops it.
+* **The front's own kept requests** (`catchUpHere()`) call `syncNow()` until
+  it says it caught up and refuse past the same bound (STS-WORKER-0054).
+* **Not sent to another worker that is current**, which was weighed: a
+  request's worker is chosen by affinity and a pin is honoured because
+  worker-local state rides on it (`oidc_rp.ts`'s back channel), the ticket
+  wait exempts a worker's own answered writes so another worker would owe a
+  stricter wait this request has not done, and the other workers are
+  applying the same burst.
+* `stats().barrier` has `refused`, `roundsMissed` and `timeoutMs`.
+  `tests/read_barrier_slow_apply.js` holds it: a real replication instance
+  whose `prepare` outlasts syncNow()'s deadline, behind the real `proxy()`
+  over a unix socket — the answer is the new value, not the old one — and a
+  worker that never answers refused 503 with nothing proxied.
 
 **WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
 `common/request_phases.js`.
@@ -9056,6 +9099,53 @@ hand-over still holds; what changed is the storage and the lifecycle.
   (`atCap()`), and again in `write()` (`STS-PKI-0223`); a label is held to the
   TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
   nothing under is `STS-PKI-0224`.
+
+## 3de. `signature_policy.ts`: which algorithm a realm signs with and accepts (#1368)
+
+**One question had three answers.** `crypto.js` refused a post-quantum JWS in
+`prepareVerification()` and nowhere else, `helpers.js` applied the lists in
+`signJwtAs()` and not `signJwt()`, and each publisher narrowed its own list. So
+every door now asks `SignaturePolicy`, and each surface has one chokepoint:
+
+| Surface | Accept | Sign |
+|---|---|---|
+| `jose` | `refuseUnacceptableJws()`, from `prepareVerification()` and `jwsSignatureValid()` | `signatureRefusal()`, from `signJwt()`, `signJwtAs()` and their twins |
+| `httpsig` | `httpsigVerifyOne()` | `signHttpMessage()` |
+| `cose` | `refuseUnacceptableCose()`, from `coseSign1Verify()` and its twin | `coseSpecToSign()` |
+| `xml` | `xmlAlgorithmVerdict()` | `signXml()`, `signQueryString()` |
+| `di` | `VcDataIntegrity.verifyBytes()`, and `verifyLdpVc()` for bbs-2023 | `VcDataIntegrity.signBytes()`, and the `ldp_vc` issuer for bbs-2023 |
+| `x509` | `pathRuleProblem()`, whose `unaccepted-signature` has a row in `certificate_trust.ts`'s tables | none: `pki.*` settings choose, and a running hierarchy depends on them |
+
+**Four things a reader would otherwise "fix":**
+
+* **`signJws()` IS NOT A CHOKEPOINT.** The DID, status-list and trust-list signers
+  sign with keys their own documents publish, and a refusal that low would move
+  what they do by default. A signer asks where it CHOOSES its algorithm.
+* **`verifyCoseSignature()` IS NOT ONE EITHER.** Passkeys and attestation statements
+  go through it and sign no Sig_structure, and WebAuthn keeps its own two lists.
+  `coseSign1Sign()` and `coseSign1Verify()` are the door, for mdoc and the CWTs.
+* **THE FAMILY SWITCHES STAY NARROW.** `keys.postQuantumSigning` covers JOSE and
+  JWS-named HTTP signatures, as its row says; widened to every surface, a realm with
+  it off would refuse its own post-quantum CA. `keys.eddsaSigning` is JOSE signing
+  only.
+* **AN EMPTY LIST MEANS TODAY, NOT THE REGISTRY'S ORDER.** Post-quantum signing is on
+  by default, so preference order as the default would move every signature to
+  ML-DSA and reorder discovery. `crypto_impl/CLAUDE.md` has the two orders.
+
+**What is published reads the same answers**, through `helpers.narrowSigningAlgs()`
+and `narrowAcceptedLists()`. With nothing configured they leave a document alone,
+which is what keeps certified output still. `tests/signature_policy_metadata.js`
+holds that against pins **taken from HTTP output captured before they existed**, so
+it cannot be satisfied by the new code agreeing with itself. A pin moving is a
+certification question.
+
+**SAML's `alg:SigningMethod` says what this realm can VERIFY**, not what it signs
+with: section 2.4 of the profile. It is the one deliberate change to a default,
+rcbj's decision.
+
+**A guard to know about**: `tests/jose_certificate_header.js` reads three lines
+above a signing call for its `certificate-header: none` comment, so code put between
+the two fails it. That happened twice on #1368. Put it above the comment.
 
 ## 3dd. `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` SECTION 18: PARANOID PKI MODE (#1360, 2026-11-06)
 

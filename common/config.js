@@ -5295,6 +5295,32 @@ const SETTINGS = [
                  '`true` means `session` and `false` means `off`. It must ' +
                  'not be off for a surface pool (workers.surfaceCount).' },
 
+  // ---------------------------------------------------------------------
+  // HOW LONG A READ BARRIER MAY HOLD A REQUEST BEFORE IT IS REFUSED
+  // (2026-11-14). It was a hard-coded 5,000 ms after which the request was
+  // SERVED from what a behind worker had — a wrong answer, which
+  // request_pool.js's A BARRIER THAT RUNS OUT IS A REFUSAL argues against.
+  // The default is past the 22 s the slowest apply took in the run that
+  // found it; there is no 0, because "never wait" is the stale answer.
+  // ---------------------------------------------------------------------
+  { key: 'workers.readBarrierTimeoutMs', group: 'Global',
+    label: 'Read barrier wait (ms)',
+    env: 'STS_WORKERS_READ_BARRIER_TIMEOUT_MS', type: 'int', dflt: 30000,
+    min: 1000, max: 600000, runtime: true, perProcess: true,
+    description: 'How long a request may wait, in all, for its request ' +
+                 'worker (or the front process, for a request it answers ' +
+                 'itself) to catch up with the writes answered before it, ' +
+                 'when workers.readYourWrite says it must. The worker is ' +
+                 'asked again every five seconds until it has caught up. ' +
+                 'Past this wait the request is refused with HTTP 503 and ' +
+                 'Retry-After (an LDAP, Kerberos or SPIFFE operation with ' +
+                 'its protocol\'s unavailable answer) rather than answered ' +
+                 'from a copy that may be stale. Raise it where a worker ' +
+                 'can take longer to apply a burst of writes (a global ' +
+                 'logout, a bulk load) on slow hardware; lower it where a ' +
+                 'quick refusal suits the callers better than a long wait. ' +
+                 'Read for each request.' },
+
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
     env: 'STS_WORKERS_SOCKET_DIR', type: 'string', dflt: '',
@@ -19148,7 +19174,8 @@ const SETTINGS = [
                  'import, the directory window) is refused. WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
                  'artifacts, Kerberos principals, the replay caches, the ' +
                  'counters and the audit log — is persisted in PRODUCT mode ' +
-                 'on postgres and in no other configuration; see ' +
+                 'on a database store (postgres or mariadb) and in no other ' +
+                 'configuration; see ' +
                  'persistence.minted. Development mode persists none of it, ' +
                  'because the signing key is regenerated on every start ' +
                  'there and a token that outlived it would verify against ' +
@@ -19637,7 +19664,8 @@ const SETTINGS = [
                  'the replay caches, the counters and the audit log — ' +
                  'survive a restart. ON, and it reaches nothing at all ' +
                  'unless BOTH global.mode is "product" AND persistence.mode ' +
-                 'is "postgres". Development mode ignores it, because the ' +
+                 'is a database store, "postgres" or "mariadb". Development ' +
+                 'mode ignores it, because the ' +
                  'signing key is regenerated on every start there and a ' +
                  'restored token would verify against nothing; the ldif ' +
                  'store ignores it too and says so at startup, because it ' +
@@ -19681,20 +19709,23 @@ const SETTINGS = [
                    'part-way through a run would leave a process applying ' +
                    'changes from a point it was never at',
     description: 'Whether this process applies changes other processes ' +
-                 'committed to the same store. ON, and it needs the postgres ' +
-                 'store: every change is written to a monotonic log INSIDE ' +
-                 'the transaction that made it, and each process reads what ' +
-                 'it has not yet applied. A LISTEN/NOTIFY nudge wakes that ' +
-                 'read early, so a missed notification costs latency and ' +
+                 'committed to the same store. ON, and it needs a database ' +
+                 'store (postgres or MariaDB): every change is written to a ' +
+                 'monotonic log INSIDE the transaction that made it, and ' +
+                 'each process reads what it has not yet applied. On ' +
+                 'postgres a ' +
+                 'LISTEN/NOTIFY nudge wakes that read early (MariaDB sends ' +
+                 'none, and is polled), so a missed notification costs ' +
+                 'latency and ' +
                  'never a change — the same trade the remote XACML PEP makes ' +
                  'about its own pull. Turning it off is what this service ' +
                  'did before this existed: correct, and each process alone ' +
                  'with its own copy. IT SHARES STATE AND NOT SOCKETS — the ' +
                  'KDC, the LDAP listeners, the main port and SPIFFE\'s ' +
-                 'four are bound per process — and the replay caches ' +
-                 'CONVERGE rather than synchronise, so between a write in ' +
-                 'one process and its arrival in another there is a window ' +
-                 'in which a proof one refused is accepted by the other.' },
+                 'sockets are bound per process. A single-use value — an ' +
+                 'authorization code, a DPoP jti, a Kerberos authenticator — ' +
+                 'is spent once across every process, through one atomic ' +
+                 'claim in the store, with no window between them.' },
 
   { key: 'persistence.pollInterval', group: 'Persistence',
     label: 'Change poll interval (ms)',
@@ -19708,10 +19739,11 @@ const SETTINGS = [
                  'typical lag is a few milliseconds. Five seconds because ' +
                  'the nudge normally arrives first and a shorter interval ' +
                  'buys nothing but queries; 250ms is the floor. Where the ' +
-                 'store sends no nudge (persistence.sqlDialect portable) ' +
-                 'and this is not set, the interval is one second. It is ' +
-                 'also the size of the replay-cache window described under ' +
-                 'persistence.coordinate.' },
+                 'store sends no nudge (mariadb, or persistence.sqlDialect ' +
+                 'portable) and this is not set, the interval is one ' +
+                 'second. A single-use value is not affected by this lag: ' +
+                 'it is spent through an atomic claim in the store (see ' +
+                 'persistence.coordinate).' },
 
   // Added 2026-09-14 (#46 section 8): `sts_changes` was never trimmed.
   // `persistence/persistence_replication.js` argues the bound this is half of.
@@ -19744,9 +19776,10 @@ const SETTINGS = [
     restartReason: 'a node joins the cluster, and in active-passive mode ' +
                    'waits for the service lease, before anything is restored ' +
                    'from the store or any listener binds',
-    description: 'How several copies of this service against ONE postgres ' +
-                 'store behave. `off`: nothing is coordinated beyond the ' +
-                 'change log, which is correct for one container and gives ' +
+    description: 'How several copies of this service against ONE database ' +
+                 'store (postgres or MariaDB) behave. `off`: nothing is ' +
+                 'coordinated beyond the change log, which is correct for ' +
+                 'one container and gives ' +
                  'wrong answers silently for two. `active-passive`: every ' +
                  'node joins, ONE holds the service lease and serves, and the ' +
                  'others wait before restoring or binding anything — so a ' +
@@ -19757,7 +19790,7 @@ const SETTINGS = [
                  'key-encryption key and REFUSES TO START while any capability ' +
                  'it depends on is missing from this build (see ' +
                  'cluster.acceptMissingCapabilities). `auto`, the default, is ' +
-                 'active-passive in product mode on a postgres store and off ' +
+                 'active-passive in product mode on a database store and off ' +
                  'everywhere else. Every write a clustered node makes is ' +
                  'FENCED: it checks that the node is still a member, and in ' +
                  'active-passive mode that it still holds the service lease, ' +

@@ -667,7 +667,9 @@ function checkTheFrontProcessWaitsForAnsweredWrites(t) {
   const end = source.indexOf('THE ROUTING POLICY, IN ONE LINE', start);
   const branch = start >= 0 && end > start ? source.slice(start, end) : '';
   const waits = branch.indexOf('awaitCommitConfirmations(null)');
-  const syncs = branch.indexOf('persistence.syncNow()');
+  // Since 2026-11-14 the pull is catchUpHere(), which calls syncNow() until
+  // it says it caught up and refuses once the bound has passed.
+  const syncs = branch.indexOf('catchUpHere(persistence');
   t.check(branch.length > 0, 'the undispatched branch is found', '');
   t.check(waits >= 0 && syncs > waits,
           'it waits for answered writes (awaitCommitConfirmations) BEFORE ' +

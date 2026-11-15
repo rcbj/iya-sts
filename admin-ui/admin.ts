@@ -8733,6 +8733,24 @@ class AdminConsole {
       self.sendConsoleFile(req, res, self.stylesheet(), null, null);
       log.debug("Leaving the static console's stylesheet.");
     });
+    // THE COUNTRY OUTLINES GEOLOCATION'S MAP IS DRAWN OVER (#444 phase 2b,
+    // 2026-11-14): `natural_earth/countries.json` as it ships, which the
+    // console fetches once per load and projects in the browser
+    // (`web_geo_map.ts`), rather than in every answer of
+    // `/admin-api/geolocation`. Public, like the script: Natural Earth's
+    // public-domain outlines and nothing about a request. Precompressed by
+    // the image build, read once; registered above the shell, which answers
+    // every other `/admin/*` path with the document.
+    app.get('/admin/geo-outlines.json', function (req, res) {
+      log.debug("Entering the console's country outlines.");
+      if (geoOutlinesFile === null) {
+        geoOutlinesFile = ShellDocument.readFile(
+          require('path').join(__dirname, 'natural_earth'), 'countries.json',
+          '{"countries":[]}');
+      }
+      ShellDocument.sendFile(req, res, geoOutlinesFile, 'application/json');
+      log.debug("Leaving the console's country outlines.");
+    });
     // ONE HANDLER, ON TWO PATHS — `/admin` itself and everything under it —
     // registered apart so that the router lists each by its own name.
     const shell = function (req, res, next) {
@@ -9330,6 +9348,9 @@ let consoleScriptText: string | null = null;
 // request instead.
 let consoleScriptPacked: { br: Buffer | null, gzip: Buffer | null } | null =
   null;
+// The country outlines Geolocation's map is drawn over, and their
+// precompressed forms, read once (`/admin/geo-outlines.json`).
+let geoOutlinesFile: ReturnType<typeof ShellDocument.readFile> | null = null;
 
 const REALM_SWITCH_PATH = '/admin/realm-switch';
 
@@ -10612,14 +10633,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'this service did before.',
            '<strong>It shares STATE and not SOCKETS, and the difference is ' +
            'where the surprises are.</strong> The KDC, the two LDAP ' +
-           'listeners, the main port and SPIFFE\'s four are bound per ' +
-           'process and always will be. And the <strong>replay caches and ' +
-           'DPoP <code>jti</code> sets converge rather than ' +
-           'synchronise</strong>: between a write in one process and its ' +
-           'arrival in another there is a window the size of ' +
-           '<code>persistence.pollInterval</code> in which a proof one ' +
-           'process refused is accepted by another. Sticky sessions at the ' +
-           'load balancer close it; nothing here does.',
+           'listeners, the main port and SPIFFE\'s sockets are bound per ' +
+           'process and always will be. <strong>A single-use value is spent ' +
+           'once across every process</strong>: an authorization code, a ' +
+           'DPoP <code>jti</code>, a SAML artifact, a Kerberos ' +
+           'authenticator and the rest are each spent through one atomic ' +
+           'claim in the store, so a value one process accepted is refused ' +
+           'by every other at once, with no window between them. A value ' +
+           'the store cannot be asked about is refused.',
            '<strong>A restored person shows on ' +
            '<a href="/admin/users">Users</a> as a directory person, not as ' +
            'having authenticated.</strong> They exist — an entry, searchable ' +

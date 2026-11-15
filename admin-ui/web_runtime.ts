@@ -125,6 +125,8 @@ class ConsoleRuntime extends SpaClient {
   // `{ path: names }` of each GET operation's query (#1476).
   private declaredQueries: Json;
   private view: Json;
+  // The static files pages are drawn over, by path, once fetched (#444).
+  private assets: Json = {};
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
@@ -1757,8 +1759,51 @@ class ConsoleRuntime extends SpaClient {
         json[one.member] = one.answer.json;
       });
     }
+    if (page.assets) {
+      json = Object.assign({}, json);
+      const members = Object.keys(page.assets);
+      for (let i = 0; i < members.length; i++) {
+        const held = await this.asset(page.assets[members[i]]);
+        if (held !== null) {
+          json[members[i]] = held;
+        }
+      }
+      if (identity !== this.identity) {
+        return;
+      }
+    }
     this.view = { page: page, json: json, query: query };
     this.drawView(null);
+  }
+
+  // A STATIC FILE A PAGE IS DRAWN OVER (#444 phase 2b), fetched once per
+  // load of the console and kept: Geolocation's country outlines are 1.3 MB
+  // the same for every realm, so they are not in any answer. Public, on
+  // this origin under the realm's prefix, with no token. A failure is not
+  // kept, so the next page asks again.
+  /**
+   * Fetches a static JSON file the console draws over, once.
+   *
+   * @param path - the console path, `/admin/geo-outlines.json`
+   * @returns the parsed file, or null when it could not be read
+   */
+  async asset(path: string): Promise<Json> {
+    if (Object.prototype.hasOwnProperty.call(this.assets, path)) {
+      return this.assets[path];
+    }
+    let held: Json = null;
+    try {
+      const res = await this.env.fetch(this.env.location.origin +
+        this.prefix + path);
+      held = res && res.ok ? await res.json() : null;
+    } catch (e) {
+      // The page says what it could not draw; nothing else is owed.
+      held = null;
+    }
+    if (held !== null) {
+      this.assets[path] = held;
+    }
+    return held;
   }
 
   // A TAB IS A FRAGMENT (`#tab-config`), and a panel is shown by CSS's
@@ -2810,6 +2855,26 @@ class ConsoleRuntime extends SpaClient {
    * @param disposition - its Content-Disposition
    * @returns nothing
    */
+  /**
+   * Saves text drawn here as a file, as `save()` saves a response.
+   *
+   * @param text - the file's content
+   * @param type - its media type
+   * @param name - the file name
+   * @returns nothing
+   */
+  saveText(text: string, type: string, name: string): void {
+    const blob = new Blob([text], { type: type });
+    const href = URL.createObjectURL(blob);
+    const a = this.env.document.createElement('a');
+    a.href = href;
+    a.download = name;
+    this.env.document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(href);
+  }
+
   async save(res: Json, disposition: string): Promise<void> {
     const name = (/filename="?([^";]+)"?/i.exec(disposition) || [])[1] ||
       'download';
@@ -2901,6 +2966,19 @@ class ConsoleRuntime extends SpaClient {
       ? url.pathname.slice(this.prefix.length) : null;
     const page = this.consolePath(url.pathname);
     const format = url.searchParams.get('format');
+    // A PICTURE'S DOCUMENT IS DRAWN HERE (#444 phase 2b), from the answer
+    // the page was drawn from, as the picture on the page is: the link's
+    // query is the page's own with `format=svg` added. A page that draws
+    // none, or a link to another page's, still asks the API.
+    const drawn = !apiPath && page && format === 'svg' && this.view &&
+      this.view.page.path === page
+      ? WebPages.documentOf(page, this.view.json) : null;
+    if (drawn !== null) {
+      event.preventDefault();
+      this.saveText(drawn, 'image/svg+xml', (el.getAttribute('download') ||
+        (this.view.page.operation.split('/').pop() || 'drawing') + '.svg'));
+      return;
+    }
     if (apiPath || (page && format)) {
       event.preventDefault();
       this.fetchAndSave(apiPath ? apiPath + url.search

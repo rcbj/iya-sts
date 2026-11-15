@@ -2371,6 +2371,14 @@
     "en": "232dadd8bb312926",
     "text": "请求工作线程在响应之前，是否必须赶上通过其他工作线程所做的写入。协调使工作线程在半秒到一秒内收敛，但这不是 read-your-write。`session`（默认）：在其地址中带有会话 Cookie、池 Cookie 或登录流程的请求，等待带有相同内容的先前请求的写入、不带有其中任何一项的请求的每一次写入，以及前端进程自己的写入；不带有其中任何一项的请求，例如来自客户端服务器的令牌请求、SCIM 或带 bearer 令牌的管理 API 调用，会等待在它之前已应答的每一次写入。因此浏览器会立即看到自己的写入和每个后端通道的写入，而另一个浏览器的写入只有在工作线程收敛后才能看到。`global`：每个请求都等待在它之前已应答的每一次写入，在负载下每个请求要多花几十毫秒。`off`：没有请求等待，调用方可能找不到自己的写入。`true` 表示 `session`，`false` 表示 `off`。对于界面池（workers.surfaceCount），不得将其关闭。"
   },
+  "workers.readBarrierTimeoutMs|label": {
+    "en": "3b71b70cca1bcc7d",
+    "text": "读屏障等待时间（毫秒）"
+  },
+  "workers.readBarrierTimeoutMs|description": {
+    "en": "5de72cbc57b2e8dc",
+    "text": "当 workers.readYourWrite 要求时，一个请求总共可以等待多长时间，让其请求 worker（或者前端进程，对于它自己应答的请求）追上在它之前已应答的写入。在追上之前，每五秒会再次询问该 worker。超过这一等待时间后，请求会以 HTTP 503 和 Retry-After 被拒绝（LDAP、Kerberos 或 SPIFFE 操作则以其协议的不可用应答拒绝），而不是用可能已经过时的副本来应答。在硬件较慢、worker 应用一批写入（一次全局注销、一次批量加载）可能需要更长时间的地方调高它；在快速拒绝比长时间等待更适合调用方的地方调低它。每个请求都会读取。"
+  },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
     "text": "请求工作线程套接字目录"
@@ -10516,8 +10524,8 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "9017af2918cf94be",
-    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
+    "en": "6c4f506d112de691",
+    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用数据库存储（postgres 或 mariadb）时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
@@ -10772,8 +10780,8 @@
     "text": "持久化会话、令牌和审计日志"
   },
   "persistence.minted|description": {
-    "en": "ce7aa21775e90c3f",
-    "text": "本服务铸造的内容——会话、访问令牌、ID 令牌和刷新令牌、授权码、预授权码、SAML 工件、Kerberos 主体和票据、重放缓存、计数器和审计日志——是否在重启后保留。默认打开，但除非 global.mode 为 \"product\" 且 persistence.mode 为 \"postgres\"，否则它不起任何作用。开发模式忽略此项，因为那里的签名密钥在每次启动时都会重新生成，恢复的令牌将无从验证；ldif 存储也会忽略此项并在启动时说明，因为它每次刷新都写入完整文件，而这些行在每个请求中都会变化。每一行都用保护签名密钥的同一个密钥加密密钥加密，因为会话 ID 就是 cookie 值，而授权码是可兑换的。"
+    "en": "744fef5983eca02e",
+    "text": "本服务铸造的内容——会话、访问令牌、ID 令牌和刷新令牌、授权码、预授权码、SAML 工件、Kerberos 主体和票据、重放缓存、计数器和审计日志——是否在重启后保留。默认打开，但除非 global.mode 为 \"product\" 且 persistence.mode 为数据库存储（\"postgres\" 或 \"mariadb\"），否则它不起任何作用。开发模式忽略此项，因为那里的签名密钥在每次启动时都会重新生成，恢复的令牌将无从验证；ldif 存储也会忽略此项并在启动时说明，因为它每次刷新都写入完整文件，而这些行在每个请求中都会变化。每一行都用保护签名密钥的同一个密钥加密密钥加密，因为会话 ID 就是 cookie 值，而授权码是可兑换的。"
   },
   "persistence.minted|restartReason": {
     "en": "a1ec511a16ef6535",
@@ -10792,8 +10800,8 @@
     "text": "与其他进程协调"
   },
   "persistence.coordinate|description": {
-    "en": "24f904c30ceb01ac",
-    "text": "本进程是否应用其他进程向同一存储提交的更改。默认打开，需要 postgres 存储：每项更改都在产生它的事务内部写入一个单调日志，每个进程读取它尚未应用的内容。LISTEN/NOTIFY 提醒会提前唤醒该读取，因此错过一条通知只会增加延迟，而绝不会丢失更改——这与远程 XACML PEP 对其自身拉取所做的权衡相同。关闭它就是本服务在此功能出现之前的行为：正确无误，每个进程独自持有自己的副本。它共享状态而不共享套接字——KDC、LDAP 监听器、主端口以及 SPIFFE 的四个监听器都按进程绑定——而重放缓存是收敛而非同步的，因此在一个进程中写入与其到达另一个进程之间存在一个窗口，在此窗口内，一个进程拒绝的证明可能被另一个进程接受。"
+    "en": "3dff083199972128",
+    "text": "此进程是否应用其他进程提交到同一存储的更改。开启时，它需要数据库存储（postgres 或 MariaDB）：每个更改都在做出它的事务之内写入一个单调递增的日志，每个进程读取自己尚未应用的内容。在 postgres 上，LISTEN/NOTIFY 提醒会提前唤醒这次读取（MariaDB 不发送提醒，而是被轮询），因此错过一次通知只会增加延迟，绝不会丢失更改——这与远程 XACML PEP 对其自身拉取所做的权衡相同。关闭它就是本服务在此功能出现之前的做法：正确，但每个进程各自持有自己的副本。它共享状态而不共享套接字——KDC、LDAP 监听器、主端口以及 SPIFFE 的套接字都按进程绑定。一次性值——授权码、DPoP jti、Kerberos 认证符——通过存储中的一次原子声明，在所有进程中只被使用一次，进程之间没有任何时间窗口。"
   },
   "persistence.coordinate|restartReason": {
     "en": "5d0ebf878ed54e42",
@@ -10804,8 +10812,8 @@
     "text": "变更轮询间隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0620a679e69c0d43",
-    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
+    "en": "60b8dc667d7ddb4d",
+    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（mariadb，或 persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。一次性值不受此延迟影响：它通过存储中的一次原子声明被使用（参见 persistence.coordinate）。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",
@@ -10820,8 +10828,8 @@
     "text": "集群模式"
   },
   "cluster.mode|description": {
-    "en": "69b7eb6339e66112",
-    "text": "本服务的多个副本在同一个 postgres 存储上的行为方式。`off`：除变更日志外不进行任何协调，这对一个容器是正确的，对两个容器则会悄悄给出错误的答复。`active-passive`：每个节点都加入，由一个节点持有服务租约并提供服务，其他节点在恢复或绑定任何内容之前等待——因此第二个容器是备用节点而不是第二个写入者，并会在正常停止后的一个心跳内、或崩溃后的 cluster.nodeTtlMs 内接管。`active-active`：每个节点都提供服务；它需要在运维人员的密钥加密密钥之下持久化的密钥，并且在本构建缺少其所依赖的任何功能时拒绝启动（请参阅 cluster.acceptMissingCapabilities）。默认值 `auto` 在产品模式下使用 postgres 存储时为 active-passive，在其他情况下均为 off。集群节点的每次写入都受到隔离保护：它会检查该节点仍是成员，在 active-passive 模式下还会检查它仍持有服务租约，丢失其中任一项的节点会退出。"
+    "en": "ce7fd84fc03cf8ca",
+    "text": "本服务的多个副本在同一个数据库存储（postgres 或 MariaDB）上的行为方式。`off`：除变更日志外不进行任何协调，这对一个容器是正确的，对两个容器则会悄悄给出错误的答复。`active-passive`：每个节点都加入，由一个节点持有服务租约并提供服务，其他节点在恢复或绑定任何内容之前等待——因此第二个容器是备用节点而不是第二个写入者，并会在正常停止后的一个心跳内、或崩溃后的 cluster.nodeTtlMs 内接管。`active-active`：每个节点都提供服务；它需要在运维人员的密钥加密密钥之下持久化的密钥，并且在本构建缺少其所依赖的任何功能时拒绝启动（请参阅 cluster.acceptMissingCapabilities）。默认值 `auto` 在产品模式下使用数据库存储时为 active-passive，在其他情况下均为 off。集群节点的每次写入都受到隔离保护：它会检查该节点仍是成员，在 active-passive 模式下还会检查它仍持有服务租约，丢失其中任一项的节点会退出。"
   },
   "cluster.mode|restartReason": {
     "en": "ec1b93d98727db81",

@@ -858,6 +858,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  | Each name in the answer the registry holds. |
@@ -1318,6 +1319,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  | Each name in the answer the registry holds. |
@@ -1527,7 +1529,7 @@ As `image/svg+xml`.
 
 **One delegation relationship: its acts, graph and drawing**
 
-One chain — (mechanism, initial identity, intermediary, target) — named by its `chain` key, as `GET /admin-api/delegation` lists them in `chains`. The answer is the chain, every act on it (not paged), the graph of those acts and, as for `/delegation/map`, `looks`, the drawing (`svg`, laid out on the server, with its links) and its size.
+One chain — (mechanism, initial identity, intermediary, target) — named by its `chain` key, as `GET /admin-api/delegation` lists them in `chains`. The answer is the chain, every act on it (not paged), the graph of those acts and, as for `/delegation/map`, `looks`, the drawing (`svg`, with its links) and its size.
 
 **A KEY NO ACT IS HELD UNDER IS NOT AN ERROR**: the store is capped and drops the oldest, so the answer is `found: false` with `maxRecords`.
 
@@ -1623,6 +1625,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  | Each name in the answer the registry holds. |
@@ -1966,6 +1969,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  | Each name in the answer the registry holds. |
@@ -2377,7 +2381,7 @@ As `image/svg+xml`.
 
 The same acts as `GET /admin-api/delegation`, with the time taken out and the parties shared: a party that is the intermediary of six chains is ONE node with six edges. Drawn from everything that MATCHED the filter, not from one page of it.
 
-`nodes` and `edges` are the graph. `looks` says what each node IS, by node id: its label, its shape, the identifier a protocol would present for it, and the console page it links to — which the directory and the application registry decide. `svg` is the drawing, laid out on the server, with its links in it; `drawing` is its size, and says so if the layout failed. `summary` carries the counts by mechanism, kind and outcome that the filter's choices show.
+`nodes` and `edges` are the graph. `looks` says what each node IS, by node id: its label, its shape, the identifier a protocol would present for it, and the console page it links to — which the directory and the application registry decide. `svg` is the drawing, with its links in it; `drawing` is its size, says so if the layout failed, and says whether this realm verifies what is presented (`verifiesCredentials`). The console lays the picture out in the browser from `nodes`, `edges`, `looks` and `drawing`, with the code that draws `svg` here. `summary` carries the counts by mechanism, kind and outcome that the filter's choices show.
 
 With `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.
 
@@ -2445,6 +2449,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `edges` | list |  |  |
 | `edges[].actor` | string |  |  |
@@ -2796,6 +2801,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `facts` | object |  |  |
 | `facts.apps` | map |  | Each name in the answer the registry holds. |
@@ -3061,7 +3067,7 @@ As `image/svg+xml`.
 
 **This realm's federation relationships, drawn**
 
-Every federation relationship of the trust realm, filtered by `role`, `protocol` and text, as a graph — the partners, this service and the applications behind each relationship — with the relationships and their sign-ins, the drawing (`svg`, laid out on the server, with its links), its size, the filter's vocabulary and the key.
+Every federation relationship of the trust realm, filtered by `role`, `protocol` and text, as a graph — the partners, this service and the applications behind each relationship — with the relationships and their sign-ins, where each box links (`looks`), the drawing (`svg`, with its links) and its size, the filter's vocabulary and the key. The console lays the picture out in the browser from `nodes`, `edges`, `relationships`, `looks` and `drawing.verifiesCredentials`, with the code that draws `svg` here.
 
 With `format=svg` the answer is the SVG document alone, with no links in it, as `image/svg+xml`.
 
@@ -3097,6 +3103,7 @@ As `application/json`:
 | `drawing` | object |  |  |
 | `drawing.failed` | string, or null |  |  |
 | `drawing.height` | number |  |  |
+| `drawing.verifiesCredentials` | boolean |  | Whether this realm verifies what is presented (its mode), which one sentence of a picture's tooltips turns on. The console lays the picture out in the browser from the answer's data and reads it there (#444). |
 | `drawing.width` | number |  |  |
 | `edges` | list |  |  |
 | `edges[].brokeredTo` | string |  |  |
@@ -3121,11 +3128,17 @@ As `application/json`:
 | `filter.role` | string |  |  |
 | `filtered` | boolean |  |  |
 | `label` | string |  |  |
+| `looks` | map |  | Where each box of the federation picture links, by node id: an application to the applications register, a partner to its first relationship, this service nowhere. |
+| `looks.{key}.href` | string |  | The console page the box links to. |
 | `mapKey` | string |  |  |
 | `nodes` | list |  |  |
+| `nodes[].application` | string |  | A foreign service provider's box: the application this service knows it as. |
 | `nodes[].id` | string |  |  |
 | `nodes[].kind` | string |  |  |
 | `nodes[].label` | string |  |  |
+| `nodes[].peer` | string |  | A partner's box: its own name for itself. |
+| `nodes[].realm` | string |  | This service's box: the trust realm's id. |
+| `nodes[].realmName` | string |  | This service's box: the trust realm's name. |
 | `nodes[].relationships` | list |  |  |
 | `nodes[].relationships[]` | string |  |  |
 | `protocols` | list |  |  |
