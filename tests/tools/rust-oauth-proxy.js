@@ -49,8 +49,10 @@ fs.rmSync(dir, { recursive: true, force: true });
 // authorization server too.
 // The device authorization endpoint and grant left with `oauth8`; the
 // person's answer on /portal/device is still Node's /account-api operation.
+// WS-Trust (`/sts`) is not the Rust runtime's either: a job that reaches
+// it for its own setup (sts_delegation_policy's OnBehalfOf) reaches Node.
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
-  '/account-api/device|' +
+  '/account-api/(device|ciba)|/sts|' +
   '/oauth2/(register|' +
   'fapi|challenge)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
