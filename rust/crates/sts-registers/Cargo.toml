@@ -25,6 +25,9 @@ url.workspace = true
 jsonschema.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+indexmap.workspace = true
+
 [build-dependencies]
 serde_json.workspace = true
 

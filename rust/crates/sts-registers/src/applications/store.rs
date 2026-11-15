@@ -331,6 +331,15 @@ impl ApplicationRegistry {
             &names,
             false,
         );
+        // `noteApplicationRemoved(stored, 'the application registry')`.
+        if let Some(id) = stored.first("appidentifier").filter(|i| !i.is_empty())
+        {
+            self.effects.application_removed(
+                id,
+                &stored.dn,
+                "the application registry",
+            );
+        }
         true
     }
 

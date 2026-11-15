@@ -58,6 +58,17 @@ pub struct Loaded {
     pub entry: Option<StoredApplication>,
 }
 
+/// One credential change written and not yet announced
+/// (`pendingCredentialWrites`' value).
+#[derive(Debug, Clone)]
+pub struct PendingCredentialWrite {
+    pub key: String,
+    pub identifier: String,
+    pub before: Value,
+    pub after: Value,
+    pub how: How,
+}
+
 /// `save(record, how)`'s `how`.
 #[derive(Debug, Clone, Default)]
 pub struct How {
@@ -385,9 +396,10 @@ impl ApplicationRegistry {
         written
     }
 
-    // `noteCredentialWrite(record, how)` with its flush: the credential
-    // change announced as soon as the write is made (Node queues it for
-    // the end of the turn; nothing between the two reads the snapshot).
+    // `noteCredentialWrite(record, how)`: the change held, by realm and
+    // identifier, for `flush_credential_writes()` — Node announces it at
+    // the end of the turn, so two writes of one entry in one turn are ONE
+    // change, from the first state to the last.
     fn note_credential_write(&self, record: &mut Record, how: &How) {
         let before = record
             .snapshot
@@ -396,15 +408,51 @@ impl ApplicationRegistry {
             .unwrap_or_else(|| snapshot_of(&Fields::new()));
         let after = snapshot_of(&record.fields);
         record.snapshot = Some(Snapshot(after.clone()));
-        if before == after {
+        let key =
+            format!("{}\n{}", sts_core::realm::current_id(), record.identifier);
+        let Ok(mut pending) = self.pending.lock() else {
             return;
+        };
+        let held = pending.iter().position(|p| p.key == key);
+        match held {
+            None if before == after => {}
+            None => pending.push(PendingCredentialWrite {
+                key,
+                identifier: record.identifier.clone(),
+                before,
+                after,
+                how: how.clone(),
+            }),
+            Some(at) => {
+                let one = &mut pending[at];
+                one.after = after;
+                if !how.actor.is_empty() {
+                    one.how.actor = how.actor.clone();
+                }
+            }
         }
-        self.announce_credential_changes(
-            &record.identifier,
-            &before,
-            &after,
-            how,
-        );
+    }
+
+    /// `flushCredentialWrites()`: every held credential change announced
+    /// (a CAEP credential-change or certificate-change each), in the order
+    /// first written. The runtime calls it when a request is answered, as
+    /// Node's microtask runs at the end of the turn; how many notices went.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn flush_credential_writes(&self) -> usize {
+        let due: Vec<PendingCredentialWrite> = match self.pending.lock() {
+            Ok(mut p) => std::mem::take(&mut *p),
+            Err(_) => return 0,
+        };
+        due.iter()
+            .map(|one| {
+                self.announce_credential_changes(
+                    &one.identifier,
+                    &one.before,
+                    &one.after,
+                    &one.how,
+                )
+            })
+            .sum()
     }
 
     // `secretIdsOf(stored)`: id to expiry.
@@ -470,7 +518,8 @@ impl ApplicationRegistry {
             if !ty.is_empty() {
                 let named = if added.is_empty() { &removed } else { &added };
                 changes.push(json!({
-                    "credentialType": "client_secret",
+                    "credentialType":
+                        "urn:iya:sts:credential-type:client-secret",
                     "changeType": ty,
                     "friendlyName":
                         format!("client secret {}", named.join(",")),
@@ -500,7 +549,7 @@ impl ApplicationRegistry {
                 || (s(a, "oauthJwks").is_empty()
                     && !s(b, "oauthJwksUri").is_empty());
             changes.push(json!({
-                "credentialType": "jwk",
+                "credentialType": "urn:iya:sts:credential-type:jwk",
                 "changeType": keys_type,
                 "friendlyName": if uri { "jwks_uri" } else { "jwks" },
                 "reasonAdmin": format!(
@@ -527,7 +576,11 @@ impl ApplicationRegistry {
             };
             changes.push(json!({
                 "pem": pem,
-                "credentialType": if pem.is_empty() { "jwk" } else { "x509" },
+                "credentialType": if pem.is_empty() {
+                    "urn:iya:sts:credential-type:jwk"
+                } else {
+                    "x509"
+                },
                 "changeType": pair_type,
                 "friendlyName": "RFC 7523 signing key pair",
                 "reasonAdmin": format!(

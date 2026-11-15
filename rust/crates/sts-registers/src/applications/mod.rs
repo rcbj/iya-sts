@@ -108,6 +108,11 @@ pub trait AppEffects: Send + Sync {
     fn credential_changed(&self, notice: &Value);
     /// `account_signals.certificateChanged(notice)`.
     fn certificate_changed(&self, notice: &Value);
+    /// `noteApplicationRemoved(stored, via)`: what the directory's removal
+    /// of an application entry sets off outside the register — its roles
+    /// deleted, its memberships and conferrals forgotten, the RISC
+    /// account-purged event (`ssf/account_signals.ts`).
+    fn application_removed(&self, identifier: &str, dn: &str, via: &str);
     /// `gnap_revocation.endForClientKeyChange()` / `endForClient()`:
     /// how many grants ended.
     fn end_gnap_grants(&self, identifier: &str, key_changed: bool, how: &Value)
@@ -156,6 +161,9 @@ pub struct ApplicationRegistry {
     env: Arc<dyn AppEnv>,
     effects: Arc<dyn AppEffects>,
     fga: RwLock<Option<Arc<dyn FgaLifecycle>>>,
+    /// `pendingCredentialWrites`: the credential changes written and not
+    /// yet announced, by realm and identifier, in the order first written.
+    pending: Mutex<Vec<write::PendingCredentialWrite>>,
 }
 
 impl std::fmt::Debug for ApplicationRegistry {
@@ -184,6 +192,7 @@ impl ApplicationRegistry {
             env,
             effects,
             fga: RwLock::new(None),
+            pending: Mutex::new(Vec::new()),
         }
     }
 
