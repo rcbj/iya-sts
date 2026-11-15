@@ -49,6 +49,7 @@ members = [
   "crates/sts-registers",
   "crates/sts-audit",
   "crates/sts-mail",
+  "crates/sts-authn",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -83,6 +84,7 @@ sts-directory = { path = "crates/sts-directory" }
 sts-registers = { path = "crates/sts-registers" }
 sts-audit = { path = "crates/sts-audit" }
 sts-mail = { path = "crates/sts-mail" }
+sts-authn = { path = "crates/sts-authn" }
 axum = "0.8"
 # /admin-api's request and answer checks against the served documents
 # (sts-mgmt-api, #1353). No resolver: every $ref is inside the document.
