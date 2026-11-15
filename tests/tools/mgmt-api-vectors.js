@@ -21,6 +21,8 @@
 // totals — is recorded too, as the answers the Rust test's ports give.
 // ---------------------------------------------------------------------------
 
+const childProcess = require('child_process');
+const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const bunyan = require('bunyan');
@@ -369,18 +371,64 @@ async function build(ROOT) {
   return out;
 }
 
+// THE CHECK RUNS IN A CHILD PROCESS OF ITS OWN (#444, phase 5), as the
+// builder does: it loads `common/protocol_stack` to build the response
+// models, and the in-process suite (`tests/rust_crypto_vectors.js`) has
+// loaded it already where another set's check ran first — a second load
+// installs every instance slot again and throws ("common/totp: an instance
+// is already installed").
+const CHILD_CHECK = [
+  'const fs = require("fs");',
+  'const mod = require(process.argv[1]);',
+  'const out = [];',
+  'mod.checkRustHere(process.argv[2],',
+  '  JSON.parse(fs.readFileSync(process.argv[3], "utf8")),',
+  '  JSON.parse(fs.readFileSync(process.argv[4], "utf8")),',
+  '  function (ok, what, detail) {',
+  '    out.push({ ok: !!ok, what: what, detail: detail });',
+  '  });',
+  'fs.writeFileSync(process.argv[5], JSON.stringify(out));'
+].join('\n');
+
+/**
+ * Holds what sts-mgmt-api answered to what Node answered, in a child
+ * process of its own (see `CHILD_CHECK`), and reports each check here.
+ *
+ * @param {string} ROOT - the repository root
+ * @param {string} rustFile - the path of mgmt-api-rust.json
+ * @param {string} nodeFile - the path of mgmt-api-node.json
+ * @param {Function} check - `(ok, what, detail)`
+ */
+function checkRust(ROOT, rustFile, nodeFile, check) {
+  log.debug("Entering checkRust().");
+  const answerFile = rustFile + '.answer.json';
+  childProcess.execFileSync(process.execPath,
+    ['-e', CHILD_CHECK, __filename, ROOT, rustFile, nodeFile, answerFile],
+    { env: Object.assign({}, process.env, { STS_LOG_LEVEL: 'fatal',
+                                            STS_KEYS_SOURCE: 'generated' }),
+      stdio: ['ignore', 'ignore', 'inherit'],
+      maxBuffer: 64 * 1024 * 1024 });
+  const answers = JSON.parse(fs.readFileSync(answerFile, 'utf8'));
+  fs.unlinkSync(answerFile);
+  answers.forEach(function (one) {
+    check(one.ok, one.what, one.detail);
+  });
+  log.debug("Leaving checkRust().");
+}
+
 /**
  * Holds what sts-mgmt-api answered (`mgmt-api-rust.json`) to what Node
  * answered, and each answer to Node's own response models (#1353), the
- * check `common/response_models.ts` makes before an answer leaves.
+ * check `common/response_models.ts` makes before an answer leaves. Run in
+ * the child `checkRust()` starts.
  *
  * @param {string} ROOT - the repository root
  * @param {any} rust - mgmt-api-rust.json
  * @param {any} node - mgmt-api-node.json
  * @param {Function} check - `(ok, what, detail)`
  */
-function checkRust(ROOT, rust, node, check) {
-  log.debug("Entering checkRust().");
+function checkRustHere(ROOT, rust, node, check) {
+  log.debug("Entering checkRustHere().");
   const req = function (rel) {
     return require(path.join(ROOT, rel));
   };
@@ -419,7 +467,8 @@ function checkRust(ROOT, rust, node, check) {
           'Node\'s response models accept sts-mgmt-api\'s answer to "' +
           mine.name + '"', problem ? problem.where : '');
   });
-  log.debug("Leaving checkRust().");
+  log.debug("Leaving checkRustHere().");
 }
 
-module.exports = { build: build, checkRust: checkRust };
+module.exports = { build: build, checkRust: checkRust,
+                   checkRustHere: checkRustHere };
