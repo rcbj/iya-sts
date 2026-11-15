@@ -1627,6 +1627,466 @@ const JOBS = [
   { file: 'sts_mode_weak_settings.js',   browser: false },
   // The configuration dump shows every parameter and no secret.
   { file: 'sts_config_dump.js', browser: false, local: true },
+  // ---------------------------------------------------------------------
+  // #444's D12, PHASE 5 (2026-11-15): OAuth 2.0 and OpenID Connect, the
+  // reports application and /report-api, and sessions, sign-in and
+  // credentials — what only the in-process tests held, carried over the
+  // wire so it stays covered when Rust replaces Node. Each header names the
+  // tests/*.js file(s) it carries; d12-list.md (beside the #444 briefs)
+  // records what moved to class (d) and why, and what is still owed. Every
+  // job works in throwaway realms of its own and removes them only when
+  // STS_TEST_REMOVE_REALMS=1 (tests/CLAUDE.md, NO JOB REMOVES A REALM). The
+  // one `exclusive` job saves the default realm's passkey profile and
+  // resets it. The jobs that run a listener the service dials read
+  // OUTBOUND_TEST_HOST.
+  // ---------------------------------------------------------------------
+  // D12 (#444), PHASE 5 (G01): extended sts_access_token_status.js (the
+  // list's members, Vary, STS-OAUTH-0819, one index per token, the RS
+  // discovery) and sts_oidc_core.js section q (client_response_attributes)
+  // — rows unchanged. New:
+  // D12 (#444): an application's own custom claims, attribute selections,
+  // the realm's custom attributes, permission-mapped and scope-gated claims,
+  // read out of real tokens (application_claims, application_claim_
+  // selections, custom_attribute_claims, permission_claims, scope_claims).
+  { file: 'sts_application_claims.js', browser: false, local: true },
+  // D12 (#444): the seeded API resource objects and the sts-api-client, and
+  // a resource refused as a client at every OAuth endpoint, STS-OAUTH-0985
+  // (api_resource_objects).
+  { file: 'sts_api_resource_objects.js', browser: false, local: true },
+  // D12 (#444): a public client asked every time and its answer counted
+  // once; a pending consent claimed only by its person in product, STS-
+  // AUTHN-0552 (consent_public_client_once, consent_claim_by_owner).
+  { file: 'sts_consent_rules.js', browser: false, local: true },
+  // D12 (#444): a deleted client confers nothing, a deleted owner owns
+  // nothing, a rename carries ownership, an application's own roles go with
+  // it — through /admin-api and the LDAP socket (deleted_references).
+  { file: 'sts_deleted_references.js', browser: false, local: true },
+  // D12 (#444): OpenID Connect for Identity Assurance as a relying party sees
+  // it — request rules, recording refusals, answers, stale values, the
+  // development/product split (identity_assurance).
+  { file: 'sts_identity_assurance.js', browser: false, local: true },
+  // D12 (#444): one issuer per realm in WS-Trust, WS-Federation, its
+  // metadata and SAML metadata, in both modes (issuer_names).
+  { file: 'sts_issuer_names.js', browser: false, local: true },
+  // D12 (#444): RFC 7521/7522/7523 grant rules over the wire — the
+  // encryption matrix at the token endpoint (20 JWEs built with node's
+  // crypto), 0029/0030, RSA1_5, the PBES2 ceiling and the realm's floor,
+  // claims never copied from an assertion; product's unknown subject
+  // (0510), a replayed client assertion (0012); a person's key pairs held
+  // to pki.personSigningKeyMax (PKI-0223/0224/0225). assertion_grant,
+  // assertion_grant_unknown_subject, used_assertions, rfc7523_person_issuer.
+  { file: 'sts_assertion_grant_rules.js', browser: false, local: true },
+  // D12 (#444): software statements at a realm's /oauth2/register and RFC
+  // 7592 (both modes, ADMIN-0915), oauthConfidential following the method
+  // (REG-0363, REG-0008), and every declared method named to a client that
+  // sent no credential (OAUTH-0019). software_statement, oauth_confidential,
+  // client_auth_declared_methods.
+  { file: 'sts_client_registration_rules.js', browser: false, local: true },
+  // D12 (#444): RFC 8693 in development and product — declared types
+  // (0628), product's verification (0555/0556/0557), the issuance policy's
+  // codes (0618/0619/0621/0790/0792-0795), the act naming what an exchange
+  // produced. token_exchange_product, token_exchange_declared_type,
+  // token_exchange_jti.
+  { file: 'sts_token_exchange_rules.js', browser: false, local: true },
+  // D12 (#444), phase 5 (G03): FAPI, RFC 8705 and the redirect, public-client
+  // and registered-target rules. The five FAPI jobs above (sts_fapi2.js,
+  // sts_fapi2_message_signing.js, sts_fapi_advanced.js, sts_fapi_baseline.js,
+  // sts_fapi_http_signatures.js) were EXTENDED in place and keep their rows;
+  // these four are new.
+  // D12 (#444): which addresses an OAuth redirect may be, in a development
+  // and a product realm — RFC 7591's allowlist (STS-REG-0070), the
+  // management API's writes (0071) around a legacy value put there over
+  // LDAP, the front-channel URI's origin (0171) (tests/redirect_uri_schemes.js).
+  { file: 'sts_redirect_uri_schemes.js', browser: false, local: true },
+  // D12 (#444): public clients in a product realm — PKCE, rotation,
+  // claims from the directory, client credentials refused, a confidential
+  // client unchanged, the method a create writes, an undeclared method
+  // (STS-OAUTH-0553) (tests/public_clients_product.js).
+  { file: 'sts_public_clients_product.js', browser: false, local: true },
+  // D12 (#444): an RFC 8707 resource, a GNAP right's locations and every
+  // audience name a registered target, in both modes (STS-OAUTH-0950, 0951,
+  // STS-GNAP-0903, 0904) (tests/registered_targets.js).
+  { file: 'sts_registered_targets.js', browser: false, local: true },
+  // D12 (#444): RFC 8705 both halves over real handshakes with the main port
+  // — the Credentials door and its refusals, the explicit mapping against a
+  // foreign CA openssl makes (posted as a client trust anchor, recorded first
+  // and removed at the end), section 3.4, UserInfo, introspection, refresh
+  // rebinding, registration, /admin-api bound tokens and #1050
+  // (tests/rfc8705_mtls.js).
+  { file: 'sts_rfc8705_mtls.js', browser: false, local: true },
+  // D12 (#444), PHASE 5, SIGNING AND JOSE (G04). Each works in throwaway
+  // realms of its own, chooses each realm's mode, and removes them only when
+  // STS_TEST_REMOVE_REALMS=1. None writes a process-wide setting.
+  // D12 (#444): a token's x5u/x5c/both/none per use case and per realm, the
+  // chain the x5u names verified leaf to Root, signed_metadata's cache, ES256
+  // and HS256 ID Tokens (tests/jose_certificate_header.js).
+  { file: 'sts_jose_certificate_header.js', browser: false, local: true },
+  // D12 (#444): keys.kidFormat — the RFC 9278 thumbprint URI as a token's
+  // kid, computed and verified here, the second JWKS entries, per realm
+  // (tests/jose_kid.js).
+  { file: 'sts_jose_kid.js', browser: false, local: true },
+  // D12 (#444): keys.postQuantumSigning off in one realm — JWKS, three
+  // metadata documents, a registration naming ML-DSA-44
+  // (tests/pq_signing_switch.js).
+  { file: 'sts_pq_signing_switch.js', browser: false, local: true },
+  // D12 (#444): keys.signingAlgorithms and keys.jwksCertificateUrl per
+  // realm, and ES256K in a product realm, at the JWKS, discovery, the crypto
+  // report and the token endpoint (tests/signing_algorithm_allowlist.js).
+  { file: 'sts_signing_algorithm_allowlist.js', browser: false, local: true },
+  // D12 (#444): the pre-phase-5 algorithm-list pins over the wire, SAML
+  // algorithm support, a post-quantum attester advertised
+  // (tests/signature_policy_metadata.js).
+  { file: 'sts_signature_policy_metadata.js', browser: false, local: true },
+  // D12 (#444): the refresh token as a JWE at the token, introspection and
+  // revocation endpoints, its refusals by code, per realm, an algorithm
+  // change (tests/refresh_token_encryption.js).
+  { file: 'sts_refresh_token_encryption.js', browser: false, local: true },
+  // D12 (#444): /admin-api/keys/history through a rotation and an emergency
+  // rotation — retired, dropped with the certificate kept, no private
+  // material (tests/signing_history.js).
+  { file: 'sts_signing_history.js', browser: false, local: true },
+  // D12 (#444): an RFC 7523 signer's chain at the token endpoint — forged,
+  // pinned, expired, mismatched, external, unreadable, another realm's, a
+  // rebuilt branch, and client authentication in product
+  // (tests/signer_chain_validation.js).
+  { file: 'sts_signer_chain_validation.js', browser: false, local: true },
+  // D12 (#444): RFC 9126 pushed authorization requests over the wire —
+  // discovery, the push and the flow, section 2.3's refusals, client
+  // authentication by mode, the request_uri's refusals, section 2.4, the
+  // require policy, pushed request objects, DPoP binding, the store's cap
+  // and the monitor's rows and counters (tests/par.js).
+  { file: 'sts_par.js', browser: false, local: true },
+  // D12 (#444): RFC 9101 / OIDC Core 6 request objects — by value, every
+  // algorithm, unsigned, typ, the require settings, request_uri fetched
+  // from this job's own listener, this job's own JWE, named servers, the
+  // round trip, registration and /admin-api/crypto
+  // (tests/rfc9101_request_objects.js). Needs OUTBOUND_TEST_HOST.
+  { file: 'sts_rfc9101_request_objects.js', browser: false, local: true },
+  // D12 (#444): a request object's jti accepted once — the passes, a held
+  // flow, by reference, at PAR, the switch and the used-assertion history
+  // (tests/rfc9101_request_object_jti.js). Needs OUTBOUND_TEST_HOST.
+  { file: 'sts_rfc9101_request_object_jti.js', browser: false,
+    local: true },
+  // D12 (#444): RFC 9701 JWT introspection responses verified and
+  // decrypted by the job's own code, section 5's intended-for rule, named
+  // servers, OAuth 2.1 and product (tests/rfc9701_introspection.js).
+  { file: 'sts_rfc9701_introspection.js', browser: false, local: true },
+  // D12 (#444): the five sender-constraint settings, one realm each, at
+  // the token endpoint, UserInfo and /admin-api
+  // (tests/sender_constraints.js).
+  { file: 'sts_sender_constraints.js', browser: false, local: true },
+  // D12 (#444): OpenID Connect dynamic registration — every registration
+  // rule by its code, RFC 7592, enforcement, a fetched jwks_uri from this
+  // job's own listener, the display URIs (tests/oidc_registration.js).
+  // Needs OUTBOUND_TEST_HOST.
+  { file: 'sts_oidc_registration.js', browser: false, local: true },
+  // D12 (#444): authorization_code_once.js — a code presented once whatever
+  // the outcome (STS-OAUTH-0789), its 30-second floor waited out, the replay
+  // revoking what the first redemption and its refresh bought, two at once,
+  // oauth2.codeReplayIdempotent's control (STS-OAUTH-0958).
+  { file: 'sts_authorization_code_once.js', browser: false, local: true },
+  // D12 (#444): oidc_code_attempts.js — a code-flow sign-in and a single
+  // sign-on on the applications' and the person's authentication attempts,
+  // one session.presented row per single sign-on, consent included.
+  { file: 'sts_oidc_code_attempts.js', browser: false, local: true },
+  // D12 (#444): opaque_access_token.js — a 43-character handle, a miss like
+  // any other, revocation, the setting cleared, a full store refused (pins a
+  // 500 recorded STS-OAUTH-0228, not STS-OAUTH-0979).
+  { file: 'sts_opaque_access_token.js', browser: false, local: true },
+  // D12 (#444): refresh_rotation_policy.js — rotation on its own switch
+  // (STS-OAUTH-0138), the client binding behind RFC 9700 mode (0140), the
+  // widened scope in every mode (0142), OAuth 2.1's unnamed and undeclared
+  // clients (0297, 0299), /oauth2/oauth21's section 4.3.1 row.
+  { file: 'sts_refresh_rotation_policy.js', browser: false, local: true },
+  // D12 (#444): rfc9068_access_tokens.js section 3 — the issued header and
+  // claims, roles of the client not a namesake, UserInfo and /admin-api
+  // refusing an ID Token (STS-OAUTH-0247), a foreign audience (0114), the
+  // token endpoint's audience refusals (0244, 0245, 0246).
+  { file: 'sts_rfc9068_access_tokens.js', browser: false, local: true },
+  // D12 (#444): asvs_product_limits.js, asvs_protocol_rules.js and
+  // asvs_all_or_nothing.js — what product mode limits, per realm, with each
+  // opt-out written on the realm; pins a trust realm's console roles unseen
+  // at SCIM and SSF.
+  { file: 'sts_asvs_product_rules.js', browser: false, local: true },
+  // D12 (#444): implicit_token_responses.js — the implicit grant beside
+  // id_token, the RFC 9700 waiver and the per-application token response
+  // types, dynamic registration's list, the administrator's write
+  // (STS-OAUTH-0133, 0163, 0998, 0999, 0127; STS-REG-0183, 0364, 0203).
+  { file: 'sts_implicit_token_responses.js', browser: false, local: true },
+  // D12 (#444): RFC 7009 revocation in BOTH modes in one run — the
+  // development half, the realm switched to product, STS-OAUTH-0612 naming
+  // both clients, a rotating chain, a named server narrowing the methods
+  // (tests/rfc7009_revocation.js).
+  { file: 'sts_rfc7009_revocation.js', browser: false, local: true },
+  // D12 (#444): which scopes a client may be issued and that the issuance
+  // policy decides it — protected scopes in both modes, product's default
+  // set, a refresh narrowed, delegated permissions, an operator's
+  // role-issuance document without a rule, RFC 9396 types, an exchange's
+  // scope (tests/scope_policy.js, tests/scope_rules_policy.js).
+  { file: 'sts_scope_rules_policy.js', browser: false, local: true },
+  // D12 (#444): /admin-api/grants, claim-providers, commands and deliveries
+  // paged, each list on its own parameter, clamped, searched, walked
+  // (tests/oauth_lists_paging.js).
+  { file: 'sts_oauth_lists_paging.js', browser: false, local: true },
+  // D12 (#444): the 2026-09-12 hard-coded-value sweep's endpoint half — the
+  // password grant by mode, the DPoP nonce per realm, registration, the
+  // Transaction Code, the demonstration's routes gone, OpenID4VCI tokens in
+  // product (STS-VC-0086), did:web per realm, a grant assertion with no iat
+  // (tests/oauth_oid4vc_hardcoded.js).
+  { file: 'sts_oauth_oid4vc_hardcoded.js', browser: false, local: true },
+  // D12 (#444): RFC 9470 without the test peer — max_age, the return
+  // marker, STS-OAUTH-0500/0502/0503/0504, UserInfo as the resource server,
+  // a TOTP step-up, the write doors, the monitor's eight counters exactly
+  // (tests/rfc9470_step_up.js).
+  { file: 'sts_rfc9470_step_up.js', browser: false, local: true },
+  // D12 (#444): RFC 9396 rich authorization requests, every feature a
+  // client sees, the parser's codes 0450-0460, 0153 and 0937 off the audit
+  // log (tests/rfc9396_authorization_details.js).
+  { file: 'sts_rfc9396_authorization_details.js', browser: false,
+    local: true },
+  // D12 (#444): the OAuth 2.0 / OIDC conversation of
+  // tests/oauth_model_wire.js in four realms, every one of its 464
+  // non-browser steps held to tests/oauth_model_wire.snapshot.json after
+  // the realm, the origin and what only TLS changes are put back. The
+  // snapshot must move beside the job when the in-process file goes
+  // (OAUTH_WIRE_SNAPSHOT).
+  { file: 'sts_oauth_model_wire.js', browser: false, local: true },
+  // D12 (#444): RFC 9728 imports through load-resource-metadata — members,
+  // extensions, signed_metadata, eleven refusals by code, section 3.1/3.3,
+  // product's internal-address refusals with nothing dialled, the plan,
+  // the fetch policy, the create-time checks (protected_resource_metadata).
+  // Runs a listener of its own on OUTBOUND_TEST_HOST.
+  { file: 'sts_protected_resource_metadata.js', browser: false, local: true },
+  // D12 (#444): the sign-out as a static surface over /authn-api/logout —
+  // shell, index, view, CSRF binding, result, a WS-Federation fan-out's
+  // signed-out document, the JSON door, the recent-sign-in rule (logout_api).
+  // Waits a minute out for section 9.
+  { file: 'sts_logout_api.js', browser: false, local: true },
+  // D12 (#444): what the OpenID conformance suite asked, asked directly —
+  // EdDSA off by default, tenant/session_expiry, the profile scope, RFC 6749
+  // sections 6 and 4.1.2 in every mode, the request_uri fragment, a missing
+  // response_type, RFC 9700's one-sentence redirect refusal
+  // (oidcc_conformance_defaults, oidcc_conformance_findings).
+  { file: 'sts_oidcc_conformance_rules.js', browser: false, local: true },
+  // D12 (#444): Back-Channel Logout's registration rules and every
+  // delivery's fate against relying parties this job runs — retry, the two
+  // dead letters, wsignout1.0, forgetting one RP, the setting off, and
+  // section 2.7's refresh revocation (backchannel_logout,
+  // backchannel_logout_gaps).
+  { file: 'sts_backchannel_logout_deliveries.js', browser: false,
+    local: true },
+  // D12 (#444): RP-Initiated Logout against a live session — validate
+  // before ending, the confirmation and its sentences, the hint, the
+  // return and its warning box, the authorization endpoint's error page,
+  // the second sign-in's reason (rp_initiated_logout).
+  { file: 'sts_rp_initiated_logout_sessions.js', browser: false,
+    local: true },
+  // D12 (#444): the console's, portal's and reports' clients learn nothing
+  // from an invented Host, in either mode; DPoP proofs through the token
+  // endpoint's verifier (oidc_rp_addresses, oidc_rp_dpop).
+  { file: 'sts_oidc_rp_clients.js', browser: false, local: true },
+  // D12 (#444): OpenID Provider Commands against a relying party this job
+  // runs — the Command Token, roles and last_access as kept, aud_sub
+  // learned and sent back, a dead letter retried by hand, automatic
+  // commands, the acts, registration (provider_commands).
+  { file: 'sts_provider_commands_rules.js', browser: false, local: true },
+  // D12 (#444), PHASE 5, the reports application. Each job signs its
+  // people in as the public client sts-report (report_signin.js, or its
+  // own copy of that flow with the scope chosen) in a throwaway realm, and
+  // removes the realm only when STS_TEST_REMOVE_REALMS=1.
+  // D12 (#444): report_query.js — the query document's refusals and caps,
+  // the CSV/JSON/PDF formats, the catalog and OpenAPI document, the
+  // definitions/schedules/jobs lists; pins report.schedule never queuing.
+  { file: 'sts_report_query.js', browser: false, local: true },
+  // D12 (#444): report_access_policy.js — REPORT_USE/REPORT_ADMIN issuance
+  // to people, applications and the console roster, the access-control
+  // policy per row, permitReportSharing no, 0017/0018.
+  { file: 'sts_report_access_policy.js', browser: false, local: true },
+  // D12 (#444): report_parameter_names.js — a parameter name of 1 to 64
+  // characters in a saved bag, a run and a filter (0004, 0030).
+  { file: 'sts_report_parameter_names.js', browser: false, local: true },
+  // D12 (#444): report_passkey_ceremonies.js and report_post_login.js — the
+  // passkeyCeremonies and postLoginProgress sources over real rows.
+  { file: 'sts_report_sources.js', browser: false, local: true },
+  // D12 (#444), PHASE 5, SIGN-IN AND ACCOUNTS (fork G10). Each works in
+  // throwaway realms and removes them only when STS_TEST_REMOVE_REALMS=1.
+  // D12 (#444): the sign-in surface over /authn-api — the screen's shell,
+  // index, view and binding, its acts, the steps after it (code page, set-up,
+  // passkey ceremony, start over), the consent screen and who is asking, no
+  // bearer id in the audit log (authn_api, authn_mfa_api, authn_consent_api).
+  { file: 'sts_authn_api_surface.js', browser: false, local: true },
+  // D12 (#444): a disabled account at every door a client reaches, in a
+  // development and a product realm; SCIM's active; a SCIM DELETE's Logout
+  // Token at the test peer (account_disable, account_delete A6).
+  { file: 'sts_account_disable.js', browser: false, local: true,
+    testPeer: true },
+  // D12 (#444): /account-api's table, its gate's three codes and its body
+  // rules (account_api).
+  { file: 'sts_account_api.js', browser: false, local: true },
+  // D12 (#444): an application's allowed sign-in mechanisms and second
+  // factors as a named authentication policy, at the screen, OAuth and
+  // WS-Federation (authn_mechanism_enforcement, mfa_mechanism_enforcement).
+  { file: 'sts_authn_mechanism_enforcement.js', browser: false, local: true },
+  // D12 (#444): evidence to clear a second factor, context-specific words,
+  // authn.sessionsEndedBefore, the delay after a wrong password, and what a
+  // sign-out revokes by mode (asvs_identity_rules, asvs_session_limits).
+  { file: 'sts_asvs_identity_and_session.js', browser: false, local: true },
+  // D12 (#444): the wallet sign-in's shells and /authn-api/wallet — the
+  // index, the start view, the binding codes, the start and the poll, the
+  // enrolment's refusals (authn_api_wallet).
+  { file: 'sts_authn_api_wallet.js', browser: false, local: true },
+  // D12 (#444): the sign-in screen's certificate first factor over a real
+  // handshake on the main port, EST-enrolled, and its five refusals
+  // (authn_certificate_signin).
+  { file: 'sts_authn_certificate_signin.js', browser: false, local: true },
+  // D12 (#444): launch.js's target rules — a registered redirect URI passed
+  // on as target_link_uri, everything else refused 400 STS-LAUNCH-0007,
+  // the observed-only address included (sts_idp_initiated_launch.js holds
+  // the rest of the door).
+  { file: 'sts_launch.js', browser: false, local: true },
+  // D12 (#444): hosted_session_bounds.js — the console's, the portal's and
+  // reports' own session bound: the confirm door (STS-REG-0368/0369), a
+  // mixed save writing nothing, the audit row, and the portal's bound
+  // enforced at the authorization endpoint (30 s, waited out).
+  { file: 'sts_hosted_session_bounds.js', browser: false, local: true },
+  // D12 (#444): authn_policy.js and authn_policy_by_group.js — the profile's
+  // refusals (STS-AUTHN-0242/0243/0244), inheritance and reset, a group
+  // naming a policy (STS-LDAP-0195, STS-AUTHN-0541/0534) and precedence
+  // decided at the sign-in screen.
+  { file: 'sts_authn_policy.js', browser: false, local: true },
+  // D12 (#444): session_cap.js — authn.maxSessions and
+  // authn.maxSessionsPerSubject at the sign-in screen (STS-AUTHN-0337,
+  // STS-AUTHN-0292), every cap a realm setting.
+  { file: 'sts_session_cap.js', browser: false, local: true },
+  // D12 (#444): stable_subject.js and authn_session_refusals.js — entryUUID
+  // over LDAP (STS-LDAP-0076), sub = urn:uuid:<entryUUID> through a rename
+  // and a re-create, SCIM ids, no entry no token (STS-WSTRUST-0017), and a
+  // refused session answered with the screen (STS-AUTHN-0180).
+  { file: 'sts_stable_subject.js', browser: false, local: true },
+  // D12 (#444): session_reauthentication.js — prompt=login keeps the sid,
+  // rotates the <sid>.<handle> cookie, keeps refresh tokens in RFC 9700
+  // mode, tells CAEP nothing; another person replaces the session.
+  { file: 'sts_session_reauthentication.js', browser: false, local: true },
+  // D12 (#444): eap_acr_values.js section E — phr and phrh requested and
+  // earned by real passkeys (passkey_wire_kit.js), STS-AUTHN-0459 and
+  // STS-OAUTH-0970.
+  { file: 'sts_eap_acr_values.js', browser: false, local: true },
+  // D12 (#444): credential_removal_sessions.js — a removed passkey, app and
+  // recovery-code set end the sessions they signed in and no other.
+  { file: 'sts_credential_removal_sessions.js', browser: false, local: true },
+  // D12 (#444): Device Bound Session Credentials over the wire — the offer,
+  // registration, the bound cookie honoured and its absence not, refresh,
+  // a replayed or foreign proof ending the session, several accounts each
+  // bound on its own, Secure-Session-Skipped (STS-AUTHN-0460), include_site,
+  // deviceBoundRequired (STS-AUTHN-0461, 0462) (tests/device_bound_sessions.js).
+  { file: 'sts_device_bound_sessions.js', browser: false, local: true },
+  // D12 (#444): a remembered browser (#265) — the bearer device, the
+  // cookie, the skip off and on, the console still asking, another browser,
+  // a copied cookie compromising the device (tests/browser_devices.js).
+  { file: 'sts_browser_devices.js', browser: false, local: true },
+  // D12 (#444): several accounts signing out — the account step off
+  // (STS-LOGOUT-0013) and on, the default moved, a gone account
+  // (STS-LOGOUT-0012), every account, RP-Initiated Logout's choice, SAML
+  // SLO by SessionIndex, WS-Federation (tests/multi_account_logout.js).
+  { file: 'sts_multi_account_logout.js', browser: false, local: true },
+  // D12 (#444): several accounts when two tabs act at once — sign-ins,
+  // selections (STS-AUTHN-0348), sign-outs, a session revoked under a flow,
+  // an administrator ending one, the set on /admin-api/sessions
+  // (tests/multi_account_concurrency.js).
+  { file: 'sts_multi_account_concurrency.js', browser: false, local: true },
+  // D12 (#444): several signed-in accounts' rules sts_multi_account.js does
+  // not ask — the setting off unchanged (SAML, IsPassive's sentence, the OP
+  // iframe's script by SHA-256, the shells), ForceAuthn, a NameID naming
+  // nobody, a transient NameID, IsPassive's generic sentence and its
+  // account.ambiguous row, SAML 1.1, wfresh, Session Management's list run
+  // in a VM, re-authentication, tickets, a dead account (STS-AUTHN-0345),
+  // forget (0347), the full-set rule (0340), adoption and the wallet
+  // enrolment (STS-VC-0093) (multi_account_protocols, multi_account_sessions).
+  { file: 'sts_multi_account_rules.js', browser: false, local: true },
+  // D12 (#444): the portal's API — a realm's custom attributes in a product
+  // realm (STS-LDAP-0169/0206/0207/0208/0164, STS-PORTAL-0626..0629), the
+  // delegate search (STS-PORTAL-0620, the stsProvisionedBy stamp refused at
+  // every door, STS-LDAP-0076 over LDAPS), an empty self-issued list, and
+  // Resources I own (portal_custom_attributes, portal_delegate_search,
+  // portal_list_refusals, portal_owned).
+  { file: 'sts_portal_rules.js', browser: false, local: true },
+  // D12 (#444): what a passkey sign-in asks and refuses — discoverable
+  // credentials and the user handle, synced passkeys under
+  // backupEligibility, product's first-use refusal, one choice or one per
+  // passkey, a key carrying no role (passkey_discoverable,
+  // passkey_backup_eligible, passkey_first_use_product,
+  // passkey_aggregate_devices, passkey_no_role).
+  { file: 'sts_passkey_signin_rules.js', browser: false, local: true },
+  // D12 (#444): what the passkey policy's rows do to a ceremony — named
+  // profiles by group and application, the names a prompt shows, the
+  // clients offered no ML-DSA and the learned register (passkey_named_
+  // policies, passkey_names, passkey_client_rules).
+  { file: 'sts_passkey_policy_rules.js', browser: false, local: true },
+  // D12 (#444): what a passkey's attestation is held to — its algorithms
+  // recorded and enforced (ML-DSA chains made at run time), the rules at
+  // sign-in, a security key's serial (passkey_attestation_algorithm,
+  // passkey_attestation_signin, passkey_enterprise_serial). Needs Node 24
+  // (the service's native ML-DSA signing makes the chains).
+  { file: 'sts_passkey_attestation_rules.js', browser: false, local: true },
+  // D12 (#444): the passkey policy's profile — the built-in rows, whole
+  // saves and their refusals, what a security key is asked, the
+  // usernameless door, synced keys, a minimum security-key PIN length
+  // (CTAP 2.1 minPinLength) and a sign-in with no username required
+  // (passkey_policy, passkey_pin_length, passkey_require_usernameless).
+  { file: 'sts_passkey_policy_profile.js', browser: false, local: true },
+  // D12 (#444): appPasskeyPolicy and a group's stsPasskeyPolicy, their
+  // refusals, which profile a sign-in gets by client_id and by group
+  // precedence, the application read's card data, the delete refused while
+  // named (passkey_policy_on_application).
+  { file: 'sts_passkey_policy_references.js', browser: false, local: true },
+  // D12 (#444): a realm with no passkey profile follows the DEFAULT realm's
+  // (passkey_policy P3). Exclusive: it saves the default realm's profile,
+  // which every realm without one follows, and resets it in a finally.
+  { file: 'sts_passkey_policy_inheritance.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): the classical retry of an ML-DSA registration at the portal
+  // and at the sign-in step, list-and-refuse, a post-quantum passkey
+  // required for one application, both lanes
+  // (passkey_post_quantum_fallback, passkey_post_quantum_required).
+  { file: 'sts_passkey_post_quantum_rules.js', browser: false, local: true },
+  // D12 (#444): the passkey refusals as rules of a realm's own role-issuance
+  // document, written from the template and edited (passkey_xacml D).
+  { file: 'sts_passkey_xacml.js', browser: false, local: true },
+  // EXTENDED, no row change: sts_passkey_post_quantum_required.js (codes
+  // STS-AUTHN-0357 and 0228 off the audit log, opt-in realm removal) and
+  // sts_passkey_report.js (section g, a realm with real enrolments). Both
+  // stay `browser: false` and keep their current flags; sts_passkey_report
+  // now also needs STS_LDAP_PORT (plain 389) for its LDAP delete.
+  // D12 (#444): webauthn_addresses, webauthn_policy, webauthn_session,
+  // webauthn_ceremony_log and webauthn_enterprise_attestation over the wire
+  // — the origin and RP ID a ceremony is held to (product refusing a
+  // misfit), what the options offer, the primary/second-factor policy codes
+  // (0044/0045/0046/0531), a key as the only credential, the ceremony and
+  // algorithm-mismatch audit rows, enterprise attestation by RP ID (0500).
+  // Throwaway realms through passkey_wire_kit.js.
+  { file: 'sts_webauthn_rules.js', browser: false, local: true },
+  // D12 (#444): post_login, post_login_started and post_login_references —
+  // the post-quantum passkey migration at the sign-in (held, the upgrade
+  // replacing the classical key in place, alongside, a device that cannot,
+  // the classical fallback), the policy's codes, the group and application
+  // references (0195, 0203, 0543), and a started activity asking its groups
+  // with the policy off.
+  { file: 'sts_post_login_rules.js', browser: false, local: true },
+  // D12 (#444): second_factor_doors.js and totp_password_only_doors.js —
+  // the five password-only doors by code in two product realms (an entry's
+  // stsMfaRequired, an authenticator app, a passkey, the realm's policy),
+  // the TOTP person admitted in development, authn.passwordAloneDoors, and
+  // every app-password refusal off /admin-api/audit.
+  { file: 'sts_second_factor_codes.js', browser: false, local: true },
+  // D12 (#444): password_policy.js and password_named_policies.js — the
+  // default profile, its history and generator, the profile as an entry,
+  // the LDAP door, named profiles by group and application, precedence at
+  // the forced change, STS-AUTHN-0108/0540.
+  { file: 'sts_password_policy_rules.js', browser: false, local: true },
+  // D12 (#444): recovery_assurance.js — recoveryAssurance any / not-weaker
+  // / operator-only at the reset link, an administrator's set-password,
+  // the keytab door (STS-KRB-0128) and a recovery code (STS-AUTHN-0380).
+  { file: 'sts_recovery_assurance.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
@@ -1880,6 +2340,14 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // D12 (#444, phase 5): the plumbing of the six OAuth wire jobs above —
+  // throwaway realms, applications and a person through /admin-api, a
+  // cookie-keeping browser, the sign-in and consent screens through
+  // authn_signin.js, JWS and JWE signed and sealed here, DPoP proofs, a
+  // listener the service dials, codes off /admin-api/audit, the opt-in
+  // realm removal.
+  'oauth_wire_kit.js',
+  'passkey_wire_kit.js',
   // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
   // static surface over /authn-api since #571, through `authn_signin.js`;
   // it was a copy of the parent's (listed in HELPERS until then).
