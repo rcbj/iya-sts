@@ -275,6 +275,7 @@ impl Views {
             }
             "getAdminRoles" => self.rbac_list_json(asked, setup),
             "getNewUserForm" => self.new_user_json(asked),
+            "getIssued" => self.tokens_json(asked),
             "createRole"
             | "deleteRole"
             | "describeRole"
@@ -1270,6 +1271,207 @@ impl Views {
             "newUserContainer": users_dn,
             "registryKeeps": MAX_USERS,
             "users": shown,
+        })
+    }
+
+    /// `GET /admin-api/tokens` (`tokensView(query)`): every JWT the token
+    /// register holds in the realm (`issuedList()`, newest first), grouped
+    /// into the sets one response issued together (`groupIssued()`),
+    /// filtered by `family`, `kind`, `state` and `session` and paged.
+    ///
+    /// The register is held whole here, so the coverage is `held` and
+    /// complete. NOT YET: the artifact families (SAML assertions, Kerberos
+    /// tickets, SVIDs), whose register (`admin_stats.artifacts`) this
+    /// runtime does not read — their counts are zero.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn tokens_json(&self, asked: &Asked<'_>) -> Json {
+        let tables = &sts_mgmt_api::tables::tables().issued;
+        let now_ms = chrono::Utc::now().timestamp_millis() as f64;
+        let mut rows: Vec<(f64, usize, Json)> = self
+            .register
+            .tokens
+            .records_in(&realm::current_id())
+            .into_iter()
+            .enumerate()
+            .map(|(i, mut r)| {
+                let state = self.token_state(&r, now_ms);
+                let exp = r.get("exp").and_then(Json::as_f64).unwrap_or(0.0);
+                let issued =
+                    r.get("issuedAt").and_then(Json::as_f64).unwrap_or(0.0);
+                r["family"] = json!("token");
+                r["state"] = json!(state);
+                r["expiresAtMs"] =
+                    json!(if exp > 0.0 { exp * 1000.0 } else { 0.0 });
+                r["identifier"] =
+                    json!(r.get("jti").and_then(Json::as_str).unwrap_or(""));
+                r["revocationReach"] = json!("protocol");
+                (issued, i, r)
+            })
+            .collect();
+        rows.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(b.1.cmp(&a.1))
+        });
+        let rows: Vec<Json> = rows
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, _, mut r))| {
+                r["order"] = json!(i);
+                r
+            })
+            .collect();
+        // `groupIssued(rows)`.
+        let mut sets: indexmap::IndexMap<String, (String, Vec<Json>)> =
+            indexmap::IndexMap::new();
+        for row in rows {
+            let set_id = row["setId"].as_str().unwrap_or("").to_string();
+            let key = if set_id.is_empty() {
+                let k = row["key"].as_str().filter(|k| !k.is_empty());
+                format!(
+                    "one:{}",
+                    k.unwrap_or(row["identifier"].as_str().unwrap_or(""))
+                )
+            } else {
+                format!("set:{set_id}")
+            };
+            sets.entry(key)
+                .or_insert_with(|| (set_id, Vec::new()))
+                .1
+                .push(row);
+        }
+        let text = |v: &Json| v.as_str().unwrap_or("").to_string();
+        let all: Vec<Json> = sets
+            .into_iter()
+            .map(|(key, (set_id, mut members))| {
+                members.sort_by_key(|m| m["order"].as_i64().unwrap_or(0));
+                let first = members[0].clone();
+                let mut states = Map::new();
+                let mut shared = String::new();
+                let mut mixed = false;
+                let (mut issued, mut early, mut late) =
+                    (0.0f64, 0.0f64, 0.0f64);
+                let (mut revocable, mut revoked) = (0, 0);
+                let mut kinds: Vec<Json> = Vec::new();
+                let mut families: Vec<Json> = Vec::new();
+                for m in &members {
+                    let st = text(&m["state"]);
+                    let n = states.get(&st).and_then(Json::as_i64).unwrap_or(0);
+                    states.insert(st.clone(), json!(n + 1));
+                    if shared.is_empty() {
+                        shared = st.clone();
+                    } else if shared != st {
+                        mixed = true;
+                    }
+                    let at = m["issuedAt"].as_f64().unwrap_or(0.0);
+                    if issued == 0.0 || at < issued {
+                        issued = at;
+                    }
+                    let exp = m["expiresAtMs"].as_f64().unwrap_or(0.0);
+                    if exp != 0.0 {
+                        if early == 0.0 || exp < early {
+                            early = exp;
+                        }
+                        if exp > late {
+                            late = exp;
+                        }
+                    }
+                    if m["revocable"] == json!(true) {
+                        revocable += 1;
+                    }
+                    if st == "revoked" {
+                        revoked += 1;
+                    }
+                    if !kinds.contains(&m["kind"]) {
+                        kinds.push(m["kind"].clone());
+                    }
+                    if !families.contains(&m["family"]) {
+                        families.push(m["family"].clone());
+                    }
+                }
+                json!({
+                    "setKey": key, "setId": set_id,
+                    "grouped": members.len() > 1, "size": members.len(),
+                    "kinds": kinds, "families": families,
+                    "family": first["family"],
+                    "state": if mixed { "mixed".to_string() } else { shared },
+                    "states": states, "issuedAt": issued,
+                    "expiresAtMs": early, "lastExpiresAtMs": late,
+                    "username": text(&first["username"]),
+                    "sub": text(&first["sub"]),
+                    "client_id": text(&first["client_id"]),
+                    "audience": text(&first["audience"]),
+                    "scope": text(&first["scope"]),
+                    "sessionId": text(&first["sessionId"]),
+                    "sessionAuthenticated":
+                        first["sessionAuthenticated"] != json!(false),
+                    "grant": text(&first["grant"]),
+                    "revocableCount": revocable, "revokedCount": revoked,
+                    "members": members,
+                })
+            })
+            .collect();
+        let wanted = |k: &str| text_of(asked.query, k);
+        let (family, kind, state, session) = (
+            wanted("family"),
+            wanted("kind"),
+            wanted("state"),
+            wanted("session"),
+        );
+        let has = |set: &Json, k: &str, v: &str| {
+            set["members"].as_array().is_some_and(|l| {
+                l.iter().any(|m| m[k].as_str().unwrap_or("") == v)
+            })
+        };
+        let filtered: Vec<Json> = all
+            .iter()
+            .filter(|s| family.is_empty() || has(s, "family", &family))
+            .filter(|s| kind.is_empty() || has(s, "kind", &kind))
+            .filter(|s| state.is_empty() || has(s, "state", &state))
+            .filter(|s| session.is_empty() || has(s, "sessionId", &session))
+            .cloned()
+            .collect();
+        let paging =
+            Paging::of(asked.query, filtered.len(), Options::default());
+        let shown = paging.slice(&filtered);
+        let count = |sets: &[Json]| -> i64 {
+            sets.iter().map(|s| s["size"].as_i64().unwrap_or(0)).sum()
+        };
+        let mut by_family = Map::new();
+        for f in tables["families"].as_array().cloned().unwrap_or_default() {
+            let name = text(&f["family"]);
+            let n = if name == "token" { count(&all) } else { 0 };
+            by_family.insert(name, json!(n));
+        }
+        let records: Vec<Json> = shown
+            .iter()
+            .flat_map(|s| s["members"].as_array().cloned().unwrap_or_default())
+            .collect();
+        let or_null =
+            |s: &str| if s.is_empty() { Json::Null } else { json!(s) };
+        let (_, revoked_count) =
+            self.register.tokens.held_in(&realm::current_id());
+        json!({
+            "held": count(&all), "heldSets": all.len(),
+            "coverage": { "source": "held", "complete": true,
+                          "newest": Json::Null,
+                          "session": or_null(&session),
+                          "unread": false, "countEstimated": false },
+            "matched": filtered.len(), "matchedCredentials": count(&filtered),
+            "shown": shown.len(), "shownCredentials": count(&shown),
+            "heldByFamily": by_family,
+            "filter": { "family": or_null(&family), "kind": or_null(&kind),
+                        "state": or_null(&state),
+                        "session": or_null(&session) },
+            "page": paging.page, "pages": paging.pages,
+            "perPage": paging.per_page, "firstRow": paging.first_row,
+            "lastRow": paging.last_row,
+            "families": tables["families"],
+            "revocableKinds": tables["revocableKinds"],
+            "revokedCount": revoked_count,
+            "sets": shown,
+            "issued": records,
+            "paging": paging.to_json(),
         })
     }
 

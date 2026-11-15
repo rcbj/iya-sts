@@ -414,7 +414,15 @@ function tables() {
     inetOrgPersonClasses: require(path.join(ROOT, 'common',
                                             'inetorgperson')).CLASSES,
     familyViews: familyViewTables(),
-    newUserForm: newUserFormTables()
+    newUserForm: newUserFormTables(),
+    // `GET /admin-api/tokens`' constant members (the `apis5` slice): the
+    // issued families and the kinds the console offers to revoke.
+    issued: {
+      families: require(path.join(ROOT, 'common',
+                                  'admin_stats')).ISSUED_FAMILIES,
+      revocableKinds: require(path.join(ROOT, 'common',
+                                        'admin_stats')).REVOCABLE_KINDS
+    }
   };
   log.debug("Leaving tables(). " + rows.length + " row(s).");
   return out;

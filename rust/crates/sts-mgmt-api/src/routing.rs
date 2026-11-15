@@ -105,6 +105,7 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::GrantAdminRole
         | Operation::GetAdminRoles
         | Operation::GetNewUserForm
+        | Operation::GetIssued
         | Operation::RevokePermission
         | Operation::GrantPermission
         | Operation::RemovePermission

@@ -157,7 +157,6 @@ macro_rules! not_yet_ported {
         | Operation::ClearSecurityKey
         | Operation::ClearEmailFactor
         | Operation::GetCredentialLineage
-        | Operation::GetIssued
         | Operation::GetIssuedSet
         | Operation::RevokeToken
         | Operation::RestoreToken

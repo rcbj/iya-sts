@@ -22488,5 +22488,55 @@
    "minLength": "at least {{n}} characters",
    "history": "not your current password or any of the {{n}} before it"
   }
+ },
+ "issued": {
+  "families": [
+   {
+    "family": "token",
+    "label": "JWTs",
+    "kinds": [
+     "id_token",
+     "access_token",
+     "refresh_token",
+     "userinfo_response",
+     "request_object",
+     "gnap_access_token"
+    ],
+    "what": "every JWT this service signs: access tokens, ID Tokens, refresh tokens, the signed UserInfo response and the OID4VP Request Object"
+   },
+   {
+    "family": "assertion",
+    "label": "SAML assertions",
+    "kinds": [
+     "SAML 2.0",
+     "SAML 1.1"
+    ],
+    "what": "issued through WS-Trust (SAML 2.0 and SAML 1.1 token types) and through WS-Federation sign-in"
+   },
+   {
+    "family": "ticket",
+    "label": "Kerberos tickets",
+    "kinds": [
+     "Kerberos TGT",
+     "Kerberos service ticket"
+    ],
+    "what": "issued by the KDC over raw TCP and UDP 88 and over MS-KKDCP, and used by the Kerberos-protected service and by SPNEGO"
+   },
+   {
+    "family": "svid",
+    "label": "SPIFFE SVIDs",
+    "kinds": [
+     "SVID (X.509)",
+     "SVID (JWT)"
+    ],
+    "what": "issued over the SPIFFE Workload API and by the SPIRE Server API's SVID service. NONE OF THEM IS REVOCABLE from /admin/tokens, unlike every kind above it: SPIFFE has no revocation — the answer is a short lifetime and rotation — so a button there would be a lie of exactly the kind this console avoids"
+   }
+  ],
+  "revocableKinds": [
+   "access_token",
+   "id_token",
+   "refresh_token",
+   "gnap_access_token"
+  ]
  }
 }
