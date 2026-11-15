@@ -5596,6 +5596,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./credentials-vectors.js').build(ROOT);
                    } },
+                 // The authorization server's core (#444, phase 5):
+                 // tests/tools/oauth-vectors.js.
+                 { file: 'oauth-node.json',
+                   build: function () {
+                     return require('./oauth-vectors.js').build(ROOT);
+                   } },
                  // The session core (#444, phase 5, sts-authn):
                  // tests/tools/session-vectors.js.
                  { file: 'session-node.json',

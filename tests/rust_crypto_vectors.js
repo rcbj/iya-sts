@@ -140,6 +140,14 @@ function runKerberos(t) {
     require('./tools/applications-vectors.js').checkRust(t,
       read('applications-rust.json'));
   }
+  // The authorization server's core (sts-oauth, #444 phase 5): a refresh
+  // token Rust sealed and an access token Rust signed, read by Node.
+  if (fs.existsSync(path.join(VECTORS, 'oauth-rust.json'))) {
+    require('./tools/oauth-vectors.js').checkRust(path.join(__dirname, '..'),
+      read('oauth-rust.json'), function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
     log.debug("Leaving runKerberos(). No Kerberos vectors.");
     return runSigned(t);

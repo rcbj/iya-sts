@@ -4,7 +4,7 @@
 [package]
 name = "sts-oauth"
 version = "0.1.0"
-description = "The authorization server and OpenID provider (oauth-oidc/). Today: RFC 9068's resource-server checks of a JWT access token."
+description = "The authorization server and OpenID provider (oauth-oidc/). The resource-server checks, DPoP, mTLS, revocation, and the authorization server's core: client authentication, the code flow, the token endpoint, access and refresh tokens, discovery and the JWKS."
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -18,6 +18,14 @@ serde_json.workspace = true
 tracing.workspace = true
 sts-crypto.workspace = true
 url.workspace = true
+sts-http.workspace = true
+sts-store.workspace = true
+sts-registers.workspace = true
+sts-authn.workspace = true
+axum.workspace = true
+chrono.workspace = true
+serde.workspace = true
+regex.workspace = true
 
 [dev-dependencies]
 # The tests make certificates of their own to fingerprint.

@@ -88,3 +88,11 @@ docker run --rm --label com.docker.compose.project=none \
    chown $(id -u):$(id -g) /out/mgmt/operations.rs \
      /out/mgmt/openapi.management.json /out/mgmt/openapi.console.json \
      /out/mgmt/openapi.every.json"
+# sts-oauth's copy of the OAuth model (#444, phase 5): the very file
+# oauth-oidc/oauth_model.ts reads, which the crate reads whole.
+mkdir -p rust/crates/sts-oauth/src/generated
+docker run --rm --label com.docker.compose.project=none \
+  -v "${PWD}/rust/crates/sts-oauth/src/generated:/out/oauth" \
+  "${TAG}" bash -c \
+  "cp models/generated/oauth.json /out/oauth/oauth.json && \
+   chown $(id -u):$(id -g) /out/oauth/oauth.json"
