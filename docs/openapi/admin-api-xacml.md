@@ -5216,7 +5216,7 @@ Scope: `admin:write`.
 
 **Map an application to one route of a remote PEP's reverse proxy**
 
-Binds a route of a registered remote PEP's reverse-proxy configuration to an application in this realm's registry (#1760, D10): the route's `application`, from which the pull reads what each mechanism needs. Saved through set-pep-proxy's checks, so an application that does not qualify for the route's mechanisms is refused by its code (STS-XACML-0217 to 0223) and a public route, which names none, by STS-XACML-0197. An unknown route is STS-XACML-0230 and a missing application STS-XACML-0256.
+Binds a route of a registered remote PEP's reverse-proxy configuration to an application in this realm's registry (#1760, D10): the route's `application`, from which the pull reads what each mechanism needs. Saved through set-pep-proxy's checks, so an application that does not qualify for the route's mechanisms is refused by its code (STS-XACML-0217 to 0223) and a public route, which names none, by STS-XACML-0197. An unknown route is STS-XACML-0230 and a missing application STS-XACML-0256. Kept for compatibility: the console no longer has a form for it, and edits a route's application on the route's own page (`/admin/xacml/pep/route?pep=<name>&route=<id>`) through set-pep-route.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 

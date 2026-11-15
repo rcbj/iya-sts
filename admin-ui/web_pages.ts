@@ -167,12 +167,16 @@ interface WebPage {
   // A DRILL-DOWN AT A PATH OF ITS OWN WHOSE LIST IS A TAB OF ANOTHER PAGE
   // (#1760): `/admin/xacml/pep?pep=` is one row of `/admin/xacml`'s Remote
   // PEPs tab, so its trail's section crumb, and the nav it marks, are that
-  // page's, and the crumb lands on the tab.
+  // page's. `fragment`, when given, lands the section crumb on a tab; the
+  // XACML pages name their tab as a crumb of its own instead (`upVia`).
   upTo?: { path: string; fragment?: string };
-  // AND THE CRUMBS BETWEEN THAT SECTION AND THE LEAF (#1760): a remote PEP
-  // route's page is XACML › the PEP › the route, the PEP a link to its
-  // Reverse proxy tab. Each is `{ label, href }` (`WebShell.trailBar()`).
-  upVia?: (query: Json) => Array<{ label: string; href: string }>;
+  // AND THE CRUMBS BETWEEN THAT SECTION AND THE LEAF (#1760): EVERY
+  // DRILL-DOWN'S TRAIL NAMES THE TAB IT WAS OPENED FROM (rcbj, 2026-11-14).
+  // A remote PEP's page is XACML › Remote PEPs › the PEP, and a route's
+  // XACML › Remote PEPs › the PEP › Reverse proxy › the route: each tab a
+  // link to that tab, the PEP a link to its page. Each is `{ label, href }`
+  // (`WebShell.trailBar()`), labelled in the reader's language by `t`.
+  upVia?: (query: Json, t: Json) => Array<{ label: string; href: string }>;
   render: (view: Json, ctx?: Json) => string;
   // A PICTURE'S `?format=svg` (#444 phase 2b): the drawing as a document on
   // its own, with no links, drawn from the page's answer in the browser as
@@ -1134,7 +1138,11 @@ const PAGES: WebPage[] = [
   // `application`.
   { path: '/admin/xacml/pep', title: 'Remote PEP',
     operation: '/admin-api/xacml/peps',
-    upTo: { path: '/admin/xacml', fragment: 'xacml-tab-peps' },
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      return [XacmlPage.pepsTabCrumb(t)];
+    },
     drill: {
       param: 'pep',
       sample: function (list: Json): string | null {
@@ -1153,10 +1161,15 @@ const PAGES: WebPage[] = [
   // and `route`. Without `route` it lists every PEP's routes as links.
   { path: '/admin/xacml/pep/route', title: 'Remote PEP route',
     operation: '/admin-api/xacml/peps',
-    upTo: { path: '/admin/xacml', fragment: 'xacml-tab-peps' },
-    upVia: function (query: Json): Array<{ label: string; href: string }> {
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
       const pep = String((query && query.pep) || '');
-      return pep ? [{ label: pep, href: XacmlPage.proxyTabHref(pep) }] : [];
+      return [XacmlPage.pepsTabCrumb(t)].concat(pep
+        ? [{ label: pep, href: XacmlPage.pepHref(pep) },
+           { label: t.text('consoleXacml.pepPage.tab.proxy'),
+             href: XacmlPage.proxyTabHref(pep) }]
+        : []);
     },
     drill: {
       param: 'route',

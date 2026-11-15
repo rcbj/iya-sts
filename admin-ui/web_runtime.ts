@@ -1844,9 +1844,10 @@ class ConsoleRuntime extends SpaClient {
           label: (this.shell.navLabels || {})[listPath] || page.title,
           leaf: String(query[page.drill.param]),
           filtered: Object.keys(kit.listViewOf(listPath, query)).length > 0,
-          // CRUMBS BETWEEN THE SECTION AND THE LEAF (#1760): a remote PEP
-          // route names its PEP, a link to that PEP's Reverse proxy tab.
-          via: page.upVia ? page.upVia(query) : undefined }
+          // CRUMBS BETWEEN THE SECTION AND THE LEAF (#1760): the tab the
+          // drill-down was opened from, and on a route's page its PEP and
+          // that PEP's Reverse proxy tab.
+          via: page.upVia ? page.upVia(query, this.t) : undefined }
       : null;
     // The title in the reader's language (#539 phase 5).
     const title = WebPages.titleOf(page, this.t);

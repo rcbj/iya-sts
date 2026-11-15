@@ -189,15 +189,27 @@ function checkOnce(t) {
   const removed = WebAnswers.landing('/admin/xacml/peps', 'remove-pep-route',
     { ok: true }, routeBack, { route: 'orders' });
   t.check(renamed === '/admin/xacml/pep/route?pep=pep-1&route=orders-api' &&
-          removed === '/admin/xacml/pep?pep=pep-1#xacml-pep-tab-proxy' &&
+          removed === '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes' &&
           WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
             { ok: false }, routeBack, { id: 'orders-api' }) === null &&
           WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
-            { ok: true }, '/admin/xacml/pep?pep=pep-1',
+            { ok: false }, '/admin/xacml/pep?pep=pep-1',
             { id: 'orders-api' }) === null,
           'C6b. a route page\'s save lands on the route as it is now called, ' +
-          'its removal on the PEP\'s Reverse proxy tab',
+          'its removal on the PEP\'s Configured Routes',
           JSON.stringify([renamed, removed]));
+  // A ROUTE CREATED on the PEP's Create a New Route tab lands on its own
+  // page, as a new application does; one removed from Configured Routes
+  // stays there (rcbj, 2026-11-14).
+  const added = WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
+    { ok: true }, '/admin/xacml/pep?pep=pep-1', { id: 'orders-api' });
+  const removedHere = WebAnswers.landing('/admin/xacml/peps',
+    'remove-pep-route', { ok: true }, '/admin/xacml/pep?pep=pep-1',
+    { route: 'orders' });
+  t.check(added === '/admin/xacml/pep/route?pep=pep-1&route=orders-api' &&
+          removedHere === '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes',
+          'C6c. a new route lands on its page, a route removed from the table ' +
+          'on Configured Routes', JSON.stringify([added, removedHere]));
   log.debug("Leaving checkOnce().");
 }
 

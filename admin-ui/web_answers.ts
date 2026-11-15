@@ -1070,8 +1070,10 @@ class WebAnswers {
   //
   // A REMOTE PEP ROUTE'S OWN PAGE (#1760) is the third: a save lands on the
   // route as it is now called, because a rename changes the id its address
-  // names, and a removal on the PEP's Reverse proxy tab, the route being
-  // gone. The fragment is kept, and the notice goes before it.
+  // names, and a removal on the PEP's Configured Routes, the route being
+  // gone. The fragment is kept, and the notice goes before it. A ROUTE
+  // CREATED on the PEP's Create a New Route tab lands on its own page, as a
+  // new application does (rcbj, 2026-11-14).
   // ---------------------------------------------------------------------------
   /**
    * The console path an act's answer is drawn on, where it is not `back`.
@@ -1109,7 +1111,20 @@ class WebAnswers {
       }
       if (action === 'remove-pep-route') {
         return '/admin/xacml/pep?' + new URLSearchParams({
-          pep: pep }).toString() + '#xacml-pep-tab-proxy';
+          pep: pep }).toString() + '#xacml-pep-proxy-routes';
+      }
+    }
+    if (page === '/admin/xacml/peps' && at.pathname === '/admin/xacml/pep') {
+      const pep = String(at.searchParams.get('pep') ||
+                         (fields && fields.name) || '');
+      if (action === 'set-pep-route' && fields && fields.id && !fields.from) {
+        return '/admin/xacml/pep/route?' + new URLSearchParams({
+          pep: pep, route: String(fields.id) }).toString();
+      }
+      // A route removed from the Configured Routes table stays there.
+      if (action === 'remove-pep-route') {
+        return '/admin/xacml/pep?' + new URLSearchParams({
+          pep: pep }).toString() + '#xacml-pep-proxy-routes';
       }
     }
     return null;

@@ -1102,29 +1102,57 @@ class WebKit {
   // page, a printout and a browser without `:has()` (which shows them all)
   // see everything. A panel with nothing in it gets no tab.
   // ---------------------------------------------------------------------------
+  // A DRILL-DOWN DRAWN INSIDE ITS PARENT'S TABS (rcbj, 2026-11-14): a page
+  // at a path of its own — a remote PEP route's — keeps the tabs of the
+  // page it was opened from. Every tab but its own is `href`, a link to
+  // that tab on the parent page, with no panel here, so its own is the one
+  // panel drawn and the `first`: shown and marked current with no fragment.
+  // Without `href`, nothing changes.
   /**
    * Draws panels as tabs: a bar of links, then each panel with something in
    * it, the first shown when no fragment picks one.
    *
    * @param cls - an extra class for the container
-   * @param panels - `{ id, label, html }` in tab order
+   * @param panels - `{ id, label, html }` in tab order; optionally `href`
+   *   (the tab is a link there, with no panel)
    * @returns the tabs as HTML
    */
   static tabbedPanels(cls, panels) {
-    const shown = panels.filter(function (one) {
-      return String(one.html || '').trim() !== '';
-    });
+    const shown = WebKit.panelsShown(panels);
     return '<div class="tabs ' + WebKit.esc(cls) + '">' +
       '<nav class="tabbar" aria-label="Sections of this page">' +
-      shown.map(function (one, n) {
-        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
-          WebKit.esc(one.id) + '">' + WebKit.esc(one.label) + '</a>';
+      shown.map(function (one) {
+        return WebKit.tabLink(one);
       }).join('') + '</nav>' +
-      shown.map(function (one, n) {
-        return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
+      shown.filter(WebKit.drawsPanel).map(function (one) {
+        return '<section class="tabpanel' + (one.first ? ' first' : '') +
           '" id="' + WebKit.esc(one.id) + '">' +
           WebKit.withDocLink(one) + '</section>';
       }).join('') + '</div>';
+  }
+
+  // The panels that get a tab, the first one drawn here marked `first`:
+  // the one shown with no fragment.
+  static panelsShown(panels) {
+    const shown = panels.filter(function (one) {
+      return !!one.href || String(one.html || '').trim() !== '';
+    });
+    const first = shown.filter(WebKit.drawsPanel)[0];
+    return shown.map(function (one) {
+      return Object.assign({}, one, { first: one === first });
+    });
+  }
+
+  // A panel drawn on this page, rather than a tab linking elsewhere.
+  static drawsPanel(one) {
+    return !one.href;
+  }
+
+  // One tab of a bar: to its panel's fragment, or where `href` says.
+  static tabLink(one) {
+    return '<a' + (one.first ? ' class="first"' : '') + ' href="' +
+      WebKit.esc(one.href ? String(one.href) : '#' + one.id) + '">' +
+      WebKit.esc(one.label) + '</a>';
   }
 
   // THE DOCUMENTATION LINK (#895) sits at the top of a leaf panel. A panel
@@ -2654,22 +2682,21 @@ class WebKit {
    * mechanism one level down.
    *
    * @param label - what the bar is, for a screen reader
-   * @param panels - `{ id, label, html }` in tab order
+   * @param panels - `{ id, label, html }` in tab order; `href` as
+   *   `tabbedPanels()` takes it
    * @returns the sub-tabs as HTML
    */
   static subTabbedPanels(label, panels) {
-    const shown = panels.filter(function (one) {
-      return String(one.html || '').trim() !== '';
-    });
+    const shown = WebKit.panelsShown(panels);
     return '<div class="subtabs"><nav class="tabbar subbar" aria-label="' +
       WebKit.esc(label) + '">' +
-      shown.map(function (one, n) {
-        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
-          WebKit.esc(one.id) + '">' + WebKit.esc(one.label) + '</a>';
+      shown.map(function (one) {
+        return WebKit.tabLink(one);
       }).join('') + '</nav>' +
-      shown.map(function (one, n) {
-        return '<div class="subpanel' + (n === 0 ? ' first' : '') + '" id="' +
-          WebKit.esc(one.id) + '">' + WebKit.withDocLink(one) + '</div>';
+      shown.filter(WebKit.drawsPanel).map(function (one) {
+        return '<div class="subpanel' + (one.first ? ' first' : '') +
+          '" id="' + WebKit.esc(one.id) + '">' + WebKit.withDocLink(one) +
+          '</div>';
       }).join('') + '</div>';
   }
 

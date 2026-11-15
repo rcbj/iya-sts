@@ -156,10 +156,20 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
 
    A drill-down view returns `up` — `upTo(section, leaf, listView)` — and
    `respond()` threads it to `page()`. **A static page row may add crumbs
-   between the section and the leaf** (`upVia(query)`, #1760): the remote
-   PEP route page is *XACML › the PEP › the route*, the PEP a link to its
-   Reverse proxy tab, through `trailBar()`'s `via`, as #1068's person pages
-   are; and `WebAnswers.landing()` sends that page's save to the route as it
+   between the section and the leaf** (`upVia(query, t)`, #1760), through
+   `trailBar()`'s `via`, as #1068's person pages are. **Every drill-down's
+   trail names the tab it was opened from** (rcbj, 2026-11-14): a remote
+   PEP's page is *XACML › Remote PEPs › the PEP* and a route's page *XACML ›
+   Remote PEPs › the PEP › Reverse proxy › the route*, each tab crumb a link
+   to that tab (by the tab's own label) and the PEP a link to its page, so
+   the section crumb is the page itself, with no fragment. **A drill-down
+   at a path of its own may be drawn inside its parent's tabs** (the remote
+   PEP route page, rcbj 2026-11-14): `kit.tabbedPanels()` and
+   `subTabbedPanels()` take a panel's `href` (a tab linking to that tab on
+   the parent page, no panel drawn; the one panel drawn is then the `first`,
+   shown and marked current with no fragment), so the route page draws the PEP page's
+   bar with Reverse proxy current and its sub-tabs with Configured Routes
+   current, the route inside; and `WebAnswers.landing()` sends that page's save to the route as it
    is now called (a rename moves its address) and its removal to the PEP's
    tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail

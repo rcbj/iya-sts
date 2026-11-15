@@ -1061,7 +1061,8 @@ every such request needs `REMOTE_PEPS` and is audited as
 
 Each row of **Protocols → XACML → Remote PEPs** opens the PEP's own page,
 `/admin/xacml/pep?pep=<name>` (`GET /admin-api/xacml/peps?pep=<name>`), with
-the trail leading back to the tab. Every act on a PEP under
+the trail *Admin console › XACML › Remote PEPs › the PEP*, its Remote PEPs
+crumb leading back to the tab. Every act on a PEP under
 `POST /admin-api/xacml/` takes the PEP as `pep`, the same name, or as `name`
 as it always has; both naming different PEPs is refused. Its tabs:
 
@@ -1071,7 +1072,7 @@ as it always has; both naming different PEPs is refused. Its tabs:
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
 | Listener | every listener it has — the four its environment binds, read-only, and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source; the forms that define, edit, remove and renew them; and the environment's HTTPS pair with Issue or Reissue (below) |
-| Reverse proxy | its routes as a table, each id a link to the route's own page (below) and each application linked; a form to add a route, one to edit each, one to map an application to a route, each route's identity mode, the whole configuration document and Clear (below) |
+| Reverse proxy | three sub-tabs: **Configured Routes**, whether the proxy is enabled, its upstream and public base URL, and its routes as a table, each id a link to the route's own page (below) and each application linked; **Create a New Route**, the form that adds one; and **Manifest**, the whole configuration document and Clear (below). Each route, its application included, is edited on its own page |
 | Signal streams | its CAEP/RISC stream health: the totals, then a table with one row per stream (below) |
 
 **Every field and column on these tabs has a tooltip**, as do the Remote PEPs
@@ -1145,23 +1146,33 @@ in the clear it is right only behind something that terminates TLS.
 
 ### Its routes, one at a time
 
-Beside the configuration document, the **Reverse proxy** tab has a form to
-add a route — its path, prefix or exact, its methods, public or the
+The **Create a New Route** sub-tab of the **Reverse proxy** tab
+(`#xacml-pep-proxy-new-route`) has a form to add a route — its path, prefix or exact, its methods, public or the
 mechanisms it accepts, its application (a chooser of the realm's
 applications), the XACML resource and action, whether credentials are
 forwarded, whether CAEP/RISC signals end its sessions, and where it goes in
-the list — and the same form, filled, to edit each route. **Map an
-application to a route** binds a route to an application of the registry.
-Every form saves the whole document through the same checks as the editor,
-so a route a form can save is a route the document could hold, and the
-reverse. The operations are `set-pep-route`, `remove-pep-route` and
-`set-pep-route-application`.
+the list. Once it is saved, the new route's own page opens, as a new
+application's does. To change a route, or the application it fronts, click
+its id in the **Configured Routes** table (`#xacml-pep-proxy-routes`): its
+own page holds the edit form (below). Every setting of the proxy itself
+(`enabled`, `upstream`, `publicBaseUrl`, `upstreamTimeoutMs`,
+`maxBodyBytes`) is a member of the document, changed on the **Manifest**
+sub-tab (`#xacml-pep-proxy-manifest`). Every form saves the
+whole document through the same checks as the editor, so a route a form can
+save is a route the document could hold, and the reverse. The operations are
+`set-pep-route` and `remove-pep-route`. `set-pep-route-application`, which
+binds a route to an application of the registry, stays on the management
+API, though the console no longer has a form for it.
 
 ### A route's own page
 
 **Click a route's id** in the Reverse proxy tab's table to open
-`/admin/xacml/pep/route?pep=<name>&route=<id>`. The trail is *XACML ›
-the PEP › the route*, and the PEP crumb leads back to its Reverse proxy tab.
+`/admin/xacml/pep/route?pep=<name>&route=<id>`. The trail is *Admin
+console › XACML › Remote PEPs › the PEP › Reverse proxy › the route*: the
+PEP crumb opens the PEP's page and the Reverse proxy crumb its Configured
+Routes. The page keeps the PEP page's tabs, with **Reverse proxy** open,
+and inside it the sub-tabs, with **Configured Routes** open and the route
+drawn in it. Every other tab and sub-tab opens the PEP's page at that tab.
 The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
 `routeDetail` member holds what the page draws.
 
@@ -1170,9 +1181,14 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   the PEP's upstream, and the reverse-proxy listeners that serve it, each
   with what the PEP last reported. Every proxy listener serves every route.
 * **One form for every value**: the id, path and match, methods, public, the
-  mechanisms, the application, the XACML resource and action, credential
+  mechanisms, the application (a chooser of the realm's applications; a
+  route that checks credentials must front one, so making the route public
+  is how to clear it), the XACML resource and action, credential
   forwarding, signals, the position, and the identity (its mode, headers and
-  claims, separator). **Save** sends `set-pep-route` with the route's current
+  claims, separator), one field per line, grouped under *Matching*,
+  *Authentication*, *Authorization*, *Order* and *Identity sent to the
+  application*. The Create a New Route form has the same layout and groups,
+  without the identity. **Save** sends `set-pep-route` with the route's current
   id in `from` and every member of the form. The save goes through the same
   checks as the document editor and the other forms.
 * **Renaming is allowed.** Change the id and save. The page then opens at
@@ -1183,7 +1199,7 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
 * **The upstream is not on the form.** The model has one upstream per PEP,
   not one per route. Change `upstream` in the configuration document.
 * **Remove** asks for a confirmation (a box to tick) and then sends
-  `remove-pep-route`. The page lands on the PEP's Reverse proxy tab.
+  `remove-pep-route`. The page lands on the PEP's Configured Routes.
 
 Opened without `route`, the page lists every PEP's routes as links.
 
