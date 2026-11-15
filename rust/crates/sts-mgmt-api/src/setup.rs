@@ -65,6 +65,13 @@ pub type Listener = Json;
 
 /// What the setup operations read outside `sts-core`.
 pub trait SetupPorts: Send + Sync {
+    /// Builds a realm just created as `realms.onCreate()`'s builders do
+    /// (`ldap_server.js`'s: the directory's containers and, in
+    /// development, its demonstration entries, the applications that are
+    /// this service, the native roles). A no-op by default.
+    fn build_realm(&self, realm: &str) {
+        let _ = realm;
+    }
     /// Seeds a new realm's administrator, and in product gives it a
     /// generated password.
     fn seed_administrator(&self, realm: &str) -> Seeded;
@@ -644,6 +651,9 @@ impl Setup<'_> {
                     Ok(r) => r,
                     Err(r) => return refused(r),
                 };
+                // `realms.create()` runs the builders before it answers,
+                // and the console's act seeds the administrator after.
+                self.ports.build_realm(&realm.id);
                 let seeded = self.ports.seed_administrator(&realm.id);
                 let prefix = self.registry.prefix_of(&realm);
                 let opens = realm::run_sync(realm.clone(), || {

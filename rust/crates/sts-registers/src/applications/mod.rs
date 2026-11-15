@@ -49,6 +49,7 @@ pub mod env;
 pub mod read;
 pub mod record;
 pub mod secrets;
+pub mod seed;
 pub mod store;
 pub mod tables;
 pub mod view;

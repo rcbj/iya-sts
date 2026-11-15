@@ -697,10 +697,26 @@ impl Stack {
             settings.clone(),
             revoked,
         );
+        // THE IDENTITY REGISTER (`admin_stats.users`), declared before the
+        // store opens and written by every sign-in the session core
+        // records (`recordAuthentication()`): the token register's
+        // revocation wraps it.
+        let identities =
+            Arc::new(crate::admin_api::identity::IdentityRecords::declare(
+                &lifecycle,
+                &handles,
+                Arc::new(sts_authn_api::wiring::DirectoryPorts {
+                    directory: directory.clone(),
+                    persistence: persistence.clone(),
+                    registry: registry.clone(),
+                    settings: settings.clone(),
+                    mode: mode.clone(),
+                }),
+            ));
         let refresh_settings = settings.clone();
         let records: Arc<dyn sts_authn::ports::Records> =
             Arc::new(sts_oauth::minted::SessionTokens {
-                inner: None,
+                inner: Some(identities.clone()),
                 register: tokens.clone(),
                 revoke_refresh_on_logout: Arc::new(move |_client: &str| {
                     refresh_settings
@@ -811,6 +827,7 @@ impl Stack {
                 )),
                 version: version_info,
                 logout: logout.logout.clone(),
+                identities,
             },
         );
         let authn_routes = authn_routes.merge(admin.router());

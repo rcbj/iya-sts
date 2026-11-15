@@ -92,7 +92,7 @@ impl How {
         }
     }
 
-    fn quiet() -> How {
+    pub(super) fn quiet() -> How {
         How {
             quiet: true,
             ..How::default()
@@ -250,7 +250,7 @@ pub fn normalise_protocols(value: &Value) -> Result<Vec<String>, String> {
 }
 
 // `addTo(list, value)`.
-fn add_to(list: &mut Vec<String>, value: &str) -> bool {
+pub(super) fn add_to(list: &mut Vec<String>, value: &str) -> bool {
     let text = crate::js::trim(value).to_string();
     if text.is_empty() || list.contains(&text) {
         return false;
@@ -260,7 +260,7 @@ fn add_to(list: &mut Vec<String>, value: &str) -> bool {
 }
 
 // `noteDescription(record, value)`.
-fn note_description(record: &mut Record, value: &str) -> bool {
+pub(super) fn note_description(record: &mut Record, value: &str) -> bool {
     let text = crate::js::trim(value).to_string();
     if text.is_empty() || !record.description.is_empty() {
         return false;

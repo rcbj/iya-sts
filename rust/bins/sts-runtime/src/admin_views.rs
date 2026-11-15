@@ -18,9 +18,8 @@
 //! (`knownUserKeys()`), which is the register's keys, every other
 //! process's rows (the store's fan-in, a previous run of Node's included)
 //! and the holders of the tokens the token register keeps
-//! (`collectUserKeys()`). This runtime's own sign-ins do not record there
-//! yet (`recordAuthentication()` is another slice's), so a person known
-//! only from a Rust sign-in is known through their tokens alone.
+//! (`collectUserKeys()`). This runtime's own sign-ins record there through
+//! `admin_identity.rs` (`recordAuthentication()`, the `apis4` slice).
 //!
 //! `getUsers` IS PORTED FOR ONE PERSON, IN PART: `known`, `user` (the
 //! register's row as `buildUserRowsResolved()` builds it — its record, the
@@ -42,8 +41,7 @@ use std::sync::Arc;
 use serde_json::{json, Map, Value as Json};
 use sts_core::errors::{codes, ErrorCode};
 use sts_core::realm;
-use sts_core::realm_lifecycle::RealmLifecycle;
-use sts_core::realm_store::{Merge, RealmMap, StoreHandles, StoreSpec};
+use sts_core::realm_store::RealmMap;
 use sts_core::settings::Settings;
 use sts_directory::EntryExt;
 use sts_mgmt_api::families::Asked;
@@ -55,7 +53,7 @@ use super::groups::Groups;
 use super::LiveDir;
 
 /// `admin_stats.users`' handle.
-pub const USERS_HANDLE: &str = "admin_stats.users";
+pub const USERS_HANDLE: &str = super::identity::USERS_HANDLE;
 
 /// The identity register, read.
 pub struct IdentityRegister {
@@ -66,22 +64,17 @@ pub struct IdentityRegister {
 }
 
 impl IdentityRegister {
-    /// Declares the register's store as Node declares it, before the
-    /// store opens, so its rows (and every other process's) are loaded.
+    /// The register over the map its writer declared
+    /// (`admin_identity.rs`), before the store opened.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn declare(
-        lifecycle: &Arc<RealmLifecycle>,
-        handles: &Arc<StoreHandles>,
+    pub fn over(
+        users: RealmMap<Json>,
         persistence: Arc<Persistence>,
         tokens: Arc<sts_oauth::minted::TokenRegister>,
         dir: Arc<LiveDir>,
     ) -> IdentityRegister {
-        let spec = StoreSpec {
-            merge: Merge::Own,
-            ..StoreSpec::persisted(USERS_HANDLE)
-        };
         IdentityRegister {
-            users: RealmMap::new(lifecycle, handles, spec),
+            users,
             persistence,
             tokens,
             dir,
