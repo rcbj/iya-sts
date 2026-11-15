@@ -32,6 +32,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Map, Value as Json};
+use sts_authn::ports::CredentialChecks;
 use sts_core::mode::Mode;
 use sts_core::realm::{RealmEnvironment, RealmRegistry};
 use sts_core::realm_lifecycle::RealmLifecycle;
@@ -46,9 +47,10 @@ use sts_credentials::limits::{BucketStore, Limit, MemoryBuckets, RateLimiter};
 use sts_credentials::mail_factor::{MailFactor, MailFactorPorts, PersonValues};
 use sts_credentials::phishing::PhishingResistance;
 use sts_credentials::ports::{
-    CredentialDirectory, Environment, Hook, Keystore, Observers, People,
-    Policies, ServiceAccounts,
+    CredentialDirectory, Environment, Hook, Keystore, Observers, PasskeyRules,
+    People, Policies, ServiceAccounts,
 };
+use sts_credentials::session_checks::SessionChecks;
 use sts_credentials::totp::Totp;
 use sts_credentials::{evidence, js, Verdict};
 use sts_crypto::secrets::{
@@ -305,6 +307,16 @@ impl CredentialDirectory for Tape {
     ) -> Hook<bool> {
         self.write("writeAppPasswords", name, value.map_or(Json::Null, s))
     }
+    fn replace_webauthn(&self, name: &str, values: &[String]) -> Hook<Json> {
+        self.write("replaceWebauthn", name, json!(values))
+            .map(Json::Bool)
+    }
+    fn read_recovery_pending(&self, name: &str) -> Hook<Option<String>> {
+        self.hook("readRecoveryPending", name).map(opt_text)
+    }
+    fn write_recovery_pending(&self, name: &str, value: &str) -> Hook<bool> {
+        self.write("writeRecoveryPending", name, s(value))
+    }
     fn read_webauthn(&self, name: &str) -> Hook<Vec<Json>> {
         self.hook("readWebauthn", name)
             .map(|v| v.as_array().cloned().unwrap_or_default())
@@ -420,6 +432,30 @@ impl Observers for Tape {
             .observed
             .push(json!({ "kind": "failure",
             "username": username, "via": via, "code": code }));
+    }
+}
+
+impl PasskeyRules for Tape {
+    fn refusal_for(&self, at: &str, facts: &Json) -> Option<Json> {
+        Some(self.ask(vec![s("passkey.refusalFor"), s(at), facts.clone()]))
+            .filter(|v| !v.is_null())
+    }
+    fn recovery_refusal(&self, ask: &Json) -> Option<Json> {
+        Some(self.ask(vec![s("passkey.recoveryRefusal"), ask.clone()]))
+            .filter(|v| !v.is_null())
+    }
+    fn requires_post_quantum(&self, at: &str) -> bool {
+        self.ask(vec![s("passkey.requiresPostQuantum"), s(at)]) == json!(true)
+    }
+    fn algorithm_mismatch(&self, row: &Json) -> Hook<()> {
+        self.observe(json!({ "kind": "mismatch", "row": row }));
+        Ok(())
+    }
+    fn credential_changed(&self, facts: &Json) {
+        self.observe(json!({ "kind": "changed", "facts": facts }));
+    }
+    fn audit(&self, row: &Json) {
+        self.observe(json!({ "kind": "audit", "row": row }));
     }
 }
 
@@ -754,7 +790,8 @@ fn mechanism(
 
 /// One door step.
 fn step(
-    c: &Credentials,
+    c: &Arc<Credentials>,
+    checks: &SessionChecks,
     method: &str,
     args: &[Json],
 ) -> (Json, String, Option<String>) {
@@ -770,6 +807,24 @@ fn step(
     };
     let ok = |j: Json| (j, String::new(), None);
     match method {
+        "authn.passkeySignInRefusal" => ok(checks
+            .passkey_sign_in_refusal(&t(0), &a(1))
+            .unwrap_or(Json::Null)),
+        "authn.recoveryRefusalAtSession" => ok(checks
+            .recovery_refusal_at_session(&t(0), &a(1))
+            .unwrap_or(Json::Null)),
+        "authn.noteAlgorithmMismatch" => {
+            checks.note_algorithm_mismatch(&t(0), &a(1), &a(2));
+            ok(Json::Null)
+        }
+        "authn.notePasskeyStanding" => {
+            checks.note_passkey_standing(&t(0), &a(1), &a(2));
+            ok(Json::Null)
+        }
+        "authn.recoveryCompleted" => {
+            checks.recovery_completed(&t(0), &a(1));
+            ok(Json::Null)
+        }
         "verify" => v(c.verify(&t(0), &t(1), &VerifyOptions::from_json(&a(2)))),
         "passwordOnlyDoors" => ok(c.password_only_doors(&t(0))),
         "mfaRequirementFor" => ok(c.mfa_requirement_for(&t(0))),
@@ -919,13 +974,14 @@ fn credentials_answer_what_node_answers() {
     }
     for case in v["scenarios"].as_array().unwrap() {
         let tape = Arc::new(Tape::new(case));
-        let c = credentials_over(&tape);
+        let c = Arc::new(credentials_over(&tape));
+        let checks = SessionChecks::new(c.clone(), tape.clone());
         let steps = case["steps"].as_array().unwrap();
         let answers: Vec<_> = steps
             .iter()
             .map(|st| {
                 let args = st["args"].as_array().cloned().unwrap_or_default();
-                step(&c, st["method"].as_str().unwrap(), &args)
+                step(&c, &checks, st["method"].as_str().unwrap(), &args)
             })
             .collect();
         let expected: Vec<&Json> =

@@ -39,6 +39,7 @@ pub mod limits;
 pub mod mail_factor;
 pub mod phishing;
 pub mod ports;
+pub mod session_checks;
 pub mod totp;
 pub mod webauthn;
 

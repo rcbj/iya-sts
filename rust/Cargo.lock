@@ -2462,6 +2462,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sts-authn",
  "sts-core",
  "sts-crypto",
  "sts-pki",

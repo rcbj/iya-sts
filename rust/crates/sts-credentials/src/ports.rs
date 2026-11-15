@@ -86,6 +86,32 @@ pub trait CredentialDirectory: Send + Sync {
     ) -> Hook<bool>;
     /// `readWebauthn(name)`: the `stsWebauthnCredential` values.
     fn read_webauthn(&self, name: &str) -> Hook<Vec<Json>>;
+    /// `replaceWebauthn(name, values)`: every key, rewritten.
+    fn replace_webauthn(&self, name: &str, values: &[String]) -> Hook<Json>;
+    /// `readRecoveryPending(name)`: `stsRecoveryPending`, `<door> <iso>`.
+    fn read_recovery_pending(&self, name: &str) -> Hook<Option<String>>;
+    /// `writeRecoveryPending(name, value)`; empty clears it.
+    fn write_recovery_pending(&self, name: &str, value: &str) -> Hook<bool>;
+}
+
+/// What the passkey policy and its neighbours decide at a session's start
+/// (`passkey_policy.ts`'s issuance questions, which the XACML engine
+/// answers; `webauthn_ceremonies.ts`'s rows; `ssf/account_signals.ts`;
+/// the audit log).
+pub trait PasskeyRules: Send + Sync {
+    /// `passkeyPolicy.refusalFor(at, facts)`: `{ code, why, reason }` or
+    /// none.
+    fn refusal_for(&self, at: &str, facts: &Json) -> Option<Json>;
+    /// `passkeyPolicy.recoveryRefusal(ask)`: `{ code, why, reason }` or none.
+    fn recovery_refusal(&self, ask: &Json) -> Option<Json>;
+    /// `passkeyPolicy.requiresPostQuantum(at)`.
+    fn requires_post_quantum(&self, at: &str) -> bool;
+    /// `webauthnCeremonies.algorithmMismatch(row)`: may throw.
+    fn algorithm_mismatch(&self, row: &Json) -> Hook<()>;
+    /// `accountSignals.credentialChanged(facts)`.
+    fn credential_changed(&self, facts: &Json);
+    /// `audit.audit(row)`.
+    fn audit(&self, row: &Json);
 }
 
 /// `common/keystore.js`: sealing under the key-encryption key.

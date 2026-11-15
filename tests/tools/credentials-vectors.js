@@ -319,6 +319,53 @@ async function build(ROOT) {
     }
   });
 
+  // WHAT startSession() ASKS OF THE CREDENTIALS (#536, #718, #724, #943):
+  // `authn.ts`'s own methods, over this recorded store and a passkey
+  // policy that answers from the case.
+  const Authn = req('authn/authn').Authn;
+  const observe = function (kind, field) {
+    return function (value) {
+      if (OBSERVED) {
+        const row = { kind: kind };
+        row[field] = clone(value);
+        OBSERVED.push(row);
+      }
+    };
+  };
+  const passkeyOf = function () {
+    return (CASE && CASE.passkey) || {};
+  };
+  const authnSelf = { deps: {
+    log: req('common/helpers').log,
+    credentials: Object.assign(Object.create(credentials), {
+      keyAlgorithm: Credentials.keyAlgorithm, keyLane: Credentials.keyLane,
+      Credentials: Credentials }),
+    passkeyPolicy: {
+      refusalFor: function (at, facts) {
+        const out = passkeyOf().refuse ? Object.assign({},
+          passkeyOf().refuse) : null;
+        return rec(['passkey.refusalFor', at, clone(facts)], out);
+      },
+      recoveryRefusal: function (ask) {
+        const out = passkeyOf().recoveryRefuse ? Object.assign({},
+          passkeyOf().recoveryRefuse) : null;
+        return rec(['passkey.recoveryRefusal', clone(ask)], out);
+      },
+      requiresPostQuantum: function (at) {
+        return rec(['passkey.requiresPostQuantum', at],
+                   !!passkeyOf().pqc);
+      },
+      RECOVERY_CREDENTIALS: req('common/passkey_policy')
+        .PasskeyPolicy.RECOVERY_CREDENTIALS
+    },
+    webauthnCeremonies: { algorithmMismatch: observe('mismatch', 'row') },
+    accountSignals: Object.assign(Object.create(req('ssf/account_signals')
+      .AccountSignals || req('ssf/account_signals')),
+    { credentialChanged: observe('changed', 'facts'),
+      keyCredentialType: req('ssf/account_signals').keyCredentialType }),
+    audit: { audit: observe('audit', 'row') }
+  } };
+
   // THE DIRECTORY: the case's entries, every hook recorded.
   const ENTRY_FIELDS = {
     readPassword: 'password', readPasswordReset: 'pwdReset',
@@ -326,10 +373,12 @@ async function build(ROOT) {
     personExists: 'exists', readAccountDisabled: 'disabled',
     readMfaRequired: 'mfaRequired', readTotp: 'totp',
     readBackupCodes: 'backup', readAppPasswords: 'apps',
-    readWebauthn: 'webauthn'
+    readWebauthn: 'webauthn', readRecoveryPending: 'recovery'
   };
   const WRITES = { writePassword: 'password', writeTotp: 'totp',
-                   writeBackupCodes: 'backup', writeAppPasswords: 'apps' };
+                   writeBackupCodes: 'backup', writeAppPasswords: 'apps',
+                   replaceWebauthn: 'webauthn',
+                   writeRecoveryPending: 'recovery' };
   const DEFAULTS = { person: true, exists: true, disabled: false,
                      mfaRequired: false, pwdReset: false, history: [],
                      webauthn: [] };
@@ -677,6 +726,11 @@ async function build(ROOT) {
         const args = typeof step.args === 'function' ? step.args(world)
           : step.args;
         const answer = verdict(function () {
+          if (step.method.indexOf('authn.') === 0) {
+            const out = Authn.prototype[step.method.slice(6)].apply(
+              authnSelf, args);
+            return out === undefined ? null : out;
+          }
           return credentials[step.method].apply(credentials, args);
         });
         const v = answer.value || {};
@@ -846,6 +900,69 @@ async function build(ROOT) {
     entries: { alice: { password: stored } } },
   [{ method: 'setPassword', args: ['alice', 'x'] },
    { method: 'passwordProblem', args: ['x', 'alice'] }]);
+
+  // What startSession() asks.
+  const key1 = { credentialId: 'K1', publicKeyJwk: { kty: 'EC', crv: 'P-256',
+                 x: 'a', y: 'b' }, minPinLength: 6, aaguid:
+                 'adce000235bcc60a648b0b25f1f05503', label: 'my key' };
+  const key2 = { credentialId: 'K2', publicKeyJwk: { kty: 'AKP', pub: 'x',
+                 alg: 'ML-DSA-65' }, coseAlg: -49, algorithm: 'ML-DSA-65',
+                 lane: 'pqc', attachment: 'platform',
+                 policyRefused: { pqc: { code: 'C', why: 'old', at: 1 } } };
+  const refusal = { code: 'STS-AUTHN-0399', why: 'a post-quantum passkey ' +
+                    'is required', reason: 'pqc' };
+  scenario('the passkey questions at a session', {
+    passkey: { refuse: refusal, pqc: true },
+    entries: { pia: { webauthn: [JSON.stringify(key1),
+                                 JSON.stringify(key2)] } } },
+  [{ method: 'authn.passkeySignInRefusal', args: ['pia', { kind: 'totp' }] },
+   { method: 'authn.passkeySignInRefusal', args: ['pia', {
+     kind: 'webauthn', id: 'K1', backupEligible: true }] },
+   { method: 'authn.passkeySignInRefusal', args: ['pia', {
+     kind: 'webauthn', id: 'nope', algorithm: 'ES256' }] },
+   { method: 'authn.passkeySignInRefusal', args: ['pia', {
+     kind: 'webauthn', id: 'nope' }] },
+   { method: 'authn.noteAlgorithmMismatch', args: ['pia', {
+     kind: 'webauthn', id: 'K1' }, 'sign-in screen'] },
+   { method: 'authn.noteAlgorithmMismatch', args: ['pia', {
+     kind: 'webauthn', id: 'x', algorithm: 'RS256' }, null] },
+   { method: 'authn.notePasskeyStanding', args: ['pia', { id: 'K1' },
+                                                 refusal] },
+   { method: 'authn.notePasskeyStanding', args: ['pia', { id: 'K1' },
+                                                 refusal] },
+   { method: 'authn.notePasskeyStanding', args: ['pia', { id: 'K2' },
+     { code: 'C', why: 'old', reason: 'pqc' }] },
+   { method: 'authn.notePasskeyStanding', args: ['pia', { id: 'K2' },
+     { code: 'C2', why: 'new', reason: 'pqc' }] },
+   { method: 'authn.notePasskeyStanding', args: ['pia', { id: 'none' },
+                                                 refusal] }]);
+  scenario('the recovery questions at a session', {
+    passkey: { recoveryRefuse: { code: 'STS-AUTHN-0381', why: 'not weaker',
+                                 reason: 'not-weaker' } },
+    entries: { quo: { webauthn: [JSON.stringify(key1)],
+                      recovery: 'email-link 2026-11-01T00:00:00.000Z' },
+               ray: {}, sue: { recovery: 'recovery-code 2026-11-02T00:00:00Z',
+                               refuses: ['writeRecoveryPending'] } } },
+  [{ method: 'authn.recoveryRefusalAtSession', args: ['ray',
+     { kind: 'password' }] },
+   { method: 'authn.recoveryRefusalAtSession', args: ['ray',
+     { kind: 'backup-code' }] },
+   { method: 'authn.recoveryRefusalAtSession', args: ['quo',
+     { kind: 'webauthn', ceremony: 'registration' }] },
+   { method: 'authn.recoveryRefusalAtSession', args: ['quo', null] },
+   { method: 'authn.recoveryCompleted', args: ['quo', { credential: {
+     kind: 'webauthn', ceremony: 'registration' } }] },
+   { method: 'authn.recoveryCompleted', args: ['quo', { credential: {
+     kind: 'totp' } }] },
+   { method: 'authn.recoveryCompleted', args: ['ray', { credential: {
+     kind: 'webauthn' } }] },
+   { method: 'authn.recoveryCompleted', args: ['quo', { credential: {
+     kind: 'webauthn' }, application: 'app1' }] },
+   { method: 'authn.recoveryCompleted', args: ['quo', { credential: {
+     kind: 'webauthn' } }] },
+   { method: 'authn.recoveryCompleted', args: ['sue', { credential: {
+     kind: 'webauthn', ceremony: 'assertion' } }] },
+   { method: 'authn.recoveryCompleted', args: ['quo', null] }]);
 
   // App passwords.
   scenario('app passwords: made, used, refused, revoked', {
@@ -1238,7 +1355,6 @@ async function build(ROOT) {
 
   // WHAT A CREDENTIAL EARNS: authn.ts's own readers of an `amr`, a step's
   // first factor, an AAGUID and a key's lane.
-  const Authn = req('authn/authn').Authn;
   const helpers = req('common/helpers');
   const self = { deps: { log: helpers.log } };
   const evidence = {

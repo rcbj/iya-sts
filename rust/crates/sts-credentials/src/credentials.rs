@@ -332,49 +332,15 @@ impl Credentials {
 
     /// `mfaRequirementFor(username)`: whether a second factor is required
     /// of this person — on their entry, by the realm, or as a console
-    /// administrator — or offered.
+    /// administrator — or offered. The session slice's one reader
+    /// (`sts_authn::requirement`), over this store's facts.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn mfa_requirement_for(&self, username: &str) -> Json {
-        let name = trimmed(username);
-        let sa = &self.d.service_accounts;
-        if !name.is_empty()
-            && sa.is_service_account_name(&name)
-            && sa.exempt_from_second_factor(&name)
-        {
-            return json!({ "required": false, "byUser": false,
-                "byRealm": false, "byAdministrator": false,
-                "offered": false, "exemptServiceAccount": true });
-        }
-        let by_user = match (&self.d.directory, name.is_empty()) {
-            (Some(d), false) => d.read_mfa_required(&name).unwrap_or(false),
-            _ => false,
+        let facts = RequirementFacts {
+            c: self,
+            name: trimmed(username),
         };
-        let by_realm = (if !name.is_empty() && sa.is_service_account_name(&name)
-        {
-            self.d.policies.configured_second_factor()
-        } else {
-            self.d.policies.require_second_factor()
-        }) == "always";
-        let for_admins = if name.is_empty() {
-            "if-held".to_string()
-        } else {
-            self.d.policies.require_second_factor_for_administrators()
-        };
-        let mut by_administrator = false;
-        let mut offered = false;
-        if for_admins != "if-held" {
-            let (read, write) = self.d.people.console_roles_of(&name);
-            if read || write {
-                let built_in = self.d.env.realm_id() == "default"
-                    && name == self.d.people.bootstrap_name();
-                by_administrator = for_admins == "always" && !built_in;
-                offered = !by_administrator;
-            }
-        }
-        let required = by_user || by_realm || by_administrator;
-        json!({ "required": required, "byUser": by_user,
-            "byRealm": by_realm, "byAdministrator": by_administrator,
-            "offered": offered && !required, "exemptServiceAccount": false })
+        sts_authn::requirement::mfa_requirement_for(&facts, username)
     }
 
     /// `secondFactorDemand(username)`: whether this person holds or must
@@ -438,6 +404,164 @@ impl Credentials {
         json!({ "secondFactor": second, "holds": holds,
             "requirement": requirement, "applies": applies,
             "alone": alone, "refused": refused, "accepted": accepted })
+    }
+
+    /// `holdsPasskey(username)`: any key at all, since a key has no role.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn holds_passkey(&self, username: &str) -> bool {
+        !self.keys_of(&trimmed(username)).is_empty()
+    }
+
+    /// `Credentials.keyAlgorithm(key)`: `{ name, coseAlg, text,
+    /// postQuantum, insecure, lane }` — the row's own, or what its JWK says.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn key_algorithm(key: &Json) -> Json {
+        let stored = js::number_opt(key.get("coseAlg"));
+        let cose = if stored != 0.0 && !stored.is_nan() {
+            stored
+        } else {
+            crate::webauthn::ceremony::cose_alg_of_jwk(
+                key.get("publicKeyJwk").unwrap_or(&json!({})),
+            ) as f64
+        };
+        let name = match key.get("algorithm").filter(|v| js::truthy(v)) {
+            Some(a) => js::string(a),
+            None => crate::webauthn::ceremony::cose_name(cose as i64)
+                .map_or_else(
+                    || format!("COSE {}", js::number_text(cose)),
+                    str::to_string,
+                ),
+        };
+        json!({ "name": name, "coseAlg": js::num(cose),
+            "text": format!("{name} ({})", js::number_text(cose)),
+            "postQuantum": name.starts_with("ML-DSA-"),
+            "insecure": crate::webauthn::ceremony::insecure_cose_ids()
+                .contains(&(cose as i64)),
+            "lane": crate::evidence::key_lane(key) })
+    }
+
+    /// `recoveryPending(username)`: `{ door, at }`, or none.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn recovery_pending(&self, username: &str) -> Option<Json> {
+        let directory = self.d.directory.as_ref()?;
+        let raw = directory
+            .read_recovery_pending(&trimmed(username))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if raw.is_empty() {
+            return None;
+        }
+        let mut parts = raw.split(' ');
+        let door = parts.next().unwrap_or("").to_string();
+        let at = parts.next().unwrap_or("").to_string();
+        Some(json!({ "door": door, "at": at }))
+    }
+
+    /// `setRecoveryPending(username, door)`: `<door> <now>`, or cleared.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn set_recovery_pending(&self, username: &str, door: &str) -> bool {
+        let Some(directory) = &self.d.directory else {
+            return false;
+        };
+        let name = trimmed(username);
+        let value = if door.is_empty() {
+            String::new()
+        } else {
+            format!("{door} {}", sts_pki::foreign::iso_ms(self.now() as i64))
+        };
+        let written = directory
+            .write_recovery_pending(&name, &value)
+            .unwrap_or(false);
+        if !written {
+            tracing::error!(
+                "{}credentials: the pending recovery of {} could not be {}.",
+                tag(codes::STS_AUTHN_0382),
+                name,
+                if door.is_empty() {
+                    "cleared"
+                } else {
+                    "written"
+                }
+            );
+        }
+        written
+    }
+
+    /// `rewriteKey(username, credentialId, mutate)`: `Ok(Some(result))`
+    /// written, `Ok(None)` no store, no such key or unchanged, `Err` threw.
+    fn rewrite_key(
+        &self,
+        username: &str,
+        credential_id: &str,
+        mutate: impl FnOnce(&mut Json) -> bool,
+    ) -> Result<Option<Json>, String> {
+        let Some(directory) = &self.d.directory else {
+            return Ok(None);
+        };
+        let mut keys = self.keys_of(username);
+        let Some(found) = keys.iter_mut().find(|k| {
+            js::string_or_empty(k.get("credentialId")) == credential_id
+        }) else {
+            return Ok(None);
+        };
+        if !mutate(found) {
+            return Ok(None);
+        }
+        let values: Vec<String> = keys.iter().map(Json::to_string).collect();
+        directory
+            .replace_webauthn(&trimmed(username), &values)
+            .map(Some)
+    }
+
+    /// `noteKeyPolicyRefused(username, credentialId, reason, code, why)`:
+    /// the refusal marked on the key's row, once per key and reason.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn note_key_policy_refused(
+        &self,
+        username: &str,
+        credential_id: &str,
+        reason: &str,
+        code: &str,
+        why: &str,
+    ) -> bool {
+        // `String(why).slice(0, 500)`: UTF-16 units, as JavaScript counts.
+        let units: Vec<u16> = why.encode_utf16().take(500).collect();
+        let why = String::from_utf16_lossy(&units);
+        let now = self.now();
+        let outcome = self.rewrite_key(username, credential_id, |found| {
+            let held = match found.get("policyRefused") {
+                Some(Json::Object(o)) => o.clone(),
+                _ => serde_json::Map::new(),
+            };
+            if reason.is_empty()
+                || held.get(reason).is_some_and(|h| h["why"] == json!(why))
+            {
+                return false;
+            }
+            let mut next = held;
+            next.insert(
+                reason.to_string(),
+                json!({ "code": code, "why": why, "at": js::num(now) }),
+            );
+            found["policyRefused"] = Json::Object(next);
+            true
+        });
+        match outcome {
+            Ok(Some(result)) => js::truthy(&result),
+            Ok(None) => false,
+            Err(e) => {
+                tracing::error!(
+                    "{}credentials: the refusal of a passkey of {} ({}) could \
+                     not be recorded: {}",
+                    tag(codes::STS_AUTHN_0318),
+                    username,
+                    reason,
+                    e
+                );
+                false
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -2604,6 +2728,65 @@ impl Credentials {
         Verdict::of(json!({ "ok": true,
             "remaining": written.value["remaining"],
             "total": written.value["total"] }))
+    }
+}
+
+/// The facts `mfaRequirementFor()` reads, asked only as Node asks them:
+/// the configured rule for a service account, the realm's for anybody
+/// else, the administrators' only for a name.
+struct RequirementFacts<'a> {
+    c: &'a Credentials,
+    name: String,
+}
+
+impl sts_authn::requirement::SecondFactorFacts for RequirementFacts<'_> {
+    fn is_service_account_name(&self, name: &str) -> bool {
+        self.c.d.service_accounts.is_service_account_name(name)
+    }
+    fn service_account_exempt(&self, name: &str) -> bool {
+        self.c.d.service_accounts.exempt_from_second_factor(name)
+    }
+    fn read_mfa_required(&self, name: &str) -> Option<Result<bool, String>> {
+        self.c
+            .d
+            .directory
+            .as_ref()
+            .map(|d| d.read_mfa_required(name))
+    }
+    fn rules(&self) -> sts_authn::requirement::SecondFactorRules {
+        let p = &self.c.d.policies;
+        let service = !self.name.is_empty()
+            && self
+                .c
+                .d
+                .service_accounts
+                .is_service_account_name(&self.name);
+        sts_authn::requirement::SecondFactorRules {
+            require: if service {
+                String::new()
+            } else {
+                p.require_second_factor()
+            },
+            configured: if service {
+                p.configured_second_factor()
+            } else {
+                String::new()
+            },
+            for_administrators: if self.name.is_empty() {
+                "if-held".to_string()
+            } else {
+                p.require_second_factor_for_administrators()
+            },
+        }
+    }
+    fn console_roles_of(&self, name: &str) -> (bool, bool) {
+        self.c.d.people.console_roles_of(name)
+    }
+    fn current_realm(&self) -> String {
+        self.c.d.env.realm_id()
+    }
+    fn bootstrap_name(&self) -> String {
+        self.c.d.people.bootstrap_name()
     }
 }
 
