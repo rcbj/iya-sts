@@ -46,7 +46,7 @@ fs.rmSync(dir, { recursive: true, force: true });
 // the two mode reports, the FAPI report, the attestation challenge and the
 // device and CIBA endpoints — each under a named authorization server too.
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
-  '/oauth2/(register|introspect|revoke|logout|userinfo|' +
+  '/oauth2/(register|introspect|revoke|logout|' +
   'oauth21|rfc9700|fapi|challenge|device_authorization|' +
   'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');

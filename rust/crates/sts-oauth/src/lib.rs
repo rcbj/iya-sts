@@ -83,3 +83,4 @@ pub mod scopes;
 pub mod sender_constraints;
 pub mod signin;
 pub mod token_endpoint;
+pub mod userinfo;

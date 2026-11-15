@@ -100,6 +100,22 @@ pub struct OAuthStack {
     pub servers: Arc<AuthorizationServers>,
     /// The consent register and screen (rule 4c).
     pub consent: Arc<sts_oauth::consent::ConsentScreen>,
+    /// `/oauth2/userinfo` (OIDC Core section 5.3).
+    pub userinfo: Arc<sts_oauth::userinfo::UserInfo>,
+}
+
+/// The person's entry for UserInfo's claims: the live directory's person
+/// doors (`DirectoryPorts::person_attribute`).
+struct ClaimEntries(Arc<sts_authn_api::wiring::DirectoryPorts>);
+
+impl sts_oauth::userinfo::ClaimDirectory for ClaimEntries {
+    fn values_of(
+        &self,
+        username: &str,
+        attribute: &str,
+    ) -> Option<Vec<String>> {
+        self.0.person_attribute(username, attribute)
+    }
 }
 
 /// `ldap_server.js`'s consent hooks over the live directory: the person's
@@ -556,6 +572,11 @@ impl OAuthStack {
             now_ms: Arc::new(sts_core::time::now_ms_f64),
             random_id: Arc::new(random_id),
         });
+        let userinfo = Arc::new(sts_oauth::userinfo::UserInfo {
+            tokens: tokens.clone(),
+            directory: Arc::new(ClaimEntries(parts.directory_ports.clone())),
+            pairwise: Some(pairwise.clone()),
+        });
         Arc::new(OAuthStack {
             settings,
             mode,
@@ -569,6 +590,7 @@ impl OAuthStack {
             sessions: parts.sessions,
             servers,
             consent,
+            userinfo,
         })
     }
 
@@ -667,6 +689,25 @@ impl OAuthStack {
                 move |r: AxumRequest| {
                     let (me, h) = (me.clone(), h.clone());
                     async move { me.token(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
+        // `/oauth2/userinfo`, GET and POST (OIDC Core section 5.3.1).
+        let routes = routes.route(
+            "/oauth2/userinfo",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.userinfo(h, r).await }
+                }
+            })
+            .post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.userinfo(h, r).await }
                 }
             })
             .fallback(unrouted),
@@ -1000,6 +1041,45 @@ impl OAuthStack {
                 None,
             )
             .into_response()
+    }
+
+    /// `userinfoResponse()`: the base is `baseUrlOf(req)` — the realm's,
+    /// never a named server's, since UserInfo is the realm's resource.
+    async fn userinfo(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, _address, body) = self.arrived(&http, &request);
+        let token_in_query = request
+            .uri()
+            .query()
+            .map(|q| {
+                sts_oauth::js::form_decode(q)
+                    .iter()
+                    .any(|(k, _)| k == "access_token" || k == "token")
+            })
+            .unwrap_or(false);
+        let ask = sts_oauth::userinfo::UserinfoAsk {
+            htu: format!("{}/oauth2/userinfo", base),
+            base,
+            method: request.method().as_str().to_string(),
+            authorization: header_of(&headers, "authorization"),
+            dpop: headers
+                .get("dpop")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string),
+            content_type: header_of(&headers, "content-type"),
+            body,
+            token_in_query,
+            peer_der: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(self.userinfo.answer(&ask)).await.into_response()
     }
 
     async fn token(
