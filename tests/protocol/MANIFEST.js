@@ -2598,6 +2598,39 @@ const JOBS = [
   // /access/v1/evaluation(s), in both modes (authzen_token_exchange).
   // Posts an outside test Root to the client truststore and removes it.
   { file: 'sts_authzen_token_exchange.js', browser: false, local: true },
+  // D12 (#444): the access-control policy as a request reaches it — the
+  // portal's own account, a realm's override refusing it, disabled and
+  // deleted, xacml.enforceAccess off, and /admin-api/mode's row
+  // (access_policy).
+  { file: 'sts_access_policy.js', browser: false, local: true },
+  // D12 (#444): the delegation facts' doors and the register — may_act,
+  // semantics, not-delegated, the attributes' grammar (STS-REG-0194) and
+  // the paged policy view (delegation_policy J, K, N).
+  { file: 'sts_delegation_facts.js', browser: false, local: true },
+  // D12 (#444): every GNAP endpoint's answer held to the recorded wire,
+  // in a development and a product realm (gnap_model_wire).
+  { file: 'sts_gnap_model_wire.js', browser: false, local: true },
+  // D12 (#444): every AuthZEN answer held to the recorded wire, in a
+  // development and a product realm (authzen_model_wire). Posts six
+  // outside test Roots to the client truststore and removes them.
+  { file: 'sts_authzen_model_wire.js', browser: false, local: true },
+  // D12 (#444): AuthZEN search's and the access request profile's
+  // remaining refusals by code (authzen_evaluation, authzen_access_request).
+  // Waits a minute for a denial to expire. Posts an outside test Root to
+  // the client truststore and removes it.
+  { file: 'sts_authzen_search_access.js', browser: false, local: true },
+  // D12 (#444): the AuthZEN tab's view and its acts' effects
+  // (authzen_admin).
+  { file: 'sts_authzen_admin_view.js', browser: false, local: true },
+  // D12 (#444): the enable's grant to the realm's REMOTE_PEPS holders, the
+  // exchange's bound (STS-FGA-0017), a policy denying delete (0014) and
+  // AuthZEN as the granted holder (STS-AUTHZEN-0046) (fga_pep_grant,
+  // fga_issuance, fga_authzen). Posts two outside test Roots to the client
+  // truststore and removes them.
+  { file: 'sts_fga_grant_codes.js', browser: false, local: true },
+  // D12 (#444): UMA's PAT refusals and the claims interaction endpoint by
+  // code (uma_protection 0103, 0105-0107; uma_claims 0400, 0407).
+  { file: 'sts_uma_pat_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
