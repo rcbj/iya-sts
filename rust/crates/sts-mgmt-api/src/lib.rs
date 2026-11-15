@@ -14,11 +14,14 @@
 //! * [`gate`] — the access-token gate, whole.
 //! * [`config_view`], [`setup`] — the configuration, mode, realm and status
 //!   operations over `sts-core`.
+//! * [`applications`] — the application registry's list and its own
+//!   acts, over `sts-registers`.
 //! * [`router`] — the axum router the HTTP layer mounts.
 
 #![forbid(unsafe_code)]
 
 pub mod answer;
+pub mod applications;
 pub mod config_view;
 pub mod document;
 pub mod gate;

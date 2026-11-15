@@ -17,6 +17,7 @@ sts-model.workspace = true
 sts-oauth.workspace = true
 sts-store.workspace = true
 sts-xacml.workspace = true
+sts-registers.workspace = true
 sts-http.workspace = true
 chrono.workspace = true
 axum.workspace = true
@@ -32,6 +33,7 @@ tracing.workspace = true
 openssl.workspace = true
 hyper.workspace = true
 tower = { version = "0.5", features = ["util"] }
+sts-directory.workspace = true
 
 [lints]
 workspace = true

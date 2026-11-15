@@ -5583,7 +5583,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    } },
                  // The audit log's and the mail channel's (#444, phase 4):
                  // tests/tools/auditmail-vectors.js.
-                 { file: 'auditmail-node.json', build: auditMailVectors }];
+                 { file: 'auditmail-node.json', build: auditMailVectors },
+                 // The application register (#444, phase 4):
+                 // tests/tools/applications-vectors.js, in a child of its own.
+                 { file: 'applications-node.json',
+                   build: function () {
+                     return require('./applications-vectors.js').build(ROOT);
+                   } }];
 
 // THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and
 // `sts-mail`'s vectors, built by the two files `auditmail-vectors.js` names.

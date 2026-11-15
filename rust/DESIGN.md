@@ -259,7 +259,9 @@ rust/
                                  the registers (phase 4, held to 321 Node cases)
     sts-registers/               the registers over the directory: roles, the console
                                  roster, role and application permissions, ownership,
-                                 the groups claim, account state, the user and group acts
+                                 the groups claim, account state, the user and group acts,
+                                 and the application register (applications.js, 3g) over
+                                 sts-directory, held to Node by applications-vectors.js
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/

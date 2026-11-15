@@ -114,6 +114,13 @@ function runKerberos(t) {
     require('./tools/directory-vectors.js').checkRust(t,
       read('directory-rust.json'));
   }
+  // The application register (sts-registers, #444 phase 4): the entries
+  // Rust's register wrote, read back through Node's own register.
+  // Synchronous.
+  if (fs.existsSync(path.join(VECTORS, 'applications-rust.json'))) {
+    require('./tools/applications-vectors.js').checkRust(t,
+      read('applications-rust.json'));
+  }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
     log.debug("Leaving runKerberos(). No Kerberos vectors.");
     return runSigned(t);

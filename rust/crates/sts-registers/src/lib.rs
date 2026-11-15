@@ -18,6 +18,8 @@
 //!   nothing by being a group;
 //! * [`people`] — `common/account_state.ts` (3at), `usersAction()`'s
 //!   create, disable and enable, and `groupsAction()`;
+//! * [`applications`] — `common/applications.js` (3g): the application
+//!   register itself, over `sts-directory`;
 //! * [`operations`] — the `/admin-api` operations those back.
 //!
 //! The directory, the settings, the audit log and every register this
@@ -33,6 +35,7 @@
 #![forbid(unsafe_code)]
 
 pub mod app_permissions;
+pub mod applications;
 pub mod group_claims;
 pub mod js;
 pub mod operations;

@@ -4378,9 +4378,11 @@ dependencies = [
  "serde_json",
  "sts-core",
  "sts-crypto",
+ "sts-directory",
  "sts-http",
  "sts-model",
  "sts-oauth",
+ "sts-registers",
  "sts-store",
  "sts-xacml",
  "tokio",
@@ -4685,13 +4687,20 @@ dependencies = [
 name = "sts-registers"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
+ "jsonschema",
  "regex",
  "serde",
  "serde_json",
  "sts-core",
+ "sts-crypto",
+ "sts-directory",
+ "sts-ldap",
  "sts-model",
+ "sts-policy",
  "sts-xacml",
  "tracing",
+ "url",
 ]
 
 [[package]]

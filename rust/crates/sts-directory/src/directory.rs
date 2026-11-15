@@ -1119,6 +1119,48 @@ impl Directory {
         Ok(key)
     }
 
+    /// What a register that owns a container does to one of its own
+    /// entries after `putEntry()` (`writeApplication()`): the creation
+    /// instant kept from the entry it replaced, as Node's
+    /// `stored.createdAt = created` and `createtimestamp = [created]` do.
+    /// Added for the application register (#444, phase 4).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn restamp_created(&mut self, r: usize, dn: &str, created: &str) {
+        let key = normalize_dn(Some(dn));
+        if let Some(stored) =
+            self.realms.get_mut(r).and_then(|t| t.entries.get_mut(&key))
+        {
+            stored.created_at = Some(created.to_string());
+            stored
+                .attributes
+                .insert("createtimestamp".to_string(), vec![created.into()]);
+        }
+    }
+
+    /// A register's own removal of one of its entries, the way
+    /// `deleteApplicationEntry()` does it: `entries.delete()` and
+    /// `touchDirectory()`, with no LDAP authorization — the register says
+    /// what else goes (`noteApplicationRemoved()`), and the group
+    /// memberships go here (`forgetGroupMemberships()`). Added for the
+    /// application register (#444, phase 4).
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn remove_entry(
+        &mut self,
+        r: usize,
+        dn: &str,
+        via: &str,
+    ) -> Option<Entry> {
+        let key = normalize_dn(Some(dn));
+        let removed = self.realms.get_mut(r)?.entries.shift_remove(&key)?;
+        self.journal.touched(&self.realms[r].id, &key);
+        self.observer.notice(DirectoryNotice::Removed {
+            realm: self.realms[r].id.clone(),
+            entry: Box::new(removed.clone()),
+        });
+        self.forget_group_memberships(r, &removed.dn, via);
+        Some(removed)
+    }
+
     // ---- refusals -------------------------------------------------------
 
     // `ldapRefusal()`: recorded, then answered.
