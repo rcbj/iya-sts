@@ -1850,7 +1850,40 @@ class WebPages {
       });
   }
 
+  // EVERY PAGE'S LINKS INTO THE XACML TABS GO THROUGH ONE REWRITE (rcbj,
+  // 2026-11-15). `/admin/xacml/policies`, `editor`, `peps`, `decide` and
+  // `authzen` are TABS of `/admin/xacml`, not pages, and the renderers still
+  // write them as paths — a policy's editor link, Remote PEPs, Try a
+  // decision. Rewritten only on `/admin/xacml` itself, so the Deciding
+  // policy link on a PEP route's page answered "/admin/xacml/editor is not a
+  // page of this console", and so did the Roles, Applications and Policies
+  // pages' links. Every page drawn is passed through `xacmlTabLinks()` now,
+  // in its navigation-only form: an `href` and a GET form move onto the tab,
+  // a POST form keeps its action, because the runtime resolves a POST by its
+  // page (`/admin/xacml/peps` is what a PEP's route forms are told apart by,
+  // `WebAnswers.PEP_ROUTES_PAGE`), and a POST is never a navigation.
+  /**
+   * Draws a console page's body, its links into the XACML tabs rewritten.
+   *
+   * @param path - the console path
+   * @param view - the page's answer
+   * @param ctx - optional; the rendering context
+   * @returns the HTML, or null for a path that is not a page
+   */
   static render(path: string, view: Json, ctx?: Json): string | null {
+    const html = WebPages.renderPage(path, view, ctx);
+    return html === null ? null : WebPages.xacmlTabLinks(html, false);
+  }
+
+  /**
+   * Draws a console page's body as its renderer writes it.
+   *
+   * @param path - the console path
+   * @param view - the page's answer
+   * @param ctx - optional; the rendering context
+   * @returns the HTML, or null for a path that is not a page
+   */
+  static renderPage(path: string, view: Json, ctx?: Json): string | null {
     const page = WebPages.pageFor(path);
     const context = ctx || WebKit.context();
     if (!page) {
@@ -2168,24 +2201,34 @@ class WebPages {
   }
 
   /**
-   * Keeps links and forms between the XACML views on their tabs.
+   * Keeps links and forms between the XACML views on their tabs: the ONE
+   * mapping of the old sub-paths to the tabs of `/admin/xacml`.
    *
-   * @param html - one XACML view's rendered HTML
-   * @returns the HTML with intra-page links and forms
+   * On `/admin/xacml` itself (`whole`, the default) a bare `/admin/xacml`
+   * link opens the Settings tab and a POST form moves onto its tab too, as
+   * the tabs' forms always did. On every other page (`whole` false,
+   * `WebPages.render()`) only the five sub-paths move, and only where they
+   * navigate — a link or a GET form — so a plain link to the section and a
+   * POST form's action are left as their page wrote them.
+   *
+   * @param html - one page's rendered HTML
+   * @param whole - optional; false for the navigation-only form
+   * @returns the HTML with links and forms onto the tabs
    */
-  static xacmlTabLinks(html: string): string {
-    const paths = {
+  static xacmlTabLinks(html: string, whole?: boolean): string {
+    const every = whole !== false;
+    const paths: { [path: string]: string } = {
       '/admin/xacml/policies': 'xacml-tab-policies',
       '/admin/xacml/editor': 'xacml-tab-editor',
       '/admin/xacml/peps': 'xacml-tab-peps',
       '/admin/xacml/decide': 'xacml-tab-decide',
       // The AuthZEN tab's forms (#563) name it so, and are moved onto it.
-      '/admin/xacml/authzen': 'xacml-tab-authzen',
-      '/admin/xacml': 'xacml-tab-settings'
+      '/admin/xacml/authzen': 'xacml-tab-authzen'
     };
-    const route = '/admin/xacml/policies|/admin/xacml/editor|' +
-      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml/authzen|' +
-      '/admin/xacml';
+    if (every) {
+      paths['/admin/xacml'] = 'xacml-tab-settings';
+    }
+    const route = Object.keys(paths).join('|');
     html = html.replace(new RegExp('href="(' + route +
       ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
     function (_match: string, path: string, query: string,
@@ -2198,6 +2241,9 @@ class WebPages {
       function (match: string, attrs: string): string {
         const action = /action="([^"]*)"/i.exec(attrs);
         if (!action) {
+          return match;
+        }
+        if (!every && !/\bmethod="get"/i.test(attrs)) {
           return match;
         }
         const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);

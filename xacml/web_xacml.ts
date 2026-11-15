@@ -1001,6 +1001,17 @@ class XacmlPage {
   static readonly PROXY_NEW_ROUTE_TAB = 'xacml-pep-proxy-new-route';
   static readonly PROXY_MANIFEST_TAB = 'xacml-pep-proxy-manifest';
 
+  // A ROUTE'S OWN PAGE IS TABS TOO (rcbj, 2026-11-15), a fourth row under
+  // the three it keeps: Metadata (the effective state and the listeners
+  // that serve it, together), Edit the route and Remove the route, the
+  // sections' order and names. Each is a fragment of the route's page, so
+  // the runtime's tab tree names the open one at the end of the trail
+  // (`WebShell.openTabs()`), and a save lands back on Edit the route
+  // (`WebAnswers.landing()`).
+  static readonly ROUTE_METADATA_TAB = 'xacml-route-tab-metadata';
+  static readonly ROUTE_EDIT_TAB = 'xacml-route-tab-edit';
+  static readonly ROUTE_REMOVE_TAB = 'xacml-route-tab-remove';
+
   // The way back from a route's page: the PEP's Reverse proxy tab, on its
   // Configured Routes.
   static proxyTabHref(name: string): string {
@@ -3229,6 +3240,19 @@ class XacmlPage {
       return '<tr><th' + self.tipOf(t, tipKey) + '>' + t.html(labelKey) +
         '</th><td>' + value + '</td></tr>';
     };
+    const routeTabs = function (panels: Json): string {
+      return kit.subTabbedPanels(
+        t.text('consoleXacml.routePage.title', { route: r.id }), [
+          { id: self.ROUTE_METADATA_TAB,
+            label: t.text('consoleProtocolSettings.metadataHeading'),
+            html: panels.metadata },
+          { id: self.ROUTE_EDIT_TAB,
+            label: t.text('consoleXacml.routePage.editHeading'),
+            html: panels.edit || '' },
+          { id: self.ROUTE_REMOVE_TAB,
+            label: t.text('consoleXacml.routePage.removeHeading'),
+            html: panels.remove || '' }]);
+    };
     const state = '<h3>' + t.html('consoleXacml.routePage.stateHeading') +
       '</h3>' + self.wide(t, 'consoleXacml.routePage.stateHeading', '<table>' +
       line('consoleXacml.routePage.th.usable',
@@ -3265,8 +3289,8 @@ class XacmlPage {
     if (!ctx.write) {
       return self.withinPepTabs(t, name, titled(r,
         kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
-        state + '<span class="sub">' + t.html('consoleXacml.readOnly') +
-        '</span>'), false) + back;
+        routeTabs({ metadata: state + '<span class="sub">' +
+          t.html('consoleXacml.readOnly') + '</span>' })), false) + back;
     }
     const when = 'consoleXacml.tip.route.when';
     // The form as the reader left it at the chooser's last press, else the
@@ -3276,8 +3300,7 @@ class XacmlPage {
     const edited = drafted.route;
     const identity = drafted.identity || { mode: 'headers', headers: [],
                                            separator: ',' };
-    const editor = '<h3>' + t.html('consoleXacml.routePage.editHeading') +
-      '</h3><form method="post" action="/admin/xacml/peps">' +
+    const editor = '<form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
       self.hidden('from', r.id) +
       self.defaultSubmit(t.text('consoleXacml.routeForm.update')) +
@@ -3309,8 +3332,7 @@ class XacmlPage {
     // on remove"): the same box, named `removePolicy`, says so.
     const policyState = detail.authorization && detail.authorization.policy;
     const withPolicy = !!policyState && !!policyState.generated;
-    const remove = '<h3>' + t.html('consoleXacml.routePage.removeHeading') +
-      '</h3><form method="post" action="/admin/xacml/peps">' +
+    const remove = '<form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'remove-pep-route') + self.hidden('name', name) +
       self.hidden('route', r.id) + '<label' +
       self.tipOf(t, 'consoleXacml.tip.routes.actions') +
@@ -3335,7 +3357,8 @@ class XacmlPage {
       : '';
     return self.withinPepTabs(t, name, titled(r,
       kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
-      state + editor + regenerate + remove), true) + back;
+      routeTabs({ metadata: state, edit: editor + regenerate,
+                  remove: remove })), true) + back;
   }
 
   // `/admin/xacml/pep/route` WITHOUT A ROUTE (#1760): every registered

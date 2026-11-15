@@ -188,7 +188,8 @@ function checkOnce(t) {
     { ok: true }, routeBack, { from: 'orders', id: 'orders-api' });
   const removed = WebAnswers.landing('/admin/xacml/peps', 'remove-pep-route',
     { ok: true }, routeBack, { route: 'orders' });
-  t.check(renamed === '/admin/xacml/pep/route?pep=pep-1&route=orders-api' &&
+  t.check(renamed === '/admin/xacml/pep/route?pep=pep-1&route=orders-api' +
+          '#xacml-route-tab-edit' &&
           removed === '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes' &&
           WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
             { ok: false }, routeBack, { id: 'orders-api' }) === null &&

@@ -1316,16 +1316,22 @@ it. Every tab, the open ones included, is a link: an XACML tab opens
 `/admin/xacml` at that tab, and a PEP tab or sub-tab opens the PEP's page
 at that tab, so **Configured Routes** leads back to the list. Just below
 the tab rows is **← Back to routes**, then the heading **Route detail:
-<id>** with the route's path. A
+<id>** with the route's path, and below it a fourth row, the route's own
+tabs: **Metadata** (its effective state and the listeners that serve it),
+**Edit the route** and **Remove the route**; a reader sees Metadata alone.
+With no fragment Metadata is open. The trail ends at the open tab, *›
+Configured Routes › the route › Edit the route*, and follows every tab
+press, Back and Forward and a reload. A Save lands back on Edit the route,
+and a refusal is drawn on the tab the form is on. A
 PEP's own page draws the first two rows the same way.
 The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
 `routeDetail` member holds what the page draws.
 
-* **Effective state**: whether the route is usable now (and why not), its
+* **Metadata**, the **Effective state**: whether the route is usable now (and why not), its
   application linked to the application's page, its position in the list,
   the PEP's upstream, and the reverse-proxy listeners that serve it, each
   with what the PEP last reported. Every proxy listener serves every route.
-* **One form for every value**: the id, path and match, methods, the
+* **Edit the route**, one form for every value: the id, path and match, methods, the
   mechanisms, the application, the authorization, credential
   forwarding, signals, the position, and the identity (its mode, headers and
   claims, separator), one field per line, grouped under *Matching*,

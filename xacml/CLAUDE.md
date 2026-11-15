@@ -1769,7 +1769,22 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   (`identityFromForm()`, the one reading `set-pep-route-identity` shares).
   No per-route upstream exists in the model; the page says so. A PEP still
   holding the old document asks `/xacml/pep/identity` for the old id until
-  its next poll, which is the rename's one cost.
+  its next poll, which is the rename's one cost. **Its sections are a fourth
+  row of tabs** (rcbj 2026-11-15), `kit.subTabbedPanels()` inside the
+  Configured Routes panel: Metadata (Effective state and Listeners that
+  serve it), Edit the route, Remove the route (`XacmlPage.ROUTE_*_TAB`).
+  They are fragments of the route's page, so the runtime's tab tree ends
+  the trail at the open one and `markOpenTabs()` marks it while the rows
+  above keep theirs (`tests/xacml_pep_console.js` RT); a save lands on
+  `#xacml-route-tab-edit` (`WebAnswers.landing()`).
+* **AN XACML TAB IS NEVER A PAGE** (rcbj 2026-11-15: the Deciding policy
+  link answered "/admin/xacml/editor is not a page of this console").
+  `/admin/xacml/{policies,editor,peps,decide,authzen}` are written as paths
+  by the renderers and moved onto `/admin/xacml?…#xacml-tab-…` by
+  `WebPages.xacmlTabLinks()`, the one mapping, which `WebPages.render()`
+  runs on every page's links and GET forms; a POST form keeps its action,
+  which `WebForms.resolve()` and `WebAnswers.PEP_ROUTES_PAGE` read
+  (`tests/xacml_pep_console.js` XL, `tests/console_web_bundle.js` F0x).
 * **`multipleAccounts`** (#1760, rcbj: "support multiple authenticated
   users within a tab"), a route member, false by default and normalised
   onto every route; true needs the `session` mechanism (`STS-XACML-0257`).

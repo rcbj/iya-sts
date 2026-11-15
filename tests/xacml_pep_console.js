@@ -639,17 +639,19 @@ async function run(t) {
           'a New Route</a><a href="' + pepUrl + 'xacml-pep-proxy-manifest">' +
           'Manifest</a></nav>',
           'W2. the Reverse proxy sub-tabs, Configured Routes current');
-  t.check(bars.length === 2 &&
+  // The fourth row is the route's own tabs (RT, below): three sub-panels
+  // inside Configured Routes, the route's sections.
+  t.check(bars.length === 3 &&
           (page.match(/<section class="tabpanel/g) || []).length === 2 &&
           page.indexOf('<section class="tabpanel first" ' +
                       'id="xacml-pep-tab-proxy">') >= 0 &&
-          (page.match(/<div class="subpanel/g) || []).length === 1 &&
+          (page.match(/<div class="subpanel/g) || []).length === 4 &&
           page.indexOf('<div class="subpanel first" ' +
                       'id="xacml-pep-proxy-routes">') >= 0 &&
-          panelOf(page, 'xacml-pep-proxy-routes')
+          page.slice(page.indexOf('id="xacml-pep-proxy-routes"'))
             .indexOf('value="set-pep-route"') >= 0,
-          'W3. one panel drawn in each, the route inside Configured Routes',
-          page);
+          'W3. one panel drawn in each row above, the route inside ' +
+          'Configured Routes', page);
   const reader = XacmlPage.routeDetail(kit.context({}, false), {
     pep: 'pep-1', route: 'orders-api', found: true,
     peps: [{ name: 'pep-1', proxy: proxy }],
@@ -663,8 +665,9 @@ async function run(t) {
           'Route', reader);
   const readerBars = reader.match(
     /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
-  t.check(readerBars.length === 3 && readerBars[0] === xacmlBar,
-          'X3. a reader\'s route page draws the same three rows',
+  t.check(readerBars.length === 4 && readerBars[0] === xacmlBar,
+          'X3. a reader\'s route page draws the same three rows, and the ' +
+          'route\'s own',
           String(readerBars.length));
   // A PEP's own page: two rows, the XACML page's tabs with Remote PEPs
   // current, then its own six as panels, the sub-tabs inside Reverse
@@ -726,12 +729,23 @@ async function run(t) {
     log.debug("Leaving tabHrefs().");
     return out;
   };
-  const routeTabs = tabHrefs(page);
+  // The three rows the page was opened from; the fourth, the route's own
+  // tabs, is fragments of this page (RT, below).
+  const routeTabs = tabHrefs(page).filter(function (one) {
+    return one.href.charAt(0) !== '#';
+  });
+  const ownTabs = tabHrefs(page).filter(function (one) {
+    return one.href.charAt(0) === '#';
+  });
   t.check(routeTabs.length === 16 && routeTabs.every(function (one) {
     return one.href.indexOf('/admin/xacml') === 0;
-  }), 'K1. every tab of the route page\'s three rows is a link to another ' +
-          'page, the current ones included',
-          JSON.stringify(routeTabs));
+  }) && ownTabs.map(function (one) {
+    return one.href;
+  }).join() === '#xacml-route-tab-metadata,#xacml-route-tab-edit,' +
+    '#xacml-route-tab-remove',
+  'K1. every tab of the route page\'s three rows is a link to another ' +
+          'page, the current ones included; the route\'s own row is its ' +
+          'fragments', JSON.stringify(routeTabs.concat(ownTabs)));
   t.check(routeTabs.some(function (one) {
     return one.label === 'Configured Routes' &&
       one.href === '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes';
@@ -772,6 +786,11 @@ async function run(t) {
       done.went[0] === one.href;
   }), 'K3. the runtime navigates on every tab with an href, to its page ' +
           'and fragment');
+  t.check(ownTabs.length === 3 && ownTabs.every(function (one) {
+    const done = clicked(one.href);
+    return done.went.length === 0 && done.hash === one.href;
+  }), 'K3b. a tab of the route\'s own row only moves the fragment, so the ' +
+          'trail and the marks follow it (RT)');
   const fragmentOnly = clicked('#xacml-pep-proxy-routes');
   t.check(fragmentOnly.went.length === 0 &&
           fragmentOnly.hash === '#xacml-pep-proxy-routes',
@@ -793,9 +812,11 @@ async function run(t) {
   const readerPanel = panelOf(reader, 'xacml-pep-proxy-routes');
   t.check(readerPanel.indexOf('class="drillback"') >= 0 &&
           readerPanel.indexOf('Route detail: orders-api') >= 0 &&
-          tabHrefs(reader).every(function (one) {
-            return one.href.charAt(0) !== '#';
-          }),
+          tabHrefs(reader).filter(function (one) {
+            return one.href.charAt(0) === '#';
+          }).map(function (one) {
+            return one.href;
+          }).join() === '#xacml-route-tab-metadata',
           'K6. a reader\'s route page: the same title, back link and tabs');
   // The kit, for any drill-down drawn inside a parent's tabs: a panel with
   // both `href` and `html` is drawn and its tab links back.
@@ -1457,16 +1478,22 @@ async function run(t) {
           'Admin console -> /admin | XACML -> /admin/xacml | Metadata',
           'TR6. /admin/xacml with no fragment: its first tab');
   // A DRILL-DOWN'S TABS ARE LINKS TO OTHER PAGES: its trail is already
-  // full and gains nothing, whatever the fragment.
+  // full and gains nothing from them, whatever the fragment. A route's page
+  // has a fourth row of its own (RT, below), whose open tab ends the trail.
+  const routeOwn = routeTrail.replace(/orders-api$/, 'orders-api -> ' +
+    '/admin/xacml/pep/route?pep=pep-1&route=orders-api | Metadata');
   t.check(runtimeTrail('/admin/xacml/pep/route',
-            { pep: 'pep-1', route: 'orders-api' }, page, '') === routeTrail &&
+            { pep: 'pep-1', route: 'orders-api' }, page, '') === routeOwn &&
           runtimeTrail('/admin/xacml/pep/route',
             { pep: 'pep-1', route: 'orders-api' }, page,
-            '#xacml-pep-proxy-routes') === routeTrail &&
+            '#xacml-pep-proxy-routes') === routeOwn &&
           runtimeTrail('/admin/xacml/pep/listener',
             { pep: 'pep-1', listener: 'public-https' }, lPage, '') ===
             lTrail,
-          'TR7. the route and listener pages keep their trails (T2, LT1)');
+          'TR7. the route and listener pages keep their trails (T2, LT1), ' +
+          'the route\'s ending in its first tab',
+          runtimeTrail('/admin/xacml/pep/route',
+            { pep: 'pep-1', route: 'orders-api' }, page, ''));
   // A page with no tabs keeps its one leaf.
   t.equal(runtimeTrail('/admin/xacml', {}, '<p>no tabs</p>', '#x'),
           'Admin console -> /admin | XACML',
@@ -1702,6 +1729,400 @@ async function run(t) {
           'each route\'s policy linked and its problem said, and a ' +
           'generated policy\'s route removed only with its box ticked',
           tableZ);
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== XL. no dead /admin/xacml/<tab> link on an XACML page ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): the Deciding policy link on a route's page answered
+  // "/admin/xacml/editor is not a page of this console". Policies, the
+  // editor, Remote PEPs, Try a decision and AuthZEN are TABS of
+  // /admin/xacml; the renderers write them as paths and
+  // `WebPages.render()` moves every link and GET form onto the tab, on
+  // every page. A POST form keeps its action: it navigates nowhere, and
+  // the runtime resolves it by that page (`WebAnswers.PEP_ROUTES_PAGE`).
+  const DEAD = /\b(href|action)="(\/admin\/xacml\/(?:policies|editor|peps|decide|authzen))(?=[?#"])/g;
+  const deadIn = function (html) {
+    log.debug("Entering deadIn().");
+    const found = [];
+    const forms = /<form\b[^>]*>/gi;
+    let f = forms.exec(html);
+    const posts = [];
+    while (f) {
+      if (/\bmethod="post"/i.test(f[0])) {
+        posts.push(f.index);
+      }
+      f = forms.exec(html);
+    }
+    let m = DEAD.exec(html);
+    while (m) {
+      const at = m.index;
+      // An action inside a POST form's own start tag is that form's.
+      const ownPost = m[1] === 'action' && posts.some(function (p) {
+        return p <= at && html.indexOf('>', p) > at;
+      });
+      if (!ownPost) {
+        found.push(html.slice(Math.max(0, at - 40), at + 80));
+      }
+      m = DEAD.exec(html);
+    }
+    log.debug("Leaving deadIn().");
+    return found;
+  };
+  const xlProxy = {
+    upstream: 'http://companion:9700', enabled: true,
+    routes: [
+      { id: 'r-policy', path: '/p', match: 'prefix', methods: ['GET'],
+        mechanisms: ['session'], application: 'orders-app',
+        authorization: { kind: 'policy', policy: 'orders-policy',
+                         resource: '', actionModel: 'method', roles: {} },
+        forwardCredentials: false, signals: true },
+      { id: 'r-simple', path: '/s', match: 'prefix', methods: ['GET'],
+        mechanisms: ['session'], application: 'orders-app',
+        authorization: { kind: 'simple', policy: 'pep-pep-1-r-simple',
+                         resource: 'https://pep.example:9543/s',
+                         actionModel: 'crud',
+                         roles: { read: ['orders-users'] } },
+        forwardCredentials: false, signals: true },
+      { id: 'r-public', path: '/h', match: 'exact', methods: [],
+        mechanisms: [], application: '',
+        authorization: { kind: 'public', policy: 'pep-pep-1-r-public',
+                         resource: 'https://pep.example:9543/h',
+                         actionModel: 'method', roles: {} },
+        forwardCredentials: false, signals: true },
+      { id: 'r-none', path: '/n', match: 'exact', methods: ['GET'],
+        mechanisms: ['session'], application: '',
+        authorization: {}, forwardCredentials: false, signals: true }] };
+  const xlStatus = xlProxy.routes.map(function (r) {
+    return { route: r.id, usable: true,
+             authorization: r.authorization.kind || '',
+             policy: r.authorization.policy || '',
+             policyProblem: r.authorization.policy ? '' : 'missing' };
+  });
+  const xlPep = { name: 'pep-1', proxy: xlProxy, proxyRoutes: xlStatus,
+                  listeners: [],
+                  listenerRows: [envRow('api-https', 'https', '',
+                                        { state: 'listening',
+                                          reason: 'none', port: 9443 })] };
+  const xlBase = {
+    pep: 'pep-1', found: true, listenersCatalogue: {},
+    listenerCertificates: { keyAlgorithms: ['ES256'],
+                            defaultKeyAlg: 'ES256' },
+    applicationChoices: [{ identifier: 'orders-app', name: 'Orders' }],
+    policyChoices: { policies: [{ name: 'orders-policy' },
+                                { name: 'pep-pep-1-r-simple' }] },
+    peps: [xlPep] };
+  const xlDrawn = [];
+  const xlDraw = function (path, query, view) {
+    log.debug("Entering xlDraw(). " + path);
+    const ctx = kit.context(query, true);
+    const html = WebPages.render(path, view, ctx);
+    xlDrawn.push({ label: path + ' ' + JSON.stringify(query),
+                   html: String(html) });
+    log.debug("Leaving xlDraw().");
+    return String(html);
+  };
+  xlDraw('/admin/xacml/pep', { pep: 'pep-1' }, xlBase);
+  const routePages = {};
+  xlProxy.routes.forEach(function (r) {
+    routePages[r.id] = xlDraw('/admin/xacml/pep/route',
+      { pep: 'pep-1', route: r.id },
+      Object.assign({}, xlBase, { route: r.id,
+        routeDetail: { found: true, route: r, usable: true, position: 0,
+                       count: xlProxy.routes.length, servedBy: [],
+                       application: r.application
+                         ? { identifier: r.application, name: 'Orders',
+                             found: true }
+                         : null,
+                       authorization: { policy: r.authorization.policy
+                         ? { name: r.authorization.policy,
+                             generated: r.authorization.kind !== 'policy',
+                             problem: '' }
+                         : null } } }));
+  });
+  xlDraw('/admin/xacml/pep/route', { pep: 'pep-1' }, xlBase);
+  xlDraw('/admin/xacml/pep/listener',
+         { pep: 'pep-1', listener: 'api-https' },
+         Object.assign({}, xlBase, { listener: 'api-https' }));
+  const xlDead = [];
+  xlDrawn.forEach(function (one) {
+    deadIn(one.html).forEach(function (bit) {
+      xlDead.push(one.label + ': ' + bit);
+    });
+  });
+  t.check(xlDrawn.length === 7 && xlDrawn.every(function (one) {
+    return one.html.length > 200;
+  }) && xlDead.length === 0,
+          'XL1. the PEP page, a route\'s page in each authorization kind ' +
+          '(policy, simple, public, none), the routes index and a ' +
+          'listener\'s page link to no /admin/xacml/<tab> path, and no GET ' +
+          'form goes to one', xlDead.join('\n'));
+  const decidingHref = 'href="/admin/xacml?policy=orders-policy' +
+    '#xacml-tab-editor"';
+  t.check(routePages['r-policy'].indexOf(decidingHref) >= 0 &&
+          routePages['r-simple'].indexOf('href="/admin/xacml?policy=' +
+            'pep-pep-1-r-simple#xacml-tab-editor"') >= 0,
+          'XL2. the deciding policy, and a generated one, link to the ' +
+          'editor tab with the policy named in the query',
+          routePages['r-policy']);
+  const editorAsked = WebPages.composeRequests(
+    WebPages.pageFor('/admin/xacml'), { policy: 'orders-policy' })
+    .filter(function (one) {
+      return one.member === 'xacmlEditor';
+    })[0];
+  t.check(!!editorAsked && editorAsked.params.policy === 'orders-policy' &&
+          XacmlPage.xacmlTabs(tr).some(function (one) {
+            return one.id === 'xacml-tab-editor';
+          }),
+          'XL3. /admin/xacml?policy=<id> asks the editor for that policy, ' +
+          'and #xacml-tab-editor is the editor\'s tab',
+          JSON.stringify(editorAsked));
+  // THE REWRITE ITSELF, on a page outside the section (the Roles and
+  // Applications pages write these paths too): a link and a GET form move,
+  // a plain link to the section and a POST form stay.
+  const moved = WebPages.xacmlTabLinks(
+    '<a href="/admin/xacml/decide">d</a>' +
+    '<a href="/admin/xacml/policies#fga-policies">f</a>' +
+    '<a href="/admin/xacml">x</a>' +
+    '<a href="/admin/xacml/pep?pep=a">p</a>' +
+    '<form method="get" action="/admin/xacml/editor"></form>' +
+    '<form method="post" action="/admin/xacml/peps"></form>', false);
+  t.equal(moved,
+          '<a href="/admin/xacml#xacml-tab-decide">d</a>' +
+          '<a href="/admin/xacml#fga-policies">f</a>' +
+          '<a href="/admin/xacml">x</a>' +
+          '<a href="/admin/xacml/pep?pep=a">p</a>' +
+          '<form method="get" action="/admin/xacml#xacml-tab-editor"></form>' +
+          '<form method="post" action="/admin/xacml/peps"></form>',
+          'XL4. off the section\'s own page, links and GET forms move onto ' +
+          'the tab; a section link, a PEP page link and a POST form stay');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== RT. a route\'s page is tabs of its own ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): every section of the route's page its own tab, in
+  // order and by name, Effective state and Listeners that serve it together
+  // on Metadata; the rows above keep their tabs marked, the trail ends at
+  // the open one, and a save comes back to the tab its form is on.
+  const ROUTE_TABS = [['xacml-route-tab-metadata', 'Metadata'],
+                      ['xacml-route-tab-edit', 'Edit the route'],
+                      ['xacml-route-tab-remove', 'Remove the route']];
+  const rtBars = page.match(
+    /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
+  t.equal(rtBars.length === 4 ? rtBars[3] : '',
+          '<nav class="tabbar subbar" aria-label="Route detail: orders-api">' +
+          ROUTE_TABS.map(function (one, n) {
+            return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
+              one[0] + '">' + one[1] + '</a>';
+          }).join('') + '</nav>',
+          'RT1. a route\'s page draws a fourth row: Metadata, Edit the ' +
+          'route, Remove the route, Metadata first');
+  const routePanel = function (html, id) {
+    log.debug("Entering routePanel(). " + id);
+    const start = html.indexOf('<div class="subpanel' +
+      (id === ROUTE_TABS[0][0] ? ' first' : '') + '" id="' + id + '">');
+    const next = start < 0 ? -1
+      : html.indexOf('<div class="subpanel', start + 10);
+    log.debug("Leaving routePanel().");
+    return start < 0 ? '' : html.slice(start, next < 0 ? html.length : next);
+  };
+  const metaPanel = routePanel(page, 'xacml-route-tab-metadata');
+  const editPanel = routePanel(page, 'xacml-route-tab-edit');
+  const removePanel = routePanel(page, 'xacml-route-tab-remove');
+  t.check(metaPanel.indexOf('>Effective state</h3>') >= 0 &&
+          metaPanel.indexOf('>Listeners that serve it</h4>') >= 0 &&
+          metaPanel.indexOf('<form') < 0 &&
+          editPanel.indexOf('value="set-pep-route"') >= 0 &&
+          editPanel.indexOf('Effective state') < 0 &&
+          editPanel.indexOf('remove-pep-route') < 0 &&
+          removePanel.indexOf('value="remove-pep-route"') >= 0 &&
+          removePanel.indexOf('set-pep-route') < 0,
+          'RT2. Effective state and the listeners that serve it are both on ' +
+          'Metadata; the edit form on Edit the route; the removal on Remove ' +
+          'the route', metaPanel.slice(0, 400));
+  const readerRoute = reader.match(
+    /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
+  t.check(readerRoute.length === 4 && /href="#xacml-route-tab-metadata"/
+            .test(readerRoute[3]) &&
+          !/xacml-route-tab-(edit|remove)/.test(reader),
+          'RT3. a reader\'s route page: Metadata alone',
+          readerRoute[3] || '');
+  // THE TRAIL'S TAIL for each fragment: the route a link to its own page,
+  // the open tab the leaf; none and an unknown one name Metadata, an
+  // anchor inside a tab names that tab.
+  const routeQ = { pep: 'pep-1', route: 'orders-api' };
+  const routeHere = routeTrail.replace(/orders-api$/, 'orders-api -> ' +
+    '/admin/xacml/pep/route?pep=pep-1&route=orders-api | ');
+  const editInner = (/ id="([^"]+)"/.exec(editPanel.slice(40)) || [])[1];
+  const tails = {
+    '': 'Metadata',
+    '#no-such-tab': 'Metadata',
+    '#xacml-route-tab-metadata': 'Metadata',
+    '#xacml-route-tab-edit': 'Edit the route',
+    '#xacml-route-tab-remove': 'Remove the route'
+  };
+  if (editInner) {
+    tails['#' + editInner] = 'Edit the route';
+  }
+  const tailMisses = Object.keys(tails).filter(function (hash) {
+    return runtimeTrail('/admin/xacml/pep/route', routeQ, page, hash) !==
+      routeHere + tails[hash];
+  });
+  t.check(!!editInner && tailMisses.length === 0,
+          'RT4. the trail ends Configured Routes › <route> › <tab> for every ' +
+          'tab, the first with no fragment or an unknown one, and the tab ' +
+          'holding an anchor', tailMisses.map(function (h) {
+            return h + ' => ' + runtimeTrail('/admin/xacml/pep/route',
+                                             routeQ, page, h);
+          }).join('\n'));
+  // THE MARK AT EVERY LEVEL, by the runtime's own markOpenTabs() over a
+  // DOM built from the page drawn: the three rows above keep Remote PEPs,
+  // Reverse proxy and Configured Routes, and the fourth marks the open tab.
+  const domOf = function (html) {
+    log.debug("Entering domOf().");
+    const VOID = ['br', 'hr', 'img', 'input', 'link', 'meta', 'wbr', 'col',
+                  'area', 'base', 'source', 'track', 'embed', 'param'];
+    const byId = {};
+    const roots = [];
+    const make = function (tag, attrs, parent) {
+      const set = {};
+      String(attrs.class || '').split(/\s+/).forEach(function (c) {
+        if (c) {
+          set[c] = true;
+        }
+      });
+      const el = {
+        tagName: tag.toUpperCase(), attrs: attrs, children: [],
+        parent: parent,
+        classList: { contains: function (c) { return !!set[c]; },
+                     add: function (c) { set[c] = true; },
+                     remove: function (c) { delete set[c]; } },
+        getAttribute: function (n) {
+          return Object.prototype.hasOwnProperty.call(this.attrs, n)
+            ? this.attrs[n] : null;
+        },
+        setAttribute: function (n, v) {
+          this.attrs[n] = v;
+        },
+        removeAttribute: function (n) {
+          delete this.attrs[n];
+        },
+        contains: function (other) {
+          let at = other;
+          while (at) {
+            if (at === this) {
+              return true;
+            }
+            at = at.parent;
+          }
+          return false;
+        }
+      };
+      if (attrs.id) {
+        byId[attrs.id] = el;
+      }
+      if (/(^|\s)(tabs|subtabs)(\s|$)/.test(String(attrs.class || '')) &&
+          tag === 'div') {
+        roots.push(el);
+      }
+      return el;
+    };
+    const top = make('body', {}, null);
+    let at = top;
+    const token = /<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+    let m = token.exec(html);
+    while (m) {
+      const tag = m[2].toLowerCase();
+      if (m[1] === '/') {
+        let up = at;
+        while (up && up.tagName !== tag.toUpperCase()) {
+          up = up.parent;
+        }
+        at = up && up.parent ? up.parent : at;
+      } else {
+        const attrs = {};
+        const re = /([^\s"'=\/>]+)(?:\s*=\s*"([^"]*)")?/g;
+        let a = re.exec(m[3]);
+        while (a) {
+          attrs[a[1].toLowerCase()] = (a[2] || '').replace(/&amp;/g, '&');
+          a = re.exec(m[3]);
+        }
+        const el = make(tag, attrs, at);
+        at.children.push(el);
+        if (VOID.indexOf(tag) < 0 && !/\/\s*$/.test(m[3])) {
+          at = el;
+        }
+      }
+      m = token.exec(html);
+    }
+    log.debug("Leaving domOf().");
+    return { roots: roots, byId: byId };
+  };
+  const marksFor = function (hash) {
+    log.debug("Entering marksFor(). " + hash);
+    const dom = domOf(page);
+    const target = dom.byId[String(hash).replace(/^#/, '')] || null;
+    const rt = Object.create(ConsoleRuntime.prototype);
+    rt.env = { document: {
+      querySelectorAll: function () { return dom.roots; },
+      querySelector: function () { return target; },
+      getElementById: function (id) { return dom.byId[id] || null; }
+    } };
+    rt.markOpenTabs();
+    const out = dom.roots.map(function (root) {
+      const bar = root.children.filter(function (el) {
+        return el.classList.contains('tabbar');
+      })[0];
+      const marked = (bar ? bar.children : []).filter(function (el) {
+        return el.classList.contains('tab-current');
+      });
+      return marked.map(function (el) {
+        return el.attrs.href;
+      }).join('+');
+    });
+    log.debug("Leaving marksFor().");
+    return out.join(' / ');
+  };
+  const above = '/admin/xacml#xacml-tab-peps / ' +
+    '/admin/xacml/pep?pep=pep-1#xacml-pep-tab-proxy / ' +
+    '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes / ';
+  const marks = {
+    '': '#xacml-route-tab-metadata',
+    '#no-such-tab': '#xacml-route-tab-metadata',
+    '#xacml-route-tab-metadata': '#xacml-route-tab-metadata',
+    '#xacml-route-tab-edit': '#xacml-route-tab-edit',
+    '#xacml-route-tab-remove': '#xacml-route-tab-remove'
+  };
+  if (editInner) {
+    marks['#' + editInner] = '#xacml-route-tab-edit';
+  }
+  const markMisses = Object.keys(marks).filter(function (hash) {
+    return marksFor(hash) !== above + marks[hash];
+  });
+  t.check(markMisses.length === 0,
+          'RT5. every fragment marks Remote PEPs, Reverse proxy and ' +
+          'Configured Routes above, and the open tab of the route\'s own row, ' +
+          'one mark per row', markMisses.map(function (h) {
+            return h + ' => ' + marksFor(h);
+          }).join('\n'));
+  // A SAVE KEEPS ITS TAB: set-pep-route lands on Edit the route, the
+  // route as it is now called; a refused save is drawn where it was (the
+  // runtime keeps the fragment), and so is the regenerate.
+  const WebAnswersRt = require('../admin-ui/web_answers');
+  const routeBackRt = '/admin/xacml/pep/route?pep=pep-1&route=orders-api';
+  t.check(WebAnswersRt.landing('/admin/xacml/peps', 'set-pep-route',
+            { ok: true }, routeBackRt, { from: 'orders-api',
+                                         id: 'orders-v2' }) ===
+            '/admin/xacml/pep/route?pep=pep-1&route=orders-v2' +
+            '#xacml-route-tab-edit' &&
+          WebAnswersRt.landing('/admin/xacml/peps', 'set-pep-route',
+            { ok: false }, routeBackRt, { id: 'orders-api' }) === null &&
+          WebAnswersRt.landing('/admin/xacml/peps',
+            'generate-pep-route-policy', { ok: true }, routeBackRt,
+            { route: 'orders-api' }) === null &&
+          editPanel.indexOf('generate-pep-route-policy') < 0 ===
+            (proxy.routes[0].authorization.kind === 'policy'),
+          'RT6. a save lands on Edit the route, a refusal and a regenerate ' +
+          'stay on the tab they were pressed on');
   log.debug("Leaving run().");
 }
 

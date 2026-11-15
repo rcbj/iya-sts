@@ -1249,9 +1249,12 @@ class WebAnswers {
     if (page === '/admin/xacml/peps' &&
         at.pathname === '/admin/xacml/pep/route') {
       const pep = String(at.searchParams.get('pep') || '');
+      // The save lands back on the route's Edit the route tab (rcbj,
+      // 2026-11-15: a form stays in its tab), `XacmlPage.ROUTE_EDIT_TAB`.
       if (action === 'set-pep-route' && fields && fields.id) {
         return '/admin/xacml/pep/route?' + new URLSearchParams({
-          pep: pep, route: String(fields.id) }).toString();
+          pep: pep, route: String(fields.id) }).toString() +
+          '#xacml-route-tab-edit';
       }
       if (action === 'remove-pep-route') {
         return '/admin/xacml/pep?' + new URLSearchParams({
@@ -1399,10 +1402,23 @@ class WebAnswers {
                html: WebAnswers.tlsClientCertificate(answer, fields, back,
                                                      t) };
     }
+    // A PEP's listener certificate, issued from the PEP's own page. Remote
+    // PEPs is a TAB of `/admin/xacml`, never a page: the section, the trail
+    // and the way back name the tab and the PEP's page (2026-11-15), where
+    // `/admin/xacml/peps` answered "is not a page of this console". Its
+    // Back to Remote PEPs is the tab; the PEP's own page is a crumb.
     if (page === '/admin/xacml/peps' &&
         action === 'issue-pep-certificate' && answer.privateKeyPem) {
-      return { title: t.text('consoleAnswers.once.pepCertificate'),
-               active: '/admin/xacml/peps',
+      const title = t.text('consoleAnswers.once.pepCertificate');
+      const pep = String(answer.pep || WebAnswers.one(fields, 'name') || '');
+      const via = [{ label: t.text('console.nav.xacml-peps'),
+                     href: '/admin/xacml#xacml-tab-peps' }];
+      return { title: title,
+               active: '/admin/xacml',
+               up: { href: '/admin/xacml', leaf: title,
+                     via: pep
+                       ? via.concat([{ label: pep, href: back }])
+                       : via },
                html: WebAnswers.pepCertificate(answer, t) };
     }
     if ((page === '/admin/pki/person' ||
@@ -1946,7 +1962,7 @@ class WebAnswers {
       kit.esc(result.fullChainPem) + '</pre>' +
       '<p>' + t.html('consoleAnswers.pep.anchor') + '</p><pre>' +
       kit.esc(result.anchorPem) + '</pre>' +
-      WebAnswers.backButton('/admin/xacml/peps',
+      WebAnswers.backButton('/admin/xacml#xacml-tab-peps',
                             t.text('consoleAnswers.pep.back'));
   }
 
