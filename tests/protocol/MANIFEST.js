@@ -2547,6 +2547,14 @@ const JOBS = [
   // approval by an absent owner, each refusal by its code
   // (gnap_interaction). Waits a minute for gnap.ownerApprovalLifetimeS.
   { file: 'sts_gnap_interaction_codes.js', browser: false, local: true },
+  // D12 (#444): GNAP impersonation and derivation asked of the delegation
+  // policy in a product realm of the job's own, each refusal by its code
+  // (gnap_delegation).
+  { file: 'sts_gnap_delegation_codes.js', browser: false, local: true },
+  // D12 (#444): per-client opaque identifiers, a user reference from
+  // another client, the grant lifetime and the per-person revoke, by code
+  // (gnap_person_grants). Waits a minute for gnap.grantLifetimeS 60.
+  { file: 'sts_gnap_person_grants_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
