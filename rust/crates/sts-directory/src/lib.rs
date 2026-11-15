@@ -17,6 +17,7 @@
 //! | [`domain_map`] | `common/domain_map.ts` |
 //! | [`ports`] | what the directory asks of the rest of the service |
 //! | [`error`] | a refusal: the ldapjs class, its result code, the sentence and the STS code |
+//! | [`funnel`] | the identity funnel's pure half: `identityOf()`, `personaFor()`'s names, `namePlan()`, `applyAuthenticationFactors()` |
 //!
 //! Proved against Node by `tests/node_vectors.rs` over `directory-node.json`
 //! (`tests/tools/directory-vectors.js`), and the other way by
@@ -28,6 +29,7 @@ pub mod directory;
 pub mod domain_map;
 pub mod entry;
 pub mod error;
+pub mod funnel;
 pub mod matching;
 pub mod model;
 pub mod ports;

@@ -308,9 +308,17 @@ rust/
                                  password grant, the failed-client-secret limit
                                  in the shared rate windows, the shared
                                  used-assertion history, RFC 9470 step-up at the
-                                 authorization endpoint.
-                                 Held to Node by tests/tools/oauth-vectors.js
-                                 and used-assertions-vectors.js
+                                 authorization endpoint; OIDC Core 5.5's claims
+                                 request with Identity Assurance's
+                                 verified_claims at the ID Token and UserInfo,
+                                 RFC 7662 introspection with RFC 9701's JWT
+                                 answer, RFC 7009 revocation; the password
+                                 grant recording through the identity funnel
+                                 (sts-directory's funnel, the runtime's
+                                 identity_funnel: autoCreateUser()).
+                                 Held to Node by tests/tools/oauth-vectors.js,
+                                 used-assertions-vectors.js and
+                                 oauth7-vectors.js
                                  both ways (the code flow: 78 requests alike)
                                  and over the wire by rust-console-e2e.sh (the
                                  unchanged console and portal bundles)

@@ -5610,6 +5610,14 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                      return require('./used-assertions-vectors.js')
                        .build(ROOT);
                    } },
+                 // The identity funnel's fold and persona, the claims
+                 // request, Identity Assurance's matching and RFC 9701's
+                 // negotiation (#444 phase 5, the `oauth7` slice):
+                 // tests/tools/oauth7-vectors.js.
+                 { file: 'oauth7-node.json',
+                   build: function () {
+                     return require('./oauth7-vectors.js').build(ROOT);
+                   } },
                  // The secrets every node agrees on, the pairwise key
                  // among them (#444 phase 5, the `oauth5` slice):
                  // tests/tools/cluster-secrets-vectors.js.
