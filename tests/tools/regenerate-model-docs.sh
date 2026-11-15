@@ -20,6 +20,8 @@
 #     models/lib/rust_lib.mjs's planCrates(): each one's Cargo.toml,
 #     src/lib.rs and src/generated/api.rs)
 #   rust/crates/sts-store/src/generated/persistence.rs
+#   rust/crates/sts-mgmt-api/src/generated/operations.rs and the two
+#     documents /admin-api serves (openapi.{management,console,every}.json)
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #
@@ -64,3 +66,17 @@ docker run --rm --label com.docker.compose.project=none \
      /out/types/api.generated.d.ts \
      /out/common/domain_classes.ts \
      /out/rust-store/persistence.rs"
+# sts-mgmt-api's copy (#444, phase 4): the operation enum it routes by and the
+# two documents /admin-api serves and validates against, as the image's model
+# build wrote them.
+mkdir -p rust/crates/sts-mgmt-api/src/generated
+docker run --rm --label com.docker.compose.project=none \
+  -v "${PWD}/rust/crates/sts-mgmt-api/src/generated:/out/mgmt" \
+  "${TAG}" bash -c \
+  "cp models/generated/mgmt_operations.rs /out/mgmt/operations.rs && \
+   cp models/generated/openapi.management.json \
+     models/generated/openapi.console.json \
+     models/generated/openapi.every.json /out/mgmt/ && \
+   chown $(id -u):$(id -g) /out/mgmt/operations.rs \
+     /out/mgmt/openapi.management.json /out/mgmt/openapi.console.json \
+     /out/mgmt/openapi.every.json"

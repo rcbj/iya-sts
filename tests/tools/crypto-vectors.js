@@ -5480,6 +5480,11 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                      return require('./xacml-vectors.js').build(ROOT);
                    } },
                  { file: 'krb5-codec-node.json', build: krb5Codec },
+                 // /admin-api, in process (#444, phase 4): mgmt-api-vectors.js.
+                 { file: 'mgmt-api-node.json',
+                   build: function () {
+                     return require('./mgmt-api-vectors.js').build(ROOT);
+                   } },
                  // The directory's wire layer: tests/tools/ldap-wire-vectors.js.
                  { file: 'ldap-wire-node.json',
                    build: function () {

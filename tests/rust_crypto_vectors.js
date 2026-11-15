@@ -74,6 +74,18 @@ function run(t) {
         t.check(ok, what);
       });
   }
+  // The management API (sts-mgmt-api, #444 phase 4): synchronous, and it
+  // needs no other Rust vector.
+  if (fs.existsSync(path.join(VECTORS, 'mgmt-api-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'mgmt-api-node.json'))) {
+    require('./tools/mgmt-api-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('mgmt-api-rust.json'),
+      read('mgmt-api-node.json'),
+      function (/** @type {boolean} */ ok, /** @type {string} */ what,
+                /** @type {string} */ detail) {
+        t.check(ok, what, detail);
+      });
+  }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
     log.debug("Leaving run(). No Kerberos vectors.");
     return runSigned(t);

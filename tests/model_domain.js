@@ -201,6 +201,19 @@ function declarations(t) {
       'utf8'),
   'rust/crates/sts-store/src/generated/persistence.rs is what the model ' +
     'generates (tests/tools/regenerate-model-docs.sh)');
+  // sts-mgmt-api's copy (#444, phase 4): the operation enum its router is
+  // an exhaustive match over, and the documents it validates against.
+  [['mgmt_operations.rs', 'operations.rs'],
+   ['openapi.management.json', 'openapi.management.json'],
+   ['openapi.console.json', 'openapi.console.json'],
+   ['openapi.every.json', 'openapi.every.json']].forEach(function (pair) {
+    const built = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      pair[0]), 'utf8');
+    t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-mgmt-api',
+      'src', 'generated', pair[1]), 'utf8') === built,
+    'rust/crates/sts-mgmt-api/src/generated/' + pair[1] + ' is what the ' +
+      'model generates (tests/tools/regenerate-model-docs.sh)');
+  });
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

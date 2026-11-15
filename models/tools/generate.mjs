@@ -24,7 +24,7 @@ import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
 import { renderRustApi, renderRustDomain, renderRustPersistence,
-  renderRustPolicyTables }
+  renderRustPolicyTables, renderRustManagementOperations }
   from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
@@ -235,6 +235,9 @@ async function generate() {
   });
   fs.writeFileSync(path.join(out, 'rust.crates.json'),
     JSON.stringify(rust.crates));
+  // The management API's operations, for sts-mgmt-api's router (#444).
+  fs.writeFileSync(path.join(out, 'mgmt_operations.rs'),
+    renderRustManagementOperations(served));
   const projected = projections(program);
   const conceptNames = new Set(concepts.map(function (one) {
     return one.name;

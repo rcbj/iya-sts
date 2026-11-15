@@ -473,6 +473,22 @@ contract to hold the Rust to. It does not shorten the engine's port.
    `setTruststore`, …) are in-process callbacks. They become constructor
    arguments (section 4.2).
 
+### 5.1a `sts-mgmt-api`: the framework, ported (phase 4)
+
+**The model routes, not a table in code.** `models/lib/rust_lib.mjs` writes
+the two documents' 700 operations as an `Operation` enum, and `routing.rs`
+is an exhaustive `match` over it whose last arm names the operations not yet
+ported (`not_yet_ported.rs`), so an operation the model adds does not compile
+until it is routed or listed. What `admin_api.ts` keeps beside the model — a
+row's `mirrors`, tag, console twin, the `:action` routes and the document's
+frame — is exported by `tests/tools/export-admin-api-tables.js`, and
+`build.rs` refuses a row the model does not have, or the reverse. The gate,
+the request checks (ajv's words, with the `jsonschema` crate's verdict), the
+closed-model answer check (#1353) and the setup operations are ported; the
+registers outside `sts-core` are ports (`GatePorts`, `AccessPolicy`,
+`SetupPorts`, `KeySource`). `mgmt-api-node.json` is the proof: 60 requests
+answered byte for byte as Node answers them, both ways.
+
 ### 5.2 The decisions
 
 1. **The console calls `/admin-api` with the signed-in operator's access
