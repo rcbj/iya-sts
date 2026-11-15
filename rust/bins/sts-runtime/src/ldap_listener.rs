@@ -53,6 +53,48 @@ fn response_op(message: &Message) -> Option<u8> {
     })
 }
 
+/// THE TWO SOCKETS' STATE, AS THE DIRECTORY'S VIEWS PUBLISH IT
+/// (`directoryState()`'s `port`, `listening`, `listenError`, `ldapsPort`
+/// and `ldapsListening`): `ldap_server.js` keeps them as module state
+/// written by `listen()`, and a view reads them whatever happened. Here
+/// they are written by [`listen_plain`] and [`listen_tls`] and read by
+/// `/admin-api/groups` (#444, phase 5, the `apis3` slice). The port starts
+/// at the configured one, as Node's `boundPort` starts at `LDAP_PORT`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SocketState {
+    pub port: Option<u16>,
+    pub listening: bool,
+    pub listen_error: String,
+    /// `secureServer ? boundTlsPort : null`: set once LDAPS has a context.
+    pub ldaps_port: Option<u16>,
+    pub ldaps_listening: bool,
+}
+
+static STATE: std::sync::Mutex<SocketState> =
+    std::sync::Mutex::new(SocketState {
+        port: None,
+        listening: false,
+        listen_error: String::new(),
+        ldaps_port: None,
+        ldaps_listening: false,
+    });
+
+fn record(change: impl FnOnce(&mut SocketState)) {
+    let mut held = STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    change(&mut held);
+}
+
+/// The sockets' state now.
+#[tracing::instrument(level = "debug")]
+pub fn state() -> SocketState {
+    STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
 /// The stand-in until the directory is ported (phase 4).
 pub struct NotYet;
 
@@ -136,9 +178,15 @@ pub async fn listen_plain(
     port: u16,
     handlers: Arc<dyn Handlers>,
 ) -> Option<tokio::task::JoinHandle<()>> {
+    record(|s| s.port = Some(port));
     let tcp = match TcpListener::bind((host, port)).await {
         Ok(tcp) => tcp,
         Err(e) => {
+            let why = e.to_string();
+            record(|s| {
+                s.listening = false;
+                s.listen_error = why;
+            });
             tracing::error!(
                 "{}ldap: the plain LDAP listener could not bind {}:{}: {}; the directory does not answer on it.",
                 tag(codes::STS_LDAP_0027),
@@ -149,6 +197,12 @@ pub async fn listen_plain(
             return None;
         }
     };
+    let bound = tcp.local_addr().map(|a| a.port()).unwrap_or(port);
+    record(|s| {
+        s.port = Some(bound);
+        s.listening = true;
+        s.listen_error = String::new();
+    });
     tracing::info!("ldap: listening on ldap://{}:{}", host, port);
     Some(tokio::spawn(async move {
         loop {
@@ -174,9 +228,11 @@ pub async fn listen_tls(
     context: openssl::ssl::SslContext,
     handlers: Arc<dyn Handlers>,
 ) -> Option<tokio::task::JoinHandle<()>> {
+    record(|s| s.ldaps_port = Some(port));
     let tcp = match TcpListener::bind((host, port)).await {
         Ok(tcp) => tcp,
         Err(e) => {
+            record(|s| s.ldaps_listening = false);
             tracing::error!(
                 "{}ldap: the LDAPS listener could not bind {}:{}: {}; LDAPS is not offered.",
                 tag(codes::STS_LDAP_0028),
@@ -187,6 +243,11 @@ pub async fn listen_tls(
             return None;
         }
     };
+    let bound = tcp.local_addr().map(|a| a.port()).unwrap_or(port);
+    record(|s| {
+        s.ldaps_port = Some(bound);
+        s.ldaps_listening = true;
+    });
     tracing::info!("ldap: listening on ldaps://{}:{}", host, port);
     let context = Arc::new(context);
     Some(tokio::spawn(async move {

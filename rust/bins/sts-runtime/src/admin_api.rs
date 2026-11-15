@@ -36,6 +36,11 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
+#[path = "admin_groups.rs"]
+mod groups;
+#[path = "admin_views.rs"]
+mod views;
+
 use axum::http::HeaderMap;
 use serde_json::{json, Value as Json};
 use sts_core::mode::Mode;
@@ -1301,6 +1306,8 @@ impl KeySource for Keys {
 
 /// The setup operations' reads.
 struct Setup {
+    /// The reads answered over the runtime (`admin_views.rs`).
+    views: Arc<views::Views>,
     persistence: Arc<Persistence>,
     apps: Arc<ApplicationRegistry>,
     people: Arc<sts_registers::people::People>,
@@ -1385,6 +1392,12 @@ impl SetupPorts for Setup {
     }
     fn people(&self) -> Option<Arc<sts_registers::people::People>> {
         Some(self.people.clone())
+    }
+    fn view(
+        &self,
+        asked: &sts_mgmt_api::families::Asked<'_>,
+    ) -> Option<sts_mgmt_api::setup::Answered> {
+        self.views.answer(asked)
     }
 }
 
@@ -1699,7 +1712,10 @@ impl AdminStack {
                     dir: dir.clone(),
                     mode: mode.clone(),
                 })),
-                groups: None,
+                groups: Some(Arc::new(groups::GroupWriter {
+                    dir: dir.clone(),
+                    settings: settings.clone(),
+                })),
                 credentials: credentials.clone(),
                 service_accounts: Arc::new(NoServiceAccounts),
                 signals: Arc::new(NoSignals),
@@ -1753,6 +1769,17 @@ impl AdminStack {
             access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
             dpop,
             setup_ports: Arc::new(Setup {
+                views: Arc::new(views::Views {
+                    dir: dir.clone(),
+                    settings: settings.clone(),
+                    register: Arc::new(views::IdentityRegister::declare(
+                        &parts.lifecycle,
+                        &parts.handles,
+                        parts.persistence.clone(),
+                        parts.oauth.tokens.register.clone(),
+                        dir.clone(),
+                    )),
+                }),
                 persistence: parts.persistence.clone(),
                 apps,
                 people,

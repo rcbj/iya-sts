@@ -41,6 +41,13 @@ pub enum Handler {
     /// `sts-credentials`, a disable ending what the person holds through
     /// the runtime's sign-out).
     UsersAction,
+    /// `POST /admin-api/groups/{action}`: `create` and `add-member`,
+    /// through `sts-registers`' `People::groups()` and the directory's
+    /// group writer.
+    GroupsAction,
+    /// A read the runtime answers over its registers (`SetupPorts::view`):
+    /// `GET /admin-api/groups` and the views ported after it.
+    View,
     /// A family's own act or view (`families.rs`): the certificate
     /// authority's and the enrollment protocols', with their monitors.
     Family,
@@ -91,6 +98,10 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         Operation::CreateUser
         | Operation::DisableUserAccount
         | Operation::EnableUserAccount => Some(Handler::UsersAction),
+        Operation::GetGroups => Some(Handler::View),
+        Operation::CreateGroup | Operation::AddGroupMember => {
+            Some(Handler::GroupsAction)
+        }
         Operation::BuildPkiChain
         | Operation::RevokePkiCertificate
         | Operation::ReleasePkiCertificateHold
@@ -130,6 +141,7 @@ pub fn handler_of_route(route: &str) -> Option<Handler> {
         "/admin-api/realms/:action" => Some(Handler::RealmsAction),
         "/admin-api/applications/:action" => Some(Handler::ApplicationsAction),
         "/admin-api/users/:action" => Some(Handler::UsersAction),
+        "/admin-api/groups/:action" => Some(Handler::GroupsAction),
         "/admin-api/acme/:action"
         | "/admin-api/est/:action"
         | "/admin-api/scep/:action" => Some(Handler::Family),

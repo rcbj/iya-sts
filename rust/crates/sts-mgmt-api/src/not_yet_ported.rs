@@ -144,9 +144,6 @@ macro_rules! not_yet_ported {
         | Operation::RetryBackchannelDelivery
         | Operation::RestoreLoggedOutToken
         | Operation::ClearKerberosSignOut
-        | Operation::GetGroups
-        | Operation::CreateGroup
-        | Operation::AddGroupMember
         | Operation::SetGroupMail
         | Operation::SetGroupPolicy
         | Operation::AddGroupOwner
