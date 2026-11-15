@@ -292,6 +292,10 @@ impl Proxy {
         let reporting = rps.clone();
         pep.sync
             .set_signals_reporter(Arc::new(move || reporting.signals_json()));
+        // And the heartbeat each stream on its own (#1760).
+        let streaming = rps.clone();
+        pep.sync
+            .set_streams_reporter(Arc::new(move || streaming.streams_json()));
         Proxy {
             pep,
             auth: Authenticator::new(client, ttl),
@@ -1597,7 +1601,7 @@ impl Proxy {
     }
 }
 
-fn tower_service(
+pub(crate) fn tower_service(
     proxy: Arc<Proxy>,
     transport: Transport,
 ) -> TowerToHyperService<axum::routing::Router> {
@@ -1610,26 +1614,10 @@ fn tower_service(
     TowerToHyperService::new(router)
 }
 
-/// The plain listener. A port that will not bind is logged and the PEP
-/// goes on: the proxy is a feature of this container, not its purpose.
-pub async fn serve_http(proxy: Arc<Proxy>, port: u16) {
-    let listener = match TcpListener::bind(("0.0.0.0", port)).await {
-        Ok(listener) => listener,
-        Err(error) => {
-            tracing::error!(
-                "{}xacml-pep: the reverse proxy could not listen on {}: {}. \
-                 The PEP's own endpoints and enforcement are unaffected.",
-                tag("STS-XPEP-0063"),
-                port,
-                error
-            );
-            return;
-        }
-    };
-    serve_on(proxy, listener).await;
-}
-
-/// The accept loop over a bound listener (the tests bind port 0).
+/// The plain listener's accept loop over a socket `main.rs` bound (it
+/// records whether the bind succeeded, #1760; the tests bind port 0). A
+/// port that will not bind is logged there and the PEP goes on: the proxy
+/// is a feature of this container, not its purpose.
 pub async fn serve_on(proxy: Arc<Proxy>, listener: TcpListener) {
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     tracing::info!(
@@ -1665,7 +1653,7 @@ pub async fn serve_https(proxy: Arc<Proxy>, https: Arc<HttpsListener>) {
     let listener = match TcpListener::bind(("0.0.0.0", https.port())).await {
         Ok(listener) => listener,
         Err(error) => {
-            https.mark_bind_failed(&error.to_string());
+            https.mark_bind_failed_for(&error);
             return;
         }
     };

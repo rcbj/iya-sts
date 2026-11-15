@@ -520,6 +520,53 @@ impl RpSet {
         })
     }
 
+    /// One row per CAEP/RISC stream, for the HEARTBEAT only (#1760): the
+    /// client it serves (so the service can say which application), the
+    /// transmitter's stream id, whether it runs and is healthy, the AGES of
+    /// its start, last poll and last success (the service turns them into
+    /// times by when the report arrived, so no clock here is believed) and
+    /// its counters. Never an error text or a URL. `GET /`, which answers
+    /// whoever reaches the container, keeps the counts of `signals_json()`.
+    pub fn streams_json(&self) -> Value {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let bounds = self.bounds();
+        let age = |at: Option<f64>| {
+            at.map(|t| ((now - t).max(0.0) * 1000.0) as u64)
+        };
+        let entries = lock(&self.entries);
+        let mut rows: Vec<(String, Value)> = entries
+            .iter()
+            .filter_map(|(client_id, entry)| {
+                let receiver = entry.party.receiver.as_ref()?;
+                let h = receiver.health();
+                Some((
+                    client_id.clone(),
+                    json!({
+                        "clientId": client_id,
+                        "streamId": h.stream_id,
+                        "running": h.running,
+                        "healthy": h.is_healthy_at(
+                            now, bounds.stale_ms as f64 / 1000.0),
+                        "startedAgeMs": age(h.started_at),
+                        "lastPollAgeMs": age(h.last_poll_at),
+                        "lastSuccessAgeMs": age(h.last_success_at),
+                        "consecutiveFailures": h.consecutive_failures,
+                        "polls": h.polls,
+                        "failedPolls": h.failed_polls,
+                        "setsAccepted": h.sets_accepted,
+                        "setsRefused": h.sets_refused,
+                        "sessionsEnded": h.sessions_ended
+                    }),
+                ))
+            })
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        Value::Array(rows.into_iter().map(|(_, v)| v).collect())
+    }
+
     /// How many relying parties and receivers are held, for `GET /`.
     pub fn counts(&self) -> (usize, usize) {
         let entries = lock(&self.entries);

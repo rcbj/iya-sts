@@ -19,6 +19,7 @@ mod enforce;
 mod identity;
 mod jwt;
 mod listener;
+mod listeners;
 mod options;
 mod pdp_client;
 mod pip;
@@ -50,6 +51,7 @@ use sts_core::version;
 use tokio::net::TcpListener;
 
 use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listeners::{EnvKind, ListenerSet, PlainStatus};
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
 use crate::pip::RemotePip;
@@ -129,9 +131,12 @@ fn install_fault_handler() {
     }));
 }
 
-async fn serve_http(pep: Arc<Pep>, port: u16) {
+async fn serve_http(pep: Arc<Pep>, port: u16, status: Arc<PlainStatus>) {
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
-        Ok(listener) => listener,
+        Ok(listener) => {
+            status.set("listening", "none");
+            listener
+        }
         Err(error) => {
             tracing::error!(
                 "{}xacml-pep: could not start: cannot listen on \
@@ -188,7 +193,7 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
     let listener = match TcpListener::bind(("0.0.0.0", https.port())).await {
         Ok(listener) => listener,
         Err(error) => {
-            https.mark_bind_failed(&error.to_string());
+            https.mark_bind_failed_for(&error);
             return;
         }
     };
@@ -316,11 +321,40 @@ async fn start(options: Options, info: version::VersionInfo) {
     // its relying parties after every pull; its listeners start below.
     let proxy = options
         .proxy_enabled
-        .then(|| Arc::new(Proxy::new(pep.clone(), proxy_client)));
+        .then(|| Arc::new(Proxy::new(pep.clone(), proxy_client.clone())));
+
+    // EVERY LISTENER (#1760): the environment's four, registered as each is
+    // made below, and the ones the service defines, bound after each pull.
+    let api_pep = pep.clone();
+    let proxy_make = proxy.clone().map(|proxy| {
+        Arc::new(move |transport: Transport| {
+            proxy::tower_service(proxy.clone(), transport)
+        }) as listeners::MakeService
+    });
+    let listener_set = Arc::new(ListenerSet::new(
+        &options.name,
+        Arc::new(move |transport: Transport| {
+            tower_service(api_pep.clone(), transport)
+        }),
+        proxy_make,
+        options.authzen_client_ca.clone(),
+        listeners::certify_with(proxy_client),
+    ));
+    let api_http = Arc::new(PlainStatus::default());
+    listener_set.environment("api-http", options.port,
+                             EnvKind::Plain(api_http.clone()));
+    listener_set.environment("api-https", options.https_port,
+                             EnvKind::Tls(https.clone()));
+    let reporting = listener_set.clone();
+    sync.set_listeners_reporter(Arc::new(move || reporting.report()));
 
     // REGISTER FIRST, PULL REGARDLESS — and both retried on the poll timer.
     sync.register().await;
     sync.pull("start").await;
+    {
+        let (set, defs) = (listener_set.clone(), sync.listener_definitions());
+        tokio::spawn(async move { set.apply(&defs).await });
+    }
     if let Some(proxy) = proxy.clone() {
         // Off the start: building a relying party asks the service for its
         // discovery document, and the PEP decides without it.
@@ -329,6 +363,7 @@ async fn start(options: Options, info: version::VersionInfo) {
 
     let poll_sync = sync.clone();
     let poll_proxy = proxy.clone();
+    let poll_listeners = listener_set.clone();
     let poll_options = options.clone();
     on_backoff(
         "the poll",
@@ -339,9 +374,11 @@ async fn start(options: Options, info: version::VersionInfo) {
         move || {
             let sync = poll_sync.clone();
             let proxy = poll_proxy.clone();
+            let listeners = poll_listeners.clone();
             Box::pin(async move {
                 sync.register_if_needed().await;
                 let ok = sync.pull("poll").await;
+                listeners.apply(&sync.listener_definitions()).await;
                 if let Some(proxy) = proxy {
                     proxy.reconcile().await;
                 }
@@ -428,13 +465,35 @@ async fn start(options: Options, info: version::VersionInfo) {
         // THE REVERSE PROXY (#1760), on ports of its own: every endpoint
         // above is untouched by it. It answers 404 to everything until the
         // service sends a configuration for this PEP.
-        tokio::spawn(proxy::serve_http(proxy.clone(), options.proxy_port));
+        let proxy_http = Arc::new(PlainStatus::default());
+        listener_set.environment("proxy-http", options.proxy_port,
+                                 EnvKind::Plain(proxy_http.clone()));
+        let (plain, port) = (proxy.clone(), options.proxy_port);
+        tokio::spawn(async move {
+            match TcpListener::bind(("0.0.0.0", port)).await {
+                Ok(socket) => {
+                    proxy_http.set("listening", "none");
+                    proxy::serve_on(plain, socket).await;
+                }
+                Err(error) => {
+                    proxy_http.set("failed", listener::bind_reason(&error));
+                    tracing::error!(
+                        "{}xacml-pep: the reverse proxy could not listen on                          {}: {}. The PEP's own endpoints and enforcement                          are unaffected.",
+                        tag("STS-XPEP-0063"),
+                        port,
+                        error
+                    );
+                }
+            }
+        });
         let proxy_https = Arc::new(HttpsListener::for_proxy(
             &options.https_cert_path,
             &options.https_key_path,
             options.proxy_https_port,
             options.https_reload_interval_ms,
         ));
+        listener_set.environment("proxy-https", options.proxy_https_port,
+                                 EnvKind::Tls(proxy_https.clone()));
         if proxy_https.is_configured() {
             let reload_options = options.clone();
             tokio::spawn(async move {
@@ -458,8 +517,14 @@ async fn start(options: Options, info: version::VersionInfo) {
             options.proxy_https_port
         );
     }
+    if !options.proxy_enabled {
+        listener_set.environment("proxy-http", options.proxy_port,
+                                 EnvKind::Off("proxy-off"));
+        listener_set.environment("proxy-https", options.proxy_https_port,
+                                 EnvKind::Off("proxy-off"));
+    }
     install_fault_handler();
-    serve_http(pep, options.port).await;
+    serve_http(pep, options.port, api_http).await;
 }
 
 /// How long the HTTPS listeners wait before re-reading their pair: the

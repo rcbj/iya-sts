@@ -54,6 +54,9 @@ struct Status {
     last_problem: Option<String>,
     last_checked_at: Option<String>,
     last_logged_problem: String,
+    /// Why the socket would not bind, from the closed set the heartbeat
+    /// reports (#1760); `None` while it has not failed.
+    bind_failed: Option<&'static str>,
 }
 
 /// The listener's pair and what is known about it.
@@ -72,6 +75,19 @@ pub struct HttpsListener {
     /// handshake alone proves possession of the key, which is all a
     /// certificate-bound token's `cnf.x5t#S256` asks.
     ask_any: bool,
+    /// Its pair is installed, not read from files (#1760).
+    in_memory: bool,
+}
+
+/// Why a bind failed, from the closed set the heartbeat reports (#1760):
+/// never the operating system's sentence, which goes to the log.
+pub fn bind_reason(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::AddrInUse => "address-in-use",
+        std::io::ErrorKind::PermissionDenied => "permission-denied",
+        std::io::ErrorKind::AddrNotAvailable => "address-unavailable",
+        _ => "other",
+    }
 }
 
 /// The certificate a caller presented on an HTTPS connection: the SHA-256
@@ -309,6 +325,7 @@ impl HttpsListener {
             acceptor: RwLock::new(None),
             client_ca: client_authorities(client_ca),
             ask_any: false,
+            in_memory: false,
         }
     }
 
@@ -500,6 +517,7 @@ impl HttpsListener {
     pub fn mark_listening(&self, port: u16) {
         let mut status = self.status();
         status.listening = true;
+        status.bind_failed = None;
         status.port = Some(port);
         if let Some(served) = &status.certificate {
             tracing::info!(
@@ -513,6 +531,24 @@ impl HttpsListener {
         }
     }
 
+    /// What the heartbeat reports about this listener (#1760): its state and
+    /// reason from the closed sets, and the certificate it serves.
+    pub fn state(&self) -> (&'static str, &'static str, Option<Value>) {
+        let s = self.status().clone();
+        let state = if s.listening {
+            ("listening", "none")
+        } else if let Some(reason) = s.bind_failed {
+            ("failed", reason)
+        } else if !s.configured && !self.in_memory {
+            ("off", "not-configured")
+        } else if s.certificate.is_none() {
+            ("waiting", "no-certificate")
+        } else {
+            ("waiting", "none")
+        };
+        (state.0, state.1, s.certificate)
+    }
+
     pub fn mark_bind_failed(&self, error: &str) {
         self.status().listening = false;
         self.problem(
@@ -524,8 +560,49 @@ impl HttpsListener {
         );
     }
 
+    /// A bind that failed, with its reason from the closed set.
+    pub fn mark_bind_failed_for(&self, error: &std::io::Error) {
+        self.status().bind_failed = Some(bind_reason(error));
+        self.mark_bind_failed(&error.to_string());
+    }
+
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// A listener whose pair is HANDED to it rather than read from disk
+    /// (#1760): a listener the service defined, whose key this process
+    /// generated and whose certificate the service issued over it. Asks
+    /// for a client certificate as the environment's listener of the same
+    /// purpose does.
+    pub fn in_memory(
+        port: u16,
+        client_ca: Option<&[u8]>,
+        ask_any: bool,
+    ) -> HttpsListener {
+        let mut listener = HttpsListener::new("", "", port, 0, client_ca);
+        listener.ask_any = ask_any;
+        listener.in_memory = true;
+        listener
+    }
+
+    /// Installs a pair, checked whole as a pair read from disk is: a pair
+    /// that does not build an acceptor is refused and the one served is
+    /// kept. Answers the served certificate's description.
+    pub fn install(&self, cert: &[u8], key: &[u8]) -> Result<Value, String> {
+        let (acceptor, leaf) =
+            acceptor_for(cert, key, &self.client_ca, self.ask_any)?;
+        let (served, _, _) = describe_served(&leaf);
+        match self.acceptor.write() {
+            Ok(mut slot) => *slot = Some(Arc::new(acceptor)),
+            Err(poisoned) => *poisoned.into_inner() = Some(Arc::new(acceptor)),
+        }
+        let mut status = self.status();
+        status.configured = true;
+        status.loaded_at = Some(sts_core::time::iso_now());
+        status.last_problem = None;
+        status.certificate = Some(served.clone());
+        Ok(served)
     }
 
     /// `https` on `GET /`.

@@ -232,6 +232,9 @@ struct SettingsHolding {
     /// The service answered 404: it has no settings endpoint (an older
     /// service), so the environment is in force. Said once.
     not_offered: bool,
+    /// The listeners the service defines for this PEP (#1760), as pulled:
+    /// the `listeners` member, or null for none. `listeners.rs` reads it.
+    listeners: Value,
 }
 
 /// What the reverse proxy has answered, cumulative in this process: by
@@ -434,6 +437,8 @@ struct State {
 
 /// What `GET /` asks the proxy's relying parties about their CAEP/RISC
 /// streams (`rp_set::RpSet::signals_json`), set by the proxy at start.
+/// The same shape asks the streams one by one for the heartbeat
+/// (`streams_json`), and every listener what it is doing (#1760).
 pub type SignalsReporter = Arc<dyn Fn() -> Value + Send + std::marker::Sync>;
 
 /// The register / pull / heartbeat client and what it holds.
@@ -442,6 +447,11 @@ pub struct Sync {
     options: Options,
     state: Mutex<State>,
     signals_reporter: Mutex<Option<SignalsReporter>>,
+    /// One row per CAEP/RISC stream, for the heartbeat only (#1760): it
+    /// names the client, which `GET /` never does.
+    streams_reporter: Mutex<Option<SignalsReporter>>,
+    /// Every listener and what it is doing, for the heartbeat (#1760).
+    listeners_reporter: Mutex<Option<SignalsReporter>>,
     /// The reverse proxy's sign-ins and sessions (#1760): here so that
     /// `GET /` can count them.
     pub proxy_sessions: Arc<Stores>,
@@ -500,6 +510,8 @@ impl Sync {
                 last_settings_kept_why: String::new(),
             }),
             signals_reporter: Mutex::new(None),
+            streams_reporter: Mutex::new(None),
+            listeners_reporter: Mutex::new(None),
         }
     }
 
@@ -942,6 +954,7 @@ impl Sync {
                         .into()
                 },
                 not_offered: false,
+                listeners: said["listeners"].clone(),
             };
         }
         tracing::info!(
@@ -1670,6 +1683,26 @@ impl Sync {
             .unwrap_or_else(|e| e.into_inner()) = Some(reporter);
     }
 
+    pub fn set_streams_reporter(&self, reporter: SignalsReporter) {
+        *self
+            .streams_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(reporter);
+    }
+
+    pub fn set_listeners_reporter(&self, reporter: SignalsReporter) {
+        *self
+            .listeners_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(reporter);
+    }
+
+    /// The listeners the last settings pull defined (#1760): null for none,
+    /// which is also an older service's answer.
+    pub fn listener_definitions(&self) -> Value {
+        self.lock().settings.listeners.clone()
+    }
+
     pub fn set_relying_parties(&self, counts: (usize, usize)) {
         self.lock().relying_parties = counts;
     }
@@ -1777,6 +1810,23 @@ impl Sync {
             .unwrap_or_else(|e| e.into_inner())
             .clone()
             .map(|report| report());
+        // ONE ROW PER STREAM (#1760), beside the counts: on the heartbeat
+        // only, which goes to the service over mutual TLS, since a row names
+        // the client its stream serves.
+        let streams = self
+            .streams_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .map(|report| report());
+        // EVERY LISTENER AND WHAT IT IS DOING (#1760). An older service
+        // ignores the member.
+        let listeners = self
+            .listeners_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .map(|report| report());
         let (token, count, c) = {
             let state = self.lock();
             (
@@ -1800,8 +1850,14 @@ impl Sync {
             "version": o.version, "notifyUrl": now.notify_url,
             "settings": o.settings_report()
         });
-        if let Some(signals) = signals {
+        if let Some(mut signals) = signals {
+            if let Some(streams) = streams {
+                signals["streams"] = streams;
+            }
             body["signals"] = signals;
+        }
+        if let Some(listeners) = listeners {
+            body["listeners"] = listeners;
         }
         let answer = self
             .client
