@@ -2570,6 +2570,12 @@ const JOBS = [
   // authzen_access_request). Posts three outside test Roots to
   // the client truststore and removes them (tools/pep-credential.js).
   { file: 'sts_authzen_codes.js', browser: false, local: true },
+  // D12 (#444): an application's own fine-grained policy, the switch, the
+  // types and issuance, each refusal by its code, and applications named
+  // like Object.prototype's members (fga_policies, fga_console,
+  // fga_issuance, fga_owned_policy_names). Pins remove-access-type-row's
+  // refusal answered 500 (STS-API-0139), a suspected defect.
+  { file: 'sts_fga_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
