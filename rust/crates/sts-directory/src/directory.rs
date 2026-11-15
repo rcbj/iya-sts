@@ -822,21 +822,6 @@ impl Directory {
             .unwrap_or_default()
     }
 
-    // `usernameKeysOf()`.
-    fn username_keys(entry: &Entry) -> Vec<String> {
-        let mut names: Vec<String> = entry.values("uid").to_vec();
-        names.extend(entry.values("stspseudonym").iter().cloned());
-        names.push(Self::username_of_dn(&entry.dn));
-        let mut out: Vec<String> = Vec::new();
-        for n in names {
-            let k = n.trim().to_lowercase();
-            if !k.is_empty() && !out.contains(&k) {
-                out.push(k);
-            }
-        }
-        out
-    }
-
     // A HOT PATH: asked by every handler and every rule, so no span.
     /// `personNameOf()`.
     pub fn person_name_of(entry: &Entry) -> String {
