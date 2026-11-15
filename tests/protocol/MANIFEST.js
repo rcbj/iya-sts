@@ -2595,6 +2595,15 @@ const JOBS = [
   // /access/v1/evaluation(s), in both modes (authzen_token_exchange).
   // Posts an outside test Root to the client truststore and removes it.
   { file: 'sts_authzen_token_exchange.js', browser: false, local: true },
+  // D12 (#444): the access-control policy as a request reaches it — the
+  // portal's own account, a realm's override refusing it, disabled and
+  // deleted, xacml.enforceAccess off, and /admin-api/mode's row
+  // (access_policy).
+  { file: 'sts_access_policy.js', browser: false, local: true },
+  // D12 (#444): the delegation facts' doors and the register — may_act,
+  // semantics, not-delegated, the attributes' grammar (STS-REG-0194) and
+  // the paged policy view (delegation_policy J, K, N).
+  { file: 'sts_delegation_facts.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
