@@ -532,6 +532,7 @@ impl SignOutDoor {
 
     /// `resultPage(base, result, inventory)`: two tabs — *Sign out*, and
     /// *Details* with the fan-out.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn result_page(
         &self,
         headers: &HeaderMap,

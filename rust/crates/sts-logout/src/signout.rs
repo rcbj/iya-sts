@@ -65,6 +65,7 @@ pub struct FanOut {
 }
 
 /// `helpers.xmlEscape()`: `&`, `<`, `>`, `"` and `'` (as `&apos;`).
+// A hot path: every value drawn; no span.
 pub fn esc(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -170,6 +171,7 @@ impl Logout {
     }
 
     /// `refusedNameMessage(asked)`, in English.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn refused_name_message(&self, wanted: &str) -> String {
         format!(
             "{}, so /logout acts only on the session you are holding. It \
@@ -187,6 +189,7 @@ impl Logout {
     }
 
     /// `nobodyMessage(act)`, in English.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn nobody_message(&self, act: bool) -> String {
         let closed = if self.deps.host.opens_test_controls() {
             "logout.anyUser is off"
@@ -220,6 +223,7 @@ impl Logout {
     }
 
     /// `issuerFor(req)`: the default authorization server's issuer.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn issuer_for(&self, asked: &Asked) -> String {
         self.deps.oauth2.issuer_of(&asked.base)
     }
@@ -227,6 +231,7 @@ impl Logout {
     /// `reauthenticationOwed(subject, body)` (#1521, ASVS 5.0.0 7.5.2):
     /// ending somebody's OTHER sessions needs a recent sign-in; leaving
     /// never does.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn reauthentication_owed(
         &self,
         subject: &Subject,
@@ -326,6 +331,7 @@ impl Logout {
     }
 
     /// `namingOf()`: who may be named here.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn naming_of(&self) -> &'static str {
         if self.any_user_allowed() {
             "open"
@@ -495,6 +501,7 @@ impl Logout {
     }
 
     /// `mergedResult(results)`: several people's results as one.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn merged_result(results: &[Value]) -> Value {
         let join = |name: &str| -> Value {
             Value::Array(
@@ -771,6 +778,7 @@ impl Logout {
     }
 
     /// `fansOut(result)`: whether the browser has something to do.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn fans_out(&self, result: &Value) -> bool {
         !self.fan_out_of(&[result]).html.is_empty()
             || result
@@ -780,6 +788,7 @@ impl Logout {
     }
 
     /// `resultView(result, remaining)`: the result as the page draws it.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn result_view(result: &Value, remaining: &Value) -> Value {
         let rows = |name: &str| -> Value {
             Value::Array(
@@ -874,7 +883,7 @@ impl Logout {
         let expected = self.mac_of(packed);
         if expected.is_empty()
             || !sts_crypto::secrets::constant_time_equals(
-                sealed[dot + 1..].as_bytes(),
+                &sealed.as_bytes()[dot + 1..],
                 expected.as_bytes(),
             )
         {
@@ -905,7 +914,11 @@ impl Logout {
                 "That sign-out result was made in another trust realm.".into(),
             );
         }
-        if !(js::number(payload.get("exp")) > self.deps.host.now_ms()) {
+        // `!(exp > now)`: an exp that is not a number never is later.
+        let later = js::number(payload.get("exp"))
+            .partial_cmp(&self.deps.host.now_ms())
+            == Some(std::cmp::Ordering::Greater);
+        if !later {
             return Err(
                 "That sign-out result has expired. What is still live \
                         is at /logout."

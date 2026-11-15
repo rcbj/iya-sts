@@ -155,7 +155,9 @@ impl Logout {
     /// natural key is a CREDENTIAL — `sha256(secret)` in hex, 16 long.
     // A hot path: once per code row; no span.
     pub fn handle_for(secret: &str) -> String {
-        let hex = sts_crypto::sigstore::sha256_hex(secret.as_bytes());
+        let digest =
+            sts_crypto::jws_alg::Hash::Sha256.digest(secret.as_bytes());
+        let hex: String = digest.iter().map(|b| format!("{:02x}", b)).collect();
         hex[..16].to_string()
     }
 
@@ -335,7 +337,7 @@ impl Logout {
         }))
     }
 
-    fn indexed<'a>(ctx: &'a Ctx) -> Option<&'a Arc<Index>> {
+    fn indexed(ctx: &Ctx) -> Option<&Arc<Index>> {
         ctx.index.as_ref().filter(|i| i.covers(&ctx.key))
     }
 
@@ -345,7 +347,8 @@ impl Logout {
             return i.holdings.get(&ctx.key).cloned().unwrap_or(Value::Null);
         }
         if ctx.holdings.is_none() {
-            let got = self.deps.stats.holdings_of(&[ctx.key.clone()]);
+            let got =
+                self.deps.stats.holdings_of(std::slice::from_ref(&ctx.key));
             ctx.holdings =
                 Some(got.get(&ctx.key).cloned().unwrap_or(Value::Null));
         }
@@ -383,7 +386,7 @@ impl Logout {
             return list_of(i.oauth_grants.get(&ctx.key));
         }
         if ctx.oauth_grants.is_none() {
-            let by = self.oauth_grants_by_key(&[ctx.key.clone()]);
+            let by = self.oauth_grants_by_key(std::slice::from_ref(&ctx.key));
             ctx.oauth_grants = Some(list_of(by.get(&ctx.key)));
         }
         ctx.oauth_grants.clone().unwrap_or_default()
@@ -421,7 +424,7 @@ impl Logout {
         if let Some(i) = Logout::indexed(ctx) {
             return list_of(i.wallet.get(&ctx.key));
         }
-        let by = self.wallet_rows_by_key(&[ctx.key.clone()]);
+        let by = self.wallet_rows_by_key(std::slice::from_ref(&ctx.key));
         list_of(by.get(&ctx.key))
     }
 
@@ -1718,7 +1721,7 @@ impl Logout {
                     ));
                 }
                 let realm = krb5.realm();
-                let p = krb5.sign_out(&[ctx.key.clone()], &realm);
+                let p = krb5.sign_out(std::slice::from_ref(&ctx.key), &realm);
                 if !truthy(Some(&p)) {
                     return Ok(no(format!(
                         "this KDC has no principal named {}@{}, so there was \

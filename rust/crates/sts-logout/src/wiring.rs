@@ -267,11 +267,9 @@ fn credential_fingerprint(identifier: &str) -> String {
     if identifier.is_empty() {
         return String::new();
     }
-    let hex = sts_crypto::sigstore::sha256_hex(identifier.as_bytes());
-    let bytes: Vec<u8> = (0..hex.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
-        .collect();
-    sts_crypto::b64::encode(&bytes)
+    sts_crypto::b64::encode(
+        &sts_crypto::jws_alg::Hash::Sha256.digest(identifier.as_bytes()),
+    )
 }
 
 /// `identityOf(value).key` (`common/admin_stats.js`): a `urn:uuid:` subject
@@ -316,11 +314,13 @@ impl IdentityKeys {
     }
 
     /// `identityKeyOf(value)`.
+    // A hot path: once per row and per record; no span.
     pub fn key_of(&self, value: &str) -> String {
         self.of(value).0
     }
 
     /// `holderKeyOf(username, sub)`.
+    // A hot path: once per row and per record; no span.
     pub fn holder_key_of(&self, username: &str, sub: &str) -> String {
         if sub.len() >= 9 && sub[..9].eq_ignore_ascii_case("urn:uuid:") {
             let (key, unresolved) = self.of(sub);
@@ -743,7 +743,12 @@ pub struct LogoutStack {
 /// `beginAuthentication(opts)` for a sign-out's sign-in: the pending
 /// record of a sign-in no application asked for — the password screen,
 /// nothing narrowed, no federation (`beginAuthenticationHere()` with no
-/// application) — and the screen's address.
+/// application) — and the screen's address. Member for member the record
+/// Node's own writes for `/logout` (probed in the tests image: `restart`
+/// null, `mechanismSource` `default`, `federation` null), so the
+/// unchanged sign-in bundle draws its screen. The authentication
+/// policy's per-application mechanisms (`mechanismFor()`), which an
+/// application-less sign-in never consults, are the policy slice's.
 fn begin_with(
     pending: sts_core::realm_store::RealmMap<Value>,
     settings: Arc<Settings>,
@@ -755,7 +760,7 @@ fn begin_with(
             * 1000.0;
         let record = json!({
             "id": id,
-            "restart": "",
+            "restart": null,
             "returnTo": opts.get("returnTo"),
             "details": opts.get("details").cloned().unwrap_or(json!([])),
             "hint": or_empty(opts.get("hint")),
