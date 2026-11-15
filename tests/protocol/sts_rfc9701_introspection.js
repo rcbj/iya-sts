@@ -619,6 +619,7 @@ async function profilesModes(meta, apiToken) {
   log.info("=== 7. the crypto-metadata page ===");
   const cm = await K.send(K.rb(D) + "/admin-api/crypto");
   const rowOf = function (label) {
+    log.debug("Entering rowOf().");
     let found = null;
     ((cm.json && cm.json.families) || []).forEach(function (family) {
       (family.algorithms || []).forEach(function (row) {
@@ -627,6 +628,7 @@ async function profilesModes(meta, apiToken) {
         }
       });
     });
+    log.debug("Leaving rowOf().");
     return found;
   };
   check("7a. /admin-api/crypto lists the introspection algorithms the " +
@@ -681,6 +683,8 @@ async function test() {
     .json.issuer;
   await K.person(D, PERSON, PASSWORD);
   const post = function (id, secret, extra) {
+    log.debug("Entering post().");
+    log.debug("Leaving post().");
     return Object.assign({ oauthClientId: id, oauthClientSecret: secret,
       oauthTokenEndpointAuthMethod: "client_secret_post" }, extra || {});
   };

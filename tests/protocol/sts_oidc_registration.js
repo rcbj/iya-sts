@@ -236,7 +236,9 @@ async function registration() {
     });
   }
   const algs = async function () {
+    log.debug("Entering algs().");
     const d = await K.send(K.rb(D) + "/.well-known/openid-configuration");
+    log.debug("Leaving algs().");
     return (d.json || {}).id_token_signing_alg_values_supported;
   };
   const devAlgs = await algs();
@@ -347,7 +349,9 @@ async function fetchedKeys() {
       oauthJwksUri: L.origin + one[1], oauthAssertionIssuer: one[0] });
   }
   const tokenWith = function (id, key) {
+    log.debug("Entering tokenWith().");
     const now = Math.floor(Date.now() / 1000);
+    log.debug("Leaving tokenWith().");
     return K.send(K.rb(D) + "/oauth2/token", { form: {
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: K.jws("ES256", { kid: key.kid }, { iss: id,
@@ -430,8 +434,10 @@ async function encryptionAndDisplay() {
     tos_uri: "https://rp.or.example/terms" });
   const shown = r.json || {};
   const entryOf = async function (id) {
+    log.debug("Entering entryOf().");
     const v = await K.send(K.rb(D) + "/admin-api/applications?application=" +
                            encodeURIComponent(id));
+    log.debug("Leaving entryOf().");
     return JSON.stringify(v.json || {});
   };
   let entry = await entryOf(shown.client_id);
@@ -491,6 +497,8 @@ async function test() {
     .json.issuer;
   served = { keys: [K1.jwk] };
   const count = function (path, fn) {
+    log.debug("Entering count().");
+    log.debug("Leaving count().");
     return function (req, res) {
       hits[path] = (hits[path] || 0) + 1;
       fn(req, res);

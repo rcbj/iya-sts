@@ -194,6 +194,8 @@ async function start(query, prefix) {
 async function clientHost() {
   log.debug("Entering clientHost().");
   const serve = function (type, name) {
+    log.debug("Entering serve().");
+    log.debug("Leaving serve().");
     return function (req, res) {
       hits[name] = (hits[name] || 0) + 1;
       res.writeHead(200, { "Content-Type": type });
@@ -693,6 +695,8 @@ async function encryption(other) {
     assert.ok(!encRsa.d && !encEc.d);
   });
   const rsaJwe = function (plaintext, jwk, extra) {
+    log.debug("Entering rsaJwe().");
+    log.debug("Leaving rsaJwe().");
     return K.jwe(plaintext, { alg: "RSA-OAEP-256", enc: "A128CBC-HS256",
       jwk: jwk, header: Object.assign({ cty: "JWT", kid: jwk.kid },
                                       extra || {}) });
@@ -775,6 +779,8 @@ async function profiles(encRsa) {
   log.info("=== h. profile narrowing and PAR ===");
   const api = K.rb(D) + "/admin-api/authorization-servers";
   const setMember = function (member, value) {
+    log.debug("Entering setMember().");
+    log.debug("Leaving setMember().");
     return K.ok(api + "/set", { profile: "r91np", member: member,
                                 value: value }, "set " + member);
   };
@@ -960,10 +966,14 @@ async function metadataAndRegistration() {
     assert.ok(refused(r, "invalid_client_metadata"), K.shown(r));
   });
   const write = function (attribute, value, mode) {
+    log.debug("Entering write().");
+    log.debug("Leaving write().");
     return K.send(K.rb(D) + "/admin-api/applications/" + (mode || "set"),
       { json: { application: "r91", attribute: attribute, value: value } });
   };
   const notOk = function (w) {
+    log.debug("Entering notOk().");
+    log.debug("Leaving notOk().");
     return w.status >= 400 || (w.json && w.json.ok === false);
   };
   let w = await write("oauthRequestUri", "ftp://x.example/ro", "add");
@@ -992,30 +1002,38 @@ async function metadataAndRegistration() {
   const cm = await K.send(K.rb(D) + "/admin-api/crypto");
   const text = JSON.stringify(cm.json || {});
   const rowOf = function (label) {
+    log.debug("Entering rowOf().");
     let found = null;
     const walk = function (node) {
+      log.debug("Entering walk().");
       if (found || !node || typeof node !== "object") {
+        log.debug("Leaving walk().");
         return;
       }
       if (Array.isArray(node)) {
         if (node[0] === label && node.length >= 2) {
           found = node[1];
+          log.debug("Leaving walk().");
           return;
         }
         node.forEach(walk);
+        log.debug("Leaving walk().");
         return;
       }
       if ((node.name === label || node.label === label ||
            node.what === label) &&
           (node.algorithms || node.values || node.value)) {
         found = node.algorithms || node.values || node.value;
+        log.debug("Leaving walk().");
         return;
       }
       Object.keys(node).forEach(function (k) {
         walk(node[k]);
       });
+      log.debug("Leaving walk().");
     };
     walk(cm.json);
+    log.debug("Leaving rowOf().");
     return found;
   };
   const signing = rowOf("Request object signature (RFC 9101)");

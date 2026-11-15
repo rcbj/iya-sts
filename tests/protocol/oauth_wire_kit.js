@@ -510,8 +510,10 @@ function kit(name) {
   function concatKdf(z, algId, bits) {
     log.debug("Entering concatKdf().");
     const len = function (b) {
+      log.debug("Entering len().");
       const out = Buffer.alloc(4);
       out.writeUInt32BE(b.length);
+      log.debug("Leaving len().");
       return Buffer.concat([out, b]);
     };
     const id = Buffer.from(algId);
