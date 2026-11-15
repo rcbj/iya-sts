@@ -169,7 +169,13 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    the parent page, no panel drawn; the one panel drawn is then the `first`,
    shown and marked current with no fragment), so the route page draws the PEP page's
    bar with Reverse proxy current and its sub-tabs with Configured Routes
-   current, the route inside; and `WebAnswers.landing()` sends that page's save to the route as it
+   current, the route inside. **Both are drawn inside the XACML page's own
+   bar** (rcbj 2026-11-15: three rows on the route page, two on the PEP's),
+   Remote PEPs current and every other XACML tab a link to
+   `/admin/xacml#<tab>` (`XacmlPage.withinXacmlTabs()`, the one tab list
+   `XacmlPage.xacmlTabs()` that `/admin/xacml` draws too). Three levels
+   needed no change to the kit: every rule of the stylesheet is a child
+   rule on its own `.tabs` or `.subtabs`. And `WebAnswers.landing()` sends that page's save to the route as it
    is now called (a rename moves its address) and its removal to the PEP's
    tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail

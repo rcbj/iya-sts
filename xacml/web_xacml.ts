@@ -2739,10 +2739,48 @@ class XacmlPage {
         Object.assign({}, ctx, { json: json }), row),
       'xacml-pep-tab-signals': self.signalsPanel(t, row.signals)
     };
-    return kit.tabbedPanels('xacml-pep-pages',
+    return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
       self.pepTabs(t).map(function (one: Json) {
         return Object.assign({}, one, { html: html[one.id] });
-      })) + back;
+      }))) + back;
+  }
+
+  // THE XACML PAGE'S TABS, in order: drawn by `/admin/xacml`
+  // (`WebPages.render()`), and as the first row of a PEP's page and a
+  // route's page, which keep them (`withinXacmlTabs()`).
+  static readonly PEPS_TAB = 'xacml-tab-peps';
+  static xacmlTabs(t: Json): Array<{ id: string; label: string }> {
+    return [
+      { id: 'xacml-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading') },
+      { id: 'xacml-tab-settings',
+        label: t.text('consoleProtocolSettings.globalSettings') },
+      { id: 'xacml-tab-policies',
+        label: t.text('console.nav.xacml-policies') },
+      { id: 'xacml-tab-editor', label: t.text('console.nav.xacml-editor') },
+      { id: XacmlPage.PEPS_TAB, label: t.text('console.nav.xacml-peps') },
+      { id: 'xacml-tab-decide', label: t.text('console.nav.xacml-decide') },
+      // AUTHZEN (#563): the API decided by this page's engine, on a tab of
+      // its own beside the PEPs that pull the repository.
+      { id: 'xacml-tab-authzen', label: t.text('consoleXacml.authzen.tab') }
+    ];
+  }
+
+  // THREE ROWS OF TABS ON A ROUTE'S PAGE, TWO ON A PEP'S (rcbj, 2026-11-15:
+  // "There should actually be three rows of tabs. 1) XACML page tabs,
+  // 2) Remote PEP tabs, and 3) Routes tabs ... it is worth it to be able to
+  // more easily navigate around this complex page"). The XACML page's bar
+  // with Remote PEPs current, the PEP page's (or the route page's) tabs
+  // drawn inside it; every other XACML tab a link to `/admin/xacml` at its
+  // anchor (`kit.tabbedPanels()`'s `href`). Nesting needs nothing of the
+  // kit: the stylesheet's rules are child rules on each `.tabs`.
+  static withinXacmlTabs(t: Json, html: string): string {
+    return kit.tabbedPanels('xacml-pages',
+      XacmlPage.xacmlTabs(t).map(function (one: Json) {
+        return one.id === XacmlPage.PEPS_TAB
+          ? Object.assign({}, one, { html: html })
+          : Object.assign({}, one, { href: '/admin/xacml#' + one.id });
+      }));
   }
 
   // THE PEP PAGE'S TABS, in order: drawn by `pepDetail()`, and by a route's
@@ -2777,6 +2815,7 @@ class XacmlPage {
   }
 
   // A ROUTE'S PAGE KEEPS THE TABS IT WAS OPENED FROM (rcbj, 2026-11-14):
+  // the XACML page's bar with Remote PEPs current (2026-11-15), inside it
   // the PEP page's bar with Reverse proxy current, inside it the Reverse
   // proxy sub-tabs with Configured Routes current, and the route inside
   // that. Every other tab and sub-tab is a link to the PEP page at that
@@ -2794,12 +2833,12 @@ class XacmlPage {
           ? Object.assign({}, one, { html: html })
           : Object.assign({}, one, { href: pep + '#' + one.id });
       }));
-    return kit.tabbedPanels('xacml-pep-pages',
+    return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
       self.pepTabs(t).map(function (one: Json) {
         return one.id === XacmlPage.PROXY_TAB
           ? Object.assign({}, one, { html: sub })
           : Object.assign({}, one, { href: pep + '#' + one.id });
-      }));
+      })));
   }
 
   /**

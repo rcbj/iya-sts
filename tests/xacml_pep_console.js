@@ -42,6 +42,9 @@
 //      both route forms: the chosen application linked, Clear, a box and
 //      Find over GET /admin-api/applications, each result a Use that fills
 //      the hidden `application`, the rest of the form kept as typed.
+//   X. THE XACML PAGE'S TABS FIRST (rcbj, 2026-11-15): three rows on a
+//      route's page (XACML with Remote PEPs current, the PEP's, the Reverse
+//      proxy sub-tabs), two on a PEP's page.
 //   T. THE TRAILS (rcbj): a PEP's page is Admin console › XACML › Remote
 //      PEPs › the PEP, and a route's adds › Reverse proxy › the route, each
 //      tab a crumb linking to that tab, built by the runtime's drawView().
@@ -475,6 +478,26 @@ async function run(t) {
   const bars = page.match(/<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) ||
     [];
   const pepUrl = '/admin/xacml/pep?pep=pep-1#';
+  // rcbj (2026-11-15): three rows on the route page — the XACML page's
+  // tabs with Remote PEPs current, the PEP page's, the Reverse proxy
+  // sub-tabs — and two on a PEP's page, the sub-tabs inside its tab.
+  const x = '/admin/xacml#';
+  const xacmlBar = '<nav class="tabbar" aria-label="Sections of this ' +
+    'page"><a href="' + x + 'xacml-tab-metadata">Metadata</a>' +
+    '<a href="' + x + 'xacml-tab-settings">Global settings</a>' +
+    '<a href="' + x + 'xacml-tab-policies">Policies</a>' +
+    '<a href="' + x + 'xacml-tab-editor">Policy editor</a>' +
+    '<a class="first" href="#xacml-tab-peps">Remote PEPs</a>' +
+    '<a href="' + x + 'xacml-tab-decide">Try a decision</a>' +
+    '<a href="' + x + 'xacml-tab-authzen">AuthZEN</a></nav>';
+  t.equal(bars[0] || '', xacmlBar,
+          'X1. the route page\'s first row: the XACML page\'s tabs, ' +
+          'Remote PEPs current, the others links to /admin/xacml');
+  t.check(page.indexOf('<section class="tabpanel first" ' +
+                       'id="xacml-tab-peps"><div class="tabs ' +
+                       'xacml-pep-pages">') >= 0,
+          'X2. the PEP page\'s tabs drawn inside Remote PEPs', page);
+  bars.shift();
   t.equal(bars[0] || '', '<nav class="tabbar" aria-label="Sections of this ' +
           'page"><a href="' + pepUrl + 'xacml-pep-tab-overview">Overview</a>' +
           '<a href="' + pepUrl + 'xacml-pep-tab-decisions">Decisions</a>' +
@@ -492,7 +515,7 @@ async function run(t) {
           'Manifest</a></nav>',
           'W2. the Reverse proxy sub-tabs, Configured Routes current');
   t.check(bars.length === 2 &&
-          (page.match(/<section class="tabpanel/g) || []).length === 1 &&
+          (page.match(/<section class="tabpanel/g) || []).length === 2 &&
           page.indexOf('<section class="tabpanel first" ' +
                       'id="xacml-pep-tab-proxy">') >= 0 &&
           (page.match(/<div class="subpanel/g) || []).length === 1 &&
@@ -512,6 +535,44 @@ async function run(t) {
           reader.indexOf('<a class="first" href="#xacml-pep-tab-proxy">') >= 0,
           'W4. a reader\'s route page keeps the tabs, without Create a New ' +
           'Route', reader);
+  const readerBars = reader.match(
+    /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
+  t.check(readerBars.length === 3 && readerBars[0] === xacmlBar,
+          'X3. a reader\'s route page draws the same three rows',
+          String(readerBars.length));
+  // A PEP's own page: two rows, the XACML page's tabs with Remote PEPs
+  // current, then its own six as panels, the sub-tabs inside Reverse
+  // proxy.
+  const pepPage = XacmlPage.pepDetail(writer, {
+    pep: 'pep-1', found: true, applicationChoices: [],
+    listenersCatalogue: {},
+    listenerCertificates: { keyAlgorithms: ['ES256'],
+                            defaultKeyAlg: 'ES256' },
+    peps: [{ name: 'pep-1', proxy: proxy, proxyRoutes: [], listeners: [],
+             listenerRows: [] }] });
+  const pepBars = pepPage.match(
+    /<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [];
+  t.equal(pepBars[0] || '', xacmlBar,
+          'X4. a PEP\'s page\'s first row: the XACML page\'s tabs, Remote ' +
+          'PEPs current');
+  t.equal(pepBars[1] || '', '<nav class="tabbar" aria-label="Sections of ' +
+          'this page"><a class="first" href="#xacml-pep-tab-overview">' +
+          'Overview</a><a href="#xacml-pep-tab-decisions">Decisions</a>' +
+          '<a href="#xacml-pep-tab-settings">Settings</a>' +
+          '<a href="#xacml-pep-tab-listener">Listener</a>' +
+          '<a href="#xacml-pep-tab-proxy">Reverse proxy</a>' +
+          '<a href="#xacml-pep-tab-signals">Signal streams</a></nav>',
+          'X5. its second row: its own tabs, each a panel of the page');
+  t.check(pepBars.length === 3 &&
+          /^<nav class="tabbar subbar" aria-label="Reverse proxy">/
+            .test(pepBars[2] || '') &&
+          panelOf(pepPage.split('id="xacml-pep-tab-proxy">')[1] || '',
+                  'xacml-pep-proxy-routes') !== '' &&
+          pepPage.indexOf('<section class="tabpanel first" ' +
+                          'id="xacml-tab-peps"><div class="tabs ' +
+                          'xacml-pep-pages">') >= 0,
+          'X6. two rows of tabs; the Reverse proxy sub-tabs inside its tab',
+          String(pepBars.length));
 
   // -------------------------------------------------------------------------
   t.log.info('=== F. one field per line, under legends ===');

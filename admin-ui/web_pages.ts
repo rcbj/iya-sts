@@ -2053,34 +2053,22 @@ class WebPages {
           !view.xacmlDecide) {
         throw new Error('The XACML page is missing a tab view.');
       }
-      const panels = [
-        { id: 'xacml-tab-metadata',
-          label: context.t.text('consoleProtocolSettings.metadataHeading'),
-          html: WebPages.withEndpoints('', view, context.t) },
-        { id: 'xacml-tab-settings',
-          label: context.t.text('consoleProtocolSettings.globalSettings'),
-          html: XacmlPage.render(view, context) },
-        { id: 'xacml-tab-policies',
-          label: context.t.text('console.nav.xacml-policies'),
-          html: XacmlPage.policiesBody(context, view.xacmlPolicies) },
-        { id: 'xacml-tab-editor',
-          label: context.t.text('console.nav.xacml-editor'),
-          html: XacmlPage.editorBody(context, view.xacmlEditor) },
-        { id: 'xacml-tab-peps',
-          label: context.t.text('console.nav.xacml-peps'),
-          html: XacmlPage.pepsBody(context, view.xacmlPeps) },
-        { id: 'xacml-tab-decide',
-          label: context.t.text('console.nav.xacml-decide'),
-          html: XacmlPage.decideBody(context, view.xacmlDecide) },
-        // AUTHZEN (#563): the API decided by this page's engine, on a tab of
-        // its own beside the PEPs that pull the repository.
-        { id: 'xacml-tab-authzen',
-          label: context.t.text('consoleXacml.authzen.tab'),
-          html: XacmlPage.authzenBody(context, view.xacmlAuthzen) }
-      ];
-      const rendered = panels.map(function (one) {
+      // The tabs and their order are `XacmlPage.xacmlTabs()`'s, which a
+      // PEP's page and a route's draw as their first row (2026-11-15).
+      const bodies: { [id: string]: string } = {
+        'xacml-tab-metadata': WebPages.withEndpoints('', view, context.t),
+        'xacml-tab-settings': XacmlPage.render(view, context),
+        'xacml-tab-policies':
+          XacmlPage.policiesBody(context, view.xacmlPolicies),
+        'xacml-tab-editor': XacmlPage.editorBody(context, view.xacmlEditor),
+        'xacml-tab-peps': XacmlPage.pepsBody(context, view.xacmlPeps),
+        'xacml-tab-decide': XacmlPage.decideBody(context, view.xacmlDecide),
+        'xacml-tab-authzen':
+          XacmlPage.authzenBody(context, view.xacmlAuthzen)
+      };
+      const rendered = XacmlPage.xacmlTabs(context.t).map(function (one) {
         return { id: one.id, label: one.label,
-          html: WebPages.xacmlTabLinks(one.html) };
+          html: WebPages.xacmlTabLinks(bodies[one.id]) };
       });
       return WebKit.tabbedPanels('xacml-pages', rendered);
     }

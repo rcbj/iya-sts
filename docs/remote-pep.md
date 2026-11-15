@@ -1226,9 +1226,12 @@ API, though the console no longer has a form for it.
 `/admin/xacml/pep/route?pep=<name>&route=<id>`. The trail is *Admin
 console › XACML › Remote PEPs › the PEP › Reverse proxy › the route*: the
 PEP crumb opens the PEP's page and the Reverse proxy crumb its Configured
-Routes. The page keeps the PEP page's tabs, with **Reverse proxy** open,
-and inside it the sub-tabs, with **Configured Routes** open and the route
-drawn in it. Every other tab and sub-tab opens the PEP's page at that tab.
+Routes. The page draws three rows of tabs: the XACML page's, with
+**Remote PEPs** open; inside it the PEP page's, with **Reverse proxy**
+open; and inside that the sub-tabs, with **Configured Routes** open and the
+route drawn in it. Every other XACML tab opens `/admin/xacml` at that tab,
+and every other PEP tab and sub-tab opens the PEP's page at that tab. A
+PEP's own page draws the first two rows the same way.
 The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
 `routeDetail` member holds what the page draws.
 
