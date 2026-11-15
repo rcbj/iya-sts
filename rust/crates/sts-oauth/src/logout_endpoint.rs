@@ -551,18 +551,18 @@ impl LogoutEndpoint {
         }
         let none = Json::Null;
         let user = session.get("user").unwrap_or(&none);
-        let names = [
+        let names: Vec<String> = [
             user.get("username"),
             user.get("email"),
             user.get("mail"),
             user.get("sub"),
             session.get("subject"),
-        ];
-        let found = names
-            .into_iter()
-            .filter(|v| crate::js::truthy(*v))
-            .any(|v| s(v).to_lowercase() == asked);
-        found
+        ]
+        .into_iter()
+        .filter(|v| crate::js::truthy(*v))
+        .map(|v| s(v).to_lowercase())
+        .collect();
+        names.contains(&asked)
     }
 
     /// `logoutRequest(req, res, q)`.
@@ -888,7 +888,10 @@ impl LogoutEndpoint {
             "ui_locales",
         ]
         .into_iter()
-        .filter(|n| q.get(*n).is_some_and(|v| !v.is_null() && s(Some(v)) != ""))
+        .filter(|n| {
+            q.get(*n)
+                .is_some_and(|v| !v.is_null() && !s(Some(v)).is_empty())
+        })
         .collect();
         let carried: String = names
             .iter()

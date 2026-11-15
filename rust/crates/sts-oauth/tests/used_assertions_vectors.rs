@@ -21,7 +21,7 @@ use std::sync::Arc;
 use serde_json::{json, Value as Json};
 use sts_core::settings::Settings;
 use sts_oauth::used_assertions::{
-    key_of, used_as, ClaimAsk, NoSealer, NoStore, Refused, UsedAssertions,
+    key_of, used_as, ClaimAsk, NoSealer, NoStore, NotClaimed, UsedAssertions,
 };
 
 fn vectors() -> Option<(PathBuf, Json)> {
@@ -103,11 +103,11 @@ async fn nodes_keys_clauses_and_answers() {
         let got = plain.claim(&claim).await;
         match (got, answer["ok"] == json!(true)) {
             (Ok(_), true) => {}
-            (Err(Refused::Replay(row)), false) => {
+            (Err(NotClaimed::Replay(row)), false) => {
                 assert_eq!(text(answer, "reason"), "replay", "{}", step);
                 assert_eq!(row["use"], answer["usedAs"], "{}", step);
             }
-            (Err(Refused::Full { .. }), false) => {
+            (Err(NotClaimed::Full { .. }), false) => {
                 assert_eq!(text(answer, "reason"), "full", "{}", step);
             }
             (other, _) => panic!("{} answered {:?}", step, other),

@@ -183,9 +183,11 @@ pub struct Handle {
     pub state: String,
 }
 
-/// Why a claim was refused.
+/// Why a claim was not made — `{ ok: false, reason }`: an outcome, not a
+/// refusal; each verifier codes its own (`STS-OAUTH-0012`, `0013`, `0243`,
+/// `0374`).
 #[derive(Clone, Debug, PartialEq)]
-pub enum Refused {
+pub enum NotClaimed {
     /// Held already; the row as a page draws it (`publicRow()`).
     Replay(Json),
     /// The realm holds as many live rows as it may.
@@ -345,13 +347,13 @@ impl UsedAssertions {
 
     /// `claim(opts)`: the document's use claimed in the ambient realm.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub async fn claim(&self, ask: &ClaimAsk) -> Result<Handle, Refused> {
+    pub async fn claim(&self, ask: &ClaimAsk) -> Result<Handle, NotClaimed> {
         if !FORMATS.contains(&ask.format.as_str())
             || ask.use_.is_empty()
             || ask.issuer.is_empty()
             || ask.identifier.is_empty()
         {
-            return Err(Refused::Store(
+            return Err(NotClaimed::Store(
                 "a claim needs a format, a use, an issuer and an identifier"
                     .into(),
             ));
@@ -390,10 +392,10 @@ impl UsedAssertions {
         match self.store.claim(&self.sealed_row(&row), cap, now).await {
             Ok(a) if a.claimed => Ok(handle),
             Ok(a) => match a.existing {
-                Some(existing) => Err(Refused::Replay(public_row(
+                Some(existing) => Err(NotClaimed::Replay(public_row(
                     &self.opened_row(&existing),
                 ))),
-                None => Err(Refused::Full { live: a.live, cap }),
+                None => Err(NotClaimed::Full { live: a.live, cap }),
             },
             Err(e) => {
                 tracing::error!(
@@ -404,7 +406,7 @@ impl UsedAssertions {
                     row.issuer,
                     e
                 );
-                Err(Refused::Store(format!(
+                Err(NotClaimed::Store(format!(
                     "the used-assertion history could not be consulted: {}",
                     e
                 )))
@@ -417,17 +419,17 @@ impl UsedAssertions {
         row: Row,
         cap: i64,
         now: i64,
-    ) -> Result<(), Refused> {
+    ) -> Result<(), NotClaimed> {
         let mut held =
             self.memory.lock().unwrap_or_else(PoisonError::into_inner);
         held.retain(|_, r| r.expires_at >= now);
         let at = (row.realm.clone(), row.key.clone());
         if let Some(existing) = held.get(&at) {
-            return Err(Refused::Replay(public_row(existing)));
+            return Err(NotClaimed::Replay(public_row(existing)));
         }
         let live = held.keys().filter(|(r, _)| *r == row.realm).count() as i64;
         if live >= cap {
-            return Err(Refused::Full { live, cap });
+            return Err(NotClaimed::Full { live, cap });
         }
         held.insert(at, row);
         Ok(())
@@ -540,7 +542,7 @@ impl UsedAssertions {
 pub struct Reserved {
     pub issuer: String,
     pub identifier: String,
-    pub answer: Result<Handle, Refused>,
+    pub answer: Result<Handle, NotClaimed>,
     /// Set when the verifier accepted the document: the reservation is
     /// kept if the answer is a 2xx.
     pub accepted: bool,
@@ -565,7 +567,7 @@ impl Arrival {
         &self,
         issuer: &str,
         identifier: &str,
-    ) -> Option<Result<Handle, Refused>> {
+    ) -> Option<Result<Handle, NotClaimed>> {
         let mut held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         let one = held
             .iter_mut()
@@ -592,7 +594,7 @@ impl Arrival {
         &self,
         issuer: &str,
         identifier: &str,
-    ) -> Option<Result<Handle, Refused>> {
+    ) -> Option<Result<Handle, NotClaimed>> {
         let held = self.held.lock().unwrap_or_else(PoisonError::into_inner);
         held.iter()
             .find(|r| r.issuer == issuer && r.identifier == identifier)
@@ -659,9 +661,9 @@ impl crate::client_auth::AssertionHistory for SharedAssertionHistory {
         };
         match found {
             Ok(_) => Spent::Ok,
-            Err(Refused::Replay(row)) => Spent::Replay(used_as(&row)),
-            Err(Refused::Full { live, .. }) => Spent::Full(live),
-            Err(Refused::Store(_)) => Spent::Failed,
+            Err(NotClaimed::Replay(row)) => Spent::Replay(used_as(&row)),
+            Err(NotClaimed::Full { live, .. }) => Spent::Full(live),
+            Err(NotClaimed::Store(_)) => Spent::Failed,
         }
     }
 
@@ -825,7 +827,7 @@ mod tests {
         let mut again = ask();
         again.use_ = "request-object".into();
         match h.claim(&again).await {
-            Err(Refused::Replay(row)) => {
+            Err(NotClaimed::Replay(row)) => {
                 assert_eq!(
                     used_as(&row),
                     " — as a client assertion, by a request that has not \
