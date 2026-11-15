@@ -323,6 +323,7 @@ pub fn empty_list_boxes_sentence(names: &[String]) -> String {
 }
 
 // `fieldsCoveredBy(body)`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn fields_covered_by(body: &Value) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut note = |name: &str| {

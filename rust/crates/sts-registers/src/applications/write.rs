@@ -92,6 +92,7 @@ impl How {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(super) fn quiet() -> How {
         How {
             quiet: true,
@@ -250,6 +251,7 @@ pub fn normalise_protocols(value: &Value) -> Result<Vec<String>, String> {
 }
 
 // `addTo(list, value)`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn add_to(list: &mut Vec<String>, value: &str) -> bool {
     let text = crate::js::trim(value).to_string();
     if text.is_empty() || list.contains(&text) {
@@ -260,6 +262,7 @@ pub(super) fn add_to(list: &mut Vec<String>, value: &str) -> bool {
 }
 
 // `noteDescription(record, value)`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn note_description(record: &mut Record, value: &str) -> bool {
     let text = crate::js::trim(value).to_string();
     if text.is_empty() || !record.description.is_empty() {

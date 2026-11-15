@@ -355,7 +355,8 @@ pub fn owned_operation_of(
                 ("application", a, b("application"), "")
             } else if let Some(a) = action_under(path, "/uma", true) {
                 ("application", a, b("owner"), "")
-            } else if let Some(a) = action_under(path, "/users", false) {
+            } else {
+                let a = action_under(path, "/users", false)?;
                 let user = b("user");
                 (
                     "service-account",
@@ -363,8 +364,6 @@ pub fn owned_operation_of(
                     if user.is_empty() { b("username") } else { user },
                     "",
                 )
-            } else {
-                return None;
             }
         }
         _ => return None,
