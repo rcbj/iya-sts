@@ -81,13 +81,14 @@ async function claims(used, config) {
                  answer: { used: !!seen.used } });
     }
   }
-  // The cap: a realm holding as many live rows as it may (three now)
-  // refuses `full`.
-  config.setOverride('oauth2.assertionReplayCacheSize', 3);
-  out.push({ step: 'claim', cap: 3,
-             ask: one('client-authentication', 'c3', 'j1'),
-             answer: outcome(await used.claim(one('client-authentication',
-                                                  'c3', 'j1'))) });
+  // The cap: a realm holding as many live rows as it may (ten, the
+  // setting's least) refuses `full`. Three are live; seven more fill it.
+  config.setOverride('oauth2.assertionReplayCacheSize', 10);
+  for (let i = 0; i < 8; i++) {
+    const ask = one('client-authentication', 'filler', 'f' + i);
+    out.push({ step: 'claim', cap: 10, ask: ask,
+               answer: outcome(await used.claim(ask)) });
+  }
   config.setOverride('oauth2.assertionReplayCacheSize', 1000);
   return out;
 }

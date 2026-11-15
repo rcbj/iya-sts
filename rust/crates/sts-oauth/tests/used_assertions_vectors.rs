@@ -65,10 +65,10 @@ async fn nodes_keys_clauses_and_answers() {
         assert_eq!(mine, text(row, "clause"), "{}", row);
         clauses.push(json!({ "existing": row["existing"], "clause": mine }));
     }
-    // Three live rows at most: the run's last claim is the fourth.
+    // Ten live rows at most: the run's last claim is the eleventh.
     let plain = UsedAssertions::new(
         Arc::new(Settings::new(
-            json!({ "oauth2": { "assertionReplayCacheSize": 3 } }),
+            json!({ "oauth2": { "assertionReplayCacheSize": 10 } }),
             HashMap::new(),
         )),
         Arc::new(NoStore),
