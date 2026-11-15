@@ -208,6 +208,15 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // The WS-Security message signature (#444 phase 7, `saml`): the
+  // envelopes Rust signed verified by Node, Rust's answers given again.
+  if (fs.existsSync(path.join(VECTORS, 'wssec-rust.json'))) {
+    require('./tools/wssec-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('wssec-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The shared secrets (#444 phase 5, `oauth5`): the `sts_cluster_secrets`
   // rows Rust offered, opened and kept by Node, and the pairwise subjects
   // Rust derived from them, derived again by Node.

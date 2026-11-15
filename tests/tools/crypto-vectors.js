@@ -5610,6 +5610,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                      return require('./used-assertions-vectors.js')
                        .build(ROOT);
                    } },
+                 // The WS-Security message signature (#444 phase 7, the
+                 // `saml` slice): tests/tools/wssec-vectors.js.
+                 { file: 'wssec-node.json',
+                   build: function () {
+                     return require('./wssec-vectors.js').build(ROOT);
+                   } },
                  // The secrets every node agrees on, the pairwise key
                  // among them (#444 phase 5, the `oauth5` slice):
                  // tests/tools/cluster-secrets-vectors.js.

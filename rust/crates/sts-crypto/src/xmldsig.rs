@@ -114,6 +114,9 @@ pub mod uri {
 
 use uri::*;
 
+mod wssec;
+pub use wssec::*;
+
 // ---------------------------------------------------------------------------
 // The hashes.
 // ---------------------------------------------------------------------------
@@ -961,6 +964,19 @@ pub fn algorithm_verdict(
     digests: &[String],
     policy: &XmlPolicy,
 ) -> AlgorithmVerdict {
+    algorithm_verdict_keyed(signature, digests, policy, false)
+}
+
+/// [`algorithm_verdict`] with `xmlAlgorithmVerdict()`'s `sharedKey`: true
+/// only for a WS-Security signature whose KeyInfo names a Kerberos token
+/// (#658), where an HMAC is a method this service can check.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn algorithm_verdict_keyed(
+    signature: &str,
+    digests: &[String],
+    policy: &XmlPolicy,
+    shared_key: bool,
+) -> AlgorithmVerdict {
     let Some(sig) = signature_method(signature) else {
         let why = refused_signature_method(signature);
         return AlgorithmVerdict {
@@ -984,10 +1000,10 @@ pub fn algorithm_verdict(
     };
     // AN HMAC NEEDS A SHARED KEY (#658). Node's only one is a Kerberos
     // token's session key, in a WS-Security signature whose KeyInfo names
-    // the token (`verifyWsSecurityHmac()`, which passes `sharedKey`); no
-    // caller of this module holds one, so an HMAC is always answered as a
-    // method a certificate cannot check.
-    if sig.family == Family::Hmac {
+    // the token (`verifyWsSecurityHmac()`, which passes `sharedKey`, and
+    // `wssec`'s reading); every other caller answers an HMAC as a method a
+    // certificate cannot check.
+    if sig.family == Family::Hmac && !shared_key {
         out.problem = format!(
             "the SignatureMethod \"{}\" is an HMAC, which needs a shared \
              key; a certificate cannot check one",
