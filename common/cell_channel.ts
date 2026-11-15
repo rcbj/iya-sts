@@ -259,6 +259,18 @@ class CellChannel {
       log.debug("Leaving CellChannel.ensureLeaf(). Held.");
       return this.leaf;
     }
+    // A Root replaced on another node, whose process branch has not arrived:
+    // the leaf held is presented until it does. Minting now would go through
+    // `pki.issueUnder()`, which REPAIRS a branch the Root no longer signs —
+    // this cell building a second process branch beside the one the other
+    // cell is building, and its claim is per cell (the claims are the cell's
+    // tier), so nothing but the row's merge would stand between the two. See
+    // handshakeContext() for the run that showed what a stale leaf costs.
+    if (this.leaf && !this.underCurrentAuthority(this.leaf) &&
+        !this.branchReady()) {
+      log.debug("Leaving CellChannel.ensureLeaf(). Waiting for the branch.");
+      return this.leaf;
+    }
     if (!this.minting) {
       const self = this;
       this.minting = this.mintLeaf().then(function (made) {
@@ -291,6 +303,72 @@ class CellChannel {
                     leaf.caDerB64 && this.rootPem() === leaf.rootPem;
     log.debug("Leaving CellChannel.underCurrentAuthority(). " + current);
     return current;
+  }
+
+  // -------------------------------------------------------------------------
+  // **THE LISTENER LOOKS AT ITS OWN LEAF ON EVERY HANDSHAKE (2026-11-14, CI
+  // run 43642810770, the `cells` mode).** A hierarchy rebuilt on cell A —
+  // `/admin/pki`'s build of the process branch at 22:00:54, three
+  // `build-root`s from 22:01:30 — reaches cell B as a row it adopts, and
+  // nothing in B asked its inter-cell leaf about it: B never dialled, and the
+  // refusal in `peerCellOf()` that was to tell a listener its leaf is stale
+  // never ran in B, because A's new leaf verifies under B's view, and once the
+  // Root was replaced the handshake failed in OpenSSL before any request
+  // reached `handle()`. So B presented its 21:59 leaf for the rest of the run
+  // and every A → B call failed — STS-CELL-0032 "not issued by the inter-cell
+  // Issuing CA", then "self-signed certificate in certificate chain" — ten
+  // protocol jobs among them. The hourly leaf job would have caught it an
+  // hour late.
+  //
+  // The listener's SNICallback is that question, asked where it cannot be
+  // skipped: in the handshake, which is the one thing every dialler does. A
+  // leaf from a branch the process no longer holds is minted again and the
+  // handshake in progress gets the new context (its key, its chain and the
+  // Root it verifies the client against); a current leaf answers with the
+  // server's own context at the cost of two comparisons. Every dialler sends
+  // the peer's private name as the server name (`dial()`), so the callback
+  // runs for every connection.
+  //
+  // **NEVER ON A ROOT WHOSE BRANCH HAS NOT ARRIVED.** A `build-root` on
+  // another cell writes the Root before the process branch under it. Minting
+  // then would issue under the branch the Root no longer signs, and asking
+  // `ensureScope()` for a branch that chains would be this cell building a
+  // second process branch beside the one being built — two Intermediate CAs
+  // out for the same reason. The leaf held is presented until the branch
+  // arrives, and the first handshake after it re-mints. `ensureLeaf()` makes
+  // the same wait for a dialler, because `pki.issueUnder()` repairs a stale
+  // branch — and a cell's claim on that build is its own cell's, not the
+  // service's.
+  // -------------------------------------------------------------------------
+  private branchReady(): boolean {
+    log.debug("Entering CellChannel.branchReady().");
+    const pki = require('./pki');
+    const ready = !!this.cellCaDer() &&
+                  pki.scopeChainsToRoot(pki.PROCESS_SCOPE) === true;
+    log.debug("Leaving CellChannel.branchReady(). " + ready);
+    return ready;
+  }
+
+  /**
+   * Answers the secure context a handshake on the inter-cell listener should
+   * use: null for the listener's own while the leaf is current, or a context
+   * over a leaf minted again because the hierarchy changed underneath it.
+   *
+   * @returns a promise of the context, or null for the server's own
+   */
+  async handshakeContext(): Promise<tls.SecureContext | null> {
+    log.debug("Entering CellChannel.handshakeContext().");
+    const held = this.leaf;
+    if (!held || this.underCurrentAuthority(held) || !this.branchReady()) {
+      log.debug("Leaving CellChannel.handshakeContext(). The server's own.");
+      return null;
+    }
+    const made = await this.ensureLeaf();
+    log.info('cells: the certificate authority this cell\'s inter-cell ' +
+             'certificate was issued under changed in another process, so ' +
+             'it was issued again before a peer\'s handshake.');
+    log.debug("Leaving CellChannel.handshakeContext(). Re-minted.");
+    return tls.createSecureContext(this.serverContextOptions(made));
   }
 
   // The service Root, the one anchor either side verifies the other against.
@@ -453,7 +531,22 @@ class CellChannel {
         return new Promise(function (resolve, reject) {
           const server = https.createServer(Object.assign(
             self.serverContextOptions(leaf),
-            { requestCert: true, rejectUnauthorized: true }),
+            { requestCert: true, rejectUnauthorized: true,
+              // A leaf from a replaced branch is minted again here, in the
+              // handshake — handshakeContext() argues it.
+              SNICallback: function (name: string, done: any) {
+                self.handshakeContext().then(function (ctx) {
+                  done(null, ctx || undefined);
+                }, function (err: any) {
+                  // The leaf held is presented: a peer that refuses it is
+                  // refused as before, and the next handshake asks again.
+                  log.warn(errorCodes.tag('STS-CELL-0031') + 'cells: the ' +
+                           'inter-cell certificate could not be issued ' +
+                           'again under the current hierarchy: ' +
+                           ((err && err.message) || err));
+                  done(null, undefined);
+                });
+              } }),
           function (req: any, res: any) {
             self.handle(app, req, res);
           });

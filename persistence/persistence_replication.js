@@ -82,13 +82,13 @@
 //   * **THE SOCKETS.** The KDC, the LDAP listeners, the main port, SPIFFE's
 //     gRPC sockets and the debugger listener are bound per process.
 //     Coordination is about state, and a socket is not state.
-//   * **THE REPLAY CACHES AND THE DPoP `jti` SETS CONVERGE RATHER THAN
-//     SYNCHRONISE, AND THAT IS A SECURITY STATEMENT.** Between a write in one
-//     process and its arrival in another there is a window the size of the
-//     convergence lag, and inside it a proof or an Authenticator refused by
-//     one process is accepted by another. Sticky sessions at the load balancer
-//     close it; nothing here does. It is written down rather than left to be
-//     found, and `/admin/persistence` says it too.
+//   * ~~**THE REPLAY CACHES AND THE DPoP `jti` SETS CONVERGE RATHER THAN
+//     SYNCHRONISE.**~~ No longer, since #46 (2026-09-14): every single-use
+//     value — a code, a DPoP `jti`, an artifact, a Kerberos Authenticator — is
+//     spent through `cluster/cluster_claims.js`'s atomic claim in the store,
+//     so a value one process accepted is refused by every other at once. The
+//     window this line described, the size of the convergence lag, is closed
+//     (#1319 took the claim out of `/admin/persistence` too).
 //   * **`ldap.maxEntries` IS STILL A CEILING ON WHAT THIS PROCESS HOLDS**,
 //     which stops meaning "the size of the directory" when the store is
 //     shared.
@@ -489,12 +489,13 @@ function createReplication(label) {
       startRetention();
       log.info('persistence: coordinating with other processes against this ' +
                'store, from change ' + applied + '. The change log is the ' +
-               'contract and is polled every ' + intervalMs() + 'ms; the ' +
-               'LISTEN/NOTIFY nudge only makes it prompt, so losing it costs ' +
-               'latency and never a change. THIS DOES NOT SHARE SOCKETS: ' +
-               'the KDC, the LDAP listeners, the TLS ports and SPIFFE\'s ' +
-               'four are per process, and the replay caches converge rather ' +
-               'than synchronise.');
+               'contract and is polled every ' + intervalMs() + 'ms; a ' +
+               'LISTEN/NOTIFY nudge, where the store sends one, only makes ' +
+               'it prompt, so losing it costs latency and never a change. ' +
+               'THIS DOES NOT SHARE SOCKETS: the KDC, the LDAP listeners, ' +
+               'the main port and SPIFFE\'s sockets are per process. A ' +
+               'single-use value is spent once across every process, ' +
+               'through one atomic claim in the store.');
       log.debug('Leaving start(). Coordinating from ' + applied + '.');
       return { coordinating: true, from: applied };
     }).catch(function (err) {
@@ -2435,11 +2436,11 @@ function createReplication(label) {
       // Said on the page rather than only in a comment, because it is the one
       // thing about this feature that can be got wrong in a way that matters.
       note: 'Coordination shares STATE and not SOCKETS. The KDC, the LDAP ' +
-            'listeners, the main port and SPIFFE\'s four are bound per ' +
-            'process. And the replay caches and DPoP jti sets CONVERGE ' +
-            'rather than synchronise: between a write in one process and ' +
-            'its arrival in another there is a window the size of the poll ' +
-            'interval in which a proof one process refused is accepted by ' +
+            'listeners, the main port and SPIFFE\'s sockets are bound per ' +
+            'process. A single-use value — an authorization code, a DPoP ' +
+            'jti, a Kerberos Authenticator — is spent once across every ' +
+            'process, through one atomic claim in the store, so there is ' +
+            'no window in which a value one process refused is accepted by ' +
             'another.'
     };
   }

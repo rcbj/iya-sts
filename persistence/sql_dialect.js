@@ -327,10 +327,58 @@ function create(engine) {
       (!!err && (err.errno === 1213 || err.errno === 1205));
   }
 
+  // -------------------------------------------------------------------------
+  // ROWS NAMED BY THEIR KEY COLUMNS, IN A STATEMENT THAT WRITES (2026-11-14).
+  // Knex spells `whereIn(['a', 'b'], tuples)` as a row constructor,
+  // `(a, b) IN ((?, ?), …)`. MariaDB 11.8 plans a single-table DELETE or
+  // UPDATE whose WHERE is that predicate with ONE tuple — the commonest
+  // case: a flush that removes one session, one key's index rows, one
+  // claim — as a FULL TABLE SCAN (EXPLAIN: `type ALL`, `possible_keys
+  // NULL`), although the tuple is the whole primary key; a SELECT of the
+  // same predicate is `const`. A scanning write locks every row it reads,
+  // and at READ COMMITTED waits for any row another transaction holds, so
+  // every minted flush that deleted something queued behind, and deadlocked
+  // with, every other flush in flight: CI run 43642810770's mariadb mode
+  // ran 3719 deadlock retries and 104 flushes ran out of them
+  // (STS-STORE-0021, each request answered 503 under STS-STORE-0066). The
+  // same rows named as `(a = ? AND b = ?) OR …` are a range on the key.
+  // PostgreSQL keeps the row constructor, whose plan is an index scan
+  // there, so its text is unchanged. An empty list keeps Knex's own empty
+  // IN (`1 = 0`): an empty OR would match every row.
+  // -------------------------------------------------------------------------
+  /**
+   * Restricts a builder to the rows whose `columns` equal one of `tuples`.
+   *
+   * @param builder - a Knex query builder
+   * @param columns - the key columns
+   * @param tuples - one array of values per row, in `columns`' order
+   * @returns the builder
+   */
+  function whereKeys(builder, columns, tuples) {
+    log.debug("Entering whereKeys(). " + tuples.length + " row(s).");
+    if (engine !== 'mariadb' || !tuples.length) {
+      log.debug("Leaving whereKeys(). A row constructor.");
+      return builder.whereIn(columns, tuples);
+    }
+    log.debug("Leaving whereKeys(). Column equalities.");
+    return builder.where(function () {
+      const any = this;
+      tuples.forEach(function (tuple) {
+        any.orWhere(function () {
+          const all = this;
+          columns.forEach(function (column, i) {
+            all.where(column, tuple[i]);
+          });
+        });
+      });
+    });
+  }
+
   log.debug("Leaving create().");
   return {
     engine: engine,
     ago: ago,
+    whereKeys: whereKeys,
     isRetryable: isRetryable,
     isPermanentDataError: isPermanentDataError,
     isUniqueViolation: isUniqueViolation,

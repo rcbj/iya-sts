@@ -509,8 +509,9 @@ function create(deps) {
       return Promise.resolve({ rows: [], rowCount: 0 });
     }
     return run(runner, 'releaseClaims',
-      kx('sts_cluster_claims')
-        .whereIn(['scope', 'realm', 'key', 'reservation'], tuples).del());
+      dialect.whereKeys(kx('sts_cluster_claims'),
+                        ['scope', 'realm', 'key', 'reservation'], tuples)
+        .del());
   }
 
   /**

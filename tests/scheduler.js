@@ -68,7 +68,10 @@
 //   R. a job filter on the report reads that job's own last slots from the
 //      store, beside a newest window another job fills, on a node that
 //      holds none of its finished rows — a leader that just took over
-//      (2026-11-14, run 28's crash takeover step 3).
+//      (2026-11-14, run 28's crash takeover step 3);
+//   S. a run abandoned in place long ago is outside that report and is
+//      found by its id, by one by-id read per realm — what the crash
+//      takeover's step 4 asks (2026-11-14, run 43642810770).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1655,6 +1658,120 @@ async function run(t) {
             'does not throw',
             JSON.stringify({ listed: lost.length }));
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== S. a run abandoned long ago is found by its id ' +
+             '(2026-11-14) ===');
+  {
+    // GITHUB ACTIONS RUN 43642810770's CRASH TAKEOVER: node-a left a run of
+    // `ssf.internal-poll` (every second) running, node-b abandoned it in
+    // place (STS-SCHED-0011) inside the bound, and step 4 of
+    // `tests/tools/scheduler-takeover.js` never saw it: the job filter holds
+    // the job's last twenty slots and a twenty-row window (R), and the row
+    // was about six hundred slots back. Step 4 now asks `?run=`, which is
+    // `findRun()`: one by-id read per realm, never a scan.
+    const durable = new Map();
+    const reads = [];
+    const w = kit.world({
+      clustered: false,
+      readRuns: function (realmId, ids) {
+        reads.push({ realmId: realmId, ids: ids.slice() });
+        const out = new Map();
+        ids.forEach(function (id) {
+          const row = durable.get(realmId + '\n' + id);
+          if (row) {
+            out.set(id, row);
+          }
+        });
+        return Promise.resolve(out);
+      },
+      newestRuns: function (realmIds) {
+        const rows = [];
+        durable.forEach(function (row) {
+          if (realmIds.indexOf(row.realm) >= 0) {
+            rows.push(row);
+          }
+        });
+        rows.sort(function (a, b) {
+          return b.startedAt - a.startedAt;
+        });
+        return Promise.resolve(rows.slice(0, 20));
+      }
+    });
+    const node = w.node('b');
+    const poll = baseJob({ id: 'test.internal-poll',
+      everyMs: function () { return 1000; } });
+    node.scheduler.register(poll);
+    const now = node.scheduler.nowMs();
+    const slotNow = Math.floor(now / 1000);
+    const idOf = function (n) {
+      return node.scheduler['runIdFor'](node.scheduler.job(poll.id),
+                                        'default', n);
+    };
+    const put = function (n, fields) {
+      const id = idOf(n);
+      durable.set('default\n' + id, Object.assign({
+        runId: id, kind: 'run', jobId: poll.id, realm: 'default',
+        slot: n, dueAt: n * 1000, trigger: 'schedule', state: 'succeeded',
+        attempt: 1, fenceAt: 1, queuedAt: n * 1000,
+        startedAt: n * 1000 + 10, endedAt: n * 1000 + 20,
+        nodeName: 'node-b'
+      }, fields || {}));
+      return id;
+    };
+    const left = put(slotNow - 600, {
+      state: 'abandoned', nodeName: 'node-a', errorCode: 'STS-SCHED-0011',
+      endedAt: now - 5000
+    });
+    for (let k = 1; k <= 30; k++) {
+      put(slotNow - k);
+    }
+    const listed = await node.scheduler.recentRuns({ job: poll.id });
+    t.check(!listed.some(function (r) { return r.runId === left; }),
+            'S1. the job\'s report does not hold a run abandoned six hundred ' +
+            'slots back: neither its last twenty slots nor the newest window',
+            JSON.stringify({ listed: listed.length }));
+    reads.length = 0;
+    const found = await node.scheduler.findRun(left);
+    t.check(found && found.runId === left && found.state === 'abandoned' &&
+            found.errorCode === 'STS-SCHED-0011',
+            'S2. findRun() answers it from the store, abandoned in place',
+            JSON.stringify(found));
+    t.check(reads.length >= 1 && reads.every(function (one) {
+      return one.ids.length === 1 && one.ids[0] === left;
+    }),
+            'S3. and read it by its id alone, one read per realm asked',
+            JSON.stringify(reads));
+    reads.length = 0;
+    const none = await node.scheduler.findRun(idOf(slotNow - 900));
+    t.check(none === null && reads.every(function (one) {
+      return one.ids.length === 1;
+    }),
+            'S4. a run nobody wrote is null, still read by id alone',
+            JSON.stringify(reads));
+    const takeover = require('./tools/scheduler-takeover');
+    t.check(takeover.runSettled(left, found, []) === true &&
+            takeover.runSettled(left, Object.assign({}, found,
+              { state: 'running' }), []) === false &&
+            takeover.runSettled(left, null, []) === false &&
+            takeover.runSettled(left, null, [{ runId: 'x',
+              abandonedOf: left }]) === true &&
+            takeover.runSettled(left, Object.assign({}, found,
+              { runId: 'another' }), []) === false,
+            'S5. step 4 counts the run settled when it is abandoned in ' +
+            'place by its id, or taken over in the job\'s runs, and not ' +
+            'while it is still running, unknown, or another run');
+    // As source, because the wait is a live cluster's: step 4's condition
+    // asks the dead node's run by its id before the job's report.
+    const text = require('fs').readFileSync(path.join(ROOT, 'tests', 'tools',
+      'scheduler-takeover.js'), 'utf8').replace(/\s+/g, ' ');
+    const wait = text.slice(text.indexOf('await until(\'the dead node'));
+    t.check(/\/admin-api\/scheduler\?run=/.test(text) &&
+            /^await until\('the dead node\\'s run to be taken over', async function \(\) \{ const detail = await runById\(base, one\.runId\);/
+              .test(wait),
+            'S6. step 4 of the crash takeover asks GET /admin-api/scheduler' +
+            '?run= for the run it left behind before the job\'s report');
+  }
   log.debug('Leaving run().');
 }
 
@@ -1666,6 +1783,6 @@ module.exports = {
             'bounded run history, removed realms, a tick that reads no ' +
             'history, a finished interval slot read once and not held (#883), ' +
             'the line ordered by the end of each run\'s slot, a job ' +
-            'filter reading the job\'s own slots',
+            'filter reading the job\'s own slots, a run found by its id',
   run: run
 };

@@ -31,6 +31,19 @@
 //
 // HSTS is here for the same reason it is not in `common/app.js`: only this
 // process can tell a TLS socket from the plain-HTTP revocation listener.
+//
+// A REQUEST ANOTHER CELL RELAYED HERE ALREADY CARRIES THE INSIDE NAMES (#98,
+// GitHub Actions run 43642810770). The sending cell's front process held the
+// browser's socket and translated the `Cookie` header before it routed, so
+// `common/cell_channel.ts` forwards `sts_session=…`, never
+// `__Host-sts_session=…`. Translating it again here dropped every `sts_*`
+// cookie as unprefixed, and a traveller's password act at cell A, relayed to
+// the person's home cell, was refused "This browser holds no session for
+// this sign-in" (STS-AUTHN-0327). The peer is a cell of this service,
+// verified over mutual TLS, and it has already applied the rule this file
+// exists for, so its header is believed as it stands (`isRelayed()`).
+// The answer's `Set-Cookie` lines are still wrapped here: the relaying cell
+// copies them onto its response as they arrive, without translating them.
 // ---------------------------------------------------------------------------
 
 import workerThreads = require('worker_threads');
@@ -102,6 +115,21 @@ class CookieWire {
   }
 
   /**
+   * Whether a request was relayed here by another cell, whose front process
+   * translated its `Cookie` header already. `stsCellRelay` is set by
+   * `common/cell_channel.ts`'s `serveRelayed()` on the request object, after
+   * the peer cell's certificate was checked; no header can set it.
+   *
+   * @param req - the request
+   * @returns true for a relayed request
+   */
+  // Hot path: every request. No Entering/Leaving pair — one would drown the
+  // log.
+  static isRelayed(req: any): boolean {
+    return !!(req && req.stsCellRelay);
+  }
+
+  /**
    * The name a browser will know a cookie by, for a document that must name it
    * (DBSC's session instructions). Asked in a worker, so it asks the settings.
    *
@@ -133,7 +161,7 @@ class CookieWire {
       }
       const prefixes = mode.prefixesCookies();
       const hsts = !mode.omitsStrictTransportSecurity();
-      if (prefixes && req.headers.cookie) {
+      if (prefixes && req.headers.cookie && !CookieWire.isRelayed(req)) {
         const header = CookieWire.unwrapHeader(req.headers.cookie,
           !!config.value('authn.cookieDomain'));
         if (header) {

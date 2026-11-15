@@ -371,7 +371,8 @@ function create(deps) {
     });
     await inChunks(dels, function (chunk) {
       return run(client, 'flush.delete',
-        kx('sts_minted').whereIn(['handle', 'realm', 'key'], chunk).del());
+        dialect.whereKeys(kx('sts_minted'), ['handle', 'realm', 'key'],
+                          chunk).del());
     });
     // 4. THE SIDE TABLES, for the bodies written.
     await sideTables(client, p, written);
@@ -493,7 +494,8 @@ function create(deps) {
     });
     await inChunks(sessionsGone, function (chunk) {
       return run(client, 'flush.sessionsGone',
-        kx('sts_sessions').whereIn(['realm', 'key'], chunk).del());
+        dialect.whereKeys(kx('sts_sessions'), ['realm', 'key'],
+                          chunk).del());
     });
     // THE MINTED INDEX (#820): the rows of a written body and of a removed
     // one cleared, except those filed again (kept, so a sort row is updated
@@ -533,7 +535,8 @@ function create(deps) {
         });
       });
       return run(client, 'flush.indexClear',
-        kx('sts_minted_index').whereIn(['handle', 'realm', 'key'], chunk)
+        dialect.whereKeys(kx('sts_minted_index'),
+                          ['handle', 'realm', 'key'], chunk)
           .whereNotIn(['handle', 'realm', 'index_key', 'key'], kept).del());
     });
     const filing = filed.filter(function (one) {
