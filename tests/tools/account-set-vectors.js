@@ -200,7 +200,7 @@ async function build(ROOT) {
         'mfa', 'OAuth 2.0 / OIDC',
         { application: 'app-two', credential: { kind: 'totp' } });
 
-  // ---- tickets -----------------------------------------------------------------
+  // ---- tickets --------------------------------------------------------------
   const minted = at('a ticket for emil', 'accountTicketFor', browser,
     { input: { target: '/oauth2/authorize?client_id=c1',
                hint: { loginHint: 'emil' } } }, function (r) {
@@ -229,13 +229,14 @@ async function build(ROOT) {
       { locals: { stsAccountSession: doraId,
                   stsAccountSet: dora.res.locals.stsAccountSet },
         recordId: 'rec-1', target: '/wsfed?wa=wsignin1.0' }, function () {
-        const res = { locals: { stsAccountSession: doraId,
-                                stsAccountSet: dora.res.locals.stsAccountSet } };
+        const res = { locals: {
+          stsAccountSession: doraId,
+          stsAccountSet: dora.res.locals.stsAccountSet } };
         return { target: authn.ticketedReturn(res, { id: 'rec-1' },
                                               '/wsfed?wa=wsignin1.0') };
       });
 
-  // ---- what the browser holds ------------------------------------------------
+  // ---- what the browser holds -----------------------------------------------
   at('the accounts this browser holds', 'browserAccounts', browser, {},
      function (r) {
        return { listed: authn.browserAccounts(r) };
@@ -322,7 +323,7 @@ async function build(ROOT) {
                                 'select_account', r) };
      });
 
-  // ---- the full set refuses a fourth account ---------------------------------
+  // ---- the full set refuses a fourth account --------------------------------
   clock.now += 1000;
   const fay = start('fay is the third', browser, 'fay', ['pwd'], '1',
                     'OAuth 2.0 / OIDC', pwd());
@@ -330,7 +331,7 @@ async function build(ROOT) {
   start('gil would be the fourth: refused', browser, 'gil', ['pwd'], '1',
         'WS-Federation', pwd('rp-one'));
 
-  // ---- the picker ----------------------------------------------------------------
+  // ---- the picker -----------------------------------------------------------
   const record = { id: 'pend-2', returnTo: '/oauth2/authorize?client_id=c2',
                    protocol: 'OAuth 2.0 / OIDC', application: 'app-one',
                    accountChoice: true, accountChoiceReason: 'ambiguous',
@@ -425,7 +426,7 @@ async function build(ROOT) {
         return { refused: authn.refuseAccountsUnread(r, res) };
       });
 
-  // ---- running out ------------------------------------------------------------------
+  // ---- running out ----------------------------------------------------------
   clock.now += 3601 * 1000;
   sessionOf('fay ran out: read lazily', browser);
   run('the clean-up moves what ended to remembered', 'sweepAccountSets', {},
@@ -444,7 +445,7 @@ async function build(ROOT) {
                sets: dump('authn.accountSets'),
                tickets: dump('authn.accountTickets') });
 
-  // ---- the pure functions -------------------------------------------------------
+  // ---- the pure functions ---------------------------------------------------
   const pure = [];
   mergeCases(clock.now).forEach(function (one) {
     pure.push({ fn: 'merge', name: one.name, args: [one.mine, one.theirs],

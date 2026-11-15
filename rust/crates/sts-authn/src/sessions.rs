@@ -1181,8 +1181,10 @@ impl Sessions {
         // A FULL SET REFUSES A NEW ACCOUNT (D11): every place
         // `authn.maxBrowserAccounts` allows is held by a live account.
         if multi_account && !reauthenticating {
-            let held = self
-                .live_account_count(account_set.as_ref(), default_found.as_ref());
+            let held = self.live_account_count(
+                account_set.as_ref(),
+                default_found.as_ref(),
+            );
             if held as f64 >= self.accounts.max_accounts() {
                 let why = format!(
                     "This browser is already signed in to {} accounts, the \

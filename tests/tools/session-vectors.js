@@ -492,7 +492,12 @@ function harness(ROOT, more) {
     return { answer: answer, res: res };
   };
   rec.opaque.push({ value: config, name: '[module]' });
-  return { req, rec, clock, realNow, randomId, config, overrides, mode, realms, state, people, gone, subjectOf, nameOf, helpers, userFor, disabled, policy, due, gateAnswers, stats, audit, deviceBound, authnModule, Authn, authn, passkeyRefusals, mechanisms, backchannel, sessionManagement, smState, observed, sessions, storeOf, request, response, cookieOf, steps, step };
+  return { req, rec, clock, realNow, randomId, config, overrides, mode, realms,
+           state, people, gone, subjectOf, nameOf, helpers, userFor, disabled,
+           policy, due, gateAnswers, stats, audit, deviceBound, authnModule,
+           Authn, authn, passkeyRefusals, mechanisms, backchannel,
+           sessionManagement, smState, observed, sessions, storeOf, request,
+           response, cookieOf, steps, step };
 }
 
 /**
@@ -507,7 +512,6 @@ function build(ROOT) {
   const rec = h.rec;
   const clock = h.clock;
   const realNow = h.realNow;
-  const randomId = h.randomId;
   const config = h.config;
   const overrides = h.overrides;
   const mode = h.mode;
@@ -515,28 +519,16 @@ function build(ROOT) {
   const state = h.state;
   const people = h.people;
   const gone = h.gone;
-  const subjectOf = h.subjectOf;
-  const nameOf = h.nameOf;
   const helpers = h.helpers;
-  const userFor = h.userFor;
   const disabled = h.disabled;
   const policy = h.policy;
   const due = h.due;
   const gateAnswers = h.gateAnswers;
-  const stats = h.stats;
-  const audit = h.audit;
-  const deviceBound = h.deviceBound;
-  const authnModule = h.authnModule;
-  const Authn = h.Authn;
   const authn = h.authn;
   const passkeyRefusals = h.passkeyRefusals;
   const mechanisms = h.mechanisms;
-  const backchannel = h.backchannel;
-  const sessionManagement = h.sessionManagement;
-  const smState = h.smState;
   const observed = h.observed;
   const sessions = h.sessions;
-  const storeOf = h.storeOf;
   const request = h.request;
   const response = h.response;
   const cookieOf = h.cookieOf;

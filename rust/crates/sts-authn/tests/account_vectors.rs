@@ -188,8 +188,10 @@ fn run(step: &Value, s: &Sessions) -> (Value, Response) {
             json!({"url": r.url, "session": s.session_of(&r, false)})
         }
         "ticketedReturn" => {
-            let mut res = Response::default();
-            res.locals = input["locals"].as_object().cloned().unwrap();
+            let res = Response {
+                locals: input["locals"].as_object().cloned().unwrap(),
+                ..Response::default()
+            };
             json!({"target": s.ticketed_return(
                 &res, &text("recordId"), &text("target"))})
         }
@@ -452,10 +454,7 @@ fn rust_writes_account_sets_node_reads() {
             .session_of(&jar.request(), false)
             .map(|x| x["id"].clone())
             .unwrap_or(json!(""));
-        let set = s
-            .account_sets()
-            .by_id(set["id"].as_str().unwrap())
-            .unwrap();
+        let set = s.account_sets().by_id(set["id"].as_str().unwrap()).unwrap();
         out.push(json!({"name": name, "now": *p.now.lock().unwrap(),
             "cookie": jar.header(), "set": set, "sessions": held,
             "accounts": accounts, "actsAs": acts}));
@@ -470,12 +469,16 @@ fn rust_writes_account_sets_node_reads() {
     record("two accounts, nothing chooses", &two, &s);
     let mut r = two.request();
     let mut response = Response::default();
-    let fay = s.session_of(&{
-        let x = two.request();
-        s.hint_account(&x, &json!({"loginHint": "fay"}));
-        x
-    }, false)
-    .unwrap();
+    let fay = s
+        .session_of(
+            &{
+                let x = two.request();
+                s.hint_account(&x, &json!({"loginHint": "fay"}));
+                x
+            },
+            false,
+        )
+        .unwrap();
     s.end_session_for(&r, &mut response, fay["id"].as_str().unwrap());
     two.take(&response);
     r.cookie = two.header();

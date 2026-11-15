@@ -141,7 +141,8 @@ pub fn pending_id_in(target: &str) -> Option<String> {
             *i > 0 && matches!(target.as_bytes()[i - 1], b'?' | b'&')
         })?
         .0;
-    let raw: String = target[at + 6..].chars().take_while(|c| *c != '&').collect();
+    let raw: String =
+        target[at + 6..].chars().take_while(|c| *c != '&').collect();
     if raw.is_empty() {
         return None;
     }
@@ -155,7 +156,9 @@ pub fn awaits_account_choice(record: Option<&Value>, now_ms: f64) -> bool {
     let Some(r) = record.filter(|r| js::truthy(Some(r))) else {
         return false;
     };
-    !(js::number(r.get("expires")) < now_ms)
+    // `record.expires < Date.now()` is false for a NaN expiry.
+    js::number(r.get("expires")).partial_cmp(&now_ms)
+        != Some(std::cmp::Ordering::Less)
         && !js::truthy(r.get("restartOnly"))
         && js::truthy(r.get("accountChoice"))
 }
@@ -464,7 +467,11 @@ impl Sessions {
 
     /// `matchAccountHint(live, hint)`: by sid, then subject, then login
     /// name or e-mail (or the subject that name resolves to).
-    fn match_account_hint(&self, live: &[String], hint: &AccountHint) -> String {
+    fn match_account_hint(
+        &self,
+        live: &[String],
+        hint: &AccountHint,
+    ) -> String {
         if !hint.sid.is_empty() && live.contains(&hint.sid) {
             return hint.sid.clone();
         }
@@ -531,8 +538,7 @@ impl Sessions {
             sid: slice(&js::or_empty(hint.get("sid")), 128),
             soft: js::truthy(hint.get("soft")),
         };
-        if !h.login_hint.is_empty() || !h.sub.is_empty() || !h.sid.is_empty()
-        {
+        if !h.login_hint.is_empty() || !h.sub.is_empty() || !h.sid.is_empty() {
             request.accounts.lock().hint = Some(h);
         }
     }
@@ -582,8 +588,7 @@ impl Sessions {
                 .map(|r| js::string_of(r.get(k)))
                 .unwrap_or_default()
         };
-        if row.is_some() && set.is_none() && !unread && field("path") == path
-        {
+        if row.is_some() && set.is_none() && !unread && field("path") == path {
             if let Some((id, _)) =
                 self.cookie_session(Some(request), SESSION_COOKIE)
             {
@@ -822,7 +827,9 @@ impl Sessions {
         response
             .locals
             .insert("stsAccountSession".into(), json!(sid));
-        response.locals.insert("stsAccountSet".into(), json!(set_id));
+        response
+            .locals
+            .insert("stsAccountSet".into(), json!(set_id));
         if added {
             self.deps.records.record_account_choice("added", None);
             let user = js::object_of(session.get("user"));
@@ -856,7 +863,11 @@ impl Sessions {
         }
         if let Some(mut row) = self.accounts.by_id(&set_id) {
             let sid = js::string_of(s.get("id"));
-            if self.accounts.end_session(&mut row, &sid, f64::NAN).is_some() {
+            if self
+                .accounts
+                .end_session(&mut row, &sid, f64::NAN)
+                .is_some()
+            {
                 self.accounts.save(&mut row);
             }
         }
@@ -909,7 +920,11 @@ impl Sessions {
 
     /// `accountRows(row, req)`: live accounts first, in the order they
     /// signed in; then the signed-out ones, the latest first. Never a sid.
-    fn account_rows(&self, row: Option<&Object>, request: &Request) -> Vec<Value> {
+    fn account_rows(
+        &self,
+        row: Option<&Object>,
+        request: &Request,
+    ) -> Vec<Value> {
         let Some(row) = row else {
             return Vec::new();
         };
@@ -1055,7 +1070,8 @@ impl Sessions {
         let row = self.account_set_of(Some(request))?;
         let mut sids: Vec<String> =
             js::object_of(row.get("sessions")).keys().cloned().collect();
-        if let Some((own, _)) = self.cookie_session(Some(request), SESSION_COOKIE)
+        if let Some((own, _)) =
+            self.cookie_session(Some(request), SESSION_COOKIE)
         {
             if !sids.contains(&own) {
                 sids.push(own);
@@ -1279,8 +1295,8 @@ impl Sessions {
         let own = self.accounts.cookie_name();
         let elsewhere = request.cookie.split(';').any(|part| {
             let name = part.trim().split('=').next().unwrap_or("");
-            let theirs = name == "sts_accounts"
-                || name.starts_with("sts_accounts_");
+            let theirs =
+                name == "sts_accounts" || name.starts_with("sts_accounts_");
             theirs && name != own
         });
         !elsewhere && self.signed_in_accounts(request).is_empty()
@@ -1427,7 +1443,9 @@ impl Sessions {
         if !cookie::cookie_value(&request.cookie, &name).is_empty()
             && self.account_set_of(Some(request)).is_none()
         {
-            self.deps.records.record_account_choice("selectFailed", None);
+            self.deps
+                .records
+                .record_account_choice("selectFailed", None);
             tracing::info!(
                 "{}authn: an act at the account picker carried an account \
                  set cookie that opens no set — another selection rotated \
@@ -1530,7 +1548,9 @@ impl Sessions {
                     location_of,
                 );
             }
-            self.deps.records.record_account_choice("selectFailed", None);
+            self.deps
+                .records
+                .record_account_choice("selectFailed", None);
             return keep(refused(
                 409,
                 codes::STS_AUTHN_0345.as_str(),
@@ -1540,11 +1560,12 @@ impl Sessions {
             ));
         }
         let held = self.account_session_read(&live_sid);
-        let session = held.and_then(|h| {
-            self.honoured_session(request, &live_sid, h, false)
-        });
+        let session = held
+            .and_then(|h| self.honoured_session(request, &live_sid, h, false));
         let Some(session) = session else {
-            self.deps.records.record_account_choice("selectFailed", None);
+            self.deps
+                .records
+                .record_account_choice("selectFailed", None);
             return keep(refused(
                 409,
                 codes::STS_AUTHN_0345.as_str(),
@@ -1607,9 +1628,9 @@ impl Sessions {
         let return_to = js::string_of(record.get("returnTo"));
         let path = return_to.split('?').next().unwrap_or("");
         let record_id = js::string_of(record.get("id"));
-        let ticket =
-            self.accounts
-                .mint_ticket(&set_id, &live_sid, path, &record_id);
+        let ticket = self
+            .accounts
+            .mint_ticket(&set_id, &live_sid, path, &record_id);
         let target = AccountSets::with_ticket(&return_to, &ticket);
         ActOutcome {
             answer: ok(json!({"ok": true, "next": "redirect",

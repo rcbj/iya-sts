@@ -65,7 +65,9 @@ pub fn account_set_expiry_job(sessions: Arc<Sessions>) -> JobSpec {
     job.scope = Scope::Realm;
     job.run = Some(Arc::new(move |_ctx| {
         let sessions = sessions.clone();
-        Box::pin(async move { Ok(sessions.sweep_account_sets_budgeted().await) })
+        Box::pin(
+            async move { Ok(sessions.sweep_account_sets_budgeted().await) },
+        )
     }));
     job
 }

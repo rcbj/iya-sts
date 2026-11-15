@@ -88,13 +88,14 @@ pub struct SweepCounts {
 
 impl SweepCounts {
     /// `{ sets, ended, expired, deleted }`, Node's answer of `sweep()`.
-    // A hot path only in name; no span.
+    // A hot path: every sweep's answer; no span.
     pub fn plain(&self) -> Value {
         json!({"sets": self.sets, "ended": self.ended,
                "expired": self.expired, "deleted": self.deleted})
     }
 
     /// `sweepBudgeted()`'s answer, `slices`, `at` and `of` with it.
+    // A hot path: every run's answer; no span.
     pub fn budgeted(&self) -> Value {
         json!({"sets": self.sets, "ended": self.ended,
                "expired": self.expired, "deleted": self.deleted,
@@ -208,8 +209,9 @@ impl AccountSets {
     /// positive number.
     // A hot path: asked by every sign-in; no span.
     pub fn max_accounts(&self) -> f64 {
-        let v = js::number(Some(&self.settings.value("authn.maxBrowserAccounts")))
-            .floor();
+        let v =
+            js::number(Some(&self.settings.value("authn.maxBrowserAccounts")))
+                .floor();
         if v > 0.0 {
             v
         } else {
@@ -306,10 +308,7 @@ impl AccountSets {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn rotate(&self, row: &mut Object) -> String {
         let handle = self.clock.random_id(32);
-        row.insert(
-            "handleHash".into(),
-            json!(cookie::handle_hash_of(&handle)),
-        );
+        row.insert("handleHash".into(), json!(cookie::handle_hash_of(&handle)));
         row.insert("handleIssuedAt".into(), js::num(self.clock.now_ms()));
         format!("{}.{}", js::string_of(row.get("id")), handle)
     }
@@ -524,7 +523,8 @@ impl AccountSets {
         let Some(t) = theirs.as_object() else {
             return mine.clone();
         };
-        let mine_ahead = n(mine, "handleIssuedAt") >= n(theirs, "handleIssuedAt");
+        let mine_ahead =
+            n(mine, "handleIssuedAt") >= n(theirs, "handleIssuedAt");
         let mut out = if mine_ahead { m.clone() } else { t.clone() };
         let latest = |field: &str| {
             let mut table = Object::new();
@@ -613,7 +613,7 @@ impl AccountSets {
     }
 
     /// `withTicket(target, ticket)`.
-    // Pure and small; no span.
+    // A hot path: every ticket minted; no span.
     pub fn with_ticket(target: &str, ticket: &str) -> String {
         format!(
             "{}{}{}={}",
@@ -708,7 +708,8 @@ impl AccountSets {
         is_live: &mut (dyn FnMut(&str) -> bool + Send),
         budget_ms: Option<u128>,
     ) -> SweepCounts {
-        let budget = budget_ms.filter(|b| *b > 0).unwrap_or(SWEEP_RUN_BUDGET_MS);
+        let budget =
+            budget_ms.filter(|b| *b > 0).unwrap_or(SWEEP_RUN_BUDGET_MS);
         let realm = realm::current_id();
         let ids = {
             let mut passes =
@@ -808,8 +809,8 @@ fn put(o: &mut Object, k: &str, v: Option<&Value>) {
 }
 
 fn remember_ms_of(settings: &dyn Settings) -> f64 {
-    let days =
-        js::number(Some(&settings.value("authn.rememberedAccountDays"))).floor();
+    let days = js::number(Some(&settings.value("authn.rememberedAccountDays")))
+        .floor();
     (if days > 0.0 { days } else { 30.0 }) * DAY_MS
 }
 
@@ -821,6 +822,7 @@ fn keep_ms_of(settings: &dyn Settings) -> f64 {
 }
 
 /// `encodeURIComponent()`.
+// A hot path: every ticket and address; no span.
 pub fn encode_uri_component(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for b in text.bytes() {
