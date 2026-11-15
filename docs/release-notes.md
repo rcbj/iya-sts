@@ -29,9 +29,89 @@ unless you ask for them. Over HTTPS, 9443 and 9543 behave as before.
 * **`docker-compose.yml`'s default `PEP_NOTIFY_URL`** is now
   `https://xacml-pep:9443/notify`. The old `http://` default was refused unless
   `xacml.pepNotifyAllowHttp` was on.
+* **The client credential's CRL stays reachable.** A credential minted with
+  `tests/tools/pep-credential.js --crl-base=http://<pep>:9090/crl` names the
+  PEP's plain port, and with plain HTTP off nothing answered there, so the
+  service could not fetch the list and refused every pull as
+  unauthenticated. With `PEP_HTTP` off the PEP now binds `PEP_PORT` for
+  `GET /crl/<name>` and nothing else, whenever it has a CRL directory to
+  serve. `PEP_CRL_HTTP=false` turns it off and `PEP_CRL_HTTP=true` binds it
+  even with no directory; a value that is neither logs `STS-XPEP-0115`.
+  Anything else asked of that port is a 404 (`STS-XPEP-0114`). The Listener
+  tab shows it as *listening, CRLs only*.
 * **Admin console**: the remote PEP's Listener tab shows the two listeners as
   *off*, each with its switch. A listener the PEP reports *off* no longer
-  holds its port, so a listener defined on the tab may use 9090.
+  holds its port, so a listener defined on the tab may use 9090. A listener
+  the PEP has not reported, or reported with no state, reads *not reported*
+  (it read *listening* before), and an environment plain-HTTP listener with
+  no report reads as its default, *off*.
+
+### The nudge to a remote PEP is HTTPS only, and verifies with no setting
+
+The service sends a remote PEP's "pull now" nudge over HTTPS only, in every
+mode, and always verifies the PEP's certificate.
+
+* **Trust with nothing set.** The PEP's HTTPS listener certificate is issued
+  by the realm's Remote PEP listeners (`pep-tls`) Issuing CA, and the nudge
+  verifies against that chain by default, with the host checked against the
+  notify URL's. A certificate from this service's Root but another Issuing
+  CA (another realm's PEP, a custom listener) is refused (`STS-XACML-0260`).
+  `xacml.pepNotifyCaFile` is still read, as an additional anchor for a PEP
+  certified elsewhere. The nudge that 8081 refused with "self-signed
+  certificate in certificate chain" (`STS-XACML-0070`) is delivered.
+* **`xacml.pepNotifyAllowHttp` and `xacml.pepNotifySkipTlsVerification` are
+  retired.** Both are still accepted, so a configuration naming them keeps
+  starting, and both are ignored; one that is on logs `STS-XACML-0258` once
+  per process. Remove them. `GET /admin-api/xacml/peps`' `notify.transport`
+  reports `allowHttp` and `skipTlsVerification` as `false`.
+* **A PEP registered with an `http://` notify URL** is shown with that URL
+  unusable, *plain http, the nudge is sent over HTTPS only*, and goes on
+  converging by polling. Set its notify URL to
+  `https://<host>:<PEP_HTTPS_PORT>/notify` (the PEP's Settings tab now
+  refuses an `http://` one, `STS-XACML-0239`). `STS-XACML-0259` is recorded
+  for a nudge refused that way; `STS-XACML-0073` and `STS-XACML-0074` are
+  retired.
+* **The PEP** answers `POST /notify` on its HTTPS listener only (a 404 over
+  plain HTTP, `STS-XPEP-0112`), and does not advertise an `http://`
+  `PEP_NOTIFY_URL` (`STS-XPEP-0113`, logged once).
+* **Admin console**: the Notify column of the Remote PEPs tab, and the PEP's
+  Overview, show *usable*, *unusable* with a one-line reason, or *none*, and
+  two words about the last nudge; the full sentences are under *Details*.
+
+### The reverse proxy's fixes from the 8081 demonstration
+
+* **The service's cookies never reach the application.** A browser sends
+  cookies by host, not port, so where the service and the proxy share a host
+  `__Host-sts_session` and the rest were forwarded upstream. The proxy now
+  strips every cookie the service names on the pull
+  (`realm.serviceCookiePrefixes`: `sts_*`, `__Host-sts_*`, `__Secure-sts_*`),
+  and the managed setting `proxyStripCookies` (`PEP_PROXY_STRIP_COOKIES`) adds
+  names, a trailing `*` for a prefix. The application's own cookies are
+  untouched. A service older than this sends no list, and the PEP strips the
+  same three prefixes.
+* **An identity header with no value is not sent.** A person in no group sent
+  an empty `X-Iya-Groups`; an empty string or list now sends no header, for
+  every identity header.
+* **`X-Iya-Amr` is sent.** The identity endpoint answered every proxy
+  session's access token with no `amr`; it now reads the token's own `amr`,
+  `acr` and `auth_time`.
+* **A proxy session a CAEP signal ended clears its cookie** on the redirect
+  to sign in, as the documentation said.
+* **Between a sign-out and its signal**, a browser whose identity the service
+  refused because its session had ended got a 403; it is now sent to sign in
+  with the proxy session ended, and anything else gets a 401.
+* **The account chooser shows usernames.** The service's ID Token carries no
+  `preferred_username`, so an account was labelled by its `urn:uuid` subject;
+  the sign-in now asks the service's session endpoint, whose answer also
+  carries the person's display name (`name`), shown beside it.
+* **A route's identity is edited on the route's own page.** The Reverse
+  proxy tab drew a *How route … forwards the identity* form under its table
+  for every route; that is now only the identity part of the route page's
+  form, which the route id in the table links to.
+  `POST /admin-api/xacml/set-pep-route-identity` is unchanged.
+* **`/admin-api/xacml/*` PEP acts take `pep` as well as `name`**, the name
+  `GET /admin-api/xacml/peps` takes as `?pep=`. `name` still works; both
+  naming different PEPs is refused (`STS-XACML-0038`).
 
 [Plain HTTP is off by default](remote-pep.md#plain-http-is-off-by-default)
 has the precedence and the reasons.

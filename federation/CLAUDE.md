@@ -810,7 +810,10 @@ end up half-written.
 **IT IS THE FIRST OF THIS REPOSITORY'S OUTBOUND REQUESTS**, in a module of its
 own that will not take a URL from anywhere but a relationship entry. It is the
 STRONGEST of them and the others each argue their own case rather than citing
-it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`,
+it — SSF's is `ssf/ssf_http.ts`, XACML's nudge is `xacml/xacml_pep_http.ts`
+(a URL the registering PEP names, so the caller's kind; since 2026-11-14 https
+only in every mode, verified against the registering realm's `pep-tls` Issuing
+CA with the leaf pinned to it, and never dialled for an `http://` URL),
 and the embedded debugger's api, the RFC 9728 import, a registered RFC 9101
 `request_uri` and the rest are listed under *The URLs this service dials that
 a caller's kind of URL could name*, below.

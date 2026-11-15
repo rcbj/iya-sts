@@ -53,7 +53,7 @@ reports them rather than hiding them.
 |---|---|
 | `GET /` | what this PEP is, what it holds, what it has enforced. **The page to read first when something is wrong** |
 | `GET /protected` | the protected resource: 200 or 403, decided here |
-| `POST /notify` | the PDP's nudge, meaning *pull now*. Answers 204 and pulls afterwards |
+| `POST /notify` | the PDP's nudge, meaning *pull now*. Answers 204 and pulls afterwards. **HTTPS only**: over plain HTTP it is a 404 |
 | `GET /healthcheck` | liveness. It deliberately does **not** ask whether the policy is current |
 
 They are served over **HTTPS on 9443** once the PEP has been given a
@@ -72,7 +72,8 @@ container's environment:
 
 | Variable | Default | What it binds |
 |---|---|---|
-| `PEP_HTTP` | `false` | the decision API (`GET /`, `/protected`, `/notify`, `/healthcheck`, `/crl/<name>`) in plain HTTP on `PEP_PORT` (9090) |
+| `PEP_HTTP` | `false` | the decision API (`GET /`, `/protected`, `/healthcheck`, `/crl/<name>`) in plain HTTP on `PEP_PORT` (9090). `POST /notify` is not answered there |
+| `PEP_CRL_HTTP` | *(unset)* | with `PEP_HTTP` off, `GET /crl/<name>` alone on `PEP_PORT`. Unset, it is bound when the PEP has a CRL directory to serve; `false` never, `true` always |
 | `PEP_PROXY_HTTP` | `false` | the reverse proxy in plain HTTP on `PEP_PROXY_PORT` (9180) |
 
 **The precedence**, highest first:
@@ -107,17 +108,25 @@ listener's port is free, so a defined listener can take 9090.
   pair yet reports itself unhealthy, which is accurate: it is answering
   nobody.
 * **`docker-compose.yml`'s default notify URL** is
-  `https://xacml-pep:9443/notify`. The old `http://` default was refused by
-  default anyway (`xacml.pepNotifyAllowHttp` is off), and product mode refuses
-  it always. The PEP's listener certificate names the notify URL's host.
-  Until the service can verify that certificate (`xacml.pepNotifyCaFile`),
-  the nudge is refused and the poll converges on its own.
+  `https://xacml-pep:9443/notify`. The nudge is HTTPS only (*The nudge is
+  HTTPS only*, below), and the PEP's listener certificate, which the realm
+  issues, names the notify URL's host and verifies with nothing set.
+* **The CRL point stays up.** A client credential minted with
+  `tests/tools/pep-credential.js --crl-base=http://<pep>:9090/crl` names the
+  PEP's plain port, and a product-mode service fetches that list under
+  hard-fail before it believes the certificate. So with `PEP_HTTP` off the PEP
+  still binds `PEP_PORT` for `GET /crl/<name>` and nothing else (anything
+  else is a 404, `STS-XPEP-0114`). A CRL is fetched in the clear by convention
+  (RFC 5280 section 4.2.1.13): one behind TLS would have to be validated with
+  itself. `PEP_CRL_HTTP` switches it (`STS-XPEP-0115` for a value that is
+  neither true nor false).
 * **The Listener tab** shows `api-http` and `proxy-http` as *off*, together
-  with the switch that turns each on.
+  with the switch that turns each on, and `api-http` as *listening, CRLs
+  only* when the CRL point is bound. A listener the PEP has not reported reads
+  *not reported*, never *listening*.
 * **The test stacks turn both switches on explicitly**, and
-  `docker-compose-run-tests.yml` explains why. The job reaches the PEP before
-  it issues the HTTPS pair. The credential's CRL distribution point is plain
-  HTTP, as CRLs conventionally are. The job also asserts the plain-HTTP nudge.
+  `docker-compose-run-tests.yml` explains why: the job reaches the PEP before
+  it issues the HTTPS pair. The CRL point and the nudge no longer need it.
 
 The examples on this page use `http://localhost:9090` because it is the
 shortest form, and they assume `PEP_HTTP=true`. Once the PEP holds its pair,
@@ -416,14 +425,34 @@ changes, which brings a change down in tens of milliseconds instead of up to
 `PEP_POLL_INTERVAL_MS` — but a nudge that never arrives costs latency and never
 a change, and the nudge body is not read and nothing in it is trusted.
 
-By default the compose service's nudge is **refused**, because its notify URL is
-plain `http` and `xacml.pepNotifyAllowHttp` is off. That is the design
-demonstrating itself: no nudge is delivered, the PDP says why on the PEP's row,
-and the PEP converges on its poll anyway. Set
-`STS_XACML_PEP_NOTIFY_ALLOW_HTTP=true` on a service in development mode to watch
-the other half; product mode refuses a plain-http nudge whatever it says
-(#171), and a PEP it nudges must serve https with a certificate that verifies,
-against node's store or `xacml.pepNotifyCaFile`.
+### The nudge is HTTPS only
+
+**The service nudges a PEP over HTTPS and nothing else, in every mode, and
+always verifies the PEP's certificate** (since 2026-11-14):
+
+* **Trust with nothing set.** The PEP's HTTPS listener certificate is issued
+  by the realm's Remote PEP listeners (`pep-tls`) Issuing CA, so the nudge
+  verifies the PEP against that chain (the Issuing CA, the realm's
+  Intermediate and the service Root), and checks the notify URL's host
+  against the certificate's names. A certificate that chains to this
+  service's Root through any other Issuing CA, such as another realm's PEP or
+  a custom listener, is refused (`STS-XACML-0260`).
+* **`xacml.pepNotifyCaFile`** adds anchors for a PEP whose listener
+  certificate comes from elsewhere, beside node's own store. A file that
+  cannot be read refuses the nudge (`STS-CORE-0104`).
+* **An `http://` notify URL** is shown unusable on the PEP's row, with the
+  reason, and the registration reply says the same. The PEP converges on its
+  poll. The PEP itself does not advertise an `http://` `PEP_NOTIFY_URL`
+  (`STS-XPEP-0113`), and the PEP's Settings tab refuses one.
+* **Retired settings.** `xacml.pepNotifyAllowHttp` and
+  `xacml.pepNotifySkipTlsVerification` are still accepted, so a
+  configuration naming them starts, and they are ignored: one that is on logs
+  `STS-XACML-0258` once per process.
+
+So the compose service's nudge is delivered once the PEP holds the pair the
+realm issued it (*Its HTTPS listener certificate*, below), in development and
+product alike. Until then the dial fails, the PDP records why on the PEP's
+row, and the PEP converges on its poll anyway.
 
 ## When the PDP goes away
 
@@ -874,16 +903,21 @@ Each route's `identity` says what the proxy forwards about the caller:
   `mechanism`, `acr` or `amr`. A list (`groups`, `amr`) is joined with the
   route's `separator`, `,` by default. A header may not be a hop-by-hop or
   framing header, `Authorization`, `Cookie`, `Host`, `Forwarded` or
-  `X-Forwarded-*`, and the proxy strips a client's own copy of each.
+  `X-Forwarded-*`, and the proxy strips a client's own copy of each. **A
+  claim with no value sends no header**: absent, an empty string, or an empty
+  list (a person in no group sends no `X-Iya-Groups` at all). `amr`, `acr`
+  and `auth_time` are read from the access token behind a proxy session, so
+  a route mapping `amr` carries how the person signed in.
 * **`saml`**: a signed SAML 2.0 Response about the caller, for the
   application's registered assertion consumer service. The application needs
   `samlEntityId` and `samlAssertionConsumerService`.
 * **`jwt`**: an access token about the caller, issued to the application and
   addressed to its audience.
 
-On the Remote PEPs tab each route has its own small form for this: a mode, a
-table of header and claim, and the separator
-(`POST /admin-api/xacml/set-pep-route-identity`).
+On the console it is edited on the route's own page (the route id in the
+Reverse proxy tab's table links to it), in the identity part of that page's
+form: a mode, a table of header and claim, and the separator. The API's
+`POST /admin-api/xacml/set-pep-route-identity` sets it alone.
 
 ### Signing a browser in: the `session` mechanism
 
@@ -907,7 +941,15 @@ mutual TLS pull. It is never on a console page or in an `/admin-api` answer.
    `client_credentials` grant and the `ssf.read` and `ssf.manage` scopes for
    this, and turn on the realm's transmitter. A route with `signals: false`
    asks `POST /xacml/pep/session` instead, at most every
-   `PEP_PROXY_SESSION_RECHECK_MS`.
+   `PEP_PROXY_SESSION_RECHECK_MS`. Either way the browser is sent to sign in
+   again with the `iya_pep_session` cookie cleared.
+5. **Between the sign-out and the signal**, a fraction of a second, the
+   service already refuses the session's access token. When the identity
+   endpoint refuses a proxy session's identity, the proxy asks
+   `POST /xacml/pep/session` whether the sign-on session is still live; if it
+   is not, the proxy session ends as a signal would have ended it: a browser
+   is sent to sign in, anything else gets a 401. A refusal of a live session
+   is still the 403 it was.
 
 **Watching the streams.** The PEP's `GET /` shows each stream's state under
 `proxy.signals`, and the PEP sends the same numbers on its heartbeat. The
@@ -943,7 +985,16 @@ certificate names.
   encoded `.`, `/` or `\` is refused `400`.
 * **What the client sent to authenticate is not forwarded**, unless the route
   sets `forwardCredentials`. That covers `Authorization` and the proxy's own
-  cookie. Hop-by-hop headers are dropped in both directions. `X-Forwarded-For`,
+  cookie.
+* **The identity provider's cookies are never forwarded**, whatever
+  `forwardCredentials` says. A browser sends cookies by host, not port, so
+  where the service and the proxy share a host the service's
+  `__Host-sts_session` and the rest would reach the application. The service
+  names its cookie prefixes on every pull (`realm.serviceCookiePrefixes`:
+  `sts_*`, `__Host-sts_*`, `__Secure-sts_*`), and the managed setting
+  `proxyStripCookies` (`PEP_PROXY_STRIP_COOKIES`) adds more: names separated
+  by commas, a trailing `*` a prefix. The application's own cookies are never
+  removed unless they are named there. Hop-by-hop headers are dropped in both directions. `X-Forwarded-For`,
   `X-Forwarded-Proto` and `X-Forwarded-Host` are the proxy's own, never the
   client's.
 * **A request is never forwarded without the identity its route sends.** When
@@ -974,7 +1025,9 @@ every such request needs `REMOTE_PEPS` and is audited as
 
 Each row of **Protocols → XACML → Remote PEPs** opens the PEP's own page,
 `/admin/xacml/pep?pep=<name>` (`GET /admin-api/xacml/peps?pep=<name>`), with
-the trail leading back to the tab. Its tabs:
+the trail leading back to the tab. Every act on a PEP under
+`POST /admin-api/xacml/` takes the PEP as `pep`, the same name, or as `name`
+as it always has; both naming different PEPs is refused. Its tabs:
 
 | Tab | What is on it |
 |---|---|
@@ -1120,7 +1173,7 @@ active account, adding an account, switching, and signing one or all out.
 
 | Address on the proxy | What it does |
 |---|---|
-| `GET /.iya-pep/accounts?return=<path>` | the chooser: every account in this browser, with its application, the active one marked, and *Switch to this account*, *Sign out*, *Add another account* and *Sign out of all accounts*. `?format=json` answers the same list as JSON. |
+| `GET /.iya-pep/accounts?return=<path>` | the chooser: every account in this browser by username (and display name, where the service gives one), with its application, the active one marked, and *Switch to this account*, *Sign out*, *Add another account* and *Sign out of all accounts*. `?format=json` answers the same list as JSON. |
 | `GET /.iya-pep/accounts/add?return=<path>` | signs another account in with `prompt=login`, so the service asks for a sign-in rather than reusing the session it holds. With `&account=<id>`, it signs that account in again, sending its `login_hint` and requiring that the ID Token name the same subject. |
 | `POST /.iya-pep/accounts/switch` (`account`, `return`) | makes that account the active one |
 | `POST /.iya-pep/accounts/logout` (`account`, `return`) | signs that account out here; the others stay |
@@ -1209,9 +1262,9 @@ session store keeps the bounds it was built with.
 `PEP_TLS_CERT`, `PEP_TLS_KEY`, `PEP_TLS_CA` and `PEP_TLS_INSECURE` are needed
 to reach and authenticate to the service before the first pull; `PEP_PORT`,
 `PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are the ports
-of the four listeners that let the PEP connect first, and `PEP_HTTP` and
-`PEP_PROXY_HTTP` switch the two plain-HTTP ones on (further listeners are
-defined on the Listener tab);
+of the four listeners that let the PEP connect first, and `PEP_HTTP`,
+`PEP_CRL_HTTP` and `PEP_PROXY_HTTP` switch the plain-HTTP ones (further
+listeners are defined on the Listener tab);
 `PEP_HTTPS_CERT`, `PEP_HTTPS_KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA` and
 `PEP_PROXY_UPSTREAM_CA` name files on the PEP's own disk; `PEP_PROXY` says
 whether the proxy's listeners start at all (its configuration's `enabled` is
@@ -1233,13 +1286,14 @@ environment's, then the default.
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | the client certificate. The leaf followed by the issuing CA |
 | `PEP_TLS_CA` | — | an anchor for the PDP's certificate |
 | `PEP_TLS_INSECURE` | `false` | do not verify the PDP. The ordinary setting against this service in development |
-| `PEP_NOTIFY_URL` | — | where the PDP should nudge — *managed*: `notifyUrl` |
+| `PEP_NOTIFY_URL` | — | where the PDP should nudge: this PEP's HTTPS listener, `https://<host>:<PEP_HTTPS_PORT>/notify`. An `http://` value is not advertised (`STS-XPEP-0113`) — *managed*: `notifyUrl`, https only |
 | `PEP_BIAS` | `deny-biased` | this PEP's own. `permit-biased` is the other — *managed*: `bias` |
 | `PEP_PIP` | `true` | resolve designators the request did not carry against the PDP's directory — *managed*: `pip` |
 | `PEP_POLL_INTERVAL_MS` | `15000` | **the contract**, and the interval a failed registration is retried on — *managed*: `pollIntervalMs` |
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | — *managed*: `heartbeatIntervalMs` |
-| `PEP_PORT` | `9090` | the decision API's plain-HTTP port, bound only with `PEP_HTTP=true` |
+| `PEP_PORT` | `9090` | the decision API's plain-HTTP port, bound with `PEP_HTTP=true`, or for the CRLs alone with it off |
 | `PEP_HTTP` | `false` | `true` binds plain HTTP on `PEP_PORT` (*Plain HTTP is off by default*) |
+| `PEP_CRL_HTTP` | *(unset)* | with `PEP_HTTP` off, `GET /crl/<name>` alone on `PEP_PORT`: bound by default where there is a CRL directory, `false` never, `true` always |
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | the **listener's** pair, issued by the PEP's realm: the leaf followed by its chain, and the key. Both or neither. They may not exist yet when the container starts |
 | `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read — *managed*: `httpsReloadIntervalMs` |
@@ -1259,6 +1313,7 @@ environment's, then the default.
 | `PEP_PROXY_MAX_ACCOUNTS` | `5` | the most accounts one browser holds on a `multipleAccounts` route, 1 to 32. A sign-in past it is refused `403` — *managed*: `proxyMaxAccounts` |
 | `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept — *managed*: `proxyJwksTtlMs` |
 | `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled — *managed*: `proxySignalsPollMs` |
+| `PEP_PROXY_STRIP_COOKIES` | *(empty)* | more cookies the proxy never forwards upstream, beside the service's own: names separated by commas, a trailing `*` a prefix — *managed*: `proxyStripCookies` |
 | `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | how long the stream may go without a successful poll. After that, sessions are checked with the service's session endpoint until it answers again. `GET /` shows the stream's state under `proxy.signals` — *managed*: `proxySignalsStaleMs` |
 | `PEP_PROXY_UPSTREAM_CA` | — | a path: anchors for an `https` upstream |
 | `PEP_PROXY_UPSTREAM_INSECURE` | `false` | do not verify an `https` upstream — *managed*: `proxyUpstreamInsecure` |

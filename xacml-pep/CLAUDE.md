@@ -35,10 +35,55 @@ tasks (`std::future::pending`), and **the healthcheck asks HTTPS on
 `PEP_HTTPS_PORT`, certificate unverified** (its own loopback; liveness, not
 identity) — a PEP with no pair yet is honestly unhealthy, answering nobody.
 **The test stacks turn both on explicitly** (`docker-compose-run-tests.yml`
-argues it: the job reaches the PEP before it issues the HTTPS pair, the
-credential's CRL distribution point is plain HTTP, and the job asserts the
-plain-HTTP nudge); so do the CI liveness check and the AWS suite task.
-`docker-compose.yml` defaults its notify URL to `https://xacml-pep:9443/notify`.
+argues it: the job reaches the PEP before it issues the HTTPS pair); so do
+the CI liveness check and the AWS suite task. `docker-compose.yml` defaults
+its notify URL to `https://xacml-pep:9443/notify`.
+
+**THE CRL POINT STAYS UP WITH HTTP OFF (2026-11-14), AND THAT WAS A DEFECT
+OF THE DEFAULT ABOVE.** The client credential's CRL distribution point is
+`http://<pep>:9090/crl` (`tests/tools/pep-credential.js --crl-base`, which
+every launcher passes), and a product-mode service fetches it under hard-fail
+before it believes the certificate. With plain HTTP off nothing answered on
+9090, the certificate failed verification, and every pull was 403
+"unauthenticated" — so "HTTP off by default" broke mutual TLS for every PEP
+whose credential named its own plain port. Two fixes were weighed: point the
+CRL somewhere always reachable, or keep the PEP serving it. **The PEP serves
+it, on a CRL-ONLY listener** (`options::crl_listener`): with `PEP_HTTP` off,
+`PEP_PORT` is bound for `GET /crl/<name>` and NOTHING else (`Transport.
+crl_only`; anything else is a 404, `STS-XPEP-0114`), whenever there is a CRL
+directory to serve. Why this and not the other:
+
+* **A CRL is fetched in the clear by design** (RFC 5280 section 4.2.1.13, and
+  this service's own revocation listener on 8082 is plain HTTP for the same
+  reason): one behind TLS would have to be validated with the certificate it
+  revokes. So plain HTTP on this one path re-opens nothing #1760 closed: the
+  decision API, the nudge and AuthZEN stay HTTPS.
+* **It is backwards compatible.** Every credential already minted names
+  `:9090/crl`; moving the distribution point would have orphaned all of them,
+  and "always reachable" elsewhere means a second process the operator has to
+  run for a container whose CRLs nobody else holds.
+* **Its own switch**, `PEP_CRL_HTTP`: unset is the default above, `false`
+  never binds it, `true` binds it with no directory, anything else keeps the
+  default and logs `STS-XPEP-0115`. With `PEP_HTTP=true` the API's listener
+  serves `/crl/` as it always did and this is not bound.
+
+It is reported as `api-http` with state `listening` and reason `crl-only`, a
+member of the service's closed set, which the Listener tab draws as
+*listening, CRLs only*.
+
+**THE NUDGE IS HTTPS ONLY (2026-11-14, rcbj: "Let's assume always HTTPS").**
+`POST /notify` is answered on an HTTPS listener alone; over plain HTTP — the
+environment's `api-http` or a defined plain listener — it is a 404 naming the
+HTTPS listener (`STS-XPEP-0112`). The service never dials an `http://` notify
+URL (`xacml/CLAUDE.md`), so a nudge in the clear is not the PDP's. And the PEP
+never ADVERTISES one: `options::advertised_notify_url()` sends an `http://`
+`PEP_NOTIFY_URL` (or a managed `notifyUrl` an older service set) as empty on
+the registration, the heartbeat and `GET /`, logged once per value
+(`STS-XPEP-0113`); the managed `notifyUrl` row takes https alone. The PEP's
+default stays EMPTY rather than a derived `https://<host>:9443/notify`: it
+cannot know the name the service reaches it by, and a guess the certificate
+does not name is a nudge refused at every policy change. The compose files
+and the job set it.
 
 **It replaced a Node container with the same contract** — the same
 environment variables and defaults, ports, endpoints, JSON bodies, log lines
@@ -75,7 +120,7 @@ shim) are in git history.
 | `saml_verify.rs` | A SAML 2.0 assertion's enveloped signature, with exclusive c14n written over roxmltree. Pure. |
 | `rp_session.rs` | The session mechanism's sign-ins in flight (the library's `Transaction`) and proxy sessions, in memory and bounded. |
 | `rp_set.rs` | The session mechanism's relying parties: one `oidc-caep-risc` `RelyingParty` per client, and its CAEP/RISC `SignalsReceiver`, built from the pull and rebuilt when it changes (D5). |
-| `identity.rs` | How the identity reaches the application (D11): claim values as headers, the `jwt` mode's token cache, the `saml` mode's cookie jar. Pure. |
+| `identity.rs` | How the identity reaches the application (D11): claim values as headers, the `jwt` mode's token cache, the `saml` mode's cookie jar. Pure. **A claim with no value sends no header** (2026-11-14): an empty string or list is no value, as absent and null always were, so a person in no group no longer sends `X-Iya-Groups:` empty. `X-Iya-Amr` reached nobody for another reason, the service's: its identity endpoint answered every proxy session's access token with `amr: []`, and reads the token's own `amr` now (`xacml/xacml_pep_proxy.ts`, `subjectOf()`). |
 | `listeners.rs` | **Every listener, and the ones the service defines (#1760)**: the definitions read again, bound, rebound and unbound after each pull, an HTTPS one's key generated here and its certificate asked for, and the report on the heartbeat. See *THE LISTENERS THE SERVICE DEFINES*. |
 | `main.rs` | Start-up, the backoff timers, the fault handler, `--stamp`, `--healthcheck`. |
 
@@ -550,9 +595,9 @@ on 2026-09-16 — the default stays because every launcher, kept stack and
 default inside `xacml-pep/certs` would invite a private key into the source
 tree; `PEP_HEARTBEAT_INTERVAL_MS` is a substitution because
 `tests/protocol/sts_xacml_remote_pep.js` reads the counters the heartbeat
-carries and cannot wait a minute; and the plain-http `PEP_NOTIFY_URL` is
-refused by the PDP by default (`xacml.pepNotifyAllowHttp`, and always in
-product, #171), so the demonstration converges on its poll.
+carries and cannot wait a minute; and `PEP_NOTIFY_URL` is the HTTPS
+listener's, which the PDP verifies against the realm's `pep-tls` chain once
+the PEP holds the pair the realm issued it.
 
 **The compose service ships with no certificate**, so out of the box it
 registers unauthenticated and the mock refuses it — which is the honest default
@@ -575,21 +620,20 @@ private key to this repository (which `postgres/generate-tls.sh` exists
 specifically to avoid) or a first-start script for a demonstration container.
 Mount a pair to see the authenticated path. **Either way it enforces.**
 
-**And the compose service's nudge is refused by default**: its notify URL is
-plain `http` on the bridge and `xacml.pepNotifyAllowHttp` is off. That is
-the design demonstrating itself — no nudge is delivered, the PDP says why on the
-PEP's row, and the PEP converges on its fifteen-second poll anyway.
+**And the compose service's nudge is delivered once the PEP holds its pair**:
+until then the dial fails, the PDP says why on the PEP's row, and the PEP
+converges on its fifteen-second poll anyway.
 
 **BOTH HALVES OF THAT ARE ASSERTED SINCE 2026-09-06**, and it took a container
-to do it. `sts_xacml_remote_pep.js` runs its sections 1–5 in exactly this
-configuration — an http notify URL the PDP refuses to dial — so every
-convergence there is the poll and the registration reply is checked for the
-refusal. Then it turns `xacml.pepNotifyAllowHttp` on in its own realm — and,
-when that realm is in product mode, asserts that plain http is STILL refused
-(#171) and puts the realm in development mode for the rest — and
-measures the other half: the PDP dials this container's `/notify` across the
-bridge, the row records `The PEP answered 204.`, and a change lands in tens of
-milliseconds against a five-second poll. **That outbound request is one of three
+to do it. `sts_xacml_remote_pep.js` runs its sections 1–5 with `xacml.pepNotify`
+OFF in its own realm (since 2026-11-14; until then with an http notify URL the
+PDP refused to dial), so every convergence there is the poll, and the
+registration reply is checked for an https URL it calls usable. Then it turns
+the nudge on and measures the other half, in whatever mode the realm is in:
+the PDP dials this container's HTTPS `/notify` across the bridge, verifying it
+against the realm's `pep-tls` chain with no CA file, the row records `The PEP
+answered 204.`, and a change lands in tens of milliseconds against a
+five-second poll. Section 9 asserts a plain-HTTP `/notify` is refused. **That outbound request is one of three
 this service makes and was the only one with no test against a real listener
 anywhere.**
 
@@ -924,7 +968,16 @@ session it names. The set is `rp_session.rs`'s: per browser
 (`iya_pep_accounts` cookie, never forwarded), ACTIVE per application client,
 and an ended session drops ITS account and makes no other active (the
 browser is sent to the chooser; an identity is never picked for the person).
-The same subject signing in again replaces its own account's session. A
+The same subject signing in again replaces its own account's session.
+**An account is named by USERNAME** (2026-11-14): it was filled from the ID
+Token's `preferred_username` alone, which the service's ID Token does not
+carry (#395), so the chooser labelled every account by its `urn:uuid`
+subject, and the username a later session check learned reached the session
+and never the account. The callback now asks `validation.session` once when
+the ID Token names nobody, and `Stores::named()` writes a learned username,
+and the display name (`name`, from the ID Token or the session answer),
+onto the session AND the account it backs; the chooser draws `username — name`
+and `?format=json` carries both. A
 full set (`proxyMaxAccounts`) refuses, `STS-XPEP-0108`. The chooser and its
 acts are server-drawn HTML under `default-src 'none'`, with forms only.
 Cross-site POSTs are refused (`STS-XPEP-0109`; the cookie is SameSite=Lax
@@ -1016,8 +1069,23 @@ converges on the poll.
 `Forwarded` the CLIENT sent gone; `Host` gone (the client library writes the
 upstream's); every identity header ANY route names gone (D11), on a
 public route too; and unless the route says
-`forwardCredentials`, `Authorization` and the `iya_pep_session` cookie gone
-(the other cookies stay). Then set fresh: `X-Forwarded-For` (the
+`forwardCredentials`, `Authorization` and the `iya_pep_session` cookie gone;
+and, WHATEVER `forwardCredentials` says, the identity provider's cookies gone
+(2026-11-14, found on the 8081 demo): a browser sends cookies by HOST, not
+port, so where the service and the proxy share a host
+`__Host-sts_session`, `__Host-sts_accounts` and `__Host-sts_signin_step` were
+forwarded to the application — a sign-on session's handle in somebody else's
+log. **The service publishes its names rather than this binary writing them
+down**: the pull's `realm.serviceCookiePrefixes` (`common/cookie_wire.ts`'s
+`servicePrefixes()`, derived from the one pattern that names every cookie the
+service writes), so a cookie added there is stripped here with no PEP
+release; a pull with no member — an older service — stands on
+`proxy_config::SERVICE_COOKIE_PREFIXES`, the same three prefixes, which is the
+one hard-coded copy and is used only then. The managed `proxyStripCookies`
+(`PEP_PROXY_STRIP_COOKIES`) adds names, a trailing `*` a prefix, for another
+identity provider on the host. Nothing else is touched: the application's own
+cookies are its own (`proxy_request::cookie_stripped`, a prefix only with
+the `*`). Then set fresh: `X-Forwarded-For` (the
 connection's peer, never a header), `X-Forwarded-Proto`, `X-Forwarded-Host`
 (the client's `Host`), then the route's identity (D11). **To the client**:
 the application's hop-by-hop headers gone (and, in mode `saml`, the
@@ -1225,7 +1293,19 @@ browser to sign in to its own.
   the session kept.
 
 An ended session sends a browser to sign in again with the cookie cleared,
-and anything else gets 401. **`/.iya-pep/logout`** ends the proxy session
+and anything else gets 401. **Including a cookie naming a session the proxy
+no longer holds** (2026-11-14): the CAEP receiver removes the session before
+the browser's next request arrives, so that request found NO session and was
+redirected without the clearing `Set-Cookie`; a cookie that names nothing
+held is now cleared on that redirect. **And the window before the signal**:
+a sign-out at the service revokes the session's access tokens at once
+(#1449), so for up to a second the identity endpoint refused the token and a
+browser got 403 "the service refused the identity". `Proxy::ended_behind()`
+answers that refusal of a PROXY SESSION's identity by asking
+`validation.session` whether the sign-on session is live; ended, the proxy
+session ends as a signal would have ended it (a browser to sign in, cookie
+cleared, or the chooser on a `multipleAccounts` route; anything else 401); a
+refusal of a live session stays the 403 it was. **`/.iya-pep/logout`** ends the proxy session
 here and in the library (`remove_session`, and the receiver's `untrack`),
 clears the cookie, and sends the browser to the library's
 `end_session_url()` (the provider's `end_session_endpoint` from discovery,

@@ -102,7 +102,7 @@ so the service starts without the pinned management API secret.
 | 8082 | 8082 | Plain-HTTP revocation listener: the CRL, OCSP and issuer certificate every issued certificate points at | `STS_PKI_HOST_PORT` |
 | 88, TCP and UDP | 88 | The Kerberos KDC, so `kinit` and a browser's SPNEGO sign-in work from the host ([Kerberos](#kerberos)) | `STS_KDC_HOST_PORT` |
 | 8444 | 8444 | The [embedded debugger](admin-console.md#the-embedded-protocol-debugger), signed in to through this service and open to console administrators only. **Both sides move together**, because its sign-in sends the browser back by the host and port it used | `STS_DEBUGGER_PORT` |
-| 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only). **9090 answers only with `XACML_PEP_HTTP=true`**: plain HTTP is off by default ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
+| 9090, 9444 | 9090, 9443 | Remote PEP, HTTP and HTTPS (`xacml` profile only). **9090 answers the decision API only with `XACML_PEP_HTTP=true`**, and otherwise only its credential's CRLs: plain HTTP is off by default ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) | `XACML_PEP_HOST_PORT`, `XACML_PEP_HTTPS_HOST_PORT` |
 | 9180, 9543 | 9180, 9543 | The remote PEP's reverse proxy, HTTP and HTTPS (`xacml` profile only). It answers 404 until a proxy is configured for that PEP; 9543 serves the same certificate as 9443. **9180 answers only with `XACML_PEP_PROXY_HTTP=true`** | `XACML_PEP_PROXY_HOST_PORT`, `XACML_PEP_PROXY_HTTPS_HOST_PORT` |
 | 9700 | 9700 | The development companion, plain HTTP (`companion` profile only) | `COMPANION_HOST_PORT` (and `COMPANION_PUBLIC_URL`) |
 | 8888 | 8888 | The companion's Kerberos-protected TCP service (`companion` profile only) | `COMPANION_KRB5_HOST_PORT` |
@@ -230,7 +230,8 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
 | `XACML_PEP_HTTP`, `XACML_PEP_PROXY_HTTP` | `false` | `true` binds the remote PEP's plain-HTTP decision API on 9090, and its plain-HTTP reverse proxy on 9180. Both are off by default ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
-| `XACML_PEP_NOTIFY_URL` | `https://xacml-pep:9443/notify` | Where the service nudges the remote PEP. It is HTTPS because plain HTTP is off ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
+| `XACML_PEP_CRL_HTTP` | empty | `PEP_CRL_HTTP`: with plain HTTP off, `false` stops the remote PEP serving its credential's CRLs on 9090 and `true` serves them with no CRL directory; empty is the default, on where there are CRLs ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
+| `XACML_PEP_NOTIFY_URL` | `https://xacml-pep:9443/notify` | Where the service nudges the remote PEP. It is HTTPS because the nudge is HTTPS only ([Remote PEP](remote-pep.md#the-nudge-is-https-only)) |
 | `XACML_PEP_PROXY_SESSION_RECHECK_MS` | `5000` | How old the remote PEP's last answer about a proxy session's sign-on session may be before it asks the service again. `0` asks on every request, so a sign-out at the service ends access at once |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
 | `GIT_COMMIT` | empty | Build argument: see [Which build am I running?](getting-started.md#which-build-am-i-running) |

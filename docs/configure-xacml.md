@@ -61,9 +61,10 @@ empty repository answers NotApplicable to everything.
 * **A risk Deny and a delegation refusal are enforced only in product mode.**
   Development mode records them ("WOULD HAVE BEEN REFUSED in product") and
   issues anyway.
-* **The nudge to a remote PEP must be `https` in product mode.**
-  `xacml.pepNotifyAllowHttp` and `xacml.pepNotifySkipTlsVerification` work
-  only in development mode.
+* **The nudge to a remote PEP is `https` in both modes** (since 2026-11-14),
+  verified against the realm's `pep-tls` Issuing CA with nothing set.
+  `xacml.pepNotifyAllowHttp` and `xacml.pepNotifySkipTlsVerification` are
+  retired and ignored in both.
 * **Revocation of a presented certificate** (`pki.revocationCheck=auto`)
   soft-fails in development mode and hard-fails in product mode.
 
@@ -476,8 +477,8 @@ api xacml/forget-pep  '{"name":"remote-pep-1"}'
 | `xacml.pepStaleAfterS` | `300` | When the console calls a PEP stale. |
 | `xacml.pepNotify` | `true` | Off stops nudging; PEPs converge on their poll. |
 | `xacml.pepNotifyAllowedHosts` | *(empty: any)* | Hosts a nudge may go to. |
-| `xacml.pepNotifyCaFile` | *(empty)* | CA certificates a PEP's notify listener may chain to. |
-| `xacml.pepNotifyAllowHttp` | `false` | **Development only.** Allows an `http://` notify URL, which the compose demonstration uses. |
+| `xacml.pepNotifyCaFile` | *(empty)* | More CA certificates a PEP's notify listener may chain to. A PEP whose listener certificate this realm issued needs none. |
+| `xacml.pepNotifyAllowHttp` | `false` | **Retired, ignored.** A nudge is https only, in every mode. |
 | `xacml.pepNotifyTimeoutMs` | `2000` | How long a nudge waits. |
 
 ---

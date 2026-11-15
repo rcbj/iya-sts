@@ -789,24 +789,69 @@ way, the whole argument goes with it.** The body is three members; keep it that
 way or move the argument.
 
 Its four bounds are `ssf.push*`'s four, deliberately — an off switch, a host
-allowlist empty by default meaning any, an https-only rule with an escape in
-development only, and a timeout — because two families making one outbound
-request each should be
-configured the same way or the second is a surprise to anybody who read the
-first. The timeout is SHORTER (2s against SSF's 10s) and that is the difference
-that follows from the argument: a lost push is a lost event, so SSF waits; a
-lost nudge costs one polling interval, so waiting is the expensive mistake.
+allowlist empty by default meaning any, https, and a timeout — because two
+families making one outbound request each should be configured the same way
+or the second is a surprise to anybody who read the first. The timeout is
+SHORTER (2s against SSF's 10s) and that is the difference that follows from
+the argument: a lost push is a lost event, so SSF waits; a lost nudge costs
+one polling interval, so waiting is the expensive mistake.
 
-**The https rule is `common/outbound_tls.ts`'s since #171 (2026-09-23)**, shared
-with GNAP, SSF and federation. `xacml.pepNotifyAllowInsecure` allowed plain
-http AND turned the PEP's certificate check off, and product mode honoured it.
-Three settings now: `xacml.pepNotifyAllowHttp` (development only; product
-refuses a plain-http nudge, `STS-XACML-0073`), `xacml.pepNotifySkipTlsVerification`
-(development only; ignored in product, `STS-XACML-0074`, and refused on write,
-`STS-CORE-0103`) and `xacml.pepNotifyCaFile` (a PEP certified by a private CA,
-beside node's store; unreadable refuses the nudge, `STS-CORE-0104`).
-`GET /admin-api/xacml/peps`' `notify.transport` reports the three as they are
-IN FORCE, so a skip stored in a product realm reads false there.
+**THE NUDGE IS HTTPS ONLY, AND ALWAYS VERIFIED, IN EVERY MODE (2026-11-14,
+rcbj: "The listener for Remote PEP notify URLs should be HTTPS. Let's assume
+always HTTPS").** Until then the https rule was `common/outbound_tls.ts`'s
+(#171), with `xacml.pepNotifyAllowHttp` and
+`xacml.pepNotifySkipTlsVerification` as the development-mode escapes, and an
+https nudge verified against node's store and `xacml.pepNotifyCaFile` alone —
+so the compose demonstration's nudge to the PEP's realm-issued listener was
+refused "self-signed certificate in certificate chain" (`STS-XACML-0070`)
+unless an operator copied the service Root into a CA file. Now:
+
+* **No plain http.** `urlVerdict()` refuses an `http://` URL in both modes
+  (`STS-XACML-0259`), with a sentence short enough for the console's reason;
+  the PEP converges by polling, as one with no notify URL always has. The
+  PEP's Settings tab refuses an `http://` `notifyUrl` (`STS-XACML-0239`), and
+  the PEP refuses `POST /notify` over plain HTTP (`xacml-pep/CLAUDE.md`).
+* **The trust needs no setting.** A PEP's HTTPS listener certificate is
+  issued by the `pep-tls` Issuing CA of the realm it registered to
+  (`xacml_pep_tls.ts`, the issue and the CSR paths), so `trust()` puts THAT
+  CHAIN — the Issuing CA, the realm's Intermediate and the service Root,
+  `pki.useCaseChainPems()` — beside node's store and the CA file, with the
+  RFC 9525 host check against the notify URL's host and the path rules
+  (`OutboundTls.verifiedOptions()`).
+* **And the pin.** The Root vouches for every Issuing CA of every realm, so
+  a chain that reaches this service's Root must have been issued, at the
+  leaf, by THIS realm's `pep-tls` CA (`pinProblem()`, compared by SHA-256
+  fingerprint because every realm's `pep-tls` CA has the same subject;
+  `STS-XACML-0260`). A chain to the CA file or node's store is not this
+  service's to judge further.
+* **`xacml.pepNotifyCaFile` stays**, as an ADDITIONAL anchor for a PEP
+  certified elsewhere; an unusable file still refuses (`STS-CORE-0104`).
+* **The two escapes are RETIRED, NOT REMOVED** — backwards compatibility. The
+  rows stay, so an appconfig file, the environment or a stored value naming
+  either still loads, and the value is ignored; one that is on is logged once
+  per process with `STS-XACML-0258` the first time a nudge would have read it.
+  `REPLACED_SETTINGS`, which refuses to start, is the pre-1.0 pattern and the
+  wrong one for a setting whose only effect was to weaken something.
+  `notify.transport` keeps its four members: `allowHttp` and
+  `skipTlsVerification` read `false`, `skipTlsVerificationSet` still says one
+  is stored. `STS-XACML-0073` and `0074` are retired.
+* **Paranoid PKI mode** holds the handshake through the door's
+  `tls-server-outbound` purpose, which already named this nudge; the realm's
+  chain is the dialer's own `ca`, so no new purpose row was owed.
+* **`tests/outbound_tls.js` no longer lists XACML among its families**: what
+  it asserts of a family — the escapes honoured in development — is what was
+  removed. `tests/pep_listener_certificate.js` section F holds the trust:
+  this realm's leaf with no CA file, a foreign CA refused and accepted by the
+  file, another Issuing CA under the same Root and another realm's `pep-tls`
+  leaf refused by the pin, plain http with the retired setting on.
+
+**THE CONSOLE'S NOTIFY CELL IS SHORT (2026-11-14).** It drew the service's
+whole sentence about an unusable URL, and the last nudge's, inline; it draws
+*usable*, *unusable* with a one-line reason (read from the URL where it can
+be, from the sentence for the allowlist, so the API grew no member), or
+*none*, and two words for the last nudge, with the sentences in a
+`<details>` — no script, `admin-ui/CLAUDE.md`'s rule. The PEP page's
+Overview draws the same cell. `tests/xacml_pep_console.js`.
 
 **On an active-active node the nudge waits for the COMMIT, and only there
 (2026-09-15, #46).** It is fired from inside `xacml_store.write()`, and the PEP
@@ -1363,11 +1408,14 @@ the two actions.
   (`0233`, `0235`); every answer is audited as `xacml.pep.validate`.
 * **THE CONSOLE EDITS THE DOCUMENT WHOLE**: the Remote PEPs tab draws each
   PEP's routes as a table and the document in a textarea; a route is added,
-  removed or moved by editing the list. **Each non-public route's identity
-  has a form of its own**: a mode choice, a header/claim table (the route's
-  rows and two empty ones) and the separator, posting
-  `set-pep-route-identity`, which replaces that route's `identity` and saves
-  the whole document through `set-pep-proxy`'s checks.
+  removed or moved by editing the list. **A route's identity is edited on
+  the route's own page** (since 2026-11-14, rcbj: the per-route sections
+  under the tab's table moved to the route drill-down), in the identity part
+  of its `set-pep-route` form: a mode choice, a header/claim table (the
+  route's rows and two empty ones) and the separator, read by
+  `identityFromForm()`. `set-pep-route-identity` still replaces one route's
+  `identity` alone for `/admin-api`, saved through `set-pep-proxy`'s checks;
+  no console form posts it now, and the tab draws no identity form.
 
 `tests/xacml_pep_proxy.js` holds all of it in a child process.
 
