@@ -31,8 +31,10 @@
 //   d. a PAR request_uri whose authorization completed at A is refused at
 //      B's authorization endpoint (it is spent when the code is issued: a
 //      second visit before that starts a sign-in again);
-//   e. a DPoP proof accepted at A's token endpoint is refused at B's, and a
-//      fresh proof is accepted there.
+//   e. a DPoP proof accepted at A's token endpoint is refused at B's for
+//      the replay, and a fresh proof is accepted there. Both are sent with
+//      the Host the proof's `htu` names, as a balancer passes it: a node
+//      checks `htu` against the URL the request was made to.
 //
 // What stays in process (class (d)): the claim store answering on a later
 // tick so two calls REALLY interleave, a stale copy written back, and a
@@ -304,6 +306,45 @@ function refresh(node, realm, refreshToken) {
     refresh_token: refreshToken, client_id: PUBLIC });
 }
 
+// A token request at `node` carrying the Host the proof names, as a
+// balancer in front of both nodes passes it: DPoP's htu is the URL the
+// request was MADE to, so a proof is only replayable at another node that
+// is reached by the same name.
+function tokenAs(node, hostName, realm, fields, proof) {
+  log.debug("Entering tokenAs(). " + node);
+  const target = new URL(node);
+  const body = form(fields);
+  log.debug("Leaving tokenAs().");
+  return new Promise(function (resolve, reject) {
+    const req = require("https").request({
+      method: "POST", hostname: target.hostname, port: target.port,
+      path: "/realm/" + realm + "/oauth2/token", agent: false,
+      headers: { host: hostName, DPoP: proof, accept: "application/json",
+                 "content-type": "application/x-www-form-urlencoded",
+                 "content-length": Buffer.byteLength(body) }
+    }, function (res) {
+      const chunks = [];
+      res.on("data", function (c) {
+        chunks.push(c);
+      });
+      res.on("end", function () {
+        const raw = Buffer.concat(chunks).toString("utf8");
+        let json = {};
+        try {
+          json = JSON.parse(raw);
+        } catch (e) {
+          log.debug("Caught in tokenAs(): " + ((e && e.message) || e));
+          // Not JSON; the caller reads `raw`.
+          json = {};
+        }
+        resolve({ status: res.statusCode, body: json, raw: raw });
+      });
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
 // An RFC 9449 proof for `url`, signed with `key`.
 function dpopProof(key, url) {
   log.debug("Entering dpopProof().");
@@ -507,10 +548,11 @@ async function proofs() {
   const proof = dpopProof(key, endpoint);
   const fields = { grant_type: "client_credentials", client_id: CONFIDENTIAL,
                    client_secret: SECRET };
-  const atA = await token(NODE_A, PLAIN, fields, { DPoP: proof });
-  const atB = await token(NODE_B, PLAIN, fields, { DPoP: proof });
-  const fresh = await token(NODE_B, PLAIN, fields,
-                            { DPoP: dpopProof(key, endpoint) });
+  const hostName = new URL(endpoint).host;
+  const atA = await tokenAs(NODE_A, hostName, PLAIN, fields, proof);
+  const atB = await tokenAs(NODE_B, hostName, PLAIN, fields, proof);
+  const fresh = await tokenAs(NODE_B, hostName, PLAIN, fields,
+                              dpopProof(key, endpoint));
   check("e. a DPoP proof accepted at A is refused at B, and a fresh proof " +
         "is accepted there", function () {
     assert.strictEqual(atA.status, 200, atA.raw.slice(0, 300));
@@ -518,6 +560,9 @@ async function proofs() {
                        atA.raw.slice(0, 300));
     assert.strictEqual(atB.status, 400, atB.raw.slice(0, 300));
     assert.ok(/invalid_dpop_proof|use_dpop_nonce/.test(atB.body.error),
+              atB.raw.slice(0, 300));
+    // Refused for the replay, not for the address it names.
+    assert.ok(!/was made for/.test(String(atB.body.error_description)),
               atB.raw.slice(0, 300));
     assert.strictEqual(fresh.status, 200, fresh.raw.slice(0, 300));
   });
