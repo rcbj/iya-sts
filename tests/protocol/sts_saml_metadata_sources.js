@@ -37,11 +37,16 @@
 //      (STS-SAML-0084) and dials nothing; an anonymous AuthnRequest from an
 //      unknown entityID with MDQ configured and no anchor asks the
 //      responder NOTHING (STS-SAML-0080), and the entityID is listed refused
-//      on GET /admin-api/saml2.
+//      on GET /admin-api/saml2; with the anchor rule set aside
+//      (`saml2.mdqImportWithoutAnchors`), a plain-http responder refused for
+//      product mode and an https one at the runner's (private) address by
+//      the outbound policy (STS-SAML-0079), neither dialled.
 //
 // NOT HERE: the refresher's own schedule (a clock), the claim two nodes
-// race for (cluster), a product realm's plain-http refusal of the responder
-// as a SEPARATE code (product never dials http; F shows nothing is asked).
+// race for (cluster), and STS-SAML-0081 (a product realm with an anchor
+// whose responder ANSWERS unsigned or foreign-signed): product's outbound
+// policy refuses every address a test listener can have — a private one —
+// so no responder of a job's is ever dialled in product.
 //
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
@@ -381,6 +386,41 @@ async function product() {
                            text.indexOf(stranger) + 300);
     assert.ok(!/STS-SAML-0080/.test(row), row);
   });
+  // saml_metadata_lifecycle 0079: with the anchor rule set aside
+  // (`saml2.mdqImportWithoutAnchors`) only the transport is left to refuse.
+  // A plain-http responder is refused for product mode whatever
+  // federation.outboundAllowHttp says; an https one at the runner's (a
+  // private) address is refused by the outbound policy, STS-SAML-0079 —
+  // and neither is dialled.
+  await K.set(P, "saml2.mdqImportWithoutAnchors", true);
+  // federation.outboundAllowHttp on, as the in-process file has it: product
+  // refuses plain http whatever it says.
+  const allowed = await K.send(K.base + "/admin-api/realms/set", { json: {
+    id: P, key: "federation.outboundAllowHttp", value: "true" } });
+  const plain = await K.send(K.rb(P) + "/admin-api/saml2/mdq-import",
+                             { json: { sp: op } });
+  await K.set(P, "saml2.mdqBaseUrl", L.origin.replace(/^http:/, "https:") +
+              "/mdq/");
+  const policy = await K.coded(P, "STS-SAML-0079", function () {
+    return K.send(K.rb(P) + "/admin-api/saml2/mdq-import",
+                  { json: { sp: op } });
+  });
+  await K.unset(P, "saml2.mdqImportWithoutAnchors");
+  if (allowed.status === 200) {
+    await K.unset(P, "federation.outboundAllowHttp");
+  }
+  K.check("F4. PRODUCT, anchors set aside: a plain-http responder is " +
+          "refused for product mode, and an https one at the runner's " +
+          "address by the outbound policy (STS-SAML-0079); nothing is " +
+          "dialled", function () {
+    assert.ok(plain.status >= 400, K.shown(plain));
+    assert.ok(allowed.status !== 200 || /product mode/.test(plain.text),
+              plain.text.slice(0, 300));
+    assert.ok(!/trust anchor/.test(plain.text));
+    assert.ok(policy.answer.status >= 400, K.shown(policy.answer));
+    assert.ok(policy.rose >= 1, "no STS-SAML-0079 row");
+    assert.strictEqual(hitsOf(opAt), 0);
+  });
   log.debug("Leaving product().");
 }
 
@@ -404,4 +444,4 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-K.main(test, 18);
+K.main(test, 19);
