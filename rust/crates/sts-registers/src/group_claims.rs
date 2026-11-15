@@ -117,16 +117,20 @@ impl GroupClaims {
         String::new()
     }
 
-    fn values_from(rows: &[Value], form: &str, use_member_of: bool)
-        -> Vec<String> {
+    fn values_from(
+        rows: &[Value],
+        form: &str,
+        use_member_of: bool,
+    ) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         for row in rows {
-            let via = row.get("via").and_then(Value::as_array).map_or(0, Vec::len);
+            let via =
+                row.get("via").and_then(Value::as_array).map_or(0, Vec::len);
             if via == 0 && !use_member_of {
                 continue;
             }
-            let value = js::or_empty(row.get(if form == "dn" { "dn" } else {
-                "cn" }));
+            let value =
+                js::or_empty(row.get(if form == "dn" { "dn" } else { "cn" }));
             if value.is_empty() || out.contains(&value) {
                 continue;
             }
@@ -157,8 +161,14 @@ impl GroupClaims {
             }
         };
         if out["enabled"] != json!(true) {
-            set(&mut out, "reason", json!("groups.claim is off, so no token \
-                or assertion carries a groups claim."));
+            set(
+                &mut out,
+                "reason",
+                json!(
+                    "groups.claim is off, so no token \
+                or assertion carries a groups claim."
+                ),
+            );
             return Outcome::ok(out);
         }
         let problem = self.name_problem(app);
@@ -167,39 +177,66 @@ impl GroupClaims {
             return Outcome::marked(codes::STS_REG_0046, out);
         }
         let Some(directory) = self.directory.as_ref() else {
-            set(&mut out, "reason", json!("The embedded LDAP directory is not \
+            set(
+                &mut out,
+                "reason",
+                json!(
+                    "The embedded LDAP directory is not \
                 loaded in this process, so there are no groups to read. \
-                Nothing else is affected."));
+                Nothing else is affected."
+                ),
+            );
             return Outcome::ok(out);
         };
-        let read = directory.groups_of_user(&self.keys.identity_key_of(
-            username));
+        let read =
+            directory.groups_of_user(&self.keys.identity_key_of(username));
         if !js::truthy(&read) {
             tracing::error!(
                 "{}the directory gave no answer for the groups claim; the \
                  token is issued without it",
                 tag(codes::STS_REG_0045)
             );
-            set(&mut out, "reason", json!("The directory could not be read; \
-                the token is issued without a groups claim."));
+            set(
+                &mut out,
+                "reason",
+                json!(
+                    "The directory could not be read; \
+                the token is issued without a groups claim."
+                ),
+            );
             return Outcome::marked(codes::STS_REG_0045, out);
         }
         let groups = read["groups"].as_array().cloned().unwrap_or_default();
         let form = js::string(&out["valueForm"]);
-        let values = GroupClaims::values_from(&groups,
-            &form, out["memberOfCounts"] == json!(true));
+        let values = GroupClaims::values_from(
+            &groups,
+            &form,
+            out["memberOfCounts"] == json!(true),
+        );
         set(&mut out, "dn", read["dn"].clone());
-        set(&mut out, "entryFound", json!(js::truthy(&read["entryFound"])));
+        set(
+            &mut out,
+            "entryFound",
+            json!(js::truthy(&read["entryFound"])),
+        );
         set(&mut out, "groups", json!(groups));
         if values.is_empty() {
-            set(&mut out, "reason", json!(if groups.is_empty() {
-                "This person is in no group here, so the claim is omitted \
-                 entirely rather than sent as an empty list.".to_string()
-            } else {
-                format!("This person is named by {} group(s), but only \
+            set(
+                &mut out,
+                "reason",
+                json!(if groups.is_empty() {
+                    "This person is in no group here, so the claim is omitted \
+                 entirely rather than sent as an empty list."
+                        .to_string()
+                } else {
+                    format!(
+                        "This person is named by {} group(s), but only \
                     through their own memberOf, and groups.claimFromMemberOf \
-                    is off.", groups.len())
-            }));
+                    is off.",
+                        groups.len()
+                    )
+                }),
+            );
         }
         set(&mut out, "values", json!(values));
         Outcome::ok(out)
@@ -233,8 +270,11 @@ impl GroupClaims {
 
     /// `samlAttributesFor(setId, context)`: one multi-valued attribute.
     #[tracing::instrument(level = "debug", skip(self, context))]
-    pub fn saml_attributes_for(&self, set_id: &str, context: &Value)
-        -> Vec<Value> {
+    pub fn saml_attributes_for(
+        &self,
+        set_id: &str,
+        context: &Value,
+    ) -> Vec<Value> {
         let answer = self.of_context(context).answer;
         let values = answer["values"].as_array().cloned().unwrap_or_default();
         if values.is_empty() {
@@ -244,8 +284,10 @@ impl GroupClaims {
             "value": values[0], "values": values});
         if set_id == "saml11" {
             if let Some(map) = attribute.as_object_mut() {
-                map.insert("namespace".into(),
-                    json!(self.tables.default_saml11_namespace()));
+                map.insert(
+                    "namespace".into(),
+                    json!(self.tables.default_saml11_namespace()),
+                );
             }
         }
         vec![attribute]

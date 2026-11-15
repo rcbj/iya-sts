@@ -216,8 +216,13 @@ impl Rbac {
 
     /// `grant(username, roleId, context)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn grant(&self, username: &str, role_id: &str, via: &str, actor: &str)
-        -> Outcome {
+    pub fn grant(
+        &self,
+        username: &str,
+        role_id: &str,
+        via: &str,
+        actor: &str,
+    ) -> Outcome {
         let name = js::trim(username).to_string();
         let Some(d) = self.directory.as_deref() else {
             return refused(
@@ -365,16 +370,21 @@ impl Rbac {
         if !js::truthy(&flags) {
             return false;
         }
-        let seeded = flags.get("bootstrapAdministrator").is_some_and(js::truthy);
-        let claimed =
-            !js::or_empty(flags.get("consoleClaimedAt")).is_empty();
+        let seeded =
+            flags.get("bootstrapAdministrator").is_some_and(js::truthy);
+        let claimed = !js::or_empty(flags.get("consoleClaimedAt")).is_empty();
         seeded && claimed
     }
 
     /// `revoke(username, roleId, context)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn revoke(&self, username: &str, role_id: &str, via: &str,
-                  actor: &str) -> Outcome {
+    pub fn revoke(
+        &self,
+        username: &str,
+        role_id: &str,
+        via: &str,
+        actor: &str,
+    ) -> Outcome {
         let name = js::trim(username).to_string();
         let Some(d) = self.directory.as_deref() else {
             return refused(
@@ -435,7 +445,8 @@ impl Rbac {
             hits.iter().map(|&i| members[i].clone()).collect();
         let mut attributes = Rbac::writable(&existing);
         for member in &removed {
-            let attribute = js::lower(&js::unless_null(member.get("attribute")));
+            let attribute =
+                js::lower(&js::unless_null(member.get("attribute")));
             let value = js::unless_null(member.get("value"));
             let key = attributes
                 .keys()
@@ -506,8 +517,10 @@ impl Rbac {
             removed.len()
         );
         if now_empty {
-            message.push_str(" THAT WAS THE LAST GRANT ON THIS SERVICE. The \
-                roster is empty again, so ");
+            message.push_str(
+                " THAT WAS THE LAST GRANT ON THIS SERVICE. The \
+                roster is empty again, so ",
+            );
             message.push_str(if reopens {
                 "this console is open to anybody who signs in until somebody \
                  is granted a role."
@@ -527,7 +540,8 @@ impl Rbac {
     #[tracing::instrument(level = "debug", skip(self, body))]
     pub fn act(&self, body: &Value, via: &str, actor: &str) -> Outcome {
         let action = js::or_empty(body.get("action"));
-        let username = js::trim(&js::or_empty(body.get("username"))).to_string();
+        let username =
+            js::trim(&js::or_empty(body.get("username"))).to_string();
         let role = js::trim(&js::or_empty(body.get("role"))).to_string();
         let mut result = match action.as_str() {
             "grant" => self.grant(&username, &role, via, actor),

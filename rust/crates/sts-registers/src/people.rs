@@ -117,8 +117,10 @@ pub fn encode_uri_component(text: &str) -> String {
     let mut out = String::new();
     for b in text.bytes() {
         let keep = b.is_ascii_alphanumeric()
-            || matches!(b, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\''
-                           | b'(' | b')');
+            || matches!(
+                b,
+                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+            );
         if keep {
             out.push(b as char);
         } else {
@@ -160,7 +162,8 @@ pub fn user_fields_from(body: &Value) -> Map<String, Value> {
         }
         let value = js::trim(&js::string(raw)).to_string();
         let boxed = name.rsplit_once('.').filter(|(head, n)| {
-            !head.is_empty() && !n.is_empty()
+            !head.is_empty()
+                && !n.is_empty()
                 && n.chars().all(|c| c.is_ascii_digit())
         });
         if let Some((head, _)) = boxed {
@@ -302,8 +305,12 @@ impl AccountState {
 
     /// `setDisabled(who, disabled, opts)`.
     #[tracing::instrument(level = "debug", skip(self, o))]
-    pub fn set_disabled(&self, who: &str, disabled: bool, o: &AccountChange)
-        -> Outcome {
+    pub fn set_disabled(
+        &self,
+        who: &str,
+        disabled: bool,
+        o: &AccountChange,
+    ) -> Outcome {
         let name = js::trim(who).to_string();
         if name.is_empty() {
             return refused(
@@ -418,8 +425,11 @@ impl AccountState {
             if disabled { "DISABLED" } else { "enabled" }
         );
         if disabled {
-            self.effects
-                .mail_account_disabled(&name, &o.reason, !o.door.is_empty());
+            self.effects.mail_account_disabled(
+                &name,
+                &o.reason,
+                !o.door.is_empty(),
+            );
         }
         let message = if disabled {
             let e = ended.clone().unwrap_or(Value::Null);
@@ -429,8 +439,10 @@ impl AccountState {
                      Front-channel notifications need the person's own \
                      browser and are not sent from here.",
                     if back_count > 0 {
-                        format!(", with {back_count} back-channel Logout \
-                                 Token(s) queued")
+                        format!(
+                            ", with {back_count} back-channel Logout \
+                                 Token(s) queued"
+                        )
                     } else {
                         String::new()
                     }
@@ -487,8 +499,12 @@ impl People {
     /// `create`, `disable`, `enable`, and the refusal of an unknown one.
     /// `None` for an action Node has that is not ported here.
     #[tracing::instrument(level = "debug", skip(self, body))]
-    pub fn users(&self, body: &Value, via: &str, actor: &str)
-        -> Option<Outcome> {
+    pub fn users(
+        &self,
+        body: &Value,
+        via: &str,
+        actor: &str,
+    ) -> Option<Outcome> {
         let action = js::or_empty(body.get("action"));
         match action.as_str() {
             "create" => Some(self.create_user(body, via, actor)),
@@ -507,8 +523,13 @@ impl People {
         }
     }
 
-    fn switch(&self, body: &Value, disable: bool, via: &str, actor: &str)
-        -> Outcome {
+    fn switch(
+        &self,
+        body: &Value,
+        disable: bool,
+        via: &str,
+        actor: &str,
+    ) -> Outcome {
         let who = js::trim(&match js::or_empty(body.get("user")) {
             u if u.is_empty() => js::or_empty(body.get("username")),
             u => u,
@@ -595,10 +616,8 @@ impl People {
             Some(Value::Array(list)) => list.first().cloned(),
             other => other.cloned(),
         };
-        let reference_text = reference
-            .as_ref()
-            .map(js::string)
-            .unwrap_or_default();
+        let reference_text =
+            reference.as_ref().map(js::string).unwrap_or_default();
         if let Some(refusal) = d.service_accounts.write_refusal(&json!({
             "stsServiceAccount": if as_service { "TRUE" } else { "" },
             "stsServiceAccountPolicy": reference_text,
@@ -863,12 +882,14 @@ impl People {
             format!(
                 ", carrying {}. Nothing was invented for it.",
                 if count > 0 {
-                    format!("the {count} attribute(s) you typed and nothing \
-                             else")
+                    format!(
+                        "the {count} attribute(s) you typed and nothing \
+                             else"
+                    )
                 } else {
                     "no attributes at all beyond its object classes and its \
                      uid"
-                        .to_string()
+                    .to_string()
                 }
             )
         };
@@ -956,13 +977,17 @@ impl People {
                         .to_string()
                 };
                 if let Some(map) = answer.as_object_mut() {
-                    map.insert("message".into(), json!(format!(
-                        "{dn} now exists{listing}. IT GRANTS NOTHING. No \
+                    map.insert(
+                        "message".into(),
+                        json!(format!(
+                            "{dn} now exists{listing}. IT GRANTS NOTHING. No \
                          endpoint in this service checks a group, and the \
                          only two that decide anything are the console roles \
                          on /admin/rbac. What it does change is what a \
                          directory client sees and what the groups claim in \
-                         an issued token says.")));
+                         an issued token says."
+                        )),
+                    );
                 }
                 Outcome {
                     answer,
@@ -983,9 +1008,11 @@ impl People {
                 self.handed(result, codes::STS_ADMIN_0528)
             }
             "set-mail" => {
-                let result =
-                    writer.set_group_mail(&field("group"), &field("mail"),
-                                          &options);
+                let result = writer.set_group_mail(
+                    &field("group"),
+                    &field("mail"),
+                    &options,
+                );
                 self.handed(result, codes::STS_ADMIN_0896)
             }
             "set-policy" => {
@@ -998,9 +1025,11 @@ impl People {
                 self.handed(result, codes::STS_ADMIN_0907)
             }
             "add-owner" => {
-                let result =
-                    writer.add_group_owner(&field("group"), &field("owner"),
-                                           &options);
+                let result = writer.add_group_owner(
+                    &field("group"),
+                    &field("owner"),
+                    &options,
+                );
                 self.handed(result, codes::STS_ADMIN_0852)
             }
             "remove-owner" => {

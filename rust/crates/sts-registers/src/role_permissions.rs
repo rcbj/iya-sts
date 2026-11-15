@@ -154,7 +154,9 @@ impl RolePermissions {
             return true;
         }
         subject.application
-            && split(scope).iter().any(|one| self.is_application_permission(one))
+            && split(scope)
+                .iter()
+                .any(|one| self.is_application_permission(one))
     }
 
     /// `heldRoles(subject)`.
@@ -173,8 +175,7 @@ impl RolePermissions {
             .filter(|one| roles::is_built_in(one))
             .cloned()
             .collect();
-        if name.is_empty() || (!subject.application && !subject.authenticated)
-        {
+        if name.is_empty() || (!subject.application && !subject.authenticated) {
             return Held {
                 all: built_in,
                 configured: Vec::new(),
@@ -251,8 +252,11 @@ impl RolePermissions {
     /// `conferredOn(subject, clientId)`: the roles a client confers on a
     /// person signing in through it.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn conferred_on(&self, subject: &Subject, client_id: &str)
-        -> Vec<String> {
+    pub fn conferred_on(
+        &self,
+        subject: &Subject,
+        client_id: &str,
+    ) -> Vec<String> {
         if client_id.is_empty()
             || subject.application
             || !subject.authenticated
@@ -285,8 +289,13 @@ impl RolePermissions {
         out
     }
 
-    fn ssf_role_check(&self, role: &str, value: &str, who: &Subject,
-                      client: &str) -> (bool, String) {
+    fn ssf_role_check(
+        &self,
+        role: &str,
+        value: &str,
+        who: &Subject,
+        client: &str,
+    ) -> (bool, String) {
         let Some(native) = NATIVE_ROLES.iter().find(|r| r.name == role) else {
             return (true, String::new());
         };
@@ -297,16 +306,26 @@ impl RolePermissions {
             return (false, format!("{role} does not authorize {value}"));
         }
         if client.is_empty() {
-            return (false, format!("no client is named, and {role} needs \
-                the client to be a member"));
+            return (
+                false,
+                format!(
+                    "no client is named, and {role} needs \
+                the client to be a member"
+                ),
+            );
         }
         let Some(row) = self.deps.roles.read(role) else {
             return (false, format!("the role {role} could not be read"));
         };
         let wanted = js::lower(client);
         if !row.applications.iter().any(|a| js::lower(a) == wanted) {
-            return (false, format!("the application \"{client}\" is not a \
-                member of the role {role}"));
+            return (
+                false,
+                format!(
+                    "the application \"{client}\" is not a \
+                member of the role {role}"
+                ),
+            );
         }
         if who.application {
             return (true, String::new());
@@ -318,27 +337,41 @@ impl RolePermissions {
             .iter()
             .map(|g| js::lower(g))
             .collect();
-        let in_group = row.groups.iter().any(|g| groups.contains(&js::lower(g)));
+        let in_group =
+            row.groups.iter().any(|g| groups.contains(&js::lower(g)));
         let shown = if who.name.is_empty() {
             "the person".to_string()
         } else {
             who.name.clone()
         };
-        (in_group, if in_group { String::new() } else {
-            format!("{shown} is in none of the groups of the role {role} \
-                ({})", if row.groups.is_empty() {
-                    "it lists none".to_string()
-                } else {
-                    row.groups.join(", ")
-                })
-        })
+        (
+            in_group,
+            if in_group {
+                String::new()
+            } else {
+                format!(
+                    "{shown} is in none of the groups of the role {role} \
+                ({})",
+                    if row.groups.is_empty() {
+                        "it lists none".to_string()
+                    } else {
+                        row.groups.join(", ")
+                    }
+                )
+            },
+        )
     }
 
-    fn why_removed(&self, value: &str, held: &Held, who: &Subject,
-                   client: &str) -> String {
+    fn why_removed(
+        &self,
+        value: &str,
+        held: &Held,
+        who: &Subject,
+        client: &str,
+    ) -> String {
         let name = js::trim(&who.name).to_string();
-        let nobody = name.is_empty()
-            || (!who.application && !who.authenticated);
+        let nobody =
+            name.is_empty() || (!who.application && !who.authenticated);
         if !held.why.is_empty() && nobody {
             return held.why.clone();
         }
@@ -350,15 +383,19 @@ impl RolePermissions {
             r.permission == value
                 && (r.name == "SSF_READ" || r.name == "SSF_MANAGE")
         }) {
-            let (stands, why) = self.ssf_role_check(ssf.name, value, who,
-                                                    client);
+            let (stands, why) =
+                self.ssf_role_check(ssf.name, value, who, client);
             if !stands {
                 return why;
             }
         }
         format!(
             "{} holds no role authorizing {value}{}",
-            if name.is_empty() { "an unnamed subject" } else { &name },
+            if name.is_empty() {
+                "an unnamed subject"
+            } else {
+                &name
+            },
             if held.configured.is_empty() {
                 String::new()
             } else {
@@ -371,18 +408,26 @@ impl RolePermissions {
     /// permission the subject's roles do not authorize taken off.
     /// `context` is `{clientId, grant, stage, record}`.
     #[tracing::instrument(level = "debug", skip(self, context))]
-    pub fn narrow_scope(&self, scope: &str, who: &Subject, context: &Value)
-        -> Value {
+    pub fn narrow_scope(
+        &self,
+        scope: &str,
+        who: &Subject,
+        context: &Value,
+    ) -> Value {
         let unchanged = json!({"scope": scope, "removed": [],
                                "emptied": false, "why": ""});
         let values = split(scope);
-        let gated: Vec<String> =
-            values.iter().filter(|v| self.is_gated(v)).cloned().collect();
+        let gated: Vec<String> = values
+            .iter()
+            .filter(|v| self.is_gated(v))
+            .cloned()
+            .collect();
         let app_permissions: Vec<String> = if who.application {
             values
                 .iter()
-                .filter(|v| !gated.contains(v)
-                    && self.is_application_permission(v))
+                .filter(|v| {
+                    !gated.contains(v) && self.is_application_permission(v)
+                })
                 .cloned()
                 .collect()
         } else {
@@ -409,8 +454,7 @@ impl RolePermissions {
                     .filter(|(role, perms)| {
                         perms.as_array().is_some_and(|p| {
                             p.iter().any(|one| one == &json!(value))
-                        }) && self.ssf_role_check(role, value, who,
-                                                  &client).0
+                        }) && self.ssf_role_check(role, value, who, &client).0
                     })
                     .map(|(role, _)| role.clone())
                     .collect();
@@ -480,21 +524,24 @@ impl RolePermissions {
             return answer;
         }
         let code = decided(&removed[0]).1.unwrap_or(codes::STS_ADMIN_0821);
-        self.deps.audit.failure(code, &json!({
-            "actor": who.name, "protocol": "OAuth 2.0 / OIDC",
-            "channel": "http", "target": removed.join(" "),
-            "outcome": "refused",
-            "summary": format!("the permission(s) {} were not issued to \
-                {}{}: {reason}", removed.join(", "),
-                if who.application { "the application " } else { "" },
-                if who.name.is_empty() { "an unnamed subject" } else {
-                    &who.name }),
-            "detail": {"client_id": client,
-                "grant": js::or_empty(context.get("grant")),
-                "subject_kind": if who.application { "application" } else {
-                    "user" },
-                "removed": removed.join(" "), "why": reason},
-        }));
+        self.deps.audit.failure(
+            code,
+            &json!({
+                "actor": who.name, "protocol": "OAuth 2.0 / OIDC",
+                "channel": "http", "target": removed.join(" "),
+                "outcome": "refused",
+                "summary": format!("the permission(s) {} were not issued to \
+                    {}{}: {reason}", removed.join(", "),
+                    if who.application { "the application " } else { "" },
+                    if who.name.is_empty() { "an unnamed subject" } else {
+                        &who.name }),
+                "detail": {"client_id": client,
+                    "grant": js::or_empty(context.get("grant")),
+                    "subject_kind": if who.application { "application" } else {
+                        "user" },
+                    "removed": removed.join(" "), "why": reason},
+            }),
+        );
         answer
     }
 
@@ -510,8 +557,7 @@ impl RolePermissions {
     /// `effectiveRoles(claims, carried)`: the roles a token's scopes still
     /// stand on, and the gated scopes no role authorizes any more.
     #[tracing::instrument(level = "debug", skip(self, claims))]
-    pub fn effective_roles(&self, claims: &Value, carried: &[String])
-        -> Value {
+    pub fn effective_roles(&self, claims: &Value, carried: &[String]) -> Value {
         let client = RolePermissions::is_client_token(claims);
         let sub = js::or_empty(claims.get("sub"));
         let subject = if client {
@@ -587,7 +633,10 @@ impl RolePermissions {
             .iter()
             .filter(|one| {
                 self.is_gated(one)
-                    && !held.configured.iter().any(|r| perms_of(r).contains(one))
+                    && !held
+                        .configured
+                        .iter()
+                        .any(|r| perms_of(r).contains(one))
             })
             .cloned()
             .collect();
@@ -599,8 +648,11 @@ impl RolePermissions {
         {
             held.why.clone()
         } else {
-            format!("{} holds no role authorizing {}", subject.name,
-                    withdrawn.join(", "))
+            format!(
+                "{} holds no role authorizing {}",
+                subject.name,
+                withdrawn.join(", ")
+            )
         };
         let mut roles_now = built_in;
         roles_now.extend(effective);

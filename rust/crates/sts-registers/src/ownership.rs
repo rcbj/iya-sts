@@ -33,7 +33,8 @@ use crate::port::{
 use crate::roles::{self, owner_roles, Roles, Who, NATIVE_ROLES};
 
 /// `KINDS`.
-pub const KINDS: [&str; 4] = ["role", "group", "service-account", "application"];
+pub const KINDS: [&str; 4] =
+    ["role", "group", "service-account", "application"];
 
 /// The reason an administrator's own closing gives.
 pub const MARKED: &str = "an administrator closed it to its owners";
@@ -231,9 +232,10 @@ impl Ownership {
                         found = true;
                         shown = js::unless_null(app.get("identifier"));
                         dn = js::or_empty(app.get("dn"));
-                        owners = match app.get("fields").and_then(|f| {
-                            f.get("appOwner")
-                        }) {
+                        owners = match app
+                            .get("fields")
+                            .and_then(|f| f.get("appOwner"))
+                        {
                             Some(Value::Array(l)) => {
                                 l.iter().map(js::string).collect()
                             }
@@ -288,8 +290,10 @@ impl Ownership {
         let mut out = Map::new();
         for row in self.deps.roles.all() {
             if row.native {
-                out.insert(row.name.clone(),
-                           json!("it is a native role of this service"));
+                out.insert(
+                    row.name.clone(),
+                    json!("it is a native role of this service"),
+                );
                 continue;
             }
             let held: Vec<&String> = row
@@ -299,9 +303,12 @@ impl Ownership {
                 .collect();
             if !held.is_empty() {
                 let list: Vec<&str> = held.iter().map(|s| s.as_str()).collect();
-                out.insert(row.name.clone(), json!(format!(
+                out.insert(
+                    row.name.clone(),
+                    json!(format!(
                     "it authorizes {}, a permission of this service no owner \
-                     may come to hold", list.join(", "))));
+                     may come to hold", list.join(", "))),
+                );
             }
         }
         out
@@ -338,8 +345,11 @@ impl Ownership {
         match kind {
             "role" => {
                 if roles::is_built_in(wanted) {
-                    reasons.push("it is a built-in role, computed rather than \
-                                  stored".to_string());
+                    reasons.push(
+                        "it is a built-in role, computed rather than \
+                                  stored"
+                            .to_string(),
+                    );
                 } else if let Some(why) = protected.get(wanted) {
                     reasons.push(js::string(why));
                 }
@@ -358,9 +368,12 @@ impl Ownership {
                     let cn = js::lower(&js::or_empty(group.get("cn")));
                     let gdn = js::unless_null(group.get("dn"));
                     if self.granting_groups().contains(&cn) {
-                        reasons.push("it is a group this service grants a \
+                        reasons.push(
+                            "it is a group this service grants a \
                                       role or the console roster through by \
-                                      its name".to_string());
+                                      its name"
+                                .to_string(),
+                        );
                     }
                     let held = in_role(&|row| {
                         row.groups.iter().any(|one| {
@@ -382,8 +395,11 @@ impl Ownership {
             "application" => {
                 let apps = &self.deps.applications;
                 if apps.is_internal_identifier(wanted) {
-                    reasons.push("it is one of this service's own \
-                                  applications".to_string());
+                    reasons.push(
+                        "it is one of this service's own \
+                                  applications"
+                            .to_string(),
+                    );
                 }
                 let held = in_role(&|row| {
                     row.applications.iter().any(|a| a == wanted)
@@ -395,7 +411,8 @@ impl Ownership {
                     ));
                 }
                 let permissions = self.protected_permissions();
-                let mut declared = self.deps.scope_policy.declared_scopes(wanted);
+                let mut declared =
+                    self.deps.scope_policy.declared_scopes(wanted);
                 declared.extend(
                     self.deps.scope_policy.delegated_permission_scopes(wanted),
                 );
@@ -452,8 +469,13 @@ impl Ownership {
     /// `setProtected(kind, name, flag, options)`: an administrator closing
     /// an object to its owners, or opening it again.
     #[tracing::instrument(level = "debug", skip(self, flag, options))]
-    pub fn set_protected(&self, kind: &str, name: &str, flag: &Value,
-                         options: &Value) -> Outcome {
+    pub fn set_protected(
+        &self,
+        kind: &str,
+        name: &str,
+        flag: &Value,
+        options: &Value,
+    ) -> Outcome {
         let wanted = flag == &Value::Bool(true) || js::string(flag) == "true";
         let what = js::trim(name).to_string();
         if !is_kind(kind) {
@@ -482,19 +504,32 @@ impl Ownership {
                 result
             }
             "group" => {
-                let m = self.deps.directory.set_group_owner_protected(
-                    &what, wanted, options);
-                Outcome { answer: m.value, code: m.code }
+                let m = self
+                    .deps
+                    .directory
+                    .set_group_owner_protected(&what, wanted, options);
+                Outcome {
+                    answer: m.value,
+                    code: m.code,
+                }
             }
             "service-account" => {
-                let m = self.deps.service_accounts.set_owner_protected(&what,
-                                                                       wanted);
-                Outcome { answer: m.value, code: m.code }
+                let m = self
+                    .deps
+                    .service_accounts
+                    .set_owner_protected(&what, wanted);
+                Outcome {
+                    answer: m.value,
+                    code: m.code,
+                }
             }
             _ => {
-                let m = self.deps.applications.set_owner_protected(&what,
-                                                                   wanted);
-                Outcome { answer: m.value, code: m.code }
+                let m =
+                    self.deps.applications.set_owner_protected(&what, wanted);
+                Outcome {
+                    answer: m.value,
+                    code: m.code,
+                }
             }
         };
         if done.answer.get("ok") != Some(&Value::Bool(true)) {

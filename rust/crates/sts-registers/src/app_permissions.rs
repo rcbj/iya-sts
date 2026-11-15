@@ -66,8 +66,10 @@ pub fn values_of(value: Option<&Value>) -> Vec<String> {
             .map(js::string)
             .filter(|one| !one.is_empty())
             .collect(),
-        Some(one) => vec![js::string(one)].into_iter()
-            .filter(|s| !s.is_empty()).collect(),
+        Some(one) => vec![js::string(one)]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect(),
     }
 }
 
@@ -81,8 +83,10 @@ pub fn permissions_of(source: &Value) -> Vec<Value> {
         .into_iter()
         .map(|value| {
             let (name, description) = match value.find('|') {
-                Some(at) => (js::trim(&value[..at]).to_string(),
-                             js::trim(&value[at + 1..]).to_string()),
+                Some(at) => (
+                    js::trim(&value[..at]).to_string(),
+                    js::trim(&value[at + 1..]).to_string(),
+                ),
                 None => (js::trim(&value).to_string(), String::new()),
             };
             let id = if base.is_empty() {
@@ -147,13 +151,19 @@ impl AppPermissions {
             resource.insert("identifier".into(), json!(identifier));
             resource.insert("name".into(), json!(name));
             resource.insert("baseUri".into(), json!(base));
-            resource.insert("rawBaseUri".into(),
-                json!(js::or_empty(fields.get("oauthPermissionBaseUri"))));
-            resource.insert("permissions".into(), json!(permissions.iter()
-                .map(|p| json!({"name": p["name"],
+            resource.insert(
+                "rawBaseUri".into(),
+                json!(js::or_empty(fields.get("oauthPermissionBaseUri"))),
+            );
+            resource.insert(
+                "permissions".into(),
+                json!(permissions
+                    .iter()
+                    .map(|p| json!({"name": p["name"],
                     "description": p["description"], "id": p["id"],
                     "raw": p["raw"], "grantedTo": []}))
-                .collect::<Vec<_>>()));
+                    .collect::<Vec<_>>()),
+            );
             resource.insert("grantsHeld".into(), json!(0));
             resources.push(resource);
         }
@@ -223,15 +233,22 @@ impl AppPermissions {
             }
         }
         resources.sort_by(|a, b| {
-            js::locale_compare(&js::string(&a["identifier"]),
-                               &js::string(&b["identifier"]))
+            js::locale_compare(
+                &js::string(&a["identifier"]),
+                &js::string(&b["identifier"]),
+            )
         });
         grants.sort_by(|a, b| {
-            js::locale_compare(&js::string(&a["client"]),
-                               &js::string(&b["client"]))
-                .then_with(|| js::locale_compare(
+            js::locale_compare(
+                &js::string(&a["client"]),
+                &js::string(&b["client"]),
+            )
+            .then_with(|| {
+                js::locale_compare(
                     &js::string(&a["permissionId"]),
-                    &js::string(&b["permissionId"])))
+                    &js::string(&b["permissionId"]),
+                )
+            })
         });
         let mut permissions: Vec<Value> = Vec::new();
         for r in &resources {
@@ -278,7 +295,10 @@ impl AppPermissions {
         let wanted = js::trim(identifier);
         let all = self.register();
         let pick = |list: &str, key: &str| -> Vec<Value> {
-            all[list].as_array().cloned().unwrap_or_default()
+            all[list]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
                 .into_iter()
                 .filter(|one| one[key] == json!(wanted))
                 .collect()
@@ -291,67 +311,95 @@ impl AppPermissions {
 
     /// `setBaseUri(resource, value, actor)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn set_base_uri(&self, resource: &str, value: &str, actor: &str)
-        -> Outcome {
+    pub fn set_base_uri(
+        &self,
+        resource: &str,
+        value: &str,
+        actor: &str,
+    ) -> Outcome {
         let asked = js::trim(value).to_string();
-        let result = self.applications.update_application(resource, &json!({
+        let result = self.applications.update_application(
+            resource,
+            &json!({
             "attribute": "oauthPermissionBaseUri", "mode": "set",
-            "value": asked, "actor": actor}));
+            "value": asked, "actor": actor}),
+        );
         if !result.value.get("ok").is_some_and(js::truthy) {
             return handed(result);
         }
         let normalised = permission_base_of(Some(&json!(asked)));
         let message = if asked.is_empty() {
-            format!("\"{resource}\" no longer has a permission base URI. Any \
+            format!(
+                "\"{resource}\" no longer has a permission base URI. Any \
                 permission still on the entry has no identifier now and no \
                 client can ask for it — /admin/delegation lists those rather \
                 than hiding them. Grants already made are unaffected on the \
                 clients holding them and become DANGLING, which is the same \
-                honest state.")
+                honest state."
+            )
         } else {
-            format!("\"{resource}\" exposes its permissions under \
+            format!(
+                "\"{resource}\" exposes its permissions under \
                 {normalised}{}A permission called `write` on it is now \
                 `{normalised}write`, which is what a client puts in a `scope` \
                 and what an access token asking for it is AUDIENCED to.",
                 if normalised == asked {
                     ". ".to_string()
                 } else {
-                    format!(" — a trailing separator was added, because a \
+                    format!(
+                        " — a trailing separator was added, because a \
                         permission identifier is the base followed by the \
                         name and \"{asked}\" + \"write\" would otherwise \
-                        read as one word. ")
-                })
+                        read as one word. "
+                    )
+                }
+            )
         };
         with_message(result, message)
     }
 
     /// `definePermission(resource, name, description, actor)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn define_permission(&self, resource: &str, name: &str,
-                             description: &str, actor: &str) -> Outcome {
+    pub fn define_permission(
+        &self,
+        resource: &str,
+        name: &str,
+        description: &str,
+        actor: &str,
+    ) -> Outcome {
         let leaf = js::trim(name).to_string();
         let value = permission_value_of(&leaf, description);
-        let result = self.applications.update_application(resource, &json!({
+        let result = self.applications.update_application(
+            resource,
+            &json!({
             "attribute": "oauthPermission", "mode": "add", "value": value,
-            "actor": actor}));
+            "actor": actor}),
+        );
         if !result.value.get("ok").is_some_and(js::truthy) {
             return handed(result);
         }
         let base = permission_base_of(
-            result.value["application"]["fields"].get("oauthPermissionBaseUri"));
-        let message = format!("\"{resource}\" now exposes the permission \
+            result.value["application"]["fields"].get("oauthPermissionBaseUri"),
+        );
+        let message = format!(
+            "\"{resource}\" now exposes the permission \
             `{leaf}`, identified by `{base}{leaf}`. NOTHING HOLDS IT YET — \
             defining a permission grants it to nobody, which is the ordering \
             this feature is built on. Grant it to a client and a request \
             carrying `{base}{leaf}` in its `scope` produces an access token \
-            audienced to {base} with `{leaf}` on its scope claim.");
+            audienced to {base} with `{leaf}` on its scope claim."
+        );
         with_message(result, message)
     }
 
     /// `removePermission(resource, name, actor)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn remove_permission(&self, resource: &str, name: &str, actor: &str)
-        -> Outcome {
+    pub fn remove_permission(
+        &self,
+        resource: &str,
+        name: &str,
+        actor: &str,
+    ) -> Outcome {
         let leaf = js::trim(name).to_string();
         let entry = self.applications.get(resource);
         if !js::truthy(&entry) {
@@ -375,9 +423,12 @@ impl AppPermissions {
             );
         };
         let found = found.clone();
-        let result = self.applications.update_application(resource, &json!({
+        let result = self.applications.update_application(
+            resource,
+            &json!({
             "attribute": "oauthPermission", "mode": "remove",
-            "value": found["raw"], "actor": actor}));
+            "value": found["raw"], "actor": actor}),
+        );
         if !result.value.get("ok").is_some_and(js::truthy) {
             return handed(result);
         }
@@ -390,34 +441,47 @@ impl AppPermissions {
             .map(|g| js::string(&g["client"]))
             .collect();
         let id = js::string(&found["id"]);
-        let message = format!("\"{resource}\" no longer exposes `{leaf}`. {}",
+        let message = format!(
+            "\"{resource}\" no longer exposes `{leaf}`. {}",
             if stranded.is_empty() {
                 "Nothing was holding it, so no grant was stranded.".to_string()
             } else {
-                format!("<strong>{} grant(s) still name `{id}` and are now \
+                format!(
+                    "<strong>{} grant(s) still name `{id}` and are now \
                     DANGLING</strong> — on {}. They were NOT removed, \
                     deliberately: revoking them would be this action writing \
                     to entries you did not name. Revoke each one, or define \
                     the permission again and they resolve exactly as before.",
-                    stranded.len(), stranded.join(", "))
-            });
+                    stranded.len(),
+                    stranded.join(", ")
+                )
+            }
+        );
         with_message(result, message)
     }
 
     /// `grant(client, permissionId, actor)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn grant(&self, client: &str, permission_id: &str, actor: &str)
-        -> Outcome {
+    pub fn grant(
+        &self,
+        client: &str,
+        permission_id: &str,
+        actor: &str,
+    ) -> Outcome {
         let id = js::trim(permission_id).to_string();
-        let result = self.applications.update_application(client, &json!({
+        let result = self.applications.update_application(
+            client,
+            &json!({
             "attribute": "oauthDelegatedPermission", "mode": "add",
-            "value": id, "actor": actor}));
+            "value": id, "actor": actor}),
+        );
         if !result.value.get("ok").is_some_and(js::truthy) {
             return handed(result);
         }
         let defines = self.applications.for_permission(&id);
         let known = js::truthy(&defines);
-        let message = format!("\"{client}\" is granted `{id}`{}. A request \
+        let message = format!(
+            "\"{client}\" is granted `{id}`{}. A request \
             from it carrying that string in `scope` produces an access token \
             audienced to {} with `{}` on its scope claim. In product mode an \
             ungranted permission is refused, so this grant is what lets it \
@@ -425,36 +489,54 @@ impl AppPermissions {
             is recorded and reported and refuses nothing unless \
             `oauth2.delegatedPermissionsEnforced` is on.",
             if known {
-                format!(", which \"{}\" exposes",
-                        js::unless_null(defines.get("identifier")))
+                format!(
+                    ", which \"{}\" exposes",
+                    js::unless_null(defines.get("identifier"))
+                )
             } else {
                 String::new()
             },
-            if known { js::unless_null(defines.get("baseUri")) } else {
-                "the permission's base URI".to_string() },
-            if known { js::unless_null(defines.get("name")) } else {
-                id.clone() });
+            if known {
+                js::unless_null(defines.get("baseUri"))
+            } else {
+                "the permission's base URI".to_string()
+            },
+            if known {
+                js::unless_null(defines.get("name"))
+            } else {
+                id.clone()
+            }
+        );
         with_message(result, message)
     }
 
     /// `revoke(client, permissionId, actor)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn revoke(&self, client: &str, permission_id: &str, actor: &str)
-        -> Outcome {
+    pub fn revoke(
+        &self,
+        client: &str,
+        permission_id: &str,
+        actor: &str,
+    ) -> Outcome {
         let id = js::trim(permission_id).to_string();
-        let result = self.applications.update_application(client, &json!({
+        let result = self.applications.update_application(
+            client,
+            &json!({
             "attribute": "oauthDelegatedPermission", "mode": "remove",
-            "value": id, "actor": actor}));
+            "value": id, "actor": actor}),
+        );
         if !result.value.get("ok").is_some_and(js::truthy) {
             return handed(result);
         }
-        let message = format!("\"{client}\" no longer holds `{id}`. In \
+        let message = format!(
+            "\"{client}\" no longer holds `{id}`. In \
             product mode its next request for it is refused invalid_scope. \
             In development with `oauth2.delegatedPermissionsEnforced` OFF \
             this changes nothing about what it is issued — the permission \
             still becomes an audience and a scope, and /admin/delegation now \
             shows those requests as UNGRANTED, which is the state the \
-            setting turns into a refusal.");
+            setting turns into a refusal."
+        );
         with_message(result, message)
     }
 }
@@ -475,34 +557,52 @@ impl AppPermissions {
     #[tracing::instrument(level = "debug", skip(self, body))]
     pub fn act(&self, body: &Value, actor: &str) -> Outcome {
         let action = js::or_empty(body.get("action"));
-        let resource = js::trim(&js::or_empty(body.get("resource"))).to_string();
+        let resource =
+            js::trim(&js::or_empty(body.get("resource"))).to_string();
         let client = js::trim(&js::or_empty(body.get("client"))).to_string();
         let refused = |code, text: &str| {
             Outcome::marked(code, json!({"ok": false, "errors": [text]}))
         };
-        if ["set-permission-base", "define-permission", "remove-permission"]
-            .contains(&action.as_str())
+        if [
+            "set-permission-base",
+            "define-permission",
+            "remove-permission",
+        ]
+        .contains(&action.as_str())
             && resource.is_empty()
         {
-            return refused(codes::STS_ADMIN_0514, "Which application exposes \
+            return refused(
+                codes::STS_ADMIN_0514,
+                "Which application exposes \
                 it? Send `resource` with the identifier exactly as the \
                 registry holds it — this is the application whose API the \
-                permission belongs to, not the one that will ask for it.");
+                permission belongs to, not the one that will ask for it.",
+            );
         }
         if ["grant-permission", "revoke-permission"].contains(&action.as_str())
             && client.is_empty()
         {
-            return refused(codes::STS_ADMIN_0515, "Which application holds \
+            return refused(
+                codes::STS_ADMIN_0515,
+                "Which application holds \
                 it? Send `client` with the identifier exactly as the registry \
                 holds it — this is the application that will name the \
-                permission in a `scope`, not the one that exposes it.");
+                permission in a `scope`, not the one that exposes it.",
+            );
         }
         let text = |k: &str| js::or_empty(body.get(k));
         let mut result = match action.as_str() {
-            "set-permission-base" => self.set_base_uri(&resource,
-                &js::unless_null(body.get("baseUri")), actor),
-            "define-permission" => self.define_permission(&resource,
-                &text("name"), &text("description"), actor),
+            "set-permission-base" => self.set_base_uri(
+                &resource,
+                &js::unless_null(body.get("baseUri")),
+                actor,
+            ),
+            "define-permission" => self.define_permission(
+                &resource,
+                &text("name"),
+                &text("description"),
+                actor,
+            ),
             "remove-permission" => {
                 self.remove_permission(&resource, &text("name"), actor)
             }
@@ -513,10 +613,14 @@ impl AppPermissions {
                 self.revoke(&client, &text("permission"), actor)
             }
             _ => {
-                return refused(codes::STS_ADMIN_0500, &format!(
-                    "Unknown action \"{action}\". The {} are: {}.",
-                    js::number_word(PERMISSION_ACTIONS.len()),
-                    PERMISSION_ACTIONS.join(", ")))
+                return refused(
+                    codes::STS_ADMIN_0500,
+                    &format!(
+                        "Unknown action \"{action}\". The {} are: {}.",
+                        js::number_word(PERMISSION_ACTIONS.len()),
+                        PERMISSION_ACTIONS.join(", ")
+                    ),
+                )
             }
         };
         if result.refused() && result.code.is_none() {

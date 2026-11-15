@@ -247,6 +247,9 @@ rust/
                                  STS_WEB_ROOT, /web), held to Node by
                                  tests/tools/http-differential.js
     sts-directory/               the embedded directory model and the LDAP server
+    sts-registers/               the registers over the directory: roles, the console
+                                 roster, role and application permissions, ownership,
+                                 the groups claim, account state, the user and group acts
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/

@@ -128,10 +128,14 @@ impl RoleActions {
             .get("displayName")
             .map(|v| js::trim(&js::string(v)).to_string());
         match action.as_str() {
-            "create-role" => {
-                self.create(body, &name, &description, display_name,
-                            member_types, actor)
-            }
+            "create-role" => self.create(
+                body,
+                &name,
+                &description,
+                display_name,
+                member_types,
+                actor,
+            ),
             "delete-role" => self.delete(&name, actor),
             "describe-role" => {
                 let Some(row) = self.roles.read(&name) else {
@@ -409,7 +413,11 @@ impl RoleActions {
             return handed_up(&result, codes::STS_ADMIN_0542);
         }
         self.audit(
-            if adding { "roles.grant" } else { "roles.revoke" },
+            if adding {
+                "roles.grant"
+            } else {
+                "roles.revoke"
+            },
             actor,
             member,
             format!(
@@ -551,8 +559,7 @@ impl RoleActions {
             }
             _ => permissions.push(permission.to_string()),
         }
-        let result =
-            self.write_back(&row, json!({"permissions": permissions}));
+        let result = self.write_back(&row, json!({"permissions": permissions}));
         if !result.is_ok() {
             return handed_up(&result, codes::STS_ADMIN_0542);
         }
@@ -574,8 +581,8 @@ impl RoleActions {
             ),
         );
         let is_gated = gated.get("gated").cloned();
-        let not_gated = js::truthy(&gated)
-            && !is_gated.as_ref().is_some_and(js::truthy);
+        let not_gated =
+            js::truthy(&gated) && !is_gated.as_ref().is_some_and(js::truthy);
         let message = if adding {
             let mut m = format!("\"{name}\" now authorizes \"{permission}\".");
             if not_gated {
@@ -665,19 +672,26 @@ impl RoleActions {
             };
             conferring.remove(at);
         }
-        let result =
-            self.write_back(&row, json!({"conferredBy": conferring}));
+        let result = self.write_back(&row, json!({"conferredBy": conferring}));
         if !result.is_ok() {
             return handed_up(&result, codes::STS_ADMIN_0542);
         }
         self.audit(
-            if adding { "roles.confer" } else { "roles.unconfer" },
+            if adding {
+                "roles.confer"
+            } else {
+                "roles.unconfer"
+            },
             actor,
             client,
             format!(
                 "\"{client}\" {} the role \"{name}\" on everybody signing in \
                  through it",
-                if adding { "now confers" } else { "no longer confers" }
+                if adding {
+                    "now confers"
+                } else {
+                    "no longer confers"
+                }
             ),
         );
         Outcome::ok(json!({
@@ -691,8 +705,13 @@ impl RoleActions {
         }))
     }
 
-    fn owner(&self, action: &str, name: &str, owner: &str, actor: &str)
-        -> Outcome {
+    fn owner(
+        &self,
+        action: &str,
+        name: &str,
+        owner: &str,
+        actor: &str,
+    ) -> Outcome {
         let adding = action == "add-owner";
         let result = if adding {
             self.roles.add_owner(name, owner)

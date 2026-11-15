@@ -94,9 +94,8 @@ pub const MAX_OWNERS: usize = 25;
 /// `DEFAULT_REQUIRED_ROLE`.
 pub const DEFAULT_REQUIRED_ROLE: &str = "EVERYBODY";
 
-static ROLE_NAME: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r"^[A-Za-z0-9][A-Za-z0-9 ._:@-]{0,63}$").ok()
-});
+static ROLE_NAME: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"^[A-Za-z0-9][A-Za-z0-9 ._:@-]{0,63}$").ok());
 
 static DN_COMMAS: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"\s*,\s*").ok());
@@ -291,7 +290,11 @@ impl Who {
 
 /// The values an entry holds for a model field, read as `DomainMap.valuesOf`
 /// reads them: the attribute named case-insensitively, `null`s dropped.
-fn field_values(fields: &[FieldSource], field: &str, at: &Value) -> Vec<String> {
+fn field_values(
+    fields: &[FieldSource],
+    field: &str,
+    at: &Value,
+) -> Vec<String> {
     let attribute = fields
         .iter()
         .find(|one| one.name == field)
@@ -476,7 +479,8 @@ impl Roles {
         let native = native_role_for(&name);
         let application = role.role_application.clone().unwrap_or_default();
         let separated = format!("{APPLICATION_SEPARATOR}{application}");
-        let local_name = if !application.is_empty() && name.ends_with(&separated)
+        let local_name = if !application.is_empty()
+            && name.ends_with(&separated)
         {
             let keep = js::len_utf16(&name) - js::len_utf16(&application) - 1;
             js::slice_utf16(&name, keep)
@@ -563,8 +567,8 @@ impl Roles {
             );
         };
         let given = |k: &str| record.get(k);
-        let application = js::trim(&js::or_empty(given("application")))
-            .to_string();
+        let application =
+            js::trim(&js::or_empty(given("application"))).to_string();
         if !application.is_empty() {
             let keep = js::len_utf16(name)
                 .saturating_sub(js::len_utf16(&application) + 1);
@@ -678,7 +682,10 @@ impl Roles {
         }
         let before = self.read(name);
         let owners = trimmed_distinct(match given("owners") {
-            None => before.as_ref().map(|b| b.owners.clone()).unwrap_or_default(),
+            None => before
+                .as_ref()
+                .map(|b| b.owners.clone())
+                .unwrap_or_default(),
             Some(v) => js::strings(Some(v)),
         });
         let owner_protected = match given("ownerProtected") {
@@ -1212,12 +1219,11 @@ impl Roles {
         if names.is_empty() {
             return None;
         }
-        let claim = match js::or_empty(Some(&self.settings.value(
-            "roles.claimName",
-        ))) {
-            n if n.is_empty() => "roles".to_string(),
-            n => n,
-        };
+        let claim =
+            match js::or_empty(Some(&self.settings.value("roles.claimName"))) {
+                n if n.is_empty() => "roles".to_string(),
+                n => n,
+            };
         sort_utf16(&mut names);
         let mut out = Map::new();
         out.insert(claim, json!(names));
@@ -1230,12 +1236,11 @@ impl Roles {
         if !claims.is_object() && !claims.is_array() {
             return Vec::new();
         }
-        let claim = match js::or_empty(Some(&self.settings.value(
-            "roles.claimName",
-        ))) {
-            n if n.is_empty() => "roles".to_string(),
-            n => n,
-        };
+        let claim =
+            match js::or_empty(Some(&self.settings.value("roles.claimName"))) {
+                n if n.is_empty() => "roles".to_string(),
+                n => n,
+            };
         let raw = match claims.get(&claim) {
             None | Some(Value::Null) => return Vec::new(),
             Some(v) => v,

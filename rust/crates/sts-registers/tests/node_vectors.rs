@@ -30,7 +30,9 @@ use sts_registers::ownership::{Ownership, OwnershipDeps};
 use sts_registers::people::{AccountChange, AccountState, People, PeopleDeps};
 use sts_registers::rbac::Rbac;
 use sts_registers::role_actions::RoleActions;
-use sts_registers::role_permissions::{RolePermissions, RolePermissionsDeps, Subject};
+use sts_registers::role_permissions::{
+    RolePermissions, RolePermissionsDeps, Subject,
+};
 use sts_registers::roles::{self, Roles, Who};
 
 fn vectors() -> Option<Value> {
@@ -107,14 +109,13 @@ fn run_roles(step: &Value, replay: &Arc<Replay>) -> Option<Got> {
         "removeOwner" => {
             got(r.remove_owner(name, input["owner"].as_str().unwrap_or("")))
         }
-        "setOwnerProtected" => got(r.set_owner_protected(
-            name,
-            input["flag"] == json!(true),
-        )),
+        "setOwnerProtected" => {
+            got(r.set_owner_protected(name, input["flag"] == json!(true)))
+        }
         "seedNativeRoles" => plain(json!({"made": r.seed_native_roles()})),
-        "rolesAuthorizing" => plain(json!(r.roles_authorizing(
-            input["permission"].as_str().unwrap_or("")
-        ))),
+        "rolesAuthorizing" => plain(json!(
+            r.roles_authorizing(input["permission"].as_str().unwrap_or(""))
+        )),
         "conferredBy" => plain(json!(
             r.conferred_by(input["clientId"].as_str().unwrap_or(""))
         )),
@@ -140,7 +141,9 @@ fn pinned(register: &str, step: &Value, mut mine: Value) -> (Value, Value) {
     let create = register == "users"
         && step["input"]["body"]["action"] == json!("create");
     if create {
-        if let (Some(m), Some(t)) = (mine.as_object_mut(), theirs.as_object_mut()) {
+        if let (Some(m), Some(t)) =
+            (mine.as_object_mut(), theirs.as_object_mut())
+        {
             m.remove("entry");
             t.remove("entry");
         }
@@ -202,9 +205,10 @@ fn every_register_answers_as_node_does() {
             "users" => people_over(&replay)
                 .users(&step["input"]["body"], "api", "vectors")
                 .map(got),
-            "groups" => Some(got(
-                people_over(&replay).groups(&step["input"]["body"], "vectors"),
-            )),
+            "groups" => {
+                Some(got(people_over(&replay)
+                    .groups(&step["input"]["body"], "vectors")))
+            }
             "groupClaims" => {
                 let gc = GroupClaims::new(
                     Some(replay.clone()),
@@ -213,12 +217,15 @@ fn every_register_answers_as_node_does() {
                     replay.clone(),
                 );
                 let input = &step["input"];
-                let text = |k: &str| input[k].as_str().unwrap_or("").to_string();
+                let text =
+                    |k: &str| input[k].as_str().unwrap_or("").to_string();
                 Some(match step["op"].as_str().unwrap_or("") {
-                    "groupsOf" => got(gc.groups_of(&text("username"), &text("app"))),
-                    "jwtClaimsFor" => {
-                        plain(gc.jwt_claims_for(&text("set"), &input["context"]))
+                    "groupsOf" => {
+                        got(gc.groups_of(&text("username"), &text("app")))
                     }
+                    "jwtClaimsFor" => plain(
+                        gc.jwt_claims_for(&text("set"), &input["context"]),
+                    ),
                     "samlAttributesFor" => plain(json!(
                         gc.saml_attributes_for(&text("set"), &input["context"])
                     )),
@@ -235,13 +242,16 @@ fn every_register_answers_as_node_does() {
                     scope_policy: replay.clone(),
                 });
                 let input = &step["input"];
-                let text = |k: &str| input[k].as_str().unwrap_or("").to_string();
+                let text =
+                    |k: &str| input[k].as_str().unwrap_or("").to_string();
                 Some(match step["op"].as_str().unwrap_or("") {
                     "identityOf" => plain(o.identity_of(&text("username"))),
-                    "ownsAnything" => {
-                        plain(json!({"owns": o.owns_anything(&text("username"))}))
+                    "ownsAnything" => plain(
+                        json!({"owns": o.owns_anything(&text("username"))}),
+                    ),
+                    "objectOf" => {
+                        plain(o.object_of(&text("kind"), &text("name")))
                     }
-                    "objectOf" => plain(o.object_of(&text("kind"), &text("name"))),
                     "owns" => plain(json!({"owns": o.owns(
                         &text("username"), &text("kind"), &text("name"))})),
                     _ => got(o.set_protected(
@@ -255,15 +265,23 @@ fn every_register_answers_as_node_does() {
             "appPermissions" => {
                 let p = AppPermissions::new(replay.clone());
                 let input = &step["input"];
-                let arg = |i: usize| input["args"][i].as_str().unwrap_or("").to_string();
+                let arg = |i: usize| {
+                    input["args"][i].as_str().unwrap_or("").to_string()
+                };
                 Some(match step["op"].as_str().unwrap_or("") {
                     "register" => plain(p.register()),
                     "forApplication" => plain(p.for_application(
-                        input["identifier"].as_str().unwrap_or(""))),
-                    "definePermission" => {
-                        got(p.define_permission(&arg(0), &arg(1), &arg(2), &arg(3)))
+                        input["identifier"].as_str().unwrap_or(""),
+                    )),
+                    "definePermission" => got(p.define_permission(
+                        &arg(0),
+                        &arg(1),
+                        &arg(2),
+                        &arg(3),
+                    )),
+                    "removePermission" => {
+                        got(p.remove_permission(&arg(0), &arg(1), &arg(2)))
                     }
-                    "removePermission" => got(p.remove_permission(&arg(0), &arg(1), &arg(2))),
                     "grant" => got(p.grant(&arg(0), &arg(1), &arg(2))),
                     "revoke" => got(p.revoke(&arg(0), &arg(1), &arg(2))),
                     _ => got(p.set_base_uri(&arg(0), &arg(1), &arg(2))),
@@ -281,30 +299,41 @@ fn every_register_answers_as_node_does() {
                     mode: replay.clone(),
                 });
                 let input = &step["input"];
-                let text = |k: &str| input[k].as_str().unwrap_or("").to_string();
+                let text =
+                    |k: &str| input[k].as_str().unwrap_or("").to_string();
                 let who = Subject::from_json(&input["subject"]);
                 Some(plain(match step["op"].as_str().unwrap_or("") {
                     "isGated" => json!({"gated": rp.is_gated(&text("value")),
                         "application": rp.is_application_permission(&text("value"))}),
                     "heldRoles" => rp.held_roles(&who).to_json(),
-                    "asksFor" => json!({"asks": rp.asks_for(&text("scope"), &who)}),
-                    "conferredOn" => json!(rp.conferred_on(&who, &text("clientId"))),
+                    "asksFor" => {
+                        json!({"asks": rp.asks_for(&text("scope"), &who)})
+                    }
+                    "conferredOn" => {
+                        json!(rp.conferred_on(&who, &text("clientId")))
+                    }
                     "narrowScope" => {
                         rp.narrow_scope(&text("scope"), &who, &input["context"])
                     }
                     _ => {
                         let carried: Vec<String> = input["carried"]
                             .as_array()
-                            .map(|l| l.iter().map(|v| v.as_str().unwrap_or("").to_string()).collect())
+                            .map(|l| {
+                                l.iter()
+                                    .map(|v| {
+                                        v.as_str().unwrap_or("").to_string()
+                                    })
+                                    .collect()
+                            })
                             .unwrap_or_default();
                         rp.effective_roles(&input["claims"], &carried)
                     }
                 }))
             }
-            "permissionActions" => Some(got(
-                AppPermissions::new(replay.clone())
-                    .act(&step["input"]["body"], "vectors"),
-            )),
+            "permissionActions" => {
+                Some(got(AppPermissions::new(replay.clone())
+                    .act(&step["input"]["body"], "vectors")))
+            }
             "rbac" => {
                 let rbac = Rbac::new(
                     Some(replay.clone()),
@@ -328,8 +357,16 @@ fn every_register_answers_as_node_does() {
         if mine != theirs {
             if let Ok(dir) = std::env::var("STS_REGISTERS_DIFF") {
                 let at = std::path::Path::new(&dir);
-                let _ = std::fs::write(at.join(format!("{i}-rust.json")), mine.to_string());
-                let _ = std::fs::write(at.join(format!("{i}-node.json")), theirs.to_string());
+                std::fs::write(
+                    at.join(format!("{i}-rust.json")),
+                    mine.to_string(),
+                )
+                .unwrap();
+                std::fs::write(
+                    at.join(format!("{i}-node.json")),
+                    theirs.to_string(),
+                )
+                .unwrap();
             }
             wrong.push(format!(
                 "answer\n     rust {}\n     node {}",
@@ -417,8 +454,10 @@ fn write_rust_vectors(written: &[Value]) {
         let entry = json!({"name": name,
             "dn": format!("cn={name},ou=roles,dc=example,dc=com"),
             "attributes": one["attributes"]});
-        let r = Roles::new(Some(Arc::new(OneRole(entry.clone()))),
-                           Arc::new(FixedSettings));
+        let r = Roles::new(
+            Some(Arc::new(OneRole(entry.clone()))),
+            Arc::new(FixedSettings),
+        );
         roles_out.push(json!({"entry": entry, "row": r.read(&name)}));
     }
     let path = std::path::Path::new(&dir).join("registers-rust.json");

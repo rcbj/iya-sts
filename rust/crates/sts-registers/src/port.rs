@@ -82,8 +82,12 @@ pub trait RosterDirectory: Send + Sync {
     /// A group entry with its resolved members, or `null`.
     fn read_group_entry(&self, dn: &str) -> Value;
     /// Writes a group entry: `{ok, created, reason, parent, entry}`.
-    fn write_group_entry(&self, dn: &str, attributes: &Value, origin: &str)
-        -> Value;
+    fn write_group_entry(
+        &self,
+        dn: &str,
+        attributes: &Value,
+        origin: &str,
+    ) -> Value;
     /// A DN in the directory's comparison form.
     fn normalize_dn(&self, dn: &str) -> String;
     /// The person's entry, `{dn, …}`, or `null`.
@@ -164,13 +168,21 @@ pub trait Credentials: Send + Sync {
     fn account_disabled(&self, name: &str) -> bool;
     /// `setAccountDisabled(name, disabled, {riscReason})`: `{ok, …}` or a
     /// marked refusal.
-    fn set_account_disabled(&self, name: &str, disabled: bool,
-                            options: &Value) -> Marked;
+    fn set_account_disabled(
+        &self,
+        name: &str,
+        disabled: bool,
+        options: &Value,
+    ) -> Marked;
     /// `generatePassword(name)`: one the person's policy accepts.
     fn generate_password(&self, name: &str) -> String;
     /// `setPassword(name, password, {generated})`: `{ok, errors}`.
-    fn set_password(&self, name: &str, password: &str, options: &Value)
-        -> Value;
+    fn set_password(
+        &self,
+        name: &str,
+        password: &str,
+        options: &Value,
+    ) -> Value;
     /// `setPasswordResetRequired(name, flag)`.
     fn set_password_reset_required(&self, name: &str, flag: bool) -> Value;
     /// `issueActivation(name)`: `{ok, token, expiresAt}` or `{ok, errors}`.
@@ -210,16 +222,37 @@ pub trait PersonWriter: Send + Sync {
 /// answers `{ok, changed, …}` or a marked refusal.
 pub trait GroupWriter: Send + Sync {
     fn create_group(&self, name: &str, options: &Value) -> Marked;
-    fn add_group_member(&self, group: &str, member: &str, options: &Value)
-        -> Marked;
-    fn set_group_mail(&self, group: &str, mail: &str, options: &Value)
-        -> Marked;
-    fn set_group_policy(&self, group: &str, attribute: &str, policy: &str,
-                        options: &Value) -> Marked;
-    fn add_group_owner(&self, group: &str, owner: &str, options: &Value)
-        -> Marked;
-    fn remove_group_owner(&self, group: &str, owner: &str, options: &Value)
-        -> Marked;
+    fn add_group_member(
+        &self,
+        group: &str,
+        member: &str,
+        options: &Value,
+    ) -> Marked;
+    fn set_group_mail(
+        &self,
+        group: &str,
+        mail: &str,
+        options: &Value,
+    ) -> Marked;
+    fn set_group_policy(
+        &self,
+        group: &str,
+        attribute: &str,
+        policy: &str,
+        options: &Value,
+    ) -> Marked;
+    fn add_group_owner(
+        &self,
+        group: &str,
+        owner: &str,
+        options: &Value,
+    ) -> Marked;
+    fn remove_group_owner(
+        &self,
+        group: &str,
+        owner: &str,
+        options: &Value,
+    ) -> Marked;
 }
 
 /// What the directory answers about groups for the groups claim and for
@@ -233,8 +266,12 @@ pub trait GroupDirectory: Send + Sync {
     /// `groupOwnership(name)`: `{dn, cn, owners, ownerProtected}` or null.
     fn group_ownership(&self, name: &str) -> Value;
     /// `setGroupOwnerProtected(name, flag, options)`.
-    fn set_group_owner_protected(&self, name: &str, flag: bool,
-                                 options: &Value) -> Marked;
+    fn set_group_owner_protected(
+        &self,
+        name: &str,
+        flag: bool,
+        options: &Value,
+    ) -> Marked;
 }
 
 /// Service accounts (`common/service_accounts.ts`) and their policy
@@ -264,8 +301,15 @@ pub trait AccountSignals: Send + Sync {
 /// activation or reset link mailed, `{ok, mailedTo}` / `{ok: false,
 /// errors}`, or null with no mail channel.
 pub trait LinkMailer: Send + Sync {
-    fn mailed_link(&self, kind: &str, who: &str, token: &str, body: &Value,
-                   actor: &str, via: &str) -> Value;
+    fn mailed_link(
+        &self,
+        kind: &str,
+        who: &str,
+        token: &str,
+        body: &Value,
+        actor: &str,
+        via: &str,
+    ) -> Value;
 }
 
 /// `common/scope_policy.ts`'s questions ownership asks.
