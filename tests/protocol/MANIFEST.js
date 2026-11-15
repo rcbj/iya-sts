@@ -2414,6 +2414,12 @@ const JOBS = [
   // certificate and the replay, and a registered copy of a revoked
   // certificate (saml_assertion_grant, STS-PKI-0129).
   { file: 'sts_saml2_bearer_items.js', browser: false, local: true },
+  // D12 (#444): the SAML, WS-Trust and WS-Federation half of the
+  // hard-coded-values sweep — delivery addresses in both modes, the
+  // signature algorithm and organisation settings, WS-Trust's credential
+  // rules, the SAML 1.1 responder's queries, the WS-Federation metadata's
+  // honesty (saml_family_hardcoded B, C, E, G, H, I).
+  { file: 'sts_saml_family_rules.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
