@@ -274,3 +274,195 @@ fn request_validation() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+struct RecordedClients(Json);
+
+impl sts_oauth::clients::Clients for RecordedClients {
+    fn client_config_of(&self, client_id: &str) -> Json {
+        self.0
+            .get(client_id)
+            .cloned()
+            .unwrap_or_else(sts_oauth::clients::unknown_client)
+    }
+    fn declared_flows_of(&self, client_id: &str) -> Option<Json> {
+        self.0
+            .get(format!("{}:flows", client_id))
+            .filter(|v| !v.is_null())
+            .cloned()
+    }
+}
+
+/// The parts of a token response that do not vary from run to run: the
+/// claims with `jti`, the instants and the status index held to their
+/// shape, and the signature dropped.
+fn steady(decoded: &Json) -> Json {
+    let mut out = decoded.clone();
+    let claims = &mut out["claims"];
+    if let Some(c) = claims.as_object_mut() {
+        let iat = c.get("iat").and_then(Json::as_i64).unwrap_or(0);
+        for k in ["iat", "nbf", "exp"] {
+            if let Some(v) = c.get(k).and_then(Json::as_i64) {
+                c.insert(k.into(), json!(v - iat));
+            }
+        }
+        if let Some(jti) = c.get("jti").and_then(Json::as_str) {
+            c.insert("jti".into(), json!(format!("<{} chars>", jti.len())));
+        }
+        if c.contains_key("status") {
+            c["status"]["status_list"]["idx"] = json!("<idx>");
+        }
+    }
+    out
+}
+
+fn decode(jwt: &str) -> Json {
+    json!({
+        "header": sts_oauth::js::segment_json(jwt, 0).unwrap(),
+        "claims": sts_oauth::js::segment_json(jwt, 1).unwrap(),
+    })
+}
+
+#[test]
+fn token_endpoint() {
+    let Some(v) = vectors() else { return };
+    let cases = v["token"].as_array().unwrap();
+    let mut failures = Vec::new();
+    let mut compared = 0;
+    for realm_row in cases.iter().filter(|c| c.get("clients").is_some()) {
+        let realm = s(&realm_row["realm"]);
+        let mode_name = s(&realm_row["mode"]);
+        let (settings, mode) =
+            settings_with(&[("global.mode", json!(mode_name))]);
+        let set = Arc::new(sts_store::key_sets::KeySet {
+            realm: realm.clone(),
+            blob: realm_row["blob"].clone(),
+        });
+        let registry = Arc::new(sts_core::realm::RealmRegistry::new(Arc::new(
+            sts_core::realm::SettingsEnvironment::new(
+                settings.clone(),
+                Vec::new(),
+            ),
+        )));
+        let lifecycle = sts_core::realm_lifecycle::RealmLifecycle::new(
+            registry,
+            settings.clone(),
+            mode.clone(),
+        );
+        let handles = sts_core::realm_store::StoreHandles::new();
+        let revoked = sts_oauth::revocation::RevokedTokens::new(
+            &lifecycle,
+            &handles,
+            settings.clone(),
+        );
+        let register = sts_oauth::minted::TokenRegister::new(
+            &lifecycle,
+            &handles,
+            settings.clone(),
+            revoked,
+        );
+        let history: Arc<dyn AssertionHistory> =
+            Arc::new(MemoryAssertionHistory::default());
+        for case in cases
+            .iter()
+            .filter(|c| s(&c["realm"]) == realm && c.get("clients").is_none())
+        {
+            let clock = Arc::new(Pinned(case["nowMs"].as_i64().unwrap()));
+            let auth = Arc::new(ClientAuth::new(
+                settings.clone(),
+                mode.clone(),
+                history.clone(),
+                Arc::new(NoAssertionKeys),
+                clock.clone(),
+            ));
+            let endpoint = sts_oauth::token_endpoint::TokenEndpoint {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                clients: Arc::new(RecordedClients(
+                    realm_row["clients"].clone(),
+                )),
+                auth,
+                register: register.clone(),
+                status: Arc::new(
+                    sts_oauth::token_endpoint::LocalStatusList::default(),
+                ),
+                signer: Arc::new(sts_oauth::token_endpoint::KeySetSigner {
+                    set: set.clone(),
+                }),
+                clock,
+                id_tokens: None,
+                credential_scopes: [
+                    "identity_credential",
+                    "identity_credential_jwt",
+                    "identity_credential_ldp",
+                    "identity_credential_did",
+                    "identity_credential_ldp_did",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                protected_scopes: Vec::new(),
+            };
+            let form: Vec<(String, String)> = case["form"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), s(v)))
+                .collect();
+            let ask = sts_oauth::token_endpoint::TokenAsk {
+                base: s(&case["base"]),
+                body: sts_oauth::js::form_encode(&form),
+                authorization: s(&case["headers"]["authorization"]),
+                ..Default::default()
+            };
+            let answer = endpoint.answer(&ask);
+            compared += 1;
+            let name = format!("{} [{}]", s(&case["name"]), mode_name);
+            let mut got_headers = serde_json::Map::new();
+            for h in ["content-type", "cache-control", "www-authenticate"] {
+                if let Some(value) = answer.header(h) {
+                    got_headers.insert(h.into(), json!(value));
+                }
+            }
+            let mut want_headers = case["responseHeaders"].clone();
+            want_headers.as_object_mut().unwrap().remove("pragma");
+            let mut got_body =
+                answer.json_body().cloned().unwrap_or(Json::Null);
+            let mut want_body = case["body"].clone();
+            let mut got_token = Json::Null;
+            let mut want_token = Json::Null;
+            if let Some(at) =
+                got_body.get("access_token").and_then(Json::as_str)
+            {
+                got_token = steady(&decode(at));
+                got_body["access_token"] = json!("<token>");
+            }
+            if let Some(at) =
+                want_body.get("access_token").and_then(Json::as_str)
+            {
+                // Node's signature verifies under the realm's key.
+                let checks = sts_crypto::jws::ClaimChecks::default();
+                set.verify_own_jws(
+                    at,
+                    None,
+                    &checks,
+                    sts_crypto::keys::KeyPolicy::STRICT,
+                    "",
+                    0.0,
+                )
+                .unwrap_or_else(|e| panic!("{}: {}", name, e));
+                want_token = steady(&case["accessToken"]);
+                want_body["access_token"] = json!("<token>");
+            }
+            let got = json!({ "status": answer.status, "headers": got_headers,
+                              "body": got_body, "token": got_token });
+            let want = json!({ "status": case["status"], "headers": want_headers,
+                               "body": want_body, "token": want_token });
+            if got != want {
+                failures
+                    .push(format!("{}\n  rust {}\n  node {}", name, got, want));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert_eq!(compared, 22, "every recorded token request is compared");
+}

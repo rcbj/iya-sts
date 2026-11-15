@@ -30,6 +30,7 @@ pub trait Clients: Send + Sync {
 }
 
 /// The answer for a client nobody registered.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn unknown_client() -> Json {
     json!({ "known": false, "registered": false, "declared": false,
             "redirect_uris": [], "post_logout_redirect_uris": [],
@@ -46,9 +47,10 @@ pub fn unknown_client() -> Json {
 fn values_of(v: Option<&Json>) -> Vec<String> {
     match v {
         None | Some(Json::Null) => Vec::new(),
-        Some(Json::Array(list)) => {
-            list.iter().map(|one| crate::js::string_of(Some(one))).collect()
-        }
+        Some(Json::Array(list)) => list
+            .iter()
+            .map(|one| crate::js::string_of(Some(one)))
+            .collect(),
         Some(one) => vec![crate::js::string_of(Some(one))],
     }
 }
@@ -62,7 +64,7 @@ fn text(fields: &Map<String, Json>, name: &str) -> Json {
 
 fn flag(fields: &Map<String, Json>, name: &str) -> Json {
     Json::Bool(
-        crate::js::string_of(fields.get(name)).to_ascii_uppercase() == "TRUE",
+        crate::js::string_of(fields.get(name)).eq_ignore_ascii_case("TRUE"),
     )
 }
 
@@ -78,13 +80,14 @@ impl Clients for RegisterClients {
     fn client_config_of(&self, client_id: &str) -> Json {
         let loaded = self.registry.load(client_id);
         let fields = &loaded.record.fields;
-        let federation_at =
-            crate::js::to_number(fields.get("appFederationExpiresAt")
-                .unwrap_or(&Json::Null));
+        let federation_at = crate::js::to_number(
+            fields.get("appFederationExpiresAt").unwrap_or(&Json::Null),
+        );
         let federation_ended = fields.contains_key("appFederationRegistration")
-            && crate::js::string_of(fields.get("appFederationRegistration"))
-                != ""
-            && !(federation_at > (self.now_s)() as f64);
+            && !crate::js::string_of(fields.get("appFederationRegistration"))
+                .is_empty()
+            && (federation_at.is_nan()
+                || federation_at <= (self.now_s)() as f64);
         if !loaded.known || federation_ended {
             return unknown_client();
         }
@@ -150,8 +153,7 @@ impl Clients for RegisterClients {
             let values: Vec<String> = values_of(loaded.record.fields.get(name))
                 .into_iter()
                 .map(|one| {
-                    let mut parts: Vec<&str> =
-                        one.split_whitespace().collect();
+                    let mut parts: Vec<&str> = one.split_whitespace().collect();
                     parts.sort_unstable();
                     parts.join(" ")
                 })

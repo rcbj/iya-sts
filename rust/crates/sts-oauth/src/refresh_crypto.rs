@@ -19,7 +19,9 @@
 
 use serde_json::Value as Json;
 use sts_core::errors::{codes, ErrorCode};
-use sts_crypto::jwe::{decrypt_compact, encrypt_compact, DecryptOptions, EncryptOptions};
+use sts_crypto::jwe::{
+    decrypt_compact, encrypt_compact, DecryptOptions, EncryptOptions,
+};
 
 /// The defaults.
 pub const DEFAULT_ALG: &str = "A256KW";
@@ -52,16 +54,18 @@ fn kind_of(alg: &str) -> &'static str {
 
 fn symmetric_bytes(alg: &str, enc: &str) -> Result<usize, Refused> {
     if alg == "dir" {
-        return sts_crypto::jwe::enc(enc).map(|e| e.cek_bytes).ok_or_else(|| {
-            refused(
-                codes::STS_OAUTH_0238,
-                &format!(
+        return sts_crypto::jwe::enc(enc).map(|e| e.cek_bytes).ok_or_else(
+            || {
+                refused(
+                    codes::STS_OAUTH_0238,
+                    &format!(
                     "the content encryption algorithm \"{}\" is not one this \
                      service implements.",
                     enc
                 ),
-            )
-        });
+                )
+            },
+        );
     }
     let bits = alg
         .strip_prefix('A')
@@ -82,7 +86,11 @@ fn symmetric_bytes(alg: &str, enc: &str) -> Result<usize, Refused> {
 }
 
 /// `symmetricKeyFor(secret, alg, enc)`.
-fn symmetric_key(secret: &[u8], alg: &str, enc: &str) -> Result<Vec<u8>, Refused> {
+fn symmetric_key(
+    secret: &[u8],
+    alg: &str,
+    enc: &str,
+) -> Result<Vec<u8>, Refused> {
     let length = symmetric_bytes(alg, enc)?;
     sts_crypto::secrets::hkdf_sha256(
         secret,
@@ -110,7 +118,9 @@ impl RefreshKeys<'_> {
         if kind == "secret" {
             return self.secret_kid();
         }
-        crate::js::string_of(self.0.pointer(&format!("/{}/publicJwk/kid", kind)))
+        crate::js::string_of(
+            self.0.pointer(&format!("/{}/publicJwk/kid", kind)),
+        )
     }
 }
 
@@ -130,7 +140,12 @@ pub fn configured(alg: &str, enc: &str) -> (String, String) {
 
 /// `seal(jws)`.
 #[tracing::instrument(level = "debug", skip_all)]
-pub fn seal(jws: &str, keys: &Json, alg: &str, enc: &str) -> Result<String, Refused> {
+pub fn seal(
+    jws: &str,
+    keys: &Json,
+    alg: &str,
+    enc: &str,
+) -> Result<String, Refused> {
     let keys = RefreshKeys(keys);
     let kind = kind_of(alg);
     let secret;
@@ -221,7 +236,8 @@ pub fn open(token: &str, keys: &Json) -> Result<String, Refused> {
         private = openssl_private(&pem).ok_or_else(undecryptable)?;
         options.private_key = Some(&private);
     }
-    let opened = decrypt_compact(text, &options).map_err(|_| undecryptable())?;
+    let opened =
+        decrypt_compact(text, &options).map_err(|_| undecryptable())?;
     let cty = opened
         .header
         .get("cty")

@@ -36,6 +36,7 @@ static MODEL: LazyLock<Json> = LazyLock::new(|| {
 });
 
 /// The model, as generated.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn model() -> &'static Json {
     &MODEL
 }
@@ -54,17 +55,18 @@ fn cap(name: &str) -> usize {
 
 const POLLUTING_KEYS: [&str; 3] = ["__proto__", "constructor", "prototype"];
 
-/// A refusal: `{ ok: false, code, field, detail }`.
+/// Why a request does not validate: `{ ok: false, code, field, detail }`
+/// — a verdict, not a refusal: the endpoint that asked records the code.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Refusal {
+pub struct Invalid {
     pub code: &'static str,
     pub field: String,
     pub detail: String,
 }
 
 /// `refusal()`.
-fn refusal(code: &'static str, field: &str, detail: String) -> Refusal {
-    Refusal {
+fn refusal(code: &'static str, field: &str, detail: String) -> Invalid {
+    Invalid {
         code,
         field: field.to_string(),
         detail,
@@ -76,7 +78,7 @@ fn scalar(
     value: &Json,
     field: &str,
     allow_text: bool,
-) -> Result<Option<String>, Refusal> {
+) -> Result<Option<String>, Invalid> {
     match value {
         Json::Null => Ok(None),
         Json::Array(list) => Err(refusal(
@@ -147,6 +149,7 @@ fn js_len(text: &str) -> usize {
 }
 
 /// `validation.redirectUriProblem()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn redirect_uri_problem(text: &str, private_use: bool) -> Option<String> {
     if text.is_empty() {
         return Some("is empty".into());
@@ -212,6 +215,7 @@ pub fn redirect_uri_problem(text: &str, private_use: bool) -> Option<String> {
 }
 
 /// `validation.isPrivateUseRedirect()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn is_private_use_redirect(value: &str) -> bool {
     match url::Url::parse(value) {
         Ok(u) => u.scheme() != "http" && u.scheme() != "https",
@@ -406,7 +410,7 @@ pub fn check(
     id: &str,
     input: &Map<String, Json>,
     where_: &str,
-) -> Result<Map<String, Json>, Refusal> {
+) -> Result<Map<String, Json>, Invalid> {
     let allow_text = where_ == "body";
     let endpoint = MODEL
         .get("endpoints")
@@ -532,6 +536,7 @@ pub fn check(
 }
 
 /// `OAuthModel.unknownError()`: an error code the model does not declare.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn unknown_error(code: &str) -> bool {
     !MODEL
         .get("errors")
