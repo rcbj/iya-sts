@@ -8432,6 +8432,23 @@ is one:
 service account what a groups search leaves out is what the account holds,
 since the form carries no `owner` rows.
 
+**THE MAKE IS FOR GOOD, AND THE TAB SAYS SO (rcbj, 2026-11-15).** A service
+account is never made an ordinary person again (`common/CLAUDE.md` 3cd), so
+the *Make them an ordinary person* button and its two strings are gone, and
+the account's tab ends with `permanentNote` in their place. The Make on an
+ordinary person carries an unfolded amber box (`irreversibleWarning`, drawn
+as a bare `div.warn` because `kit.warn()` folds anything over a line) and a
+REQUIRED, UNNAMED checkbox (`#service-account-irreversible`,
+`irreversibleConfirm`): the browser's own constraint validation stops the
+Make, and the hidden default button Enter presses, until it is ticked — no
+script of this page's, which `script-src 'self'` would not run inline, and
+no member of the request, which `/admin-api` does not ask for. Every other
+button in the form is `formnovalidate`, so a Remove, a search or a Use is
+never stopped by it. The new-user screen draws `permanentNote` as a
+`div.warn` beside its Service account box, where a required checkbox could
+not be conditional on the box without a script.
+`tests/service_account_irreversible.js` section C holds both.
+
 ## A GROUP'S PAGE HAS AN OWNERS TAB (#603, 2026-10-12)
 
 rcbj: "apply this same owner pattern to Groups. Add an owner tab to

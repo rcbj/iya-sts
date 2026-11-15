@@ -16,14 +16,14 @@
 //   A. tests/service_account_owners.js A, B and F: a person and a group own
 //      an account, each once whatever it was called, in the order given; a
 //      string is one owner per line and REPLACES the list; an empty list
-//      and no `owners` are refused (STS-SVCACCT-0023); one owner who is
+//      and no `owners` are refused (STS-SVCACCT-0061); one owner who is
 //      nobody refuses the whole set and writes nothing (0024); more than
 //      twenty-five is refused (0031) and exactly twenty-five is not; with
-//      `requireOwner` off the list may be empty and the attribute goes; an
+//      `requireOwner` off the list still may not be emptied (0061); an
 //      owner deleted is taken off the list and the other kept (#1612); an
 //      LDAP modify writes two owners and is refused one naming nobody; the
 //      one-at-a-time acts add an owner beside the others, never twice,
-//      refuse to take off a non-owner (0032) or the last owner, keep the
+//      refuse to take off a non-owner (0032) or the last owner (0061), keep the
 //      owners when a destination is cleared, refuse a destination that is
 //      no secret destination, and refuse an ordinary person (0033); the
 //      person page carries the rules the form is held to.
@@ -34,9 +34,10 @@
 //      not a service account is refused a reference (STS-SVCACCT-0048), as
 //      is a name the realm does not hold (STS-LDAP-0106), at the person
 //      editor and over LDAP; a create naming one without the flag is
-//      refused before anybody exists; clearing the flag clears it; each
-//      account's LDAP door, browser and `requireOwner` follow the profile
-//      it names; and a named profile an account names is not deleted
+//      refused before anybody exists; clearing the flag is refused (0060)
+//      and the reference stays; each account's LDAP door and browser follow
+//      the profile it names, and neither profile lets its owner go (0061);
+//      and a named profile an account names is not deleted
 //      (STS-SVCACCT-0049) until nothing does.
 //
 // What stays in process is in each file's D12 note: the console's search,
@@ -386,11 +387,12 @@ async function theList() {
                       Object.assign({ user: "sao" }, body));
     };
   };
-  refusedWith(await coded(api, "STS-SVCACCT-0023", setTo({ owners: [] })),
-    "STS-SVCACCT-0023", "an empty list is refused while the policy " +
-    "requires one");
-  refusedWith(await coded(api, "STS-SVCACCT-0023", setTo({})),
-    "STS-SVCACCT-0023", "and so is no `owners` at all: a set replaces the " +
+  // An account that names owners never loses its last (rcbj, 2026-11-15).
+  refusedWith(await coded(api, "STS-SVCACCT-0061", setTo({ owners: [] })),
+    "STS-SVCACCT-0061", "an empty list is refused: the account names " +
+    "owners now");
+  refusedWith(await coded(api, "STS-SVCACCT-0061", setTo({})),
+    "STS-SVCACCT-0061", "and so is no `owners` at all: a set replaces the " +
     "list");
   refusedWith(await coded(api, "STS-SVCACCT-0024",
     setTo({ owners: ["sao-ann", "nobody-at-all"] })),
@@ -416,14 +418,15 @@ async function theList() {
   await ok(api + "/policies/save-serviceAccount-policy",
            await fullPolicy(api, { requireOwner: false }),
            "turned requireOwner off");
-  const unowned = await ok(api + "/users/set-service-account",
-    { user: "sao", owners: "" }, "emptied the list");
+  refusedWith(await coded(api, "STS-SVCACCT-0061", function () {
+    return postJson(api + "/users/set-service-account",
+                    { user: "sao", owners: "" });
+  }), "STS-SVCACCT-0061", "with requireOwner off the list still may not " +
+      "be emptied once it names an owner");
   const bare = await ownersOf(api, "sao");
-  check("with requireOwner off the list may be empty, and the attribute " +
-        "goes", function () {
-    assert.strictEqual(unowned.account.owners.length, 0);
+  check("and every owner is still on the entry", function () {
     assert.strictEqual(valuesOf(bare.view, "stsServiceAccountOwner").length,
-                       0);
+                       MAX_OWNERS);
   });
   await ok(api + "/policies/reset-serviceAccount-policy",
            { profile: "default" }, "reset the policy");
@@ -523,11 +526,12 @@ async function oneAtATime() {
     assert.strictEqual(off.account.owners[0].dn.toLowerCase(),
                        ann.toLowerCase());
   });
-  const last = await postJson(api + "/users/remove-service-account-owner",
-                              { user: "saf", owner: ann });
+  refusedWith(await coded(api, "STS-SVCACCT-0061", function () {
+    return postJson(api + "/users/remove-service-account-owner",
+                    { user: "saf", owner: ann });
+  }), "STS-SVCACCT-0061", "the last owner stays, whatever the policy");
   const kept = await ownersOf(api, "saf");
-  check("the last owner stays while the policy requires one", function () {
-    assert.strictEqual(last.status, 400, last.raw.slice(0, 300));
+  check("and is still listed", function () {
     assert.strictEqual(kept.owners.length, 1);
   });
   const half = await postJson(api + "/users/set-service-account-destination",
@@ -694,13 +698,15 @@ async function theReference() {
       return row.key === "sab-new";
     }));
   });
-  await ok(api + "/users/set-service-account", { user: "sab-acct",
-    serviceAccount: false }, "made the account a person again");
+  // A service account is never made a person again (rcbj, 2026-11-15).
+  refusedWith(await coded(api, "STS-SVCACCT-0060", function () {
+    return postJson(api + "/users/set-service-account",
+                    { user: "sab-acct", serviceAccount: false });
+  }), "STS-SVCACCT-0060", "the account cannot be made a person again");
   const cleared = await ownersOf(api, "sab-acct");
-  check("making the account a person again clears the reference",
-        function () {
+  check("and it keeps the reference", function () {
     assert.deepStrictEqual(valuesOf(cleared.view, "stsServiceAccountPolicy"),
-                           []);
+                           ["narrow"]);
   });
   log.debug("Leaving theReference().");
 }
@@ -732,17 +738,17 @@ async function theReaders() {
     assert.strictEqual(plainScreen.next, "refused",
                        JSON.stringify(plainScreen.json));
   });
-  const namedOwners = await postJson(api + "/users/set-service-account",
-                                     { user: "sac-named", owners: [] });
-  const plainOwners = await coded(api, "STS-SVCACCT-0023", function () {
+  // Both name an owner, so neither may lose it whatever its profile says
+  // (rcbj, 2026-11-15); requireOwner is the create's question now.
+  refusedWith(await coded(api, "STS-SVCACCT-0061", function () {
+    return postJson(api + "/users/set-service-account",
+                    { user: "sac-named", owners: [] });
+  }), "STS-SVCACCT-0061", "an account under a profile with requireOwner " +
+      "off still keeps its owner");
+  refusedWith(await coded(api, "STS-SVCACCT-0061", function () {
     return postJson(api + "/users/set-service-account",
                     { user: "sac-plain", owners: [] });
-  });
-  check("requireOwner at edit is the account's own profile's", function () {
-    assert.strictEqual(namedOwners.status, 200, namedOwners.raw.slice(0, 300));
-  });
-  refusedWith(plainOwners, "STS-SVCACCT-0023", "and an account naming " +
-              "default still needs one");
+  }), "STS-SVCACCT-0061", "and so does one naming default");
   log.debug("Leaving theReaders().");
 }
 

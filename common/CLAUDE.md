@@ -13237,6 +13237,33 @@ its password may ROTATE, pushed to a secrets manager first and committed only
 after, with the previous password kept for an overlap. `docs/service-accounts.md`
 is the operator's page; each file's header argues its part.
 
+* **FOR GOOD (rcbj, 2026-11-15): "Once a user is established as a service
+  account, do not allow this to be undone. Do not allow all owners to be
+  deleted. Do not allow an owner to delete themselves as an owner."** Three
+  rules, held by `set()` (so by `addOwner()`, `removeOwner()`, the console
+  and `/admin-api`) with the codes STS-SVCACCT-0060 to -0063 and by
+  `serviceAccountWriteRefusal()` on an LDAP modify with -0064 to -0067
+  (0051–0059 are the remote PEP's, #1760): `serviceAccount` false on a
+  service account, or a delete or replace of the flag, is refused; a change
+  that leaves an account that names an owner with none is refused, asked
+  BEFORE `check()`'s `requireOwner` so its -0023 does not stand in; and
+  `ownerChangeRefusal()` refuses the caller taking off their own DN, or the
+  group that was their ONLY way of owning the account — a group the caller
+  is in may go while they still own it another way, since they are not
+  removing themselves. The caller is the verified token's PERSON
+  (`callerPersonOf()`, passed as `ctx.admin`) or the LDAP bind DN, never a
+  request member; development's open API and a client's own token name
+  nobody, so only the last-owner rule applies to them. Three decisions
+  stand beside the rules: **deleting the entry is still allowed** (it ends
+  the account, it does not make it a person, and #1613's rule means a
+  person made again at the name inherits nothing); **`requireOwner` off
+  still lets an account be MADE, and edited, with no owner** — the rule is
+  about taking owners away, and refusing every edit of an ownerless account
+  would turn the setting off for existing accounts; and **deleting the
+  PERSON OR GROUP that is the last owner is not refused**:
+  `rewriteOwnerReferences()` takes the DN off and the audit row says the
+  account names no owner now, because a leaver's deletion (often SCIM, from
+  an HR system) cannot wait on an ownership detail.
 * **ONE PREDICATE.** `ServiceAccounts.isServiceAccount(entry)` is asked by
   every door; `isServiceAccountName()` for a door holding a name. No door
   reads the attribute. The directory's only writer of the attributes is

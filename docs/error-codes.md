@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5486** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5494** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 41
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
@@ -4919,6 +4919,14 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0048` | stsServiceAccountPolicy was written on a person who is not a service account; only a service account names a service-account policy (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
 | `STS-SVCACCT-0049` | A named service-account policy was not deleted because a service account still names it in stsServiceAccountPolicy (#1240). | HTTP 400 (management API) |
 | `STS-SVCACCT-0050` | stsServiceAccountPolicy was written, over LDAP or at a create, naming neither `default` nor a service-account policy of this realm (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0060` | A service account was asked to become an ordinary person again (`serviceAccount` false); once a service account, always one — delete the entry to end it (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0061` | A change would have left a service account that names an owner with none — the last owner removed, or `owners` emptied — whatever the policy's requireOwner says (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0062` | An owner tried to take their own DN off a service account's owners; another administrator may (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0063` | An owner tried to take off a service account the group that was their only way of owning it, which removes themselves (rcbj, 2026-11-15). | HTTP 400 (management API) |
+| `STS-SVCACCT-0064` | An LDAP modify removed or changed stsServiceAccount on a service account; once a service account, always one (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0065` | An LDAP modify would have left a service account that names an owner with no stsServiceAccountOwner, whatever requireOwner says (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0066` | An LDAP modify by the bound DN took that DN off a service account's stsServiceAccountOwner (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0067` | An LDAP modify took off a service account the group that was the bound DN's only way of owning it (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
 
 ## STS-XACML
 

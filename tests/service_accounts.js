@@ -16,8 +16,8 @@
 //      around in; `set()` refuses nobody, an application-shaped name, a
 //      missing owner (requireOwner), an owner who is nobody, the account as
 //      its own owner and half a destination; a person or a GROUP owns one;
-//      the auxiliary class follows the flag; clearing takes every attribute
-//      away.
+//      the auxiliary class follows the flag; clearing is refused (rcbj,
+//      2026-11-15) and leaves every attribute where it was.
 //   B. THE POLICY: every default the more secure one; a save carries every
 //      field; a rotated password shorter than the password policy is
 //      refused; a realm inherits the default realm's profile; requireOwner
@@ -32,8 +32,9 @@
 //      accounts, and then it is not.
 //   E. THE SESSION FUNNEL: `authn.startSession()` refuses a service account a
 //      browser session, and starts a KEYED one.
-//   F. THE CONSOLE AND THE API: `set-service-account`, a create that refuses
-//      a bad owner BEFORE anybody exists, and `/admin/users?kind=`.
+//   F. THE CONSOLE AND THE API: `set-service-account` (false refused on a
+//      service account), a create that refuses a bad owner BEFORE anybody
+//      exists, and `/admin/users?kind=`.
 //   G. AN LDAP MODIFY meets the same rules: no owner while one is required,
 //      and the auxiliary class kept beside the flag.
 //   H. ROTATION (P4), against a fake destination: refused for a person and
@@ -204,19 +205,23 @@ async function flag(t) {
             'STS-SVCACCT-0024',
             'A10. a group DN is resolved as a group (or refused where this ' +
             'realm has no such group)', JSON.stringify(groupOwned));
+    // ONCE A SERVICE ACCOUNT, ALWAYS ONE (rcbj, 2026-11-15): clearing is
+    // refused; `tests/service_account_irreversible.js` holds every door.
     const cleared = serviceAccounts.set('svc-a', { serviceAccount: false });
-    t.check(cleared.ok && !serviceAccounts.isServiceAccountName('svc-a') &&
-            serviceAccounts.of('svc-a') === null,
-            'A11. clearing makes them an ordinary person again');
+    t.check(cleared.ok === false &&
+            errorCodes.codeOf(cleared) === 'STS-SVCACCT-0060' &&
+            serviceAccounts.isServiceAccountName('svc-a'),
+            'A11. a service account is not made an ordinary person again',
+            JSON.stringify(cleared));
     const after = stored('svc-a');
     if (after) {
       const keys = Object.keys(after.attributes).map(function (k) {
         return k.toLowerCase();
       });
-      t.check(keys.indexOf('stsserviceaccountowner') < 0 &&
+      t.check(keys.indexOf('stsserviceaccountowner') >= 0 &&
               (after.attributes.objectClass || after.attributes.objectclass ||
-               []).map(String).indexOf('stsServiceAccount') < 0,
-              'A12. and the owner and the class went with the flag');
+               []).map(String).indexOf('stsServiceAccount') >= 0,
+              'A12. and the owner and the class are still on the entry');
     }
   });
   log.debug('Leaving flag().');
@@ -459,13 +464,16 @@ async function consoleAndApi(t) {
     const cleared = adminActions.usersAction({
       action: 'set-service-account', user: 'svc-c', serviceAccount: 'false' },
       { via: 'test', actor: 'tester' });
-    t.check(cleared.ok && !serviceAccounts.isServiceAccountName('svc-c'),
-            'F6. set-service-account false makes them a person again');
+    t.check(cleared.ok === false &&
+            errorCodes.codeOf(cleared) === 'STS-SVCACCT-0060' &&
+            serviceAccounts.isServiceAccountName('svc-c'),
+            'F6. set-service-account false on a service account is refused',
+            JSON.stringify(cleared));
     const again = adminActions.usersAction({
       action: 'set-service-account', user: 'svc-c', owners: ['svc-c-owner'] },
       { via: 'test', actor: 'tester' });
     t.check(again.ok && again.serviceAccount === true,
-            'F7. set-service-account (true by default) makes one again',
+            'F7. set-service-account (true by default) on one still works',
             JSON.stringify(again));
   });
   log.debug('Leaving consoleAndApi().');

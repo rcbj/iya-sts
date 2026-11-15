@@ -22558,6 +22558,45 @@ const CODES = [
       'create, naming neither `default` nor a service-account policy of ' +
       'this realm (#1240).',
     spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  // 0051-0059 are left to the remote PEP's service accounts (#1760), being
+  // written beside these on another branch.
+  { code: 'STS-SVCACCT-0060',
+    summary: 'A service account was asked to become an ordinary person ' +
+      'again (`serviceAccount` false); once a service account, always one ' +
+      '— delete the entry to end it (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0061',
+    summary: 'A change would have left a service account that names an ' +
+      'owner with none — the last owner removed, or `owners` emptied — ' +
+      'whatever the policy\'s requireOwner says (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0062',
+    summary: 'An owner tried to take their own DN off a service account\'s ' +
+      'owners; another administrator may (rcbj, 2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0063',
+    summary: 'An owner tried to take off a service account the group that ' +
+      'was their only way of owning it, which removes themselves (rcbj, ' +
+      '2026-11-15).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-SVCACCT-0064',
+    summary: 'An LDAP modify removed or changed stsServiceAccount on a ' +
+      'service account; once a service account, always one (rcbj, ' +
+      '2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0065',
+    summary: 'An LDAP modify would have left a service account that names ' +
+      'an owner with no stsServiceAccountOwner, whatever requireOwner says ' +
+      '(rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0066',
+    summary: 'An LDAP modify by the bound DN took that DN off a service ' +
+      'account\'s stsServiceAccountOwner (rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0067',
+    summary: 'An LDAP modify took off a service account the group that was ' +
+      'the bound DN\'s only way of owning it (rcbj, 2026-11-15).',
+    spec: 'constraintViolation (19) over LDAP' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

@@ -541,9 +541,9 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   'answer-ciba-request',
   // A SERVICE ACCOUNT (#221, 2026-10-06): `set-service-account` makes the
   // person one (`serviceAccount` true, the default), changes its `owners`
-  // (#600: the whole list), `destination` and `secretName`, or makes it a
-  // person again
-  // (`serviceAccount` false). `common/service_accounts.ts` checks and keeps
+  // (#600: the whole list), `destination` and `secretName`; it never makes
+  // one a person again (rcbj, 2026-11-15: `serviceAccount` false on one is
+  // refused, STS-SVCACCT-0060). `common/service_accounts.ts` checks and keeps
   // it; where the realm's policy refuses a service account every browser
   // sign-in, becoming one ends the person's sessions. `rotate-password`
   // QUEUES a rotation of a service account's password on the scheduler's
@@ -3839,8 +3839,10 @@ class AdminActions {
       const { serviceAccounts } = this.deps;
       const adding = action === 'add-service-account-owner';
       const owner = String(body.owner == null ? '' : body.owner).trim();
-      const result: any = adding ? serviceAccounts.addOwner(who, owner)
-                                 : serviceAccounts.removeOwner(who, owner);
+      const caller = { caller: ctx.admin ? ctx.admin.username : '' };
+      const result: any = adding
+        ? serviceAccounts.addOwner(who, owner, caller)
+        : serviceAccounts.removeOwner(who, owner, caller);
       audited(adding ? 'admin.service-account.owner-added'
                      : 'admin.service-account.owner-removed',
               (result.ok ? '' : 'could not ') +
@@ -3934,11 +3936,14 @@ class AdminActions {
 
   // ---------------------------------------------------------------------------
   // A SERVICE ACCOUNT (#221): the flag, its owner and its push destination,
-  // set or cleared. The checks are `service_accounts.set()`'s; this audits,
-  // and where the realm keeps service accounts out of every browser it ends
-  // the sessions a person who has just become one still holds — the policy
-  // would refuse them at the next sign-in, and a session already open is the
-  // same browser.
+  // set. It is never cleared (rcbj, 2026-11-15): `set()` refuses
+  // `serviceAccount` false on a service account, an owner list left empty
+  // and the caller taking themselves off, so a refusal of those is audited
+  // here like any other. The checks are `service_accounts.set()`'s; this
+  // audits, and where the realm keeps service accounts out of every browser
+  // it ends the sessions a person who has just become one still holds — the
+  // policy would refuse them at the next sign-in, and a session already open
+  // is the same browser.
   // ---------------------------------------------------------------------------
   private serviceAccountAction(who, body, ctx, audited) {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
@@ -3950,7 +3955,7 @@ class AdminActions {
       owners: body.owners,
       destination: body.destination,
       secretName: body.secretName
-    });
+    }, { caller: ctx.admin ? ctx.admin.username : '' });
     const ownersOf = function (account) {
       log.debug("Entering ownersOf().");
       log.debug("Leaving ownersOf().");
@@ -4151,7 +4156,15 @@ class AdminActions {
     const given = context || {};
     const ctx = { via: given.via || 'console',
                   actor: String(given.actor || ''),
-                  base: String(given.base || '') };
+                  base: String(given.base || ''),
+                  // THE PERSON ACTING, as the token named them (#945), for
+                  // the service-account owner rules (rcbj, 2026-11-15): an
+                  // owner may not take themselves off. Null for a client's
+                  // token and for development's open API.
+                  admin: given.admin && given.admin.username
+                    ? { username: String(given.admin.username),
+                        sub: String(given.admin.sub || '') }
+                    : null };
 
     // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
     // assertion and ML-DSA registration both run in the operator's browser;
