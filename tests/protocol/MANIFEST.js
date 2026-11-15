@@ -2427,6 +2427,12 @@ const JOBS = [
   // signatures and the console's SAML 2.0 actions (saml_interop_findings A,
   // C, D, E, G; saml_request_signatures I, J).
   { file: 'sts_saml_interop_rules.js', browser: false, local: true },
+  // D12 (#444): every XML Signature family the service verifies — RSA,
+  // PSS, ECDSA, EdDSA, DSA, ML-DSA, SLH-DSA — on both bindings and on
+  // signed metadata, Single Logout for a subset, SHA-1 and RSA-MD5
+  // (saml_signature_algorithms 1, 2). Needs node 24's ML-DSA and SLH-DSA
+  // keys (the tests image's runtime).
+  { file: 'sts_saml_signature_families.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
