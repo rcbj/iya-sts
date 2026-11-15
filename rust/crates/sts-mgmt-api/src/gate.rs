@@ -255,7 +255,198 @@ pub struct Caller {
     pub roles: Vec<String>,
     pub expires_at: Option<i64>,
     pub owner: bool,
+    /// The one object an owner's token reaches (`ownedOperationOf()`),
+    /// whose answer is projected for it.
+    pub owned: Option<OwnedOperation>,
     pub claims: Json,
+}
+
+/// `ownedOperationOf(req)`'s answer: the object an owner's request would
+/// administer.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OwnedOperation {
+    /// `role`, `group`, `service-account` or `application`.
+    pub kind: String,
+    pub id: String,
+    /// `read`, or the action the path names.
+    pub action: String,
+    /// What an application action would write, by name.
+    pub attributes: Vec<String>,
+    /// The projection a read's answer is given (`role`, `group`,
+    /// `application`, `uma`), or '' for none.
+    pub project: String,
+}
+
+/// `OWNER_APPLICATION_FIELDS`: the fields an owner's read of an
+/// application is shown.
+pub const OWNER_APPLICATION_FIELDS: &[&str] = &[
+    "appName",
+    "appHomePageUrl",
+    "appCorsOrigin",
+    "oauthRedirectUri",
+    "oauthPostLogoutRedirectUri",
+    "oauthFrontchannelLogoutUri",
+    "oauthBackchannelLogoutUri",
+    "samlAssertionConsumerService",
+    "samlSingleLogoutService",
+    "oauthAllowedTokenResponseTypes",
+];
+
+// `/^\/<prefix>\/(<action>)$/` with `<action>` `[a-z][a-z-]*`, or the
+// `owner-` actions of `/uma`.
+fn action_under(path: &str, prefix: &str, owner_only: bool) -> Option<String> {
+    let rest = path.strip_prefix(prefix)?.strip_prefix('/')?;
+    let shaped = rest.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && rest.chars().all(|c| c.is_ascii_lowercase() || c == '-');
+    if !shaped || (owner_only && !rest.starts_with("owner-")) {
+        return None;
+    }
+    Some(rest.to_string())
+}
+
+/// `ownedOperationOf(req)` (`OWNER_OPERATIONS`): the object an owner's
+/// request names, or `None` for an operation no owner may ask or one that
+/// names nothing. `path` is under the API.
+#[tracing::instrument(level = "debug", skip(query, body))]
+pub fn owned_operation_of(
+    method: &str,
+    path: &str,
+    query: &crate::request::Query,
+    body: &Json,
+) -> Option<OwnedOperation> {
+    let path = path.trim_end_matches('/');
+    let q = |k: &str| match query.get(k) {
+        Some(Json::String(s)) => s.clone(),
+        Some(Json::Array(a)) => a
+            .iter()
+            .filter_map(Json::as_str)
+            .collect::<Vec<_>>()
+            .join(","),
+        Some(Json::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    };
+    let b = |k: &str| match body.get(k) {
+        Some(Json::String(s)) => s.clone(),
+        Some(Json::Null) | None => String::new(),
+        Some(other) => other.to_string(),
+    };
+    let (kind, action, id, project) = match method {
+        "GET" => match path {
+            "/roles" => ("role", "read".to_string(), q("role"), "role"),
+            "/groups" => ("group", "read".to_string(), q("group"), "group"),
+            "/applications" => (
+                "application",
+                "read".to_string(),
+                q("application"),
+                "application",
+            ),
+            "/service-accounts" => {
+                ("service-account", "read".to_string(), q("account"), "")
+            }
+            "/uma" => ("application", "read".to_string(), q("owner"), "uma"),
+            _ => return None,
+        },
+        "POST" => {
+            if let Some(a) = action_under(path, "/roles", false) {
+                ("role", a, b("role"), "")
+            } else if let Some(a) = action_under(path, "/groups", false) {
+                ("group", a, b("group"), "")
+            } else if let Some(a) = action_under(path, "/applications", false) {
+                ("application", a, b("application"), "")
+            } else if let Some(a) = action_under(path, "/uma", true) {
+                ("application", a, b("owner"), "")
+            } else {
+                let a = action_under(path, "/users", false)?;
+                let user = b("user");
+                (
+                    "service-account",
+                    a,
+                    if user.is_empty() { b("username") } else { user },
+                    "",
+                )
+            }
+        }
+        _ => return None,
+    };
+    let id = id.trim().to_string();
+    if id.is_empty() {
+        return None;
+    }
+    let mut attributes: Vec<String> = Vec::new();
+    if kind == "application" {
+        if ["set", "add", "remove"].contains(&action.as_str()) {
+            let one = b("attribute");
+            if !one.is_empty() {
+                attributes.push(one);
+            }
+        } else if action == "update-fields" {
+            attributes =
+                sts_registers::applications::actions::fields_covered_by(body);
+            let named = body.get("protocolsPresent").is_some_and(|v| {
+                !matches!(v, Json::Null | Json::Bool(false))
+                    && v.as_str() != Some("")
+            }) || body.get("protocols").is_some()
+                || body.get("protocol").is_some();
+            if named && !attributes.iter().any(|a| a == "appAllowedProtocol") {
+                attributes.push("appAllowedProtocol".into());
+            }
+        }
+    }
+    Some(OwnedOperation {
+        kind: kind.into(),
+        id,
+        action,
+        attributes,
+        project: project.into(),
+    })
+}
+
+/// `row.project(answer)`: what an owner's read is shown of the answer.
+#[tracing::instrument(level = "debug", skip(answer))]
+pub fn owner_projection(project: &str, answer: &Json) -> Option<Json> {
+    match project {
+        "role" => Some(serde_json::json!({ "role": answer.get("role") })),
+        "group" => {
+            let g = answer.get("group").filter(|g| !g.is_null());
+            Some(serde_json::json!({
+                "found": answer.get("found").is_some_and(|f| f == &Json::Bool(true)),
+                "group": g.map(|g| serde_json::json!({
+                    "dn": g.get("dn"), "cn": g.get("cn"),
+                    "description": g.get("description"),
+                    "members": g.get("members"),
+                    "memberCount": g.get("memberCount"),
+                    "owners": g.get("owners"), "maxOwners": g.get("maxOwners"),
+                })),
+                "membersPaging": answer.get("membersPaging"),
+            }))
+        }
+        "application" => {
+            let mut fields = serde_json::Map::new();
+            for name in OWNER_APPLICATION_FIELDS {
+                if let Some(v) = answer.get("fields").and_then(|f| f.get(*name))
+                {
+                    fields.insert((*name).into(), v.clone());
+                }
+            }
+            let page = answer.get("page");
+            Some(serde_json::json!({
+                "found": answer.get("found").is_some_and(|f| f == &Json::Bool(true)),
+                "identifier": answer.get("identifier"),
+                "name": answer.get("name"),
+                "description": answer.get("description"),
+                "kinds": answer.get("kinds"),
+                "protocols": answer.get("protocols"),
+                "fields": fields,
+                "owners": page.and_then(|p| p.get("owners")).cloned()
+                    .unwrap_or_else(|| serde_json::json!([])),
+                "maxOwners": page.and_then(|p| p.get("maxOwners")),
+            }))
+        }
+        "uma" => Some(serde_json::json!({
+            "owner": answer.get("owner").filter(|o| !o.is_null())
+        })),
+        _ => None,
+    }
 }
 
 /// What the gate decided.
@@ -808,7 +999,22 @@ impl Gate<'_> {
             && security_change.is_none()
             && !carried.iter().any(|s| s == scope)
             && carried.iter().any(|s| s == owner_scope);
-        if owner_path {
+        // `ownedOperationOf(req)`, in the realm that issued the token.
+        let owned = if owner_path {
+            let query = crate::request::parse_query(
+                arrived.original_url.split_once('?').map_or("", |(_, q)| q),
+            );
+            let empty = Json::Object(Default::default());
+            let body = if read {
+                &empty
+            } else {
+                arrived.body.unwrap_or(&empty)
+            };
+            owned_operation_of(arrived.method, path, &query, body)
+        } else {
+            None
+        };
+        if owner_path && (owned.is_none() || token_realm != arrived.realm) {
             return Err(forbidden(
                 codes::STS_API_0132,
                 format!(
@@ -816,13 +1022,16 @@ impl Gate<'_> {
                      reaches only the operations on one role, group, service account or application it names — \
                      GET {}/roles?role=, /groups?group=, /applications?application= or /service-accounts?account=, \
                      and POST {}/roles/{{action}}, /groups/{{action}}, /applications/{{action}} or /users/{{action}} \
-                     naming the object. A list is not one: what you own is /account-api/owned/{{kind}}. {} {} is \
-                     not one of these.",
-                    owner_scope, scope, BASE, BASE, arrived.method, arrived.original_url
+                     naming the object{}. A list is not one: what you own is /account-api/owned/{{kind}}. {} {} is \
+                     {}",
+                    owner_scope, scope, BASE, BASE,
+                    if owned.is_some() { ", in the realm that issued the token" } else { "" },
+                    arrived.method, arrived.original_url,
+                    if owned.is_some() { "in another realm." } else { "not one of these." }
                 ),
             ));
         }
-        let needed = scope;
+        let needed = if owner_path { owner_scope } else { scope };
         if undeclared.iter().any(|s| s == needed) {
             return Err(forbidden(
                 codes::STS_API_0123,
@@ -979,15 +1188,62 @@ impl Gate<'_> {
             Vec::new()
         };
         if self.settings.value_of("xacml.enforceAccess").as_bool() {
+            let owned_object =
+                owned.as_ref().map(|o| sts_xacml::access::OwnedObject {
+                    kind: o.kind.clone(),
+                    id: o.id.clone(),
+                    action: o.action.clone(),
+                    required_role: if read {
+                        "OWNER_READ".into()
+                    } else {
+                        "OWNER_WRITE".into()
+                    },
+                    attributes: o.attributes.clone(),
+                    person: effective.subject_name.clone(),
+                });
             let question = Question {
                 resource: "management-api".into(),
                 action: if read { "read".into() } else { "write".into() },
                 subject: who.clone(),
                 authenticated: true,
                 required_all_roles: required_all.clone(),
+                owned_object: owned_object.clone(),
                 ..Default::default()
             };
             let answer = self.access.check(&question, &held, &required);
+            if let (false, Some(o)) = (answer.allowed, &owned_object) {
+                tracing::info!(
+                    "admin-api: the access policy's owner rule refused {} {} \
+                     for {}. {}",
+                    arrived.method,
+                    arrived.original_url,
+                    o.person,
+                    answer.why
+                );
+                return Err(forbidden(
+                    codes::STS_API_0133,
+                    format!(
+                        "The access policy's owner rule refused this request. An owner may {} the {} \"{}\" only \
+                         when it names them, or a group they are in, as an owner; when it is not closed to its \
+                         owners (a native or protected role, a group or application this service grants through, \
+                         or one an administrator closed); when \"{}\" is an action its kind allows an owner{}; and \
+                         never to take its last owner off. {}",
+                        if read { "read" } else { "change" },
+                        o.kind,
+                        o.id,
+                        o.action,
+                        if o.attributes.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                ", and every attribute it writes ({}) is one an owner may write",
+                                o.attributes.join(", ")
+                            )
+                        },
+                        answer.why
+                    ),
+                ));
+            }
             if !answer.allowed {
                 tracing::info!(
                     "admin-api: the access policy refused {} {} for {}. {}",
@@ -1051,7 +1307,8 @@ impl Gate<'_> {
                 .get("exp")
                 .and_then(Json::as_f64)
                 .map(|f| f as i64),
-            owner: false,
+            owner: owned.is_some(),
+            owned,
             claims,
         })
     }

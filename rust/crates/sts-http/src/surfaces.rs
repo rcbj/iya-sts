@@ -104,6 +104,13 @@ pub trait SurfaceGates: Send + Sync {
     /// The realm chooser's answer for `surface` (`admin`, `portal`,
     /// `report`) — a redirect or its page — or `None` to draw the shell.
     fn before_shell(&self, surface: &str, ask: &Ask<'_>) -> Option<Response>;
+    /// The `Set-Cookie` the shell is drawn with when the chooser answered
+    /// "here" (`writeCookie()` of a decision of the default realm), or
+    /// `None`.
+    fn shell_cookie(&self, surface: &str, ask: &Ask<'_>) -> Option<String> {
+        let _ = (surface, ask);
+        None
+    }
     /// Why the surface's callback cannot be registered here, or `None`.
     fn callback_refused(&self, surface: &str, ask: &Ask<'_>) -> Option<String>;
     /// `(oauth, api, authn)`: the bases of the applications on other
@@ -816,6 +823,7 @@ impl SurfaceHost {
         if let Some(answer) = gates.before_shell(surface, ask) {
             return answer;
         }
+        let cookie = gates.shell_cookie(surface, ask);
         let refused = gates.callback_refused(surface, ask);
         let elsewhere = gates.elsewhere(surface, ask);
         let (html, options) = match surface {
@@ -863,7 +871,11 @@ impl SurfaceHost {
                 },
             ),
         };
-        crate::shell::serve(ask.headers, html, &options)
+        let mut response = crate::shell::serve(ask.headers, html, &options);
+        if let Some(v) = cookie.and_then(|c| HeaderValue::from_str(&c).ok()) {
+            response.headers_mut().append(header::SET_COOKIE, v);
+        }
+        response
     }
 
     /// A surface's stylesheet: `no-cache`; the console's compressed by

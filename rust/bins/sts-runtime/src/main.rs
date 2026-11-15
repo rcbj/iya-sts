@@ -123,14 +123,26 @@ impl SocketOwners {
         let port = |key: &str| {
             u16::try_from(settings.value_of(key).as_int()).unwrap_or(0)
         };
-        if let Some(t) = ldap_listener::listen_plain(
-            host,
-            port("ldap.port"),
-            handlers.clone(),
-        )
-        .await
-        {
-            self.tasks.push(t);
+        // `ldap.plainListener` off (product's default): Node starts no
+        // plain listener at all, and LDAPS is the only way in
+        // (`ldapServer.listen()`); the view says so (`directoryState()`).
+        if settings.value_of("ldap.plainListener").as_bool() {
+            if let Some(t) = ldap_listener::listen_plain(
+                host,
+                port("ldap.port"),
+                handlers.clone(),
+            )
+            .await
+            {
+                self.tasks.push(t);
+            }
+        } else {
+            tracing::info!(
+                "ldap: the plain listener on {} was NOT started \
+                 (ldap.plainListener is off); LDAPS on {} is the only way in.",
+                port("ldap.port"),
+                port("ldap.tlsPort")
+            );
         }
         let first = listeners
             .material

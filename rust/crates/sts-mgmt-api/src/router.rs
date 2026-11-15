@@ -880,6 +880,18 @@ fn run(
             code: None,
         },
     };
+    // `res.locals.ownerProjection`: an owner's read is shown what its
+    // kind's projection keeps of the answer.
+    let mut answered = answered;
+    if answered.status == 200 {
+        if let Some(projected) =
+            caller.and_then(|c| c.owned.as_ref()).and_then(|o| {
+                crate::gate::owner_projection(&o.project, &answered.body)
+            })
+        {
+            answered.body = projected;
+        }
+    }
     send(method, row.path, Some(row), answered)
 }
 

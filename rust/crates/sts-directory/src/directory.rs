@@ -433,8 +433,12 @@ fn utf16_len(s: &str) -> usize {
     s.encode_utf16().count()
 }
 
-// What a search sends of one attribute's values.
-fn shown_values(name: &str, values: Vec<String>) -> Vec<String> {
+/// What a search sends of one attribute's values: the Kerberos keys, the
+/// enrollment credentials and a key table's private keys withheld
+/// (`directoryRowOf()`'s chain, which `GET /admin-api/ldap/directory`
+/// reads too).
+// A HOT PATH: once per attribute of every entry a search answers.
+pub fn shown_values(name: &str, values: Vec<String>) -> Vec<String> {
     let lower = name.to_lowercase();
     if KERBEROS_WITHHELD.contains(&lower.as_str()) {
         return values

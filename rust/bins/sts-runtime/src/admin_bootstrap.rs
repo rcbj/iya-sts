@@ -379,11 +379,21 @@ type Claimer = dyn Fn(&str, &[String], &str) + Send + Sync;
 /// THE BOOTSTRAP ADMINISTRATOR'S CLAIM AT THE AUTHORIZATION ENDPOINT
 /// (`role_permissions.ts`'s and `admin_rbac.ts`'s `noteConsoleSignIn()`):
 /// the port the authorization endpoint asks, made before the admin API
-/// exists and handed its claim when it is built. No scope is gated by role
-/// in this runtime yet, so the narrowing answers what it was asked.
+/// exists and handed its claim when it is built. THE SCOPES A RESOURCE
+/// GATES BY ROLE (rule 3bq, `role_permissions.ts`) are the admin API's
+/// role permissions, handed in the same way: until they are (and for a
+/// realm whose directory this process has not read), nothing is gated.
 #[derive(Default)]
 pub struct ConsoleClaim {
     claim: std::sync::OnceLock<Box<Claimer>>,
+    permissions: std::sync::OnceLock<Gating>,
+}
+
+/// The role permissions the narrowing asks, and the hook that makes sure
+/// the registers' directory holds the ambient realm before it does.
+pub struct Gating {
+    pub permissions: Arc<sts_registers::role_permissions::RolePermissions>,
+    pub filled: Box<dyn Fn() + Send + Sync>,
 }
 
 impl ConsoleClaim {
@@ -394,14 +404,47 @@ impl ConsoleClaim {
             tracing::debug!("admin: the console claim was installed already.");
         }
     }
+
+    /// The role permissions, once the admin API is built.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn install_gating(&self, gating: Gating) {
+        if self.permissions.set(gating).is_err() {
+            tracing::debug!("admin: the scope gating was installed already.");
+        }
+    }
 }
 
 impl sts_oauth::authorize::GatedScopes for ConsoleClaim {
-    fn asks_for_gated(&self, _scope: &str) -> bool {
-        false
+    // `rolePermissions.asksForGated(scope)`.
+    fn asks_for_gated(&self, scope: &str) -> bool {
+        self.permissions.get().is_some_and(|g| {
+            (g.filled)();
+            g.permissions.asks_for_gated(scope)
+        })
     }
-    fn narrow(&self, scope: &str, _: &str, _: bool, _: &str, _: &str) -> Json {
-        json!({ "scope": scope, "emptied": false, "why": "" })
+    // `rolePermissions.narrowScope(scope, person, {clientId, grant})`.
+    fn narrow(
+        &self,
+        scope: &str,
+        username: &str,
+        authenticated: bool,
+        client_id: &str,
+        grant: &str,
+    ) -> Json {
+        let Some(g) = self.permissions.get() else {
+            return json!({ "scope": scope, "emptied": false, "why": "" });
+        };
+        (g.filled)();
+        let who = sts_registers::role_permissions::Subject {
+            application: false,
+            name: username.to_string(),
+            authenticated,
+        };
+        g.permissions.narrow_scope(
+            scope,
+            &who,
+            &json!({ "clientId": client_id, "grant": grant }),
+        )
     }
     fn note_console_sign_in(
         &self,

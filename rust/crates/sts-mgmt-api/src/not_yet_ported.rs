@@ -147,7 +147,6 @@ macro_rules! not_yet_ported {
         | Operation::SetGroupPolicy
         | Operation::AddGroupOwner
         | Operation::RemoveGroupOwner
-        | Operation::GetDirectoryEntries
         | Operation::GetDirectoryApplications
         | Operation::GetDirectoryFederations
         | Operation::GetDirectorySpiffe
@@ -155,7 +154,6 @@ macro_rules! not_yet_ported {
         | Operation::GetDirectoryPolicies
         | Operation::GetDirectoryPeps
         | Operation::GetDirectoryDevices
-        | Operation::GetDirectoryService
         | Operation::GetAdminRoles
         | Operation::GetMultiFactor
         | Operation::ClearAuthenticatorApp

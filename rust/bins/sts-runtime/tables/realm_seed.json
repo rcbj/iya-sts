@@ -1,0 +1,1703 @@
+{
+  "seed": {
+    "development": [
+      {
+        "dn": "@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "domain",
+            "dcObject"
+          ],
+          "dc": [
+            "@@DC@@"
+          ],
+          "description": [
+            "IYA STS directory. Every bind succeeds; nothing here is a real account."
+          ]
+        }
+      },
+      {
+        "dn": "ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "users"
+          ],
+          "description": [
+            "People. An entry appears here for anyone who authenticates to this service through any protocol."
+          ]
+        }
+      },
+      {
+        "dn": "ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "groups"
+          ],
+          "description": [
+            "Groups, as groupOfNames — membership is the multi-valued `member` attribute holding the DN of each member."
+          ]
+        }
+      },
+      {
+        "dn": "ou=applications,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "applications"
+          ],
+          "description": [
+            "Applications: the OAuth clients, OpenID Connect relying parties, SAML service providers, WS-Federation applications, WS-Trust relying parties, OpenID4VP verifiers and Kerberos services this service has been asked about. THIS CONTAINER IS THE REGISTRY — it is not a copy of one kept elsewhere — so an ldapmodify here changes what the protocol endpoints do. applications.js holds the schema; GET /ldap/applications publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=federations,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "federations"
+          ],
+          "description": [
+            "Federation relationships: the foreign identity providers this service consumes assertions from, and the foreign service providers it asserts to. THIS CONTAINER IS THE REGISTER — an ldapmodify of fedSigningCertificate here changes which signer the next assertion is verified against, and an ldapmodify of fedEnabled turns a partner on. It is the one store in this directory whose contents are a SECURITY DECISION rather than a record: everything else here is permissive by design, and a federation endpoint cannot be. federation/federation.js holds the schema; GET /admin/ldap/federations publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=devices,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "devices"
+          ],
+          "description": [
+            "Devices: the phones, computers and hosts this realm knows, each an RFC 4519 device whose one owner is a person or an application, whose stsDeviceApplication values are the applications that have used it and whose stsDeviceKey values are the keys it is recognised by. OpenID Connect Native SSO keeps its device_secret here, hashed (common/devices.ts)."
+          ]
+        }
+      },
+      {
+        "dn": "ou=oidfed,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "oidfed"
+          ],
+          "description": [
+            "OpenID Federation 1.1: this realm's Federation Entity Keys, the Subordinates it vouches for, the Trust Anchors it trusts and the Trust Marks it issues and holds (oidfed/oidfed_store.ts). A Subordinate here is published at the fetch endpoint as signed; an ldapmodify of one changes what this realm vouches for."
+          ]
+        }
+      },
+      {
+        "dn": "ou=kerberosTrusts,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "kerberosTrusts"
+          ],
+          "description": [
+            "Kerberos trusts (#430): one entry per partner Kerberos realm, holding the inter-realm keys this realm shares with it — the incoming krbtgt/<this realm>@<partner> and the outgoing krbtgt/<partner>@<this realm> — its attributes and the DNS suffixes routed to it (kerberos/krb5_trusts.ts). The keys are sealed and never returned."
+          ]
+        }
+      },
+      {
+        "dn": "ou=claimproviders,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "claimproviders"
+          ],
+          "description": [
+            "OpenID Connect Claims Providers (#147): the OpenID Providers this realm fetches claims from for a person who linked one, delivered as aggregated or distributed claims (oauth-oidc/claims_providers.ts). A person's own tokens for each provider are on their entry, sealed (stsClaimSourceTokens)."
+          ]
+        }
+      },
+      {
+        "dn": "ou=attributesources,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "attributesources"
+          ],
+          "description": [
+            "Attribute sources (#94): the SQL databases this realm reads people's attributes from, onto their entries (attribute-sources/attribute_sources.ts). What a source wrote on a person is named on that entry (stsAttributeSourced)."
+          ]
+        }
+      },
+      {
+        "dn": "ou=policies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "policies"
+          ],
+          "description": [
+            "XACML 3.0 policies. THIS CONTAINER IS THE POLICY REPOSITORY — an ldapmodify of xacmlPolicyDocument here changes what the PDP decides on the next request, and an ldapmodify of xacmlEnabled takes a policy out of the decision without deleting it. The entry holds the XACML XML AS AUTHORED and everything else on it is derived from that document at write time, so where the two disagree the document wins. xacml/xacml_store.ts holds the schema."
+          ]
+        }
+      },
+      {
+        "dn": "ou=roles,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "roles"
+          ],
+          "description": [
+            "ROLES: the one thing here a user, a group AND an application can all be mapped into. An entry is named by the role and everything on it is MEMBERSHIP — who holds it. What a role is REQUIRED for is NOT here: that lives in appRequiredRole on the application entry that requires it, because it is a fact about the application. Six more roles exist and are in no container at all — EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS, ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS and ALL_UNAUTHENTICATED_APPLICATIONS are COMPUTED from the security context of the decision being made. common/roles.js holds the schema; GET /admin/roles publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=passwordPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "passwordPolicies"
+          ],
+          "description": [
+            "PASSWORD POLICY profiles, in the shape of draft-behera-ldap-password-policy (pwdPolicy, pwdMinLength, pwdInHistory) with this service's composition rules beside them. An ldapmodify here changes what the NEXT password set in this realm must look like, and nothing already stored. The profile is cn=default; while it is absent the built-in defaults are in force. ENFORCED IN PRODUCT MODE. common/password_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=authnPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "authnPolicies"
+          ],
+          "description": [
+            "AUTHENTICATION POLICY profiles: which mechanisms this realm accepts as a first factor and as a second, and when a second factor is required. The profile is cn=default; while it is absent a realm other than the default one follows the DEFAULT REALM's cn=default, and the built-in defaults apply where neither exists. common/authn_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=serviceAccountPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "serviceAccountPolicies"
+          ],
+          "description": [
+            "SERVICE-ACCOUNT POLICY profiles: what a service account (a person entry carrying stsServiceAccount) may do in this realm — the second factor, the browser, the password doors — and how its password rotates. The profile is cn=default; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in defaults apply where neither exists. common/service_account_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=passkeyPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "passkeyPolicies"
+          ],
+          "description": [
+            "PASSKEY POLICY profiles: how passkeys behave in this realm — whether a sign-in may name no username, and what a security key is asked to store. The profile is cn=default; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in defaults apply where neither exists. common/passkey_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=localePolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "localePolicies"
+          ],
+          "description": [
+            "LOCALE POLICY profiles: the language this realm's pages fall back to and give a new person. cn=default applies everywhere; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in defaults apply where neither exists. A named profile applies where an application (appLocalePolicy) or a group (stsLocalePolicy) names it. common/locale_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=attributePolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "attributePolicies"
+          ],
+          "description": [
+            "ATTRIBUTE POLICY profiles: the attributes every person in this realm must hold, besides uid, cn and sn. cn=default applies everywhere; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in default (givenName, sn, mail) applies where neither exists. Enforced in product mode. common/attribute_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=postLoginPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "postLoginPolicies"
+          ],
+          "description": [
+            "POST-LOGIN ACTIVITY profiles: what a person is asked to do after signing in, before they are sent back to the application (today: register a post-quantum passkey). Off by default. cn=default applies everywhere; while it is absent a realm other than the default one follows the DEFAULT REALM's. A named profile applies to the members of the groups it lists. common/post_login_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=attributeDefinitions,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "attributeDefinitions"
+          ],
+          "description": [
+            "CUSTOM ATTRIBUTES of this realm: cn=<name> with a label, a syntax and whether it holds one value or several. A person may be given a value of each, and the attribute policy may require one. Not inherited from the default realm. common/attribute_policy.ts holds the schema; Directory > Policies > Attribute policy edits it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=peps,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "peps"
+          ],
+          "description": [
+            "Remote XACML Policy Enforcement Points that have registered with this PDP. A ROW HERE IS A RECORD AND NOT A PERMISSION: a PEP that never registers can still pull GET /xacml/pep/policies and enforce, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is a place on /admin/xacml/peps and an address for the change nudge. xacml/xacml_pep_registry.ts holds the schema."
+          ]
+        }
+      },
+      {
+        "dn": "ou=signerTrustAnchors,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "signerTrustAnchors"
+          ],
+          "description": [
+            "The SIGNER TRUSTSTORE: the certificate authorities, and the intermediates under them, a third party's certificate may chain to when it is relied on for anything but a TLS handshake. One stsSignerTrustAnchor entry per certificate added at /admin/pki/trust or POST /admin-api/pki/trust/add. An entry here decides whose signature this realm believes, so writing one is an administrative act. common/signer_truststore.ts owns what an entry is."
+          ]
+        }
+      },
+      {
+        "dn": "ou=spiffe,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "spiffe"
+          ],
+          "description": [
+            "The SPIFFE trust domain this service is the issuing authority for. Two containers beneath: entries (registration entries, which decide what gets issued) and agents (what has attested). spiffe_registry.js holds the schema; GET /admin/ldap/spiffe publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=entries,ou=spiffe,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "entries"
+          ],
+          "description": [
+            "SPIFFE registration entries. THIS CONTAINER IS THE REGISTRY — an ldapmodify of spiffeX509SvidTtl here changes the lifetime of the next SVID the Workload API hands out, because nothing caches these."
+          ]
+        }
+      },
+      {
+        "dn": "ou=agents,ou=spiffe,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "agents"
+          ],
+          "description": [
+            "SPIFFE agents that have attested here. A RECORD rather than configuration: everything on these entries was written by this service, and nothing about an agent is editable from the console. An agent here was verified by the node attestor its type names; a type nothing verifies is refused, never recorded."
+          ]
+        }
+      },
+      {
+        "dn": "cn=admin,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalRole"
+          ],
+          "cn": [
+            "admin"
+          ],
+          "sn": [
+            "Administrator"
+          ],
+          "description": [
+            "A bind account. So is every other DN in the universe: this server accepts any bind except the password \"invalid\"."
+          ]
+        }
+      },
+      {
+        "dn": "uid=alice,ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalPerson",
+            "inetOrgPerson"
+          ],
+          "uid": [
+            "alice"
+          ],
+          "cn": [
+            "Alice Anderson"
+          ],
+          "sn": [
+            "Anderson"
+          ],
+          "givenname": [
+            "Alice"
+          ],
+          "displayname": [
+            "Alice Anderson"
+          ],
+          "title": [
+            "Principal Engineer"
+          ],
+          "employeetype": [
+            "staff"
+          ],
+          "mail": [
+            "alice@@@DOMAIN@@"
+          ],
+          "description": [
+            "Seeded, not authenticated."
+          ]
+        },
+        "after": {
+          "schacdateofbirth": [
+            "19671116"
+          ],
+          "schaccountryofcitizenship": [
+            "NL"
+          ],
+          "street": [
+            "891 Mock Lane"
+          ],
+          "l": [
+            "Westerveld"
+          ],
+          "st": [
+            "Utrecht"
+          ],
+          "postalcode": [
+            "4395 LG"
+          ],
+          "c": [
+            "NL"
+          ]
+        }
+      },
+      {
+        "dn": "uid=bob,ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalPerson",
+            "inetOrgPerson"
+          ],
+          "uid": [
+            "bob"
+          ],
+          "cn": [
+            "Bob Brown"
+          ],
+          "sn": [
+            "Brown"
+          ],
+          "givenname": [
+            "Bob"
+          ],
+          "displayname": [
+            "Bob Brown"
+          ],
+          "title": [
+            "Support Analyst"
+          ],
+          "employeetype": [
+            "staff"
+          ],
+          "mail": [
+            "bob@@@DOMAIN@@"
+          ],
+          "description": [
+            "Seeded, not authenticated."
+          ]
+        },
+        "after": {
+          "schacdateofbirth": [
+            "19680309"
+          ],
+          "schaccountryofcitizenship": [
+            "GB"
+          ],
+          "street": [
+            "936 Mock Lane"
+          ],
+          "l": [
+            "Eastgate"
+          ],
+          "st": [
+            "Greater Manchester"
+          ],
+          "postalcode": [
+            "ZW1 5ZU"
+          ],
+          "c": [
+            "GB"
+          ]
+        }
+      },
+      {
+        "dn": "uid=carol,ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalPerson",
+            "inetOrgPerson"
+          ],
+          "uid": [
+            "carol"
+          ],
+          "cn": [
+            "Carol Carter"
+          ],
+          "sn": [
+            "Carter"
+          ],
+          "givenname": [
+            "Carol"
+          ],
+          "displayname": [
+            "Carol Carter"
+          ],
+          "title": [
+            "Directory Administrator"
+          ],
+          "employeetype": [
+            "admin"
+          ],
+          "mail": [
+            "carol@@@DOMAIN@@"
+          ],
+          "description": [
+            "Seeded, not authenticated."
+          ]
+        },
+        "after": {
+          "schacdateofbirth": [
+            "19800223"
+          ],
+          "schaccountryofcitizenship": [
+            "DK"
+          ],
+          "street": [
+            "469 Sample Road"
+          ],
+          "l": [
+            "Nordhavn"
+          ],
+          "st": [
+            "Hovedstaden"
+          ],
+          "postalcode": [
+            "4089"
+          ],
+          "c": [
+            "DK"
+          ]
+        }
+      },
+      {
+        "dn": "uid=sensitive,ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalPerson",
+            "inetOrgPerson"
+          ],
+          "uid": [
+            "sensitive"
+          ],
+          "cn": [
+            "Sensitive Account"
+          ],
+          "sn": [
+            "Account"
+          ],
+          "displayname": [
+            "Sensitive Account"
+          ],
+          "mail": [
+            "sensitive@@@DOMAIN@@"
+          ],
+          "stsnotdelegated": [
+            "TRUE"
+          ],
+          "description": [
+            "Seeded, not authenticated: flagged never to be delegated (stsNotDelegated), as the KDC's sensitive account."
+          ]
+        },
+        "after": {
+          "givenname": [
+            "Priya"
+          ],
+          "schacdateofbirth": [
+            "19550116"
+          ],
+          "schaccountryofcitizenship": [
+            "DK"
+          ],
+          "street": [
+            "764 Placeholder Street"
+          ],
+          "l": [
+            "Nordhavn"
+          ],
+          "st": [
+            "Hovedstaden"
+          ],
+          "postalcode": [
+            "6553"
+          ],
+          "c": [
+            "DK"
+          ]
+        }
+      },
+      {
+        "dn": "cn=developers,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "developers"
+          ],
+          "description": [
+            "A groupOfNames. Membership is the `member` attribute."
+          ],
+          "member": [
+            "uid=alice,ou=users,@@BASE@@",
+            "uid=bob,ou=users,@@BASE@@"
+          ]
+        }
+      },
+      {
+        "dn": "cn=directory-admins,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "directory-admins"
+          ],
+          "description": [
+            "A second group, so a search for groups returns more than one."
+          ],
+          "member": [
+            "uid=carol,ou=users,@@BASE@@"
+          ]
+        }
+      },
+      {
+        "dn": "cn=remote-pep-1,ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalPerson",
+            "inetOrgPerson"
+          ],
+          "cn": [
+            "remote-pep-1"
+          ],
+          "sn": [
+            "remote-pep-1"
+          ],
+          "displayname": [
+            "Remote XACML PEP #1"
+          ],
+          "description": [
+            "THE IDENTITY OF A REMOTE XACML POLICY ENFORCEMENT POINT, not a person. A client certificate whose subject common name is \"remote-pep-1\" resolves to this entry, and its membership of cn=remote-peps below is what lets it reach /xacml/pep/register, /xacml/pep/policies and /xacml/pep/heartbeat. Seeded, and authenticated by nothing until a certificate arrives."
+          ]
+        },
+        "after": {
+          "givenname": [
+            "Diego"
+          ],
+          "mail": [
+            "diego.duarte.2592@example.net"
+          ],
+          "schacdateofbirth": [
+            "19600503"
+          ],
+          "schaccountryofcitizenship": [
+            "DK"
+          ],
+          "street": [
+            "612 Placeholder Street"
+          ],
+          "l": [
+            "Nordhavn"
+          ],
+          "st": [
+            "Hovedstaden"
+          ],
+          "postalcode": [
+            "7917"
+          ],
+          "c": [
+            "DK"
+          ]
+        }
+      },
+      {
+        "dn": "cn=remote-peps,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "remote-peps"
+          ],
+          "description": [
+            "Members hold the built-in REMOTE_PEPS role, which is what the three /xacml/pep endpoints require. The group is named by roles.remotePepGroup; emptying it closes those endpoints to everybody, and adding a member is how a second enforcement point is admitted."
+          ],
+          "member": [
+            "cn=remote-pep-1,ou=users,@@BASE@@"
+          ]
+        },
+        "setting": "roles.remotePepGroup"
+      },
+      {
+        "dn": "cn=xacml-user-1,ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "person",
+            "organizationalPerson",
+            "inetOrgPerson"
+          ],
+          "cn": [
+            "xacml-user-1"
+          ],
+          "sn": [
+            "xacml-user-1"
+          ],
+          "displayname": [
+            "XACML surface caller #1"
+          ],
+          "description": [
+            "THE IDENTITY OF A CALLER OF THE XACML ENDPOINTS, which is usually another service rather than a person. A client certificate whose subject common name is \"xacml-user-1\" resolves to this entry, and its membership of cn=xacml-users below is what lets it reach GET /xacml, POST /xacml/pdp and GET /xacml/policies. It is NOT a member of cn=remote-peps and must not be made one: those three endpoints publish the documents this service enforces its own access with. Seeded, and authenticated by nothing until a certificate arrives."
+          ]
+        },
+        "after": {
+          "givenname": [
+            "Freya"
+          ],
+          "mail": [
+            "freya.chen.9303@example.com"
+          ],
+          "schacdateofbirth": [
+            "19960920"
+          ],
+          "schaccountryofcitizenship": [
+            "US"
+          ],
+          "street": [
+            "194 Nowhere Terrace"
+          ],
+          "l": [
+            "Fairview"
+          ],
+          "st": [
+            "OR"
+          ],
+          "postalcode": [
+            "04188"
+          ],
+          "c": [
+            "US"
+          ]
+        }
+      },
+      {
+        "dn": "cn=xacml-users,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "xacml-users"
+          ],
+          "description": [
+            "Members hold the built-in XACML_USER role, which is what the three XACML endpoints proper require — GET /xacml, POST /xacml/pdp and GET /xacml/policies. The group is named by roles.xacmlUserGroup; emptying it closes those three endpoints to everybody, and adding a member — a person, or the DN a client certificate resolves to — is how a caller is admitted. It is deliberately NOT cn=remote-peps: that group reaches /xacml/pep/*, which publishes the documents this service enforces its own access with."
+          ],
+          "member": [
+            "cn=xacml-user-1,ou=users,@@BASE@@"
+          ]
+        },
+        "setting": "roles.xacmlUserGroup"
+      },
+      {
+        "dn": "cn=authzen-peps,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "authzen-peps"
+          ],
+          "description": [
+            "Members hold the built-in AUTHZEN_PEPS role, which is what the AuthZEN Authorization API under /access/v1 requires. The group is named by roles.authzenPepGroup; emptying it closes /access/v1 to everybody, and adding a member — a person, a service account, or an application's entry — is how a caller is admitted. It is deliberately neither cn=xacml-users nor cn=remote-peps: an AuthZEN caller asks for decisions and reads no policy and no person's attributes."
+          ]
+        },
+        "setting": "roles.authzenPepGroup"
+      }
+    ],
+    "product": [
+      {
+        "dn": "@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "domain",
+            "dcObject"
+          ],
+          "dc": [
+            "@@DC@@"
+          ],
+          "description": [
+            "The STS directory. A simple bind is verified against the entry's userPassword."
+          ]
+        }
+      },
+      {
+        "dn": "ou=users,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "users"
+          ],
+          "description": [
+            "People, as provisioned — through the console, /admin-api, SCIM or an LDAP add. Authenticating creates nobody."
+          ]
+        }
+      },
+      {
+        "dn": "ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "groups"
+          ],
+          "description": [
+            "Groups, as groupOfNames — membership is the multi-valued `member` attribute holding the DN of each member."
+          ]
+        }
+      },
+      {
+        "dn": "ou=applications,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "applications"
+          ],
+          "description": [
+            "Applications: the OAuth clients, OpenID Connect relying parties, SAML service providers, WS-Federation applications, WS-Trust relying parties, OpenID4VP verifiers and Kerberos services this service has been asked about. THIS CONTAINER IS THE REGISTRY — it is not a copy of one kept elsewhere — so an ldapmodify here changes what the protocol endpoints do. applications.js holds the schema; GET /ldap/applications publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=federations,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "federations"
+          ],
+          "description": [
+            "Federation relationships: the foreign identity providers this service consumes assertions from, and the foreign service providers it asserts to. THIS CONTAINER IS THE REGISTER — an ldapmodify of fedSigningCertificate here changes which signer the next assertion is verified against, and an ldapmodify of fedEnabled turns a partner on. It is the one store in this directory whose contents are a SECURITY DECISION rather than a record: everything else here is permissive by design, and a federation endpoint cannot be. federation/federation.js holds the schema; GET /admin/ldap/federations publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=devices,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "devices"
+          ],
+          "description": [
+            "Devices: the phones, computers and hosts this realm knows, each an RFC 4519 device whose one owner is a person or an application, whose stsDeviceApplication values are the applications that have used it and whose stsDeviceKey values are the keys it is recognised by. OpenID Connect Native SSO keeps its device_secret here, hashed (common/devices.ts)."
+          ]
+        }
+      },
+      {
+        "dn": "ou=oidfed,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "oidfed"
+          ],
+          "description": [
+            "OpenID Federation 1.1: this realm's Federation Entity Keys, the Subordinates it vouches for, the Trust Anchors it trusts and the Trust Marks it issues and holds (oidfed/oidfed_store.ts). A Subordinate here is published at the fetch endpoint as signed; an ldapmodify of one changes what this realm vouches for."
+          ]
+        }
+      },
+      {
+        "dn": "ou=kerberosTrusts,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "kerberosTrusts"
+          ],
+          "description": [
+            "Kerberos trusts (#430): one entry per partner Kerberos realm, holding the inter-realm keys this realm shares with it — the incoming krbtgt/<this realm>@<partner> and the outgoing krbtgt/<partner>@<this realm> — its attributes and the DNS suffixes routed to it (kerberos/krb5_trusts.ts). The keys are sealed and never returned."
+          ]
+        }
+      },
+      {
+        "dn": "ou=claimproviders,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "claimproviders"
+          ],
+          "description": [
+            "OpenID Connect Claims Providers (#147): the OpenID Providers this realm fetches claims from for a person who linked one, delivered as aggregated or distributed claims (oauth-oidc/claims_providers.ts). A person's own tokens for each provider are on their entry, sealed (stsClaimSourceTokens)."
+          ]
+        }
+      },
+      {
+        "dn": "ou=attributesources,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "attributesources"
+          ],
+          "description": [
+            "Attribute sources (#94): the SQL databases this realm reads people's attributes from, onto their entries (attribute-sources/attribute_sources.ts). What a source wrote on a person is named on that entry (stsAttributeSourced)."
+          ]
+        }
+      },
+      {
+        "dn": "ou=policies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "policies"
+          ],
+          "description": [
+            "XACML 3.0 policies. THIS CONTAINER IS THE POLICY REPOSITORY — an ldapmodify of xacmlPolicyDocument here changes what the PDP decides on the next request, and an ldapmodify of xacmlEnabled takes a policy out of the decision without deleting it. The entry holds the XACML XML AS AUTHORED and everything else on it is derived from that document at write time, so where the two disagree the document wins. xacml/xacml_store.ts holds the schema."
+          ]
+        }
+      },
+      {
+        "dn": "ou=roles,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "roles"
+          ],
+          "description": [
+            "ROLES: the one thing here a user, a group AND an application can all be mapped into. An entry is named by the role and everything on it is MEMBERSHIP — who holds it. What a role is REQUIRED for is NOT here: that lives in appRequiredRole on the application entry that requires it, because it is a fact about the application. Six more roles exist and are in no container at all — EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS, ALL_APPLICATIONS, ALL_AUTHENTICATED_APPLICATIONS and ALL_UNAUTHENTICATED_APPLICATIONS are COMPUTED from the security context of the decision being made. common/roles.js holds the schema; GET /admin/roles publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=passwordPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "passwordPolicies"
+          ],
+          "description": [
+            "PASSWORD POLICY profiles, in the shape of draft-behera-ldap-password-policy (pwdPolicy, pwdMinLength, pwdInHistory) with this service's composition rules beside them. An ldapmodify here changes what the NEXT password set in this realm must look like, and nothing already stored. The profile is cn=default; while it is absent the built-in defaults are in force. ENFORCED IN PRODUCT MODE. common/password_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=authnPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "authnPolicies"
+          ],
+          "description": [
+            "AUTHENTICATION POLICY profiles: which mechanisms this realm accepts as a first factor and as a second, and when a second factor is required. The profile is cn=default; while it is absent a realm other than the default one follows the DEFAULT REALM's cn=default, and the built-in defaults apply where neither exists. common/authn_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=serviceAccountPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "serviceAccountPolicies"
+          ],
+          "description": [
+            "SERVICE-ACCOUNT POLICY profiles: what a service account (a person entry carrying stsServiceAccount) may do in this realm — the second factor, the browser, the password doors — and how its password rotates. The profile is cn=default; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in defaults apply where neither exists. common/service_account_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=passkeyPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "passkeyPolicies"
+          ],
+          "description": [
+            "PASSKEY POLICY profiles: how passkeys behave in this realm — whether a sign-in may name no username, and what a security key is asked to store. The profile is cn=default; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in defaults apply where neither exists. common/passkey_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=localePolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "localePolicies"
+          ],
+          "description": [
+            "LOCALE POLICY profiles: the language this realm's pages fall back to and give a new person. cn=default applies everywhere; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in defaults apply where neither exists. A named profile applies where an application (appLocalePolicy) or a group (stsLocalePolicy) names it. common/locale_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=attributePolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "attributePolicies"
+          ],
+          "description": [
+            "ATTRIBUTE POLICY profiles: the attributes every person in this realm must hold, besides uid, cn and sn. cn=default applies everywhere; while it is absent a realm other than the default one follows the DEFAULT REALM's, and the built-in default (givenName, sn, mail) applies where neither exists. Enforced in product mode. common/attribute_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=postLoginPolicies,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "postLoginPolicies"
+          ],
+          "description": [
+            "POST-LOGIN ACTIVITY profiles: what a person is asked to do after signing in, before they are sent back to the application (today: register a post-quantum passkey). Off by default. cn=default applies everywhere; while it is absent a realm other than the default one follows the DEFAULT REALM's. A named profile applies to the members of the groups it lists. common/post_login_policy.ts holds the schema; GET /admin/policies publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=attributeDefinitions,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "attributeDefinitions"
+          ],
+          "description": [
+            "CUSTOM ATTRIBUTES of this realm: cn=<name> with a label, a syntax and whether it holds one value or several. A person may be given a value of each, and the attribute policy may require one. Not inherited from the default realm. common/attribute_policy.ts holds the schema; Directory > Policies > Attribute policy edits it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=peps,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "peps"
+          ],
+          "description": [
+            "Remote XACML Policy Enforcement Points that have registered with this PDP. A ROW HERE IS A RECORD AND NOT A PERMISSION: a PEP that never registers can still pull GET /xacml/pep/policies and enforce, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is a place on /admin/xacml/peps and an address for the change nudge. xacml/xacml_pep_registry.ts holds the schema."
+          ]
+        }
+      },
+      {
+        "dn": "ou=signerTrustAnchors,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "signerTrustAnchors"
+          ],
+          "description": [
+            "The SIGNER TRUSTSTORE: the certificate authorities, and the intermediates under them, a third party's certificate may chain to when it is relied on for anything but a TLS handshake. One stsSignerTrustAnchor entry per certificate added at /admin/pki/trust or POST /admin-api/pki/trust/add. An entry here decides whose signature this realm believes, so writing one is an administrative act. common/signer_truststore.ts owns what an entry is."
+          ]
+        }
+      },
+      {
+        "dn": "ou=spiffe,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "spiffe"
+          ],
+          "description": [
+            "The SPIFFE trust domain this service is the issuing authority for. Two containers beneath: entries (registration entries, which decide what gets issued) and agents (what has attested). spiffe_registry.js holds the schema; GET /admin/ldap/spiffe publishes it."
+          ]
+        }
+      },
+      {
+        "dn": "ou=entries,ou=spiffe,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "entries"
+          ],
+          "description": [
+            "SPIFFE registration entries. THIS CONTAINER IS THE REGISTRY — an ldapmodify of spiffeX509SvidTtl here changes the lifetime of the next SVID the Workload API hands out, because nothing caches these."
+          ]
+        }
+      },
+      {
+        "dn": "ou=agents,ou=spiffe,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "organizationalUnit"
+          ],
+          "ou": [
+            "agents"
+          ],
+          "description": [
+            "SPIFFE agents that have attested here. A RECORD rather than configuration: everything on these entries was written by this service, and nothing about an agent is editable from the console. An agent here was verified by the node attestor its type names; a type nothing verifies is refused, never recorded."
+          ]
+        }
+      },
+      {
+        "dn": "cn=remote-peps,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "remote-peps"
+          ],
+          "description": [
+            "Members hold the built-in REMOTE_PEPS role, which is what the three /xacml/pep endpoints require. The group is named by roles.remotePepGroup; emptying it closes those endpoints to everybody, and adding a member is how a second enforcement point is admitted."
+          ]
+        },
+        "setting": "roles.remotePepGroup"
+      },
+      {
+        "dn": "cn=xacml-users,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "xacml-users"
+          ],
+          "description": [
+            "Members hold the built-in XACML_USER role, which is what the three XACML endpoints proper require — GET /xacml, POST /xacml/pdp and GET /xacml/policies. The group is named by roles.xacmlUserGroup; emptying it closes those three endpoints to everybody, and adding a member — a person, or the DN a client certificate resolves to — is how a caller is admitted. It is deliberately NOT cn=remote-peps: that group reaches /xacml/pep/*, which publishes the documents this service enforces its own access with."
+          ]
+        },
+        "setting": "roles.xacmlUserGroup"
+      },
+      {
+        "dn": "cn=authzen-peps,ou=groups,@@BASE@@",
+        "attributes": {
+          "objectclass": [
+            "top",
+            "groupOfNames"
+          ],
+          "cn": [
+            "authzen-peps"
+          ],
+          "description": [
+            "Members hold the built-in AUTHZEN_PEPS role, which is what the AuthZEN Authorization API under /access/v1 requires. The group is named by roles.authzenPepGroup; emptying it closes /access/v1 to everybody, and adding a member — a person, a service account, or an application's entry — is how a caller is admitted. It is deliberately neither cn=xacml-users nor cn=remote-peps: an AuthZEN caller asks for decisions and reads no policy and no person's attributes."
+          ]
+        },
+        "setting": "roles.authzenPepGroup"
+      }
+    ]
+  },
+  "applications": [
+    {
+      "identifier": "sts-management-api",
+      "name": "Management API",
+      "kinds": [
+        "oauth2-resource-server"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own management API at /admin-api, as an OAuth 2.0 resource (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthAudience": [
+          "@@BASE@@/admin-api"
+        ],
+        "oauthPermissionBaseUri": "urn:sts:admin-api:",
+        "oauthPermission": [
+          "admin:read|Every read on /admin-api (ADMIN_READ)",
+          "admin:write|Every /admin-api operation that changes anything (ADMIN_WRITE), except what changes security",
+          "admin:security|The /admin-api operations that change security: policies, the policies an object names, the Security Administrator role and its holders' accounts (SECURITY_ADMIN)",
+          "admin:console|The admin console's own operations under /admin-api/console (ADMIN_CONSOLE)",
+          "owner:read|Read what the person owns, through /admin-api (OWNER_READ)",
+          "owner:write|Change what the person owns, through /admin-api (OWNER_WRITE)"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-management-api",
+        "client_name": "Management API",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_uri": "@@BASE@@/admin-api",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [],
+        "response_types": [],
+        "scope": ""
+      }
+    },
+    {
+      "identifier": "sts-account-api",
+      "name": "Account API",
+      "kinds": [
+        "oauth2-resource-server"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own account API at /account-api, the user portal's, as an OAuth 2.0 resource (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthAudience": [
+          "@@BASE@@/account-api"
+        ],
+        "oauthPermissionBaseUri": "urn:sts:account-api:",
+        "oauthPermission": [
+          "account:manage|The person's own account, through /account-api"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-account-api",
+        "client_name": "Account API",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_uri": "@@BASE@@/account-api",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [],
+        "response_types": [],
+        "scope": ""
+      }
+    },
+    {
+      "identifier": "sts-report-api",
+      "name": "Reporting API",
+      "kinds": [
+        "oauth2-resource-server"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own reports API at /report-api, as an OAuth 2.0 resource (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthAudience": [
+          "@@BASE@@/report-api"
+        ],
+        "oauthPermissionBaseUri": "urn:sts:report-api:",
+        "oauthPermission": [
+          "report:use|Reports as a user (REPORT_USE)",
+          "report:admin|Reports as an administrator (REPORT_ADMIN)"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-report-api",
+        "client_name": "Reporting API",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_uri": "@@BASE@@/report-api",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [],
+        "response_types": [],
+        "scope": ""
+      }
+    },
+    {
+      "identifier": "sts-authzen-api",
+      "name": "AuthZEN API",
+      "kinds": [
+        "oauth2-resource-server"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own AuthZEN Authorization API at /access/v1, as an OAuth 2.0 resource (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthAudience": [
+          "@@BASE@@/access/v1"
+        ],
+        "oauthPermissionBaseUri": "urn:sts:authzen-api:",
+        "oauthPermission": [
+          "authzen:evaluate|AuthZEN access evaluations at /access/v1 (AUTHZEN_PEPS)"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-authzen-api",
+        "client_name": "AuthZEN API",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_uri": "@@BASE@@/access/v1",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [],
+        "response_types": [],
+        "scope": ""
+      }
+    },
+    {
+      "identifier": "sts-uma-protection-api",
+      "name": "UMA protection API",
+      "kinds": [
+        "oauth2-resource-server"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own UMA 2.0 protection API at /uma, as an OAuth 2.0 resource (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthAudience": [
+          "@@BASE@@/uma"
+        ],
+        "oauthPermissionBaseUri": "urn:sts:uma-protection-api:",
+        "oauthPermission": [
+          "uma_protection|Register resources and ask permission tickets on the resource owner's behalf at /uma (UMA 2.0 protection API)"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-uma-protection-api",
+        "client_name": "UMA protection API",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_uri": "@@BASE@@/uma",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [],
+        "response_types": [],
+        "scope": ""
+      }
+    },
+    {
+      "identifier": "sts-resource",
+      "name": "Default resource",
+      "kinds": [
+        "oauth2-resource-server"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's default resource indicator (UserInfo, SCIM, Shared Signals, OpenID4VCI, Grant Management), as an OAuth 2.0 resource (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthAudience": [
+          "@@BASE@@/resource"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-resource",
+        "client_name": "Default resource",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_uri": "@@BASE@@/resource",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [],
+        "response_types": [],
+        "scope": ""
+      }
+    },
+    {
+      "identifier": "sts-admin-console",
+      "name": "Admin console",
+      "kinds": [
+        "oauth2-client",
+        "oidc-relying-party"
+      ],
+      "protocols": [
+        "OAuth 2.0 / OIDC"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own admin console at /admin (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2",
+          "oidc"
+        ],
+        "oauthMaxAuthAgeS": "3600",
+        "oauthRefreshTokenTtlS": "3600",
+        "oauthRefreshIdleSeconds": "900",
+        "oauthDelegatedPermission": [
+          "urn:sts:admin-api:admin:read",
+          "urn:sts:admin-api:admin:write",
+          "urn:sts:admin-api:admin:security",
+          "urn:sts:admin-api:admin:console"
+        ],
+        "oauthGlobalConsent": [
+          "openid",
+          "profile",
+          "email",
+          "offline_access",
+          "admin:read",
+          "admin:write",
+          "admin:security",
+          "admin:console"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-admin-console",
+        "client_name": "Admin console",
+        "client_id_issued_at": "@@ISSUED@@",
+        "registration_access_token": "@@RANDOM@@",
+        "registration_client_uri": "@@BASE@@/oauth2/register/sts-admin-console",
+        "client_uri": "@@BASE@@/admin",
+        "application_type": "web",
+        "redirect_uris": [
+          "@@BASE@@/admin/callback"
+        ],
+        "post_logout_redirect_uris": [
+          "@@BASE@@/admin"
+        ],
+        "grant_types": [
+          "authorization_code",
+          "refresh_token"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "scope": "openid profile email offline_access",
+        "token_endpoint_auth_method": "none"
+      }
+    },
+    {
+      "identifier": "sts-user-portal",
+      "name": "User portal",
+      "kinds": [
+        "oauth2-client",
+        "oidc-relying-party"
+      ],
+      "protocols": [
+        "OAuth 2.0 / OIDC"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own user portal at /portal (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2",
+          "oidc"
+        ],
+        "oauthMaxAuthAgeS": "28800",
+        "oauthRefreshTokenTtlS": "28800",
+        "oauthRefreshIdleSeconds": "3600",
+        "oauthDelegatedPermission": [
+          "urn:sts:account-api:account:manage",
+          "urn:sts:admin-api:owner:read",
+          "urn:sts:admin-api:owner:write"
+        ],
+        "oauthGlobalConsent": [
+          "openid",
+          "profile",
+          "email",
+          "offline_access",
+          "account:manage",
+          "owner:read",
+          "owner:write"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-user-portal",
+        "client_name": "User portal",
+        "client_id_issued_at": "@@ISSUED@@",
+        "registration_access_token": "@@RANDOM@@",
+        "registration_client_uri": "@@BASE@@/oauth2/register/sts-user-portal",
+        "client_uri": "@@BASE@@/portal",
+        "application_type": "web",
+        "redirect_uris": [
+          "@@BASE@@/portal/callback"
+        ],
+        "post_logout_redirect_uris": [
+          "@@BASE@@/portal"
+        ],
+        "grant_types": [
+          "authorization_code",
+          "refresh_token"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "scope": "openid profile email offline_access",
+        "token_endpoint_auth_method": "none"
+      }
+    },
+    {
+      "identifier": "sts-report",
+      "name": "Reports",
+      "kinds": [
+        "oauth2-client",
+        "oidc-relying-party"
+      ],
+      "protocols": [
+        "OAuth 2.0 / OIDC"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: this service's own reports at /report (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2",
+          "oidc"
+        ],
+        "oauthMaxAuthAgeS": "3600",
+        "oauthRefreshTokenTtlS": "3600",
+        "oauthRefreshIdleSeconds": "900",
+        "oauthDelegatedPermission": [
+          "urn:sts:report-api:report:use",
+          "urn:sts:report-api:report:admin"
+        ],
+        "oauthGlobalConsent": [
+          "openid",
+          "profile",
+          "email",
+          "offline_access",
+          "report:use",
+          "report:admin"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-report",
+        "client_name": "Reports",
+        "client_id_issued_at": "@@ISSUED@@",
+        "registration_access_token": "@@RANDOM@@",
+        "registration_client_uri": "@@BASE@@/oauth2/register/sts-report",
+        "client_uri": "@@BASE@@/report",
+        "application_type": "web",
+        "redirect_uris": [
+          "@@BASE@@/report/callback"
+        ],
+        "post_logout_redirect_uris": [
+          "@@BASE@@/report"
+        ],
+        "grant_types": [
+          "authorization_code",
+          "refresh_token"
+        ],
+        "response_types": [
+          "code"
+        ],
+        "scope": "openid profile email offline_access",
+        "token_endpoint_auth_method": "none"
+      }
+    },
+    {
+      "identifier": "sts-api-client",
+      "name": "API client",
+      "kinds": [
+        "oauth2-client"
+      ],
+      "protocols": [
+        "OAuth 2.0"
+      ],
+      "realmScope": "every",
+      "description": "seeded at startup: the client this service's own management API (/admin-api) and reports API (/report-api) are called as (applications.seedInternal)",
+      "attributes": {
+        "appAllowedProtocol": [
+          "oauth2"
+        ],
+        "oauthDelegatedPermission": [
+          "urn:sts:admin-api:admin:read",
+          "urn:sts:admin-api:admin:write",
+          "urn:sts:admin-api:admin:security",
+          "urn:sts:report-api:report:use"
+        ]
+      },
+      "registration": {
+        "client_id": "sts-api-client",
+        "client_name": "API client",
+        "client_id_issued_at": "@@ISSUED@@",
+        "client_secret": "@@RANDOM@@",
+        "client_secret_expires_at": 0,
+        "registration_access_token": "@@RANDOM@@",
+        "registration_client_uri": "@@BASE@@/oauth2/register/sts-api-client",
+        "client_uri": "@@BASE@@/admin/api-explorer",
+        "application_type": "web",
+        "redirect_uris": [],
+        "grant_types": [
+          "client_credentials"
+        ],
+        "response_types": [],
+        "scope": "",
+        "token_endpoint_auth_method": "client_secret_basic"
+      }
+    }
+  ],
+  "roleGroupSettings": [
+    "roles.remotePepGroup",
+    "roles.xacmlUserGroup",
+    "roles.authzenPepGroup"
+  ]
+}

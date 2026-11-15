@@ -42,6 +42,12 @@ mod bootstrap;
 pub use bootstrap::ConsoleClaim;
 #[path = "admin_groups.rs"]
 mod groups;
+#[path = "admin_identity.rs"]
+pub mod identity;
+#[path = "admin_owners.rs"]
+mod owners;
+#[path = "admin_realm_seed.rs"]
+mod realm_seed;
 #[path = "admin_views.rs"]
 mod views;
 
@@ -137,6 +143,9 @@ pub struct AdminParts {
     /// The protocol-independent sign-out (`logout/logout.ts`), which a
     /// disable ends everything the person holds through.
     pub logout: Arc<sts_logout::Logout>,
+    /// The identity register, written by every sign-in and read by the
+    /// views (`admin_identity.rs`).
+    pub identities: Arc<identity::IdentityRecords>,
 }
 
 /// The journal of a request's writes: `(realm, key)` of every entry the
@@ -443,8 +452,10 @@ impl rp::RosterDirectory for Roster {
     }
 }
 
-/// What the role register asks of `ou=roles`, in the ambient realm.
-struct RoleDir(Arc<LiveDir>);
+/// What the role register asks of `ou=roles`, in the ambient realm; the
+/// settings bound what a write may add (`roles.maxRoles`,
+/// `ldap.maxEntries`).
+struct RoleDir(Arc<LiveDir>, Arc<Settings>);
 
 impl rp::RoleDirectory for RoleDir {
     fn all_roles(&self) -> Vec<Json> {
@@ -484,8 +495,109 @@ impl rp::RoleDirectory for RoleDir {
                 .collect()
         })
     }
-    fn write_role(&self, _name: &str, _attributes: &Json) -> rp::Marked {
-        rp::Marked::plain(json!(false))
+    // `writeRole(name, attributes)` (`ldap_server.js`): the role entry
+    // stored whole as `cn=<name>,ou=roles,<base>` (or where the role is
+    // already filed), `cn` first, its creation instant kept, refused for a
+    // full container or a full directory.
+    fn write_role(&self, name: &str, attributes: &Json) -> rp::Marked {
+        use sts_core::errors::codes;
+        let realm_id = realm::current_id();
+        let mut tree =
+            self.0.tree.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(r) = LiveDir::realm_index(&tree, &realm_id) else {
+            return rp::Marked::plain(json!(false));
+        };
+        let roles = format!("ou=roles,{}", tree.realms()[r].base);
+        let roles_key = sts_ldap::service_dn::normalize_dn(Some(&roles));
+        let in_roles: Vec<(String, Option<String>, Option<String>)> = tree
+            .realms()[r]
+            .entries
+            .iter()
+            .filter(|(k, e)| {
+                **k != roles_key
+                    && sts_ldap::service_dn::is_under(Some(&e.dn), Some(&roles))
+            })
+            .map(|(_, e)| {
+                (
+                    e.first("cn").unwrap_or("").to_string(),
+                    Some(e.dn.clone()),
+                    e.created_at.clone(),
+                )
+            })
+            .collect();
+        let existing = in_roles
+            .iter()
+            .find(|(cn, _, _)| cn.to_lowercase() == name.to_lowercase());
+        let dn = existing
+            .and_then(|(_, dn, _)| dn.clone())
+            .unwrap_or_else(|| format!("cn={name},{roles}"));
+        if existing.is_none() {
+            let max = self.1.value_of("roles.maxRoles").as_int();
+            if in_roles.len() as i64 >= max {
+                tracing::warn!(
+                    "{}ldap: not creating {}; ou=roles holds its maximum of \
+                     {} entry/entries (roles.maxRoles).",
+                    sts_core::log::tag(codes::STS_LDAP_0038),
+                    dn,
+                    max
+                );
+                return rp::Marked::plain(json!(false));
+            }
+            let max = self.1.value_of("ldap.maxEntries").as_int();
+            let total: usize =
+                tree.realms().iter().map(|t| t.entries.len()).sum();
+            if total as i64 >= max {
+                tracing::warn!(
+                    "{}ldap: not creating {}; the directory holds its \
+                     maximum of {} entries.",
+                    sts_core::log::tag(codes::STS_LDAP_0007),
+                    dn,
+                    max
+                );
+                return rp::Marked::plain(json!(false));
+            }
+        }
+        let origin = if existing.is_some() {
+            tree.get(r, &dn).and_then(|e| e.origin.clone())
+        } else {
+            Some("roles".to_string())
+        };
+        let created = existing.and_then(|(_, _, c)| c.clone());
+        let mut written: Vec<(String, Vec<String>)> =
+            vec![("cn".into(), vec![name.to_string()])];
+        if let Some(o) = attributes.as_object() {
+            for (k, v) in o {
+                let values: Vec<String> = match v {
+                    Json::Array(a) => a
+                        .iter()
+                        .map(|x| match x {
+                            Json::String(s) => s.clone(),
+                            other => other.to_string(),
+                        })
+                        .collect(),
+                    Json::Null => Vec::new(),
+                    Json::String(s) => vec![s.clone()],
+                    other => vec![other.to_string()],
+                };
+                if k.eq_ignore_ascii_case("cn") {
+                    written[0].1 = values;
+                } else {
+                    written.push((k.clone(), values));
+                }
+            }
+        }
+        match tree.put_entry(r, &dn, &written, origin.as_deref(), None) {
+            Ok(_) => {
+                if let Some(c) = created {
+                    tree.restamp_created(r, &dn, &c);
+                }
+                rp::Marked::plain(json!(true))
+            }
+            Err(e) => rp::Marked {
+                value: json!({ "ok": false, "errors": [e.message] }),
+                code: e.code,
+            },
+        }
     }
     fn delete_role(&self, _name: &str) -> bool {
         false
@@ -508,8 +620,37 @@ impl rp::RoleDirectory for RoleDir {
                 .unwrap_or_default()
         })
     }
-    fn ensure_group(&self, _name: &str, _options: &Json) -> Json {
-        json!({ "ok": false })
+    // `ensureGroup(name, options)`: the group made by `createGroup()`
+    // where it is missing; one already there is left as it is.
+    fn ensure_group(&self, name: &str, options: &Json) -> Json {
+        use sts_registers::port::GroupWriter as _;
+        let wanted = name.trim().to_string();
+        let dn = self.0.with(|t| {
+            LiveDir::realm_index(t, &realm::current_id()).map(|r| {
+                let dn = groups::Groups { tree: t, r }.group_dn_for(&wanted);
+                (t.get(r, &dn).is_some(), dn)
+            })
+        });
+        if let Some((true, dn)) = dn {
+            return json!({ "ok": true, "existed": true, "dn": dn,
+                           "group": wanted });
+        }
+        let writer = groups::GroupWriter {
+            dir: self.0.clone(),
+            settings: self.1.clone(),
+        };
+        let made = writer.create_group(&wanted, options).value;
+        if made.get("ok") == Some(&Json::Bool(true)) {
+            let mut out = json!({ "existed": false });
+            if let (Some(o), Some(m)) = (out.as_object_mut(), made.as_object())
+            {
+                for (k, v) in m {
+                    o.insert(k.clone(), v.clone());
+                }
+            }
+            return out;
+        }
+        made
     }
 }
 
@@ -626,22 +767,67 @@ impl rp::Applications for RegApps {
     }
 }
 
-/// `ownership.ownsAnything()`: not ported — nobody is an owner here.
-struct NoOwners;
+/// The built-in issuance policy's per-scope rules a narrowing meets
+/// (`xacml/xacml_scope_verdicts.js`'s `decide()` over the `role-issuance`
+/// template, `xacml_templates.ts`): a scope its resource GATES BY ROLE is
+/// dropped (`STS-ADMIN-0821`, `scope-not-authorized`), and an application
+/// permission an application asks for is dropped (`STS-OAUTH-0957`,
+/// `application-permission-not-authorized`), unless a role the subject
+/// holds (`held`) is among the roles that authorize it; everything else
+/// is kept. The template's other scope rules read facts a narrowing does
+/// not carry (the declaration, the stage, consent), and are not met here.
+/// A realm's own issuance policy (`ou=policies`) is not read by this
+/// runtime yet: the embedded PEP is not ported, so the built-in decides,
+/// as Node's `builtInScopeVerdicts()` does when no decider is loaded.
+struct RoleIssuance;
 
-impl rp::OwnsAnything for NoOwners {
-    fn owns_anything(&self, _name: &str) -> bool {
-        false
-    }
-}
-
-/// The issuance gate's verdicts: every scope kept. `effectiveRoles()`
-/// never asks it; only narrowing does.
-struct KeepEveryScope;
-
-impl rp::IssuanceGate for KeepEveryScope {
-    fn check_scopes(&self, _request: &Json) -> Vec<rp::ScopeVerdict> {
-        Vec::new()
+impl rp::IssuanceGate for RoleIssuance {
+    fn check_scopes(&self, request: &Json) -> Vec<rp::ScopeVerdict> {
+        use sts_core::errors::codes;
+        use sts_registers::role_permissions::{
+            AUTHORIZING_ROLE, SCOPE_APPLICATION_PERMISSION, SCOPE_GATED,
+        };
+        let strings = |v: &Json| -> Vec<String> {
+            v.as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let held = strings(&request["held"]);
+        let facts = request["facts"].as_array().cloned().unwrap_or_default();
+        facts
+            .iter()
+            .map(|fact| {
+                let attribute = |id: &str| -> Option<Json> {
+                    fact["attributes"].as_array().and_then(|a| {
+                        a.iter().find(|x| x["id"] == json!(id)).cloned()
+                    })
+                };
+                let flag = |id: &str| {
+                    attribute(id).is_some_and(|a| a["values"][0] == json!(true))
+                };
+                let authorizing = attribute(AUTHORIZING_ROLE)
+                    .map(|a| strings(&a["values"]))
+                    .unwrap_or_default();
+                let authorized = authorizing.iter().any(|r| held.contains(r));
+                let scope = fact["scope"].as_str().unwrap_or("").to_string();
+                let (verdict, code) = if flag(SCOPE_GATED) && !authorized {
+                    ("drop", Some(codes::STS_ADMIN_0821))
+                } else if flag(SCOPE_APPLICATION_PERMISSION) && !authorized {
+                    ("drop", Some(codes::STS_OAUTH_0957))
+                } else {
+                    ("keep", None)
+                };
+                rp::ScopeVerdict {
+                    scope,
+                    verdict: verdict.to_string(),
+                    code,
+                }
+            })
+            .collect()
     }
 }
 
@@ -1316,6 +1502,9 @@ impl KeySource for Keys {
 
 /// The setup operations' reads.
 struct Setup {
+    /// A new realm's subtree, applications and native roles
+    /// (`admin_realm_seed.rs`).
+    builder: Arc<realm_seed::RealmBuilder>,
     /// The reads answered over the runtime (`admin_views.rs`).
     views: Arc<views::Views>,
     /// A new realm's bootstrap administrator (`admin_bootstrap.rs`).
@@ -1331,6 +1520,10 @@ struct Setup {
 }
 
 impl SetupPorts for Setup {
+    fn build_realm(&self, realm: &str) {
+        // `ldap_server.js`'s `realms.onCreate()` builder.
+        self.builder.build(realm);
+    }
     fn seed_administrator(&self, realm: &str) -> Seeded {
         // `rbac.seedBootstrapAdministrator()` (`admin_bootstrap.rs`).
         self.seeder.seed(realm)
@@ -1696,9 +1889,32 @@ impl AdminStack {
             mode: reg_mode.clone(),
         });
         let roles = Arc::new(sts_registers::roles::Roles::new(
-            Some(Arc::new(RoleDir(dir.clone()))),
+            Some(Arc::new(RoleDir(dir.clone(), settings.clone()))),
             Arc::new(RegSettings(settings.clone())),
         ));
+        // THE OWNERSHIP REGISTER (rule 3cn), which the owner roles are
+        // computed from and the access policy's owner PIP reads.
+        let ownership = Arc::new(sts_registers::ownership::Ownership::new(
+            sts_registers::ownership::OwnershipDeps {
+                settings: Arc::new(RegSettings(settings.clone())),
+                directory: Arc::new(owners::OwnerDir(dir.clone())),
+                roles: roles.clone(),
+                applications: Arc::new(RegApps(apps.clone())),
+                service_accounts: Arc::new(NoServiceAccounts),
+                scope_policy: Arc::new(owners::OwnerScopes {
+                    settings: settings.clone(),
+                    scopes: scopes.clone(),
+                }),
+            },
+        ));
+        let builder = Arc::new(realm_seed::RealmBuilder {
+            dir: dir.clone(),
+            apps: apps.clone(),
+            roles: roles.clone(),
+            settings: settings.clone(),
+            mode: mode.clone(),
+            registry: parts.registry.clone(),
+        });
         let permissions =
             Arc::new(sts_registers::role_permissions::RolePermissions::new(
                 sts_registers::role_permissions::RolePermissionsDeps {
@@ -1706,8 +1922,8 @@ impl AdminStack {
                     applications: Arc::new(RegApps(apps.clone())),
                     audit: Arc::new(LogAudit),
                     roster: roster.clone(),
-                    ownership: Arc::new(NoOwners),
-                    gate: Arc::new(KeepEveryScope),
+                    ownership: Arc::new(owners::Owns(ownership.clone())),
+                    gate: Arc::new(RoleIssuance),
                     subjects: Arc::new(Subjects(dir.clone())),
                     mode: reg_mode,
                 },
@@ -1761,6 +1977,22 @@ impl AdminStack {
         // The claim the console's sign-in makes, over the registers'
         // directory (refilled where it has not been yet: no request here
         // has run since the start).
+        // THE SCOPES A RESOURCE GATES BY ROLE, at the authorization and
+        // token endpoints (rule 3bq), over the same role permissions.
+        let filler = dir.clone();
+        parts.oauth.console_claim.install_gating(bootstrap::Gating {
+            permissions: permissions.clone(),
+            filled: Box::new(move || {
+                let realm_id = realm::current_id();
+                let filled = filler.with(|t| {
+                    LiveDir::realm_index(t, &realm_id)
+                        .is_some_and(|r| !t.realms()[r].entries.is_empty())
+                });
+                if !filled {
+                    filler.reload();
+                }
+            }),
+        });
         let claimer = seeder.clone();
         parts
             .oauth
@@ -1803,9 +2035,10 @@ impl AdminStack {
                 roles: permissions,
                 roster: roster.clone(),
             }),
-            access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
+            access: Arc::new(owners::OwnerAccess::new(ownership.clone())),
             dpop,
             setup_ports: Arc::new(Setup {
+                builder,
                 seeder: seeder.clone(),
                 views: Arc::new(views::Views {
                     mode: mode.clone(),
@@ -1813,9 +2046,8 @@ impl AdminStack {
                     apps: apps.clone(),
                     dir: dir.clone(),
                     settings: settings.clone(),
-                    register: Arc::new(views::IdentityRegister::declare(
-                        &parts.lifecycle,
-                        &parts.handles,
+                    register: Arc::new(views::IdentityRegister::over(
+                        parts.identities.users(),
                         parts.persistence.clone(),
                         parts.oauth.tokens.register.clone(),
                         dir.clone(),
