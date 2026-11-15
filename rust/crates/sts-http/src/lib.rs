@@ -213,11 +213,22 @@ pub async fn not_found(
 
 /// Every root-relative `href`, `action`, `formaction` and `src` of an HTML
 /// page, prefixed (`withRealmLinks()`); `//host` is not root-relative.
+///
+/// A LINK THAT ALREADY CARRIES THE PREFIX IS LEFT ALONE (Node's fix of
+/// 2026-11-14, #444 D12), as `realms.href()` leaves a redirect alone: a page
+/// that drew `currentPrefix() + '/portal'` came out
+/// `/realm/<id>/realm/<id>/portal`, a 404.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn with_realm_links(html: &str, prefix: &str) -> String {
     if prefix.is_empty() {
         return html.to_string();
     }
+    let own = prefix.get(1..).unwrap_or("");
+    let carries_prefix = |rest: &str| {
+        rest.strip_prefix(own).is_some_and(|after| {
+            matches!(after.chars().next(), Some('/' | '?' | '#' | '"'))
+        })
+    };
     let Ok(pattern) = regex::Regex::new(r#"\b(href|action|formaction|src)="/"#)
     else {
         return html.to_string();
@@ -225,7 +236,8 @@ pub fn with_realm_links(html: &str, prefix: &str) -> String {
     let mut out = String::with_capacity(html.len() + 64);
     let mut last = 0;
     for m in pattern.find_iter(html) {
-        if html[m.end()..].starts_with('/') {
+        let rest = &html[m.end()..];
+        if rest.starts_with('/') || carries_prefix(rest) {
             continue;
         }
         out.push_str(&html[last..m.end() - 1]);
@@ -1050,4 +1062,27 @@ pub fn layered(
     registry: Arc<RealmRegistry>,
 ) -> axum::Router {
     HttpLayer::minimal(registry).wrap(router)
+}
+
+#[cfg(test)]
+mod realm_link_tests {
+    use super::with_realm_links;
+
+    // Node's `withRealmLinks()` since 2026-11-14 (#444 D12): a root-relative
+    // link is prefixed once, and one that already carries the prefix, or
+    // is protocol-relative, is left alone.
+    #[test]
+    fn a_link_is_prefixed_once() {
+        let page = "<a href=\"/portal\">p</a><a href=\"/realm/acme/portal\">\
+                    q</a><a href=\"/realm/acmex/x\">r</a><img src=\"//h/i\">\
+                    <form action=\"/realm/acme?x=1\"></form>";
+        assert_eq!(
+            with_realm_links(page, "/realm/acme"),
+            "<a href=\"/realm/acme/portal\">p</a><a \
+             href=\"/realm/acme/portal\">q</a><a \
+             href=\"/realm/acme/realm/acmex/x\">r</a><img src=\"//h/i\">\
+             <form action=\"/realm/acme?x=1\"></form>"
+        );
+        assert_eq!(with_realm_links(page, ""), page);
+    }
 }

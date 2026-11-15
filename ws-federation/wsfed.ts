@@ -2210,7 +2210,10 @@ class WsFederation {
       const account = accounts.filter((a) => {
         return a.sid === String(one.id);
       })[0];
-      const href = realms.currentPrefix() + PASSIVE_PATH + '?' + back +
+      // ROOT-RELATIVE: `app.js` puts the realm's prefix on a page's links as
+      // it is sent. Drawn with the prefix it was `/realm/<id>/realm/<id>/
+      // wsfed?...` (2026-11-14, found by #444's D12).
+      const href = PASSIVE_PATH + '?' + back +
         (back ? '&' : '') + 'sts_signout_account=' +
         encodeURIComponent(account ? account.key : '');
       return '<li><a href="' + xmlEscape(href) + '">' +

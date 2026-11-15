@@ -34,6 +34,31 @@
 //      console, after which the person holding no role is refused in both
 //      modes.
 //
+// D12 (#444) ADDS TWO SECTIONS, one per kind of process:
+//
+//   5. (DEVELOPMENT PROCESS) tests/console_bootstrap_product.js 2 and 3: A
+//      REALM IN PRODUCT MODE IS PRODUCT WHERE THE PROCESS IS NOT. A realm
+//      created with `overrides: { "global.mode": "product" }` reports its
+//      window closed and no longer open to anyone, while this job's
+//      development realm reports it open; a person holding no role who
+//      signs in to its console is refused, and claims nothing.
+//   6. (PRODUCT PROCESS) tests/console_claim_at_issuance.js: THE CLAIM IS
+//      MADE AT ISSUANCE TO THE CONSOLE'S OWN CLIENT. In a second realm of
+//      its own the bootstrap administrator signs in with its password
+//      through ANOTHER client first: that client is issued no admin scope
+//      and the console stays unclaimed; then the console's client over the
+//      same sign-on session claims it and is issued both admin scopes; and
+//      the default realm's own window is exactly as it was.
+//
+// Its two realms are removed at the end only when STS_TEST_REMOVE_REALMS is
+// "1" (a shared private probe would fill otherwise); the suite leaves them.
+//
+// What stays in process (each file's D12 note): the federated, Kerberos,
+// security-key and application-subject cases of the claim, the debugger's
+// two refusals (no test stack binds the debugger's listener), the startup
+// line STS-ADMIN-0798, and what a password sign-in IS (amr and authority as
+// a module answers them).
+//
 // **IT IS `local: true`** on the first of `tests/CLAUDE.md`'s questions: it is
 // about this service's own `/admin` and `/admin-api`.
 //
@@ -89,6 +114,11 @@ base = String(base).replace(/\/+$/, "");
 const STAMP = runStamp();
 const REALM = "cbw-" + STAMP;
 const R = "/realm/" + REALM;
+// D12's two realms: born in product in a development process (5), and the
+// claim-at-issuance realm in a product process (6).
+const PRODUCT_REALM = ("cbq-" + STAMP).toLowerCase().slice(0, 31);
+const CLAIM_REALM = ("cbc-" + STAMP).toLowerCase().slice(0, 31);
+const OTHER_CLIENT = "cb-other-client";
 const VISITOR = usernameFor("cb-visitor");
 const HOLDER = usernameFor("cb-holder");
 // A password the default policy accepts: twelve characters or more, an
@@ -704,8 +734,250 @@ async function thePasswordClaimsIt(created, visitorClient) {
   log.debug("Leaving thePasswordClaimsIt().");
 }
 
-async function test() {
-  log.debug("Entering test().");
+// ---------------------------------------------------------------------------
+// 5. A PRODUCT REALM IN A DEVELOPMENT PROCESS (D12).
+// ---------------------------------------------------------------------------
+async function aProductRealmInADevelopmentProcess() {
+  log.debug("Entering aProductRealmInADevelopmentProcess().");
+  log.info("=== 5. a realm born in product, in a development process ===");
+  const made = await api("POST", "/admin-api/realms/create", {
+    id: PRODUCT_REALM, domain: PRODUCT_REALM + ".example.net",
+    name: "Product realm " + STAMP,
+    overrides: { "global.mode": "product",
+                 "authn.allowOptionalSecondFactor": "true" } });
+  assert.strictEqual(made.status, 200, "creating " + PRODUCT_REALM +
+                     " answered " + made.status + " " +
+                     made.text.slice(0, 300));
+  const QR = "/realm/" + PRODUCT_REALM;
+  const roster = await api("GET", QR + "/admin-api/rbac");
+  const dev = await api("GET", R + "/admin-api/rbac");
+  check("5. the mode is asked in the roster's realm: the product realm's " +
+        "window is closed while the development realm's opens",
+        function () {
+    assert.strictEqual(roster.status, 200, roster.text.slice(0, 200));
+    assert.strictEqual(roster.body.openToAnyone, false,
+                       JSON.stringify(roster.body.openToAnyone));
+    assert.strictEqual(roster.body.windowOpens, false);
+    assert.strictEqual(dev.body.windowOpens, true);
+  });
+  const password = await consoleSignIn.ensureConsoleAccount(base + QR,
+    usernameFor("cb-q-visitor"), function (line) {
+      log.info(line);
+    });
+  const visitor = await signInWithPassword(QR, usernameFor("cb-q-visitor"),
+                                           password, password);
+  const reply = await consolePage(visitor, "/admin-api/tokens?per=1");
+  check("5. a person holding no role is refused its console", function () {
+    assert.ok(refusedAccess(reply), "it answered " + reply.status + " " +
+              reply.text.slice(0, 200));
+  });
+  const after = await api("GET", QR + "/admin-api/rbac");
+  check("5. and claims nothing", function () {
+    assert.ok(!after.body.bootstrap.claimedAt,
+              JSON.stringify(after.body.bootstrap));
+  });
+  // A NODE DEFECT, FIXED (2026-11-14, #444's D12): the realm was seeded
+  // with the CREATE's realm's name (`admin`, development) while its roster
+  // asks for the product name (`admin-<hmac>`), so nobody could ever claim
+  // this console. The name is now asked in the realm, and so is whether a
+  // generated password is handed back.
+  const bootName = String((made.body && made.body.bootstrap &&
+                           made.body.bootstrap.username) || "");
+  const generated = String((made.body && made.body.password) || "");
+  check("5. the realm is seeded under the name its roster asks for, and " +
+        "its create hands back that account's generated password",
+        function () {
+    assert.ok(roster.body.bootstrap && roster.body.bootstrap.seeded === true,
+              JSON.stringify(roster.body.bootstrap));
+    assert.strictEqual(bootName, roster.body.bootstrap.username,
+                       JSON.stringify(made.body.bootstrap));
+    assert.ok(/^admin-[0-9a-f]{16}$/.test(bootName), bootName);
+    assert.ok(generated && made.body.username === bootName,
+              JSON.stringify(made.body).slice(0, 300));
+  });
+  await signInWithPassword(QR, bootName, generated, NEW_ADMIN_PASSWORD);
+  // THE CLAIM, READ FROM THE ROSTER through the service's own API client.
+  // (The claimer's own first read is not asserted here: in a product realm
+  // it intermittently answers 401 STS-API-0122 although the claim was made,
+  // reported to #444 separately.)
+  let claimed = await api("GET", QR + "/admin-api/rbac");
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (claimed.body && claimed.body.bootstrap &&
+        claimed.body.bootstrap.claimedAt) {
+      break;
+    }
+    await new Promise(function (r) { setTimeout(r, 500); });
+    claimed = await api("GET", QR + "/admin-api/rbac");
+  }
+  check("5. so its bootstrap administrator signs in with that password and " +
+        "claims the console", function () {
+    assert.ok(claimed.body.bootstrap.claimedAt,
+              JSON.stringify(claimed.body.bootstrap));
+    assert.strictEqual(claimed.body.bootstrap.username, bootName);
+    assert.strictEqual(claimed.body.openToAnyone, false);
+    assert.strictEqual(claimed.body.bootstrapPasswordRequired, false);
+  });
+  log.debug("Leaving aProductRealmInADevelopmentProcess().");
+}
+
+// A sign-in through `clientId`'s own authorization request in `realmBase`,
+// answering the forced password change; answers the jar holding the
+// sign-on session and the scope the code bought.
+async function signInThroughAnotherClient(realmBase, user, password,
+                                          newPassword) {
+  log.debug("Entering signInThroughAnotherClient(). " + user);
+  const cookies = consoleSignIn.jar();
+  const hop = async function (url, options) {
+    const opts = Object.assign({ redirect: "manual" }, options || {});
+    opts.headers = Object.assign({ cookie: cookies.header() },
+                                 opts.headers || {});
+    const r = await fetch(new URL(url, base).toString(), opts);
+    cookies.keep(r);
+    return r;
+  };
+  const pkce = newPkce();
+  const callback = "https://" + OTHER_CLIENT + ".example/cb";
+  const authorize = base + realmBase + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: OTHER_CLIENT,
+      redirect_uri: callback, scope: "openid admin:read admin:write",
+      state: pkce.state, code_challenge: pkce.challenge,
+      code_challenge_method: "S256",
+      resource: base + realmBase + "/admin-api" }).toString();
+  const toScreen = await hop(authorize);
+  const where = toScreen.headers.get("location") || "";
+  let answered = await authnSignin.signIn(base + realmBase,
+    new URL(where, base).toString(),
+    { action: "login", username: user, password: password },
+    { cookie: cookies.header() });
+  cookies.keep(answered);
+  for (let step = 0; step < 2 && answered.next === "password-change";
+       step++) {
+    answered = await authnSignin.changePassword(base + realmBase,
+      answered.location, { new_password: newPassword,
+                           confirm_password: newPassword },
+      { cookie: cookies.header() });
+    cookies.keep(answered);
+    answered = await authnSignin.ignoreOffer(base + realmBase, answered);
+    cookies.keep(answered);
+  }
+  // THE CONSENT SCREEN, which product draws for a client that is not one of
+  // this service's own (`/oauth2/consent`, #576): Allow, as a person would.
+  let at = await hop(answered.location || authorize);
+  for (let i = 0; i < 6 && (at.status === 302 || at.status === 303) &&
+       String(at.headers.get("location") || "").indexOf(callback) !== 0;
+       i++) {
+    const next = new URL(at.headers.get("location"), base).toString();
+    if (authnSignin.isConsent(next)) {
+      const allowed = await authnSignin.consentFor(next, cookies.header());
+      cookies.keep(allowed);
+      at = await hop(allowed.location || authorize);
+    } else {
+      at = await hop(next);
+    }
+  }
+  const back = new URL(at.headers.get("location") || base, base);
+  const code = back.searchParams.get("code") || "";
+  const minted = await call("POST", base + realmBase + "/oauth2/token", {
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code",
+      code: code, redirect_uri: callback, client_id: OTHER_CLIENT,
+      code_verifier: pkce.verifier,
+      resource: base + realmBase + "/admin-api" }).toString() });
+  log.debug("Leaving signInThroughAnotherClient(). " + minted.status);
+  return { cookies: cookies, minted: minted, code: code,
+           where: answered.next + " " + at.status + " " +
+                  (at.headers.get("location") || "") };
+}
+
+// ---------------------------------------------------------------------------
+// 6. THE CLAIM AT ISSUANCE (D12, tests/console_claim_at_issuance.js).
+// ---------------------------------------------------------------------------
+async function theClaimAtIssuance() {
+  log.debug("Entering theClaimAtIssuance().");
+  log.info("=== 6. the bootstrap administrator claims at issuance ===");
+  const defaultBefore = await api("GET", "/admin-api/rbac");
+  const made = await api("POST", "/admin-api/realms/create", {
+    id: CLAIM_REALM, domain: CLAIM_REALM + ".example.net",
+    name: "Claim at issuance " + STAMP });
+  assert.strictEqual(made.status, 200, "creating " + CLAIM_REALM +
+                     " answered " + made.status + " " +
+                     made.text.slice(0, 300));
+  const CR = "/realm/" + CLAIM_REALM;
+  const admin = made.body.username || made.body.bootstrap.username;
+  const generated = made.body.password;
+  const created = await api("POST", CR + "/admin-api/applications/create", {
+    identifier: OTHER_CLIENT, kind: "oauth2-client", name: OTHER_CLIENT,
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [OTHER_CLIENT],
+              oauthTokenEndpointAuthMethod: "none",
+              oauthGrantType: ["authorization_code"],
+              oauthAllowedScope: ["openid"],
+              oauthDelegatedPermission: ["urn:sts:admin-api:admin:read",
+                                         "urn:sts:admin-api:admin:write"],
+              oauthRedirectUri: ["https://" + OTHER_CLIENT +
+                                 ".example/cb"] } });
+  assert.strictEqual(created.status, 200, "creating the other client " +
+                     "answered " + created.status + " " +
+                     created.text.slice(0, 300));
+  const pending = await api("GET", CR + "/admin-api/rbac");
+  check("6.1 before the claim the bootstrap administrator is seeded and " +
+        "pending, its password required", function () {
+    assert.ok(pending.body.bootstrap.seeded &&
+              !pending.body.bootstrap.claimedAt,
+              JSON.stringify(pending.body.bootstrap));
+    assert.strictEqual(pending.body.bootstrapPasswordRequired, true);
+  });
+  const other = await signInThroughAnotherClient(CR, admin, generated,
+                                                 NEW_ADMIN_PASSWORD);
+  const otherScope = String((other.minted.body &&
+                             other.minted.body.scope) || "");
+  const afterOther = await api("GET", CR + "/admin-api/rbac");
+  check("6.2 another client, on a password sign-in as the bootstrap " +
+        "administrator, is issued no admin scope and claims nothing",
+        function () {
+    assert.ok(other.code, "the other client's request got no code: " +
+              other.where);
+    assert.strictEqual(other.minted.status, 200,
+                       other.minted.text.slice(0, 300));
+    assert.ok(!/admin:(read|write)/.test(otherScope), otherScope);
+    assert.ok(!afterOther.body.bootstrap.claimedAt,
+              JSON.stringify(afterOther.body.bootstrap));
+  });
+  const consoleClient = await consoleOverSession(CR,
+                                                 other.cookies.header());
+  const me = await consolePage(consoleClient, "/admin-api/me");
+  let roster = await api("GET", CR + "/admin-api/rbac");
+  for (let attempt = 0; attempt < 40 && !roster.body.bootstrap.claimedAt;
+       attempt++) {
+    await new Promise(function (r) { setTimeout(r, 500); });
+    roster = await api("GET", CR + "/admin-api/rbac");
+  }
+  check("6.3 the console's client over the same session claims the " +
+        "console, recorded on the account", function () {
+    assert.ok(roster.body.bootstrap.claimedAt,
+              JSON.stringify(roster.body.bootstrap));
+    assert.strictEqual(roster.body.bootstrapPasswordRequired, false);
+  });
+  check("6.4 and is issued both admin scopes", function () {
+    assert.strictEqual(me.status, 200, me.text.slice(0, 300));
+    assert.ok((me.body.scopes || []).indexOf("admin:read") >= 0 &&
+              (me.body.scopes || []).indexOf("admin:write") >= 0,
+              JSON.stringify(me.body.scopes));
+    assert.strictEqual(me.body.write, true);
+  });
+  const defaultAfter = await api("GET", "/admin-api/rbac");
+  check("6.5 the default realm's own window is exactly as it was",
+        function () {
+    assert.strictEqual(JSON.stringify(defaultAfter.body.bootstrap),
+                       JSON.stringify(defaultBefore.body.bootstrap));
+    assert.strictEqual(defaultAfter.body.windowOpens,
+                       defaultBefore.body.windowOpens);
+  });
+  log.debug("Leaving theClaimAtIssuance().");
+}
+
+async function testBody() {
+  log.debug("Entering testBody().");
   log.info("Driving the console's bootstrap window at " + base + ".");
   product = await facts.isProduct(base + "/admin-api");
   const created = await api("POST", "/admin-api/realms/create",
@@ -719,16 +991,39 @@ async function test() {
   const visitorClient = await aPersonHoldingNoRole();
   await aCertificateSignIn();
   await thePasswordClaimsIt(created, visitorClient);
+  if (product) {
+    await theClaimAtIssuance();
+  } else {
+    await aProductRealmInADevelopmentProcess();
+  }
 
   // A FLOOR ON THE COUNT, for the reason sts_roles.js gives: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed".
-  const floor = product ? 9 : 8;
+  const floor = product ? 14 : 13;
   assert.ok(checks >= floor,
     "only " + checks + " checks ran where at least " + floor + " should " +
     "have, so a SECTION STOPPED BEING CALLED.");
   log.info(checks + " checks passed.");
   log.info("Test completed successfully.");
+  log.debug("Leaving testBody().");
+}
+
+// D12'S TWO REALMS ARE REMOVED ONLY WHEN STS_TEST_REMOVE_REALMS IS "1": a
+// private probe many jobs share fills its directory otherwise, while the
+// suite's own rule (tests/CLAUDE.md, *No job removes a realm*) leaves them.
+async function test() {
+  log.debug("Entering test().");
+  try {
+    await testBody();
+  } finally {
+    if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+      for (const id of [PRODUCT_REALM, CLAIM_REALM]) {
+        const r = await api("POST", "/admin-api/realms/remove", { id: id });
+        log.info("Removed the realm " + id + ": " + r.status);
+      }
+    }
+  }
   log.debug("Leaving test().");
 }
 

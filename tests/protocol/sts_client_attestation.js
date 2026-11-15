@@ -35,8 +35,20 @@
 //      refused, one that may sign is accepted though its chain names no list, and
 //      with the row off the first is accepted again.
 //
-// What each check refuses in detail, with every error code, is
-// `tests/client_attestation.js`, in process.
+//   i. (D12, #444) Every refusal `tests/client_attestation.js` held in
+//      process, asked of the realm's PAR endpoint, by its OAuth error and
+//      its code off the realm's audit log: the attestation's typ, alg,
+//      claims, expiry, private cnf key, sub and a stranger's x5c (0722,
+//      0723, 0725, 0727-0729, 0731); the PoP's typ, key, jti, aud and iat
+//      (0733-0737); a challenge never issued (0739), a PoP replayed
+//      (0740), a field outside token68 (0720), no proof (0743), no
+//      attestation (0751), and the freshness window (0730).
+//
+// What stays in process, and why: the module-level questions — a JWKS
+// trust's kid and signature (0724, 0726: the anchor is a PEM here and a
+// configured JWKS is a second trust mode no other job writes), a
+// post-quantum client instance key, `requestRefusal()`/`bindingRefusal()`
+// as functions, and client_auth / oauth2_bcp / FAPI's method lists (G, H).
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -79,7 +91,7 @@ const PASSWORD = "Attest-Passw0rd!-" + String(Date.now()).slice(-6);
 const ALICE = names.usernameFor("attest-alice");
 const SCOPE = "openid profile";
 const CHALLENGE_HEADER = "oauth-client-attestation-challenge";
-const FLOOR = 23;
+const FLOOR = 26;
 
 let checks = 0;
 function check(what, fn) {
@@ -603,6 +615,193 @@ async function test() {
         "the token is DPoP-bound (section 5.2)", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 400));
     assert.strictEqual(r.body.token_type, "DPoP");
+  });
+
+  // -------------------------------------------------------------------------
+  // i. EVERY REFUSAL BY ITS CODE (D12, #444): what
+  // `tests/client_attestation.js` asked of the module in process, asked of the realm's PAR endpoint, each
+  // refusal by its OAuth error and its code off the realm's audit log (a
+  // code is recorded, never sent). A fresh challenge before each case, so
+  // the case is the only thing wrong with the request.
+  // -------------------------------------------------------------------------
+  log.info("=== i. every refusal by its code ===");
+  const codeCount = async function (code) {
+    log.debug("Entering codeCount(). " + code);
+    const a = await send(realmApi + "/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    log.debug("Leaving codeCount().");
+    return Number((a.body && a.body.matched) || 0);
+  };
+  const fresh = async function () {
+    log.debug("Entering fresh().");
+    const c = await postForm(disco.challenge_endpoint, {});
+    lastChallenge = c.body.attestation_challenge;
+    log.debug("Leaving fresh().");
+  };
+  // An attestation or a PoP with `o`: header members, claims replaced,
+  // claims dropped, another signing key.
+  const shaped = function (header, claims, key, o) {
+    log.debug("Entering shaped().");
+    const h = Object.assign({}, header, (o && o.header) || {});
+    const c = Object.assign({}, claims, (o && o.claims) || {});
+    ((o && o.drop) || []).forEach(function (name) {
+      delete c[name];
+    });
+    log.debug("Leaving shaped().");
+    if (h.alg === "HS256") {
+      const input = Buffer.from(JSON.stringify(h)).toString("base64url") +
+        "." + Buffer.from(JSON.stringify(c)).toString("base64url");
+      return input + "." + nodeCrypto.createHmac("sha256", "k")
+        .update(input).digest("base64url");
+    }
+    return jws(h, c, (o && o.signWith) || key);
+  };
+  const attestationShaped = function (o) {
+    log.debug("Entering attestationShaped().");
+    log.debug("Leaving attestationShaped().");
+    return shaped({ typ: "oauth-client-attestation+jwt", alg: "RS256",
+                    x5c: [attester.leafDer] },
+                  { iss: "https://attester.example.test", sub: clientId,
+                    iat: now(), exp: now() + 600, cnf: { jwk: k1.jwk } },
+                  attester.key, o);
+  };
+  const popShaped = function (o) {
+    log.debug("Entering popShaped().");
+    log.debug("Leaving popShaped().");
+    return shaped({ typ: "oauth-client-attestation-pop+jwt", alg: "ES256" },
+                  { aud: issuer, jti: nodeCrypto.randomUUID(), iat: now(),
+                    challenge: lastChallenge }, k1.privateKey, o);
+  };
+  const problems = [];
+  const refusedBy = async function (label, headers, code, error) {
+    log.debug("Entering refusedBy(). " + label);
+    const before = await codeCount(code);
+    const answer = await postForm(parUrl, params, headers);
+    let n = await codeCount(code);
+    for (let i = 0; i < 20 && n <= before; i += 1) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 100);
+      });
+      n = await codeCount(code);
+    }
+    if (answer.status < 400 || (error && answer.body.error !== error) ||
+        n <= before || /STS-[A-Z]+-\d{4}/.test(answer.raw)) {
+      problems.push(label + " (" + code + "): " + answer.status + " " +
+                    answer.raw.slice(0, 200) + " rows " + before + "->" + n);
+    }
+    log.debug("Leaving refusedBy().");
+  };
+  const attestationCases = [
+    ["typ JWT", { header: { typ: "JWT" } }, "STS-OAUTH-0722"],
+    ["an HMAC alg", { header: { alg: "HS256" } }, "STS-OAUTH-0723"],
+    ["no sub", { drop: ["sub"] }, "STS-OAUTH-0727"],
+    ["no exp", { drop: ["exp"] }, "STS-OAUTH-0727"],
+    ["no cnf", { drop: ["cnf"] }, "STS-OAUTH-0727"],
+    ["an exp in the past", { claims: { exp: now() - 3600 } },
+     "STS-OAUTH-0728"],
+    ["an iat in the future", { claims: { iat: now() + 3600 } },
+     "STS-OAUTH-0728"],
+    ["a private cnf key", { claims: { cnf: { jwk: Object.assign(
+      { d: "AAAA" }, k1.jwk) } } }, "STS-OAUTH-0729"],
+    ["a sub naming another client",
+     { claims: { sub: "https://other.example.test" } }, "STS-OAUTH-0731"],
+    ["a stranger's x5c", { header: { x5c: [stranger.leafDer] },
+                           signWith: stranger.key }, "STS-OAUTH-0725"]
+  ];
+  for (const one of attestationCases) {
+    await fresh();
+    await refusedBy("attestation: " + one[0], {
+      "OAuth-Client-Attestation": attestationShaped(one[1]),
+      "OAuth-Client-Attestation-PoP": popShaped() }, one[2],
+    "invalid_client");
+  }
+  const popCases = [
+    ["typ JWT", { header: { typ: "JWT" } }, "STS-OAUTH-0733"],
+    ["another key", { signWith: instanceKey().privateKey },
+     "STS-OAUTH-0734"],
+    ["no jti", { drop: ["jti"] }, "STS-OAUTH-0735"],
+    ["no aud", { drop: ["aud"] }, "STS-OAUTH-0735"],
+    ["the token endpoint as aud", { claims: { aud: issuer + "/oauth2/token" } },
+     "STS-OAUTH-0736"],
+    ["two audiences", { claims: { aud: [issuer, "https://elsewhere.test"] } },
+     "STS-OAUTH-0736"],
+    ["an iat ten minutes old", { claims: { iat: now() - 600 } },
+     "STS-OAUTH-0737"],
+    ["an iat in the future", { claims: { iat: now() + 600 } },
+     "STS-OAUTH-0737"]
+  ];
+  for (const one of popCases) {
+    await fresh();
+    await refusedBy("PoP: " + one[0], {
+      "OAuth-Client-Attestation": attestationShaped(),
+      "OAuth-Client-Attestation-PoP": popShaped(one[1]) }, one[2],
+    "invalid_client");
+  }
+  await fresh();
+  await refusedBy("a challenge never issued", {
+    "OAuth-Client-Attestation": attestationShaped(),
+    "OAuth-Client-Attestation-PoP": popShaped({ claims: {
+      challenge: "not-one-this-server-issued-ever" } }) },
+  "STS-OAUTH-0739", "use_attestation_challenge");
+  await fresh();
+  const spentPop = popShaped();
+  const firstPop = await postForm(parUrl, params, {
+    "OAuth-Client-Attestation": attestationShaped(),
+    "OAuth-Client-Attestation-PoP": spentPop });
+  await refusedBy("the same PoP again", {
+    "OAuth-Client-Attestation": attestationShaped(),
+    "OAuth-Client-Attestation-PoP": spentPop }, "STS-OAUTH-0740",
+  "invalid_client");
+  await fresh();
+  await refusedBy("an attestation outside token68", {
+    "OAuth-Client-Attestation": attestationShaped() + " x",
+    "OAuth-Client-Attestation-PoP": popShaped() }, "STS-OAUTH-0720",
+  "invalid_client");
+  await fresh();
+  await refusedBy("neither a PoP nor a DPoP proof", {
+    "OAuth-Client-Attestation": attestationShaped() }, "STS-OAUTH-0743",
+  "invalid_client");
+  await refusedBy("no attestation at all", {}, "STS-OAUTH-0751",
+                  "invalid_client");
+  await ok(realmApi + "/config/set",
+           { key: "oauth2.clientAttestationMaxAgeS", value: "600" },
+           "set the attestation freshness window to 600 s");
+  await fresh();
+  await refusedBy("an attestation older than the window", {
+    "OAuth-Client-Attestation": attestationShaped({ claims: {
+      iat: now() - 3600, exp: now() + 3600 } }),
+    "OAuth-Client-Attestation-PoP": popShaped() }, "STS-OAUTH-0730",
+  "use_fresh_attestation");
+  await ok(realmApi + "/config/reset",
+           { key: "oauth2.clientAttestationMaxAgeS" },
+           "put the freshness window back");
+  check("i1. each attestation refusal at PAR is invalid_client with its " +
+        "code on the realm's audit log and none in the answer: typ " +
+        "(0722), an HMAC alg (0723), a missing sub, exp or cnf (0727), " +
+        "expiry and a future iat (0728), a private cnf key (0729), " +
+        "another client's sub (0731), a stranger's x5c (0725)", function () {
+    assert.deepStrictEqual(problems.filter(function (one) {
+      return /^attestation:/.test(one);
+    }), []);
+  });
+  check("i2. each PoP refusal likewise: typ (0733), a key the attestation " +
+        "does not bind (0734), a missing jti or aud (0735), the token " +
+        "endpoint or two audiences (0736), an iat ten minutes either side " +
+        "(0737)", function () {
+    assert.deepStrictEqual(problems.filter(function (one) {
+      return /^PoP:/.test(one);
+    }), []);
+  });
+  check("i3. a challenge never issued is use_attestation_challenge (0739); " +
+        "a PoP spent once is a replay (0740); a field outside token68 " +
+        "(0720), no proof at all (0743) and no attestation (0751) are " +
+        "invalid_client; an attestation older than " +
+        "clientAttestationMaxAgeS is 400 use_fresh_attestation (0730)",
+        function () {
+    assert.strictEqual(firstPop.status, 201, firstPop.raw.slice(0, 300));
+    assert.deepStrictEqual(problems.filter(function (one) {
+      return !/^(attestation|PoP):/.test(one);
+    }), []);
   });
 
   log.info("=== h. paranoid PKI mode: the attester's certificate (#1360) ===");

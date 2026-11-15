@@ -201,18 +201,10 @@ impl Sessions {
         if !set_id.is_empty() {
             return self.accounts.by_id(&set_id);
         }
-        match cookie::cookies_of(&r.cookie) {
-            Ok(cookies) => self.accounts.set_of(&cookies),
-            Err(e) => {
-                tracing::error!(
-                    "{}authn: a browser's account set could not be read: {}",
-                    tag(codes::STS_AUTHN_0344.as_str()),
-                    e
-                );
-                r.accounts.lock().set_unread = true;
-                None
-            }
-        }
+        // A cookie that does not decode is skipped by cookies_of() (Node's
+        // fix of 2026-11-14), so the header itself never makes the set
+        // unreadable; a store that fails still does, in set_of().
+        self.accounts.set_of(&cookie::cookies_of(&r.cookie))
     }
 
     /// `accountEligible(session)`: a browser's own authenticated sign-in.
@@ -270,12 +262,29 @@ impl Sessions {
     /// as stored now is that object here, and the held copy where it has
     /// gone (Node's `sessions.set()` writes it back either way).
     fn stamp_account_set(&self, sid: &str, held: &Value, set_id: &str) {
-        let mut session = self.here().get(sid).unwrap_or_else(|| held.clone());
-        if session.get("accountSetId") != Some(&json!(set_id)) {
-            if let Some(o) = session.as_object_mut() {
-                o.insert("accountSetId".into(), json!(set_id));
-            }
-            self.here().set(sid, session);
+        // IT NEVER BRINGS A SESSION BACK (Node's fix of 2026-11-14, #444
+        // D12). The stamp wrote the held copy back with a plain set(), so
+        // a session another request or node ended between the caller's
+        // read and this write came back to life. It goes through
+        // noteSessionChanged(), which writes only a row the store still
+        // holds (merged with a newer copy) and nothing for one that is gone.
+        if held.is_null() || held.get("accountSetId") == Some(&json!(set_id)) {
+            return;
+        }
+        if js::or_empty(held.get("id")) != sid {
+            return;
+        }
+        // Node's held object IS the store's row, stamped in place, so its
+        // noteSessionChanged() writes it as it stands; here the stored row
+        // is edited in place, and only while it is held.
+        let id = set_id.to_string();
+        if !self.note_session_changed(sid, |o| {
+            o.insert("accountSetId".into(), json!(id));
+        }) {
+            tracing::debug!(
+                "authn: session {} is gone; its set stamp not written",
+                sid
+            );
         }
     }
 

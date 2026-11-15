@@ -30,6 +30,21 @@
 //      one it would replace; an import of a selection writes only that one
 //      and leaves the importer's other policy as it was; a name the export
 //      does not carry is refused.
+//   F. THE CODES, READ OFF EACH REALM'S AUDIT LOG (D12, #444: carries over
+//      tests/policy_transfer.js C, D, E, G, H and K's refusals): not JSON,
+//      not a JWS and a header without its chain (STS-ADMIN-0926); a payload
+//      altered after signing (0927); another realm asked (0929) and a yes
+//      about another chain (0930); a THIRD realm of the same service still
+//      asked after the importer's yes, because the Issuing CA is pinned
+//      (0929); an unknown transfer action (0934); an export selection the
+//      realm does not store (0937) and an empty one (the request schema
+//      first, STS-API-0009); an import selection the
+//      export does not carry (0938); and every pki.policyExportAlgorithm
+//      value exports with that `alg` and is trusted by its own realm, the
+//      view naming the algorithm in force and carrying no private key. Its
+//      third realm is removed at the end only when STS_TEST_REMOVE_REALMS is
+//      "1" (a hand run against a long-lived probe), for tests/CLAUDE.md's
+//      *No job removes a realm*.
 // ===========================================================================
 
 const assert = require("assert");
@@ -224,6 +239,119 @@ async function selections() {
   log.debug("Leaving selections().");
 }
 
+async function newestSeq(id) {
+  log.debug("Entering newestSeq().");
+  const r = await call(id, "GET", "/audit?per=1");
+  log.debug("Leaving newestSeq().");
+  return (r.body && r.body.newestSeq) || 0;
+}
+
+// A refusal, and the code it recorded in the realm it was made in; a
+// response never carries one.
+async function refusedWith(id, path, payload, code, what) {
+  log.debug("Entering refusedWith(). " + what);
+  const since = await newestSeq(id);
+  const r = await call(id, "POST", path, payload);
+  let codes = [];
+  for (let i = 0; i < 20 && codes.indexOf(code) < 0; i += 1) {
+    const rows = await call(id, "GET", "/audit?per=200");
+    codes = ((rows.body && rows.body.events) || []).filter(function (row) {
+      return row.seq > since && row.errorCode;
+    }).map(function (row) {
+      return row.errorCode;
+    });
+    if (codes.indexOf(code) < 0) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 150);
+      });
+    }
+  }
+  check("F. " + what + " (400, " + code + " on the audit row)", function () {
+    assert.strictEqual(r.status, 400, String(r.raw).slice(0, 300));
+    assert.ok(codes.indexOf(code) >= 0, "recorded: " + codes.join(","));
+    assert.ok(String(r.raw).indexOf("STS-") < 0, "a code was sent");
+  });
+  log.debug("Leaving refusedWith().");
+  return r;
+}
+
+async function theCodes(doc, third) {
+  log.debug("Entering theCodes().");
+  const header = JSON.parse(Buffer.from(doc.protected, "base64url")
+    .toString("utf8"));
+  const inspect = "/policies/transfer/inspect";
+  await refusedWith(EXPORTER, inspect, { document: "not json" },
+                    "STS-ADMIN-0926", "not JSON");
+  await refusedWith(EXPORTER, inspect, { document: "{\"a\":1}" },
+                    "STS-ADMIN-0926", "not a JWS");
+  const noChain = Object.assign({}, header, { x5c: [header.x5c[0]] });
+  await refusedWith(EXPORTER, inspect, { document: Object.assign({}, doc,
+    { protected: Buffer.from(JSON.stringify(noChain))
+        .toString("base64url") }) },
+    "STS-ADMIN-0926", "a header without the chain");
+  const payload = JSON.parse(Buffer.from(doc.payload, "base64url")
+    .toString("utf8"));
+  await refusedWith(EXPORTER, inspect, { document: Object.assign({}, doc, {
+    payload: Buffer.from(JSON.stringify(Object.assign({}, payload,
+      { realm: "somebody-else" }))).toString("base64url") }) },
+    "STS-ADMIN-0927", "a payload altered after it was signed");
+  const asked = await refusedWith(third, "/policies/transfer/import",
+    { document: doc }, "STS-ADMIN-0929",
+    "a third realm sharing the service Root is still asked, the Issuing CA " +
+    "being pinned");
+  check("F. and it asks about the exporter, with nothing written",
+        function () {
+    assert.strictEqual(asked.body.needsTrust, true);
+    assert.strictEqual(asked.body.inspection.realm, EXPORTER);
+  });
+  await refusedWith(third, "/policies/transfer/import",
+    { document: doc, trustSigner: true, issuerFingerprint: "CD".repeat(32) },
+    "STS-ADMIN-0930", "a yes about another chain");
+  await refusedWith(EXPORTER, "/policies/transfer/frobnicate", {},
+                    "STS-ADMIN-0934", "an unknown transfer action");
+  await refusedWith(EXPORTER, "/policies/transfer/export",
+    { policies: [{ kind: "password", name: "ptx-no-such-policy" }] },
+    "STS-ADMIN-0937", "an export of a policy the realm does not store");
+  // OBSERVED: the request schema's minItems refuses an empty list first.
+  await refusedWith(EXPORTER, "/policies/transfer/export", { policies: [] },
+                    "STS-API-0009", "an export of an empty selection, by " +
+                    "the request schema");
+  const one = await call(EXPORTER, "POST", "/policies/transfer/export",
+    { policies: [{ kind: "password", name: "ptx-strict" }] });
+  await refusedWith(IMPORTER, "/policies/transfer/import",
+    { document: one.body.document,
+      policies: [{ kind: "password", name: "default" }] },
+    "STS-ADMIN-0938", "an import naming a profile the export does not carry");
+
+  for (const alg of ["RS256", "PS256", "ES256", "ES384", "ES512", "EdDSA",
+                     "ML-DSA-44", "ML-DSA-65", "ML-DSA-87"]) {
+    const set = await call(EXPORTER, "POST", "/config/set",
+                           { key: "pki.policyExportAlgorithm", value: alg });
+    const view = await call(EXPORTER, "GET", "/policies/transfer");
+    const exported = await call(EXPORTER, "POST",
+                                "/policies/transfer/export", {});
+    const signed = exported.body && exported.body.document;
+    const own = signed ? await call(EXPORTER, "POST", inspect,
+                                    { document: signed }) : null;
+    check("G. pki.policyExportAlgorithm " + alg + " exports with that alg, " +
+          "trusted by its own realm, the view naming it", function () {
+      assert.strictEqual(set.status, 200, String(set.raw).slice(0, 300));
+      assert.ok(String(view.raw).indexOf(alg) >= 0 &&
+                String(view.raw).indexOf("PRIVATE KEY") < 0,
+                String(view.raw).slice(0, 300));
+      assert.strictEqual(exported.status, 200,
+                         String(exported.raw).slice(0, 300));
+      assert.strictEqual(JSON.parse(Buffer.from(signed.protected,
+        "base64url").toString("utf8")).alg, alg);
+      assert.strictEqual(own.status, 200, String(own.raw).slice(0, 300));
+      assert.strictEqual(own.body.origin, "own");
+    });
+  }
+  await call(EXPORTER, "POST", "/config/reset",
+             { key: "pki.policyExportAlgorithm" });
+  log.debug("Leaving theCodes().");
+}
+
 async function test() {
   log.debug("Entering test().");
   await realm(EXPORTER);
@@ -311,6 +439,19 @@ async function test() {
     assert.strictEqual(again.body.origin, "trusted");
   });
   await selections();
+  const THIRD = usernameFor("ptxt").replace(/[^a-z0-9-]/g, "").slice(0, 30);
+  await realm(THIRD);
+  try {
+    await theCodes(doc, THIRD);
+  } finally {
+    if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+      for (const id of [EXPORTER, IMPORTER, THIRD]) {
+        await fetch(serviceApi + "/realms/remove", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: id }) });
+      }
+    }
+  }
   assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");

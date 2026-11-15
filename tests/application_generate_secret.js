@@ -117,6 +117,18 @@ function run(t) {
           rewritten);
   t.check(rewritten.indexOf('href="//elsewhere.example/"') >= 0,
           '4b. and a protocol-relative link is still left alone', rewritten);
+  // A link already carrying the realm's prefix keeps it once (2026-11-14,
+  // #444's D12), as realms.href() does for a redirect; another realm's
+  // segment, or a longer id, is still prefixed.
+  const twice = app.withRealmLinks('<a href="/realm/acme/portal">p</a>' +
+      '<a href="/realm/acme">r</a><a href="/realm/acmex/portal">x</a>',
+      '/realm/acme');
+  t.check(twice.indexOf('href="/realm/acme/portal"') >= 0 &&
+          twice.indexOf('/realm/acme/realm/acme/') < 0 &&
+          twice.indexOf('href="/realm/acme"') >= 0 &&
+          twice.indexOf('href="/realm/acme/realm/acmex/portal"') >= 0,
+          '4c. a link that already carries the prefix is not given it again',
+          twice);
 
   adminActions.applicationsAction({ action: 'forget', application: ID });
 

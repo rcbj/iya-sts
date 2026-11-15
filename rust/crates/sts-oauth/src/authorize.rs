@@ -522,6 +522,10 @@ struct Vetted {
     /// `pageText.key` (#1326): the error page's sentence where one code
     /// covers two cases.
     page_key: Option<String>,
+    /// `verifiedRedirect` (#26): the one refusal that may go back to a
+    /// registered client's own registered redirect URI with nobody signed
+    /// in (`redirectPolicyFor()`).
+    verified_redirect: bool,
 }
 
 fn s(v: Option<&Json>) -> String {
@@ -880,6 +884,7 @@ impl AuthorizationEndpoint {
                     error,
                     description,
                     page_key: None,
+                    verified_redirect: false,
                 },
             ))
         };
@@ -973,6 +978,16 @@ impl AuthorizationEndpoint {
         {
             return Err(refuse(code, "invalid_request", description));
         }
+        // A REDIRECT URI VERIFIED AS THE CLIENT'S OWN (Node's #26,
+        // 2026-11-15): a REGISTERED client, and an address matched against
+        // the URIs registered for IT — not the service-wide
+        // oauth2.redirectUris list (nor a relaxed pushed address, which
+        // this port does not make). Only this kind of address may carry an
+        // RFC 8707 `invalid_target` back with nobody signed in; see the
+        // STS-OAUTH-0950 refusal below.
+        let verified_redirect = values(client.get("redirect_uris"))
+            .iter()
+            .any(|r| self.uri_matches(r, &redirect_uri));
         let response_mode = s(q.get("response_mode"));
         if response_mode == "form_post"
             && crate::model::is_private_use_redirect(&redirect_uri)
@@ -992,6 +1007,7 @@ impl AuthorizationEndpoint {
                         error,
                         description,
                         page_key: None,
+                        verified_redirect: false,
                     },
                 ))
             };
@@ -1197,7 +1213,13 @@ impl AuthorizationEndpoint {
             let strangers =
                 targets.unregistered(&asked, std::slice::from_ref(&ask.base));
             if !strangers.is_empty() {
-                return Err(redirectable(
+                // REDIRECTED EVEN WITH NOBODY SIGNED IN, ONCE THE ADDRESS IS
+                // THE CLIENT'S OWN (Node's #26, rcbj, 2026-11-15): RFC 9700
+                // section 4.11.2's danger is a browser forwarded to an
+                // address nobody vouched for; a registered client's own
+                // registered redirect URI, carrying only `invalid_target`
+                // and the request's `state`, is neither.
+                let mut r = redirectable(
                     &q,
                     codes::STS_OAUTH_0950,
                     "invalid_target",
@@ -1205,7 +1227,9 @@ impl AuthorizationEndpoint {
                         "RFC 8707 section 2: the resource {}",
                         describe_unregistered(&strangers)
                     ),
-                ));
+                );
+                r.1.verified_redirect = verified_redirect;
+                return Err(r);
             }
         }
         Ok((q, types, client))
@@ -1434,10 +1458,12 @@ impl AuthorizationEndpoint {
                 let (q, v) = *e;
                 let q = q.unwrap_or_default();
                 let session = self.sign_on.session_of(&ask.request);
+                // `redirectPolicyFor()`'s `verifiedRedirect` (#26) redirects
+                // as a session does; every other refusal keeps the rule.
                 return self.fail_keyed(
                     ask,
                     &q,
-                    session.is_some(),
+                    session.is_some() || v.verified_redirect,
                     v.code,
                     v.error,
                     &v.description,

@@ -355,10 +355,12 @@ fn member_issues(schema: &Json, value: Option<&Json>, at: &str) -> Vec<Issue> {
                     });
                 }
             }
+            // A LIST MEMBER IS NAMED BY ITS PARAMETER, not by its index
+            // (Node's `fromZod()` fix of 2026-11-14, #444 D12): the field
+            // is the last segment of the path that is a name.
             if let Some(items) = schema.get("items") {
-                for (i, one) in list.iter().enumerate() {
-                    let mut found =
-                        member_issues(items, Some(one), &i.to_string());
+                for one in list.iter() {
+                    let mut found = member_issues(items, Some(one), at);
                     out.append(&mut found);
                 }
             }

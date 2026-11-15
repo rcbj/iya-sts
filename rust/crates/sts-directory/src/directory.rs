@@ -2565,6 +2565,19 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         Ok(())
     }
 
+    /// `bootstrapAdministratorOwner()`: whose bootstrap administrator it
+    /// is, for a refusal's words — the realm the directory answers in
+    /// (Node's fix of 2026-11-14, #444 D12: a trust realm's seeded account
+    /// was called "the default realm's bootstrap administrator").
+    fn bootstrap_administrator_owner(&self, r: usize) -> String {
+        let id = &self.realms[r].id;
+        if id == DEFAULT_REALM {
+            "the default realm's".to_string()
+        } else {
+            format!("the \"{}\" realm's", id)
+        }
+    }
+
     fn delete(&mut self, request: &Request) -> Result<(), LdapError> {
         let dn = request.dn.clone();
         let r = self.realm_for(&dn);
@@ -2583,8 +2596,9 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             return Err(self.refuse(
                 Some(codes::STS_LDAP_0077),
                 format!(
-                    "a delete of {dn} was refused: it is the default realm's bootstrap administrator, which cannot \
-be deleted"
+                    "a delete of {dn} was refused: it is {} bootstrap \
+administrator, which cannot be deleted",
+                    self.bootstrap_administrator_owner(r)
                 ),
                 LdapError::new("UnwillingToPerformError", dn.clone(), None),
                 &dn,
@@ -2668,8 +2682,9 @@ be deleted"
             return Err(self.refuse(
                 Some(codes::STS_LDAP_0077),
                 format!(
-                    "a rename of {dn} was refused: it is the default realm's bootstrap administrator, and a rename \
-would delete that account under another name"
+                    "a rename of {dn} was refused: it is {} bootstrap \
+administrator, and a rename would delete that account under another name",
+                    self.bootstrap_administrator_owner(r)
                 ),
                 LdapError::new("UnwillingToPerformError", dn.clone(), None),
                 &dn,

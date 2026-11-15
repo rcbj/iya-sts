@@ -370,6 +370,12 @@ impl Passwords for CredentialPasswords {
                 .and_then(|a| a.get("name"))
                 .and_then(Json::as_str)
                 .map(str::to_string),
+            reason: verdict
+                .value
+                .get("reason")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string(),
         }
     }
 }

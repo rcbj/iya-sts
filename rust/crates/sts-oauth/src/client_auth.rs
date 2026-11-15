@@ -930,6 +930,11 @@ impl ClientAuth {
         };
         let algs = [alg.as_str()];
         let mut last_error = String::new();
+        // A refusal the signature policy made carries its own code (#1368's
+        // STS-KEYS-0179 for an algorithm keys.acceptedSigningAlgorithms
+        // does not list): it is recorded as that, not as a signature that
+        // did not verify (Node's fix of 2026-11-14, #444 D12).
+        let mut last_code: Option<sts_core::errors::ErrorCode> = None;
         let mut verified: Option<(Json, RegisteredKey)> = None;
         for entry in &entries {
             match verify_jws(
@@ -945,12 +950,20 @@ impl ClientAuth {
                 }
                 // `verifyJwsAsync()` says `invalid signature` where the
                 // bytes do not verify; its other messages are the same.
-                Err(e) => last_error = jwt_error_text(&e),
+                Err(e) => {
+                    last_code = match &e {
+                        sts_crypto::jws::JwtError::Signature(c) => c.code(),
+                        sts_crypto::jws::JwtError::Claims(_) => None,
+                    };
+                    last_error = jwt_error_text(&e);
+                }
             }
         }
         let Some((claims, used)) = verified else {
             return Err(refusal(
-                codes::STS_OAUTH_0007,
+                last_code
+                    .filter(|c| c.subsystem() == "KEYS")
+                    .unwrap_or(codes::STS_OAUTH_0007),
                 format!(
                     "the client_assertion did not verify: {}. It must be \
                      signed by a key this client registered, name this client \

@@ -218,6 +218,19 @@ function checkTheDecisions(t) {
   t.equal(inRealm('sc-at-dpop', function () {
     return sc.accessTokenRefusal({ boundJkt: 'k', proofOk: true });
   }), null, '1x. a proved bound token passes');
+  // #28: /admin-api passes the setting as read in the realm that ISSUED the
+  // token, so a realm's switch does not refuse the service-wide API
+  // client's bearer, and the default realm's switch still holds it.
+  t.equal(inRealm('sc-at-dpop', function () {
+    return sc.accessTokenRefusal({ where: 'the management API',
+                                   dpopRequired: false, boundJkt: '' });
+  }), null, '1x-ii. a bearer token whose issuing realm does not require ' +
+            'DPoP passes in a realm that does (#28)');
+  const issuerRequires = sc.accessTokenRefusal({ dpopRequired: true,
+                                                 boundJkt: '' });
+  t.equal(issuerRequires && issuerRequires.errorCode, 'STS-OAUTH-0528',
+          '1x-iii. and one whose issuing realm requires it is refused ' +
+          'wherever it is presented (#28)');
 
   const unboundAt = inRealm('sc-at-mtls', function () {
     return sc.accessTokenRefusal({ mtlsAvailable: true, boundThumbprint: '' });

@@ -723,6 +723,20 @@ impl Core {
                 ..Default::default()
             });
         }
+        // A RIGHT PASSWORD REFUSED FOR WANT OF A SECOND FACTOR is recorded
+        // as the verifier's STS-AUTHN-0213, as LDAP and SCIM record it; the
+        // answer is the same (Node's fix of 2026-11-14, #444 D12).
+        if local.is_ok()
+            && verified
+                .as_ref()
+                .is_some_and(|v| v.reason == "second-factor-required")
+        {
+            return Err(Refusal::new(
+                codes::STS_AUTHN_0213,
+                401,
+                "The password was not accepted.",
+            ));
+        }
         Err(Refusal::new(
             if local.is_ok() {
                 codes::STS_ENROLL_0014

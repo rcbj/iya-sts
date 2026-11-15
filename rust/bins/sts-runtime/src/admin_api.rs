@@ -605,6 +605,10 @@ impl rp::RoleDirectory for RoleDir {
     fn resolve_owner(&self, _text: &str) -> Json {
         json!({ "kind": "", "dn": "", "name": "" })
     }
+    fn name_for_subject(&self, subject: &str) -> String {
+        self.0
+            .with(|t| t.name_for_subject(&realm::current_id(), subject))
+    }
     fn groups_of_user(&self, name: &str) -> Vec<String> {
         self.0.with(|t| {
             let Some(r) = LiveDir::realm_index(t, &realm::current_id()) else {

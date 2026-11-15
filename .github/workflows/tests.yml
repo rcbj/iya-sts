@@ -80,6 +80,13 @@ on:
         description: Also run the coverage job
         type: boolean
         default: false
+      # THE #444 JOBS (rcbj, 2026-11-15): off unless asked, each reported
+      # SKIPPED; passed to the unit job and every launcher call as
+      # STS_TEST_444. A push or a pull request has no inputs, so `off`.
+      with444:
+        description: Also run the jobs #444 created (STS_TEST_444=on)
+        type: boolean
+        default: false
   # Nightly, for the coverage run. A schedule runs the DEFAULT branch's copy
   # of this file, so every checkout below takes `develop` on a schedule: the
   # tree worth measuring every night is the one work lands on.
@@ -113,6 +120,9 @@ env:
   # log made 20-38 MB of it, truncated before the summary. The service logs
   # are captured into the report artifact either way.
   STS_TEST_ATTACH_RUNNER_ONLY: "1"
+  # The #444 switch for every job below (tests/CLAUDE.md, *The #444
+  # switch*): the unit job hands it to its container, the launcher reads it.
+  STS_TEST_444: ${{ inputs.with444 && 'on' || 'off' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -285,6 +295,7 @@ jobs:
         run: |
           docker run --rm --shm-size=2g \
             -e STS_TEST_SERVICE_URL= -e STS_LDAP_URL= \
+            -e STS_TEST_444 \
             -v "${PWD}/tests/report:/usr/src/sts/tests/report" \
             "ghcr.io/rcbj/iya-sts/iya-sts-tests:${IMAGE_TAG}" \
             node tests/tools/run-report.js --no-protocol --unit-concurrency=4 \

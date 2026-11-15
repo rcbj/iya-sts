@@ -392,6 +392,29 @@ async function unwrapAssertion(presented, opts) {
   // the authorization server the request actually reached — which is what the
   // sender fetched from the JWKS at the path it posted to.
   // -------------------------------------------------------------------------
+  //
+  // **THE REALM'S ENCRYPTION KEYS FIRST (2026-11-14, found by #444's D12).**
+  // The JWKS publishes two keys marked `use: "enc"` (the request object's,
+  // `helpers.requestObjectKeysFor()`), and RFC 7517 section 4.2 says that is
+  // the key a sender encrypts to. Until this day only the signing keys were
+  // tried, so a client that followed the JWKS was refused "holds no key it
+  // could be encrypted to ... under kid 'sts-ro-...'". The `enc` key of the
+  // family is tried first; the signing keys are still tried after it, so a
+  // client that has been encrypting to one keeps working (backwards
+  // compatibility from 1.0.0 on).
+  const encKeys = (function () {
+    try {
+      return require('../common/helpers').requestObjectKeysFor();
+    } catch (e) {
+      log.debug('Caught in unwrapAssertion(): ' + ((e && e.message) || e));
+      return null;
+    }
+  })();
+  const kidMatches = function (jwk) {
+    log.debug('Entering kidMatches().');
+    log.debug('Leaving kidMatches().');
+    return !header.kid || String(header.kid) === String((jwk || {}).kid);
+  };
   const symmetric = stsCrypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0;
   const candidates = [];
   if (symmetric) {
@@ -404,6 +427,11 @@ async function unwrapAssertion(presented, opts) {
     // the same reason — an agreement either produces the right secret or it
     // does not.
     const wanted = String((header.epk && header.epk.crv) || '');
+    const encEc = encKeys && encKeys.ec;
+    if (encEc && encEc.publicJwk && kidMatches(encEc.publicJwk) &&
+        (!wanted || encEc.publicJwk.crv === wanted)) {
+      candidates.push({ privateKey: encEc.privateKey });
+    }
     (STS.extraKeys || []).forEach(function (one) {
       const jwk = one.publicJwk || {};
       if (jwk.kty !== 'EC' || (wanted && jwk.crv !== wanted)) {
@@ -436,6 +464,10 @@ async function unwrapAssertion(presented, opts) {
       candidates.push({ privateJwk: held.privateJwk });
     }
   } else {
+    const encRsa = encKeys && encKeys.rsa;
+    if (encRsa && encRsa.publicJwk && kidMatches(encRsa.publicJwk)) {
+      candidates.push({ privateKey: encRsa.privateKey });
+    }
     // Every RSA key of this realm, JOSE first — each live generation (#42).
     require('../common/helpers').ownRsaDecryptionKeys('jose')
       .forEach(function (one) {

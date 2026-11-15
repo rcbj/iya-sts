@@ -79,9 +79,21 @@ class StepAddress {
     }).filter(function (one: string) {
       return one.indexOf(STEP_COOKIE + '=') === 0;
     })[0] || '';
+    let step = '';
+    if (pair && mode.hidesStepIds()) {
+      // A value that does not decode is no step id this service wrote, and
+      // is skipped rather than thrown: `decodeURIComponent()` throws on a
+      // bad percent escape (Authn.cookiesOf()'s rule, 2026-11-14).
+      try {
+        step = decodeURIComponent(pair.slice(STEP_COOKIE.length + 1));
+      } catch (e) {
+        log.debug("Caught in StepAddress.stepOfCookie(): " +
+                  ((e && e.message) || e));
+        step = '';
+      }
+    }
     log.debug("Leaving StepAddress.stepOfCookie().");
-    return pair && mode.hidesStepIds()
-      ? decodeURIComponent(pair.slice(STEP_COOKIE.length + 1)) : '';
+    return step;
   }
 
   /**

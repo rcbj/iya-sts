@@ -38,6 +38,18 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "MIT"
 
+# The OAuth wire snapshot moved beside its protocol job (#444's D12) is this
+# service's own record, not a protocol job's copy: it keeps the BSL it had in
+# tests/. A JSON file carries no header, so it is declared here, after the
+# block above, which it would otherwise fall under.
+[[annotations]]
+path = [
+  "tests/protocol/oauth_model_wire.snapshot.json",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "BUSL-1.1"
+
 # The id-proto-debugger user guides under docs/debugger/, copied from that
 # project's release 0.9.3 (#1717): the same owner, and that project's MIT
 # licence, like the protocol jobs above. The chapter's own two pages,

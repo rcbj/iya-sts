@@ -2573,6 +2573,11 @@
    "spec": ""
   },
   {
+   "code": "STS-SCHED-0024",
+   "summary": "A run of a cluster job waited because another run of the same job in the same realm was still running, on this node or another (#1757): a manual run waits until that run ends, and a scheduled run until it ends or its slot does, after which the next slot is due.",
+   "spec": ""
+  },
+  {
    "code": "STS-KEYS-0001",
    "summary": "The artifact logger handed to an XML encryption threw and was ignored.",
    "spec": ""
@@ -4364,12 +4369,12 @@
   {
    "code": "STS-PKI-0183",
    "summary": "A certificate authority was not built because the store could not be asked whether another node is building it.",
-   "spec": "the caller's refusal (errors on a console or /admin-api reply)"
+   "spec": "HTTP 503 with Retry-After from /admin-api/pki; the caller's refusal (errors on a console reply) elsewhere"
   },
   {
    "code": "STS-PKI-0184",
-   "summary": "Another node held the build of a certificate authority for longer than this node waits, and nothing appeared in the store.",
-   "spec": "the caller's refusal (errors on a console or /admin-api reply)"
+   "summary": "A build of a certificate authority was waited for longer than a caller waits — held by another node or process under its claim, or queued behind builds of the same scope in this process — so the caller was refused rather than left waiting.",
+   "spec": "HTTP 503 with Retry-After from /admin-api/pki; the caller's refusal (errors on a console reply) elsewhere"
   },
   {
    "code": "STS-PKI-0185",
@@ -16071,12 +16076,12 @@
   },
   {
    "code": "STS-LDAP-0076",
-   "summary": "In product mode, an add or modify named createTimestamp, modifyTimestamp or entryDN, which the directory maintains itself.",
+   "summary": "An add or modify named an attribute the directory maintains itself: entryUUID or stsProvisionedBy in every mode, and in product mode createTimestamp, modifyTimestamp and entryDN as well.",
    "spec": "LDAP result code 19, constraintViolation"
   },
   {
    "code": "STS-LDAP-0077",
-   "summary": "A delete or rename of the default realm's bootstrap administrator (admin.bootstrapUsername) was refused — over LDAP or SCIM — because that account cannot be removed.",
+   "summary": "A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP or SCIM — because that account cannot be removed.",
    "spec": "LDAP result code 53, unwillingToPerform; SCIM 403"
   },
   {

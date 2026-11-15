@@ -373,10 +373,7 @@ fn pure(doc: &Value, replay: &Arc<Replay>) -> Vec<String> {
                 last_now.as_f64().unwrap(),
             ),
             "cookiesOf" => {
-                match cookie::cookies_of(args[0].as_str().unwrap()) {
-                    Ok(o) => Value::Object(o),
-                    Err(e) => json!({"threw": e}),
-                }
+                Value::Object(cookie::cookies_of(args[0].as_str().unwrap()))
             }
             "methodPhraseFor" => {
                 json!(record::method_phrase_for(&strings(&args[0])))

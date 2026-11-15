@@ -1306,9 +1306,26 @@ class AuditExport {
       headers: sent
     };
     if (pinned) {
+      // PINNED to the address that was checked; the Host header, the TLS
+      // server name and the certificate check still come from the URL's
+      // name. **AND IN THE SHAPE THE CALLER ASKED FOR (2026-11-14, found by
+      // #444's D12).** Node's `net.connect()` asks with `{ all: true }`
+      // (its family autoselection) and then wants a LIST of
+      // `{ address, family }`; this answered the single-address form to
+      // every caller, so every delivery to a destination given by host NAME
+      // failed with "Invalid IP address: undefined" — and one given by
+      // address never called the lookup at all, which is why it worked.
+      // `federation_http.ts`'s pinnedLookup() answers both forms the same way.
       options.lookup = function (_hostname: string, opts: Json,
                                  cb?: Json): void {
+        logger.debug("Entering AuditExport.postHttp()'s lookup().");
         const done = typeof opts === 'function' ? opts : cb;
+        if (opts && typeof opts === 'object' && opts.all) {
+          logger.debug("Leaving AuditExport.postHttp()'s lookup(). All.");
+          done(null, [{ address: pinned, family: family }]);
+          return;
+        }
+        logger.debug("Leaving AuditExport.postHttp()'s lookup().");
         done(null, pinned, family);
       };
     }

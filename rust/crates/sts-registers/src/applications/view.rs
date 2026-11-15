@@ -102,6 +102,39 @@ fn masked_credential(value: &Value) -> Value {
     }
 }
 
+// THE REGISTRATION DOCUMENT CARRIES TWO CREDENTIALS (Node's
+// `maskedRegistrationJson()`, 2026-11-14, #444 D12). `appRegistrationJson`
+// is the RFC 7591 registration response kept as it was answered, and that
+// answer holds the `client_secret` and the RFC 7592
+// `registration_access_token`. The attribute is not a credential, so it was
+// answered whole to every Admin Read caller while
+// `appRegistrationAccessToken` beside it was masked. The two members are
+// masked as the attribute is; the rest of the document stands, and a value
+// that is not a JSON object is answered as it is.
+fn masked_registration_json(value: &Value) -> Value {
+    match value {
+        Value::Array(l) => {
+            Value::Array(l.iter().map(masked_registration_json).collect())
+        }
+        Value::String(text) if !text.is_empty() => {
+            let Ok(Value::Object(mut document)) =
+                serde_json::from_str::<Value>(text)
+            else {
+                return value.clone();
+            };
+            for name in ["client_secret", "registration_access_token"] {
+                if let Some(v) = document.get_mut(name) {
+                    *v = masked_credential(v);
+                }
+            }
+            // `JSON.stringify()`: serde_json keeps the member order
+            // (preserve_order) and writes the compact form Node does.
+            json!(Value::Object(document).to_string())
+        }
+        _ => value.clone(),
+    }
+}
+
 /// `KINDS`, as the page publishes them.
 #[tracing::instrument(level = "debug")]
 pub fn kinds_json() -> Value {
@@ -170,6 +203,8 @@ impl ApplicationRegistry {
                 for (k, v) in o.iter_mut() {
                     if names.contains(&k.as_str()) {
                         *v = masked_credential(v);
+                    } else if k == "appRegistrationJson" {
+                        *v = masked_registration_json(v);
                     }
                 }
             }
@@ -321,5 +356,32 @@ impl ApplicationRegistry {
             "protocols": protocols_json(),
             "applications": rows,
         })
+    }
+}
+
+#[cfg(test)]
+mod registration_json_tests {
+    use super::masked_registration_json;
+    use serde_json::json;
+
+    // `maskedRegistrationJson()` (Node's fix of 2026-11-14): the two
+    // credentials masked, the rest of the document as it stood, anything
+    // that is not a JSON object answered as it is.
+    #[test]
+    fn the_two_credentials_are_masked_and_nothing_else() {
+        let doc = r#"{"client_id":"c","client_secret":"s","registration_access_token":"t","n":1}"#;
+        assert_eq!(
+            masked_registration_json(&json!([doc])),
+            json!(["{\"client_id\":\"c\",\"client_secret\":\"(set — not \
+                 returned)\",\"registration_access_token\":\"(set — not \
+                 returned)\",\"n\":1}"])
+        );
+        assert_eq!(masked_registration_json(&json!("[1]")), json!("[1]"));
+        assert_eq!(masked_registration_json(&json!("x{")), json!("x{"));
+        assert_eq!(masked_registration_json(&json!("")), json!(""));
+        assert_eq!(
+            masked_registration_json(&json!(r#"{"client_secret":""}"#)),
+            json!(r#"{"client_secret":""}"#)
+        );
     }
 }

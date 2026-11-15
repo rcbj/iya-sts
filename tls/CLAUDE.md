@@ -424,7 +424,15 @@ What is this directory's:
   awaits it before `recordClientCertificate()`. A certificate the policy refuses
   starts **no session** and is **not recorded** as an authentication — it gets a
   refusal audit row with `STS-PKI-0118` or `-0119` instead — and the route says
-  so in its answer, which carries the whole verdict at `revocation`. **It also
+  so in its answer, which carries the whole verdict at `revocation`. **The
+  route's refusal is a row of its own since 2026-11-15 (#34, #38)**: the
+  handshake's row is the default realm's (a handshake has no realm) and it is
+  written only where the PROCESS's policy refuses, so `STS-PKI-0119` under a
+  realm's hard-fail and `STS-PKI-0189` (RFC 9608) were a log line only, and
+  `STS-PKI-0118` never reached the realm the request named. `GET /tls/sign-in`
+  now marks its answer with the verdict's own code, and the call log writes
+  the row in the request's realm; the answer is still 200 with
+  `session.refusedOnRevocation`. **It also
   answered 403 on 9443 until 2026-09-16**; that listener is gone and nothing
   here refuses a connection any more. `GET /tls` carries the policy.
 * **NOT AT THE HANDSHAKE, AND THAT WAS MEASURED RATHER THAN ASSUMED.** Node's
@@ -2076,7 +2084,15 @@ Admin Read, drawn by `web_tls_connection.ts` from `GET
   certificate as `describeCertificate()` describes a sighting, its RFC 8705
   thumbprint, the identity gate's answer (`issuedIdentityOf()`), and the
   revocation verdict `GET /tls/sign-in` would act on (`checkedSocket()`). It
-  starts no session and records no sighting;
+  starts no session and records no sighting. **`verified` IS NOT TRUE FOR A
+  CERTIFICATE REFUSED ON REVOCATION (#37, 2026-11-15)**: it was the
+  handshake's `socket.authorized` alone, which on the main port carries no
+  revocation by design, so a revoked certificate every door refuses read
+  `verified: true`. It is the handshake's verdict and not `refused` now; the
+  handshake's own answer is `handshakeVerified`, and `revocationStatus` is
+  the verdict in brief — `status`, `refused`, `checked`, `policy` and the
+  `source` that decided (`revocationStatusOf()`). Both members were added;
+  none was removed;
 * `forwarded` — `/tls/forwarded`'s object, extended: `global.trustProxy`,
   `global.trustedProxies`, whether the peer is a trusted proxy and whether the
   headers were `believed` (`client_address.js`'s own answer, not a second

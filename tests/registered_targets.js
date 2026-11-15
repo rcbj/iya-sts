@@ -295,7 +295,8 @@ function authorize(t, f, base) {
     });
     log.debug("Leaving vet().");
     return { ok: !!out.ok, code: out.code || '', error: out.error || '',
-             redirect: !!out.redirect, description: out.description || '' };
+             redirect: !!out.redirect, description: out.description || '',
+             verified: !!out.verifiedRedirect };
   };
   const refused = [vet('product', NOBODY), vet('product', f.seen),
                    vet('product', [API, NOBODY]),
@@ -317,6 +318,24 @@ function authorize(t, f, base) {
           'indicator, /account-api and /report-api pass, as does no ' +
           'resource',
           JSON.stringify(passed));
+  // #26: the refusal says the address is the registered client's own, and
+  // RFC 9700 mode's authenticate-before-redirect rule lets exactly that one
+  // go back with nobody signed in; without it the page stays.
+  t.check(refused.every(function (r) {
+    return r.verified === true;
+  }), 'T3d. the refusal marks rt-oauth\'s registered redirect URI as ' +
+          'verified (#26)', JSON.stringify(refused));
+  const bcp = require('../oauth-oidc/oauth2_bcp');
+  const policies = inMode('product', function () {
+    return [bcp.redirectPolicyFor({ hasSession: false,
+                                    verifiedRedirect: true }),
+            bcp.redirectPolicyFor({ hasSession: false })];
+  });
+  t.check(policies[0].redirect === true && policies[1].redirect === false &&
+          policies[1].requirement === 'authenticate-before-redirect',
+          'T3e. product, nobody signed in: a verified invalid_target is ' +
+          'redirected, any other error is still shown (#26)',
+          JSON.stringify(policies));
   log.debug("Leaving authorize().");
   return server;
 }

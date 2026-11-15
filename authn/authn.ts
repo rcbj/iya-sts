@@ -1817,7 +1817,8 @@ class Authn {
   // protocol module reads to answer "is this person already signed in?", and
   // the only place in the service that writes it.
   /**
-   * Parses a request's Cookie header.
+   * Parses a request's Cookie header. A cookie whose value is not
+   * URI-encoded is skipped, never thrown.
    *
    * @param req - the request
    * @returns a map of cookie name to decoded value
@@ -1826,13 +1827,31 @@ class Authn {
     const { log } = this.deps;
     log.debug("Entering Authn.cookiesOf().");
     const out: Record<string, any> = {};
+    let skipped = 0;
+    // ONE COOKIE THAT DOES NOT DECODE IS THAT COOKIE'S PROBLEM, NOT THE
+    // BROWSER'S (2026-11-14, found by #444's D12). `decodeURIComponent()`
+    // throws `URIError` on a bad percent escape, and a site on a shared
+    // parent domain can set any cookie it likes (`x=%E0%A4%A`), so one bad
+    // value made every session door answer 500 and the account set read as
+    // unreadable — a 503 picker and STS-AUTHN-0344 on every request — for
+    // a browser whose own cookies were all well formed. A value this service
+    // wrote is always encoded, so one that does not decode is not one of
+    // ours: it is left out and the others are read.
     String(req.headers.cookie || '').split(';').forEach(function (part) {
       const i = part.indexOf('=');
-      if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(
-          part.slice(i + 1).trim());
+      if (i <= 0) {
+        return;
+      }
+      try {
+        out[part.slice(0, i).trim()] = decodeURIComponent(
+            part.slice(i + 1).trim());
+      } catch (e) {
+        log.debug("Caught in Authn.cookiesOf(): " + ((e && e.message) || e));
+        skipped++;
+      }
     });
     log.debug("Leaving Authn.cookiesOf(). " + Object.keys(out).length +
-              " cookie(s).");
+              " cookie(s)" + (skipped ? ", " + skipped + " skipped." : "."));
     return out;
   }
 
@@ -2329,14 +2348,29 @@ class Authn {
 
   // A session's own set, stamped on the row so that its end can find the
   // set by key (`accountSessionEnded()`) without a scan.
+  //
+  // **IT NEVER BRINGS A SESSION BACK (2026-11-14, found by #444's D12).**
+  // The stamp wrote the HELD object back with a plain `set()`, so a session
+  // another request or node ended between the caller's read and this write
+  // came back to life. It goes through `noteSessionChanged()`, which writes
+  // only a row the store still holds (merged with a newer copy where one
+  // replaced it) and writes nothing for a session that is gone.
   private stampAccountSet(sid, session, setId) {
     const { log } = this.deps;
     log.debug("Entering Authn.stampAccountSet().");
-    if (session && session.accountSetId !== setId) {
-      session.accountSetId = setId;
-      sessions.set(String(sid), session);
+    if (!session || session.accountSetId === setId) {
+      log.debug("Leaving Authn.stampAccountSet(). Nothing to stamp.");
+      return;
     }
-    log.debug("Leaving Authn.stampAccountSet().");
+    if (String(session.id || '') !== String(sid)) {
+      log.debug("Leaving Authn.stampAccountSet(). The row is not " + sid +
+                "'s.");
+      return;
+    }
+    session.accountSetId = setId;
+    const written = this.noteSessionChanged(session);
+    log.debug("Leaving Authn.stampAccountSet(). " +
+              (written ? "Stamped." : "The session is gone; not written."));
   }
 
   // ---------------------------------------------------------------------------
@@ -5347,6 +5381,39 @@ class Authn {
       this.sessionCapLoggedAt = now;
     }
     log.debug("Leaving Authn.noteCapacityEnd().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHETHER THE REALM IS AT ITS SESSION CAP NOW, with no side effect (2026-11-14,
+  // found by #444's D12). A browser that arrives while the realm is full is
+  // given no arrival session (`startArrivalSession()`), so its sign-in
+  // screen's acts carry no session and were refused "Load the sign-in page
+  // again" — which no reload changes while the realm stays full, and which
+  // named no code. `/authn-api` asks this to say what is true instead. It
+  // counts as `makeRoomForSession()` counts and frees nothing, so an expired
+  // row that an insert would end is still counted: the answer can be "full"
+  // a moment early, never "not full" while it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether the ambient realm holds `authn.maxSessions` sessions now.
+   *
+   * @returns true at the cap; false with no cap, below it, or when the count
+   *   cannot be read
+   */
+  realmAtSessionCap() {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Authn.realmAtSessionCap().");
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    if (!(cap >= 1)) {
+      log.debug("Leaving Authn.realmAtSessionCap(). No cap.");
+      return false;
+    }
+    const size = this.windowOn()
+      ? sessionWindow.countForAdmission(realms.currentId(), cap)
+      : sessions.realmMap().size;
+    log.debug("Leaving Authn.realmAtSessionCap(). " + size + " of " + cap +
+              ".");
+    return size !== null && Number(size) >= cap;
   }
 
   private noteRealmRefusal() {
@@ -13344,6 +13411,32 @@ class Authn {
     log.debug("Leaving Authn.refuseAtScreen().");
   }
 
+  // ---------------------------------------------------------------------------
+  // A SELF-SERVICE RECOVERY DOOR WAS PASSED, AND THE ENTRY SAYS SO (2026-11-14
+  // for a recovery code, 2026-11-15 for an emailed code or link, #31; both
+  // found by #444's D12). Under a recoveryAssurance that holds a recovery to
+  // a passkey (3cq), the administrator's password, a reset link and an
+  // activation link each write `stsRecoveryPending` (noteRecovery()); a
+  // recovery code, an emailed code and an emailed link wrote nothing: the
+  // sign-in was held (STS-AUTHN-0381), but nothing said a recovery was under
+  // way once the person left the set-up. The finisher calls this before
+  // either way on, so the next sign-in meets it until a passkey signs them
+  // in. noteRecovery() writes nothing where no hold is required (no passkey,
+  // or `any`), and nothing is written for a door the policy refuses
+  // outright (`operator-only`, STS-AUTHN-0380), which is no recovery at all.
+  // ---------------------------------------------------------------------------
+  private noteRecoveryDoor(username: string, door: string): void {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.noteRecoveryDoor(). " + door);
+    const doorRefused = passkeyPolicy.recoveryRefusal({
+      username: username, door: door, at: 'door',
+      covered: credentials.holdsPasskey(username) });
+    if (!doorRefused || doorRefused.code !== 'STS-AUTHN-0380') {
+      credentials.noteRecovery(username, door);
+    }
+    log.debug("Leaving Authn.noteRecoveryDoor().");
+  }
+
   // AN EMAILED SECOND FACTOR, VERIFIED: the step's first factor and `otp`
   // (D2 — RFC 8176 registers nothing for email, and a single-use secret sent
   // to the person is what `otp` names), `acr` `mfa` (D1), and the credential
@@ -13366,6 +13459,9 @@ class Authn {
     pendingMfa.delete(String(mfaId));
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
+    // An emailed code or link is a recovery door (#31), as a recovery code
+    // is; recorded before either way on.
+    this.noteRecoveryDoor(step.username, 'email-' + kind);
     if (step.thenEnrol) {
       // A proof before an enrolment (#475): the set-up screen, no session.
       this.enrolAfterProof(res, step, amr);
@@ -13412,6 +13508,9 @@ class Authn {
     const record = step.authn;
     const username = step.username;
     const credential = { kind: 'email-' + kind };
+    // The same recovery door as a second factor's (#31): recorded before
+    // the risk assessment and the second factor it may ask for.
+    this.noteRecoveryDoor(username, 'email-' + kind);
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: String(record.application || ''),
         credential: credential,
@@ -17278,7 +17377,7 @@ class Authn {
                 "verify.");
       return this.passkeyRefused(res, base, record,
         webauthnPolicy.failureCodeFor(verdict),
-        'the assertion did not verify — ' +
+        'the assertion did not verify; this check failed: ' +
         (verdict.failed || []).join('; '), SAID);
     }
     const spent = await credentials.spendAssertion({
@@ -17375,8 +17474,9 @@ class Authn {
         'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
-      return this.stepRefused(res, 'The second factor did not verify — ' +
-                              failed.join('; ') + '.');
+      return this.stepRefused(res, 'The second factor did not verify; ' +
+                              'this check failed: ' + failed.join('; ') +
+                              '.');
     }
 
     pendingMfa.delete(String(body.mfa_id));
@@ -17434,6 +17534,13 @@ class Authn {
                  'recovery; nothing is signed in until it is used',
         detail: { requiredBy: 'recovery' }
       });
+      // THE SIGN-IN IS STILL REFUSED, AND IT IS RECORDED SO (2026-11-14,
+      // found by #444's D12): no session starts here, because a key
+      // registered on the strength of the recovery is not a passkey that
+      // signed the person in (#901). The act answered `next: redirect` with
+      // no STS-AUTHN-0381 anywhere, as if the sign-in had gone through; the
+      // code is marked on the act, so its call-log row names it.
+      this.deps.errorCodes.mark(res, 'STS-AUTHN-0381');
       this.returnToCaller(res, step.authn, null, null);
       log.debug("Leaving Authn.finishWebauthn(). A recovery passkey " +
                 "registered; back to sign in with it.");
@@ -17706,6 +17813,9 @@ class Authn {
     // never a first factor, so the first factor's `amr` is always in the list.
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
+    // A RECOVERY CODE IS A RECOVERY DOOR, AND IT IS RECORDED ON THE ENTRY
+    // (2026-11-14, found by #444's D12) — see noteRecoveryDoor().
+    this.noteRecoveryDoor(step.username, 'recovery-code');
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol) {
@@ -20288,6 +20398,7 @@ export = {
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,
   cookiesOf: slot.forward('cookiesOf'),
+  realmAtSessionCap: slot.forward('realmAtSessionCap'),
   sessionOf: slot.forward('sessionOf'),
   // SEVERAL ACCOUNTS IN ONE BROWSER (#561): `authn/CLAUDE.md`, *Several
   // signed-in accounts in one browser*, has each one's contract.
