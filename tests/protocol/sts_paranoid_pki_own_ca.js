@@ -159,12 +159,22 @@ function verified(view) {
   return !!(view && view.clientCertificate && view.clientCertificate.verified);
 }
 
+// The handshake's own verdict (#37): `verified` also holds the revocation
+// verdict since then, which a policy that consults revocation refuses.
+function handshakeVerified(view) {
+  log.debug("Entering handshakeVerified().");
+  log.debug("Leaving handshakeVerified().");
+  return !!(view && view.clientCertificate &&
+            view.clientCertificate.handshakeVerified);
+}
+
 // The view, asked until it says `want` or a few seconds pass: a setting is
 // applied to the listener's context, and the next handshake reads it.
-async function settle(tls, want) {
+async function settle(tls, want, read) {
   log.debug("Entering settle().");
+  const asked = read || verified;
   let view = await connection(tls);
-  for (let i = 0; i < 20 && verified(view) !== want; i += 1) {
+  for (let i = 0; i < 20 && asked(view) !== want; i += 1) {
     await K.sleep(300);
     view = await connection(tls);
   }
@@ -213,10 +223,10 @@ async function test(realm) {
   const good = await enrol(realm, who, "tls-client");
   const bad = await enrol(realm, who, "tls-client");
   await revoke(realm, bad);
-  const off = await settle(bad, true);
+  const off = await settle(bad, true, handshakeVerified);
   check("A1. with pki.paranoid off a revoked client certificate of the " +
         "realm's CA still verifies at the handshake", function () {
-    assert.strictEqual(verified(off), true, JSON.stringify(off));
+    assert.strictEqual(handshakeVerified(off), true, JSON.stringify(off));
   });
   // Revocation is consulted only where pki.revocationCheck asks it to;
   // development's `auto` asks nothing, so hard-fail beside paranoid.
