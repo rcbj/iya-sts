@@ -92,13 +92,14 @@ const API = base + "/realm/" + REALM + "/admin-api";
 // host as the service's network sees it (test_crl_host.js's variable).
 const PEER = String(process.env.OUTBOUND_TEST_HOST ||
                     process.env.GNAP_PUSH_HOST || "localhost");
-// THE WEBHOOKS ARE GIVEN THAT HOST'S ADDRESS, NOT ITS NAME (2026-11-15):
-// Node's HTTP destination refuses every delivery to a host NAME with
-// "Invalid IP address: undefined" (its pinned lookup answers the wrong
-// shape), while a syslog destination by the same name delivers. Reported
-// to #444 as a Node defect; an address is what both runtimes deliver to.
-// OUTBOUND_TEST_ADDRESS names it where the job's own lookup of PEER would
-// answer differently from the service's.
+// THE FIRST WEBHOOK IS GIVEN THAT HOST'S NAME, THE REST ITS ADDRESS. Until
+// 2026-11-14 Node's HTTP destination refused every delivery to a host NAME
+// with "Invalid IP address: undefined" (its pinned lookup answered the
+// single-address form to `{ all: true }`), while a syslog destination by
+// the same name delivered — a Node defect #444's D12 found, now fixed, so
+// the JSON webhook is given the name and has to deliver. The others keep
+// the address. OUTBOUND_TEST_ADDRESS names it where the job's own lookup of
+// PEER would answer differently from the service's.
 const dns = require("dns");
 
 let checks = 0;
@@ -608,12 +609,13 @@ async function hooks(peer) {
   const address = process.env.OUTBOUND_TEST_ADDRESS ||
     (await dns.promises.lookup(PEER, { family: 4 })).address;
   const at = "http://" + address + ":" + peer.port;
+  const byName = "http://" + PEER + ":" + peer.port;
   await ok(post("/config/set", { key: "auditExport.redactKeys",
     value: "password,secret,token,authorization,method" }),
     "redacted the detail name method");
   await ok(act("add", { id: "json", type: "webhook", name: "JSON",
-    url: at + "/ok", excludeAttributes: "durationMs",
-    headers: "X-Trace: d12" }), "added the JSON webhook");
+    url: byName + "/ok", excludeAttributes: "durationMs",
+    headers: "X-Trace: d12" }), "added the JSON webhook, by host name");
   await until(function () {
     return peer.got.ok.some(function (one) {
       return /"protocol\.call"/.test(one.body);
@@ -633,6 +635,10 @@ async function hooks(peer) {
   const call = delivered.filter(function (one) {
     return one.event && one.event.action === "protocol.call";
   })[0];
+  check("H0. a webhook given by host NAME delivers (the pinned lookup " +
+        "answers net.connect()'s { all: true })", function () {
+    assert.ok(call, "nothing delivered to " + byName);
+  });
   check("H. the canonical event as JSON, with the plain header sent",
         function () {
     assert.ok(call, JSON.stringify(peer.got.ok.slice(0, 2)).slice(0, 400));
