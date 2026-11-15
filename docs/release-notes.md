@@ -72,24 +72,35 @@ mode, and always verifies the PEP's certificate.
   for a nudge refused that way; `STS-XACML-0073` and `STS-XACML-0074` are
   retired.
 * **The PEP** answers `POST /notify` on its HTTPS listener only (a 404 over
-  plain HTTP, `STS-XPEP-0112`), and does not advertise an `http://`
-  `PEP_NOTIFY_URL` (`STS-XPEP-0113`, logged once).
+  plain HTTP, `STS-XPEP-0112`), and **rejects** an `http://`
+  `PEP_NOTIFY_URL`, or an `http://` `notifyUrl` an older service stored
+  (`STS-XPEP-0113`, at ERROR, once per value). A rejected URL means the PEP
+  advertises no notify URL at all, not the derived one, until it is fixed
+  or unset. It is reported with `rejected: true`
+  (`peps[].settingsInUse.values.notifyUrl.rejected` on
+  `GET /admin-api/xacml/peps`), and the PEP's Settings tab and Notify column
+  say it is rejected.
 * **Admin console**: the Notify column of the Remote PEPs tab, and the PEP's
   Overview, show *usable*, *unusable* with a one-line reason, or *none*, and
   two words about the last nudge; the full sentences are under *Details*.
 * **The PEP derives its notify URL when none is set.** With neither the
   PEP's Settings tab `notifyUrl` nor `PEP_NOTIFY_URL` set, the PEP advertises
-  `https://<host>:<PEP_HTTPS_PORT>/notify`. `<host>` is the first DNS name in
-  the HTTPS listener certificate it serves, or `PEP_NAME` if that is a DNS
-  name, or the container's hostname. A PEP with no HTTPS certificate yet
+  `https://<host>:<PEP_HTTPS_PORT>/notify`. `<host>` is the DNS name in the
+  HTTPS listener certificate it serves that equals its hostname, else the
+  certificate's first DNS name, else `PEP_NAME` if that is a DNS name, else
+  the container's hostname. So a certificate naming the PEP's registered
+  name first and `xacml-pep` second, on a container named `xacml-pep`, gives
+  `xacml-pep`. When you issue the certificate, add the PEP's hostname to
+  its DNS names. A PEP with no HTTPS certificate yet
   advertises none until it has one, and a new certificate derives the URL
   again. The PEP logs the derived URL at INFO, and reports its source as
   `derived` (`GET /admin-api/xacml/peps`'
   `peps[].settingsInUse.values.notifyUrl.source`). The Notify column says
   *derived by the PEP from its HTTPS listener certificate*. The service still
   checks the URL as before: https only, the certificate verified, and the
-  host checked against it. `docker-compose.yml` and the test stack still set
-  `PEP_NOTIFY_URL` explicitly.
+  host checked against it. **`docker-compose.yml` and the test stack no
+  longer set a notify URL**, so they derive it. `XACML_PEP_NOTIFY_URL`
+  still sets one, and an empty one now means unset.
 
 ### The reverse proxy's fixes from the 8081 demonstration
 

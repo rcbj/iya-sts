@@ -5230,7 +5230,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0110` | A remote PEP proxy account page was asked for something it does not answer: no such page, or an add whose return path is not on a session route with multipleAccounts (#1760). | HTTP 404 |
 | `STS-XPEP-0111` | A remote PEP proxy account act named an account the browser's set does not hold (#1760). | HTTP 404 |
 | `STS-XPEP-0112` | A remote PEP was nudged (POST /notify) over plain HTTP. The nudge is answered on its HTTPS listener only since 2026-11-14. | HTTP 404 not_found, saying where the nudge is answered |
-| `STS-XPEP-0113` | The remote PEP's notify URL (PEP_NOTIFY_URL, or the notifyUrl the service set) is not https, so it is not advertised: the service nudges over https only. The PEP converges by polling. Logged once per value. | none — a warning in the PEP's log |
+| `STS-XPEP-0113` | The remote PEP's notify URL (PEP_NOTIFY_URL, or the notifyUrl the service set) is not https, so it is REJECTED: the service nudges over https only and nothing allows http. The PEP advertises no notify URL, does not fall back to the one it would derive, reports the setting rejected in settingsInUse, and converges by polling until it is fixed or unset. Logged once per value. | none — an error in the PEP's log; settingsInUse rejected |
 | `STS-XPEP-0114` | A request reached the remote PEP's CRL-only plain-HTTP listener for something other than GET /crl/<name>; that listener serves its credential's CRLs and nothing else. | HTTP 404 not_found |
 | `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (bound when PEP_HTTP is off and the credential has a CRL directory). Logged once at start. | none; the listener keeps its default |
 

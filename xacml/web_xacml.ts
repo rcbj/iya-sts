@@ -876,9 +876,19 @@ class XacmlPage {
 
   static pepNotify(t: Json, row: Json): string {
     const url = row.effectiveNotifyUrl || row.notifyUrl;
+    // REJECTED BY THE PEP (2026-11-14, rcbj): a notify URL set at its
+    // environment or here that is not https. The PEP then advertises none
+    // and does not fall back to a derived one (`STS-XPEP-0113`).
+    const inUse = row.settingsInUse && row.settingsInUse.values
+      ? row.settingsInUse.values.notifyUrl : null;
+    const rejected = inUse && inUse.rejected === true
+      ? '<div class="sub xacml-alert">' +
+        t.html('consoleXacml.pep.notifyRejected',
+               { url: String(inUse.value || '') }) + '</div>'
+      : '';
     if (!url) {
       return '<span class="sub">' + t.html('consoleXacml.pep.noNotify') +
-        '</span>';
+        '</span>' + rejected;
     }
     const problem = String(row.notifyProblem || '');
     // Each reason by its own key, so the catalogs' check finds them.
@@ -908,15 +918,13 @@ class XacmlPage {
     // DERIVED BY THE PEP (2026-11-14): with neither the value set here nor
     // `PEP_NOTIFY_URL`, the PEP advertises one built from its HTTPS
     // listener certificate, and says so in the settings it reports.
-    const inUse = row.settingsInUse && row.settingsInUse.values
-      ? row.settingsInUse.values.notifyUrl : null;
     const derived = inUse && inUse.source === 'derived' &&
       inUse.value === url
       ? '<div class="sub">' + t.html('consoleXacml.pep.notifyDerived') +
         '</div>'
       : '';
-    return '<code>' + esc(url) + '</code>' + derived + status + lastLine +
-      details;
+    return '<code>' + esc(url) + '</code>' + derived + rejected + status +
+      lastLine + details;
   }
 
   // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
@@ -2106,7 +2114,11 @@ class XacmlPage {
         (reported
           ? '<code>' + esc(String(reported.value)) + '</code>' +
             '<div class="sub">' + (words.source[reported.source] ||
-                                   esc(reported.source)) + '</div>'
+                                   esc(reported.source)) + '</div>' +
+            (reported.rejected === true
+              ? '<div class="sub xacml-alert">' +
+                t.html('consoleXacml.pepSettings.rejected') + '</div>'
+              : '')
           : '<span class="sub">' +
             t.html('consoleXacml.pepSettings.notReported') + '</span>') +
         '</td><td><code>' + esc(String(one.default)) + '</code></td><td>' +

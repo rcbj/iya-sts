@@ -23,7 +23,9 @@
 //!   validated it with. One that fails is LEFT OUT and named
 //!   (`STS-XPEP-0102`) — the setting is then the environment's — never the
 //!   whole document: unlike a route table, one setting does not change what
-//!   another means.
+//!   another means. **The one exception is a `notifyUrl` that is not https**
+//!   (2026-11-14): it is REJECTED, and the PEP advertises no notify URL
+//!   rather than fall back (`notify_rejected()`, `STS-XPEP-0113`).
 //! * **A FAILED PULL KEEPS WHAT IS HELD** (`STS-XPEP-0100`), as every pull
 //!   here does.
 //!
@@ -261,6 +263,26 @@ pub struct Managed {
     pub values: BTreeMap<&'static str, Value>,
     pub refused: Vec<String>,
     pub unknown: Vec<String>,
+    /// A `notifyUrl` the service sent that is not an https URL (an older
+    /// service's stored `http://` one): REJECTED rather than refused, so
+    /// it is not a fallback to the environment either — this PEP then
+    /// advertises no notify URL at all (`options::Options::notify_in_force`,
+    /// `STS-XPEP-0113`).
+    pub rejected_notify: Option<String>,
+}
+
+/// Whether a notify URL somebody SET is rejected (2026-11-14, rcbj: "If an
+/// http:// URL is given and is not allowed per configuration, it should be
+/// rejected"): a non-empty value that is not an https URL. The nudge is
+/// sent over https only and nothing allows http any more
+/// (`xacml.pepNotifyAllowHttp` is retired), so an `http://` one is always
+/// rejected. Empty is "not set", never rejected.
+pub fn notify_rejected(text: &str) -> bool {
+    let trimmed = text.trim();
+    !trimmed.is_empty()
+        && !trimmed
+            .get(..8)
+            .is_some_and(|s| s.eq_ignore_ascii_case("https://"))
 }
 
 impl Managed {
@@ -277,6 +299,12 @@ impl Managed {
         for (key, value) in members {
             match row_of(key) {
                 None => out.unknown.push(key.clone()),
+                Some(row) if row.key == DERIVED_KEY
+                    && value.as_str().is_some_and(notify_rejected) =>
+                {
+                    out.rejected_notify =
+                        value.as_str().map(|s| s.trim().to_string());
+                }
                 Some(row) => match check(row, value) {
                     Ok(value) => {
                         out.values.insert(row.key, value);
@@ -374,7 +402,12 @@ impl Held {
     /// there), and an empty `notifyUrl` read as set would hide the
     /// derived one behind nothing.
     fn service_sets(&self, row: &Row) -> bool {
-        match self.current().values.get(row.key) {
+        let current = self.current();
+        if row.key == DERIVED_KEY && current.rejected_notify.is_some() {
+            // Set, and rejected: still the service's, never a fallback.
+            return true;
+        }
+        match current.values.get(row.key) {
             None => false,
             Some(value) => row.key != DERIVED_KEY
                 || value.as_str().is_some_and(|s| !s.trim().is_empty()),

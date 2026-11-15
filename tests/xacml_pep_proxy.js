@@ -1631,7 +1631,8 @@ async function childBody() {
     .json.syncToken;
   const report = { token: tokenNow, at: '1999-01-01T00:00:00Z',
     values: {
-      bias: { value: 'deny-biased', source: 'environment' },
+      // `rejected` is a flag of the notify URL alone (2026-11-14).
+      bias: { value: 'deny-biased', source: 'environment', rejected: true },
       pollIntervalMs: { value: 8000, source: 'service' },
       timeoutMs: { value: -5, source: 'default' },
       logLevel: { value: 'loud', source: 'default' },
@@ -1654,11 +1655,31 @@ async function childBody() {
           Object.keys(inUse.values).sort().join(',') ===
             'bias,notifyUrl,pollIntervalMs' &&
           inUse.values.notifyUrl.source === 'derived' &&
+          !('rejected' in inUse.values.notifyUrl) &&
+          !('rejected' in inUse.values.bias) &&
           inUse.token === tokenNow && !('secret' in inUse) &&
           Math.abs(Date.parse(inUse.at) - Date.now()) < 60000,
           'S11. a registration keeps the settings; the report keeps only ' +
           'known settings of their type and closed source, stamped on ' +
           'arrival', JSON.stringify(row2 && row2.settingsInUse));
+  // A NOTIFY URL THE PEP REJECTED (2026-11-14, STS-XPEP-0113): kept with
+  // its value, its source and `rejected: true`; a `rejected` that is not
+  // true is not.
+  const pepSettingsModule = require(ROOT + '/xacml/xacml_pep_settings');
+  const rejectedInUse = pepSettingsModule.inUseOf({ token: 't', values: {
+    notifyUrl: { value: 'http://old:9090/notify', source: 'environment',
+                 rejected: true } } });
+  const notRejected = pepSettingsModule.inUseOf({ token: 't', values: {
+    notifyUrl: { value: 'https://pep:9443/notify', source: 'service',
+                 rejected: 'yes' } } });
+  t.check(rejectedInUse && rejectedInUse.values.notifyUrl &&
+          rejectedInUse.values.notifyUrl.rejected === true &&
+          rejectedInUse.values.notifyUrl.value === 'http://old:9090/notify' &&
+          rejectedInUse.values.notifyUrl.source === 'environment' &&
+          notRejected && !('rejected' in notRejected.values.notifyUrl),
+          'S11b. a notify URL the PEP reports rejected is kept rejected, ' +
+          'and only a `rejected` of true is', JSON.stringify([rejectedInUse,
+                                                            notRejected]));
   const viewed = inRealm(function () {
     return require(ROOT + '/xacml/xacml_admin').pepsJson(NAME);
   });

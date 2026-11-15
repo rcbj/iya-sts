@@ -126,6 +126,10 @@ const SOURCES = ['service', 'environment', 'default'];
 // /notify`, the host taken from its HTTPS listener certificate, and reports
 // the source `derived` — between the environment and the default. Read as
 // a source of that row alone; `precedence` stays the three every row has.
+// The same row alone may be reported `rejected: true` (2026-11-14, rcbj: "If
+// an http:// URL is given and is not allowed per configuration, it should be
+// rejected"): a value set at the PEP's environment or here that is not https,
+// with which the PEP advertises no notify URL at all (`STS-XPEP-0113`).
 const DERIVED_KEYS = ['notifyUrl'];
 // No C0 control character and no DEL.
 const CONTROL = /[\u0000-\u001f\u007f]/;
@@ -642,7 +646,8 @@ class PepSettings {
       helpers.log.debug("Leaving PepSettings.inUseOf(). Nothing to read.");
       return null;
     }
-    const values: Record<string, { value: unknown; source: string }> = {};
+    const values: Record<string, { value: unknown; source: string;
+                                   rejected?: boolean }> = {};
     const reported = said.values && typeof said.values === 'object'
       ? said.values : {};
     SETTINGS.forEach(function (row) {
@@ -668,6 +673,9 @@ class PepSettings {
       }
       if (kept !== undefined) {
         values[row.key] = { value: kept, source: one.source };
+        if (one.rejected === true && DERIVED_KEYS.indexOf(row.key) >= 0) {
+          values[row.key].rejected = true;
+        }
       }
     });
     const token = typeof said.token === 'string' &&

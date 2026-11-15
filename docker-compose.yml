@@ -288,7 +288,7 @@ services:
       - PEP_HTTPS_PORT=9443
       - PEP_HTTPS_RELOAD_INTERVAL_MS=${XACML_PEP_HTTPS_RELOAD_INTERVAL_MS:-5000}
       - PEP_TLS_INSECURE=true
-      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-https://xacml-pep:9443/notify}
+      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://xacml-pep/protected}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
       - PEP_PIP=${XACML_PEP_PIP:-true}

@@ -24033,10 +24033,13 @@ const CODES = [
     spec: 'HTTP 404 not_found, saying where the nudge is answered' },
   { code: 'STS-XPEP-0113',
     summary: 'The remote PEP\'s notify URL (PEP_NOTIFY_URL, or the ' +
-      'notifyUrl the service set) is not https, so it is not advertised: ' +
-      'the service nudges over https only. The PEP converges by polling. ' +
-      'Logged once per value.',
-    spec: 'none — a warning in the PEP\'s log' },
+      'notifyUrl the service set) is not https, so it is REJECTED: the ' +
+      'service nudges over https only and nothing allows http. The PEP ' +
+      'advertises no notify URL, does not fall back to the one it would ' +
+      'derive, reports the setting rejected in settingsInUse, and ' +
+      'converges by polling until it is fixed or unset. Logged once per ' +
+      'value.',
+    spec: 'none — an error in the PEP\'s log; settingsInUse rejected' },
   { code: 'STS-XPEP-0114',
     summary: 'A request reached the remote PEP\'s CRL-only plain-HTTP ' +
       'listener for something other than GET /crl/<name>; that listener ' +

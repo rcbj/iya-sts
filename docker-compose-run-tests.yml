@@ -989,13 +989,19 @@ services:
       # stack starts, so there is no anchor any image could hold. `pep.js` logs this on every start
       # rather than once, for federation_http.ts's reason.
       - PEP_TLS_INSECURE=true
-      # THE ADDRESS THE SERVICE NUDGES: the PEP's HTTPS listener, because the
-      # nudge is https only (2026-11-14). It is deliverable once the job has
-      # written the HTTPS pair and turns xacml.pepNotify on in its realm —
-      # the one place this repository's third outbound request is dialled at
-      # a listener that answers — and it verifies against the realm's pep-tls
-      # Issuing CA with no CA file, in either mode.
-      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-https://xacml-pep:9443/notify}
+      # THE ADDRESS THE SERVICE NUDGES IS DERIVED, NOT SET (2026-11-14, rcbj's
+      # "option 1"): with PEP_NOTIFY_URL unset the PEP advertises
+      # https://<host>:9443/notify, <host> its listener certificate's DNS name
+      # that equals this container's hostname. The job issues that pair
+      # naming `xacml-pep` (XACML_PEP_HTTPS_URL's host), so this stack
+      # exercises the derivation and still gets https://xacml-pep:9443/notify.
+      # It is deliverable once the job has written the pair and turns
+      # xacml.pepNotify on in its realm — the one place this repository's
+      # third outbound request is dialled at a listener that answers — and
+      # it verifies against the realm's pep-tls Issuing CA with no CA file,
+      # in either mode. EMPTY BY DEFAULT, which the PEP reads as unset; a host
+      # that sets XACML_PEP_NOTIFY_URL still overrides the derivation.
+      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://example.test/records}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
       # THE REMOTE POLICY INFORMATION POINT (2026-09-06). On by default:

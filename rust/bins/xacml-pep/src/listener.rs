@@ -776,35 +776,50 @@ mod tests {
             100,
             None,
         );
+        // A hostname no certificate below names until the last one.
+        const HOST: Option<&str> = Some("pep-e.example");
         let mut options = crate::options::Options::from_env("0.0.0");
         options.https_port = 9443;
         options.notify_url = String::new();
         options.managed = Arc::new(crate::settings::Held::default());
         assert!(!listener.reload());
         assert_eq!(listener.dns_names(), None, "no certificate, no names");
-        assert!(!options.refresh_derived_notify(
-            listener.dns_names().as_deref()));
+        assert!(!options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(), None, HOST));
         assert_eq!(options.now().notify_url, "", "no listener, none");
         let (cert, key) = pair_naming(&["*.pep.example", "pep-a.example",
                                         "pep-b.example"]);
         std::fs::write(&cert_path, &cert).unwrap();
         std::fs::write(&key_path, &key).unwrap();
         assert!(listener.reload());
-        assert!(options.refresh_derived_notify(
-            listener.dns_names().as_deref()));
+        assert!(options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(), None, HOST));
         assert_eq!(options.now().notify_url,
                    "https://pep-a.example:9443/notify",
                    "the first DNS name a host can be; the wildcard is not");
-        assert!(!options.refresh_derived_notify(
-            listener.dns_names().as_deref()), "the same certificate");
+        assert!(!options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(), None, HOST),
+            "the same certificate");
         let (cert, key) = pair_naming(&["pep-c.example"]);
         std::fs::write(&cert_path, &cert).unwrap();
         std::fs::write(&key_path, &key).unwrap();
         assert!(!listener.reload(), "a reload, not a first start");
-        assert!(options.refresh_derived_notify(
-            listener.dns_names().as_deref()), "a new name derives again");
+        assert!(options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(), None, HOST),
+            "a new name derives again");
         assert_eq!(options.now().notify_url,
                    "https://pep-c.example:9443/notify");
+        // OPTION 1 ON A RELOAD: a certificate naming the hostname, not
+        // first, derives the hostname's name.
+        let (cert, key) = pair_naming(&["pep-c.example", "PEP-E.example"]);
+        std::fs::write(&cert_path, &cert).unwrap();
+        std::fs::write(&key_path, &key).unwrap();
+        assert!(!listener.reload());
+        assert!(options.refresh_derived_notify_as(
+            listener.dns_names().as_deref(), None, HOST),
+            "the hostname's name, not the first");
+        assert_eq!(options.now().notify_url,
+                   "https://pep-e.example:9443/notify");
         let installed = HttpsListener::in_memory(0, None, false);
         assert_eq!(installed.dns_names(), None);
         let (cert, key) = pair_naming(&["pep-d.example"]);

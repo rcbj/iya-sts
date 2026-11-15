@@ -36,8 +36,9 @@ tasks (`std::future::pending`), and **the healthcheck asks HTTPS on
 identity) — a PEP with no pair yet is honestly unhealthy, answering nobody.
 **The test stacks turn both on explicitly** (`docker-compose-run-tests.yml`
 argues it: the job reaches the PEP before it issues the HTTPS pair); so do
-the CI liveness check and the AWS suite task. `docker-compose.yml` defaults
-its notify URL to `https://xacml-pep:9443/notify`.
+the CI liveness check and the AWS suite task. `docker-compose.yml` sets no
+notify URL since 2026-11-14 (`${XACML_PEP_NOTIFY_URL:-}`): the PEP derives
+it (*THE NOTIFY URL IS DERIVED*, below).
 
 **THE CRL POINT STAYS UP WITH HTTP OFF (2026-11-14), AND THAT WAS A DEFECT
 OF THE DEFAULT ABOVE.** The client credential's CRL distribution point is
@@ -76,10 +77,40 @@ member of the service's closed set, which the Listener tab draws as
 environment's `api-http` or a defined plain listener — it is a 404 naming the
 HTTPS listener (`STS-XPEP-0112`). The service never dials an `http://` notify
 URL (`xacml/CLAUDE.md`), so a nudge in the clear is not the PDP's. And the PEP
-never ADVERTISES one: `options::advertised_notify_url()` sends an `http://`
-`PEP_NOTIFY_URL` (or a managed `notifyUrl` an older service set) as empty on
-the registration, the heartbeat and `GET /`, logged once per value
-(`STS-XPEP-0113`); the managed `notifyUrl` row takes https alone.
+never ADVERTISES one: **a notify URL somebody SET that is not https is
+REJECTED** (2026-11-14, rcbj: "If an http:// URL is given and is not allowed
+per configuration, it should be rejected"; nothing allows http since
+`xacml.pepNotifyAllowHttp` was retired).
+
+* **What is rejected**: `settings::notify_rejected()` — a non-empty value
+  that does not start `https://` (any case). `PEP_NOTIFY_URL`, and a managed
+  `notifyUrl` an older service stored: `Managed::parse()` records that one
+  as `rejected_notify` rather than in `refused`, because a refused setting
+  FALLS BACK to the environment (`STS-XPEP-0102`) and a rejected one must
+  not. Any other refusal of the row (a user name, a fragment) still falls
+  back as before.
+* **Rejected means NOTHING is advertised, not the derived URL**:
+  `Options::notify_in_force()` answers `(advertised, rejected)`, and a
+  rejected value is still the one in force at its place in the precedence,
+  so `Now::notify_url` is empty and `Now::notify_rejected` holds it. The
+  operator asked for something specific; a guess around it would hide that
+  it is wrong. An https managed value still wins over a rejected
+  `PEP_NOTIFY_URL`, the precedence being unchanged.
+* **Said at ERROR, once per variable and value** (`say_notify_rejected()`,
+  `STS-XPEP-0113`), naming `PEP_NOTIFY_URL` or the service's setting, why,
+  that there is no fallback, and the fix. Said where it is in force, so a
+  rejected `PEP_NOTIFY_URL` under an https managed value says nothing.
+* **Reported rejected**: `Options::settings_report()` replaces the
+  `notifyUrl` entry with the value given, its source (`environment`, or
+  `service` — `Held::service_sets()` counts a rejected managed value as set)
+  and `rejected: true`. `rejected` is a member of that entry alone in the
+  model (`models/api/common.tsp`), the service keeps it only for that row
+  and only when it is `true` (`xacml_pep_settings.ts`'s `inUseOf()`), and
+  the console draws it on the Settings tab and in the Notify cell.
+* `advertised_notify_url()` stays at the three places the URL is sent, as a
+  guard that logs nothing: `Now::notify_url` is already https or empty.
+* The service keeps its own refusals: `STS-XACML-0259` (no nudge to an http
+  row) and `STS-XACML-0239` (the Settings tab refuses one).
 
 **THE NOTIFY URL IS DERIVED WHEN NOBODY SET ONE (2026-11-14, rcbj: "The PEP
 should attempt to derive the notify URL").** It read EMPTY by default until
@@ -91,12 +122,34 @@ can pass. `options::derive_notify_url()` builds
 `https://<host>:<PEP_HTTPS_PORT>/notify`, `<host>` the first that is a DNS
 name (`is_dns_name()`: no wildcard, no IP address) of:
 
-1. the first subjectAltName DNS name of the certificate the 9443 listener
-   serves (`HttpsListener::dns_names()`, recorded at every `reload()` and
-   `install()`);
-2. `PEP_NAME` as SET — its default `pep-1` is not read, being a name no
+1. **the subjectAltName DNS name equal to the hostname** (case and a trailing
+   dot aside; `DerivedFrom::CertificateHostname`) of the certificate the
+   9443 listener serves (`HttpsListener::dns_names()`, recorded at every
+   `reload()` and `install()`) — rcbj's "option 1", 2026-11-14;
+2. the first subjectAltName DNS name of that certificate;
+3. `PEP_NAME` as SET — its default `pep-1` is not read, being a name no
    resolver knows;
-3. the hostname (`HOSTNAME`, `/proc/sys/kernel/hostname`, `/etc/hostname`).
+4. the hostname (`HOSTNAME`, `/proc/sys/kernel/hostname`, `/etc/hostname`).
+
+**Why the hostname's SAN first (the 8081 deploy, 2026-11-14).** The first-SAN
+rule picked `remote-pep-1`: the realm's default certificate names the PEP's
+REGISTERED name first (`xacml/xacml_pep_tls.ts`'s `derivedNames()`), and
+that name is also its CN, which no resolver knows. The certificate was
+`remote-pep-1, xacml-pep, localhost, 127.0.0.1` on a container named
+`xacml-pep`. A SAN that is the hostname is both in the certificate (the
+service's host check passes) and the name the container is known by on its
+network (it resolves). The INFO line names the rule that picked the host
+(`DerivedFrom::describe()`); the source reported is still `derived`.
+
+**THE GAP THIS LEAVES**: a PEP that derives its URL registers with NONE
+before it holds a certificate, so the realm's default names are its
+registered name alone, and a certificate issued with the defaults derives
+the registered name (rule 2). Until 2026-11-14 the compose default
+`https://xacml-pep:9443/notify` put `xacml-pep` in the defaults. The
+operator adds the hostname when issuing (`docs/remote-pep.md` says so); the
+test stacks name it (`sts_xacml_remote_pep.js` issues for the host it
+dials). Closing it in code needs the PEP to report its hostname to the
+service, which `derivedNames()` would then add — not done.
 
 * **No certificate served, no URL**: `POST /notify` is HTTPS only, so there
   is nothing to advertise. Only the environment's `api-https` listener
@@ -110,16 +163,27 @@ name (`is_dns_name()`: no wildcard, no IP address) of:
   that member only, and the catalogue's `precedence` stays the three every
   row has. An empty managed value is not set (the service never sends one),
   so it cannot hide the derived URL. **An explicit `http://` value still
-  wins** and is still not advertised: the order is rcbj's, and a value
-  somebody set is not overridden by a guess.
+  wins, and is REJECTED** (*THE NUDGE IS HTTPS ONLY*, above): nothing is
+  advertised, the order is rcbj's, and a value somebody set is not
+  overridden by a guess.
 * **When it is derived**: once before the registration — `main.rs` reads
   the pair once before `register()` so the registration carries it — and
   after every reload of the pair. `Held::set_derived_notify()` answers
   whether it changed; a change is logged at INFO with its source, and when
   it changes the URL IN FORCE the reload loop sends a heartbeat at once,
   because the heartbeat's `notifyUrl` replaces the row's.
-* **The compose files and `sts_xacml_remote_pep.js` still set
-  `PEP_NOTIFY_URL`** explicitly; nothing was removed.
+* **The test stacks DERIVE it** (2026-11-14): both compose files pass
+  `PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-}` — empty is unset here, so the
+  `${VAR:-default}` form is right and the host's `XACML_PEP_NOTIFY_URL`
+  keeps working; the BARE form would have read the host's `PEP_NOTIFY_URL`
+  instead and silently dropped it. `docker-compose-run-tests.yml`'s PEP is
+  hostname `xacml-pep` and the job issues its pair naming `xacml-pep`, and
+  `sts_xacml_remote_pep.js`'s own bridge container is hostname `PEP_NAME`,
+  which its certificate names; section 6 asserts the row's URL names it. Its
+  host-network container still SETS `https://127.0.0.1:<port>/notify`: the
+  service dials the loopback address, which derivation never yields, and the
+  hostname there is the machine's. The AWS suite task sets the task's IP for
+  the same reason.
 
 **It replaced a Node container with the same contract** — the same
 environment variables and defaults, ports, endpoints, JSON bodies, log lines
@@ -631,9 +695,10 @@ on 2026-09-16 — the default stays because every launcher, kept stack and
 default inside `xacml-pep/certs` would invite a private key into the source
 tree; `PEP_HEARTBEAT_INTERVAL_MS` is a substitution because
 `tests/protocol/sts_xacml_remote_pep.js` reads the counters the heartbeat
-carries and cannot wait a minute; and `PEP_NOTIFY_URL` is the HTTPS
-listener's, which the PDP verifies against the realm's `pep-tls` chain once
-the PEP holds the pair the realm issued it.
+carries and cannot wait a minute; and `PEP_NOTIFY_URL` defaults EMPTY
+(2026-11-14), so the PEP derives the HTTPS listener's from the certificate
+the realm issued it — the SAN equal to the hostname, `xacml-pep` — which the
+PDP verifies against the realm's `pep-tls` chain.
 
 **The compose service ships with no certificate**, so out of the box it
 registers unauthenticated and the mock refuses it — which is the honest default

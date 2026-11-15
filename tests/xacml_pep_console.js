@@ -126,6 +126,36 @@ async function run(t) {
   const none = XacmlPage.pepNotify(tr, {});
   t.check(none.indexOf('never nudged') >= 0 && none.indexOf('<details') < 0,
           'N7. no notify URL is "none"', none);
+  // REJECTED BY THE PEP (2026-11-14, STS-XPEP-0113): it advertises none,
+  // so the row has no URL, and the cell says why, naming what was set.
+  const rejectedUse = { values: { notifyUrl: {
+    value: 'http://old:9090/notify', source: 'environment',
+    rejected: true } } };
+  const rejected = XacmlPage.pepNotify(tr, { notifyUrl: '',
+                                            settingsInUse: rejectedUse });
+  t.check(rejected.indexOf('never nudged') >= 0 &&
+          rejected.indexOf('rejected by the PEP') >= 0 &&
+          rejected.indexOf('http://old:9090/notify') >= 0 &&
+          rejected.indexOf('xacml-alert') >= 0 &&
+          none.indexOf('rejected') < 0 && derived.indexOf('rejected') < 0,
+          'N10. a notify URL the PEP rejected is said so in the cell, with ' +
+          'the value; one it did not reject is not', rejected);
+  const settingsTab = XacmlPage.settingsBody({ t: tr, write: false }, {
+    settingsCatalogue: { settings: [
+      { key: 'notifyUrl', env: 'PEP_NOTIFY_URL', type: 'url',
+        group: 'registration', default: '', applies: 'nextRound' },
+      { key: 'resource', env: 'PEP_RESOURCE', type: 'text',
+        group: 'registration', default: '', applies: 'nextRound' }],
+      bootstrap: [] } },
+    { settings: {}, settingsInUse: { at: '', token: 't', values: {
+      notifyUrl: rejectedUse.values.notifyUrl,
+      resource: { value: 'r', source: 'environment' } } } });
+  const notifyCells = settingsTab.split('PEP_RESOURCE')[0];
+  t.check(notifyCells.indexOf('http://old:9090/notify') >= 0 &&
+          notifyCells.indexOf('rejected: not https') >= 0 &&
+          settingsTab.split('PEP_RESOURCE')[1].indexOf('rejected') < 0,
+          'N11. the Settings tab shows the rejected notify URL as ' +
+          'rejected, and no other row', settingsTab);
 
   // -------------------------------------------------------------------------
   t.log.info('=== L. the listener tab\'s state cell ===');

@@ -1051,9 +1051,12 @@ async function startThePep() {
     create.push("--publish", "127.0.0.1::9443");
     create.push("--publish", "127.0.0.1::9180");
     create.push("--publish", "127.0.0.1::9543");
-    // The PDP dials this across the bridge by the container's own name,
-    // over HTTPS: the nudge is https only (2026-11-14).
-    environment.PEP_NOTIFY_URL = "https://" + PEP_NAME + ":9443/notify";
+    // NO PEP_NOTIFY_URL: THE PEP DERIVES IT (2026-11-14, rcbj's "option
+    // 1"). The PDP dials it across the bridge by the container's own name,
+    // over HTTPS: the container's hostname is PEP_NAME, section 1b's
+    // certificate names it (the registered name) beside `localhost`, and
+    // the PEP picks the certificate's DNS name that equals its hostname —
+    // https://<PEP_NAME>:9443/notify, which section 6 asserts.
   } else {
     pep.containerPort = await freePort();
     pep.hostPort = pep.containerPort;
@@ -1068,7 +1071,11 @@ async function startThePep() {
     pep.proxyHttpsUrl = "https://localhost:" + proxyHttpsPort;
     // On the host network the service is a process on this same loopback, so
     // this is the address it dials — and it is still a real outbound request
-    // made by the PDP to a listener it does not share a process with.
+    // made by the PDP to a listener it does not share a process with. SET,
+    // not derived (2026-11-14): the service dials the loopback ADDRESS,
+    // which derivation never yields (IP addresses are skipped), and on the
+    // host network the hostname is this machine's, which the certificate
+    // section 1b issues does not name.
     environment.PEP_NOTIFY_URL = "https://127.0.0.1:" +
                                  pep.httpsContainerPort + "/notify";
   }
