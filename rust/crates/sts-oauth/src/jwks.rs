@@ -575,3 +575,94 @@ pub fn jwks_body(keys: Vec<Json>) -> String {
     serde_json::to_string_pretty(&json!({ "keys": keys }))
         .unwrap_or_else(|_| "{}".to_string())
 }
+
+/// The certificate authority's records as the store holds them: the
+/// realm's hierarchy row and the service's (`keystore.pkiFor()`), over
+/// [`sts_store::key_sets::KeySets`].
+pub struct StoredSources {
+    pub sets: std::sync::Arc<sts_store::key_sets::KeySets>,
+    pub realm: String,
+    pub now_ms: f64,
+}
+
+impl CertificateSources for StoredSources {
+    fn published(
+        &self,
+        use_case: &str,
+        slot: &str,
+        kid: &str,
+    ) -> Option<(String, Vec<String>)> {
+        self.sets
+            .published_certificate_for(&self.realm, use_case, slot, kid)
+    }
+
+    fn service_root_pem(&self) -> Option<String> {
+        self.sets
+            .pki_row("*service")?
+            .pointer("/root/certificatePem")?
+            .as_str()
+            .map(str::to_string)
+    }
+
+    /// `pki.pinnedSignersFor()`: the `certs` records marked pinned, the
+    /// retired ones past `retiredUntil` left out. A pinned post-quantum
+    /// signer's AKP key is not read here yet (its SPKI decoding is
+    /// `pqcX509.decodeSpki()`), so such a signer publishes no key.
+    fn pinned_signers(&self, use_case: &str) -> Vec<PinnedSigner> {
+        let Some(row) = self.sets.pki_row(&self.realm) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (_, record) in row
+            .get("certs")
+            .and_then(Json::as_object)
+            .into_iter()
+            .flatten()
+        {
+            let meta = &record["pinnedSigner"];
+            let kid = s(record, "kid");
+            if record.get("pinned") != Some(&Json::Bool(true))
+                || !meta.is_object()
+                || kid.is_empty()
+                || s(record, "useCase") != use_case
+            {
+                continue;
+            }
+            let retired = num(meta.get("retiredAt")) > 0.0;
+            if retired && num(meta.get("retiredUntil")) <= self.now_ms {
+                continue;
+            }
+            let kind = s(meta, "kind").to_string();
+            let public_jwk = if kind == "pq" {
+                None
+            } else {
+                JwsKey::from_pem(s(record, "publicKeyPem"))
+                    .ok()
+                    .and_then(|k| k.public_jwk().ok().flatten())
+                    .and_then(|jwk| {
+                        let mut jwk = jwk.as_object()?.clone();
+                        jwk.insert("kid".into(), json!(kid));
+                        jwk.insert("use".into(), json!("sig"));
+                        if kind != "rsa" {
+                            jwk.insert("alg".into(), meta["alg"].clone());
+                        }
+                        Some(Json::Object(jwk))
+                    })
+            };
+            out.push(PinnedSigner {
+                kid: kid.to_string(),
+                kind,
+                certificate_pem: s(record, "certificatePem").to_string(),
+                chain_pem: record["chainPem"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Json::as_str)
+                    .map(str::to_string)
+                    .collect(),
+                public_jwk,
+            });
+        }
+        out
+    }
+}

@@ -137,28 +137,44 @@ fn store_mode(settings: &Settings) -> Result<StoreMode, String> {
     }
 }
 
-/// `GET /oauth2/jwks`: the ambient realm's published keys, served
-/// `no-store` like every document that carries a key, pretty-printed as
-/// Node's `JSON.stringify(…, null, 2)`. A realm's set is made on its first
-/// use; one that cannot be read or made is answered 500 with
-/// `STS-OAUTH-0184`, Node's answer when the JWKS cannot be built.
-async fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
+/// `GET /oauth2/jwks`: the ambient realm's published keys as Node's
+/// `sendJwks()` builds them (`sts_oauth::jwks`: the signature policy, the
+/// Root after the chain, the standby generations), served `no-store` like
+/// every document that carries a key, pretty-printed as Node's
+/// `JSON.stringify(…, null, 2)`. A realm's set is made on its first use;
+/// one that cannot be read or made is answered 500 with `STS-OAUTH-0184`,
+/// Node's answer when the JWKS cannot be built.
+async fn jwks(
+    persistence: Weak<Persistence>,
+    settings: Arc<Settings>,
+    mode: Arc<Mode>,
+) -> axum::response::Response {
     use axum::http::{header, StatusCode};
     use axum::response::IntoResponse;
     let realm = sts_core::realm::current_id();
     let sets = persistence.upgrade().and_then(|p| p.key_sets());
     let built = match sets {
         Some(sets) => sets.open_or_make(&realm).await.and_then(|set| {
-            let published = set.kid().and_then(|kid| {
-                sets.published_certificate_for(&realm, "jose", "RS256", &kid)
-            });
-            sts_store::key_sets::jwks_document(&set, published)
+            let now_ms = chrono::Utc::now().timestamp_millis() as f64;
+            let sources = sts_oauth::jwks::StoredSources {
+                sets: sets.clone(),
+                realm: realm.clone(),
+                now_ms,
+            };
+            let policy =
+                sts_oauth::jwks::JwksPolicy::from_settings(&settings, &mode);
+            sts_oauth::jwks::jwks_keys(&sts_oauth::jwks::JwksInputs {
+                blob: &set.blob,
+                pq_keys: None,
+                sources: &sources,
+                policy: &policy,
+                now_ms,
+            })
         }),
         None => Err("no key set is held for this realm".to_string()),
     }
-    .and_then(|doc| {
-        serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())
-    });
+    .map(sts_oauth::jwks::jwks_body);
+
     match built {
         Ok(body) => (
             StatusCode::OK,
@@ -608,11 +624,13 @@ impl Stack {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn router(&self) -> axum::Router {
         let persistence = Arc::downgrade(&self.persistence);
+        let (settings, mode) = (self.settings.clone(), self.mode.clone());
         let routes = axum::Router::new().route(
             "/oauth2/jwks",
             axum::routing::get(move || {
                 let persistence = persistence.clone();
-                async move { jwks(persistence).await }
+                let (settings, mode) = (settings.clone(), mode.clone());
+                async move { jwks(persistence, settings, mode).await }
             }),
         );
         // OUTSIDE everything else, as Node's request pool and cluster
@@ -721,7 +739,10 @@ mod tests {
         let (status, default) = jwks_of(&stack, "/oauth2/jwks").await;
         assert_eq!(status, 200);
         assert_eq!(default["keys"][0]["kty"], "RSA");
-        assert_eq!(default["keys"].as_array().unwrap().len(), 9);
+        // RSA, ES256, ES384, ES512 and ES256K, and the two request-object
+        // encryption keys: the EdDSA and Ed448 keys the set holds are left
+        // out while keys.eddsaSigning is off, as Node leaves them out.
+        assert_eq!(default["keys"].as_array().unwrap().len(), 7);
         let (status, acme) = jwks_of(&stack, "/realm/acme/oauth2/jwks").await;
         assert_eq!(status, 200);
         assert_ne!(acme["keys"][0]["kid"], default["keys"][0]["kid"]);
