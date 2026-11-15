@@ -1628,7 +1628,22 @@ function setOverride(id, key, raw) {
   // judged against the realm's own `keys.signingAlgorithms`, as the realm's
   // `/admin-api/config/set` judges it (STS-KEYS-0192). A setting the realm
   // does not carry is read at the value it inherits. checkOverrides()'s rule.
-  const batch = Object.assign({}, realm.overrides, { [key]: raw });
+  //
+  // **AND THE OTHER VALUES OF THE WRITE THIS ONE IS PART OF** (2026-11-15,
+  // GitHub Actions run #287): a caller that writes several settings of the
+  // ambient realm one by one inside `config.withWriteBatch()` — `Branding.
+  // saveSettings()`, a realm's `set-many` — had its batch REPLACED by this
+  // one for the length of the check, so the first of a pair legal only
+  // together (a dark card, then its light text) was judged against the
+  // realm's OLD value of the second and refused. The enclosing batch sits
+  // between the stored overrides and this value. It is taken only for a
+  // write into the ambient realm, which is the realm such a caller writes.
+  const ambient = current();
+  const enclosing = ambient && ambient.id === realm.id
+    ? config.currentWriteBatch()
+    : null;
+  const batch = Object.assign({}, realm.overrides, enclosing || {},
+                              { [key]: raw });
   const checked = config.withWriteBatch(batch, function () {
     return { problem: checkRealmOverride(key, raw),
              code: checkRealmOverrideCode(key, raw) };
