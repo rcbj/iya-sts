@@ -20,7 +20,10 @@
 //      that version puts it, and to its STS-WSTRUST code on the realm's
 //      audit log. The expired credential is a real one: asked for with a
 //      one-minute wst:Lifetime in a realm whose clock skew is 0, and
-//      presented after it has gone.
+//      presented after it has gone — a SAML 2.0 credential and ActAs, and
+//      (`wstrust_jwt_claims.js` K2c, `wstrust_saml11.js` T3b) a JWT
+//      (STS-WSTRUST-0027) and a SAML 1.1 assertion (0006) inside ActAs; and
+//      K2b, a JWT another issuer named — another realm's (0026).
 //   B. the fault's namespace is the request's own (2005/02).
 //   E. the RSTR says Bearer when PublicKey was asked for; ?encrypt=1 reads
 //      the cipher from the AppliesTo's application (#747).
@@ -174,6 +177,12 @@ async function faults(P, D) {
                                     { body: lifetime });
   const shortAlice = await tokenFor(P, "wf-alice", FRONT, W.SAML2,
                                     { body: lifetime });
+  // wstrust_jwt_claims K2c and wstrust_saml11 T3b: the same minute, a JWT
+  // and a SAML 1.1 assertion.
+  const shortAliceJwt = await tokenFor(P, "wf-alice", FRONT, W.JWT,
+                                       { body: lifetime });
+  const shortAlice11 = await tokenFor(P, "wf-alice", FRONT, W.SAML11,
+                                      { body: lifetime });
   const frontSigned = await tokenFor(P, "wf-front");
   const aliceForFront = await tokenFor(P, "wf-alice", FRONT);
   const aliceSigned = await tokenFor(P, "wf-alice");
@@ -236,6 +245,12 @@ async function faults(P, D) {
      "STS-WSTRUST-0030", "InvalidScope"],
     [P, "no AppliesTo", { security: frontSigned }, "STS-WSTRUST-0031",
      "InvalidRequest"],
+    // wstrust_jwt_claims K2b: a JWT another issuer named — over the wire,
+    // another realm's, under that realm's key and issuer.
+    [P, "a JWT another issuer named, inside ActAs",
+     { security: frontSigned, body: W.actAs(await tokenFor(D, "wf-alice",
+       FRONT, W.JWT)), appliesTo: BACK, tokenType: W.JWT },
+     "STS-WSTRUST-0026", "InvalidRequest"],
     [D, "a malformed body", { raw: "<a><b></a>" }, "STS-WSTRUST-0001",
      "InvalidRequest"],
     [D, "a UsernameToken with no password",
@@ -313,6 +328,12 @@ async function faults(P, D) {
   await refusal(P, "an expired token inside ActAs", { security: frontSigned,
     body: W.actAs(shortAlice), appliesTo: BACK }, "STS-WSTRUST-0006",
     "ExpiredData");
+  await refusal(P, "an expired JWT inside ActAs", { security: frontSigned,
+    body: W.actAs(shortAliceJwt), appliesTo: BACK, tokenType: W.JWT },
+  "STS-WSTRUST-0027", "ExpiredData");
+  await refusal(P, "an expired SAML 1.1 assertion inside ActAs",
+    { security: frontSigned, body: W.actAs(shortAlice11), appliesTo: BACK,
+      tokenType: W.SAML11 }, "STS-WSTRUST-0006", "ExpiredData");
   await K.unset(P, "oauth2.clockSkewS");
   log.debug("Leaving faults().");
 }
