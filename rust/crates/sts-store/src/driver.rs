@@ -252,6 +252,23 @@ pub trait Driver: Send + Sync {
     fn purge_minted(&self, _before_ms: i64) -> StoreFuture<'_, u64> {
         Box::pin(async { Ok(0) })
     }
+    /// `ensureSharedSecret(name, material)` (#46): a shared secret, first
+    /// writer wins — `material` is already sealed by the caller, the offer
+    /// is `INSERT … ON CONFLICT DO NOTHING`, and what the table holds
+    /// afterwards (this offer or an earlier one) is answered. A store that
+    /// cannot share (memory, ldif) has no such method in Node, and says so
+    /// with [`Driver::shares_secrets`].
+    fn ensure_shared_secret<'a>(
+        &'a self,
+        _name: &'a str,
+        _material: &'a str,
+    ) -> StoreFuture<'a, Option<SharedSecretRow>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// Whether this store shares secrets ([`Driver::ensure_shared_secret`]).
+    fn shares_secrets(&self) -> bool {
+        false
+    }
     /// Whether [`Driver::merge_keys`] decides under the row's lock.
     fn merges_keys(&self) -> bool {
         false
@@ -272,6 +289,17 @@ pub trait Driver: Send + Sync {
             )))
         })
     }
+}
+
+/// One `sts_cluster_secrets` row, as `ensureSharedSecret()` answers it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedSecretRow {
+    /// The sealed value.
+    pub material: String,
+    pub created_by: String,
+    pub created_at: i64,
+    /// Whether this caller's offer was the one kept.
+    pub offered: bool,
 }
 
 /// One stored minted row (`loadMinted()`), its body sealed.

@@ -14,6 +14,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cluster_secrets;
 pub mod codec;
 pub mod dialect;
 pub mod driver;

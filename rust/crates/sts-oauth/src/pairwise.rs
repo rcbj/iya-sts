@@ -17,12 +17,15 @@
 //!   client, in Node's store (`oauth2.ephemeralSubjects`: `s|<session>|
 //!   <client>` → the `sub`, `e|<sub>` → `{ local, client, session, until }`).
 //!
-//! WHAT REPLACED WHAT. Node reads the `oidc-pairwise` secret from the
-//! cluster's secret register (`sts_cluster_secrets`, made once and kept by
-//! the store in product); this runtime reads it as the other slices read
-//! theirs — `STS_OIDC_PAIRWISE_SECRET`, or 32 random bytes made for this
-//! process — so a pairwise `sub` agrees with Node's only where an operator
-//! pinned the secret. The purge job (`oauth2.ephemeral-subjects-purge`) is
+//! THE SECRET IS NODE'S OWN (D11): the `oidc-pairwise` row of
+//! `sts_cluster_secrets`, sealed as Node seals it and read through
+//! `sts_store::cluster_secrets` — `STS_OIDC_PAIRWISE_SECRET` where an
+//! operator set it, the store's where keys persist, a per-process value
+//! where nothing can be shared — so a pairwise `sub` a 1.x install gave a
+//! client is the one this runtime gives it, on every node. The secret is
+//! read at each derivation, not when the stack is declared: the store's
+//! value is known only after the store has started. The purge job
+//! (`oauth2.ephemeral-subjects-purge`) is
 //! [`PairwiseSubjects::purge`], for the scheduler to run.
 
 use std::sync::Arc;
@@ -55,8 +58,9 @@ fn host_of(uri: &str) -> Option<String> {
 pub struct PairwiseSubjects {
     pub settings: Arc<Settings>,
     pub clients: Arc<dyn Clients>,
-    /// The `oidc-pairwise` secret's text.
-    pub secret: String,
+    /// The `oidc-pairwise` secret's text (`clusterSecrets.text(
+    /// 'oidc-pairwise')`), read at each derivation.
+    pub secret: Arc<dyn Fn() -> String + Send + Sync>,
     pub ephemeral: RealmMap<Json>,
     pub now_ms: Arc<dyn Fn() -> f64 + Send + Sync>,
 }
@@ -72,20 +76,6 @@ impl PairwiseSubjects {
             lifecycle,
             handles,
             StoreSpec::persisted("oauth2.ephemeralSubjects"),
-        )
-    }
-
-    /// The `oidc-pairwise` cluster secret: `STS_OIDC_PAIRWISE_SECRET`, or
-    /// 32 random bytes, base64url, made for this process.
-    #[tracing::instrument(level = "debug")]
-    pub fn process_secret() -> String {
-        if let Ok(text) = std::env::var("STS_OIDC_PAIRWISE_SECRET") {
-            if !text.is_empty() {
-                return text;
-            }
-        }
-        sts_crypto::b64::encode(
-            &sts_crypto::random::random_bytes(32).unwrap_or_default(),
         )
     }
 
@@ -142,7 +132,7 @@ impl PairwiseSubjects {
                     ));
                 }
                 sts_crypto::secrets::derive_shared_credential(
-                    &self.secret,
+                    &(self.secret)(),
                     LABEL,
                     &[&sts_core::realm::current_id(), &sector, local],
                 )

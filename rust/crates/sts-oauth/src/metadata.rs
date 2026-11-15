@@ -64,7 +64,7 @@ const AUTHORIZATION_SIGNING_ALG_VALUES_SUPPORTED: &[&str] = &[
     "ML-DSA-87-Ed448",
 ];
 
-const AUTHORIZATION_ENCRYPTION_ALG_VALUES_SUPPORTED: &[&str] = &[
+pub(crate) const AUTHORIZATION_ENCRYPTION_ALG_VALUES_SUPPORTED: &[&str] = &[
     "RSA-OAEP-256",
     "RSA-OAEP",
     "ECDH-ES",
@@ -73,7 +73,7 @@ const AUTHORIZATION_ENCRYPTION_ALG_VALUES_SUPPORTED: &[&str] = &[
     "ECDH-ES+A256KW",
 ];
 
-const AUTHORIZATION_ENCRYPTION_ENC_VALUES_SUPPORTED: &[&str] = &[
+pub(crate) const AUTHORIZATION_ENCRYPTION_ENC_VALUES_SUPPORTED: &[&str] = &[
     "A128GCM",
     "A192GCM",
     "A256GCM",
@@ -698,7 +698,7 @@ pub fn as_metadata(inputs: &MetadataInputs<'_>) -> Json {
 
 /// `USERINFO_SIGNING_ALGS`: the RSA, curve, post-quantum and HMAC tables,
 /// then `none`.
-const USERINFO_SIGNING_ALG_VALUES_SUPPORTED: &[&str] = &[
+pub(crate) const USERINFO_SIGNING_ALG_VALUES_SUPPORTED: &[&str] = &[
     "RS256",
     "RS384",
     "RS512",

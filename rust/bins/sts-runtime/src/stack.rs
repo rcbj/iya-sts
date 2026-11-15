@@ -134,21 +134,27 @@ impl ChangePull for PersistencePull {
 /// wait for it to be written down.
 struct PersistenceCommits(Weak<Persistence>);
 
+// WRITE BEFORE ANSWER, FOR EVERY KIND OF WRITE. The position is the
+// directory's generation AND the minted journal's (`write_position()`), and
+// the wait commits everything pending (`settle_writes()`) rather than the
+// directory alone: a code redeemed, a token revoked, a session ended are
+// minted rows, and a gate that counted only the directory let their
+// answers out before their commit — so a process reading the store the
+// moment it held the answer (Node's `/oauth2/introspect` beside this one)
+// still saw the token active. Committing what other requests wrote as well
+// is a superset of what this one needs, never less.
 impl CommitLog for PersistenceCommits {
     fn position(&self) -> u64 {
-        self.0.upgrade().map_or(0, |p| p.generation())
+        self.0.upgrade().map_or(0, |p| p.write_position())
     }
 
-    fn through(&self, position: u64) -> BoxFuture<'_, Result<(), String>> {
+    fn through(&self, _position: u64) -> BoxFuture<'_, Result<(), String>> {
         let p = self.0.upgrade();
         Box::pin(async move {
             let Some(p) = p else {
                 return Ok(());
             };
-            match p.directory_through(position).await {
-                sts_store::persistence::Through::Failed(e) => Err(e),
-                _ => Ok(()),
-            }
+            p.settle_writes().await
         })
     }
 }
@@ -197,16 +203,23 @@ async fn jwks(
     use axum::response::IntoResponse;
     let realm = sts_core::realm::current_id();
     let sets = persistence.upgrade().and_then(|p| p.key_sets());
+    let policy = sts_oauth::jwks::JwksPolicy::from_settings(&settings, &mode);
     let built = match sets {
-        Some(sets) => sets.open_or_make(&realm).await.and_then(|set| {
+        // THE JWKS TRIGGERS THE WHOLE POST-QUANTUM SET (`pqKeysForAsync()`):
+        // a JWKS that grew a key later would leave a client that cached it
+        // without the key it needs.
+        Some(sets) => if policy.post_quantum {
+            sets.with_pq_keys(&realm).await
+        } else {
+            sets.open_or_make(&realm).await
+        }
+        .and_then(|set| {
             let now_ms = chrono::Utc::now().timestamp_millis() as f64;
             let sources = sts_oauth::jwks::StoredSources {
                 sets: sets.clone(),
                 realm: realm.clone(),
                 now_ms,
             };
-            let policy =
-                sts_oauth::jwks::JwksPolicy::from_settings(&settings, &mode);
             sts_oauth::jwks::jwks_keys(&sts_oauth::jwks::JwksInputs {
                 blob: &set.blob,
                 pq_keys: None,
@@ -855,6 +868,15 @@ impl Stack {
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
+        // THE SECRETS EVERY NODE AGREES ON (`clusterSecrets.start()`,
+        // after the keystore opens and before anything is served): the
+        // pairwise key among them, Node's row read as Node sealed it.
+        self.persistence
+            .share_secrets(matches!(
+                self.cluster_mode.0,
+                ClusterMode::ActiveActive
+            ))
+            .await?;
         // The application register's directory, from what the store gave
         // back (`oauth.rs`).
         self.oauth.reload_directory();
@@ -1110,8 +1132,19 @@ mod tests {
         assert_eq!(default["keys"][0]["kty"], "RSA");
         // RSA, ES256, ES384, ES512 and ES256K, and the two request-object
         // encryption keys: the EdDSA and Ed448 keys the set holds are left
-        // out while keys.eddsaSigning is off, as Node leaves them out.
-        assert_eq!(default["keys"].as_array().unwrap().len(), 7);
+        // out while keys.eddsaSigning is off, as Node leaves them out. And
+        // the eleven post-quantum keys, which the first JWKS fetch makes
+        // (`pqKeysForAsync()`), keys.postQuantumSigning being on.
+        assert_eq!(default["keys"].as_array().unwrap().len(), 18);
+        assert_eq!(
+            default["keys"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|k| k["kty"] == "AKP")
+                .count(),
+            11
+        );
         let (status, acme) = jwks_of(&stack, "/realm/acme/oauth2/jwks").await;
         assert_eq!(status, 200);
         assert_ne!(acme["keys"][0]["kid"], default["keys"][0]["kid"]);

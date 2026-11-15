@@ -249,6 +249,20 @@ impl Minted {
         !self.state().journal.is_empty()
     }
 
+    /// The journal's generation: it moves with every noted write.
+    // Hot path (twice per request): no span.
+    pub fn generation(&self) -> u64 {
+        self.state().generation
+    }
+
+    /// Whether a write noted so far is not yet committed: journalled, or
+    /// taken by a flush still running.
+    // Hot path (once per answered request): no span.
+    pub fn pending(&self) -> bool {
+        let st = self.state();
+        !st.journal.is_empty() || st.committed < st.generation
+    }
+
     /// `keyColumnOf()`: the keyed digest a name is filed under, or the name
     /// where no digest key is held.
     fn key_column_of(

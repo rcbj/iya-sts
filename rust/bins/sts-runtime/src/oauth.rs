@@ -100,6 +100,22 @@ pub struct OAuthStack {
     pub servers: Arc<AuthorizationServers>,
     /// The consent register and screen (rule 4c).
     pub consent: Arc<sts_oauth::consent::ConsentScreen>,
+    /// `/oauth2/userinfo` (OIDC Core section 5.3).
+    pub userinfo: Arc<sts_oauth::userinfo::UserInfo>,
+}
+
+/// The person's entry for UserInfo's claims: the live directory's person
+/// doors (`DirectoryPorts::person_attribute`).
+struct ClaimEntries(Arc<sts_authn_api::wiring::DirectoryPorts>);
+
+impl sts_oauth::userinfo::ClaimDirectory for ClaimEntries {
+    fn values_of(
+        &self,
+        username: &str,
+        attribute: &str,
+    ) -> Option<Vec<String>> {
+        self.0.person_attribute(username, attribute)
+    }
 }
 
 /// `ldap_server.js`'s consent hooks over the live directory: the person's
@@ -406,7 +422,14 @@ impl OAuthStack {
         let pairwise = Arc::new(sts_oauth::pairwise::PairwiseSubjects {
             settings: settings.clone(),
             clients: clients.clone(),
-            secret: sts_oauth::pairwise::PairwiseSubjects::process_secret(),
+            // Node's `oidc-pairwise` cluster secret, read at each
+            // derivation: the store's value is known once it has started.
+            secret: {
+                let secrets = parts.persistence.cluster_secrets();
+                Arc::new(move || {
+                    secrets.text("oidc-pairwise").unwrap_or_default()
+                })
+            },
             ephemeral: sts_oauth::pairwise::PairwiseSubjects::declare_ephemeral(
                 &parts.lifecycle,
                 &parts.handles,
@@ -549,6 +572,11 @@ impl OAuthStack {
             now_ms: Arc::new(sts_core::time::now_ms_f64),
             random_id: Arc::new(random_id),
         });
+        let userinfo = Arc::new(sts_oauth::userinfo::UserInfo {
+            tokens: tokens.clone(),
+            directory: Arc::new(ClaimEntries(parts.directory_ports.clone())),
+            pairwise: Some(pairwise.clone()),
+        });
         Arc::new(OAuthStack {
             settings,
             mode,
@@ -562,6 +590,7 @@ impl OAuthStack {
             sessions: parts.sessions,
             servers,
             consent,
+            userinfo,
         })
     }
 
@@ -592,9 +621,22 @@ impl OAuthStack {
     /// endpoint signs with it.
     async fn ensure_keys(&self) {
         if let Some(sets) = self.persistence.key_sets() {
-            if let Err(e) =
-                sets.open_or_make(&sts_core::realm::current_id()).await
-            {
+            let realm = sts_core::realm::current_id();
+            // THE POST-QUANTUM HALF TOO, where the realm signs with it
+            // (`pqKeysForAsync()`): an ML-DSA or SLH-DSA ID Token, a
+            // hybrid response's, is signed by a synchronous signer that
+            // cannot wait for eleven keys to be made.
+            let pq = sts_oauth::jwks::JwksPolicy::from_settings(
+                &self.settings,
+                &self.mode,
+            )
+            .post_quantum;
+            let made = if pq {
+                sets.with_pq_keys(&realm).await
+            } else {
+                sets.open_or_make(&realm).await
+            };
+            if let Err(e) = made {
                 tracing::error!(
                     "{}oauth2: the realm's key set could not be read: {}",
                     sts_core::log::tag(sts_core::errors::codes::STS_OAUTH_0184),
@@ -647,6 +689,48 @@ impl OAuthStack {
                 move |r: AxumRequest| {
                     let (me, h) = (me.clone(), h.clone());
                     async move { me.token(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
+        // The two mode reports (`GET /oauth2/rfc9700`, `/oauth2/oauth21`).
+        let routes = routes.route(
+            "/oauth2/rfc9700",
+            axum::routing::get({
+                let me = me.clone();
+                move || {
+                    let me = me.clone();
+                    async move { me.report(true) }
+                }
+            })
+            .fallback(unrouted),
+        );
+        let routes = routes.route(
+            "/oauth2/oauth21",
+            axum::routing::get({
+                let me = me.clone();
+                move || {
+                    let me = me.clone();
+                    async move { me.report(false) }
+                }
+            })
+            .fallback(unrouted),
+        );
+        // `/oauth2/userinfo`, GET and POST (OIDC Core section 5.3.1).
+        let routes = routes.route(
+            "/oauth2/userinfo",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.userinfo(h, r).await }
+                }
+            })
+            .post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.userinfo(h, r).await }
                 }
             })
             .fallback(unrouted),
@@ -972,14 +1056,81 @@ impl OAuthStack {
             },
             ..AuthorizeAsk::default()
         };
-        self.authorize
-            .push(
-                &ask,
-                &self.tokens,
-                &header_of(&headers, "authorization"),
-                None,
-            )
-            .into_response()
+        let dpop = headers
+            .get("dpop")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(self.authorize.push(
+            &ask,
+            &self.tokens,
+            &header_of(&headers, "authorization"),
+            None,
+            dpop.as_deref(),
+        ))
+        .await
+        .into_response()
+    }
+
+    /// `bcp.state()` or `oauth21.state()`, for the ambient realm.
+    fn report(&self, rfc9700: bool) -> Response {
+        let reports = sts_oauth::reports::Reports {
+            settings: &self.settings,
+            mode: &self.mode,
+        };
+        let grants = &self.tokens.grants;
+        let state = if rfc9700 {
+            reports.rfc9700(sts_oauth::reports::Remembered {
+                transactions: grants.transactions.len(),
+                client_assertions: self.tokens.auth.assertions_remembered(),
+                refresh_tokens: grants.refresh_tokens.len(),
+                refresh_families: grants.refresh_families.len(),
+            })
+        } else {
+            reports.oauth21_state()
+        };
+        sts_oauth::reports::answer(&state).into_response()
+    }
+
+    /// `userinfoResponse()`: the base is `baseUrlOf(req)` — the realm's,
+    /// never a named server's, since UserInfo is the realm's resource.
+    async fn userinfo(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, _address, body) = self.arrived(&http, &request);
+        let token_in_query = request
+            .uri()
+            .query()
+            .map(|q| {
+                sts_oauth::js::form_decode(q)
+                    .iter()
+                    .any(|(k, _)| k == "access_token" || k == "token")
+            })
+            .unwrap_or(false);
+        let ask = sts_oauth::userinfo::UserinfoAsk {
+            htu: format!("{}/oauth2/userinfo", base),
+            base,
+            method: request.method().as_str().to_string(),
+            authorization: header_of(&headers, "authorization"),
+            dpop: headers
+                .get("dpop")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string),
+            content_type: header_of(&headers, "content-type"),
+            body,
+            token_in_query,
+            peer_der: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(self.userinfo.answer(&ask)).await.into_response()
     }
 
     async fn token(
@@ -1200,7 +1351,10 @@ impl OAuthStack {
             }
         };
         self.servers.ensure(&id, true, true);
-        named::run(id, handler()).await
+        // A NAMED SERVER'S OWN FAPI PROFILE (#138): in force for its
+        // requests, the realm's where it names none.
+        let own = self.servers.fapi_of(&id);
+        named::run(id, named::with_fapi(own, handler())).await
     }
 }
 

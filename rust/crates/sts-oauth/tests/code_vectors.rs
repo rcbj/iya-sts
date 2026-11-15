@@ -555,6 +555,7 @@ async fn the_code_flow() {
                         &format!("/realm/{}", realm)
                     ))
                 }
+                sts_oauth::answer::Body::Raw(t) => json!(t),
                 sts_oauth::answer::Body::Empty => Json::Null,
             };
             let mut want_body = case["body"].clone();

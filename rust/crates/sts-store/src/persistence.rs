@@ -199,6 +199,9 @@ pub struct Persistence {
     minted: Mutex<Option<Arc<crate::minted::Minted>>>,
     /// The composition root's steps, set before [`Persistence::start`].
     hooks: Mutex<StoreHooks>,
+    /// The secrets every node agrees on (`cluster/cluster_secrets.ts`),
+    /// shared through this store once [`Persistence::share_secrets`] ran.
+    cluster_secrets: Arc<crate::cluster_secrets::ClusterSecrets>,
     me: Weak<Persistence>,
 }
 
@@ -231,6 +234,9 @@ impl Persistence {
             handles: Mutex::new(None),
             minted: Mutex::new(None),
             hooks: Mutex::new(StoreHooks::default()),
+            cluster_secrets: Arc::new(
+                crate::cluster_secrets::ClusterSecrets::default(),
+            ),
             me: me.clone(),
         });
         let weak = Arc::downgrade(&me);
@@ -347,6 +353,18 @@ impl Persistence {
     /// The generation a waiter waits for: everything marked so far.
     pub fn generation(&self) -> u64 {
         self.state().generation
+    }
+
+    /// WHERE THIS PROCESS'S WRITES ARE, ALL OF THEM: the directory's
+    /// generation plus the minted journal's. It moves with every write of
+    /// either, which is all a commit gate asks of it — a request whose
+    /// handling left it where it was wrote nothing. The minted half is what
+    /// the gate once missed: a code redeemed or a token revoked is a minted
+    /// row, not a directory write, and its answer left before its commit.
+    // Hot path (twice per request): no span.
+    pub fn write_position(&self) -> u64 {
+        let minted = self.minted().map_or(0, |m| m.generation());
+        self.generation().wrapping_add(minted)
     }
 
     fn write_delay_ms(&self) -> u64 {
@@ -493,6 +511,34 @@ impl Persistence {
         }
         let wrote = stored?;
         Ok(minted? || wrote)
+    }
+
+    /// WRITE BEFORE ANSWER: everything this process has marked or
+    /// journalled so far, committed — the directory's, the realms', the
+    /// overrides' and the minted rows — or `Ok` at once when nothing is
+    /// pending. The HTTP layer awaits it before a response leaves, so a
+    /// row another process reads the moment it holds the answer (a code
+    /// redeemed, a token revoked, a consent given) is in the store, as it
+    /// is in Node's own memory for Node's next request. A flush another
+    /// task began is waited for, not skipped: its writes are not committed
+    /// until it ends.
+    // Hot path (every answered request): no span.
+    pub async fn settle_writes(&self) -> Result<(), String> {
+        let directory = {
+            let st = self.state();
+            st.enabled
+                && !st.restoring
+                && !st.stopped
+                && (st.directory_dirty
+                    || st.realms_dirty
+                    || st.config_dirty
+                    || st.committed_at < st.generation)
+        };
+        let minted = self.minted().is_some_and(|m| m.pending());
+        if !directory && !minted {
+            return Ok(());
+        }
+        self.flush().await.map(|_| ())
     }
 
     async fn flush_store(&self) -> Result<bool, String> {
@@ -854,6 +900,30 @@ impl Persistence {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// The secrets every node agrees on: per process until
+    /// [`Persistence::share_secrets`], the store's after.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn cluster_secrets(
+        &self,
+    ) -> Arc<crate::cluster_secrets::ClusterSecrets> {
+        self.cluster_secrets.clone()
+    }
+
+    /// `clusterSecrets.start(keystore)`, which Node's `service_state.ts`
+    /// calls once the keystore is open: every declared secret read from
+    /// (or first offered to) the store, sealed under this process's data
+    /// keys. After [`Persistence::start`]; fatal on any failure.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn share_secrets(
+        &self,
+        active_active: bool,
+    ) -> Result<Json, String> {
+        let keys = self.data_keys();
+        self.cluster_secrets
+            .start(self.driver.as_ref(), &keys, active_active)
+            .await
     }
 
     /// The keystore's data keys: none before [`Persistence::start`].

@@ -24,8 +24,12 @@
 //! WHAT IS NOT HERE, and what is answered meanwhile: ID Token encryption,
 //! the enterprise claims, `claims` requests, the Claims Providers, `cnf`
 //! for `bound_key`, the device claims and `ds_hash`, and
-//! `oauth2.breakIdTokenNonce`; a post-quantum algorithm (the key set holds
-//! no post-quantum signing key here) issues no ID Token.
+//! `oauth2.breakIdTokenNonce`.
+//!
+//! A POST-QUANTUM ALGORITHM (ML-DSA, SLH-DSA, the composites) is signed with
+//! the realm's `pqKeys`, made on first use and stored in Node's format
+//! (`sts_store::key_sets::KeySets::with_pq_keys`), and refused with Node's
+//! sentence where `keys.postQuantumSigning` is off.
 
 use std::sync::Arc;
 
@@ -48,7 +52,7 @@ pub struct CoreIdTokens {
 
 /// `fapi.defaultSigningAlg()`: PS256 under FAPI 1.0 Advanced.
 fn fapi_default_alg(settings: &Settings) -> &'static str {
-    if settings.value_of("oauth2.fapi").as_str() == "1-advanced" {
+    if crate::authorization_servers::fapi_profile(settings) == "1-advanced" {
         "PS256"
     } else {
         ""
@@ -104,6 +108,29 @@ impl CoreIdTokens {
                 },
             )
             .map_err(|e| e.to_string());
+        }
+        // `pqSignatureRefusal(alg)`: a post-quantum signature only where
+        // the realm publishes a post-quantum key to verify it with.
+        if sts_store::key_sets::is_pq_alg(alg)
+            && matches!(
+                self.settings.value_of("keys.postQuantumSigning"),
+                sts_core::settings::SettingValue::Bool(false)
+            )
+        {
+            tracing::warn!(
+                "{}helpers: the \"{}\" realm was asked for a {} signature \
+                 while keys.postQuantumSigning is off there, and refused it; \
+                 a client or setting still names a post-quantum algorithm.",
+                sts_core::log::tag(sts_core::errors::codes::STS_KEYS_0158),
+                sts_core::realm::current_id(),
+                alg
+            );
+            return Err(format!(
+                "this realm does not sign with {}: keys.postQuantumSigning \
+                 is off, so it publishes no post-quantum key to verify the \
+                 signature with.",
+                alg
+            ));
         }
         self.signer.sign(payload, "JWT", alg)
     }

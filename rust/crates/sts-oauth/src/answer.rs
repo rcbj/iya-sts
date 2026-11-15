@@ -32,6 +32,9 @@ pub enum Body {
     Json(Json),
     /// `text/html`.
     Html(String),
+    /// Text sent as it is, under the `Content-Type` the answer sets (a
+    /// pretty-printed document, a JWT).
+    Raw(String),
 }
 
 /// One endpoint's answer.
@@ -216,6 +219,7 @@ impl Answer {
             Body::Empty => Vec::new(),
             Body::Json(j) => j.to_string().into_bytes(),
             Body::Html(h) => h.clone().into_bytes(),
+            Body::Raw(t) => t.clone().into_bytes(),
         };
         let mut response =
             axum::response::Response::new(axum::body::Body::from(bytes));

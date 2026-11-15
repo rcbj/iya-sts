@@ -221,7 +221,8 @@ impl ConsentRegister {
     /// `fapi.v1()`: FAPI 1.0, which makes the screen compulsory and a
     /// global consent no answer (#138).
     fn fapi_v1(&self) -> bool {
-        let profile = self.settings.value_of("oauth2.fapi");
+        let profile =
+            crate::authorization_servers::fapi_profile(&self.settings);
         matches!(profile.as_str(), "1-baseline" | "1-advanced")
     }
 

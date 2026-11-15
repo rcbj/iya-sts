@@ -228,7 +228,105 @@ function mailTemplates() {
   }));
 }
 
+// THE AUTHORIZATION SERVER'S TWO MODE REPORTS (#444, phase 5, the `oauth5`
+// slice): `GET /oauth2/rfc9700` (`oauth2_bcp.js`'s `REQUIREMENTS` and the
+// constant sentences of `state()`) and `GET /oauth2/oauth21` (`oauth21.js`'s
+// `REQUIREMENTS` and `state()`'s), which `sts-oauth::reports` serves. A row
+// whose `enforced` or `note` is a FUNCTION depends on the settings, and is
+// exported EVALUATED, once for each combination of the four settings those
+// functions read — `global.https`, `oauth2.allowImplicitTokenResponses` and
+// the two access-token requirements — keyed `https|implicit|dpop|mtls` with
+// each a 0 or a 1. `config.value()` answers those four from the combination
+// while the export runs, and the settings as they are otherwise: OAuth 2.1
+// and FAPI off, so the implicit waiver is the setting alone.
+const OAUTH_DATA = path.join(ROOT, 'rust', 'crates', 'sts-oauth', 'tables');
+const REPORT_INPUTS = ['global.https', 'oauth2.allowImplicitTokenResponses',
+                       'oauth2.accessTokenRequireDpop',
+                       'oauth2.accessTokenRequireMtls'];
+
+function oauthReports() {
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const bcp = require(path.join(ROOT, 'oauth-oidc', 'oauth2_bcp.js'));
+  const oauth21 = require(path.join(ROOT, 'oauth-oidc', 'oauth21.js'));
+  const real = config.value;
+  const forced = {};
+  config.value = function (key) {
+    if (Object.prototype.hasOwnProperty.call(forced, key)) {
+      return forced[key];
+    }
+    if (key === 'oauth2.oauth21' || key === 'oauth2.fapi') {
+      return key === 'oauth2.fapi' ? '' : false;
+    }
+    return real.apply(this, arguments);
+  };
+  const keys = [];
+  for (let i = 0; i < 16; i++) {
+    keys.push([8, 4, 2, 1].map(function (bit) {
+      return (i & bit) ? '1' : '0';
+    }).join('|'));
+  }
+  const evaluated = function (field) {
+    if (typeof field !== 'function') {
+      return field === undefined ? null : field;
+    }
+    const out = {};
+    keys.forEach(function (key) {
+      key.split('|').forEach(function (bit, n) {
+        forced[REPORT_INPUTS[n]] = bit === '1';
+      });
+      out[key] = field();
+    });
+    return { computed: out };
+  };
+  // `what_it_means`, which says whether the mode is on and, for RFC 9700,
+  // which scheme the port answers on.
+  const meaning = function (stateOf, flag, withTls) {
+    const out = {};
+    [true, false].forEach(function (on) {
+      (withTls && on ? [true, false] : [true]).forEach(function (tls) {
+        forced[flag] = on;
+        forced['global.https'] = tls;
+        out[on ? (withTls ? 'on|' + (tls ? '1' : '0') : 'on') : 'off'] =
+          stateOf().what_it_means;
+      });
+    });
+    delete forced[flag];
+    delete forced['global.https'];
+    return out;
+  };
+  try {
+    const rfc9700 = bcp.state();
+    const draft = oauth21.state();
+    const bcpMeaning = meaning(bcp.state, 'oauth2.rfc9700', true);
+    const draftMeaning = meaning(oauth21.state, 'oauth2.oauth21', false);
+    return JSON.parse(JSON.stringify({
+      inputs: REPORT_INPUTS,
+      rfc9700: {
+        rfc: rfc9700.rfc, url: rfc9700.url, scope: rfc9700.scope,
+        what_it_means: bcpMeaning,
+        requirements: bcp.REQUIREMENTS.map(function (row) {
+          return { id: row.id, section: 'RFC 9700 ' + row.section,
+                   level: row.level, applies_to: row.appliesTo,
+                   title: row.title, enforced: evaluated(row.enforced),
+                   note: evaluated(row.note) };
+        })
+      },
+      oauth21: {
+        specification: draft.specification, draft: draft.draft,
+        url: draft.url, status: draft.status, implies: draft.implies,
+        what_it_means: draftMeaning,
+        exemptions: draft.exemptions,
+        requirements: draft.requirements
+      },
+      sender_constraints_note: rfc9700.sender_constraints.note
+    }));
+  } finally {
+    config.value = real;
+  }
+}
+
 const EXPORTS = [
+  { file: 'oauth_reports.json', dir: OAUTH_DATA, build: oauthReports },
   { file: 'mail_templates.json', dir: MAIL_DATA, build: mailTemplates },
   { file: 'audit_vocabulary.json', dir: AUDIT_DATA, build: auditVocabulary },
   { file: 'error_codes.json', build: errorCodes },
@@ -292,6 +390,7 @@ if (require.main === module) {
   } else {
     fs.mkdirSync(DATA, { recursive: true });
     fs.mkdirSync(CRYPTO_DATA, { recursive: true });
+    fs.mkdirSync(OAUTH_DATA, { recursive: true });
     // A file under env/ is written only where its directory exists.
     rendered().forEach(function (one) {
       fs.writeFileSync(one.file, one.text);
