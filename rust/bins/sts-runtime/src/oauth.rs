@@ -125,7 +125,47 @@ impl sts_oauth::userinfo::ClaimDirectory for ClaimEntries {
         username: &str,
         attribute: &str,
     ) -> Option<Vec<String>> {
-        self.0.person_attribute(username, attribute)
+        let values = self.0.person_attribute(username, attribute)?;
+        if !attribute
+            .eq_ignore_ascii_case(sts_oauth::identity_assurance::ATTRIBUTE)
+        {
+            return Some(values);
+        }
+        // `credentials.readIdaVerifications()`: SEALED since 2026-10-01
+        // under the key-encryption key (label `identity-verifications`); a
+        // value written before then, or without a durable key, is the JSON
+        // as it is.
+        Some(
+            values
+                .into_iter()
+                .map(|v| {
+                    if !sts_crypto::secrets::is_encrypted_with_kek(&v) {
+                        return v;
+                    }
+                    match self
+                        .0
+                        .persistence
+                        .data_keys()
+                        .open(&v, "identity-verifications")
+                    {
+                        Some(opened) => opened,
+                        None => {
+                            tracing::warn!(
+                                "{}credentials: the identity verifications \
+                                 of {} are sealed and will not open under \
+                                 this process's key-encryption key; read as \
+                                 none.",
+                                sts_core::log::tag(
+                                    sts_core::errors::codes::STS_OAUTH_0788
+                                ),
+                                username
+                            );
+                            String::new()
+                        }
+                    }
+                })
+                .collect(),
+        )
     }
 }
 

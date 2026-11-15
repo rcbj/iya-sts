@@ -838,7 +838,16 @@ impl TokenEndpoint {
                     revoked += 1;
                 }
             }
+            // The grant's other tokens as the register filed them (Node's
+            // `grantTokens` rows): every access and refresh token minted
+            // under this family.
             if !family.is_empty() {
+                revoked += self.register.revoke_where(
+                    &sts_core::realm::current_id(),
+                    &|r: &Json| s(r.get("grantId")) == family,
+                    &format!("{}, with the refresh token of its grant", via),
+                    self.clock.now_ms(),
+                );
                 self.revoke_family_by_id(&family, &owner).await;
             }
         }
