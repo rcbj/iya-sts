@@ -184,7 +184,8 @@ pub fn me_json(services: &Services, caller: Option<&Caller>) -> Json {
             "realm"
         }
     });
-    let roles: Vec<String> = caller.map(|c| c.roles.clone()).unwrap_or_default();
+    let roles: Vec<String> =
+        caller.map(|c| c.roles.clone()).unwrap_or_default();
     let roster = caller
         .filter(|c| c.kind == "person")
         .and_then(|c| services.console.roster(&c.name, &realm_id));
@@ -217,7 +218,9 @@ pub fn me_json(services: &Services, caller: Option<&Caller>) -> Json {
     );
     console.insert(
         "windowOpens".into(),
-        Json::Bool(r.is_none_or(|x| x.get("windowOpens") != Some(&json!(false)))),
+        Json::Bool(
+            r.is_none_or(|x| x.get("windowOpens") != Some(&json!(false))),
+        ),
     );
     console.insert(
         "bootstrapPasswordRequired".into(),
@@ -240,10 +243,7 @@ pub fn me_json(services: &Services, caller: Option<&Caller>) -> Json {
     );
     out.insert("realm".into(), Json::from(realm_id.clone()));
     out.insert("readingRealm".into(), Json::from(ambient));
-    out.insert(
-        "authority".into(),
-        authority.map_or(Json::Null, Json::from),
-    );
+    out.insert("authority".into(), authority.map_or(Json::Null, Json::from));
     out.insert(
         "scopes".into(),
         json!(caller.map(|c| c.scopes.clone()).unwrap_or_default()),
@@ -408,7 +408,11 @@ pub fn build_info(v: &sts_core::version::VersionInfo) -> String {
     } else {
         format!(
             "{}{} — ",
-            if v.release { "Release build " } else { "Build " },
+            if v.release {
+                "Release build "
+            } else {
+                "Build "
+            },
             v.build
         )
     };
@@ -648,8 +652,7 @@ pub fn locale_files(
     version: &sts_core::version::VersionInfo,
 ) -> Json {
     let t = catalogs.translator(preferences, "en");
-    let at: String =
-        v_digits(&version.built_at);
+    let at: String = v_digits(&version.built_at);
     let build = format!(
         "{}{}",
         if at.is_empty() { "0".to_string() } else { at },

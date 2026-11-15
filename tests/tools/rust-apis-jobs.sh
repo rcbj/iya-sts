@@ -125,8 +125,33 @@ run_svc() {
   docker logs "$name" > "$OUT/$name.failed.log" 2>&1 || true
   fail "$name started (see $OUT/$name.failed.log)"; exit 1
 }
+# JOB_IMAGE: run each job inside that image (a tests image under this
+# slice's tag, whose node and packages are the jobs' own) on the host's
+# network, with this worktree's tests/protocol mounted over its own;
+# without it, the host's node and NODE_PATH.
 job() {
   local label="$1" base="$2" file="$3" token
+  if [ -n "${JOB_IMAGE:-}" ]; then
+    token="$(docker run --rm --network host \
+      -e STS_ADMIN_API_CLIENT_SECRET="$SECRET" -e NODE_TLS_REJECT_UNAUTHORIZED=0 \
+      "$JOB_IMAGE" node tests/tools/admin-api-token.js "$base" 2>/dev/null \
+      || true)"
+    if docker run --rm --network host \
+         -v "$REPO/tests/protocol:/usr/src/sts/tests/protocol:ro" \
+         -w /usr/src/sts/tests/protocol \
+         -e WSTRUST_STS_URL="$base/sts" -e OID4VCI_ISSUER_URL="$base" \
+         -e NODE_TLS_REJECT_UNAUTHORIZED=0 -e CONFIG_FILE=./env/local.js \
+         -e STS_ADMIN_API_TOKEN="$token" -e STS_MODE=product \
+         -e NODE_OPTIONS="--require /usr/src/sts/tests/tools/attach-admin-token.js" \
+         "$JOB_IMAGE" timeout 900 node "$file" \
+         > "$OUT/$label-${file%.js}.log" 2>&1; then
+      pass "$label $file"
+    else
+      fail "$label $file (tail: $(tail -c 400 "$OUT/$label-${file%.js}.log" \
+        | tr '\n' ' '))"
+    fi
+    return 0
+  fi
   token="$(STS_ADMIN_API_CLIENT_SECRET=$SECRET \
     node "$REPO/tests/tools/admin-api-token.js" "$base" 2>/dev/null || true)"
   if ( cd "$REPO/tests/protocol" && \

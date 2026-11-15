@@ -69,8 +69,7 @@ pub const SCOPE: &str = "account:manage";
 pub const PORTAL_CLIENT: &str = "sts-user-portal";
 
 /// The document, as the model wrote it.
-pub const DOCUMENT_TEXT: &str =
-    include_str!("generated/openapi.account.json");
+pub const DOCUMENT_TEXT: &str = include_str!("generated/openapi.account.json");
 
 static DOCUMENT: LazyLock<Json> = LazyLock::new(|| {
     serde_json::from_str(DOCUMENT_TEXT).unwrap_or_else(|e| {
@@ -263,9 +262,7 @@ pub fn problem_of(
     status: u16,
     body: &Json,
 ) -> Option<String> {
-    let Some((id, entry)) = operation_of(method, path) else {
-        return None;
-    };
+    let (id, entry) = operation_of(method, path)?;
     let responses = entry.get("responses")?;
     let Some(declared) = responses
         .get(status.to_string())
@@ -334,7 +331,9 @@ impl AccountApi {
         let s = &self.services;
         let realm_id = realm::current_id();
         let (token, scheme) = crate::gate::presented_token_of(
-            headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()),
+            headers
+                .get(header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok()),
         );
         if token.is_empty() {
             return Err(unauthorized(
@@ -456,8 +455,7 @@ impl AccountApi {
         };
         let jti = text(claims.get("jti"));
         if (!jti.is_empty() && s.gate_ports.revoked(&realm_id, &jti))
-            || (!person.is_empty()
-                && s.gate_ports.disabled(&realm_id, &person))
+            || (!person.is_empty() && s.gate_ports.disabled(&realm_id, &person))
         {
             return Err(unauthorized(
                 codes::STS_ACCOUNT_0007,
@@ -581,7 +579,10 @@ impl AccountApi {
             );
             out.headers.push((
                 "www-authenticate",
-                format!("DPoP error=\"insufficient_scope\", scope=\"{}\"", SCOPE),
+                format!(
+                    "DPoP error=\"insufficient_scope\", scope=\"{}\"",
+                    SCOPE
+                ),
             ));
             return Err(out);
         }
@@ -788,12 +789,12 @@ pub fn describe(attributes: &Json) -> Json {
             let rows: Vec<Json> = klass
                 .get("attributes")
                 .and_then(Json::as_array)
-                .map(|list| list.iter().map(|row| row_for(row, attributes)).collect())
+                .map(|list| {
+                    list.iter().map(|row| row_for(row, attributes)).collect()
+                })
                 .unwrap_or_default();
-            let held = rows
-                .iter()
-                .filter(|r| r["present"] == json!(true))
-                .count();
+            let held =
+                rows.iter().filter(|r| r["present"] == json!(true)).count();
             held_all += held;
             total_all += rows.len();
             json!({ "id": klass["id"], "name": klass["name"],
@@ -806,7 +807,9 @@ pub fn describe(attributes: &Json) -> Json {
             // total.
             let o = g.as_object_mut().map(std::mem::take).unwrap_or_default();
             let mut out = Map::new();
-            for k in ["id", "name", "rfc", "oid", "what", "rows", "held", "total"] {
+            for k in
+                ["id", "name", "rfc", "oid", "what", "rows", "held", "total"]
+            {
                 if let Some(v) = o.get(k) {
                     out.insert(k.into(), v.clone());
                 }
@@ -830,7 +833,10 @@ fn row_for(row: &Json, attributes: &Json) -> Json {
     let flag = |k: &str| row.get(k).is_some_and(|v| v == &json!(true));
     let mut out = Map::new();
     out.insert("ldap".into(), json!(ldap));
-    out.insert("label".into(), row.get("label").cloned().unwrap_or(Json::Null));
+    out.insert(
+        "label".into(),
+        row.get("label").cloned().unwrap_or(Json::Null),
+    );
     out.insert("rfc".into(), row.get("rfc").cloned().unwrap_or(Json::Null));
     out.insert("note".into(), json!(text(row.get("note"))));
     out.insert("must".into(), json!(flag("must")));
@@ -865,8 +871,9 @@ fn send(method: &Method, path: &str, out: Out) -> Response {
             .unwrap_or(Json::Null);
         code = Some(codes::STS_API_0139);
     }
-    let mut response =
-        Response::new(Body::from(serde_json::to_string(&body).unwrap_or_default()));
+    let mut response = Response::new(Body::from(
+        serde_json::to_string(&body).unwrap_or_default(),
+    ));
     *response.status_mut() =
         StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
     let h = response.headers_mut();
@@ -903,14 +910,14 @@ async fn serve(
     };
     let base = api.base(&parts.headers, over_tls);
     let htu = format!("{}{}", base, path);
-    let Some((id, entry)) = operation_of(parts.method.as_str(), &trimmed) else {
-        let mut response = sts_http::html(sts_http::express::error_document(
-            &format!(
+    let Some((id, entry)) = operation_of(parts.method.as_str(), &trimmed)
+    else {
+        let mut response =
+            sts_http::html(sts_http::express::error_document(&format!(
                 "Cannot {} {}",
                 parts.method,
                 sts_http::express::escape_html(&path)
-            ),
-        ));
+            )));
         *response.status_mut() = StatusCode::NOT_FOUND;
         return response;
     };
@@ -919,7 +926,8 @@ async fn serve(
         .and_then(Json::as_array)
         .is_some_and(|s| !s.is_empty());
     let caller = if person {
-        match api.authenticate(&parts.method, &parts.headers, &htu, &base, &id) {
+        match api.authenticate(&parts.method, &parts.headers, &htu, &base, &id)
+        {
             Ok(c) => Some(c),
             Err(out) => return send(&parts.method, &trimmed, out),
         }

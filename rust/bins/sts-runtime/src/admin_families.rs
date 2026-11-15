@@ -132,7 +132,7 @@ impl AdminFamilies {
                 let scope = Self::scope_from(&json!({}));
                 Some(match a.build_scope(&scope, &options) {
                     Err(r) => refused(r.code, vec![r.sentence()]),
-                    Ok(row) => ok(json!({
+                    Ok(_) => ok(json!({
                         "ok": true,
                         "why": format!(
                             "A three-tier certificate authority was built for the \"{}\" realm, and 0 \
@@ -141,7 +141,7 @@ impl AdminFamilies {
                              service keeps no copy of what it issued, so none of it can be listed.",
                             label
                         ),
-                        "chain": if row.is_object() { row } else { Json::Null },
+                        "chain": describe_chain(a, &scope),
                     })),
                 })
             }
@@ -232,10 +232,8 @@ impl AdminFamilies {
                 match core.create_eab(&target, lifetime, &actor) {
                     Err(r) => handed_on(&r),
                     Ok(made) => {
-                        let directory = format!(
-                            "{}/enroll/acme/directory",
-                            asked.base
-                        );
+                        let directory =
+                            format!("{}/enroll/acme/directory", asked.base);
                         ok(json!({
                             "ok": true,
                             "kid": made.kid,
@@ -281,9 +279,11 @@ impl AdminFamilies {
                         )],
                     ));
                 };
-                if found.record.get("revoked").is_some_and(|r| {
-                    !r.is_null() && r != &json!(false)
-                }) {
+                if found
+                    .record
+                    .get("revoked")
+                    .is_some_and(|r| !r.is_null() && r != &json!(false))
+                {
                     return Some(refused(
                         codes::STS_ACME_0096,
                         vec!["That certificate is already revoked.".into()],
@@ -417,10 +417,7 @@ impl AdminFamilies {
             "remove-host-name",
         ];
         let body = asked.body;
-        let actor = asked
-            .caller
-            .map(|c| c.name.clone())
-            .unwrap_or_default();
+        let actor = asked.caller.map(|c| c.name.clone()).unwrap_or_default();
         let core = &f.core;
         Some(match asked.action {
             "create-challenge" => {
@@ -551,6 +548,62 @@ impl AdminFamilies {
             ),
         })
     }
+}
+
+/// `TIERS`' `what`, in order.
+const TIER_WHAT: [&str; 3] = [
+    "The trust anchor. Self-signed, the longest-lived of the three, and the only certificate in the \
+     hierarchy a relying party has to be given out of band — everything below it travels in the chain.",
+    "Signed by the Root. It exists so that the Root's key can be used once and then left alone: a \
+     compromise here is repaired by reissuing this tier, and a compromise of the Root is not repaired at \
+     all. pathLen is 1, so it may sign one more CA and no deeper.",
+    "Signed by the Intermediate, and the only tier that signs anything this service hands out. pathLen is \
+     0 — it signs LEAVES and no further CA, which is what makes \"an application certificate cannot be used \
+     to mint another\" a property of the encoding rather than of this service's manners.",
+];
+
+/// `describeChain(rawChainFor(scope))`: the hierarchy with no private key.
+fn describe_chain(a: &Authority, scope: &str) -> Json {
+    let Some(tiers) = a.raw_chain_for(scope) else {
+        return Json::Null;
+    };
+    let row = a.raw_row_for(scope).unwrap_or(Json::Null);
+    let now = chrono::Utc::now().timestamp_millis();
+    let null_if_empty = |v: &Json| match v {
+        Json::String(t) if t.is_empty() => Json::Null,
+        Json::Null => Json::Null,
+        other => other.clone(),
+    };
+    json!({
+        "realm": row["realm"],
+        "createdAt": row["createdAt"],
+        "keyAlg": row["keyAlg"],
+        "signatureAlg": row["signatureAlg"],
+        "altKeyAlg": null_if_empty(&row["altKeyAlg"]),
+        "organisation": row["organisation"],
+        "country": row["country"],
+        "issuedCount": row["issuedCount"].as_i64().unwrap_or(0),
+        "persisted": a.persists(),
+        "tiers": tiers.iter().enumerate().map(|(i, one)| {
+            let expired = chrono::DateTime::parse_from_rfc3339(
+                one["notAfter"].as_str().unwrap_or(""),
+            )
+            .map(|t| t.timestamp_millis() < now)
+            .unwrap_or(false);
+            json!({
+                "tier": one["tier"], "label": one["label"],
+                "what": TIER_WHAT.get(i).copied().unwrap_or(""),
+                "subject": one["subject"], "serialHex": one["serialHex"],
+                "notBefore": one["notBefore"], "notAfter": one["notAfter"],
+                "keyAlg": one["keyAlg"], "signatureAlg": one["signatureAlg"],
+                "altKeyAlg": null_if_empty(&one["altKeyAlg"]),
+                "altSignatureAlg": null_if_empty(&one["altSignatureAlg"]),
+                "thumbprint": one["thumbprint"],
+                "certificatePem": one["certificatePem"],
+                "expired": expired,
+            })
+        }).collect::<Vec<_>>(),
+    })
 }
 
 impl FamilyPorts for AdminFamilies {

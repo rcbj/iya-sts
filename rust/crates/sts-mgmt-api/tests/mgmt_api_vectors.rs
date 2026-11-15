@@ -211,7 +211,9 @@ impl SetupPorts for Fake {
 
 impl ConsolePorts for Fake {
     fn roster_available(&self) -> bool {
-        self.v["consoleFacts"]["rosterAvailable"].as_bool().unwrap_or(false)
+        self.v["consoleFacts"]["rosterAvailable"]
+            .as_bool()
+            .unwrap_or(false)
     }
     fn runtime_facts(&self) -> Json {
         self.v["consoleFacts"]["runtime"].clone()
@@ -229,8 +231,7 @@ impl ConsolePorts for Fake {
         _username: &str,
         as_files: bool,
     ) -> Json {
-        let preferences =
-            sts_mgmt_api::console::preferences_of(headers, None);
+        let preferences = sts_mgmt_api::console::preferences_of(headers, None);
         let version: VersionInfo =
             serde_json::from_value(self.v["version"].clone()).unwrap();
         if as_files {
@@ -260,11 +261,9 @@ impl ConsolePorts for Fake {
 /// The catalogs, as the repository holds them.
 static CATALOGS: std::sync::LazyLock<sts_http::i18n::Catalogs> =
     std::sync::LazyLock::new(|| {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..");
-        sts_http::i18n::Catalogs::load(&sts_http::i18n::Catalogs::dir_in(
-            &root,
-        ))
+        let root =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        sts_http::i18n::Catalogs::load(&sts_http::i18n::Catalogs::dir_in(&root))
     });
 
 struct Keys(HashMap<String, KeySet>);

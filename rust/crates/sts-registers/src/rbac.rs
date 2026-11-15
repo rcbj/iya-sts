@@ -645,22 +645,16 @@ impl Rbac {
             json!({ "username": bootstrap_name, "seeded": seeded,
                     "claimedAt": claimed_at }),
         );
-        let unclaimed = if seeded {
-            claimed_at.is_empty()
-        } else {
-            empty
-        };
+        let unclaimed = if seeded { claimed_at.is_empty() } else { empty };
         let realm = self.bound_realm();
         let opens = self.mode.opens_console_to_anyone(&realm);
         out.insert("windowOpens".into(), json!(opens));
         if unclaimed && held.is_empty() {
             out.insert("openable".into(), json!(true));
-            if opens
-                && js::truthy(&self.settings.value("admin.openWhenEmpty"))
+            if opens && js::truthy(&self.settings.value("admin.openWhenEmpty"))
             {
                 out.insert("open".into(), json!(true));
-                let window: &[&str] = if realm == sts_core::realm::DEFAULT_ID
-                {
+                let window: &[&str] = if realm == sts_core::realm::DEFAULT_ID {
                     &["read", "write", "security"]
                 } else {
                     &["read", "write"]
@@ -683,7 +677,10 @@ impl Rbac {
                     && !held.is_empty()
             ),
         );
-        out.insert("withheld".into(), json!(!opens && unclaimed && held.is_empty()));
+        out.insert(
+            "withheld".into(),
+            json!(!opens && unclaimed && held.is_empty()),
+        );
         let roles: Vec<&str> = ROSTER_ROLES
             .iter()
             .map(|r| r.id)

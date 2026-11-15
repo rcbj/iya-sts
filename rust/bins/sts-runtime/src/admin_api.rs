@@ -188,7 +188,11 @@ impl LiveDir {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn write_back(&self) {
         let touched: Vec<(String, String)> = std::mem::take(
-            &mut *self.touched.0.lock().unwrap_or_else(PoisonError::into_inner),
+            &mut *self
+                .touched
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
         );
         if touched.is_empty() {
             return;
@@ -205,7 +209,8 @@ impl LiveDir {
         }
     }
 
-    /// Reads the registers' directory.
+    /// Reads the registers' directory. A hot path: every port's read goes
+    /// through it, so it carries no span.
     pub fn with<R>(&self, f: impl FnOnce(&Directory) -> R) -> R {
         let tree = self.tree.lock().unwrap_or_else(PoisonError::into_inner);
         f(&tree)
@@ -250,12 +255,18 @@ fn groups_of_user(tree: &Directory, r: usize, key: &str) -> Json {
                     sts_ldap::service_dn::normalize_dn(Some(v)) == person
                 })
             })
-            .map(|a| if a == "member" { "member" } else { "uniqueMember" })
+            .map(|a| {
+                if a == "member" {
+                    "member"
+                } else {
+                    "uniqueMember"
+                }
+            })
             .collect();
         let claimed = located.is_some_and(|e| {
-            e.values("memberof").iter().any(|v| {
-                sts_ldap::service_dn::normalize_dn(Some(v)) == *gkey
-            })
+            e.values("memberof")
+                .iter()
+                .any(|v| sts_ldap::service_dn::normalize_dn(Some(v)) == *gkey)
         });
         if via.is_empty() && !claimed {
             continue;
@@ -291,7 +302,8 @@ impl rp::RosterDirectory for Roster {
         Some(self.realm.clone())
     }
     fn group_dn_for(&self, cn: &str) -> String {
-        self.dir.with(|t| format!("cn={},{}", cn, t.groups_dn(self.r(t))))
+        self.dir
+            .with(|t| format!("cn={},{}", cn, t.groups_dn(self.r(t))))
     }
     fn read_group_entry(&self, dn: &str) -> Json {
         self.dir.with(|t| {
@@ -311,9 +323,10 @@ impl rp::RosterDirectory for Roster {
             let members: Vec<Json> = ["member", "uniquemember"]
                 .into_iter()
                 .flat_map(|a| {
-                    stored.values(a).iter().map(move |v| {
-                        json!({ "value": v, "attribute": a })
-                    })
+                    stored
+                        .values(a)
+                        .iter()
+                        .map(move |v| json!({ "value": v, "attribute": a }))
                 })
                 .collect();
             object["rule"] = json!(rule);
@@ -570,7 +583,11 @@ impl rp::Applications for RegApps {
     fn setting_for(&self, identifier: &str, key: &str) -> Json {
         self.0.setting_for(identifier, key)
     }
-    fn update_application(&self, _identifier: &str, _change: &Json) -> rp::Marked {
+    fn update_application(
+        &self,
+        _identifier: &str,
+        _change: &Json,
+    ) -> rp::Marked {
         rp::Marked::plain(json!({ "ok": false }))
     }
     fn is_internal_identifier(&self, identifier: &str) -> bool {
@@ -579,7 +596,11 @@ impl rp::Applications for RegApps {
     fn owner_protected(&self, _identifier: &str) -> bool {
         false
     }
-    fn set_owner_protected(&self, _identifier: &str, _flag: bool) -> rp::Marked {
+    fn set_owner_protected(
+        &self,
+        _identifier: &str,
+        _flag: bool,
+    ) -> rp::Marked {
         rp::Marked::plain(json!({ "ok": false }))
     }
     fn owner_values(&self) -> Vec<Vec<String>> {
@@ -615,12 +636,12 @@ impl rp::Subjects for Subjects {
         if !lower.starts_with("urn:uuid:") {
             return false;
         }
-        self.0.with(|t| {
-            t.name_for_subject(&realm::current_id(), sub).is_empty()
-        })
+        self.0
+            .with(|t| t.name_for_subject(&realm::current_id(), sub).is_empty())
     }
     fn name_for_subject(&self, sub: &str) -> String {
-        self.0.with(|t| t.name_for_subject(&realm::current_id(), sub))
+        self.0
+            .with(|t| t.name_for_subject(&realm::current_id(), sub))
     }
 }
 
@@ -693,12 +714,10 @@ impl rp::PersonWriter for PersonWriter {
             );
         }
         let lower = wanted.to_lowercase();
-        let dn_shaped = wanted
-            .split_once('=')
-            .is_some_and(|(a, _)| {
-                a.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-                    && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-            });
+        let dn_shaped = wanted.split_once('=').is_some_and(|(a, _)| {
+            a.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                && a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        });
         if dn_shaped {
             return Self::refused(
                 codes::STS_LDAP_0043,
@@ -805,12 +824,10 @@ impl rp::PersonWriter for PersonWriter {
                             .filter(|t| !t.is_empty())
                             .collect(),
                         Json::Null => Vec::new(),
-                        Json::String(t) => {
-                            vec![t.trim().to_string()]
-                                .into_iter()
-                                .filter(|t| !t.is_empty())
-                                .collect()
-                        }
+                        Json::String(t) => vec![t.trim().to_string()]
+                            .into_iter()
+                            .filter(|t| !t.is_empty())
+                            .collect(),
                         other => vec![other.to_string()],
                     };
                     if values.is_empty() {
@@ -1306,7 +1323,11 @@ struct Console {
 
 impl ConsolePorts for Console {
     fn roster(&self, name: &str, realm_id: &str) -> Option<Json> {
-        Some(rp::RosterRoles::roles_of(self.roster.as_ref(), name, realm_id))
+        Some(rp::RosterRoles::roles_of(
+            self.roster.as_ref(),
+            name,
+            realm_id,
+        ))
     }
     fn roster_available(&self) -> bool {
         true
@@ -1359,6 +1380,7 @@ impl ConsolePorts for Console {
 /// `SsfReceivers.announcementsFor(surface, since)`: what a broadcast left
 /// for this surface since the caller's first answer, oldest first; a row
 /// older than `ssf.announcementKeepS` is never answered.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn announcements_for(
     store: &RealmMap<Json>,
     settings: &Settings,
@@ -1406,7 +1428,8 @@ struct Account {
 
 impl sts_mgmt_api::account::AccountPorts for Account {
     fn name_for_subject(&self, sub: &str) -> String {
-        self.dir.with(|t| t.name_for_subject(&realm::current_id(), sub))
+        self.dir
+            .with(|t| t.name_for_subject(&realm::current_id(), sub))
     }
     fn subject_is_gone(&self, sub: &str) -> bool {
         sub.trim().to_lowercase().starts_with("urn:uuid:")
@@ -1427,9 +1450,8 @@ impl sts_mgmt_api::account::AccountPorts for Account {
     fn person_entry(&self, name: &str) -> Option<Json> {
         self.dir.with(|t| {
             let r = LiveDir::realm_index(t, &realm::current_id())?;
-            t.existing_user_entry(r, name).map(|e| {
-                json!({ "dn": e.dn, "attributes": e.attributes })
-            })
+            t.existing_user_entry(r, name)
+                .map(|e| json!({ "dn": e.dn, "attributes": e.attributes }))
         })
     }
     fn mechanisms(&self, name: &str) -> Json {
@@ -1443,9 +1465,8 @@ impl sts_mgmt_api::account::AccountPorts for Account {
             0
         };
         let totp = self.credentials.totp_of(name);
-        let unusable = totp
-            .as_ref()
-            .is_some_and(|t| t["unusable"] == json!(true));
+        let unusable =
+            totp.as_ref().is_some_and(|t| t["unusable"] == json!(true));
         json!({
             "password": self.credentials.has_password(name),
             "keys": keys,
@@ -1669,7 +1690,9 @@ impl AdminStack {
                     .as_str()
                     .unwrap_or("memory")
                     .to_string(),
-                persistence_enabled: store["enabled"].as_bool().unwrap_or(false),
+                persistence_enabled: store["enabled"]
+                    .as_bool()
+                    .unwrap_or(false),
             },
             version: parts.version,
             eddsa_curve: String::new(),
@@ -1704,8 +1727,7 @@ impl AdminStack {
         let serial = self.serial.clone();
         sts_mgmt_api::router::router(self.services.clone())
             .merge(self.account.clone().router())
-            .layer(
-            axum::middleware::from_fn(
+            .layer(axum::middleware::from_fn(
                 move |request: axum::extract::Request,
                       next: axum::middleware::Next| {
                     let (dir, serial) = (dir.clone(), serial.clone());
@@ -1717,7 +1739,6 @@ impl AdminStack {
                         response
                     }
                 },
-            ),
-        )
+            ))
     }
 }
