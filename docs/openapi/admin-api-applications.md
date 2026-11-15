@@ -6246,6 +6246,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -6298,6 +6299,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -6377,6 +6379,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -6429,6 +6432,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -8006,6 +8010,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -8058,6 +8063,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -8142,6 +8148,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -8194,6 +8201,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -8706,6 +8714,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |
@@ -8758,6 +8767,7 @@ Scope: `admin:write`.
 | `definition` | any JSON |  | The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition. |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `field` | string |  | On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`. |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `type` | string |  |  |

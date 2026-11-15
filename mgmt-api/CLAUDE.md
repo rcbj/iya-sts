@@ -2911,7 +2911,11 @@ and `applicationPolicies` on `GET /admin-api/xacml/policies`;
   where the validator could only say a member is missing. The row's
   `category`, `dataType` and `multiplicity` are plain strings: the grammar
   takes a short name OR its XACML URI, and its refusal (STS-FGA-0023) names
-  the `field`, which the console draws under the box.
+  the `field`, which the console draws under the box. **`field` IS IN THE
+  RESPONSE MODEL since #40 (2026-11-15)**, on `WithOkMessageErrors97`, which
+  the five access-type acts share: until then the refusal was not a valid
+  answer of its operation, so #1353's check replaced every 400 of the three
+  mapping acts with a 500 and STS-API-0139 (`sts_fga_codes` S3 pinned it).
 * **The three mapping acts rewrite the type's ONE value through
   `updateApplication()`**, the door `set-access-type` takes, after the
   grammar's own `FgaMap.parseRow()` has read the row — so the reserved

@@ -7072,7 +7072,8 @@ namespace IyaSts.Api.Management {
     `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `type`?: string;
-    `definition`?: `JSONOperatorWroteIntoAccess`
+    `definition`?: `JSONOperatorWroteIntoAccess`;
+    @js(#{`description`:"On a refusal of an access type's XACML mapping (`STS-FGA-0023`, `STS-FGA-0019`): the member of the request that was wrong — `path`, `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`."}) `field`?: string
   }
 
 @component model `WithNameKindDn` {
