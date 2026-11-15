@@ -36,6 +36,10 @@
 #   7. What Rust does not serve yet (a family route, a sign-in) is LISTED
 #      with the status it answered, never failed.
 #
+# E2E_CLUSTER_MODE (default off) is both runtimes' cluster.mode:
+# `active-passive` has each join and take the service lease before it
+# restores anything (`cluster.gate()`), which the summary then checks.
+#
 # Writes <out-dir> (default tests/vectors/rust-e2e-<engine>, gitignored):
 # each container's log, the two JWKS pairs, the differential report, the
 # handshake diff and summary.txt. Exits 1 when a check fails.
@@ -213,7 +217,7 @@ service_env() {
     "STS_KEYS_KEK_PROVIDER=file" \
     "STS_KEYS_KEK_FILE=/run/secrets/sts-kek" \
     "STS_SECRETS_ALLOW_LOCAL_SECRETS=true" \
-    "STS_CLUSTER_MODE=off" \
+    "STS_CLUSTER_MODE=${E2E_CLUSTER_MODE:-off}" \
     "STS_WORKERS_REQUEST_COUNT=0" \
     "STS_DEBUGGER_ENABLED=off" \
     "ADMIN_API_CLIENT_SECRET=$SECRET"
@@ -350,6 +354,14 @@ check "opened the $ENGINE store and restored the realms and settings" \
   grep -qE "persistence: $ENGINE store open; restored [0-9]+ directory entry/entries, [2-9][0-9]* defined realm\(s\) and [1-9][0-9]* appconfig override" "$LOG"
 check "adopted the origin Node wrote under (sts:front)" \
   grep -qE 'writes as origin n:sts:front' "$LOG"
+if [ "${E2E_CLUSTER_MODE:-off}" = active-passive ]; then
+  # The gate before the restore: the service lease held, then the store
+  # read back (`cluster.gate()`, #444's phase 3 cleanup).
+  check "joined and took the service lease before restoring anything" \
+    awk '/is the ACTIVE node/ { active = NR }
+         /store open; restored/ { restored = NR }
+         END { exit !(active && restored && active < restored) }' "$LOG"
+fi
 check "read the KEK and checked every stored key set" \
   grep -qE 'keystore: [3-9][0-9]* realm key set\(s\) read from the store and checked' "$LOG"
 check "coordinates through the change log" \
