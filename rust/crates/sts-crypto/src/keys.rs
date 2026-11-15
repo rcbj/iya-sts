@@ -499,3 +499,20 @@ mod tests {
         assert!(fine.use_problem().is_none());
     }
 }
+
+/// Whether a certificate's signature verifies under another's public key
+/// (`X509Certificate#verify(issuer.publicKey)` in node), both PEM; false
+/// where either does not parse.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn certificate_signed_by(certificate_pem: &str, issuer_pem: &str) -> bool {
+    let (Ok(cert), Ok(issuer)) = (
+        X509::from_pem(certificate_pem.as_bytes()),
+        X509::from_pem(issuer_pem.as_bytes()),
+    ) else {
+        return false;
+    };
+    issuer
+        .public_key()
+        .and_then(|key| cert.verify(&key))
+        .unwrap_or(false)
+}

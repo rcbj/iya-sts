@@ -19,9 +19,14 @@
 
 #![forbid(unsafe_code)]
 
+pub mod answer;
+pub mod bcp;
+pub mod client_auth;
 pub mod dpop;
 pub mod dpop_reservation;
 pub mod dpop_stores;
+pub mod js;
+pub mod jwks;
 pub mod jwt_access_token;
 pub mod mtls;
 pub mod revocation;
