@@ -859,10 +859,14 @@ async function sectionE() {
                                     ALICE, { resource: RS });
   check("E3. email granted: in, though the OpenID Connect scopes are not on " +
         "the token's scope claim", function () {
-    // PINNED (development): a resource server's declared section 5.4
-    // claims carry the person's INVENTED values here — `name` "<user>
-    // (mock)", `email` at the realm's domain — not the entry's `mail`.
-    assert.ok(/@/.test(String(withEmail.email)), JSON.stringify(withEmail));
+    // A resource server's declared section 5.4 claims carry the entry's
+    // own values, even in development (until fix/node-defects-1114 they
+    // carried the invented persona: `name` "<user> (mock)", an `email` at
+    // the realm's domain).
+    assert.strictEqual(withEmail.email, ALICE + "@appclaims.example.test",
+                       JSON.stringify(withEmail));
+    assert.ok(!/\(mock\)/.test(String(withEmail.name)),
+              JSON.stringify(withEmail));
     assert.ok(String(withEmail.scope || "").indexOf("email") < 0,
               String(withEmail.scope));
   });
