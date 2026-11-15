@@ -314,7 +314,20 @@ rust/
                                  both ways (the code flow: 78 requests alike)
                                  and over the wire by rust-console-e2e.sh (the
                                  unchanged console and portal bundles)
-    sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
+    sts-saml/                    SAML 2.0 as an identity provider (phase 7,
+                                 saml/saml2_sso.ts and its libraries): the
+                                 model (saml.json), the assertion, Response,
+                                 ArtifactResponse, LogoutRequest/Response,
+                                 the bindings and the POST page, the
+                                 AuthnRequest, a service provider's signature
+                                 (request_signature.ts), the artifact and its
+                                 row, the IdP metadata, SAML 1.1's assertion.
+                                 Held to Node by tests/tools/saml-vectors.js
+                                 both ways. In the runtime: the stores under
+                                 Node's handles, /saml2/autopost.js and the
+                                 unscoped /saml2/metadata; SSO, SLO, the ARS
+                                 and the rest are not routes yet
+    sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/
     sts-xacml/                   the engine: no I/O; shared by the runtime and the PEP
     sts-enroll/                  ACME, EST, SCEP over one CertEnrollment core
