@@ -6,24 +6,27 @@
 //! (#105): steps 21 and 22 of section 7.1 — the format's shape, its
 //! signature, and what it requires of its certificate.
 //!
-//! Ported: `packed` (Self, and Basic/AttCA through x5c, section 8.2),
-//! `tpm` (AttCA through an AIK certificate, 8.3), `fido-u2f` (8.6) and
-//! `none` (8.7), and the refusal of a format section 8 does not define.
-//! `android-key`, `android-safetynet`, `apple` and `compound` answer
-//! [`Statement::Unported`]; a caller refuses such a registration until
-//! they are ported. What follows the statement in `assess()` — the FIDO
-//! Metadata Service, the trust path to the realm's anchors, revocation,
-//! the policy that demands trust — is not here either (see the crate's
-//! report).
+//! All eight formats: `packed` (Self, and Basic/AttCA through x5c,
+//! section 8.2), `tpm` (AttCA through an AIK certificate, 8.3),
+//! `android-key` (Basic, its KeyDescription read from the hardware-enforced
+//! list, 8.4), `android-safetynet` (Basic, a JWS from attest.android.com,
+//! 8.5), `fido-u2f` (8.6), `none` (8.7), `apple` (AnonCA, 8.8) and
+//! `compound` (8.9, every member verified, one level deep), and the refusal
+//! of a format section 8 does not define. What follows the statement in
+//! `assess()` — the FIDO Metadata Service, the trust path to the anchors,
+//! revocation, the policy that demands trust — is [`super::trust`].
 
 use serde_json::Value as Json;
 use sts_core::errors::{codes, ErrorCode};
+use sts_crypto::jws;
 use sts_crypto::jws_alg::Hash;
+use sts_crypto::keys::{JwsKey, KeyPolicy};
 use sts_crypto::raw_sig::public_key_from_spki;
 use sts_crypto::webauthn::{
-    cose_signature_alg, fido_aaguid_extension, tpm_name, tpm_parse_attest,
-    tpm_parse_public, tpm_parse_signature, verify_cose_signature, CoseKey,
-    CoseOptions, TPM_GENERATED_VALUE, TPM_ST_ATTEST_CERTIFY,
+    android_key_description, apple_attestation_nonce, cose_signature_alg,
+    fido_aaguid_extension, tpm_name, tpm_parse_attest, tpm_parse_public,
+    tpm_parse_signature, verify_cose_signature, CoseKey, CoseOptions,
+    TPM_GENERATED_VALUE, TPM_ST_ATTEST_CERTIFY,
 };
 use sts_pki::foreign::{
     attestation_certificate_facts, attestation_key_identifier,
@@ -46,6 +49,17 @@ pub const FORMATS: [&str; 8] = [
 ];
 
 const OID_FIDO_AAGUID: &str = "1.3.6.1.4.1.45724.1.1.4";
+const OID_ANDROID_KEY: &str = "1.3.6.1.4.1.11129.2.1.17";
+const OID_APPLE_NONCE: &str = "1.2.840.113635.100.8.2";
+/// Android Keymaster's constants (section 8.4).
+const KM_ORIGIN_GENERATED: i64 = 0;
+const KM_PURPOSE_SIGN: i64 = 2;
+/// A SafetyNet response older than this, or this far in the future, is
+/// refused: the specification defers to Google, which checks `timestampMs`
+/// against the time of the request.
+const SAFETYNET_WINDOW_MS: f64 = 60.0 * 1000.0;
+/// How deep a compound statement may nest: one level.
+const MAX_COMPOUND_DEPTH: usize = 1;
 const OID_TCG_AIK: &str = "2.23.133.8.3";
 const OID_TPM_MANUFACTURER: &str = "2.23.133.2.1";
 const OID_TPM_MODEL: &str = "2.23.133.2.2";
@@ -64,6 +78,11 @@ pub struct Context {
     pub rp_id_hash: Vec<u8>,
     /// `webauthn.insecureAlgorithms`, through the policy.
     pub allow_insecure: bool,
+    /// `webauthn.attestationAndroidSoftwareKeys` (`settings.
+    /// androidSoftwareKeys`): android-key reads both authorization lists.
+    pub android_software_keys: bool,
+    /// The verifier's clock (`deps.now()`), for SafetyNet's `timestampMs`.
+    pub now_ms: f64,
 }
 
 /// `verifyStatement()`'s answer.
@@ -74,14 +93,33 @@ pub enum Statement {
         kind: &'static str,
         trust_path: Vec<Vec<u8>>,
         acki: Option<String>,
+        /// android-safetynet's: trusted only where the realm allows it.
+        safetynet: bool,
+        /// A compound statement's members, each verified.
+        subs: Vec<Statement>,
     },
     Refused {
         code: ErrorCode,
         format: String,
         why: String,
     },
-    /// A section 8 format this crate does not verify yet.
-    Unported { format: String },
+}
+
+/// A verified statement with no SafetyNet flag and no members.
+fn verified(
+    format: &str,
+    kind: &'static str,
+    trust_path: Vec<Vec<u8>>,
+    acki: Option<String>,
+) -> Statement {
+    Statement::Verified {
+        format: format.to_string(),
+        kind,
+        trust_path,
+        acki,
+        safetynet: false,
+        subs: Vec::new(),
+    }
 }
 
 impl Statement {
@@ -94,6 +132,7 @@ impl Statement {
                 kind,
                 trust_path,
                 acki,
+                ..
             } => {
                 let mut out = serde_json::json!({ "ok": true, "format": format,
                     "type": kind, "trustPath": trust_path.len() });
@@ -105,9 +144,6 @@ impl Statement {
             Statement::Refused { code, format, why } => serde_json::json!({
                 "ok": false, "code": code.as_str(), "why": why,
                 "format": format }),
-            Statement::Unported { format } => {
-                serde_json::json!({ "ok": false, "unported": format })
-            }
         }
     }
 }
@@ -416,12 +452,7 @@ fn packed(st: &Cbor, ctx: &Context) -> Statement {
                     .to_string(),
             );
         }
-        return Statement::Verified {
-            format: "packed".to_string(),
-            kind: "self",
-            trust_path: Vec::new(),
-            acki: None,
-        };
+        return verified("packed", "self", Vec::new(), None);
     }
     if !verify_with_certificate(
         &chain[0],
@@ -453,12 +484,7 @@ fn packed(st: &Cbor, ctx: &Context) -> Statement {
     if !problem.is_empty() {
         return fail(codes::STS_AUTHN_0234, "packed", problem);
     }
-    Statement::Verified {
-        format: "packed".to_string(),
-        kind: "basic",
-        trust_path: chain,
-        acki: None,
-    }
+    verified("packed", "basic", chain, None)
 }
 
 fn tpm(st: &Cbor, ctx: &Context) -> Statement {
@@ -562,12 +588,7 @@ fn tpm(st: &Cbor, ctx: &Context) -> Statement {
     if !why.is_empty() {
         return fail(codes::STS_AUTHN_0234, "tpm", why);
     }
-    Statement::Verified {
-        format: "tpm".to_string(),
-        kind: "attca",
-        trust_path: chain,
-        acki: None,
-    }
+    verified("tpm", "attca", chain, None)
 }
 
 fn fido_u2f(st: &Cbor, ctx: &Context) -> Statement {
@@ -633,17 +654,358 @@ fn fido_u2f(st: &Cbor, ctx: &Context) -> Statement {
         );
     }
     let acki = attestation_key_identifier(&chain[0]);
+    verified("fido-u2f", "basic", chain, Some(acki))
+}
+
+fn extension_value(facts: &Json, oid: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    let ext = facts["extensions"].get(oid)?;
+    base64::engine::general_purpose::STANDARD
+        .decode(ext["value"].as_str().unwrap_or(""))
+        .ok()
+}
+
+/// Section 8.4: Basic, the credential key certified with a KeyDescription.
+fn android_key(st: &Cbor, ctx: &Context) -> Statement {
+    let f = "android-key";
+    let shape = shape_problem(st, &["alg", "sig", "x5c"], &[]);
+    if !shape.is_empty() {
+        return fail(codes::STS_AUTHN_0232, f, shape);
+    }
+    let alg = member(st, "alg").and_then(Cbor::int).unwrap_or(0);
+    let chain = x5c(st);
+    let mut signed = ctx.auth_data.clone();
+    signed.extend(&ctx.client_data_hash);
+    if !verify_with_certificate(
+        &chain[0],
+        alg,
+        &signed,
+        &bytes_of(st, "sig"),
+        ctx.allow_insecure,
+    ) {
+        return fail(
+            codes::STS_AUTHN_0233,
+            f,
+            "the signature does not verify under the first certificate's key"
+                .to_string(),
+        );
+    }
+    let facts = attestation_certificate_facts(&chain[0]);
+    let Some(facts) =
+        facts.filter(|fa| same_key(&fa["publicKeyJwk"], &ctx.credential_jwk))
+    else {
+        return fail(
+            codes::STS_AUTHN_0234,
+            f,
+            "the first certificate's key is not the credential public key"
+                .to_string(),
+        );
+    };
+    let description = match extension_value(&facts, OID_ANDROID_KEY) {
+        None => None,
+        Some(v) => match android_key_description(&v) {
+            Ok(d) => Some(d),
+            Err(e) => return fail(codes::STS_AUTHN_0234, f, e),
+        },
+    };
+    let Some(d) = description else {
+        return fail(
+            codes::STS_AUTHN_0234,
+            f,
+            format!(
+                "the certificate carries no key attestation extension \
+                 ({OID_ANDROID_KEY})"
+            ),
+        );
+    };
+    let lists = if ctx.android_software_keys {
+        vec![&d.tee_enforced, &d.software_enforced]
+    } else {
+        vec![&d.tee_enforced]
+    };
+    let origin = lists.iter().find_map(|l| l.origin);
+    let purposes: Vec<i64> = lists
+        .iter()
+        .flat_map(|l| l.purpose.iter().copied())
+        .collect();
+    let why = if d.attestation_challenge != ctx.client_data_hash {
+        "the attestationChallenge is not the client data hash".to_string()
+    } else if d.software_enforced.all_applications
+        || d.tee_enforced.all_applications
+    {
+        "the key is usable by all applications (allApplications), and a \
+         credential must be scoped to its RP ID"
+            .to_string()
+    } else if origin != Some(KM_ORIGIN_GENERATED) {
+        format!(
+            "the key's origin is {} in the {}, not KM_ORIGIN_GENERATED",
+            origin.map_or("not stated".to_string(), |o| o.to_string()),
+            if ctx.android_software_keys {
+                "authorization lists"
+            } else {
+                "hardware-enforced list"
+            }
+        )
+    } else if purposes.is_empty()
+        || purposes.iter().any(|p| *p != KM_PURPOSE_SIGN)
+    {
+        let listed: Vec<String> = purposes.iter().map(i64::to_string).collect();
+        format!(
+            "the key's purpose is {}, not KM_PURPOSE_SIGN alone",
+            if listed.is_empty() {
+                "not stated".to_string()
+            } else {
+                listed.join(", ")
+            }
+        )
+    } else {
+        String::new()
+    };
+    if !why.is_empty() {
+        return fail(codes::STS_AUTHN_0234, f, why);
+    }
+    verified(f, "basic", chain, None)
+}
+
+/// `/(^|,\s*)DNS:attest\.android\.com(,|$)/` over the subjectAltName.
+fn names_google_san(san: &str) -> bool {
+    const WANT: &str = "DNS:attest.android.com";
+    san.split(',').enumerate().any(|(i, part)| {
+        if i == 0 {
+            part == WANT
+        } else {
+            part.trim_start() == WANT
+        }
+    })
+}
+
+/// `/(^|\n)CN=attest\.android\.com(\n|$)/` over the subject's lines.
+fn names_google_cn(subject: &str) -> bool {
+    subject
+        .split('\n')
+        .any(|line| line == "CN=attest.android.com")
+}
+
+/// Section 8.5: Basic, a SafetyNet JWS. Verified, and TRUSTED only where
+/// `webauthn.attestationAllowSafetynet` says (`trustOf()`).
+fn safetynet(st: &Cbor, ctx: &Context) -> Statement {
+    let f = "android-safetynet";
+    let shape = shape_problem(st, &["ver", "response"], &[]);
+    if !shape.is_empty() {
+        return fail(codes::STS_AUTHN_0232, f, shape);
+    }
+    let jws = String::from_utf8_lossy(&bytes_of(st, "response")).to_string();
+    let header: Option<Json> = serde_json::from_slice(
+        &super::ceremony::from_base64url(jws.split('.').next().unwrap_or("")),
+    )
+    .ok();
+    let chain: Vec<Vec<u8>> = header
+        .as_ref()
+        .and_then(|h| h.get("x5c"))
+        .and_then(Json::as_array)
+        .map(|l| {
+            l.iter()
+                .map(|one| {
+                    sts_pki::foreign::node_base64(&crate::js::string(one))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let facts = chain.first().and_then(|d| attestation_certificate_facts(d));
+    let Some(facts) = facts else {
+        return fail(
+            codes::STS_AUTHN_0232,
+            f,
+            "the response is not a JWS carrying an x5c chain".to_string(),
+        );
+    };
+    if !names_google_san(facts["subjectAltName"].as_str().unwrap_or(""))
+        && !names_google_cn(facts["subjectText"].as_str().unwrap_or(""))
+    {
+        return fail(
+            codes::STS_AUTHN_0234,
+            f,
+            "the response is not signed by attest.android.com".to_string(),
+        );
+    }
+    let checked = JwsKey::from_pem(facts["pem"].as_str().unwrap_or(""))
+        .and_then(|key| {
+            jws::verify_compact(
+                &jws,
+                &key,
+                &jws::VerifyOptions {
+                    algorithms: &["RS256", "ES256"],
+                    empty_payload: false,
+                    policy: KeyPolicy::STRICT,
+                },
+            )
+        });
+    let claims = match checked {
+        Ok(v) => v.claims.unwrap_or(Json::Null),
+        Err(e) => {
+            return fail(
+                codes::STS_AUTHN_0233,
+                f,
+                format!("the response's signature does not verify: {}", e.0),
+            )
+        }
+    };
+    let mut signed = ctx.auth_data.clone();
+    signed.extend(&ctx.client_data_hash);
+    let nonce = base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        Hash::Sha256.digest(&signed),
+    );
+    let at = crate::js::number_opt(claims.get("timestampMs"));
+    let now = ctx.now_ms;
+    let window = SAFETYNET_WINDOW_MS;
+    let why = if claims.get("nonce") != Some(&Json::String(nonce)) {
+        "the nonce is not the base64 SHA-256 of authenticatorData ‖ \
+         clientDataHash"
+            .to_string()
+    } else if claims.get("ctsProfileMatch") != Some(&Json::Bool(true)) {
+        "ctsProfileMatch is not true: the device failed Android compatibility"
+            .to_string()
+    } else if !at.is_finite() || at > now + window || at < now - window {
+        "the response's timestampMs is not within a minute of now".to_string()
+    } else {
+        String::new()
+    };
+    if !why.is_empty() {
+        return fail(codes::STS_AUTHN_0234, f, why);
+    }
     Statement::Verified {
-        format: "fido-u2f".to_string(),
+        format: f.to_string(),
         kind: "basic",
         trust_path: chain,
-        acki: Some(acki),
+        acki: None,
+        safetynet: true,
+        subs: Vec::new(),
     }
 }
 
-/// `verifyStatement(format, attStmt, ctx)`.
+/// Section 8.8: AnonCA, a certificate for the credential key with the nonce
+/// in it.
+fn apple(st: &Cbor, ctx: &Context) -> Statement {
+    let f = "apple";
+    let shape = shape_problem(st, &["x5c"], &[]);
+    if !shape.is_empty() {
+        return fail(codes::STS_AUTHN_0232, f, shape);
+    }
+    let chain = x5c(st);
+    let facts = attestation_certificate_facts(&chain[0]);
+    let nonce = facts
+        .as_ref()
+        .and_then(|fa| extension_value(fa, OID_APPLE_NONCE))
+        .and_then(|v| apple_attestation_nonce(&v));
+    let mut signed = ctx.auth_data.clone();
+    signed.extend(&ctx.client_data_hash);
+    let expected = Hash::Sha256.digest(&signed);
+    if nonce.as_deref() != Some(&expected[..]) {
+        return fail(
+            codes::STS_AUTHN_0234,
+            f,
+            if nonce.is_some() {
+                "the certificate's nonce is not the SHA-256 of \
+                 authenticatorData ‖ clientDataHash"
+                    .to_string()
+            } else {
+                format!(
+                    "the certificate carries no nonce extension \
+                     ({OID_APPLE_NONCE})"
+                )
+            },
+        );
+    }
+    let jwk = facts.map_or(Json::Null, |fa| fa["publicKeyJwk"].clone());
+    if !same_key(&jwk, &ctx.credential_jwk) {
+        return fail(
+            codes::STS_AUTHN_0234,
+            f,
+            "the certificate's key is not the credential public key"
+                .to_string(),
+        );
+    }
+    verified(f, "anonca", chain, None)
+}
+
+/// Section 8.9: two or more statements, each verified by its own procedure;
+/// "Relying Party policy" here is that every member must verify.
+fn compound(st: &Cbor, ctx: &Context, depth: usize) -> Statement {
+    let f = "compound";
+    if depth >= MAX_COMPOUND_DEPTH {
+        return fail(
+            codes::STS_AUTHN_0232,
+            f,
+            "a compound statement may not contain another".to_string(),
+        );
+    }
+    let items = match st {
+        Cbor::Array(items) if items.len() >= 2 => items,
+        _ => {
+            return fail(
+                codes::STS_AUTHN_0232,
+                f,
+                "attStmt is not an array of at least two statements"
+                    .to_string(),
+            )
+        }
+    };
+    let mut subs = Vec::new();
+    for (i, one) in items.iter().enumerate() {
+        let pair = match one {
+            Cbor::Map(entries) if entries.len() == 2 => {
+                match (one.get_text("fmt"), one.get_text("attStmt")) {
+                    (Some(Cbor::Text(fmt)), Some(inner))
+                        if fmt != "compound" =>
+                    {
+                        Some((fmt.clone(), inner))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let Some((fmt, inner)) = pair else {
+            return fail(
+                codes::STS_AUTHN_0232,
+                f,
+                format!(
+                    "member {i} is not a {{ fmt, attStmt }} pair of another \
+                     format"
+                ),
+            );
+        };
+        match statement_at(&fmt, inner, ctx, depth + 1) {
+            Statement::Refused { code, why, .. } => {
+                return fail(code, f, format!("member {i} — {why}"));
+            }
+            ok => subs.push(ok),
+        }
+    }
+    Statement::Verified {
+        format: f.to_string(),
+        kind: "compound",
+        trust_path: Vec::new(),
+        acki: None,
+        safetynet: false,
+        subs,
+    }
+}
+
+/// `verifyStatement(format, attStmt, ctx, 0)`.
 #[tracing::instrument(level = "debug", skip(st, ctx))]
 pub fn verify_statement(format: &str, st: &Cbor, ctx: &Context) -> Statement {
+    statement_at(format, st, ctx, 0)
+}
+
+/// `verifyStatement(format, attStmt, ctx, depth)`.
+fn statement_at(
+    format: &str,
+    st: &Cbor,
+    ctx: &Context,
+    depth: usize,
+) -> Statement {
     if !FORMATS.contains(&format) {
         return fail(
             codes::STS_AUTHN_0231,
@@ -658,22 +1020,18 @@ pub fn verify_statement(format: &str, st: &Cbor, ctx: &Context) -> Statement {
     match format {
         "packed" => packed(st, ctx),
         "tpm" => tpm(st, ctx),
+        "android-key" => android_key(st, ctx),
+        "android-safetynet" => safetynet(st, ctx),
         "fido-u2f" => fido_u2f(st, ctx),
-        "none" => {
+        "apple" => apple(st, ctx),
+        "compound" => compound(st, ctx, depth),
+        _ => {
             let shape = shape_problem(st, &[], &[]);
             if shape.is_empty() {
-                Statement::Verified {
-                    format: "none".to_string(),
-                    kind: "none",
-                    trust_path: Vec::new(),
-                    acki: None,
-                }
+                verified("none", "none", Vec::new(), None)
             } else {
                 fail(codes::STS_AUTHN_0232, "none", shape)
             }
         }
-        other => Statement::Unported {
-            format: other.to_string(),
-        },
     }
 }
