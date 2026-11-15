@@ -551,8 +551,12 @@ function reportRetainNow(ctx?: any): Promise<any> {
 
 function reportScheduleNow(nowMs?: number): Promise<any> {
   log.debug("Entering reportScheduleNow().");
+  const at = nowMs || Date.now();
+  // `nowMs` AS THE SCHEDULER HANDS IT, a function (2026-11-14): this entry
+  // point passed a number, which is how the schedule's misreading of the
+  // scheduler's own context went unseen (report/sources.ts, reportJobNow()).
   const out = reportGateOne('schedule', {
-    nowMs: nowMs || Date.now(),
+    nowMs: function (): number { return at; },
     stillOwner: function (): boolean { return true; }
   });
   log.debug("Leaving reportScheduleNow().");

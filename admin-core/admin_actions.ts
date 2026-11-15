@@ -10303,7 +10303,14 @@ class AdminActions {
       // is logged at once (#103, STS-ADMIN-0798).
       rbac.reportClosedConsole(result.realm.id);
       let password = '';
-      if (seeded.ran && seeded.created && mode.isProduct()) {
+      // THE MODE IS THE NEW REALM'S, NOT THIS REQUEST'S (2026-11-14, #444's
+      // D12): a realm created with `global.mode=product` from a development
+      // realm is product, so its seeded administrator is given a generated
+      // password here as in a product process.
+      const productRealm = !!realms.run(result.realm, function () {
+        return mode.isProduct();
+      });
+      if (seeded.ran && seeded.created && productRealm) {
         realms.run(result.realm, function () {
           const generated = credentials.generatePassword(seeded.username);
           const set = credentials.setPassword(seeded.username, generated,

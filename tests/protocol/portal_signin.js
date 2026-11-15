@@ -343,7 +343,9 @@ async function signInToThePortal(base, user, log2, options) {
     // console helper does. The answer is read as the form's 303 was.
     const signedIn = await authnSignin.signIn(base, fromLocation(location),
       { action: "login", username: user, password: password },
-      { cookie: cookies.header() });
+      // The browser's User-Agent on the submit too: a product realm scores
+      // a request without one as an automated client (STS-RISK-0016).
+      { cookie: cookies.header(), headers: { "User-Agent": AGENT } });
     cookies.keep(signedIn);
     at = authnSignin.responseLike(signedIn);
     location = at.headers.get("location") || "";
@@ -360,7 +362,7 @@ async function signInToThePortal(base, user, log2, options) {
         authnSignin.isConsent(location) && opts.consent !== false) {
       consentScreens += 1;
       const answered = await authnSignin.consentFor(fromLocation(location),
-                                                    cookies.header());
+        cookies.header(), { headers: { "User-Agent": AGENT } });
       cookies.keep(answered);
       at = authnSignin.responseLike(answered);
     } else if (at.status === 200) {

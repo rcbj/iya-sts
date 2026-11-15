@@ -37,6 +37,21 @@
 //      with a signed request, PAR, JARM and a CA-issued certificate.
 //   j. JARM outside FAPI: a named server with fapi=off answers query.jwt and
 //      refuses query.jwt carrying an id_token in clear.
+//   k. D12 (#444), `tests/fapi_advanced_units.js` over the wire: by-value
+//      refusals of code without JARM (invalid_request), no scope
+//      (invalid_scope), a token response type, plain PKCE, no nonce, no exp
+//      and an nbf over an hour old; id_token code with an aud array taken;
+//      ES512 for JARM, RSA1_5, a none JARM alg and an enc without an alg
+//      refused at registration; an RS256 client assertion refused and PS256
+//      taken; oauth2.accessTokenSigningAlg ES256 holding and RS256 replaced
+//      by PS256; a named server's HS256 refused; an encrypted JARM response
+//      opened here (RSA-OAEP-256) to a PS256 JWT; and every code of a-k off
+//      the audit log (ADV_CODES). Not carried (class (d)): signJwt() and
+//      verifyOwnJws() as functions (B), jarm.transportOf() and the metadata
+//      filter as functions, the requirement table as data, a registered
+//      RS256 JARM alg under Advanced (registration refuses it first, so
+//      STS-OAUTH-0588 is unreachable), and a named server's own EdDSA
+//      access tokens (EdDSA signing is off by default, #1292).
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -384,6 +399,93 @@ async function portalSignsIn(who, password) {
   return { problem: problem, me: me };
 }
 
+// The codes section k reads off the audit log, as the wire records them.
+// Where the units file asked fapi.js alone it named other codes for seven of
+// these — 0783 (no JARM), 0784 (no scope), 0582 (a token response type),
+// 0575 (nonce), 0586 (an RS256 assertion), 0585 (aud) and 0580 (a secret
+// method) — because a request meets the general gates (advertised modes and
+// types, the request object, client authentication) first.
+const ADV_CODES = [
+  // c: client_secret_jwt, a public client, code token, an RS256 ID Token
+  "STS-REG-0167", "STS-REG-0174", "STS-REG-0183", "STS-REG-0177",
+  // d: a plain request, nbf, aud, the lifetime, a push without PKCE
+  "STS-OAUTH-0340", "STS-OAUTH-0584", "STS-OAUTH-0366", "STS-OAUTH-0573",
+  // f, h, j: unbound, mTLS required, query.jwt with an id_token in clear
+  "STS-OAUTH-0583", "STS-OAUTH-0598", "STS-OAUTH-0587",
+  // k: no JARM mode, no scope, a token response type, plain PKCE, no nonce
+  "STS-OAUTH-0164", "STS-OAUTH-0560", "STS-OAUTH-0163", "STS-OAUTH-0165",
+  "STS-OAUTH-0562",
+  // k: RSA1_5, JARM's grammar, an RS256 assertion, the named server's alg
+  "STS-REG-0164", "STS-REG-0179", "STS-OAUTH-0570", "STS-ADMIN-0799"
+];
+
+// How many rows of this realm's audit log carry `code`, waited for briefly.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  let n = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const r = await send(realmApi + "/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    n = Number((r.body && r.body.matched) || 0);
+    if (n > 0) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
+// Opens a compact JWE (RSA-OAEP-256 or RSA-OAEP; A128CBC-HS256 or A*GCM)
+// with `privateKey`; the plaintext as a string. An independent
+// implementation of RFC 7516 section 5.2 and RFC 7518 section 5.2.2.1.
+function openJwe(compact, privateKey) {
+  log.debug("Entering openJwe().");
+  const parts = String(compact).split(".");
+  if (parts.length !== 5) {
+    log.debug("Leaving openJwe(). Not a JWE.");
+    throw new Error("not a compact JWE: " + parts.length + " parts");
+  }
+  const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+  const cek = nodeCrypto.privateDecrypt({ key: privateKey,
+    padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+    oaepHash: header.alg === "RSA-OAEP-256" ? "sha256" : "sha1" },
+    Buffer.from(parts[1], "base64url"));
+  const iv = Buffer.from(parts[2], "base64url");
+  const ciphertext = Buffer.from(parts[3], "base64url");
+  const tag = Buffer.from(parts[4], "base64url");
+  const aad = Buffer.from(parts[0], "ascii");
+  let plain = null;
+  if (/^A(128|192|256)GCM$/.test(header.enc)) {
+    const d = nodeCrypto.createDecipheriv("aes-" + (cek.length * 8) + "-gcm",
+                                          cek, iv);
+    d.setAAD(aad);
+    d.setAuthTag(tag);
+    plain = Buffer.concat([d.update(ciphertext), d.final()]);
+  } else {
+    const half = cek.length / 2;
+    const macKey = cek.subarray(0, half);
+    const encKey = cek.subarray(half);
+    const al = Buffer.alloc(8);
+    al.writeBigUInt64BE(BigInt(aad.length * 8));
+    const hash = { 16: "sha256", 24: "sha384", 32: "sha512" }[half];
+    const mac = nodeCrypto.createHmac(hash, macKey)
+      .update(Buffer.concat([aad, iv, ciphertext, al])).digest()
+      .subarray(0, half);
+    if (!nodeCrypto.timingSafeEqual(mac, tag)) {
+      log.debug("Leaving openJwe(). Bad tag.");
+      throw new Error("the JWE's authentication tag does not verify");
+    }
+    const d = nodeCrypto.createDecipheriv("aes-" + (half * 8) + "-cbc",
+                                          encKey, iv);
+    plain = Buffer.concat([d.update(ciphertext), d.final()]);
+  }
+  log.debug("Leaving openJwe().");
+  return plain.toString("utf8");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving FAPI 1.0 Advanced at " + base + R);
@@ -725,7 +827,246 @@ async function test() {
     assert.strictEqual(opened.claims.error, "invalid_request");
   });
 
-  assert.ok(checks >= 20, "only " + checks + " checks ran; a section has " +
+  log.info("=== k. the profile's rules, as fapi_advanced_units.js held " +
+           "them ===");
+  // EVERY REQUEST BELOW CARRIES FRESH state AND nonce VALUES: RFC 9700 mode
+  // (which the profile implies) refuses one already used in this realm.
+  let kn = 0;
+  const freshly = function (extra) {
+    kn += 1;
+    return Object.assign({}, hybrid, { state: "k" + kn + "-" + STAMP,
+                                       nonce: "kn" + kn + "-" + STAMP },
+                         extra || {});
+  };
+  const refusedByValue = async function (claims, what, error) {
+    const answer = await alice.go("GET", R + "/oauth2/authorize?" + form({
+      client_id: client.client_id, request: requestObject(claims) }));
+    const at = paramsAt(answer);
+    check(what, function () {
+      assert.ok(error === 400 ? answer.status === 400
+                              : at && at.get("error") === error,
+                answer.status + " " + answer.location + " " +
+                String(answer.text).slice(0, 200));
+    });
+    return answer;
+  };
+  await refusedByValue(freshly({ response_type: "code",
+                                 response_mode: "query" }),
+                       "k/A. code without JARM is refused invalid_request " +
+                       "(Part 2 5.2.2 item 2, #187)", "invalid_request");
+  await refusedByValue(freshly({ scope: "" }),
+                       "k/A. a request naming no scope is refused " +
+                       "invalid_scope rather than given a default (#187)",
+                       "invalid_scope");
+  await refusedByValue(freshly({ response_type: "code id_token token" }),
+                       "k/A. a response type carrying a token is refused " +
+                       "unsupported_response_type",
+                       "unsupported_response_type");
+  await refusedByValue(freshly({ code_challenge: q.challenge + "x",
+                                 code_challenge_method: "plain" }),
+                       "k/A. a challenge that is sent is held to S256",
+                       "invalid_request");
+  await refusedByValue(freshly({ nonce: undefined }),
+                       "k/A. Baseline's nonce rule still applies",
+                       "invalid_request");
+  const nowK = Math.floor(Date.now() / 1000);
+  await refusedByValue(Object.assign(freshly(), { exp: undefined }),
+                       "k/A. a request object with no exp is refused " +
+                       "(item 13), on this server's own page", 400);
+  await refusedByValue(freshly({ nbf: nowK - 3601, exp: nowK + 60 }),
+                       "k/A. one whose nbf is over 60 minutes old is " +
+                       "refused", 400);
+  r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
+    form({ client_id: client.client_id,
+           request: requestObject(freshly({ response_type: "id_token code" }),
+                                  { aud: ["https://other.example",
+                                          issuer] }) })), ALICE, consent);
+  back = paramsAt(r);
+  check("k/A. id_token code (either order) with an aud array holding the " +
+        "issuer is answered with a code and an ID Token", function () {
+    assert.ok(back && back.get("code") && back.get("id_token"),
+              r.status + " " + r.location);
+  });
+
+  // REGISTRATION: the algorithms Advanced refuses, and JARM's grammar.
+  await refusedRegistration({ authorization_signed_response_alg: "ES512" },
+                            "k/A. an ES512 JARM response is refused (8.6)");
+  await refusedRegistration({ id_token_encrypted_response_alg: "RSA1_5" },
+                            "k/A. RSA1_5 is refused (8.6.1)");
+  await refusedRegistration({ authorization_signed_response_alg: "none" },
+                            "k/C. none is not a JARM algorithm (section 3)");
+  await refusedRegistration({ authorization_encrypted_response_enc:
+                                "A256GCM" },
+                            "k/C. a JARM enc without an alg is refused");
+
+  // AN RS256 CLIENT ASSERTION (8.6): a client whose key is RSA, signing
+  // RS256 where the profile allows PS256.
+  const rsaPair = nodeCrypto.generateKeyPairSync("rsa",
+                                                 { modulusLength: 2048 });
+  const rsaPub = rsaPair.publicKey.export({ format: "jwk" });
+  rsaPub.kid = "adv-rsa-" + STAMP;
+  rsaPub.use = "sig";
+  r = await postJson(base + R + "/oauth2/register", Object.assign({},
+    metadata, { token_endpoint_auth_signing_alg: "PS256",
+                request_object_signing_alg: "PS256",
+                grant_types: ["client_credentials"], response_types: [],
+                jwks: { keys: [rsaPub] } }));
+  const rsaClient = r.body || {};
+  const rsaAssertion = function (alg) {
+    const now = Math.floor(Date.now() / 1000);
+    const input = Buffer.from(JSON.stringify({ alg: alg, typ: "JWT",
+                                               kid: rsaPub.kid }))
+      .toString("base64url") + "." +
+      Buffer.from(JSON.stringify({ iss: rsaClient.client_id,
+        sub: rsaClient.client_id, aud: issuer,
+        jti: nodeCrypto.randomBytes(12).toString("base64url"), iat: now,
+        exp: now + 60 })).toString("base64url");
+    const options = alg === "PS256"
+      ? { key: rsaPair.privateKey,
+          padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: 32 }
+      : rsaPair.privateKey;
+    return input + "." + nodeCrypto.sign("sha256", Buffer.from(input),
+                                         options).toString("base64url");
+  };
+  const rsaToken = function (alg) {
+    return send(tokenUrl, { method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded",
+                 DPoP: dpopProof(tokenUrl) },
+      body: form({ grant_type: "client_credentials",
+                   client_id: rsaClient.client_id,
+                   client_assertion_type:
+                     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                   client_assertion: rsaAssertion(alg) }) });
+  };
+  const rsByRs = await rsaToken("RS256");
+  const rsByPs = await rsaToken("PS256");
+  check("k/A. a client assertion signed RS256 is refused invalid_client, " +
+        "and the same client's PS256 one is taken (8.6)", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+    assert.strictEqual(rsByRs.status, 401, rsByRs.raw.slice(0, 300));
+    assert.strictEqual(rsByRs.body.error, "invalid_client");
+    assert.strictEqual(rsByPs.status, 200, rsByPs.raw.slice(0, 300));
+  });
+
+  // D. THE ACCESS-TOKEN ALGORITHM: the setting holds where the profile
+  // allows it, is replaced by PS256 where it does not, and a named server's
+  // member refuses one it cannot use.
+  await ok(realmApi + "/config/set", { key: "oauth2.accessTokenSigningAlg",
+                                       value: "ES256" },
+           "chose ES256 for access tokens");
+  const byEs = await rsaToken("PS256");
+  await ok(realmApi + "/config/set", { key: "oauth2.accessTokenSigningAlg",
+                                       value: "RS256" },
+           "chose RS256 for access tokens");
+  const byRs = await rsaToken("PS256");
+  await ok(realmApi + "/config/reset",
+           { key: "oauth2.accessTokenSigningAlg" }, "put the choice back");
+  check("k/D. oauth2.accessTokenSigningAlg ES256 holds under Advanced; RS256 " +
+        "is replaced by PS256", function () {
+    assert.strictEqual(byEs.status, 200, byEs.raw.slice(0, 300));
+    assert.strictEqual(verifyWithJwks(byEs.body.access_token, jwks)
+                         .header.alg, "ES256");
+    assert.strictEqual(byRs.status, 200, byRs.raw.slice(0, 300));
+    assert.strictEqual(verifyWithJwks(byRs.body.access_token, jwks)
+                         .header.alg, "PS256");
+  });
+  r = await postJson(realmApi + "/authorization-servers/set",
+                     { id: "open", member: "access_token_signing_alg",
+                       value: "HS256" });
+  check("k/D. a named server's access_token_signing_alg refuses HS256",
+        function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+
+  // C. AN ENCRYPTED JARM RESPONSE: a client registering an encryption key
+  // and RSA-OAEP-256 gets a JWE that opens, with its own key, to the
+  // response signed PS256.
+  const encPair = nodeCrypto.generateKeyPairSync("rsa",
+                                                 { modulusLength: 2048 });
+  const encPub = encPair.publicKey.export({ format: "jwk" });
+  encPub.kid = "adv-enc-" + STAMP;
+  encPub.use = "enc";
+  encPub.alg = "RSA-OAEP-256";
+  r = await postJson(base + R + "/oauth2/register", Object.assign({},
+    metadata, { authorization_encrypted_response_alg: "RSA-OAEP-256",
+                jwks: { keys: [pub, encPub] } }));
+  const encClient = r.body || {};
+  check("k/C. a client registering RSA-OAEP-256 for its JARM responses is " +
+        "registered", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+  });
+  const encObject = function (claims) {
+    const now = Math.floor(Date.now() / 1000);
+    return signEs256({ alg: "ES256", typ: "oauth-authz-req+jwt",
+                       kid: pub.kid },
+      Object.assign({ iss: encClient.client_id, aud: issuer,
+                      client_id: encClient.client_id, nbf: now,
+                      exp: now + 300, iat: now,
+                      jti: nodeCrypto.randomBytes(12).toString("base64url") },
+                    claims), pair.privateKey);
+  };
+  const encNow = Math.floor(Date.now() / 1000);
+  const encAuth = { client_id: encClient.client_id,
+    client_assertion_type:
+      "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+    client_assertion: signEs256({ alg: "ES256", typ: "JWT", kid: pub.kid },
+      { iss: encClient.client_id, sub: encClient.client_id, aud: issuer,
+        jti: nodeCrypto.randomBytes(12).toString("base64url"), iat: encNow,
+        exp: encNow + 60 }, pair.privateKey) };
+  for (const one of SCOPE.split(" ")) {
+    await ok(realmApi + "/consent/grant-global-consent",
+             { client: encClient.client_id, scope: one },
+             "consented " + one);
+  }
+  const ep = pkce();
+  r = await send(parUrl, { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form(Object.assign(encAuth, { request: encObject(Object.assign({},
+      params, { client_id: encClient.client_id, state: "enc-" + STAMP,
+                nonce: "encn-" + STAMP, code_challenge: ep.challenge })) })) });
+  const pushedEnc = r;
+  r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
+    form({ client_id: encClient.client_id,
+           request_uri: (pushedEnc.body || {}).request_uri })),
+    ALICE, consent);
+  back = paramsAt(r);
+  const jwe = String((back && back.get("response")) || "");
+  let inner = null;
+  let opened = null;
+  try {
+    inner = openJwe(jwe, encPair.privateKey);
+    opened = verifyWithJwks(inner, jwks);
+  } catch (e) {
+    log.debug("Caught in test(): " + ((e && e.message) || e));
+    // Reported by the check below with what came back.
+    inner = "error: " + ((e && e.message) || e);
+  }
+  check("k/C. its response is a five-part JWE that opens with its key to a " +
+        "JARM response signed PS256, carrying the code and state",
+        function () {
+    assert.strictEqual(pushedEnc.status, 201, pushedEnc.raw.slice(0, 300));
+    assert.strictEqual(jwe.split(".").length, 5, r.status + " " +
+                       String(r.location).slice(0, 200));
+    assert.ok(opened, String(inner).slice(0, 200));
+    assert.strictEqual(opened.header.alg, "PS256");
+    assert.strictEqual(opened.claims.state, "enc-" + STAMP);
+    assert.ok(opened.claims.code);
+  });
+
+  // THE CODES, read off the realm's audit log; a code is never sent.
+  const advCodes = {};
+  for (const code of ADV_CODES) {
+    advCodes[code] = await codeCount(code);
+  }
+  check("k. the refusals are recorded under their codes (" +
+        ADV_CODES.join(", ") + ")", function () {
+    Object.keys(advCodes).forEach(function (code) {
+      assert.ok(advCodes[code] >= 1, JSON.stringify(advCodes));
+    });
+  });
+
+  assert.ok(checks >= 40, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -28,6 +28,18 @@
 //   7. REVOCATION: /oauth2/revoke takes the device secret away; the device
 //      stays, and is removed through /admin-api.
 //
+// AND D12 (#444, 2026-11-15), what `tests/native_sso.js` held in process
+// that a client sees: section 4's refusals read off the realm's audit log —
+// device_sso refused to a client not enabled (STS-OAUTH-0624); RFC 8693
+// section 2.1's presence rules, an actor_token with no actor_token_type and
+// an actor_token_type with no token (STS-OAUTH-0626); and a token type this
+// service does not exchange, the device secret as the subject or as the
+// actor beside an access token (STS-OAUTH-0627). Not carried (class (d)):
+// `exchangeTypeProblem()` saying nothing of the saml1/saml2 and jwt types
+// (an exchange of those reaches other refusals first), the eviction order
+// at devices.maxPerPerson, a registration's own members against a trusted
+// software statement's, and `ownTokenKind()` — library answers.
+//
 // AND WHAT A RECEIVER IS TOLD (#294, for #239/#240), on a poll stream in the
 // realm that takes session-presented and credential-change:
 //   * the first app's device secret is a credential-change `create` whose
@@ -256,6 +268,29 @@ async function codeGrant(who, app, scope, extra) {
            tokens: tokens };
 }
 
+// THE CODES ARE RECORDED, NEVER SENT (D12): read off this realm's audit log.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await fetch(api + "/audit?per=500&code=" +
+                        encodeURIComponent(code));
+  const body = await r.json();
+  log.debug("Leaving codeCount().");
+  return Number((body && body.matched) || 0);
+}
+
+async function codesSettle(code, atLeast) {
+  log.debug("Entering codesSettle(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 40 && n < atLeast; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving codesSettle(). " + n);
+  return n;
+}
+
 async function exchange(app, fields) {
   log.debug("Entering exchange(). " + app.id);
   const r = await hop(null, "POST", base + "/oauth2/token", { form:
@@ -481,11 +516,52 @@ async function test() {
 
   log.info("=== 4. the refusals ===");
   mark = SEEN.length;
+  const notEnabled = await codeCount("STS-OAUTH-0624");
   const plain = await codeGrant(jar(), APPS.plain, "openid device_sso");
   check("a client not enabled for Native SSO is refused device_sso " +
         "(invalid_scope)", function () {
     assert.strictEqual(plain.error, "invalid_scope", plain.landed);
   });
+  const notEnabledAfter = await codesSettle("STS-OAUTH-0624",
+                                            notEnabled + 1);
+  check("and the refusal is recorded STS-OAUTH-0624", function () {
+    assert.ok(notEnabledAfter > notEnabled,
+              notEnabled + " -> " + notEnabledAfter);
+  });
+  // RFC 8693 section 2.1's presence rules and the types this service
+  // exchanges (native_sso.js 4a, 4b), each by its recorded code.
+  const typed = [
+    ["an actor_token with no actor_token_type", "STS-OAUTH-0626",
+     { subject_token: idToken, subject_token_type: ID_TOKEN,
+       actor_token: secret, audience: issuer }],
+    ["an actor_token_type with no actor_token", "STS-OAUTH-0626",
+     { subject_token: idToken, subject_token_type: ID_TOKEN,
+       actor_token_type: DEVICE, audience: issuer }],
+    ["a subject_token_type nobody defined", "STS-OAUTH-0627",
+     { subject_token: idToken,
+       subject_token_type: "urn:ietf:params:oauth:token-type:unknown",
+       audience: issuer }],
+    ["the device secret as the subject", "STS-OAUTH-0627",
+     { subject_token: secret, subject_token_type: DEVICE,
+       audience: issuer }],
+    ["the device secret as the actor beside an access token",
+     "STS-OAUTH-0627",
+     { subject_token: idToken, subject_token_type: ACCESS,
+       actor_token: secret, actor_token_type: DEVICE, audience: issuer }]
+  ];
+  for (const one of typed) {
+    const before = await codeCount(one[1]);
+    const got = await exchange(APPS.second, one[2]);
+    const after = await codesSettle(one[1], before + 1);
+    check("refused invalid_request and recorded " + one[1] + ": " + one[0],
+          function () {
+      assert.strictEqual(got.status, 400, got.text.slice(0, 300));
+      assert.strictEqual(got.json.error, "invalid_request",
+                         got.text.slice(0, 300));
+      assert.ok(!/STS-[A-Z]+-\d{4}/.test(got.text), got.text.slice(0, 300));
+      assert.ok(after > before, one[1] + " " + before + " -> " + after);
+    });
+  }
   const refusals = [
     ["a client of another group (unauthorized_client)", APPS.other,
      { subject_token: idToken, subject_token_type: ID_TOKEN,
@@ -596,7 +672,7 @@ async function test() {
     assert.strictEqual(held.length, 0, JSON.stringify(held));
   });
 
-  assert.ok(checks >= 21, "only " + checks + " checks ran");
+  assert.ok(checks >= 27, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

@@ -6460,7 +6460,7 @@ to its set (`holdToModel()`, `STS-OAUTH-1005`), and `oauthError()` holds the
 code (`STS-OAUTH-1006`); the answer is sent as built. A recorded problem is a
 model gap to close in the TypeSpec. The open claim sets and the other answers
 are held by `tests/model_oauth.js`, against every answer, decoded token and
-error code `tests/oauth_model_wire.snapshot.json` recorded in development,
+error code `tests/protocol/oauth_model_wire.snapshot.json` recorded in development,
 RFC 9700, OAuth 2.1 and FAPI 2.0 modes, and it builds both discovery
 documents with every `oauth2.*` switch on in each FAPI profile — and with an
 attester trusted, since attestation-based client authentication's four members

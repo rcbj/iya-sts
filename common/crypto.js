@@ -4476,6 +4476,19 @@ function verifyJws(token, key, opts) {
       throw new Error('this JWS cannot be verified with ' + weak + '.');
     }
   }
+  // THE LIBRARY PATH PASSES THE ACCEPT CHOKEPOINT TOO (2026-11-14, found by
+  // #444's D12). `prepareVerification()` asks it for every algorithm the
+  // shared verifier checks, and this path — RS, PS, ES and HS, through
+  // jsonwebtoken — never did: under `keys.acceptedSigningAlgorithms=RS256`
+  // an ES256 `private_key_jwt` was still accepted and STS-KEYS-0179 never
+  // recorded, while discovery published RS256 alone. Asked after the
+  // caller's own list (jsonwebtoken checks that below), before the
+  // signature, as there.
+  if (peeked && typeof peeked.alg === 'string' &&
+      (!Array.isArray(options.algorithms) ||
+       options.algorithms.indexOf(peeked.alg) >= 0)) {
+    refuseUnacceptableJws(peeked.alg);
+  }
   const verifyOptions = Object.assign({}, options);
   if (verifyOptions.algorithms === undefined) {
     // Naming the algorithms is not decoration: jsonwebtoken will otherwise

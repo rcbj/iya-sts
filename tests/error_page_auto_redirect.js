@@ -12,6 +12,9 @@
 //   2. set, a meta refresh names the link's own target and the seconds, and
 //      the page says so;
 //   3. the form_post variant never has one — a POST needs a script.
+//   4. in a trust realm the portal link is drawn root-relative and carries
+//      the realm's prefix ONCE as the page is sent (2026-11-14, #444's D12:
+//      it was `/realm/<id>/realm/<id>/portal`, a 404).
 // ===========================================================================
 'use strict';
 const config = require('../common/config');
@@ -114,6 +117,31 @@ async function run(t) {
             '3. the form_post page never continues by itself');
   } finally {
     config.clearOverride('oauth2.errorPageAutoRedirectS');
+  }
+
+  t.log.info('=== 4. in a trust realm, the portal link\'s prefix once ===');
+  const realms = require('../common/realms');
+  const app = require('../common/app');
+  const id = 'epar' + process.pid;
+  const made = realms.create({ id: id, name: 'Error page links' });
+  t.check(!!(made && made.ok), '4. a realm for the page', JSON.stringify(made));
+  try {
+    const realm = realms.get(id);
+    const prefix = realms.prefixOf(realm);
+    const drawn = realms.run(realm, function () {
+      return render(false);
+    });
+    const sent = app.withRealmLinks(drawn, prefix);
+    t.check(drawn.indexOf('href="/portal"') >= 0,
+            '4a. the page draws its portal link root-relative', prefix);
+    t.check(sent.indexOf('href="' + prefix + '/portal"') >= 0 &&
+            sent.indexOf(prefix + prefix) < 0,
+            '4b. and as sent it is the realm\'s portal, its prefix once',
+            (/<a class="portal" href="[^"]*"/.exec(sent) || [''])[0]);
+    t.check(sent.indexOf('action="' + prefix + '/authn/language"') >= 0,
+            '4c. and the language chooser posts in the realm');
+  } finally {
+    realms.remove(id);
   }
   log.debug("Leaving run().");
 }

@@ -4757,6 +4757,22 @@ function registrationUriProblem(metadata) {
      'invalid_client_metadata']
   ];
   for (let i = 0; i < members.length; i++) {
+    // AN EMPTY STRING IN A LIST OF URIS IS NOT A URI (2026-11-14, found by
+    // #444's D12). `valuesOf()` drops it, as it should for a value read off
+    // an entry, so `redirect_uris: [""]` reached no check and a development
+    // realm registered it (201, echoed back) — while the allowlist and
+    // RFC 9700 mode refuse it. A list member that is empty is refused here,
+    // in every mode, as any other address that is not one is.
+    const raw = meta[members[i][0]];
+    if (Array.isArray(raw) && raw.some(function (one) {
+      return one === null || one === undefined || String(one).trim() === '';
+    })) {
+      log.debug("Leaving registrationUriProblem(). An empty " +
+                members[i][0] + " member.");
+      return { errorCode: 'STS-REG-0070', error: members[i][2],
+               description: members[i][0] + ': an empty string is not a ' +
+                            'URI.' };
+    }
     const values = valuesOf(meta[members[i][0]]);
     for (let j = 0; j < values.length; j++) {
       const problem = addressProblem(members[i][1], values[j]);

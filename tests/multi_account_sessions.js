@@ -41,6 +41,12 @@
 //  12. the portal's wallet enrolment (2026-10-20, rcbj on 8081): with two
 //      accounts live it names its own as `login_hint` and is admitted; with
 //      no hint, or one naming nobody here, it is refused (STS-VC-0093).
+//  13. a cookie that does not decode (`x=%E0%A4%A`, any name) is skipped:
+//      the browser's own cookies are read, the set is not "unreadable"
+//      (no 503, no STS-AUTHN-0344) and the picker's act answers rather
+//      than throwing (2026-11-14, #444's D12).
+//  14. a session ended between its read and the set's stamp is not
+//      written back: the stamp never brings a session back (2026-11-14).
 //
 // WHY IN PROCESS. Which row a session is, what the set holds and whether a
 // ticket was spent are facts about the stores; an HTTP caller sees cookies
@@ -798,6 +804,140 @@ function partEnrolHint(t) {
   log.debug("Leaving partEnrolHint().");
 }
 
+// ---------------------------------------------------------------------------
+// 13. A COOKIE THAT DOES NOT DECODE IS SKIPPED (2026-11-14, #444's D12). A
+// bad percent escape in ANY cookie made `cookiesOf()` throw `URIError`, so
+// the set read as unreadable — the picker 503 and STS-AUTHN-0344 on every
+// request — and the picker's act, which reads the cookies outside a try,
+// threw. The other cookies are read; the bad one is left out.
+// ---------------------------------------------------------------------------
+function partBadCookie(t) {
+  log.debug("Entering partBadCookie().");
+  t.log.info('=== 13. a cookie that does not decode is skipped ===');
+  const errorCodes = require('../common/error_codes');
+  const b = browser();
+  const alice = signIn(b, 'mas-bc-alice').session;
+  const bob = signIn(b, 'mas-bc-bob').session;
+  b.jar.x = '%E0%A4%A';
+  const plain = b.req('/oauth2/authorize');
+  let cookies = null;
+  let threw = '';
+  try {
+    cookies = authn.cookiesOf(plain);
+  } catch (e) {
+    log.debug("Caught in partBadCookie(): " + ((e && e.message) || e));
+    threw = String((e && e.name) || e);
+  }
+  t.check(!threw && !!cookies && !('x' in cookies) &&
+          !!cookies[authn.SESSION_COOKIE] &&
+          !!cookies[AccountSets.cookieName()],
+          '13a. cookiesOf() skips the cookie that does not decode and ' +
+          'reads the others', threw || JSON.stringify(Object.keys(
+            cookies || {})));
+  const hinted = b.req('/oauth2/authorize');
+  authn.hintAccount(hinted, { loginHint: 'mas-bc-alice' });
+  t.equal((authn.sessionOf(hinted) || {}).id, alice.id,
+          '13b. the set is read: a hint still chooses alice');
+  t.check(!hinted.stsAccountSetUnread, '13c. and the set is not marked ' +
+          'unreadable');
+  const view = b.req('/authn-api/pending/x/accounts');
+  t.equal(authn.refuseAccountsUnread(view, view.res), false,
+          '13d. the picker draws (no 503, no STS-AUTHN-0344)');
+  t.check(errorCodes.codeOf(view.res) !== 'STS-AUTHN-0344',
+          '13e. and records no STS-AUTHN-0344',
+          String(errorCodes.codeOf(view.res)));
+  const start = b.req('/oauth2/authorize?client_id=c');
+  const path = authn.beginAuthentication({
+    returnTo: '/oauth2/authorize?client_id=c', details: [],
+    protocol: 'OAuth 2.0 / OIDC', application: '', request: start });
+  const id = decodeURIComponent(String(path).split('authn=')[1] || '');
+  const record = authn.pendingForAccounts(id);
+  const pick = b.req('/authn-api/pending/' + id + '/accounts');
+  const listed = record ? authn.accountsView(pick, record) : null;
+  const bobKey = ((listed && listed.accounts) || []).filter(function (one) {
+    return one.username === 'mas-bc-bob';
+  }).map(function (one) {
+    return one.key;
+  })[0];
+  const act = b.req('/authn-api/pending/' + id + '/accounts/select');
+  let actThrew = '';
+  try {
+    authn.accountsAct(act, act.res, record, { action: 'select',
+                                              account: bobKey });
+  } catch (e) {
+    log.debug("Caught in partBadCookie(): " + ((e && e.message) || e));
+    actThrew = String((e && e.name) || e);
+  }
+  const answer = answerOf(act.res) || {};
+  t.check(!actThrew && act.res.statusCode === 200 &&
+          answer.next === 'redirect',
+          '13f. the picker\'s act answers a select rather than throwing',
+          actThrew || (act.res.statusCode + ' ' + JSON.stringify(answer)));
+  b.take(act.res);
+  t.check(String(b.jar[authn.SESSION_COOKIE] || '').split('.')[0] ===
+            bob.id, '13g. and bob became the default');
+  // The step cookie's reader, with the same rule: no throw.
+  const StepAddress = require('../common/step_address');
+  const step = b.req('/authn/totp');
+  step.headers.cookie = 'sts_signin_step=%E0%A4%A';
+  let stepThrew = '';
+  try {
+    StepAddress.stepOfCookie(step);
+  } catch (e) {
+    log.debug("Caught in partBadCookie(): " + ((e && e.message) || e));
+    stepThrew = String((e && e.name) || e);
+  }
+  t.check(!stepThrew, '13h. StepAddress.stepOfCookie() does not throw on ' +
+          'a value that does not decode', stepThrew);
+  delete b.jar.x;
+  log.debug("Leaving partBadCookie().");
+}
+
+// ---------------------------------------------------------------------------
+// 14. THE STAMP NEVER BRINGS A SESSION BACK (2026-11-14). The set's id is
+// stamped on a session it lists; that stamp wrote the HELD object back with
+// a plain `set()`, so a session another request (or node) ended between the
+// read and the stamp came back. The adoption path (D12, section 9) is the
+// one with a write between its read and its stamp — the set's own save —
+// and that save is where the session is ended here.
+// ---------------------------------------------------------------------------
+function partNoResurrection(t) {
+  log.debug("Entering partNoResurrection().");
+  t.log.info('=== 14. the account set\'s stamp never brings a session ' +
+             'back ===');
+  const b = browser();
+  const alice = withSettings({ 'authn.multipleAccounts': false }, function () {
+    return signIn(b, 'mas-nr-alice').session;
+  });
+  t.check(!!alice && !!authn.sessions.get(alice.id),
+          '14a. alice signed in with the setting off, so she has no set');
+  const realSave = AccountSets.save;
+  let ended = false;
+  AccountSets.save = function (row) {
+    log.debug("Entering save().");
+    if (!ended) {
+      ended = true;
+      // Another request ending her session between the read and the stamp.
+      authn.sessions.delete(alice.id);
+    }
+    log.debug("Leaving save().");
+    return realSave.call(AccountSets, row);
+  };
+  try {
+    withSettings({ 'authn.multipleAccounts': true }, function () {
+      const req = b.req('/oauth2/authorize');
+      authn.sessionOf(req);
+    });
+  } finally {
+    AccountSets.save = realSave;
+  }
+  t.check(ended, '14b. the adoption reached the set\'s save');
+  t.check(!authn.sessions.get(alice.id),
+          '14c. and the session ended meanwhile was NOT written back by the ' +
+          'stamp');
+  log.debug("Leaving partNoResurrection().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   realms.run(realms.DEFAULT_REALM, function () {
@@ -821,7 +961,9 @@ function run(t) {
       partOn(t);
       partUnread(t);
       partEnrolHint(t);
+      partBadCookie(t);
     });
+    partNoResurrection(t);
     made.forEach(function (sid) {
       if (authn.sessionById(sid)) {
         authn.endSessionById(sid, 'the end of multi_account_sessions.js');

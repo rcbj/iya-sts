@@ -25,7 +25,9 @@
 //   d. a post-login activity narrowed to the two groups starts, is listed
 //      running with both DNs, a second for the same groups in the other
 //      order is refused, and it pauses, resumes and ends; an ended one does
-//      not pause.
+//      not pause.;
+//   e. in a realm of its own (D12, #444), the acts' codes and the job's
+//      body run now — see section e's own header below.
 //
 // It is narrowed to groups made here, which hold nobody, so the job — which
 // runs every few minutes on the stack this job shares — mails nobody for
@@ -275,11 +277,235 @@ async function test() {
     }
   }
 
-  assert.ok(checks >= 6, "only " + checks + " checks ran; a section has " +
-                                           "stopped being called.");
+  const own = await jobBody();
+  try {
+    await own.removeRealms();
+  } catch (e) {
+    log.debug("Caught in test(): " + ((e && e.message) || e));
+    // A realm left behind is not a failed assertion.
+    log.warn("removing this run's realm failed: " + e.message);
+  }
+  assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +
+                                            "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
+}
+
+// ---------------------------------------------------------------------------
+// e. THE ACTS' CODES AND THE JOB'S BODY, IN A REALM OF ITS OWN (D12, #444:
+// the wire half of `tests/post_login_activities.js`, deleted at the
+// cutover).
+//
+// Sections a-d above work in the default realm; this one makes its own,
+// so the job's run reads people this section made and nobody else:
+//
+//   e1. the codes of the refusals, off `/admin-api/audit`: a number out of
+//       its bounds and an unknown activity (the request schema's,
+//       STS-API-0009: every bound STS-AUTHN-0490 names is in the schema), a
+//       second for the same groups in the other order (0492), an act whose
+//       state does not move and an unknown id (0491);
+//   e2-e4. the job's body, run now through `/admin-api/scheduler/run`:
+//       a started activity over two groups mails the people its groups
+//       reach who are due — three people holding a classical passkey, one
+//       in both groups, one in neither — the shared member ONCE and the
+//       outsider not, each to the address on the entry, through the
+//       development capture; the captured message's one link is the
+//       portal's path with no query, and it carries no credential;
+//   e5. with the realm's mail transport off, a run mails nobody
+//       (STS-AUTHN-0495 on the scheduler's run row).
+//
+// OWED: a member with no address refused by the channel and counted
+// (STS-AUTHN-0494) — a development realm invents an address for a person
+// created with none, and a product realm captures no mail to read back.
+//
+// NOT CARRIED (class (d)): the slice after the key cursor, the cursor
+// starting over, the interval and the maximum holding a person back
+// across runs on a moved clock, one audit row per started activity per
+// run, the chooser's paging over twenty-five groups (section b holds the
+// chooser), and `/report-api`'s `postLoginProgress` source (the reports
+// family's job).
+// ---------------------------------------------------------------------------
+const wire = require("./passkey_wire_kit.js");
+const portalSignin = require("./portal_signin.js");
+
+async function jobBody() {
+  log.debug("Entering jobBody().");
+  const k = wire.kit("sts_post_login_activities", { log: log });
+  const realm = await k.realm("pla-job", "development");
+  const PASSWORD = "Pla-Job-Passw0rd!-" + String(Date.now()).slice(-6);
+  const name = function (n) {
+    log.debug("Entering name(). " + n);
+    log.debug("Leaving name().");
+    return (n + "-" + k.STAMP).slice(0, 30);
+  };
+  const g1 = name("plj-one").toLowerCase();
+  const g2 = name("plj-two").toLowerCase();
+  for (const g of [g1, g2]) {
+    const made = await k.call(realm, "POST", "/groups/create", { group: g });
+    assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
+  }
+  // A in the first group, B in both, C in neither — each holding a
+  // classical passkey, so each is due.
+  const people = {};
+  for (const p of [["a", [g1]], ["b", [g1, g2]], ["c", []]]) {
+    const n = name("plj-" + p[0]);
+    await k.person(realm, n, PASSWORD);
+    const portal = await portalSignin.signInToThePortal(realm.base, n, null,
+      { password: PASSWORD });
+    const key = k.authenticator({});
+    const done = await k.enrol(portal, key, {});
+    assert.ok(done.done && done.done.status === 200,
+      "registering " + n + "'s passkey answered " +
+      JSON.stringify((done.done || done.begun).json).slice(0, 300));
+    for (const g of p[1]) {
+      const added = await k.call(realm, "POST", "/groups/add-member",
+                                 { group: g, member: n });
+      assert.strictEqual(added.status, 200, added.raw.slice(0, 300));
+    }
+    people[p[0]] = n;
+  }
+
+  log.info("=== e1. the acts' codes ===");
+  const refused = async function (code, path, body) {
+    log.debug("Entering refused(). " + code);
+    const before = await k.codeCount(realm, code);
+    const r = await k.call(realm, "POST", "/post-login-activities" + path,
+                           body);
+    const n = await k.newCodes(realm, code, before);
+    log.debug("Leaving refused(). " + r.status + " " + n);
+    return { r: r, n: n };
+  };
+  // THE REQUEST SCHEMA HOLDS EVERY BOUND STS-AUTHN-0490 NAMES — the
+  // numbers' ranges and types, the activity's one value, fifty groups — so
+  // over /admin-api those refusals are the schema's (STS-API-0009).
+  const bounds = await refused("STS-API-0009", "/start",
+                               { groups: [g1], maxMails: 99 });
+  const activity = await refused("STS-API-0009", "/start",
+                                 { activity: "nonsense", groups: [g1] });
+  const started = await k.call(realm, "POST", "/post-login-activities/start",
+    { activity: "pqc-passkey-migration", groups: [g1, g2], intervalDays: 1,
+      maxMails: 3, perRun: 100 });
+  const id = started.body && started.body.started && started.body.started.id;
+  const twice = await refused("STS-AUTHN-0492", "/start",
+                              { groups: [g2, g1] });
+  const resume = await refused("STS-AUTHN-0491", "/resume", { id: id });
+  const nobody = await refused("STS-AUTHN-0491", "/pause",
+                               { id: "pla-nobody-" + k.STAMP });
+  check("e1. a number out of bounds and an unknown activity are refused " +
+        "by the request schema (STS-API-0009, before STS-AUTHN-0490), a " +
+        "second for the same groups in the other order STS-AUTHN-0492, and " +
+        "an act whose state does not move or an unknown id 0491",
+        function () {
+    [bounds, activity, twice, resume, nobody].forEach(function (one) {
+      assert.strictEqual(one.r.status, 400, one.r.raw.slice(0, 300));
+      assert.ok(one.n >= 1, one.r.raw.slice(0, 300));
+      assert.ok(!/STS-[A-Z]+-\d{4}/.test(one.r.raw), one.r.raw);
+    });
+    assert.ok(started.status === 200 && id, started.raw.slice(0, 300));
+  });
+
+  log.info("=== e2. the job's body, run now ===");
+  const runJob = async function () {
+    log.debug("Entering runJob().");
+    const queued = await k.send("POST", k.root + "/admin-api/scheduler/run",
+      { job: "post-login.activity-mail", realm: realm.id });
+    assert.ok(queued.status === 202 || queued.status === 200,
+      "queueing the job answered " + queued.status + " " +
+      queued.raw.slice(0, 300));
+    const runId = queued.body && queued.body.runId;
+    let detail = null;
+    for (let i = 0; i < 120; i += 1) {
+      const r = await k.send("GET", k.root + "/admin-api/scheduler?run=" +
+                             encodeURIComponent(runId));
+      detail = r.body && r.body.detail;
+      if (detail && /^(succeeded|failed|ok|done|error|completed)/.test(
+            String(detail.state || ""))) {
+        break;
+      }
+      await k.sleep(500);
+    }
+    log.debug("Leaving runJob(). " + JSON.stringify(detail).slice(0, 200));
+    return detail;
+  };
+  const reminders = async function () {
+    log.debug("Entering reminders().");
+    const r = await k.call(realm, "GET", "/mail/outbox?per=300&q=" +
+                           encodeURIComponent("post-login-reminder"));
+    log.debug("Leaving reminders().");
+    return ((r.body && r.body.rows) || []).filter(function (one) {
+      return one.template === "post-login-reminder";
+    });
+  };
+  const run = await runJob();
+  const mails = await reminders();
+  const count = function (who) {
+    log.debug("Entering count().");
+    log.debug("Leaving count().");
+    return mails.filter(function (one) {
+      return one.username === who;
+    }).length;
+  };
+  check("e2. a run of the job mails the union of the two groups — the " +
+        "member of both ONCE, the person in neither not", function () {
+    assert.ok(run, "the run did not finish");
+    assert.strictEqual(count(people.a), 1, JSON.stringify(mails));
+    assert.strictEqual(count(people.b), 1, JSON.stringify(mails));
+    assert.strictEqual(count(people.c), 0, JSON.stringify(mails));
+  });
+  const toA = mails.filter(function (one) {
+    return one.username === people.a;
+  })[0] || {};
+  check("e3. to the address on the entry", function () {
+    assert.strictEqual(toA.to, people.a + "@passkey-wire.test",
+                       JSON.stringify(toA));
+  });
+  let body = null;
+  for (let i = 0; i < 40; i += 1) {
+    const r = await k.call(realm, "GET", "/mail/outbox?message=" +
+                           encodeURIComponent(toA.id));
+    body = r.body && r.body.message;
+    if (body && body.state === "captured") {
+      break;
+    }
+    await k.sleep(150);
+  }
+  const links = String((body && body.text) || "").match(
+    /https?:\/\/[^\s]+/g) || [];
+  check("e4. the captured message's one link is the portal's path, with no " +
+        "query, and it carries no credential", function () {
+    assert.strictEqual(links.length, 1, JSON.stringify(links));
+    assert.ok(/\/portal$/.test(links[0]), links[0]);
+    assert.ok(!/token|code=|secret/i.test(String(body.html || "") +
+                                          String(body.text || "")));
+  });
+  const ended = await k.call(realm, "POST", "/post-login-activities/end",
+                             { id: id });
+  assert.strictEqual(ended.status, 200, ended.raw.slice(0, 300));
+
+  log.info("=== e5. no transport, nobody mailed ===");
+  await k.mustSet(realm, "mail.transport", "off");
+  const again = await k.call(realm, "POST", "/post-login-activities/start",
+    { activity: "pqc-passkey-migration", intervalDays: 1 });
+  const againId = again.body && again.body.started && again.body.started.id;
+  const before = (await reminders()).length;
+  const b495 = await k.codeCount(realm, "STS-AUTHN-0495");
+  const dry = await runJob();
+  const n495 = await k.newCodes(realm, "STS-AUTHN-0495", b495);
+  const afterRows = (await reminders()).length;
+  check("e5. with the realm's mail transport off a run mails nobody and " +
+        "says why (STS-AUTHN-0495)", function () {
+    assert.ok(again.status === 200 && againId, again.raw.slice(0, 300));
+    assert.strictEqual(afterRows, before);
+    // On the scheduler's run row, not the audit log (the code's own row
+    // in common/error_codes.js says "logged; the scheduler run row").
+    assert.ok(/STS-AUTHN-0495/.test(JSON.stringify(dry)),
+              JSON.stringify(dry) + " audit rows: " + n495);
+  });
+  await k.call(realm, "POST", "/post-login-activities/end", { id: againId });
+  await k.reset(realm, "mail.transport");
+  log.debug("Leaving jobBody().");
+  return k;
 }
 
 const program = new Command();

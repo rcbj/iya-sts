@@ -445,6 +445,11 @@ function childMain() {
            'E2. a recovery code in place of the passkey starts no session ' +
            'and draws the recovery set-up step',
            (r.next || r.apiStatus) + ' ' + JSON.stringify(r).slice(0, 200));
+      // (2026-11-14, #444's D12) and, as every other recovery door does, the
+      // recovery is pending on the entry until a passkey signs them in.
+      note((credentials.recoveryPending(BOB) || {}).door === 'recovery-code',
+           'E2b. the recovery code\'s recovery is pending on the entry',
+           JSON.stringify(credentials.recoveryPending(BOB)));
       r = await stepAct(bobSetup, 'setup/webauthn');
       const bobCeremony = r.next === 'mfa' ? await reopen(bobSetup, r) : r;
       note(bobCeremony.view && bobCeremony.view.webauthn &&

@@ -23,6 +23,17 @@
 //      listener, an internal address): the ping names the request with the
 //      client's Bearer and the token request answers; the push carries the
 //      tokens, the ID Token naming the request.
+//   7. THE REQUEST'S LIFE AND ITS REGISTRATION (D12, #444: carries over
+//      `tests/ciba.js`): section 4's registration rules at RFC 7591
+//      registration (an unknown delivery mode, ping with no notification
+//      endpoint, and a ping client's members echoed); the per-person bound
+//      (`oauth2.cibaMaxPendingPerPerson`) refusing access_denied; another
+//      client's poll finding nothing; only the hinted person answering, and
+//      once; a request nobody answered expiring (expired_token); and in
+//      development the notification's fate — 503, 503, 204 delivered on the
+//      third attempt, 400 not retried, and the sweep telling a push client
+//      its unanswered request expired. NOT carried: the user code's hash and
+//      the stores' digests (`ciba.js` 3 and 6, store internals, class (d)).
 //
 // OWNED HERE (local: true): this repository's authorization server and
 // portal. The portal is a static application since #568: the person signs
@@ -221,6 +232,189 @@ async function provision(id, extra) {
   log.debug("Leaving provision().");
 }
 
+// SECTION 7 (D12, #444): what tests/ciba.js held in process.
+async function lifeSection(product, browser) {
+  log.debug("Entering lifeSection().");
+  log.info("=== 7. the request's life and its registration ===");
+  await ok(api + "/config/set", { key: "oauth2.openRegistration",
+                                  value: true },
+           "opened dynamic registration in the realm");
+  const register = function (members) {
+    return hop(null, "POST", base + "/oauth2/register", { json:
+      Object.assign({ redirect_uris: ["https://rp.ciba.example/cb"],
+                      grant_types: [GRANT] }, members) });
+  };
+  let r = await register({ backchannel_token_delivery_mode:
+                             "carrier-pigeon" });
+  check("7.1a. registration: an unknown delivery mode is refused " +
+        "invalid_client_metadata", function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.strictEqual(r.json.error, "invalid_client_metadata");
+  });
+  r = await register({ backchannel_token_delivery_mode: "ping" });
+  check("7.1b. and ping with no client_notification_endpoint (section 4)",
+        function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.strictEqual(r.json.error, "invalid_client_metadata");
+  });
+  r = await register({ backchannel_token_delivery_mode: "ping",
+    backchannel_client_notification_endpoint: "https://rp.ciba.example/n",
+    backchannel_user_code_parameter: true });
+  check("7.1c. a ping client's members are kept and read back", function () {
+    assert.strictEqual(r.status, 201, r.text.slice(0, 300));
+    assert.strictEqual(r.json.backchannel_token_delivery_mode, "ping");
+    assert.strictEqual(r.json.backchannel_client_notification_endpoint,
+                       "https://rp.ciba.example/n");
+    assert.strictEqual(r.json.backchannel_user_code_parameter, true);
+  });
+
+  await ok(api + "/config/set", { key: "oauth2.cibaMaxPendingPerPerson",
+                                  value: 1 }, "bounded pending requests");
+  const OTHER = names.usernameFor("ciba-other");
+  await registry.ensurePerson(base, OTHER, PASSWORD);
+  const firstOne = await authorize("ciba-poll", { login_hint: OTHER });
+  const second = await authorize("ciba-poll", { login_hint: OTHER });
+  await ok(api + "/config/reset", { key: "oauth2.cibaMaxPendingPerPerson" },
+           "put the bound back");
+  check("7.2b. past the per-person bound, access_denied (403, CIBA Core " +
+        "section 13)", function () {
+    assert.strictEqual(firstOne.status, 200, firstOne.text.slice(0, 300));
+    assert.strictEqual(second.status, 403, second.text.slice(0, 300));
+    assert.strictEqual(second.json.error, "access_denied");
+  });
+  const otherId = firstOne.json.auth_req_id;
+  const foreign = await token("ciba-code", otherId);
+  check("7.2c. another client's poll finds nothing", function () {
+    assert.strictEqual(foreign.json.error, "invalid_grant", foreign.text);
+  });
+  await portal(browser, "/portal/ciba");
+  const notHers = await portalClient.act("/portal/ciba",
+                                         { action: "approve", id: otherId });
+  const stillPending = await token("ciba-poll", otherId);
+  check("7.2e. only the hinted person answers: another person's approval " +
+        "is refused and the request is still pending", function () {
+    assert.ok(!(notHers.json && notHers.json.ok), notHers.text.slice(0, 300));
+    assert.ok(/authorization_pending|slow_down/.test(String(
+      stillPending.json && stillPending.json.error)), stillPending.text);
+  });
+  r = await authorize("ciba-poll", { login_hint: HOLDER });
+  const onceId = r.json.auth_req_id;
+  const yes = await answerOnPortal(browser, onceId, "approve");
+  const no = await portalClient.act("/portal/ciba",
+                                    { action: "deny", id: onceId });
+  check("7.2f. approved, and once: a second answer is refused", function () {
+    assert.ok(yes.answer.json && yes.answer.json.ok,
+              yes.answer.text.slice(0, 300));
+    assert.ok(!(no.json && no.json.ok), no.text.slice(0, 300));
+  });
+  r = await authorize("ciba-poll", { login_hint: HOLDER,
+                                     requested_expiry: "10" });
+  const lateId = r.json.auth_req_id;
+  check("7.2h0. a requested expiry is the acknowledgement's expires_in",
+        function () {
+    assert.strictEqual(r.json.expires_in, 10, r.text.slice(0, 200));
+  });
+  await new Promise(function (resolve) { setTimeout(resolve, 11500); });
+  const late = await token("ciba-poll", lateId);
+  check("7.2h. past its expiry, expired_token", function () {
+    assert.strictEqual(late.json.error, "expired_token", late.text);
+  });
+
+  if (product) {
+    log.info("[skip] 7.4: product mode will not dial this job's listener.");
+    log.debug("Leaving lifeSection(). Product.");
+    return;
+  }
+  const host = process.env.CIBA_NOTIFY_HOST ||
+               process.env.GNAP_PUSH_HOST || "localhost";
+  const credential = await testCa.selfSignedCertificate(host);
+  const received = [];
+  const scripts = { "/flaky": [503, 503, 204], "/refuse": [400],
+                    "/push": [204] };
+  const listener = https.createServer({ key: credential.key,
+                                        cert: credential.cert },
+    function (req, res) {
+      let text = "";
+      req.on("data", function (c) { text += c; });
+      req.on("end", function () {
+        received.push({ path: req.url, auth: req.headers.authorization,
+                        body: text ? JSON.parse(text) : {} });
+        const script = scripts[req.url] || [404];
+        res.writeHead(script.length > 1 ? script.shift() : script[0]);
+        res.end();
+      });
+    });
+  await new Promise(function (resolve) {
+    listener.listen(Number(process.env.CIBA_LISTENER_PORT || 0), "0.0.0.0",
+                    resolve);
+  });
+  try {
+    const at = "https://" + host + ":" + listener.address().port;
+    await ok(api + "/config/set", { key: "oauth2.cibaNotifyBackoffMs",
+                                    value: 0 }, "no backoff between tries");
+    await ok(api + "/config/set", { key: "oauth2.cibaNotifyAttempts",
+                                    value: 3 }, "three tries");
+    await ok(api + "/config/set", { key: "oauth2.cibaSweepS", value: 5 },
+             "a five-second sweep");
+    await provision("ciba-flaky", { oauthBackchannelTokenDeliveryMode: "ping",
+      oauthBackchannelClientNotificationEndpoint: at + "/flaky" });
+    await provision("ciba-refuse", {
+      oauthBackchannelTokenDeliveryMode: "ping",
+      oauthBackchannelClientNotificationEndpoint: at + "/refuse" });
+    await provision("ciba-push2", { oauthBackchannelTokenDeliveryMode: "push",
+      oauthBackchannelClientNotificationEndpoint: at + "/push" });
+    const posted = function (p) {
+      return received.filter(function (one) {
+        return one.path === p;
+      });
+    };
+    for (const id of ["ciba-flaky", "ciba-refuse"]) {
+      const made = await authorize(id, { login_hint: HOLDER,
+        client_notification_token: "nt-" + id });
+      await answerOnPortal(browser, made.json.auth_req_id, "approve");
+    }
+    for (let i = 0; i < 40 && posted("/flaky").length < 3; i += 1) {
+      await new Promise(function (resolve) { setTimeout(resolve, 500); });
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 3000); });
+    check("7.4a. 503, 503, 204: the ping is retried and lands on the third " +
+          "attempt, with the client's Bearer each time", function () {
+      assert.strictEqual(posted("/flaky").length, 3,
+                         JSON.stringify(received).slice(0, 400));
+      assert.ok(posted("/flaky").every(function (one) {
+        return one.auth === "Bearer nt-ciba-flaky";
+      }));
+    });
+    check("7.4c. a 400 is not worth retrying: one POST, and no more",
+          function () {
+      assert.strictEqual(posted("/refuse").length, 1);
+    });
+    const pushed = await authorize("ciba-push2", { login_hint: HOLDER,
+      client_notification_token: "nt-push2", requested_expiry: "10" });
+    const pushedId = pushed.json.auth_req_id;
+    for (let i = 0; i < 60 && !posted("/push").length; i += 1) {
+      await new Promise(function (resolve) { setTimeout(resolve, 500); });
+    }
+    const told = posted("/push")[0];
+    check("7.5a. the sweep expires an unanswered request, and a push client " +
+          "is told so: expired_token, naming the request", function () {
+      assert.ok(told, "nothing was pushed: " + JSON.stringify(received)
+        .slice(0, 300));
+      assert.strictEqual(told.body.error, "expired_token",
+                         JSON.stringify(told.body));
+      assert.strictEqual(told.body.auth_req_id, pushedId);
+      assert.strictEqual(told.auth, "Bearer nt-push2");
+    });
+  } finally {
+    listener.close();
+    for (const key of ["oauth2.cibaNotifyBackoffMs",
+                       "oauth2.cibaNotifyAttempts", "oauth2.cibaSweepS"]) {
+      await ok(api + "/config/reset", { key: key }, "reset " + key);
+    }
+  }
+  log.debug("Leaving lifeSection().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const product = await facts.isProduct(root + "/admin-api");
@@ -409,6 +603,8 @@ async function test() {
     });
     listener.close();
   }
+
+  await lifeSection(product, browser);
 
   assert.ok(checks >= 12, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");

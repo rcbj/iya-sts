@@ -22,6 +22,12 @@
 // development refuses as well is asserted in both, and what only product
 // refuses is asserted where the stack is product.
 //
+// D12 (#444, 2026-11-15): it runs TWICE — the realm in the stack's mode,
+// then a second realm switched to the other mode after its fixtures — and
+// reads STS-OAUTH-0796, 0797 and 0798 off the realm's audit log, so the
+// product-only half of `tests/token_exchange_assertions.js` is asserted on
+// every stack.
+//
 // `local: true`: the feature is this repository's. It works in a throwaway
 // realm, so the certificate authority is one it built, and leaves the realm
 // standing (*No job removes a realm*, `tests/CLAUDE.md`).
@@ -57,9 +63,14 @@ log.info("Log initialized. logLevel=" + log.level());
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
-const REALM = usernameFor("txassert").replace(/[^a-z0-9-]/g, "").slice(0, 30);
-const realmBase = base + "/realm/" + REALM;
-const realmApi = realmBase + "/admin-api";
+// `let` since D12 (#444): the job runs TWICE, once in a realm in the stack's
+// own mode and once in a second realm switched to the other mode, so that
+// what only product refuses is asserted on every stack (see test()).
+let REALM = usernameFor("txassert").replace(/[^a-z0-9-]/g, "").slice(0, 30);
+let realmBase = base + "/realm/" + REALM;
+let realmApi = realmBase + "/admin-api";
+let FORCE_MODE = "";
+const CREATED = [];
 const SECRET = "tx-assertions-" + crypto.randomBytes(8).toString("hex");
 const ALICE = usernameFor("txalice");
 const DAVE = usernameFor("txdave");
@@ -178,6 +189,29 @@ function refused(r, what) {
   return String(r.json.error_description || "");
 }
 
+// D12 (#444): a code is recorded, never sent, so it is read off the
+// realm's audit log; `before` is the count read before the request.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await call("GET", realmApi + "/audit?per=500&code=" +
+                       encodeURIComponent(code));
+  log.debug("Leaving codeCount().");
+  return Number((r.json && r.json.matched) || 0);
+}
+
+async function codeRose(code, before) {
+  log.debug("Entering codeRose(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 20 && n <= before; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 100);
+    });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving codeRose(). " + n);
+  return n > before;
+}
+
 function issued(r, what) {
   log.debug("Entering issued().");
   assert.ok(r.status === 200 && r.json && r.json.access_token,
@@ -203,6 +237,7 @@ async function setup() {
   await ok(base + "/admin-api/realms/create",
            { id: REALM, domain: REALM + ".example.net",
              name: "Token exchange assertions" }, "created the realm");
+  CREATED.push(REALM);
   await ok(realmApi + "/pki/build", { organisation: "Exchange Assertion " +
                                       "Test", country: "US" },
            "built a certificate authority");
@@ -279,6 +314,14 @@ async function setup() {
   const md = await call("GET", realmBase +
                         "/.well-known/oauth-authorization-server");
   TOKEN = String(md.json.token_endpoint || realmBase + "/oauth2/token");
+  // The second pass's mode, switched AFTER the fixtures: a product realm in
+  // a development process holds no key-encryption key, so the RFC 7522 key
+  // pair could not be sealed onto the entry while it was product.
+  if (FORCE_MODE) {
+    await ok(base + "/admin-api/realms/set", { id: REALM, key: "global.mode",
+                                               value: FORCE_MODE },
+             "switched the realm to " + FORCE_MODE);
+  }
   log.debug("Leaving setup().");
   return {
     jwtKey: jwtKey.privateKey,
@@ -289,9 +332,10 @@ async function setup() {
   };
 }
 
-async function test() {
-  log.debug("Entering test().");
-  PRODUCT = await registry.isProduct(base);
+async function pass() {
+  log.debug("Entering pass().");
+  PRODUCT = FORCE_MODE ? FORCE_MODE === "product"
+                       : await registry.isProduct(base);
   log.info("Driving " + realmBase + (PRODUCT ? " (product)" :
                                      " (development)"));
   const keys = await setup();
@@ -344,11 +388,17 @@ async function test() {
         "issued to SOMEBODY ELSE — it chains — is refused", function () {
           assert.ok(/KeyInfo/.test(refused(r, "B1")), r.text.slice(0, 300));
         });
+  let before = await codeCount("STS-OAUTH-0797");
   r = await exchange(CLIENT, saml2About(ALICE), T.saml1);
-  check("B2. a SAML 2.0 assertion declared as saml1 is refused", function () {
+  const rose0797 = await codeRose("STS-OAUTH-0797", before);
+  check("B2. a SAML 2.0 assertion declared as saml1 is refused, recorded " +
+        "STS-OAUTH-0797", function () {
     assert.ok(/declared/.test(refused(r, "B2")), r.text.slice(0, 300));
+    assert.ok(rose0797, "no new STS-OAUTH-0797 row");
   });
+  before = await codeCount("STS-OAUTH-0796");
   r = await exchange(CLIENT, jwtAbout(ALICE, { aud: url(FRONT) }), T.jwt);
+  const rose0796 = await codeRose("STS-OAUTH-0796", before);
   check("B3. under authorization-server (the default) an assertion " +
         "addressed to a relying party registered here is refused" +
         (PRODUCT ? "" : " (development: read unverified instead)"),
@@ -356,6 +406,7 @@ async function test() {
           if (PRODUCT) {
             assert.ok(/tokenExchangeAudience/.test(refused(r, "B3")),
                       r.text.slice(0, 300));
+            assert.ok(rose0796, "no new STS-OAUTH-0796 row");
           } else {
             // Development falls back to its unverified read of a JWT that
             // does not verify, as it always has (F1).
@@ -453,10 +504,13 @@ async function test() {
     check("F1. a JWT from an issuer nobody declared is refused", function () {
       refused(r, "F1");
     });
+    before = await codeCount("STS-OAUTH-0798");
     r = await exchange(CLIENT, jwtAbout("txa-nobody-" + jti()), T.jwt);
-    check("F2. an assertion naming nobody the directory holds is refused",
-          function () {
+    const rose0798 = await codeRose("STS-OAUTH-0798", before);
+    check("F2. an assertion naming nobody the directory holds is refused, " +
+          "recorded STS-OAUTH-0798", function () {
             refused(r, "F2");
+            assert.ok(rose0798, "no new STS-OAUTH-0798 row");
           });
   } else {
     const forged = b64u({ alg: "none", typ: "JWT" }) + "." + b64u({
@@ -469,12 +523,47 @@ async function test() {
           });
   }
 
-  const expected = PRODUCT ? 16 : 15;
-  assert.ok(checks >= expected, "only " + checks + " of " + expected +
-            " checks ran; a section has stopped being called.");
+  log.debug("Leaving pass().");
+}
+
+// TWO PASSES (D12, #444): the realm in the stack's own mode, then a second
+// realm switched to the other one through the root API's realms/set, so a
+// development stack asserts product's refusals too and the reverse.
+async function test() {
+  log.debug("Entering test().");
+  await pass();
+  const first = PRODUCT;
+  const firstChecks = checks;
+  REALM = REALM.slice(0, 27) + "-b2";
+  realmBase = base + "/realm/" + REALM;
+  realmApi = realmBase + "/admin-api";
+  FORCE_MODE = first ? "development" : "product";
+  await pass();
+  // 16 checks in product and 15 in development, whichever ran first.
+  assert.ok(firstChecks >= (first ? 16 : 15) && checks >= 31,
+            "only " + checks + " of 31 checks ran; a section has stopped " +
+            "being called.");
   log.info(checks + " check(s) passed.");
+  await removeRealms();
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
+}
+
+// REMOVAL IS OPT-IN (D12, #444): with STS_TEST_REMOVE_REALMS=1, a private
+// probe's switch, both realms are removed; a suite run leaves them standing
+// (tests/CLAUDE.md, *No job removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  for (const id of CREATED) {
+    const r = await call("POST", base + "/admin-api/realms/remove",
+                         { id: id });
+    log.info("removed the realm " + id + " (" + r.status + ")");
+  }
+  log.debug("Leaving removeRealms().");
 }
 
 const program = new Command();
@@ -490,7 +579,14 @@ program
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+test().catch(async function (e) {
   log.error(e.stack || e.message);
+  try {
+    await removeRealms();
+  } catch (again) {
+    log.debug("Caught in a callback in test(): " +
+              ((again && again.message) || again));
+    log.warn("could not remove this run's realms: " + again.message);
+  }
   process.exit(1);
 });
