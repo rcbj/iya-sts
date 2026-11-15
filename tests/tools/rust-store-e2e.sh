@@ -321,7 +321,7 @@ if [ "$ENGINE" = postgres ]; then
     -c "GRANT CONNECT ON DATABASE sts_node TO sts_app" >/dev/null
 else
   docker exec "$DB" sh -c "mariadb-dump -uroot -p'$OWNER_PW' \
-    --single-transaction --no-create-info --skip-triggers sts_store \
+    --single-transaction --no-create-info --skip-triggers --replace sts_store \
     | mariadb -uroot -p'$OWNER_PW' sts_node"
 fi
 pass "the store copied for the comparison (sts_node)"
