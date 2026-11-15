@@ -67,6 +67,34 @@ let NOW = T0;
 // Every resolveValues() the channel made, in order.
 const RESOLUTIONS = [];
 
+// THE SCRIPT the channel part ran, in order — every setting written, every
+// clock move, every send and every other act (a `mark` Rust performs the
+// same way) — so Rust replays the same sequence.
+const SCRIPT = [];
+
+/**
+ * Moves the frozen clock on, and says so in the script.
+ *
+ * @param {number} ms - how far
+ */
+function tick(ms) {
+  log.debug("Entering tick().");
+  NOW += ms;
+  SCRIPT.push({ op: 'now', at: NOW });
+  log.debug("Leaving tick().");
+}
+
+/**
+ * Notes an act in the script.
+ *
+ * @param {string} name - the act
+ */
+function mark(name) {
+  log.debug("Entering mark(). " + name);
+  SCRIPT.push({ op: 'mark', name: name });
+  log.debug("Leaving mark().");
+}
+
 /**
  * Sets a setting, throwing when it is refused.
  *
@@ -77,6 +105,7 @@ const RESOLUTIONS = [];
 function setting(config, key, value) {
   log.debug("Entering setting(). " + key);
   const result = config.setOverride(key, value);
+  SCRIPT.push({ op: 'set', key: key, value: value });
   if (!result || !result.ok) {
     throw new Error('setting ' + key + ' refused: ' + JSON.stringify(result));
   }
@@ -462,6 +491,8 @@ async function child(root, answer) {
     if (delivered && typeof delivered.then === 'function') {
       await delivered;
     }
+    SCRIPT.push({ op: 'send', index: sends.length,
+                  how: how ? how.name || 'custom' : 'send' });
     sends.push({ label: label, now: NOW, request: req,
       result: JSON.parse(JSON.stringify(result || null)),
       refusedCodes: ((result && result.refused) || []).map(function (r) {
@@ -482,7 +513,7 @@ async function child(root, answer) {
       continue;
     }
     for (const p of PEOPLE) {
-      NOW += 1000;
+      tick(1000);
       const links = {};
       spec.links.forEach(function (name) {
         links[name] = '/portal/x?user=' + p[0] + '#token=t-' + spec.id;
@@ -496,12 +527,12 @@ async function child(root, answer) {
   setting(config, 'mail.dkimAlgorithm', 'ed25519-sha256');
   setting(config, 'mail.fromName', 'Iyä, "STS"');
   dkimPem = keys.ed25519.privateKeyPem;
-  NOW += 1000;
+  tick(1000);
   await send('ed25519', { username: 'ann', template: 'test-message',
     values: { when: 'w'.repeat(120), transport: 'smtp', username: 'ann' } });
   setting(config, 'mail.fromName', '');
   setting(config, 'mail.dkimDomain', '');
-  NOW += 1000;
+  tick(1000);
   await send('unsigned', { username: 'sven', template: 'test-message',
     values: { when: 'nu', transport: 'smtp', username: 'sven' } });
   setting(config, 'mail.dkimDomain', 'example.com');
@@ -509,7 +540,7 @@ async function child(root, answer) {
   setting(config, 'mail.fromName', 'IYA STS');
   dkimPem = keys.rsa.privateKeyPem;
   // THE REFUSALS, each with its code and its audit row.
-  NOW += 1000;
+  tick(1000);
   await send('no entry', { username: 'ghost', template: 'test-message' });
   await send('no mail', { username: 'nomail', template: 'test-message' });
   await send('bad mail', { username: 'badmail', template: 'test-message' });
@@ -536,6 +567,7 @@ async function child(root, answer) {
     dedupKey: 'k1' });
   await send('dedup 2', { username: 'fred', template: 'test-message',
     dedupKey: 'k1' });
+  mark('declined');
   out.declined = [
     mail.setDeclined('declines', 'notification', true, 'declines'),
     mail.setDeclined('declines', 'security', true),
@@ -555,7 +587,7 @@ async function child(root, answer) {
   await send('default from', { username: 'ann', template: 'test-message' });
   setting(config, 'mail.from', 'no-reply@example.com');
   setting(config, 'mail.ratePerRecipient', 2);
-  NOW += 5000000;
+  tick(5000000);
   await send('rate 1', { username: 'kit', template: 'test-message' });
   await send('rate 2', { username: 'kit', template: 'test-message' });
   await send('rate 3', { username: 'kit', template: 'test-message' });
@@ -588,11 +620,14 @@ async function child(root, answer) {
   // hand.
   setting(config, 'mail.attempts', 2);
   failNext = [{ responseCode: 451, response: '451 later' }];
-  NOW += 1000;
+  SCRIPT.push({ op: 'fail', failures: failNext.slice() });
+  tick(1000);
   await send('deferred', { username: 'li', template: 'test-message' });
   const deadId = sends[sends.length - 1].result.queued[0].id;
   failNext = [{ responseCode: 550, response: '550 no' }];
-  NOW += 120000;
+  SCRIPT.push({ op: 'fail', failures: failNext.slice() });
+  tick(120000);
+  mark('retry');
   const swept = await mail.sweep();
   const deadView = mail.message(deadId);
   const before = { handed: handed.length, raw: sentRaw.length };
@@ -610,39 +645,48 @@ async function child(root, answer) {
                 raw: sentRaw.slice(before.raw) };
   // THE LINK BASE: unpinned in development, then product.
   setting(config, 'global.publicBaseUrl', '');
+  mark('linkBase0');
   out.linkBases = [mail.linkBase()];
   await send('dev link base', { username: 'ann', template: 'password-reset',
     links: { link: '/p' } });
   setting(config, 'global.mode', 'product');
+  mark('linkBase1');
   out.linkBases.push(mail.linkBase());
   await send('product, no pin', { username: 'ann',
     template: 'password-reset', links: { link: '/p' } });
   // CAPTURE NEVER REACHES PRODUCT: refused on write (STS-MAIL-0003, the
   // settings slice's write rule), and refused at build and at start.
+  mark('captureWrite');
   out.captureWriteRefused = config.setOverride('mail.transport', 'capture');
+  mark('productStartup');
   out.productStartup = await mail.startupProblem();
   setting(config, 'global.mode', 'development');
   setting(config, 'mail.transport', 'capture');
+  mark('productOverCapture');
   const productSet = config.setOverride('global.mode', 'product');
   out.productOverCapture = productSet;
   if (productSet && productSet.ok) {
+    mark('captureInProduct');
     out.captureInProduct = await mail.transport().then(function () {
       return null;
     }, function (e) {
       return { code: errorCodes.codeOf(e), message: e.message };
     });
+    mark('startupProblem');
     out.startupProblem = await mail.startupProblem();
   }
   setting(config, 'global.mode', 'development');
   setting(config, 'mail.transport', 'off');
   await send('off', { username: 'ann', template: 'test-message' });
   setting(config, 'mail.transport', 'default');
+  mark('effective');
   out.effective = [mail.effectiveTransport(), mail.available()];
   // THE TEMPLATES OF A REALM: saved, chosen, refused, put back.
   setting(config, 'mail.transport', 'smtp');
   setting(config, 'global.publicBaseUrl', 'https://sts.example.com/base/');
   const own = { subject: 'Own {{service}}', text: 'Own {{link}} {{username}}',
                 html: '<p>Own <a href="{{link}}">go</a></p>' };
+  mark('saved');
   out.saved = [
     mail.saveTemplate('password-reset', 'fr-ca', own, 'admin'),
     mail.saveTemplate('password-reset', 'FR', own, 'admin'),
@@ -657,18 +701,23 @@ async function child(root, answer) {
     return { result: JSON.parse(JSON.stringify(r)),
              code: errorCodes.codeOf(r) };
   });
+  mark('templateViews');
   out.templateViews = [mail.templateView('password-reset', 'FR-CA'),
     mail.templateView('password-reset', 'en'), mail.templateView('x', 'en')];
   for (const p of ['claire', 'fred', 'sven', 'ann']) {
-    NOW += 1000;
+    tick(1000);
     await send('own wording to ' + p, { username: p,
       template: 'password-reset', values: { username: p },
       links: { link: '/portal/reset' } });
   }
+  mark('resetBack');
   out.resetBack = mail.resetTemplate('password-reset', 'fr');
+  mark('listTemplates');
   out.listTemplates = mail.listTemplates();
   out.sends = sends;
+  out.script = SCRIPT;
   out.transportOptions = transportOptions;
+  mark('uses');
   out.uses = await usesPart(C, mail, handed, audits);
   fs.writeFileSync(answer, JSON.stringify(out));
   log.debug("Leaving child().");
@@ -724,7 +773,7 @@ async function usesPart(C, mail, handed, audits) {
     marks = { handed: handed.length, audits: audits.length,
               resolutions: RESOLUTIONS.length };
   };
-  NOW += 1000;
+  tick(1000);
   await record('notice password-changed', uses.notice('password-changed', 'fred',
     { values: { how: 'by you' }, via: 'portal' }));
   await record('notice bySystem', uses.notice('account-disabled', 'sven',
