@@ -206,7 +206,30 @@ function auditVocabulary() {
   }));
 }
 
+// THE MAIL CHANNEL'S MESSAGES (#444, phase 4): `common/mail_templates.ts`'s
+// built-in English templates and categories, every translation file under
+// `common/mail_locales/` as the module reads it, and the catalog tags the
+// language chain is worked out against (`common/locales/catalogs.json`) —
+// what `sts-mail::templates` renders from.
+const MAIL_DATA = path.join(ROOT, 'rust', 'crates', 'sts-mail', 'tables');
+
+function mailTemplates() {
+  const templates = require(path.join(ROOT, 'common', 'mail_templates'));
+  const catalogs = require(path.join(ROOT, 'common', 'locales',
+                                     'catalogs.json'));
+  return JSON.parse(JSON.stringify({
+    layoutId: templates.LAYOUT_ID,
+    common: templates.COMMON,
+    categories: templates.CATEGORIES,
+    builtIn: templates.BUILT_IN,
+    locales: templates.localeFiles(),
+    source: catalogs.source,
+    catalogs: catalogs.catalogs
+  }));
+}
+
 const EXPORTS = [
+  { file: 'mail_templates.json', dir: MAIL_DATA, build: mailTemplates },
   { file: 'audit_vocabulary.json', dir: AUDIT_DATA, build: auditVocabulary },
   { file: 'error_codes.json', build: errorCodes },
   { file: 'settings.json', build: settings },
