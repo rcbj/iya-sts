@@ -1128,7 +1128,7 @@ as it always has; both naming different PEPs is refused. Its tabs:
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
 | Listener | every listener it has — the four its environment binds, read-only, and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source; the forms that define, edit, remove and renew them; and the environment's HTTPS pair with Issue or Reissue (below) |
-| Reverse proxy | three sub-tabs: **Configured Routes**, whether the proxy is enabled, its upstream and public base URL, and its routes as a table, each id a link to the route's own page (below) and each application linked; **Create a New Route**, the form that adds one; and **Manifest**, the whole configuration document and Clear (below). Each route, its application included, is edited on its own page |
+| Reverse proxy | three sub-tabs: **Configured Routes**, whether the proxy is enabled, its upstream and public base URL, and its routes as a table, each id a link to the route's own page (below) and each application linked; **Create a New Route**, the form that adds one; and **Manifest**, the whole configuration document with Save, Remove, Download and Load from file (below). Each route, its application included, is edited on its own page |
 | Signal streams | its CAEP/RISC stream health: the totals, then a table with one row per stream (below) |
 
 **Every field and column on these tabs has a tooltip**, as do the Remote PEPs
@@ -1204,8 +1204,8 @@ in the clear it is right only behind something that terminates TLS.
 
 The **Create a New Route** sub-tab of the **Reverse proxy** tab
 (`#xacml-pep-proxy-new-route`) has a form to add a route — its path, prefix or exact, its methods, public or the
-mechanisms it accepts, its application (a chooser of the realm's
-applications), the XACML resource and action, whether credentials are
+mechanisms it accepts, its application (found with a search of the
+realm's applications, below), the XACML resource and action, whether credentials are
 forwarded, whether CAEP/RISC signals end its sessions, and where it goes in
 the list. Once it is saved, the new route's own page opens, as a new
 application's does. To change a route, or the application it fronts, click
@@ -1281,6 +1281,37 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
        "application":"orders-app","mode":"headers",
        "headerName":["X-Remote-User"],"headerClaim":["username"]}' \
   https://localhost:8081/admin-api/xacml/set-pep-route
+```
+
+### Moving a proxy configuration between PEPs
+
+The **Manifest** sub-tab has four buttons on one row: **Save the
+configuration**, **Remove the configuration** (tick its box first),
+**Download** and **Load from file**.
+
+1. On the PEP that has the configuration, press **Download**. The browser
+   saves `<pep-name>-proxy.json`: the document exactly as it is stored and
+   as the PEP pulls it, pretty-printed. It holds no secret. The document
+   has no member that could hold one, and a URL in it may not carry a user
+   name or password. A session route's client secret is read from its
+   application's entry at each pull and is never in the document.
+2. Open the other PEP's page, its **Reverse proxy** tab, **Manifest**, and
+   press **Load from file**. Choose the file. Its text replaces what the
+   editor holds. Nothing is saved yet, so you can change it first (for
+   example `upstream`, or `publicBaseUrl`, which each PEP has its own of).
+3. Press **Save the configuration**. The document goes through the same
+   checks as any other save, `set-pep-proxy`. Every route's application
+   must be in this realm's registry. A file from a PEP of another realm
+   whose routes name that realm's applications is refused by name
+   (`STS-XACML-0217`), and the stored configuration is kept.
+
+The same file can be sent with the management API:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg name pep-2 --slurpfile proxy pep-1-proxy.json \
+        '{name: $name, proxy: $proxy[0]}')" \
+  https://localhost:8081/admin-api/xacml/set-pep-proxy
 ```
 
 ### Several accounts in one browser

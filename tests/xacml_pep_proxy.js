@@ -2487,6 +2487,70 @@ async function childBody() {
     config.clearOverride('global.mode');
   });
 
+  // -------------------------------------------------------------------------
+  // M. A CONFIGURATION MOVED BETWEEN PEPS (rcbj, 2026-11-15: "easy to save
+  // and transfer between remote PEPs"): the Manifest's Download is the
+  // stored document, with no secret in it; the file, loaded into another
+  // PEP's editor and saved, goes through set-pep-proxy's own validator,
+  // which takes it where every route's application resolves in this realm
+  // and refuses one naming an application this realm does not hold.
+  // -------------------------------------------------------------------------
+  const storedM = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  }).peps[0].proxy;
+  const manifestM = XacmlPage.manifestButtons(consoleT, NAME, storedM);
+  const hrefM = (manifestM.match(
+    /download="([^"]+)" href="data:application\/json;base64,([^"]+)"/) ||
+    []);
+  const fileM = hrefM[2]
+    ? Buffer.from(hrefM[2], 'base64').toString('utf8') : '';
+  t.check(hrefM[1] === NAME + '-proxy.json' &&
+          JSON.stringify(JSON.parse(fileM || 'null')) ===
+            JSON.stringify(storedM) &&
+          fileM === JSON.stringify(storedM, null, 2) + '\n' &&
+          fileM.indexOf(WEB_SECRET) < 0 &&
+          !/secret|password/i.test(fileM),
+          'M1. Download is the stored document as <pep>-proxy.json, ' +
+          'pretty-printed, with no secret', String(hrefM[1]) + ' ' +
+          fileM.slice(0, 200));
+  const movedM = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-proxy', name: OTHER,
+                                      proxy: fileM });
+  });
+  const otherM = inRealm(function () {
+    return xacmlAdminL.pepsJson(OTHER);
+  }).peps[0].proxy;
+  t.check(movedM && movedM.ok &&
+          JSON.stringify(otherM) === JSON.stringify(storedM),
+          'M2. the file saved on another PEP of this realm is taken, through ' +
+          'set-pep-proxy\'s validator', JSON.stringify(movedM).slice(0, 300));
+  // An application of ANOTHER realm: the default realm holds it, this
+  // realm does not, so the route naming it does not resolve here.
+  const elsewhere = applications.createApplication({
+    identifier: 'ppx-other-realm', protocols: ['oauth2'],
+    fields: { oauthClientId: 'ppx-other-realm',
+              oauthAudience: [AUDIENCE] } });
+  const foreignM = JSON.parse(fileM);
+  const guardedM = foreignM.routes.filter(function (one) {
+    return !one.public;
+  })[0];
+  guardedM.application = 'ppx-other-realm';
+  const refusedM = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-proxy', name: OTHER,
+      proxy: JSON.stringify(foreignM, null, 2) });
+  });
+  const keptM = inRealm(function () {
+    return xacmlAdminL.pepsJson(OTHER);
+  }).peps[0].proxy;
+  t.check(refusedM && !refusedM.ok &&
+          errorCodes.codeOf(refusedM) === 'STS-XACML-0217' &&
+          /ppx-other-realm/.test(JSON.stringify(refusedM)) &&
+          JSON.stringify(keptM) === JSON.stringify(storedM),
+          'M3. a file whose route names another realm\'s application is ' +
+          'refused by name (STS-XACML-0217), the stored document kept',
+          JSON.stringify(refusedM).slice(0, 300) + ' ' +
+          JSON.stringify(elsewhere).slice(0, 120));
+
   await new Promise(function (ok) {
     listener.close(ok);
   });

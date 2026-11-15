@@ -1394,25 +1394,18 @@ class XacmlPage {
         esc(row.proxyProblem) + '</div>'
       : '';
     const editor = ctx.write
-      ? '<form method="post" action="/admin/xacml/peps">' +
+      ? '<form method="post" action="/admin/xacml/peps" ' +
+        'id="pep-proxy-edit">' +
         self.hidden('action', 'set-pep-proxy') +
         self.hidden('name', row.name) +
         '<label' + self.tipOf(t, 'consoleXacml.tip.proxy.document') + '>' +
         t.html('consoleXacml.proxy.editLabel') +
-        '<br><textarea name="proxy" rows="18" cols="88">' +
+        '<br><textarea name="proxy" id="pep-proxy-doc" rows="18" ' +
+        'cols="88">' +
         esc(JSON.stringify(proxy || self.proxyTemplate(), null, 2)) +
         '</textarea></label><div class="sub">' +
-        t.html('consoleXacml.proxy.editNote') + '</div>' +
-        '<button type="submit">' + t.html('consoleXacml.proxy.save') +
-        '</button></form>' +
-        (proxy
-          ? '<form method="post" action="/admin/xacml/peps" ' +
-            'class="inline">' +
-            self.hidden('action', 'clear-pep-proxy') +
-            self.hidden('name', row.name) +
-            '<button type="submit">' + t.html('consoleXacml.proxy.clear') +
-            '</button></form>'
-          : '')
+        t.html('consoleXacml.proxy.editNote') + '</div></form>' +
+        self.manifestButtons(t, row.name, proxy)
       : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
     // EDITING A ROUTE IS ON ITS OWN PAGE, which the route id in the table
     // links to (rcbj, 2026-11-14): its identity, its application (the
@@ -1795,6 +1788,62 @@ class XacmlPage {
       self.routeFields(t, json, r, count, 'new', true, drafted.position) +
       self.formRow('<button type="submit">' +
         t.html('consoleXacml.routeForm.add') + '</button>') + '</form>';
+  }
+
+  // THE MANIFEST'S BUTTONS, ONE ROW (rcbj, 2026-11-15: "Go ahead and add a
+  // download button ... It makes a semi-volatile part of the configuration
+  // easy to save and transfer between remote PEPs. Put all of the buttons
+  // on the same row"): Save the configuration (the editor form's, by
+  // `form=`), Remove the configuration (a form of its own, behind the route
+  // page's confirmation: an unnamed required checkbox), Download and Load
+  // from file.
+  //
+  // DOWNLOAD is the console's `data:` link with `download` (`kit.
+  // base64Utf8()`, the certificate downloads' arrangement): the document
+  // as stored, from the answer the page already holds, pretty-printed, so
+  // no operation is needed. It can carry no secret: the document's members
+  // are a closed list (`xacml_pep_proxy.ts`'s DOCUMENT_MEMBERS) and a URL in
+  // it may hold no user name or password; the client secrets a session
+  // route needs are read off the application's entry at the pull and are in
+  // no document. The name is `<pep>-proxy.json`, as the console's other
+  // downloads are named for what they hold, with no date.
+  //
+  // LOAD FROM FILE reads a chosen file into the editor in the browser
+  // (`ConsoleRuntime.wireFileLoads()`), and nothing is saved until Save,
+  // which sends `set-pep-proxy` through the same validator: a file from
+  // another PEP is saved here only when every route's application resolves
+  // in this realm, and refused by name otherwise.
+  static manifestButtons(t: Json, name: string, proxy: Json): string {
+    const self = this;
+    const file = name + '-proxy.json';
+    const download = proxy
+      ? '<a class="btn" download="' + esc(file) + '" href="' +
+        esc('data:application/json;base64,' +
+            kit.base64Utf8(JSON.stringify(proxy, null, 2) + '\n')) + '"' +
+        self.tipOf(t, 'consoleXacml.tip.proxy.download', { file: file }) +
+        '>' + t.html('consoleXacml.proxy.download') + '</a>'
+      : '';
+    const load = '<button type="button" class="secondary" ' +
+      'data-load-file="pep-proxy-file"' +
+      self.tipOf(t, 'consoleXacml.tip.proxy.load') + '>' +
+      t.html('consoleXacml.proxy.load') + '</button>' +
+      '<input type="file" id="pep-proxy-file" hidden ' +
+      'accept=".json,application/json" data-load-into="pep-proxy-doc">';
+    const remove = proxy
+      ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
+        self.hidden('action', 'clear-pep-proxy') + self.hidden('name', name) +
+        '<label' + self.tipOf(t, 'consoleXacml.tip.proxy.clear') +
+        '><input type="checkbox" required> ' +
+        t.html('consoleXacml.proxy.clearConfirm') + '</label> ' +
+        '<button type="submit" class="danger"' +
+        self.tipOf(t, 'consoleXacml.tip.proxy.clear') + '>' +
+        t.html('consoleXacml.proxy.clear') + '</button></form>'
+      : '';
+    return '<div class="formrow pep-proxy-actions">' +
+      '<button type="submit" form="pep-proxy-edit"' +
+      self.tipOf(t, 'consoleXacml.tip.proxy.save') + '>' +
+      t.html('consoleXacml.proxy.save') + '</button> ' + remove + ' ' +
+      download + ' ' + load + '</div>';
   }
 
   // THE ROUTE'S FIELDS, shared by the Create a New Route form and the

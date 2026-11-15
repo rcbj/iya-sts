@@ -1415,6 +1415,7 @@ class ConsoleRuntime extends SpaClient {
     this.markOpenTabs();
     this.wireCopyButtons();
     this.wireViewDownloads();
+    this.wireFileLoads();
     this.wireOrderedChoices();
     this.wireCheckAll();
     this.loadPageScripts();
@@ -3544,6 +3545,52 @@ class ConsoleRuntime extends SpaClient {
         });
       });
       refresh();
+    }
+  }
+
+  // A FILE READ INTO A FORM'S BOX (#1760, rcbj 2026-11-15: a remote PEP's
+  // proxy configuration "easy to save and transfer between remote PEPs").
+  // A `button[data-load-file]` opens the hidden file input it names, and
+  // that input's `data-load-into` names the box the chosen file's text is
+  // put in — the Manifest's editor. Nothing is sent: the form's own Save
+  // does that, through its operation's validator. A file that cannot be
+  // read says so on the button, in English (failures stay English, #539).
+  /**
+   * Wires the buttons that read a chosen file into a box of the page.
+   *
+   * @returns nothing
+   */
+  wireFileLoads(): void {
+    const self = this;
+    const doc = this.env.document;
+    const buttons = doc.querySelectorAll('button[data-load-file]');
+    for (let i = 0; i < buttons.length; i++) {
+      const button = buttons[i];
+      const input = doc.getElementById(
+        button.getAttribute('data-load-file') || '');
+      const box = input ? doc.getElementById(
+        input.getAttribute('data-load-into') || '') : null;
+      if (!input || !box) {
+        continue;
+      }
+      button.addEventListener('click', function () {
+        input.click();
+      });
+      input.addEventListener('change', function () {
+        const file = input.files && input.files[0];
+        if (!file) {
+          return;
+        }
+        return Promise.resolve(file.text()).then(function (text: string) {
+          box.value = String(text);
+          self.dirty = true;
+          input.value = '';
+        }, function (e: Json) {
+          // The reason is the browser's; the button says the read failed.
+          button.textContent = 'Could not read ' + String(file.name || '') +
+            ': ' + String((e && e.message) || e);
+        });
+      });
     }
   }
 

@@ -1569,6 +1569,23 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   form (`new`, `page-<from>`), so nothing typed is lost. Each form's first
   button is a hidden default save, so Enter in a box saves and Enter in the
   search box is a Find. `tests/xacml_pep_console.js` A1–A8.
+* **THE MANIFEST'S FOUR BUTTONS ARE ONE ROW** (rcbj 2026-11-15: "add a
+  download button ... easy to save and transfer between remote PEPs. Put
+  all of the buttons on the same row"), `XacmlPage.manifestButtons()`:
+  Save (the editor form's, by `form=`), Remove (its own form, behind the
+  route page's required checkbox), Download and Load from file. Download
+  is a `data:` link with `download="<pep>-proxy.json"` (the certificate
+  downloads' arrangement, `kit.base64Utf8()`) of the stored document from
+  the answer the page holds, pretty-printed: no operation, and no secret,
+  because the document's members are closed, its URLs carry no userinfo
+  and a session route's client secret is read off the application at the
+  pull. Load from file is `ConsoleRuntime.wireFileLoads()` (a
+  `button[data-load-file]` opening a hidden file input whose
+  `data-load-into` names the box): the file's text goes into the editor
+  and nothing is sent until Save, whose `set-pep-proxy` takes another
+  PEP's file only where every route's application resolves in this realm
+  (`STS-XACML-0217` otherwise). `tests/xacml_pep_console.js` M1–M4,
+  `tests/xacml_pep_proxy.js` M1–M3.
 * **A ROUTE'S OWN PAGE** (rcbj 2026-11-14: "click on a route name and go to
   another page and be able to update all the configuration values"),
   `/admin/xacml/pep/route?pep=&route=`: `getXacmlPeps` with `route` adds

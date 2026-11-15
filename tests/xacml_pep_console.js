@@ -45,6 +45,9 @@
 //   X. THE XACML PAGE'S TABS FIRST (rcbj, 2026-11-15): three rows on a
 //      route's page (XACML with Remote PEPs current, the PEP's, the Reverse
 //      proxy sub-tabs), two on a PEP's page.
+//   M. THE MANIFEST'S BUTTONS IN ONE ROW (rcbj, 2026-11-15): Save, Remove
+//      behind a confirmation, Download (the stored document as
+//      <pep>-proxy.json) and Load from file (into the editor, unsent).
 //   T. THE TRAILS (rcbj): a PEP's page is Admin console › XACML › Remote
 //      PEPs › the PEP, and a route's adds › Reverse proxy › the route, each
 //      tab a crumb linking to that tab, built by the runtime's drawView().
@@ -293,6 +296,93 @@ async function run(t) {
           manifest.indexOf('set-pep-route"') < 0,
           'S4. Manifest: the whole document and Clear', manifest);
 
+  // -------------------------------------------------------------------------
+  t.log.info('=== M. the Manifest\'s buttons, one row ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): "add a download button ... easy to save and transfer
+  // between remote PEPs. Put all of the buttons on the same row."
+  const actionRow = (manifest.match(
+    /<div class="formrow pep-proxy-actions">([\s\S]*)<\/div>/) || [])[1] ||
+    '';
+  const hrefOf = (actionRow.match(
+    /<a class="btn" download="pep-1-proxy\.json" href="data:application\/json;base64,([^"]+)"/) ||
+    [])[1];
+  const downloaded = hrefOf
+    ? Buffer.from(hrefOf, 'base64').toString('utf8') : '';
+  t.check(/<button type="submit" form="pep-proxy-edit" title="[^"]+">Save the configuration<\/button>/
+            .test(actionRow) &&
+          /<form method="post" action="\/admin\/xacml\/peps" class="inline"><input type="hidden" name="action" value="clear-pep-proxy">[\s\S]*<input type="checkbox" required>[\s\S]*>Remove the configuration<\/button><\/form>/
+            .test(actionRow) &&
+          !!hrefOf &&
+          /<button type="button" class="secondary" data-load-file="pep-proxy-file" title="[^"]+">Load from file<\/button><input type="file" id="pep-proxy-file" hidden accept="\.json,application\/json" data-load-into="pep-proxy-doc">/
+            .test(actionRow) &&
+          manifest.indexOf('<form method="post" action="/admin/xacml/peps" ' +
+                           'id="pep-proxy-edit">') >= 0 &&
+          manifest.indexOf('<textarea name="proxy" id="pep-proxy-doc"') >= 0,
+          'M1. Save, Remove (behind its confirmation), Download and Load ' +
+          'from file in one row', actionRow);
+  // `manifest` was drawn while the document had its publicBaseUrl.
+  t.equal(downloaded, JSON.stringify(Object.assign({}, proxy,
+    { publicBaseUrl: 'https://orders.example.test' }), null, 2) + '\n',
+          'M2. Download is the stored document, pretty-printed, as ' +
+          'pep-1-proxy.json');
+  const noProxy = panelOf(XacmlPage.proxySection(writer,
+    { name: 'pep-1', proxy: null, proxyRoutes: [] }),
+    'xacml-pep-proxy-manifest');
+  t.check(noProxy.indexOf('download=') < 0 &&
+          noProxy.indexOf('clear-pep-proxy') < 0 &&
+          noProxy.indexOf('data-load-file="pep-proxy-file"') >= 0,
+          'M3. with nothing stored: nothing to download or remove; Load ' +
+          'from file stays', noProxy);
+  // Load from file, as the runtime wires it: the button opens the input,
+  // and the chosen file's text is put in the editor, nothing sent.
+  const listeners = {};
+  const listenOn = function (who) {
+    log.debug("Entering listenOn(). " + who);
+    log.debug("Leaving listenOn().");
+    return function (kind, fn) {
+      listeners[who + ':' + kind] = fn;
+    };
+  };
+  const box = { value: 'old' };
+  let opened = 0;
+  const fileInput = {
+    files: null, value: 'C:\\fakepath\\pep-2-proxy.json',
+    getAttribute: function () {
+      return 'pep-proxy-doc';
+    },
+    click: function () {
+      opened++;
+    },
+    addEventListener: listenOn('input')
+  };
+  const loadButton = {
+    getAttribute: function () {
+      return 'pep-proxy-file';
+    },
+    addEventListener: listenOn('button')
+  };
+  const LoadRuntime = require('../admin-ui/web_runtime');
+  const loader = { dirty: false, env: { document: {
+    querySelectorAll: function () {
+      return [loadButton];
+    },
+    getElementById: function (id) {
+      return id === 'pep-proxy-file' ? fileInput
+        : id === 'pep-proxy-doc' ? box : null;
+    } } } };
+  LoadRuntime.prototype.wireFileLoads.call(loader);
+  listeners['button:click']();
+  fileInput.files = [{ name: 'pep-2-proxy.json', text: async function () {
+    return downloaded;
+  } }];
+  await listeners['input:change']();
+  t.check(opened === 1 && box.value === downloaded && loader.dirty &&
+          fileInput.value === '',
+          'M4. Load from file puts the chosen file in the editor and ' +
+          'sends nothing', JSON.stringify({ opened: opened,
+                                            dirty: loader.dirty }));
+
   // The route's own page maps its application: the current one linked,
   // the same chooser in the one edit form, saved by set-pep-route.
   const page = XacmlPage.routeDetail(writer, {
@@ -372,14 +462,18 @@ async function run(t) {
                     applicationChoices: [] };
   const fakeRuntime = {
     view: { json: pepJson },
-    apiJson: async function (method, path) {
+    apiJson: async function apiJson(method, path) {
+      log.debug("Entering apiJson(). " + path);
       asked.push(method + ' ' + path);
+      log.debug("Leaving apiJson().");
       return { status: 200, json: {
         applications: [{ identifier: 'billing-app', name: 'Billing' },
                        { identifier: 'orders-app', name: 'Orders' }],
         page: 1, pages: 3, matched: 12 } };
     },
-    drawView: function () {
+    drawView: function drawView() {
+      log.debug("Entering drawView().");
+      log.debug("Leaving drawView().");
       return null;
     },
     env: { document: { getElementById: function () {
