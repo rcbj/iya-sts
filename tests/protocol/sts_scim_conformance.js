@@ -80,6 +80,14 @@ const REALM = "scimc-" + TAG;
 const realmBase = root + "/realm/" + REALM;
 const SCIM_BASE = realmBase + "/scim/v2";
 const RELATIONSHIP = "scim-conformance-partner";
+// THE CELL THIS JOB ADDRESSES, in the `cells` mode only (#98): the driver
+// sends it as every homeCell scim2-tester fills (its fifth adaptation, in
+// tests/scim-conformance/scim2_tester_driver.py). GitHub Actions run
+// 43642810770's cells mode refused the harness's random uuid4() cell ids
+// 400 invalidValue and 400 mutability, as RFC 7644 section 3.12 says it
+// may, and nine User checks stopped there. Elsewhere it is "", and the
+// service ignores homeCell.
+const ADDRESSED_CELL = homeCellAddressed();
 const PEER = "https://partner.scim-conformance.example";
 
 // Where the two harnesses are. tests/Dockerfile installs both and sets these;
@@ -323,6 +331,29 @@ async function setUp(product) {
   return token.json.access_token;
 }
 
+// The id of the cell `root` reaches: cell A unless root is cell B's
+// address. Cell A is the cell the runner drives as `sts` (cells_kit.js).
+function homeCellAddressed() {
+  log.debug("Entering homeCellAddressed().");
+  const cells = require("./cells_kit").cellsFromEnv();
+  if (!cells) {
+    log.debug("Leaving homeCellAddressed(). Not the cells mode.");
+    return "";
+  }
+  const originOf = function (url) {
+    try {
+      return new URL(url).origin;
+    } catch (e) {
+      log.debug("Caught in homeCellAddressed(): " + ((e && e.message) || e));
+      return "";
+    }
+  };
+  const id = originOf(root) === originOf(cells.b) ? cells.ids.b
+                                                  : cells.ids.a;
+  log.debug("Leaving homeCellAddressed(). " + id);
+  return id;
+}
+
 function run(command, args, env, what) {
   log.debug("Entering run(). " + what);
   const done = childProcess.spawnSync(command, args, {
@@ -342,6 +373,7 @@ function runScim2Tester(token, product) {
   const done = run(PYTHON, [DRIVER], {
     SCIM_BASE_URL: SCIM_BASE, SCIM_TOKEN: token,
     SCIM_POLICY_NAMES: product ? "1" : "0",
+    SCIM_HOME_CELL: ADDRESSED_CELL,
     SCIM_CA_FILE: process.env.NODE_EXTRA_CA_CERTS || "",
     SCIM_FEDERATION_RELATIONSHIP: RELATIONSHIP,
     SCIM_FEDERATION_PEER: PEER }, "scim2-tester");
