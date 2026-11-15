@@ -577,6 +577,16 @@ impl TokenEndpoint {
             audiences,
             issuer: ask.base.clone(),
             peer: ask.peer.clone(),
+            // `oauth21.strictClientAssertionAudience()`: the issuer as the
+            // assertion's SOLE audience in OAuth 2.1 mode.
+            strict_audience: if oauth21 {
+                crate::jwt_access_token::JwtAccessTokens::new(
+                    self.settings.clone(),
+                )
+                .issuer_for(&ask.base)
+            } else {
+                String::new()
+            },
             ..Presented::default()
         };
         let hints = MethodHints {
@@ -836,6 +846,15 @@ impl TokenEndpoint {
             ],
             issuer: base.to_string(),
             peer: peer.clone(),
+            strict_audience: if self
+                .settings
+                .value_of("oauth2.oauth21")
+                .as_bool()
+            {
+                issuer.clone()
+            } else {
+                String::new()
+            },
             ..Presented::default()
         };
         let hints = MethodHints {
