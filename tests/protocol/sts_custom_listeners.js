@@ -186,7 +186,8 @@ async function refused(realm, action, value, code, what, extra) {
   const before = await codeCount(realm, code);
   const r = await postJson(apiOf(realm, extra && extra.onBase) +
                            "/listeners/" + action,
-                           Object.assign({ value: value }, extra && extra.body));
+                           Object.assign({ value: value },
+                                         extra && extra.body));
   const saw = await sawCode(realm, code, before);
   check(what + " (" + code + ")", function () {
     assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
