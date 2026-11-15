@@ -53,6 +53,7 @@ pub const DOORS: [(&str, &str, &str); 5] = [
 ];
 
 /// The ids of the doors, in the table's order.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn door_ids() -> Vec<&'static str> {
     DOORS.iter().map(|d| d.0).collect()
 }

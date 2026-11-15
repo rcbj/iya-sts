@@ -26,6 +26,7 @@ use crate::ports::PasskeyRules;
 
 /// `passkeyPolicy.RECOVERY_CREDENTIALS`: the credential kinds that are
 /// themselves a recovery door, by the door's name.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn recovery_door_of(kind: &str) -> &'static str {
     match kind {
         "backup-code" => "recovery-code",
@@ -36,6 +37,7 @@ pub fn recovery_door_of(kind: &str) -> &'static str {
 }
 
 /// `AccountSignals.keyCredentialType(key)`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn key_credential_type(key: &Json) -> &'static str {
     if key.get("attachment").and_then(Json::as_str) == Some("platform") {
         "fido2-platform"

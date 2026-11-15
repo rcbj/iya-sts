@@ -266,6 +266,27 @@ impl Evidence {
         }
     }
 
+    /// `startSession(res, username, amr, acr, via, detail, req)` with this
+    /// evidence: the door's own `detail` members kept, `credential` set to
+    /// what verified. `None` is a refused session; the refusal's members
+    /// (`refusedWith`, `refusedWhy`, `recoveryLimited`, `postLogin`,
+    /// `riskStepUp`) are then on `detail`, as Node leaves them.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn start_session(
+        &self,
+        sessions: &sts_authn::Sessions,
+        response: &mut sts_authn::ports::Response,
+        username: &str,
+        via: &str,
+        detail: &mut sts_authn::js::Object,
+        request: Option<&sts_authn::ports::Request>,
+    ) -> Option<Json> {
+        detail.insert("credential".to_string(), self.credential.clone());
+        sessions.start_session(
+            response, username, &self.amr, &self.acr, via, detail, request,
+        )
+    }
+
     /// The event as `phishing_resistance.ts` reads it, for this crate's own
     /// question of what the evidence earns.
     #[tracing::instrument(level = "debug", skip(self))]

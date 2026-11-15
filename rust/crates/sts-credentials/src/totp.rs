@@ -38,6 +38,7 @@ pub struct TotpSettings {
 
 impl TotpSettings {
     /// As Node's object.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn to_json(&self) -> Json {
         json!({
             "enabled": self.enabled,
@@ -430,6 +431,7 @@ fn min(a: f64, b: f64) -> f64 {
 }
 
 /// `encodeURIComponent()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn encode_uri_component(text: &str) -> String {
     let mut out = String::new();
     for b in text.as_bytes() {

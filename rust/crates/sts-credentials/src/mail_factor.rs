@@ -34,6 +34,7 @@ pub const EMAIL_OTP_CREDENTIAL_TYPE: &str =
     "urn:iya:sts:credential-type:email-otp";
 
 /// The mechanism names the authentication policy knows them by.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn mechanism(kind: &str) -> &'static str {
     if kind == "link" {
         "emailLink"
@@ -43,6 +44,7 @@ pub fn mechanism(kind: &str) -> &'static str {
 }
 
 /// `MailFactor.isKind()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn is_kind(value: &str) -> bool {
     value == "code" || value == "link"
 }

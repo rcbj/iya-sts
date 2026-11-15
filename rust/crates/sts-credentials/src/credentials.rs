@@ -213,14 +213,17 @@ impl Credentials {
     }
 
     /// The mechanisms, for a caller that needs one beside the store.
+    /// A hot path (an accessor), so it carries no span.
     pub fn totp(&self) -> &Totp {
         &self.totp
     }
 
+    /// A hot path (an accessor), so it carries no span.
     pub fn backup_codes(&self) -> &BackupCodes {
         &self.backup
     }
 
+    /// A hot path (an accessor), so it carries no span.
     pub fn app_passwords(&self) -> &AppPasswords {
         &self.apps
     }
@@ -837,8 +840,7 @@ impl Credentials {
         let by_user = js::truthy_opt(demand.get("byUser"));
         let door = opts.door();
         let via = opts.via();
-        if !door.is_empty()
-            && self.apps.password_alone_doors().iter().any(|d| *d == door)
+        if !door.is_empty() && self.apps.password_alone_doors().contains(&door)
         {
             tracing::warn!(
                 "credentials: {} signed in with a password ALONE at {} \
@@ -2409,7 +2411,7 @@ impl Credentials {
             Some(&self.d.env.setting("backupCodes.pendingTtlS")),
             900.0,
         );
-        asked.min(3600.0).max(60.0) * 1000.0
+        asked.clamp(60.0, 3600.0) * 1000.0
     }
 
     fn pending_codes_key(handle: &str) -> String {
@@ -2812,10 +2814,4 @@ fn base64url(bytes: &[u8]) -> String {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
     URL_SAFE_NO_PAD.encode(bytes)
-}
-
-/// `crypto.constantTimeEquals()` of two strings, for a caller comparing a
-/// presented value to one it holds.
-pub fn same_text(a: &str, b: &str) -> bool {
-    constant_time_equals(a.as_bytes(), b.as_bytes())
 }

@@ -35,6 +35,7 @@ pub struct BackupCodeSettings {
 
 impl BackupCodeSettings {
     /// As Node's object.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn to_json(&self) -> Json {
         json!({ "enabled": self.enabled, "count": js::num(self.count),
                 "length": js::num(self.length),

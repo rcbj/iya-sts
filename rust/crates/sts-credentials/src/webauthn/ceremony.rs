@@ -33,6 +33,7 @@ pub const MAX_CREDENTIAL_ID_BYTES: usize = 1023;
 pub const COSE_KTY_AKP: i64 = 7;
 
 /// `COSE_CURVES`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn cose_curve(id: i64) -> Option<&'static str> {
     match id {
         1 => Some("P-256"),
@@ -46,6 +47,7 @@ pub fn cose_curve(id: i64) -> Option<&'static str> {
 }
 
 /// `COSE_ALGS[id]`: the verifier's name for a COSE algorithm.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn cose_name(id: i64) -> Option<&'static str> {
     COSE_SIGNATURE_ALGS
         .iter()
@@ -54,6 +56,7 @@ pub fn cose_name(id: i64) -> Option<&'static str> {
 }
 
 /// `INSECURE_COSE_ALGS`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn insecure_cose_ids() -> Vec<i64> {
     COSE_SIGNATURE_ALGS
         .iter()
@@ -68,6 +71,7 @@ fn b64u(bytes: &[u8]) -> String {
 
 /// `Buffer.from(text, 'base64url')`: lenient, as node is — characters
 /// outside the alphabet are skipped, padding and both alphabets accepted.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn from_base64url(text: &str) -> Vec<u8> {
     let cleaned: String = text
         .chars()
@@ -100,6 +104,7 @@ pub struct Flags {
 
 impl Flags {
     /// As Node's object.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn to_json(self) -> Json {
         json!({ "up": self.up, "uv": self.uv, "be": self.be, "bs": self.bs,
                 "at": self.at, "ed": self.ed })
@@ -617,6 +622,7 @@ pub fn verify_assertion(input: &AssertionInput) -> Result<Json, String> {
 }
 
 /// Lower-case hex.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
