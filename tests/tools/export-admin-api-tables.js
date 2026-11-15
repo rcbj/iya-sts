@@ -214,6 +214,83 @@ function familyViewTables() {
 }
 
 /**
+ * `GET /admin-api/users/new`'s constant members (#444, phase 5, the `apis5`
+ * slice), in a realm with no custom attribute: the credential catalogue
+ * (`vcClaims.personFields()`, as `newUserJson()` maps it), the field grid's
+ * groups and attributes (`personEditor`), the credential choices, the
+ * attributes one box holds whole, and the form's own rows BEFORE
+ * `newUserFieldRows()` applies the attribute policy — each with the base
+ * `simple` the policy widens and the claim it reaches — so the Rust view
+ * marks what the realm's policy requires as Node does.
+ *
+ * @returns {any} the tables
+ */
+function newUserFormTables() {
+  log.debug("Entering newUserFormTables().");
+  const mod = function (name) {
+    return require(path.join(ROOT, name));
+  };
+  const vcClaims = mod('oid4vc/vc_claims');
+  const personEditor = mod('ldap/person_editor');
+  const views = mod('admin-core/admin_views');
+  const catalogue = vcClaims.personFields();
+  const claimOf = {};
+  catalogue.forEach(function (row) {
+    claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
+  });
+  // `newUserFieldRows()`'s rows, as it builds them before the policy.
+  const rows = personEditor.editableAttributes().filter(function (row) {
+    return row.group !== 'policies';
+  }).map(function (row) {
+    return { name: row.name, label: row.label, schema: row.schema,
+             multi: row.multi, note: row.note, group: row.group,
+             example: row.example, simple: !!row.simple };
+  });
+  catalogue.forEach(function (row) {
+    const known = rows.some(function (one) {
+      return one.name.toLowerCase() === row.ldap.toLowerCase();
+    });
+    if (!known) {
+      rows.push({ name: row.ldap, label: row.label, schema: row.schema,
+                  multi: false, note: '',
+                  group: personEditor.groupOf(row.ldap) === 'other' &&
+                    row.ldap.toLowerCase() === 'mail'
+                    ? 'contact' : personEditor.groupOf(row.ldap),
+                  example: personEditor.FIELD_EXAMPLES[
+                    row.ldap.toLowerCase()] || '',
+                  simple: row.ldap.toLowerCase() === 'mail' });
+    }
+  });
+  const out = {
+    fields: catalogue.map(function (row) {
+      return { attribute: row.ldap, label: row.label, schema: row.schema,
+               claim: row.claim.slice(0), invented: !!row.from };
+    }),
+    fieldGroups: personEditor.FIELD_GROUPS.map(function (group) {
+      return { id: group.id, label: group.label, what: group.what };
+    }),
+    gridFields: personEditor.editableAttributes().map(function (row) {
+      return { attribute: row.name, label: row.label, group: row.group,
+               multi: row.multi, example: row.example,
+               simple: row.simple, takes: row.note || 'text',
+               custom: !!row.custom };
+    }),
+    credentials: views.CREDENTIAL_CHOICES.map(function (one) {
+      return { id: one.id, label: one.label, what: one.what };
+    }),
+    rows: rows.map(function (row) {
+      return Object.assign({}, row,
+        { claim: claimOf[row.name.toLowerCase()] || '' });
+    }),
+    longTextAttributes: mod('common/applications').LONG_TEXT_ATTRIBUTES || [],
+    defaultCredential: mod('admin-core/admin_actions').DEFAULT_CREDENTIAL,
+    passwordSentences: mod('common/password_policy').SENTENCES
+  };
+  log.debug("Leaving newUserFormTables().");
+  return out;
+}
+
+/**
  * The tables, as the Rust crate reads them.
  *
  * @returns {any} the export
@@ -289,7 +366,9 @@ function tables() {
   // The certificate enrollment tab's settings blocks (#444, phase 5, the
   // `apis2` slice): one page, each family's group alone.
   // And the groups page's (#444, phase 5, the `apis3` slice).
-  const blockPages = ['/admin/cert-issuance', '/admin/pki', '/admin/groups'];
+  // And the role roster's and the new-user form's (the `apis5` slice).
+  const blockPages = ['/admin/cert-issuance', '/admin/pki', '/admin/groups',
+                      '/admin/rbac'];
   blockPages.forEach(function (page) {
     const block = admin.configSettingsJson(page);
     pageSettings[page] = {
@@ -298,6 +377,50 @@ function tables() {
       }),
       sharedWith: block.sharedWith
     };
+  });
+  // THE PROTOCOL SETTINGS PAGES (#444, the `apis5` slice): each
+  // `get…Settings` operation's answer less its settings block (computed in
+  // Rust from `pageSettings`, added here for each page) and its `status`
+  // (the mechanism's live state, not a table).
+  const settingsOperations = {};
+  api.ROUTES.forEach(function (entry) {
+    const m = /^GET (\/admin\/\S+)$/.exec(String(entry.mirrors || ''));
+    if (!m || !/^get\w+Settings$/.test(entry.operationId || '')) {
+      return;
+    }
+    // The two VC operations draw a page of their own under /admin/vc
+    // (`settingsPage` in admin_api.ts's SETTINGS_PAGES).
+    const asked = entry.operationId === 'getOid4vciSettings'
+      ? '/admin/oid4vci'
+      : (entry.operationId === 'getOid4vpSettings' ? '/admin/oid4vp' : m[1]);
+    let page = null;
+    try {
+      page = admin.protocolSettingsJsonFor(asked);
+    } catch (e) {
+      log.debug("Caught in tables(): " + ((e && e.message) || e));
+      page = null;
+    }
+    if (!page) {
+      return;
+    }
+    const out = Object.assign({}, page);
+    const block = out.settings || {};
+    delete out.settings;
+    delete out.status;
+    out.settingsPage = block.page;
+    out.settingsGroups = (block.groups || []).map(function (group) {
+      return group.group;
+    });
+    settingsOperations[entry.operationId] = out;
+    if (block.page && !pageSettings[block.page]) {
+      const whole = admin.configSettingsJson(block.page);
+      pageSettings[block.page] = {
+        groups: whole.groups.map(function (group) {
+          return group.group;
+        }),
+        sharedWith: whole.sharedWith
+      };
+    }
   });
   // The frame drawn for nobody in particular: every section.
   const frame = admin.shellJson(null, null, null);
@@ -334,7 +457,17 @@ function tables() {
     // inetOrgPerson schema's fixed list (`common/inetorgperson.ts`, 3z).
     inetOrgPersonClasses: require(path.join(ROOT, 'common',
                                             'inetorgperson')).CLASSES,
-    familyViews: familyViewTables()
+    familyViews: familyViewTables(),
+    newUserForm: newUserFormTables(),
+    settingsOperations: settingsOperations,
+    // `GET /admin-api/tokens`' constant members (the `apis5` slice): the
+    // issued families and the kinds the console offers to revoke.
+    issued: {
+      families: require(path.join(ROOT, 'common',
+                                  'admin_stats')).ISSUED_FAMILIES,
+      revocableKinds: require(path.join(ROOT, 'common',
+                                        'admin_stats')).REVOCABLE_KINDS
+    }
   };
   log.debug("Leaving tables(). " + rows.length + " row(s).");
   return out;

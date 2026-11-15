@@ -210,9 +210,27 @@ impl DirectoryPorts {
             return None;
         }
         let (realm, key) = self.key_of(name);
+        if let Some(e) = self.directory.entry_at(&realm, &key) {
+            return Some((realm, key, e));
+        }
+        // A NAME THE PERSON ANSWERS TO that is not the one they are filed
+        // under (`usernameKeysOf()`: a `uid` value or a live `stsPseudonym`,
+        // #644), in the realm's users container (#444, the `apis5` slice).
+        let wanted = name.trim().to_lowercase();
+        let (_, base) = self.realm();
+        let users = format!(",ou=users,{}", base).to_lowercase();
+        let named = |e: &StoredEntry, a: &str| {
+            e.attributes.get(a).is_some_and(|v| {
+                v.iter().any(|x| x.trim().to_lowercase() == wanted)
+            })
+        };
         self.directory
-            .entry_at(&realm, &key)
-            .map(|e| (realm, key, e))
+            .find_in(&realm, &|k: &str, e: &StoredEntry| {
+                k.ends_with(&users)
+                    && !k[..k.len() - users.len()].contains(',')
+                    && (named(e, "uid") || named(e, "stspseudonym"))
+            })
+            .map(|(k, e)| (realm, k, e))
     }
 
     fn write(
@@ -299,10 +317,9 @@ impl DirectoryPorts {
             .to_string();
         let (realm, base) = self.realm();
         let users = format!(",ou=users,{}", base).to_lowercase();
+        // Under the directory's lock, copying only the hit.
         self.directory
-            .realm_entries(&realm)
-            .into_iter()
-            .find(|(k, e)| {
+            .find_in(&realm, &|k: &str, e: &StoredEntry| {
                 k.ends_with(&users)
                     && first(e, "entryUUID")
                         .is_some_and(|u| u.to_lowercase() == wanted)

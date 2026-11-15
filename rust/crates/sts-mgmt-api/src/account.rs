@@ -131,6 +131,156 @@ pub trait AccountPorts: Send + Sync {
         let _ = entry;
         Vec::new()
     }
+    /// `PortalPseudonyms.listView(username)`: the person's sign-in names,
+    /// the pending address, the cap and whether mail can be sent; `None`
+    /// where there is no directory.
+    fn pseudonyms(&self, username: &str) -> Option<Json> {
+        let _ = username;
+        None
+    }
+    /// `writePseudonyms(username, {op, value, source})`.
+    fn write_pseudonyms(
+        &self,
+        username: &str,
+        op: &str,
+        value: &str,
+        source: &str,
+    ) -> Json {
+        let _ = (username, op, value, source);
+        json!({ "ok": false, "code": "" })
+    }
+    /// `mail.available()`.
+    fn mail_available(&self) -> bool {
+        false
+    }
+    /// `ctx.translatorFor(username).text(key, params)`: one of the
+    /// portal's messages in the person's language.
+    fn text(
+        &self,
+        username: &str,
+        key: &str,
+        params: &[(&str, &str)],
+    ) -> String {
+        let _ = (username, params);
+        key.to_string()
+    }
+}
+
+/// `NO_DIRECTORY` (`portal/portal_pseudonyms.ts`).
+const NO_DIRECTORY: &str =
+    "The directory is not available, so this could not be done.";
+/// `NO_MAIL`.
+const NO_MAIL: &str =
+    "This service has no way to send mail here at the moment.";
+/// `NO_PERSON`.
+const NO_PERSON: &str = "There is no such person in this realm.";
+
+/// `GET` and `POST /account-api/pseudonyms` (`portal/portal_pseudonyms.ts`,
+/// #644; the `apis5` slice of #444): the list, and an add, a removal or a
+/// cancelled pending address, written by the directory with `source:
+/// self`.
+///
+/// NOT YET: the shared `mail-verify` attempt limit before an add
+/// (`websecurity.attemptShared()`), and an unverified ADDRESS added while
+/// mail can be sent — the pending link and its mail — which answers as an
+/// operation not yet ported.
+fn pseudonyms_answer(
+    ports: &dyn AccountPorts,
+    caller: &AccountCaller,
+    post: Option<&Json>,
+) -> Option<Out> {
+    let who = caller.username.as_str();
+    let Some(view) = ports.pseudonyms(who) else {
+        return Some(refuse(
+            503,
+            codes::STS_PORTAL_0623,
+            NO_DIRECTORY.into(),
+            json!({ "view": { "refused": NO_DIRECTORY } }),
+        ));
+    };
+    let Some(body) = post else {
+        return Some(Out {
+            status: 200,
+            body: view,
+            code: None,
+            headers: Vec::new(),
+        });
+    };
+    let text = |k: &str| match body.get(k) {
+        None | Some(Json::Null) => String::new(),
+        Some(Json::String(t)) => t.clone(),
+        Some(v) => v.to_string(),
+    };
+    let action = text("action");
+    let value = text("value").trim().to_string();
+    if !["add", "remove", "cancel-pending"].contains(&action.as_str()) {
+        return Some(refuse(
+            400,
+            codes::STS_LDAP_0199,
+            "That is not something this page does.".into(),
+            json!({ "view": view }),
+        ));
+    }
+    let email = !value.is_empty()
+        && !value.contains(char::is_whitespace)
+        && value.contains('@');
+    if action == "add" && email {
+        if !ports.mail_available() {
+            return Some(refuse(
+                400,
+                codes::STS_MAIL_0032,
+                NO_MAIL.into(),
+                json!({ "view": view }),
+            ));
+        }
+        return None;
+    }
+    let op = if action == "cancel-pending" {
+        "cancel"
+    } else {
+        action.as_str()
+    };
+    let written = ports.write_pseudonyms(who, op, &value, "self");
+    if written.get("ok") != Some(&Json::Bool(true)) {
+        let mut code = written
+            .get("code")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let mut sentence = written
+            .get("sentence")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        if code.is_empty() {
+            code = codes::STS_LDAP_0093.as_str().into();
+            if sentence.is_empty() {
+                sentence = NO_PERSON.into();
+            }
+        }
+        let status = if code == codes::STS_LDAP_0093.as_str()
+            || code == codes::STS_PORTAL_0623.as_str()
+        {
+            503
+        } else {
+            400
+        };
+        let view = ports.pseudonyms(who).unwrap_or(view);
+        let code =
+            sts_core::errors::known(&code).unwrap_or(codes::STS_LDAP_0093);
+        return Some(refuse(status, code, sentence, json!({ "view": view })));
+    }
+    let key = match action.as_str() {
+        "remove" => "portalPseudonyms.done.removed",
+        "cancel-pending" => "portalPseudonyms.done.cancelled",
+        _ => "portalPseudonyms.done.added",
+    };
+    Some(Out {
+        status: 200,
+        body: json!({ "ok": true, "message": ports.text(who, key, &[]) }),
+        code: None,
+        headers: Vec::new(),
+    })
 }
 
 /// The signed-in person (`AccountCaller`).
@@ -218,6 +368,25 @@ fn js_json(v: Option<&Json>) -> String {
 }
 
 /// The operation at a method and a path: its id and its entry.
+/// The members an operation's JSON body may hold: its schema's
+/// `properties`, the schema followed through one `$ref`; None where it
+/// declares no object shape or admits any member.
+fn body_fields(entry: &Json) -> Option<Vec<String>> {
+    let mut schema =
+        entry.pointer("/requestBody/content/application~1json/schema")?;
+    if let Some(r) = schema.get("$ref").and_then(Json::as_str) {
+        schema = DOCUMENT.pointer(r.strip_prefix('#')?)?;
+    }
+    if schema
+        .get("additionalProperties")
+        .is_some_and(|a| a != &Json::Bool(false))
+    {
+        return None;
+    }
+    let props = schema.get("properties")?.as_object()?;
+    Some(props.keys().cloned().collect())
+}
+
 fn operation_of(method: &str, path: &str) -> Option<(String, &'static Json)> {
     let verb = if method.eq_ignore_ascii_case("HEAD") {
         "get".to_string()
@@ -897,7 +1066,18 @@ async fn serve(
     State(api): State<Arc<AccountApi>>,
     request: Request,
 ) -> Response {
-    let (parts, _body) = request.into_parts();
+    let (parts, raw) = request.into_parts();
+    // The body a POST carries, as JSON (the portal's runtime sends JSON);
+    // anything else is no body.
+    let posted: Option<Json> = if parts.method == axum::http::Method::POST {
+        axum::body::to_bytes(raw, 1 << 20)
+            .await
+            .ok()
+            .and_then(|b| serde_json::from_slice::<Json>(&b).ok())
+            .or(Some(json!({})))
+    } else {
+        None
+    };
     let over_tls = parts
         .extensions
         .get::<sts_http::cookie_wire::OverTls>()
@@ -961,6 +1141,50 @@ async fn serve(
             &trimmed,
             refuse(400, codes::STS_ACCOUNT_0022, sentence, json!({})),
         );
+    }
+    // A FIELD THE OPERATION DOES NOT TAKE IS REFUSED, NOT DROPPED
+    // (`AccountApi.run()`'s `unknownFields()`): asked of the operation's
+    // declared object shape; one that admits any member is left alone.
+    if let (Some(body), Some(fields)) = (posted.as_ref(), body_fields(entry)) {
+        let mut unknown: Vec<&String> = body
+            .as_object()
+            .map(|o| o.keys().filter(|k| !fields.contains(k)).collect())
+            .unwrap_or_default();
+        unknown.sort();
+        if !unknown.is_empty() {
+            let named: Vec<String> =
+                unknown.iter().map(|n| format!("\"{n}\"")).collect();
+            return send(
+                &parts.method,
+                &trimmed,
+                refuse(
+                    400,
+                    codes::STS_ACCOUNT_0018,
+                    format!(
+                        "body: {} {} this operation takes.",
+                        named.join(", "),
+                        if unknown.len() == 1 {
+                            "is not a field"
+                        } else {
+                            "are not fields"
+                        }
+                    ),
+                    json!({}),
+                ),
+            );
+        }
+    }
+    if let ("getPseudonyms" | "postPseudonyms", Some(c)) =
+        (id.as_str(), caller.as_ref())
+    {
+        let post = if id == "postPseudonyms" {
+            posted.as_ref()
+        } else {
+            None
+        };
+        if let Some(out) = pseudonyms_answer(api.ports.as_ref(), c, post) {
+            return send(&parts.method, &trimmed, out);
+        }
     }
     let answered = match (id.as_str(), caller.as_ref()) {
         ("getMe", Some(c)) => Some(api.me(c, &parts.headers)),

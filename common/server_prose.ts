@@ -1032,6 +1032,11 @@ export = {
   SEP: ServerProse.SEP,
   hashOf: ServerProse.hashOf,
   fill: ServerProse.fill,
+  // What `tests/tools/export-server-prose.js` exports for the Rust port
+  // (#444, the `apis5` slice): the modules each phrase namespace is made
+  // of, and the members never translated.
+  PHRASE_MODULES: PHRASE_MODULES,
+  NEVER_TRANSLATED: Array.from(NEVER_TRANSLATED),
   phraseSource: ServerProse.phraseSource,
   harvest: ServerProse.harvest,
   namespaces: slot.forward('namespaces'),

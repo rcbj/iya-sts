@@ -722,9 +722,13 @@ impl Persistence {
                 })
                 .collect();
             // A snapshot driver rewrites a file per realm touched, so it is
-            // handed those realms whole.
+            // handed those realms whole. Only that driver: a row store
+            // writes the upserts alone, and copying every touched realm
+            // on each flush made every write cost the directory's size
+            // (#444, the `apis5` slice).
             let mut all = BTreeMap::new();
-            for realm in &d.touched {
+            let whole = driver.name() == "ldif";
+            for realm in d.touched.iter().filter(|_| whole) {
                 if self.lifecycle.registry().get(realm).is_some()
                     || realm == DEFAULT_ID
                 {
@@ -1577,12 +1581,86 @@ impl Persistence {
 #[derive(Default)]
 pub struct MemoryDirectory {
     realms: Mutex<IndexMap<String, IndexMap<String, StoredEntry>>>,
+    /// How many writes it has taken, so a reader that copied it can tell
+    /// whether its copy is still current without comparing every entry.
+    changes: std::sync::atomic::AtomicU64,
+    /// The newest writes, `(change, realm, key)`, so such a reader can
+    /// bring its copy up to date entry by entry; a realm replaced whole is
+    /// logged with an empty key. Bounded: a reader further behind copies
+    /// again.
+    log: Mutex<std::collections::VecDeque<(u64, String, String)>>,
 }
 
+/// How many writes [`MemoryDirectory::changed_since`] remembers.
+const CHANGE_LOG: usize = 4096;
+
 impl MemoryDirectory {
+    /// The writes taken so far. A hot path (asked before every request a
+    /// copy is kept for), so it carries no span.
+    pub fn changes(&self) -> u64 {
+        self.changes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn changed(&self, realm: &str, key: &str) {
+        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        let n = self
+            .changes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        log.push_back((n, realm.to_string(), key.to_string()));
+        while log.len() > CHANGE_LOG {
+            log.pop_front();
+        }
+    }
+
+    /// The entries written since change `seen`, `(realm, key)` in the
+    /// order written, or None where the log no longer reaches back that
+    /// far or a realm was replaced whole since. A hot path (asked before
+    /// every request a copy is kept for), so it carries no span.
+    pub fn changed_since(&self, seen: u64) -> Option<Vec<(String, String)>> {
+        let log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        let now = self.changes();
+        if now == seen {
+            return Some(Vec::new());
+        }
+        let first = log.front().map_or(u64::MAX, |(n, _, _)| *n);
+        if first > seen + 1 {
+            return None;
+        }
+        let mut out = Vec::new();
+        for (n, realm, key) in log.iter() {
+            if *n <= seen {
+                continue;
+            }
+            if key.is_empty() {
+                return None;
+            }
+            out.push((realm.clone(), key.clone()));
+        }
+        Some(out)
+    }
+
+    /// The first entry of a realm a test holds, in its order, without
+    /// copying the others (as `realm_entries()` would).
+    #[tracing::instrument(level = "debug", skip(self, test))]
+    pub fn find_in(
+        &self,
+        realm: &str,
+        test: &dyn Fn(&str, &StoredEntry) -> bool,
+    ) -> Option<(String, StoredEntry)> {
+        self.realms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(realm)?
+            .iter()
+            .find(|(k, e)| test(k, e))
+            .map(|(k, e)| (k.clone(), e.clone()))
+    }
+
     /// Puts an entry under its DN, lower-cased as its key.
     pub fn put(&self, realm: &str, entry: StoredEntry) {
         let key = entry.dn.to_lowercase();
+        self.changed(realm, &key);
         self.realms
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -1613,6 +1691,7 @@ impl LiveDirectory for MemoryDirectory {
             .unwrap_or_default()
     }
     fn replace_realm(&self, realm: &str, entries: Vec<StoredEntry>) {
+        self.changed(realm, "");
         let rows = entries
             .into_iter()
             .map(|e| (e.dn.to_lowercase(), e))
@@ -1623,6 +1702,7 @@ impl LiveDirectory for MemoryDirectory {
             .insert(realm.to_string(), rows);
     }
     fn apply_entry(&self, realm: &str, key: &str, entry: Option<StoredEntry>) {
+        self.changed(realm, key);
         let mut realms =
             self.realms.lock().unwrap_or_else(PoisonError::into_inner);
         let rows = realms.entry(realm.to_string()).or_default();

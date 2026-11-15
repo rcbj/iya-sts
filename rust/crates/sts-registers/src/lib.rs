@@ -18,6 +18,8 @@
 //!   nothing by being a group;
 //! * [`people`] — `common/account_state.ts` (3at), `usersAction()`'s
 //!   create, disable and enable, and `groupsAction()`;
+//! * [`persona`] — `oid4vc/vc_claims.ts`'s invented person and
+//!   `person_editor.ts`'s typed-attribute check, from Node's tables;
 //! * [`applications`] — `common/applications.js` (3g): the application
 //!   register itself, over `sts-directory`;
 //! * [`operations`] — the `/admin-api` operations those back.
@@ -42,6 +44,7 @@ pub mod operations;
 pub mod outcome;
 pub mod ownership;
 pub mod people;
+pub mod persona;
 pub mod port;
 pub mod rbac;
 pub mod role_actions;

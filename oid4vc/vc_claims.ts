@@ -581,6 +581,20 @@ class VcClaims {
    */
   static readonly PERSON_FIELDS = PERSON_FIELDS;
 
+  /**
+   * The tables `personaFor()` draws from, in the order it draws (#444, the
+   * `apis5` slice): what `tests/tools/export-person-tables.js` exports so
+   * that the Rust port invents the same person for the same name.
+   */
+  static readonly PERSONA_TABLES = {
+    givenNames: GIVEN_NAMES, familyNames: FAMILY_NAMES, streets: STREETS,
+    places: PLACES, titles: TITLES, honorifics: HONORIFICS,
+    salutations: SALUTATIONS, departments: DEPARTMENTS, units: UNITS,
+    employeeTypes: EMPLOYEE_TYPES, employeeStatuses: EMPLOYEE_STATUSES,
+    locales: LOCALES, timeZones: TIME_ZONES, genderCodes: GENDER_CODES,
+    mailDomains: MAIL_DOMAINS
+  };
+
   // The directory's hooks, or null — see setDirectory().
   private directory: DirectoryHooks | null = null;
 
@@ -1735,6 +1749,7 @@ export = {
   VC_ATTRIBUTES: VcClaims.VC_ATTRIBUTES,
   CANONICAL_NAMES: VcClaims.CANONICAL_NAMES,
   DEFAULT_SELECTION: VcClaims.DEFAULT_SELECTION,
+  PERSONA_TABLES: VcClaims.PERSONA_TABLES,
   selectedRows: slot.forward('selectedRows'),
   selectedNames: slot.forward('selectedNames'),
   APP_SELECTION_ATTRIBUTE: VcClaims.APP_SELECTION_ATTRIBUTE,

@@ -357,6 +357,116 @@ impl ApplicationRegistry {
             "applications": rows,
         })
     }
+
+    /// `applicationDetailJson(req, identifier).json`, IN PART (#444, the
+    /// `apis5` slice): `found`, the entry spread out with every credential
+    /// masked (`maskedApplicationRow()`), its attribute rows paged under
+    /// `attributesPage` with the sealed values shown opened and every
+    /// sensitive one masked (`maskedAttributeRows()`), and the return
+    /// addresses awaiting confirmation paged under `observedPage`. Absent
+    /// rather than empty — their registers are not read here: `page`,
+    /// `warnings`, the authentication attempts, `credentials`,
+    /// `sharedSignals`, `certificateEnrollment`, `customClaims`,
+    /// `claimSelections`, `tokenLifetimes`, `softwareStatements`,
+    /// `applicationRoles` and `delegatedPermissions`.
+    #[tracing::instrument(level = "debug", skip(self, query))]
+    pub fn application_detail_json(
+        &self,
+        query: &Map<String, Value>,
+        identifier: &str,
+    ) -> Value {
+        let Some(row) = self.get(identifier) else {
+            return json!({ "found": false, "identifier": identifier });
+        };
+        let sensitive: Vec<&str> = Tables::get()
+            .schema
+            .attributes
+            .iter()
+            .filter(|r| r.sensitive)
+            .map(|r| r.name.as_str())
+            .collect();
+        let operational = crate::js::strings(row.get("operational"));
+        let attributes =
+            row["attributes"].as_object().cloned().unwrap_or_default();
+        let mut names: Vec<&String> = attributes.keys().collect();
+        names.sort();
+        let sealed =
+            |v: &Value| v.as_str().is_some_and(|s| self.env.is_sealed(s));
+        let rows: Vec<Value> = names
+            .into_iter()
+            .map(|name| {
+                let value = &attributes[name];
+                let opened = if sealed(value) {
+                    row["fields"].get(name).cloned()
+                } else {
+                    None
+                };
+                let shown = match opened {
+                    Some(o) if !sealed(&o) && !o.is_null() => o,
+                    _ => value.clone(),
+                };
+                let values = match &shown {
+                    Value::Array(_) => shown.clone(),
+                    other => json!([crate::js::string(other)]),
+                };
+                let values = if sensitive.contains(&name.as_str()) {
+                    masked_credential(&values)
+                } else {
+                    values
+                };
+                json!({ "name": name, "values": values,
+                        "sealedAtRest": &shown != value,
+                        "operational": operational.contains(name) })
+            })
+            .collect();
+        let named = |name: &str, total: usize, noun: &str| -> Value {
+            let mut pg = paging_of(query, total, noun);
+            let param = format!("{name}Page");
+            let pages = pg["pages"].as_i64().unwrap_or(1);
+            let per = pg["perPage"].as_i64().unwrap_or(1);
+            let page =
+                parse_int(query.get(&param)).unwrap_or(1).max(1).min(pages);
+            let offset = (page - 1) * per;
+            let total = total as i64;
+            pg["page"] = json!(page);
+            pg["offset"] = json!(offset);
+            pg["firstRow"] = json!(if total > 0 { offset + 1 } else { 0 });
+            pg["lastRow"] = json!((offset + per).min(total));
+            pg["param"] = json!(param);
+            pg
+        };
+        let slice = |rows: &[Value], pg: &Value| -> Vec<Value> {
+            let offset = pg["offset"].as_i64().unwrap_or(0) as usize;
+            let per = pg["perPage"].as_i64().unwrap_or(1) as usize;
+            rows.iter().skip(offset).take(per).cloned().collect()
+        };
+        let attribute_paging = named("attributes", rows.len(), "attributes");
+        let observed: Vec<Value> = row["returnAddressesObserved"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let observed_paging =
+            named("observed", observed.len(), "observed addresses");
+        let mut out = Map::new();
+        out.insert("found".into(), json!(true));
+        if let Value::Object(masked) = self.masked_application_row(&row) {
+            out.extend(masked);
+        }
+        out.insert(
+            "attributesShown".into(),
+            json!(slice(&rows, &attribute_paging)),
+        );
+        out.insert("attributesPaging".into(), paging_json(&attribute_paging));
+        out.insert(
+            "returnAddressesObservedShown".into(),
+            json!(slice(&observed, &observed_paging)),
+        );
+        out.insert(
+            "returnAddressesObservedPaging".into(),
+            paging_json(&observed_paging),
+        );
+        Value::Object(out)
+    }
 }
 
 #[cfg(test)]

@@ -511,6 +511,7 @@ impl People {
             "disable" | "enable" => {
                 Some(self.switch(body, action == "disable", via, actor))
             }
+            "set-pseudonyms" => Some(self.set_pseudonyms(body, via, actor)),
             known if USERS_ACTIONS.contains(&known) => None,
             _ => Some(refused(
                 codes::STS_ADMIN_0500,
@@ -586,6 +587,104 @@ impl People {
             "changed": a["changed"],
             "ended": a.get("ended").cloned().unwrap_or(Value::Null),
             "message": a["message"],
+        }))
+    }
+
+    /// `usersAction()`'s `set-pseudonyms`: the person and EXACTLY ONE of
+    /// `add`, `remove` or `cancelPending`, written by the directory
+    /// (`writePseudonyms()`, `source: admin`, so an address is live at
+    /// once). Audited either way.
+    ///
+    /// A refusal from the directory is answered as Node answers it, in ONE
+    /// sentence whatever the directory's reason — no person, a shape the
+    /// rules refuse, a name another person answers to — and STS-ADMIN-0909:
+    /// the writer's own code and sentence are not carried (a Node defect,
+    /// ported as it is).
+    fn set_pseudonyms(&self, body: &Value, via: &str, actor: &str) -> Outcome {
+        let who = js::trim(&match js::or_empty(body.get("user")) {
+            u if u.is_empty() => js::or_empty(body.get("username")),
+            u => u,
+        })
+        .to_string();
+        let has = |k: &str| body.get(k).is_some();
+        let (has_add, has_remove, has_cancel) =
+            (has("add"), has("remove"), has("cancelPending"));
+        let picked = [has_add, has_remove, has_cancel]
+            .iter()
+            .filter(|b| **b)
+            .count();
+        let text = |k: &str| match body.get(k) {
+            None | Some(Value::Null) => String::new(),
+            Some(v) => js::trim(&js::string(v)).to_string(),
+        };
+        let add = text("add");
+        let remove = text("remove");
+        let cancel = text("cancelPending").to_lowercase();
+        let cancel_yes = ["true", "on", "1", "yes"].contains(&cancel.as_str());
+        if who.is_empty()
+            || picked != 1
+            || (has_add && add.is_empty())
+            || (has_remove && remove.is_empty())
+            || (has_cancel && !cancel_yes)
+        {
+            return refused(
+                codes::STS_ADMIN_0908,
+                vec!["Name the person and exactly one of add, remove or \
+                      cancelPending."
+                    .to_string()],
+            );
+        }
+        let (op, value) = if has_add {
+            ("add", add)
+        } else if has_remove {
+            ("remove", remove)
+        } else {
+            ("cancel", String::new())
+        };
+        let written = match self.deps.people.as_ref() {
+            Some(writer) => writer.write_pseudonyms(&who, op, &value, "admin"),
+            None => Value::Null,
+        };
+        let ok = written.get("ok") == Some(&Value::Bool(true));
+        let names = if ok {
+            written.get("pseudonyms").cloned().unwrap_or(json!([]))
+        } else {
+            json!([])
+        };
+        let email = !value.is_empty()
+            && self
+                .deps
+                .people
+                .as_ref()
+                .is_some_and(|w| w.is_email(&value));
+        self.deps.audit.record(&json!({
+            "category": "admin", "action": "admin.pseudonym.set",
+            "actor": actor, "target": who,
+            "outcome": if ok { "success" } else { "failure" },
+            "summary": format!("{} the sign-in names of {who}",
+                if ok { "changed" } else { "could not change" }),
+            "detail": { "username": who, "via": via, "op": op,
+                        "length": names.as_array().map_or(0, Vec::len),
+                        "email": email },
+        }));
+        if !ok {
+            return refused(
+                codes::STS_ADMIN_0909,
+                vec![format!(
+                    "There is no person called \"{who}\" in this realm, or \
+                     the directory would not write the name."
+                )],
+            );
+        }
+        // `written.pending === true ? null : (written.pending || null)`.
+        let pending = match written.get("pending") {
+            Some(Value::Bool(true)) | None | Some(Value::Null) => Value::Null,
+            Some(v) if !js::truthy(v) => Value::Null,
+            Some(v) => v.clone(),
+        };
+        Outcome::ok(json!({
+            "ok": true, "pseudonyms": names, "pending": pending,
+            "message": format!("The sign-in names of {who} were changed."),
         }))
     }
 

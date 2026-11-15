@@ -22,6 +22,7 @@
 //! * [`families`] — the certificate authority's and the enrollment
 //!   protocols' acts, answered by their own crates.
 //! * [`paging`] — one list's paging, as every view pages.
+//! * [`prose`] — #543's server prose, translated by `Accept-Language`.
 //! * [`router`] — the axum router the HTTP layer mounts.
 //! * [`account`] — `/account-api`, the user portal's door, over the same
 //!   services.
@@ -39,6 +40,7 @@ pub mod families;
 pub mod gate;
 pub mod operations;
 pub mod paging;
+pub mod prose;
 pub mod request;
 pub mod router;
 pub mod routing;

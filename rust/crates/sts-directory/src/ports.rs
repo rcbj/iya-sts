@@ -516,8 +516,10 @@ without a value. Set another value instead.",
     }
 }
 
-// `ALWAYS_REQUIRED` and the default profile's `requiredAttributes`.
-fn default_required_attributes() -> Vec<String> {
+/// `ALWAYS_REQUIRED` and the default profile's `requiredAttributes`:
+/// `attributePolicy.required()` where no profile is stored.
+#[tracing::instrument(level = "debug")]
+pub fn default_required_attributes() -> Vec<String> {
     let model = DirectoryModel::get();
     let listed =
         match model.field_default("policy.attributes", "requiredAttributes") {

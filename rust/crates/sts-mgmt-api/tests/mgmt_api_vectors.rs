@@ -315,6 +315,15 @@ fn first_difference(a: &Json, b: &Json, at: &str) -> Option<String> {
 
 #[tokio::test]
 async fn admin_api_answers_as_node_does() {
+    // The server's prose (#543) is read from the web root, which in this
+    // test is the repository: its catalogs are the ones Node's vectors
+    // were answered from.
+    if std::env::var("STS_WEB_ROOT").is_err() {
+        std::env::set_var(
+            "STS_WEB_ROOT",
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.."),
+        );
+    }
     let Ok(dir) = std::env::var("STS_CRYPTO_VECTORS") else {
         eprintln!("STS_CRYPTO_VECTORS is not set; the /admin-api vectors were not checked.");
         return;

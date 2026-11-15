@@ -87,6 +87,11 @@ pub trait RosterDirectory: Send + Sync {
     fn realm_id(&self) -> Option<String>;
     /// `cn=<cn>,ou=groups,<base>`.
     fn group_dn_for(&self, cn: &str) -> String;
+    /// `ou=groups,<base>`, the directory's `groupsDn`.
+    fn groups_dn(&self) -> String {
+        let probe = self.group_dn_for("x");
+        probe.strip_prefix("cn=x,").unwrap_or(&probe).to_string()
+    }
     /// A group entry with its resolved members, or `null`.
     fn read_group_entry(&self, dn: &str) -> Value;
     /// Writes a group entry: `{ok, created, reason, parent, entry}`.
@@ -233,6 +238,25 @@ pub trait AccountEffects: Send + Sync {
 /// entry}` or a marked refusal.
 pub trait PersonWriter: Send + Sync {
     fn create_user(&self, name: &str, options: &Value) -> Marked;
+    /// `writePseudonyms(entryOrUsername, {op, value, source})`: `{ok,
+    /// username, pseudonyms, pending}`, or `{ok: false, code, sentence}`
+    /// (`code` empty for nobody). A directory with no writer has nobody.
+    fn write_pseudonyms(
+        &self,
+        who: &str,
+        op: &str,
+        value: &str,
+        source: &str,
+    ) -> Value {
+        let _ = (who, op, value, source);
+        serde_json::json!({ "ok": false, "code": "" })
+    }
+    /// `mail_transports.addressProblem(text) === ''`: whether a value is
+    /// an email address.
+    fn is_email(&self, text: &str) -> bool {
+        let _ = text;
+        false
+    }
 }
 
 /// `ldap_server.js`'s group writer (`admin.setGroupWriter()`): each act

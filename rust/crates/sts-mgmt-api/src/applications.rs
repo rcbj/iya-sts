@@ -6,11 +6,12 @@
 //! register:
 //!
 //! * `GET /admin-api/applications` — `getApplications`, the list
-//!   (`adminViews.applicationsJson(req)` without `?application=`). The
-//!   drill-down (`?application=`) reads a dozen other registers — the roles,
-//!   the claims preview, the delegated permissions, the signals, the
-//!   enrolment, the audit log's attempts — and is not yet ported: it answers
-//!   as an operation not yet ported does.
+//!   (`adminViews.applicationsJson(req)` without `?application=`), and the
+//!   drill-down (`?application=`) IN PART: the entry, masked, and its two
+//!   paged lists. The sections that read a dozen other registers — the
+//!   roles, the claims preview, the delegated permissions, the signals, the
+//!   enrolment, the audit log's attempts — are absent rather than empty
+//!   (`ApplicationRegistry::application_detail_json()`).
 //! * `POST /admin-api/applications/{action}` — the register's own acts
 //!   (`adminActions.applicationsAction()`): `create`, `set`, `add`,
 //!   `remove`, `update-fields`, `confirm-address`, `discard-address`,
@@ -67,18 +68,23 @@ fn families_of_choices(values: &[String]) -> Vec<String> {
     out
 }
 
-/// `GET /admin-api/applications`: the list, or None for the drill-down.
+/// `GET /admin-api/applications`: the list, or one application's
+/// drill-down with `?application=` (`applicationsJson(req)`), in part.
 #[tracing::instrument(level = "debug", skip(setup, query))]
 pub fn list(setup: &Setup<'_>, query: &Query) -> Option<Answered> {
     let registry = setup.ports.applications()?;
     let one = query.get("application").map(js_string).unwrap_or_default();
-    if !one.trim().is_empty() {
-        return None;
-    }
     let q: Map<String, Json> =
         query.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-    let body = registry
-        .applications_list_json(&q, setup.page_settings("/admin/applications"));
+    let body = if one.trim().is_empty() {
+        registry.applications_list_json(
+            &q,
+            setup.page_settings("/admin/applications"),
+        )
+    } else {
+        // `String(req.query.application || '').trim()`.
+        registry.application_detail_json(&q, one.trim())
+    };
     Some(Answered {
         status: 200,
         body,

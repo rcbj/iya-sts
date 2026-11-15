@@ -1,0 +1,272 @@
+{
+ "source": "en",
+ "separator": "|",
+ "never": [
+  "group",
+  "key",
+  "id",
+  "path",
+  "route",
+  "routes",
+  "action",
+  "actions",
+  "value",
+  "values",
+  "default",
+  "env",
+  "legacyEnv",
+  "appconfigPath",
+  "enumValues",
+  "csvValues",
+  "source",
+  "dn",
+  "href",
+  "url",
+  "container",
+  "attribute",
+  "method",
+  "methods",
+  "operationId",
+  "page",
+  "pages",
+  "setWith",
+  "mirrors",
+  "realm",
+  "kind",
+  "type",
+  "state",
+  "status",
+  "by",
+  "cards",
+  "specs",
+  "mode",
+  "category",
+  "protocol",
+  "family",
+  "tag",
+  "locale",
+  "lang"
+ ],
+ "namespaces": {
+  "audit": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/audit"
+   ]
+  },
+  "caches": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/caches",
+    "/admin-api/caches",
+    "/admin-api/caches"
+   ]
+  },
+  "crypto": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/crypto"
+   ]
+  },
+  "database": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/database",
+    "/admin-api/database",
+    "/admin-api/ldap/service",
+    "/admin-api/persistence",
+    "/admin-api/database"
+   ]
+  },
+  "delegation": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/delegation",
+    "/admin-api/delegation/user",
+    "/admin-api/delegation/application",
+    "/admin-api/console/delegation/map",
+    "/admin-api/console/delegation/chain",
+    "/admin-api/console/federation/map",
+    "/admin-api/delegation/user",
+    "/admin-api/delegation/application",
+    "/admin-api/console/delegation/map",
+    "/admin-api/console/delegation/chain",
+    "/admin-api/console/federation/map"
+   ]
+  },
+  "devices": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/device-registration"
+   ]
+  },
+  "encryption": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/encryption"
+   ]
+  },
+  "endpoints": {
+   "kind": "phrases",
+   "routes": [
+    "*"
+   ]
+  },
+  "federation": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/federation",
+    "/admin-api/ldap/federations",
+    "/admin-api/console/federation/map",
+    "/admin-api/console/federation/map"
+   ]
+  },
+  "gnap": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/users"
+   ]
+  },
+  "kerberos": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/kerberos/principals"
+   ]
+  },
+  "ldap": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/ldap/service",
+    "/admin-api/ldap/spiffe",
+    "/admin-api/ldap/applications",
+    "/admin-api/ldap/federations",
+    "/admin-api/ldap/devices",
+    "/admin-api/ldap/roles",
+    "/admin-api/ldap/policies",
+    "/admin-api/ldap/peps",
+    "/admin-api/ldap/applications",
+    "/admin-api/applications",
+    "/admin-api/applications/new",
+    "/admin-api/ldap/devices",
+    "/admin-api/ldap/policies",
+    "/admin-api/ldap/peps"
+   ]
+  },
+  "listeners": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/listeners",
+    "/admin-api/listeners",
+    "/admin-api/listeners"
+   ]
+  },
+  "mode": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/mode"
+   ]
+  },
+  "nodehealth": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/node-health"
+   ]
+  },
+  "pki": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/pki",
+    "/admin-api/pki"
+   ]
+  },
+  "policies": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/policies",
+    "/admin-api/policies/:action"
+   ]
+  },
+  "realms": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/realms"
+   ]
+  },
+  "roles": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/roles",
+    "/admin-api/ldap/roles",
+    "/admin-api/roles",
+    "/admin-api/rbac"
+   ]
+  },
+  "scheduler": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/scheduler",
+    "/admin-api/scheduler/:action",
+    "/admin-api/scheduler/:action"
+   ]
+  },
+  "scim": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/scim",
+    "/admin-api/scim/monitor",
+    "/admin-api/scim",
+    "/admin-api/scim/monitor",
+    "/admin-api/scim",
+    "/admin-api/scim/monitor"
+   ]
+  },
+  "scimmap": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/scim"
+   ]
+  },
+  "secrets": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/secrets"
+   ]
+  },
+  "secretstore": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/secrets",
+    "/admin-api/encryption",
+    "/admin-api/database",
+    "/admin-api/persistence",
+    "/admin-api/ldap/service"
+   ]
+  },
+  "settings": {
+   "kind": "settings"
+  },
+  "spiffe": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/spiffe",
+    "/admin-api/spiffe",
+    "/admin-api/ldap/spiffe",
+    "/admin-api/spiffe",
+    "/admin-api/spiffe/brokers",
+    "/admin-api/spiffe"
+   ]
+  },
+  "stsmetadata": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/sts-metadata"
+   ]
+  },
+  "workerpools": {
+   "kind": "phrases",
+   "routes": [
+    "/admin-api/worker-pools"
+   ]
+  }
+ }
+}

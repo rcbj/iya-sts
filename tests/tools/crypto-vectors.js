@@ -5557,6 +5557,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./mgmt-api-vectors.js').build(ROOT);
                    } },
+                 // The invented person and the typed-attribute check
+                 // (#444, phase 5, the `apis5` slice):
+                 // tests/tools/people-vectors.js.
+                 { file: 'people-node.json',
+                   build: function () {
+                     return require('./people-vectors.js').build(ROOT);
+                   } },
                  // The registers over the directory (#444, phase 4):
                  // tests/tools/registers-vectors.js.
                  { file: 'registers-node.json',

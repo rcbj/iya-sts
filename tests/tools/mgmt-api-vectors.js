@@ -189,6 +189,21 @@ async function build(ROOT) {
   await ask('realms', 'GET', '/admin-api/realms', 'service');
   await ask('realms paged', 'GET', '/admin-api/realms?page=3&per=1',
             'service');
+  // --- the server's prose in the caller's language (#543; #444, the
+  // `apis5` slice): the console names the locale it negotiated, one tag
+  // (admin-ui/web_runtime.ts), so each is asked as it sends it; a regional
+  // tag falls back along its chain; English and no header answer English.
+  for (const tag of ['sv', 'fr', 'zh-Hans', 'fr-CA', 'en']) {
+    await ask('prose: mode in ' + tag, 'GET', '/admin-api/mode', 'service',
+              undefined, { 'accept-language': tag });
+    await ask('prose: config in ' + tag, 'GET', '/admin-api/config',
+              'service', undefined, { 'accept-language': tag });
+  }
+  await ask('prose: realms in sv', 'GET', '/admin-api/realms', 'service',
+            undefined, { 'accept-language': 'sv' });
+  await ask('prose: the document stays English', 'GET',
+            '/admin-api/openapi.json', 'service', undefined,
+            { 'accept-language': 'sv' });
   // --- what a request may name and hold ----------------------------------
   await ask('unknown query name', 'GET', '/admin-api/config?x=1', 'service');
   await ask('query of the wrong type', 'GET', '/admin-api/realms?page=abc',
@@ -289,9 +304,15 @@ async function build(ROOT) {
   // --- the open API of development (authRequired off) ----------------------
   config.setOverride('adminApi.authRequired', false);
   await ask('open: me', 'GET', '/admin-api/me');
+  // THE FRAME IS ONE OF THE TWO CALLS THAT NEGOTIATE THE LANGUAGE
+  // (`LANGUAGE_CALLS` in admin-ui/web_runtime.ts): the console adds no
+  // `Accept-Language` to it, so what arrives is the browser's own, in the
+  // form a browser writes it — tags comma-joined with no space, weights on
+  // all but the first. Asked in Swedish, so the frame's own prose is the
+  // translated one where a namespace carries it.
   await ask('open: the console frame, catalogs as files', 'GET',
             '/admin-api/console?catalogs=files', undefined, undefined,
-            { 'accept-language': 'en-GB, en;q=0.5' });
+            { 'accept-language': 'sv-SE,sv;q=0.9,en-US;q=0.8,en;q=0.7' });
   await ask('open: the console frame', 'GET', '/admin-api/console');
   await ask('open: the dashboard', 'GET', '/admin-api/console/dashboard');
   await ask('open: console operations', 'GET',

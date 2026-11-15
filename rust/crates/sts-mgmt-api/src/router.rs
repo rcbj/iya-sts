@@ -892,7 +892,42 @@ fn run(
             answered.body = projected;
         }
     }
+    // THE PROSE THE SERVER WROTE INTO THE VIEW, IN THE CALLER'S LANGUAGE
+    // (#543, `sendJson()`): only when the request names one in
+    // `Accept-Language`, only for a success, and never in an OpenAPI
+    // document (`translatesAnswer()`).
+    if (200..300).contains(&answered.status)
+        && !row.path.ends_with("/openapi.json")
+    {
+        if let Some(header) =
+            header_text(headers, "accept-language").filter(|h| !h.is_empty())
+        {
+            answered.body = crate::prose::Prose::shared().translate_view(
+                answered.body,
+                header,
+                &prose_route(row),
+            );
+        }
+    }
     send(method, row.path, Some(row), answered)
+}
+
+/// `res.locals.proseRoute`: the route an operation is registered under
+/// (an `:action` route's pattern), or for a console twin the route of the
+/// management operation it answers the prose of.
+fn prose_route(row: &OperationRow) -> String {
+    let of =
+        |r: &tables::Row| r.route.clone().unwrap_or_else(|| r.path.clone());
+    if row.kind == Kind::Console {
+        if let Some(of_twin) = tables::tables()
+            .rows
+            .iter()
+            .find(|r| r.console_twin.as_deref() == Some(row.path))
+        {
+            return of(of_twin);
+        }
+    }
+    tables::row(row.id).map_or_else(|| row.path.to_string(), of)
 }
 
 fn gate_required(services: &Services) -> bool {
