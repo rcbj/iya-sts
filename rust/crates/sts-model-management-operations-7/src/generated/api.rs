@@ -2073,11 +2073,28 @@ pub mod get_tls_connection {
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
+    pub struct Answer200ClientCertificateRevocationStatus {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub status: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub refused: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub checked: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub policy: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub source: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
     pub struct Answer200ClientCertificate {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub presented: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub verified: Option<bool>,
+        #[serde(rename = "handshakeVerified", default, skip_serializing_if = "Option::is_none")]
+        pub handshake_verified: Option<bool>,
         #[serde(rename = "authorizationError", default, skip_serializing_if = "Option::is_none", with = "sts_model_base::double_option")]
         pub authorization_error: Option<Option<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2088,6 +2105,8 @@ pub mod get_tls_connection {
         pub identity: Option<Answer200ClientCertificateIdentity>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub revocation: Option<Answer200ClientCertificateRevocation>,
+        #[serde(rename = "revocationStatus", default, skip_serializing_if = "Option::is_none")]
+        pub revocation_status: Option<Answer200ClientCertificateRevocationStatus>,
         #[serde(rename = "signIn", default, skip_serializing_if = "Option::is_none")]
         pub sign_in: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
