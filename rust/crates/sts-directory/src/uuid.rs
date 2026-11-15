@@ -48,10 +48,9 @@ pub fn backfilled_entry_uuid(realm: &str, key: &str) -> String {
 pub fn uuid_shaped(text: &str) -> bool {
     let groups: Vec<&str> = text.split('-').collect();
     groups.len() == 5
-        && groups
-            .iter()
-            .zip([8, 4, 4, 4, 12])
-            .all(|(g, n)| g.len() == n && g.bytes().all(|b| b.is_ascii_hexdigit()))
+        && groups.iter().zip([8, 4, 4, 4, 12]).all(|(g, n)| {
+            g.len() == n && g.bytes().all(|b| b.is_ascii_hexdigit())
+        })
 }
 
 /// `DN_SHAPED`: `/^[A-Za-z][A-Za-z0-9-]*=/`.
@@ -80,7 +79,9 @@ pub fn did_shaped(text: &str) -> bool {
         return false;
     };
     match rest.find(':') {
-        Some(at) if at > 0 => rest[..at].bytes().all(|b| b.is_ascii_alphanumeric()),
+        Some(at) if at > 0 => {
+            rest[..at].bytes().all(|b| b.is_ascii_alphanumeric())
+        }
         _ => false,
     }
 }

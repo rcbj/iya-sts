@@ -29,7 +29,11 @@ impl LdapError {
     /// is the class's name, which is what an ldapjs error built with none
     /// says.
     #[tracing::instrument(level = "debug", skip(message))]
-    pub fn new(name: &str, message: impl Into<String>, code: Option<ErrorCode>) -> Self {
+    pub fn new(
+        name: &str,
+        message: impl Into<String>,
+        code: Option<ErrorCode>,
+    ) -> Self {
         let message = message.into();
         let result_code = result_codes::error_classes()
             .into_iter()

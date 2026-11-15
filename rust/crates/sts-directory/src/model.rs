@@ -205,6 +205,7 @@ const LEARNT: &[(&str, bool, bool)] = &[
 ];
 
 impl DirectoryModel {
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// The model the crate was built with.
     pub fn get() -> &'static DirectoryModel {
         &MODEL
@@ -252,7 +253,9 @@ impl DirectoryModel {
         for (id, attributes, person) in LEARNT {
             if let Some(schema) = self.schemas.get(*id) {
                 if *attributes {
-                    order.extend(schema.attributes.iter().map(|a| a.name.clone()));
+                    order.extend(
+                        schema.attributes.iter().map(|a| a.name.clone()),
+                    );
                 }
                 if *person {
                     order.extend(
@@ -291,9 +294,10 @@ impl DirectoryModel {
     // A HOT PATH: once per attribute of every entry a search considers.
     pub fn is_secret(&self, name: &str) -> bool {
         let lower = name.to_lowercase();
-        self.secret.iter().any(|s| *s == lower)
+        self.secret.contains(&lower)
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// A concept by its name.
     pub fn concept(&self, name: &str) -> Option<&Concept> {
         self.concept_index.get(name).map(|i| &self.concepts[*i])

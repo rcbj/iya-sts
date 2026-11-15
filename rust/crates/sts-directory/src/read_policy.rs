@@ -56,7 +56,8 @@ pub struct AttributeRule {
 
 const CONTAINER_ATTRIBUTES: &[&str] = &["objectclass", "ou", "dc", "o"];
 const GROUP_ATTRIBUTES: &[&str] = &["objectclass", "cn", "description"];
-const GROUP_MEMBER_ATTRIBUTES: &[&str] = &["member", "uniquemember", "memberuid"];
+const GROUP_MEMBER_ATTRIBUTES: &[&str] =
+    &["member", "uniquemember", "memberuid"];
 const ALWAYS_WITH_THE_ENTRY: &[&str] = &["entrydn"];
 
 fn names(lists: &[&[&str]]) -> Vec<String> {
@@ -108,7 +109,9 @@ pub fn attribute_rule(reader: &Reader, entry: &EntryFacts) -> AttributeRule {
         };
     }
     let names = match entry.kind {
-        EntryKind::Container => names(&[CONTAINER_ATTRIBUTES, ALWAYS_WITH_THE_ENTRY]),
+        EntryKind::Container => {
+            names(&[CONTAINER_ATTRIBUTES, ALWAYS_WITH_THE_ENTRY])
+        }
         EntryKind::Person => {
             let mut out = reader.readable_of_others.clone();
             out.extend(names(&[ALWAYS_WITH_THE_ENTRY]));

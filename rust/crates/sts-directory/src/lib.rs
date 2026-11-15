@@ -34,7 +34,9 @@ pub mod ports;
 pub mod read_policy;
 pub mod uuid;
 
-pub use directory::{Change, Directory, Operation, Outcome, Request, SearchEntry};
+pub use directory::{
+    Change, Directory, Operation, Outcome, Request, SearchEntry,
+};
 pub use domain_map::{DomainMap, FromOptions};
 pub use entry::{Attributes, Entry, EntryExt};
 pub use error::LdapError;

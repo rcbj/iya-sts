@@ -58,6 +58,7 @@ impl Default for DomainMap<'static> {
 }
 
 impl<'m> DomainMap<'m> {
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// Over a model other than the built-in one.
     pub fn over(model: &'m DirectoryModel) -> DomainMap<'m> {
         DomainMap { model }
@@ -123,10 +124,9 @@ impl<'m> DomainMap<'m> {
             };
             if field.embedded {
                 let inner = field.concept.as_deref().unwrap_or("");
-                let nested = self
-                    .model
-                    .concept(inner)
-                    .ok_or_else(|| DomainMapError::NoSuchConcept(inner.into()))?;
+                let nested = self.model.concept(inner).ok_or_else(|| {
+                    DomainMapError::NoSuchConcept(inner.into())
+                })?;
                 let mut map = Map::new();
                 self.fill(nested, attributes, options, &here, &mut map)?;
                 if !map.is_empty() {
@@ -143,7 +143,7 @@ impl<'m> DomainMap<'m> {
                 continue;
             }
             let Some(from) = &field.from else { continue };
-            if from.secret && !options.secrets.iter().any(|s| *s == here) {
+            if from.secret && !options.secrets.contains(&here) {
                 continue;
             }
             if let Some(v) = self.read(field, attributes, options) {
@@ -223,7 +223,9 @@ impl<'m> DomainMap<'m> {
 
     /// The concept as its generated `sts_model::domain` type.
     #[tracing::instrument(level = "debug", skip(value))]
-    pub fn typed<T: DeserializeOwned>(value: &Json) -> Result<T, DomainMapError> {
+    pub fn typed<T: DeserializeOwned>(
+        value: &Json,
+    ) -> Result<T, DomainMapError> {
         serde_json::from_value(value.clone())
             .map_err(|e| DomainMapError::Shape(e.to_string()))
     }
@@ -264,7 +266,11 @@ fn generalized_to_iso(value: &str) -> Option<String> {
     {
         return None;
     }
-    let seconds = if main.len() == 14 { &main[12..14] } else { "00" };
+    let seconds = if main.len() == 14 {
+        &main[12..14]
+    } else {
+        "00"
+    };
     Some(format!(
         "{}-{}-{}T{}:{}:{}Z",
         &main[0..4],

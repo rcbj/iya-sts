@@ -143,7 +143,9 @@ impl DirectorySettings for sts_core::settings::Settings {
         self.text(sts_core::settings::keys::ADMIN_BOOTSTRAP_USERNAME)
     }
     fn self_writable_attributes(&self) -> Vec<String> {
-        listed(self.value(sts_core::settings::keys::LDAP_SELF_WRITABLE_ATTRIBUTES))
+        listed(
+            self.value(sts_core::settings::keys::LDAP_SELF_WRITABLE_ATTRIBUTES),
+        )
     }
     fn directory_readable_attributes(&self) -> Vec<String> {
         listed(self.value(
@@ -164,7 +166,9 @@ impl DirectorySettings for sts_core::settings::Settings {
 fn int(value: sts_core::settings::SettingValue) -> i64 {
     match value {
         sts_core::settings::SettingValue::Int(n) => n,
-        sts_core::settings::SettingValue::Text(t) => t.trim().parse().unwrap_or(0),
+        sts_core::settings::SettingValue::Text(t) => {
+            t.trim().parse().unwrap_or(0)
+        }
         _ => 0,
     }
 }
@@ -380,11 +384,18 @@ pub trait PersonRules: Send + Sync {
         attributes: &Attributes,
     ) -> Option<PolicyRefusal>;
     /// `requiresOwner(profileForReference(reference, uid))`.
-    fn service_account_requires_owner(&self, reference: &str, uid: &str) -> bool;
+    fn service_account_requires_owner(
+        &self,
+        reference: &str,
+        uid: &str,
+    ) -> bool;
     /// `attributePolicy.createRefusal()`: what a new person lacks, where
     /// the policy is `enforced` (`!mode.createsIncompletePeople()`).
-    fn attribute_create_refusal(&self, attributes: &Attributes, enforced: bool)
-        -> Option<PolicyRefusal>;
+    fn attribute_create_refusal(
+        &self,
+        attributes: &Attributes,
+        enforced: bool,
+    ) -> Option<PolicyRefusal>;
     /// `attributePolicy.editRefusal()`: a required value taken away.
     fn attribute_edit_refusal(
         &self,
@@ -422,7 +433,8 @@ impl PersonRules for DefaultPersonRules {
     }
     fn population_language(&self, _application: &str, _dn: &str) -> String {
         let model = DirectoryModel::get();
-        let populate = model.field_default("policy.locale", "populatePreferredLanguage");
+        let populate =
+            model.field_default("policy.locale", "populatePreferredLanguage");
         if populate == Json::Bool(true) {
             match model.field_default("policy.locale", "defaultLocale") {
                 Json::String(s) => s,
@@ -438,12 +450,20 @@ impl PersonRules for DefaultPersonRules {
     ) -> Option<PolicyRefusal> {
         None
     }
-    fn service_account_requires_owner(&self, _reference: &str, _uid: &str) -> bool {
-        DirectoryModel::get().field_default("policy.serviceAccount", "requireOwner")
+    fn service_account_requires_owner(
+        &self,
+        _reference: &str,
+        _uid: &str,
+    ) -> bool {
+        DirectoryModel::get()
+            .field_default("policy.serviceAccount", "requireOwner")
             == Json::Bool(true)
     }
-    fn attribute_create_refusal(&self, attributes: &Attributes, enforced: bool)
-        -> Option<PolicyRefusal> {
+    fn attribute_create_refusal(
+        &self,
+        attributes: &Attributes,
+        enforced: bool,
+    ) -> Option<PolicyRefusal> {
         if !enforced {
             return None;
         }
@@ -499,10 +519,11 @@ without a value. Set another value instead.",
 // `ALWAYS_REQUIRED` and the default profile's `requiredAttributes`.
 fn default_required_attributes() -> Vec<String> {
     let model = DirectoryModel::get();
-    let listed = match model.field_default("policy.attributes", "requiredAttributes") {
-        Json::String(s) => s,
-        _ => String::new(),
-    };
+    let listed =
+        match model.field_default("policy.attributes", "requiredAttributes") {
+            Json::String(s) => s,
+            _ => String::new(),
+        };
     let mut out: Vec<String> = vec!["uid".into(), "cn".into(), "sn".into()];
     for one in listed.split(',').map(str::trim).filter(|s| !s.is_empty()) {
         let spelt = model.canonical_name(&one.to_lowercase());
@@ -516,9 +537,9 @@ fn default_required_attributes() -> Vec<String> {
 // `holds()`: a non-empty value of the name, in any case.
 fn holds(attributes: &Attributes, name: &str) -> bool {
     let wanted = name.to_lowercase();
-    attributes
-        .iter()
-        .any(|(k, v)| k.to_lowercase() == wanted && v.iter().any(|s| !s.trim().is_empty()))
+    attributes.iter().any(|(k, v)| {
+        k.to_lowercase() == wanted && v.iter().any(|s| !s.trim().is_empty())
+    })
 }
 
 /// The registers that name people and groups by name or DN outside the

@@ -49,12 +49,15 @@ use crate::error::LdapError;
 use crate::matching;
 use crate::model::DirectoryModel;
 use crate::ports::{
-    Clock, CryptoUuids, DefaultPersonRules, DirectoryAuthority, DirectoryJournal,
-    DirectoryMode, DirectoryNotice, DirectoryObserver, DirectorySettings,
-    FixedMode, FixedSettings, NoAuthority, NoJournal, NoObserver, NoRegisters,
-    PersonRules, RegisterCascade, SystemClock, UuidSource,
+    Clock, CryptoUuids, DefaultPersonRules, DirectoryAuthority,
+    DirectoryJournal, DirectoryMode, DirectoryNotice, DirectoryObserver,
+    DirectorySettings, FixedMode, FixedSettings, NoAuthority, NoJournal,
+    NoObserver, NoRegisters, PersonRules, RegisterCascade, SystemClock,
+    UuidSource,
 };
-use crate::read_policy::{self, AttributeRule, EntryFacts, EntryKind, Reader, ReaderKind};
+use crate::read_policy::{
+    self, AttributeRule, EntryFacts, EntryKind, Reader, ReaderKind,
+};
 use crate::uuid::backfilled_entry_uuid;
 
 /// The default realm's id.
@@ -86,14 +89,25 @@ const CLIENT_WRITTEN_OPERATIONAL: &[&str] = &[
 ];
 
 // Refused in every mode: `entryUUID` is a person's subject.
-const ALWAYS_PROTECTED_OPERATIONAL: &[&str] = &["entryuuid", ENTRY_UUID_ALIAS, PROVISIONED_BY];
+const ALWAYS_PROTECTED_OPERATIONAL: &[&str] =
+    &["entryuuid", ENTRY_UUID_ALIAS, PROVISIONED_BY];
 
-const GROUP_CLASSES: &[&str] = &["groupofnames", "groupofuniquenames", "posixgroup", "groupofurls"];
+const GROUP_CLASSES: &[&str] = &[
+    "groupofnames",
+    "groupofuniquenames",
+    "posixgroup",
+    "groupofurls",
+];
 
 /// `MEMBER_ATTRIBUTES`: what each one's values ARE.
-const MEMBER_ATTRIBUTES: &[(&str, bool)] = &[("member", false), ("uniquemember", false), ("memberuid", true)];
+const MEMBER_ATTRIBUTES: &[(&str, bool)] = &[
+    ("member", false),
+    ("uniquemember", false),
+    ("memberuid", true),
+];
 
-const OWNER_REFERENCE_ATTRIBUTES: &[&str] = &["owner", "stsserviceaccountowner"];
+const OWNER_REFERENCE_ATTRIBUTES: &[&str] =
+    &["owner", "stsserviceaccountowner"];
 
 const PSEUDONYM_LDAP_ATTRIBUTES: &[&str] = &[
     "stspseudonym",
@@ -132,7 +146,8 @@ const MAX_OWNERS: usize = 25;
 
 const SASL_MECHANISMS: &[&str] = &["EXTERNAL"];
 
-const DESCRIPTION_OPERATOR_CODE: &str = "A description cannot carry an operator error code. Those codes are \
+const DESCRIPTION_OPERATOR_CODE: &str =
+    "A description cannot carry an operator error code. Those codes are \
 recorded, and a description is stored text that this service would send back.";
 
 const NUL_SENTENCE: &str = "contains a NUL byte. It is malformed under every LDAP string syntax, and a value \
@@ -180,8 +195,14 @@ const CREDENTIAL_ATTRIBUTE_DOORS: &[(&str, &str)] = &[
 ];
 
 const CREDENTIAL_ATTRIBUTE_PREFIXES: &[(&str, &str)] = &[
-    ("stsassertion", "/portal/signing-key, or the signing key controls on /admin/users"),
-    ("stssamlassertion", "/portal/signing-key, or the signing key controls on /admin/users"),
+    (
+        "stsassertion",
+        "/portal/signing-key, or the signing key controls on /admin/users",
+    ),
+    (
+        "stssamlassertion",
+        "/portal/signing-key, or the signing key controls on /admin/users",
+    ),
 ];
 
 // What a search never shows, in every mode (`krb5PersonKeys`,
@@ -309,7 +330,9 @@ fn distinct(list: &[String]) -> Vec<String> {
 
 fn credential_door(ty: &str) -> &'static str {
     let name = ty.to_lowercase();
-    if let Some((_, door)) = CREDENTIAL_ATTRIBUTE_DOORS.iter().find(|(n, _)| *n == name) {
+    if let Some((_, door)) =
+        CREDENTIAL_ATTRIBUTE_DOORS.iter().find(|(n, _)| *n == name)
+    {
         return door;
     }
     CREDENTIAL_ATTRIBUTE_PREFIXES
@@ -361,7 +384,9 @@ fn nul_refusal(ty: &str, values: &[String]) -> Option<LdapError> {
 
 // `withoutBinaryOption()`.
 fn without_binary(lower: &str) -> String {
-    if lower.len() >= 7 && lower[lower.len() - 7..].eq_ignore_ascii_case(";binary") {
+    if lower.len() >= 7
+        && lower[lower.len() - 7..].eq_ignore_ascii_case(";binary")
+    {
         lower[..lower.len() - 7].to_string()
     } else {
         lower.to_string()
@@ -375,22 +400,31 @@ fn withheld_key_table(values: Vec<String>) -> Vec<String> {
         .map(|v| match serde_json::from_str::<serde_json::Value>(&v) {
             Ok(mut row) => {
                 if let Some(obj) = row.as_object_mut() {
-                    let truthy = obj.get("privateKey").is_some_and(|p| match p {
-                        serde_json::Value::Null | serde_json::Value::Bool(false) => false,
-                        serde_json::Value::String(s) => !s.is_empty(),
-                        serde_json::Value::Number(n) => n.as_f64() != Some(0.0),
-                        _ => true,
-                    });
+                    let truthy =
+                        obj.get("privateKey").is_some_and(|p| match p {
+                            serde_json::Value::Null
+                            | serde_json::Value::Bool(false) => false,
+                            serde_json::Value::String(s) => !s.is_empty(),
+                            serde_json::Value::Number(n) => {
+                                n.as_f64() != Some(0.0)
+                            }
+                            _ => true,
+                        });
                     if truthy {
                         obj.insert(
                             "privateKey".to_string(),
-                            serde_json::Value::String("(withheld: the private key, never shown)".to_string()),
+                            serde_json::Value::String(
+                                "(withheld: the private key, never shown)"
+                                    .to_string(),
+                            ),
                         );
                     }
                 }
                 serde_json::to_string(&row).unwrap_or_default()
             }
-            Err(_) => "(withheld: a key-table row that is not JSON)".to_string(),
+            Err(_) => {
+                "(withheld: a key-table row that is not JSON)".to_string()
+            }
         })
         .collect()
 }
@@ -466,7 +500,11 @@ impl Directory {
     /// process is not, and every predicate is asked in the realm the
     /// operation's DN selects.
     #[tracing::instrument(level = "debug", skip(self, mode))]
-    pub fn with_realm_mode(mut self, realm: &str, mode: Arc<dyn DirectoryMode>) -> Self {
+    pub fn with_realm_mode(
+        mut self,
+        realm: &str,
+        mode: Arc<dyn DirectoryMode>,
+    ) -> Self {
         self.realm_modes.retain(|(id, _)| id != realm);
         self.realm_modes.push((realm.to_string(), mode));
         self
@@ -484,14 +522,21 @@ impl Directory {
 
     /// The settings read per call.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn with_settings(mut self, settings: Arc<dyn DirectorySettings>) -> Self {
+    pub fn with_settings(
+        mut self,
+        settings: Arc<dyn DirectorySettings>,
+    ) -> Self {
         self.settings = settings;
         self
     }
 
     /// The clock and the UUID source.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn with_clock(mut self, clock: Arc<dyn Clock>, uuids: Arc<dyn UuidSource>) -> Self {
+    pub fn with_clock(
+        mut self,
+        clock: Arc<dyn Clock>,
+        uuids: Arc<dyn UuidSource>,
+    ) -> Self {
         self.clock = clock;
         self.uuids = uuids;
         self
@@ -506,7 +551,10 @@ impl Directory {
 
     /// Who holds which console role.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn with_authority(mut self, authority: Arc<dyn DirectoryAuthority>) -> Self {
+    pub fn with_authority(
+        mut self,
+        authority: Arc<dyn DirectoryAuthority>,
+    ) -> Self {
         self.authority = authority;
         self
     }
@@ -520,14 +568,20 @@ impl Directory {
 
     /// The registers a delete or a rename reaches.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn with_registers(mut self, registers: Arc<dyn RegisterCascade>) -> Self {
+    pub fn with_registers(
+        mut self,
+        registers: Arc<dyn RegisterCascade>,
+    ) -> Self {
         self.registers = registers;
         self
     }
 
     /// Where the notices go.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn with_observer(mut self, observer: Arc<dyn DirectoryObserver>) -> Self {
+    pub fn with_observer(
+        mut self,
+        observer: Arc<dyn DirectoryObserver>,
+    ) -> Self {
         self.observer = observer;
         self
     }
@@ -574,9 +628,10 @@ impl Directory {
         for mut entry in entries {
             let key = normalize_dn(Some(&entry.dn));
             if entry.entry_uuid().is_empty() {
-                entry
-                    .attributes
-                    .insert("entryuuid".to_string(), vec![backfilled_entry_uuid(realm, &key)]);
+                entry.attributes.insert(
+                    "entryuuid".to_string(),
+                    vec![backfilled_entry_uuid(realm, &key)],
+                );
             }
             self.realms[r].entries.insert(key, entry);
         }
@@ -602,11 +657,13 @@ impl Directory {
             .collect()
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// The realms' trees, default first.
     pub fn realms(&self) -> &[RealmTree] {
         &self.realms
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// One realm's tree.
     pub fn tree(&self, realm: &str) -> Option<&RealmTree> {
         self.realms.iter().find(|r| r.id == realm)
@@ -629,7 +686,9 @@ impl Directory {
     /// `inNamingContext()`: under any realm's base.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn in_naming_context(&self, dn: &str) -> bool {
-        self.realms.iter().any(|r| is_under(Some(dn), Some(&r.base)))
+        self.realms
+            .iter()
+            .any(|r| is_under(Some(dn), Some(&r.base)))
     }
 
     /// `realmFor()`: the realm with the deepest base containing the DN, the
@@ -645,7 +704,9 @@ impl Directory {
             -1
         };
         for (i, r) in self.realms.iter().enumerate().skip(1) {
-            if is_under(Some(dn), Some(&r.base)) && (utf16_len(&r.base) as i64) > best_len {
+            if is_under(Some(dn), Some(&r.base))
+                && (utf16_len(&r.base) as i64) > best_len
+            {
                 best = i;
                 best_len = utf16_len(&r.base) as i64;
             }
@@ -663,11 +724,13 @@ impl Directory {
         format!("{rdn},{}", self.base(r))
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `usersDn()`.
     pub fn users_dn(&self, r: usize) -> String {
         self.container(r, "ou=users")
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `groupsDn()`.
     pub fn groups_dn(&self, r: usize) -> String {
         self.container(r, "ou=groups")
@@ -687,6 +750,7 @@ impl Directory {
 
     // ---- reading entries --------------------------------------------
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `getEntry()`: the entry at a DN in a realm.
     pub fn get(&self, r: usize, dn: &str) -> Option<&Entry> {
         self.realms.get(r)?.entries.get(&normalize_dn(Some(dn)))
@@ -695,27 +759,40 @@ impl Directory {
     fn has_children(&self, r: usize, dn: &str) -> bool {
         let key = normalize_dn(Some(dn));
         let suffix = format!(",{key}");
-        self.realms[r].entries.keys().any(|k| *k != key && k.ends_with(&suffix))
+        self.realms[r]
+            .entries
+            .keys()
+            .any(|k| *k != key && k.ends_with(&suffix))
     }
 
     fn total_entries(&self) -> usize {
         self.realms.iter().map(|r| r.entries.len()).sum()
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `isPersonEntry()`: placed under `ou=users`, the container excepted.
     pub fn is_person_dn(&self, r: usize, dn: &str) -> bool {
         let users = self.users_dn(r);
-        is_under(Some(dn), Some(&users)) && normalize_dn(Some(dn)) != normalize_dn(Some(&users))
+        is_under(Some(dn), Some(&users))
+            && normalize_dn(Some(dn)) != normalize_dn(Some(&users))
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `groupRuleFor()`: '' for not a group, else `both`, `placement` or
     /// `objectClass`.
-    pub fn group_rule(&self, r: usize, dn: &str, attributes: &Attributes) -> &'static str {
+    pub fn group_rule(
+        &self,
+        r: usize,
+        dn: &str,
+        attributes: &Attributes,
+    ) -> &'static str {
         let groups = self.groups_dn(r);
-        let under = is_under(Some(dn), Some(&groups)) && normalize_dn(Some(dn)) != normalize_dn(Some(&groups));
-        let classed = attributes
-            .get("objectclass")
-            .is_some_and(|v| v.iter().any(|c| GROUP_CLASSES.contains(&c.to_lowercase().as_str())));
+        let under = is_under(Some(dn), Some(&groups))
+            && normalize_dn(Some(dn)) != normalize_dn(Some(&groups));
+        let classed = attributes.get("objectclass").is_some_and(|v| {
+            v.iter()
+                .any(|c| GROUP_CLASSES.contains(&c.to_lowercase().as_str()))
+        });
         match (under, classed) {
             (true, true) => "both",
             (true, false) => "placement",
@@ -726,9 +803,12 @@ impl Directory {
 
     fn is_role_dn(&self, r: usize, dn: &str) -> bool {
         let roles = self.roles_dn(r);
-        !dn.is_empty() && is_under(Some(dn), Some(&roles)) && normalize_dn(Some(dn)) != normalize_dn(Some(&roles))
+        !dn.is_empty()
+            && is_under(Some(dn), Some(&roles))
+            && normalize_dn(Some(dn)) != normalize_dn(Some(&roles))
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `usernameOfEntry()`: the RDN's value, unescaped.
     pub fn username_of_dn(dn: &str) -> String {
         let rdn = split_rdns(Some(dn)).into_iter().next().unwrap_or_default();
@@ -753,6 +833,7 @@ impl Directory {
         out
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `personNameOf()`.
     pub fn person_name_of(entry: &Entry) -> String {
         for a in ["uid", "x509subject", "didsubject", "spiffesubject"] {
@@ -778,6 +859,7 @@ impl Directory {
             .unwrap_or_default()
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `existingUserEntry()`: the `uid` DN directly under `ou=users`, then
     /// the first entry there, in the store's order, answering to the name.
     pub fn existing_user_entry(&self, r: usize, name: &str) -> Option<&Entry> {
@@ -790,12 +872,13 @@ impl Directory {
             return Some(e);
         }
         let users_key = normalize_dn(Some(&users));
-        self.realms[r]
-            .entries
-            .values()
-            .find(|e| normalize_dn(Some(&parent_dn(Some(&e.dn)))) == users_key && Self::username_keys(e).contains(&wanted))
+        self.realms[r].entries.values().find(|e| {
+            normalize_dn(Some(&parent_dn(Some(&e.dn)))) == users_key
+                && Self::username_keys(e).contains(&wanted)
+        })
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `entryByUuid()`: a primary value before an alias.
     pub fn entry_by_uuid(&self, r: usize, uuid: &str) -> Option<&Entry> {
         let lower = uuid.trim().to_lowercase();
@@ -804,21 +887,32 @@ impl Directory {
             return None;
         }
         let entries = &self.realms.get(r)?.entries;
-        entries.values().find(|e| e.entry_uuid() == wanted).or_else(|| {
-            entries
-                .values()
-                .find(|e| e.values(ENTRY_UUID_ALIAS).iter().any(|a| a.to_lowercase() == wanted))
-        })
+        entries
+            .values()
+            .find(|e| e.entry_uuid() == wanted)
+            .or_else(|| {
+                entries.values().find(|e| {
+                    e.values(ENTRY_UUID_ALIAS)
+                        .iter()
+                        .any(|a| a.to_lowercase() == wanted)
+                })
+            })
     }
 
     // `firstRecording()`: the first entry whose attribute holds the value.
-    fn first_recording(&self, r: usize, attribute: &str, wanted: &str) -> Option<&Entry> {
+    fn first_recording(
+        &self,
+        r: usize,
+        attribute: &str,
+        wanted: &str,
+    ) -> Option<&Entry> {
         self.realms[r]
             .entries
             .values()
             .find(|e| e.values(attribute).iter().any(|v| v == wanted))
     }
 
+    // A HOT PATH: asked by every handler and every rule, so no span.
     /// `locateEntry()`'s lookup half: a subject, a DN (or the certificate
     /// subject an entry recorded), a DID, a SPIFFE ID, or a name.
     pub fn locate(&self, r: usize, key: &str) -> Option<&Entry> {
@@ -827,7 +921,9 @@ impl Directory {
             return self.entry_by_uuid(r, key);
         }
         if crate::uuid::dn_shaped(key) {
-            return self.get(r, key).or_else(|| self.first_recording(r, "x509subject", key));
+            return self
+                .get(r, key)
+                .or_else(|| self.first_recording(r, "x509subject", key));
         }
         let trimmed = key.trim();
         if crate::uuid::did_shaped(key) {
@@ -859,7 +955,10 @@ impl Directory {
             return String::new();
         }
         match self.locate(r, text) {
-            Some(e) if self.is_person_dn(r, &e.dn) && !e.entry_uuid().is_empty() => {
+            Some(e)
+                if self.is_person_dn(r, &e.dn)
+                    && !e.entry_uuid().is_empty() =>
+            {
                 format!("urn:uuid:{}", e.entry_uuid())
             }
             _ => String::new(),
@@ -893,7 +992,12 @@ impl Directory {
 
     fn is_service_account(attributes: &Attributes) -> bool {
         DomainMap::default()
-            .field_of("ServiceAccount", "serviceAccount", attributes, &FromOptions::default())
+            .field_of(
+                "ServiceAccount",
+                "serviceAccount",
+                attributes,
+                &FromOptions::default(),
+            )
             .ok()
             .flatten()
             == Some(serde_json::Value::Bool(true))
@@ -941,10 +1045,16 @@ impl Directory {
             modified_at: Some(now.clone()),
         };
         for (name, values) in attributes {
-            stored.attributes.insert(name.to_lowercase(), values.clone());
+            stored
+                .attributes
+                .insert(name.to_lowercase(), values.clone());
         }
-        stored.attributes.insert("createtimestamp".to_string(), vec![now.clone()]);
-        stored.attributes.insert("modifytimestamp".to_string(), vec![now]);
+        stored
+            .attributes
+            .insert("createtimestamp".to_string(), vec![now.clone()]);
+        stored
+            .attributes
+            .insert("modifytimestamp".to_string(), vec![now]);
         let previous = self.realms[r].entries.get(&key).cloned();
         // fillPreferredLanguage(): a NEW person without one.
         if previous.is_none()
@@ -953,13 +1063,17 @@ impl Directory {
         {
             let tag = self.rules.population_language("", dn);
             if !tag.is_empty() {
-                stored.attributes.insert("preferredlanguage".to_string(), vec![tag.clone()]);
                 stored
                     .attributes
-                    .insert("stspreferredlanguagepopulated".to_string(), vec![tag]);
+                    .insert("preferredlanguage".to_string(), vec![tag.clone()]);
+                stored.attributes.insert(
+                    "stspreferredlanguagepopulated".to_string(),
+                    vec![tag],
+                );
             }
         }
-        let carried = previous.as_ref().map(Entry::entry_uuid).unwrap_or_default();
+        let carried =
+            previous.as_ref().map(Entry::entry_uuid).unwrap_or_default();
         let uuid = if !carried.is_empty() {
             carried
         } else if stored.origin.as_deref() == Some("seed") {
@@ -967,11 +1081,18 @@ impl Directory {
         } else {
             self.uuids.random_uuid()
         };
-        stored.attributes.insert("entryuuid".to_string(), vec![uuid]);
+        stored
+            .attributes
+            .insert("entryuuid".to_string(), vec![uuid]);
         stored.attributes.shift_remove(ENTRY_UUID_ALIAS);
-        if let Some(aliases) = previous.as_ref().map(|p| p.values(ENTRY_UUID_ALIAS).to_vec()) {
+        if let Some(aliases) = previous
+            .as_ref()
+            .map(|p| p.values(ENTRY_UUID_ALIAS).to_vec())
+        {
             if !aliases.is_empty() {
-                stored.attributes.insert(ENTRY_UUID_ALIAS.to_string(), aliases);
+                stored
+                    .attributes
+                    .insert(ENTRY_UUID_ALIAS.to_string(), aliases);
             }
         }
         stored.attributes.shift_remove(PROVISIONED_BY);
@@ -983,7 +1104,9 @@ impl Directory {
             stored.attributes.insert(PROVISIONED_BY.to_string(), before);
         } else if previous.is_none() {
             if let Some(p) = provisioned_by {
-                stored.attributes.insert(PROVISIONED_BY.to_string(), vec![p.to_string()]);
+                stored
+                    .attributes
+                    .insert(PROVISIONED_BY.to_string(), vec![p.to_string()]);
             }
         }
         self.realms[r].entries.insert(key.clone(), stored.clone());
@@ -999,7 +1122,13 @@ impl Directory {
     // ---- refusals -------------------------------------------------------
 
     // `ldapRefusal()`: recorded, then answered.
-    fn refuse(&self, code: Option<ErrorCode>, summary: String, mut err: LdapError, target: &str) -> LdapError {
+    fn refuse(
+        &self,
+        code: Option<ErrorCode>,
+        summary: String,
+        mut err: LdapError,
+        target: &str,
+    ) -> LdapError {
         if code.is_some() {
             err.code = code;
         }
@@ -1012,7 +1141,9 @@ impl Directory {
     }
 
     fn bound_dn(request: &Request) -> String {
-        if request.bound_dn.is_empty() || request.bound_dn.to_lowercase() == "cn=anonymous" {
+        if request.bound_dn.is_empty()
+            || request.bound_dn.to_lowercase() == "cn=anonymous"
+        {
             String::new()
         } else {
             request.bound_dn.clone()
@@ -1033,7 +1164,10 @@ impl Directory {
     fn holds_role(&self, bound: &str, role: &str) -> bool {
         match self.get(0, bound) {
             Some(stored) => Self::roles_grant(
-                self.authority.roles_of(&Self::console_key(&stored.dn, Some(stored)), DEFAULT_REALM),
+                self.authority.roles_of(
+                    &Self::console_key(&stored.dn, Some(stored)),
+                    DEFAULT_REALM,
+                ),
                 role,
             ),
             None => false,
@@ -1047,8 +1181,10 @@ impl Directory {
         }
         match self.get(r, bound) {
             Some(stored) => Self::roles_grant(
-                self.authority
-                    .roles_of(&Self::console_key(&stored.dn, Some(stored)), &self.realms[r].id),
+                self.authority.roles_of(
+                    &Self::console_key(&stored.dn, Some(stored)),
+                    &self.realms[r].id,
+                ),
                 role,
             ),
             None => false,
@@ -1067,22 +1203,39 @@ impl Directory {
     ) -> String {
         let target = normalize_dn(Some(dn));
         let rdns: Vec<&str> = target.split(',').collect();
-        if let Some(c) = self.authority.policy_containers().into_iter().find(|c| rdns.contains(&c.as_str())) {
-            return format!("it is under {c}, a Directory → Policies container");
+        if let Some(c) = self
+            .authority
+            .policy_containers()
+            .into_iter()
+            .find(|c| rdns.contains(&c.as_str()))
+        {
+            return format!(
+                "it is under {c}, a Directory → Policies container"
+            );
         }
         let cn = self.settings.security_group().trim().to_string();
         let security_dn = if cn.is_empty() {
             String::new()
         } else {
-            normalize_dn(Some(&format!("cn={},{}", escape_dn_value(Some(&cn)), self.groups_dn(r))))
+            normalize_dn(Some(&format!(
+                "cn={},{}",
+                escape_dn_value(Some(&cn)),
+                self.groups_dn(r)
+            )))
         };
         if !security_dn.is_empty() && target == security_dn {
             return format!("it is {cn}, the Security Administrator's group");
         }
         let references = self.authority.policy_reference_attributes();
-        let named: Vec<String> = distinct(types).into_iter().filter(|t| references.contains(t)).collect();
+        let named: Vec<String> = distinct(types)
+            .into_iter()
+            .filter(|t| references.contains(t))
+            .collect();
         if !named.is_empty() {
-            return format!("it writes {}, which names a policy", named.join(", "));
+            return format!(
+                "it writes {}, which names a policy",
+                named.join(", ")
+            );
         }
         let member_of = values
             .iter()
@@ -1091,19 +1244,24 @@ impl Directory {
             .any(|v| {
                 let text = v.trim();
                 !security_dn.is_empty()
-                    && (normalize_dn(Some(text)) == security_dn || text.to_lowercase() == cn.to_lowercase())
+                    && (normalize_dn(Some(text)) == security_dn
+                        || text.to_lowercase() == cn.to_lowercase())
             });
         if member_of {
             return format!(
                 "it writes a memberOf naming {cn}, which grants the Security Administrator's role"
             );
         }
-        if operation != "add" && !bound.is_empty() && normalize_dn(Some(bound)) != target {
+        if operation != "add"
+            && !bound.is_empty()
+            && normalize_dn(Some(bound)) != target
+        {
             if let Some(stored) = self.get(r, dn) {
                 if self.is_person_dn(r, &stored.dn)
-                    && self
-                        .authority
-                        .holds_security(&Self::console_key(&stored.dn, Some(stored)), &self.realms[r].id)
+                    && self.authority.holds_security(
+                        &Self::console_key(&stored.dn, Some(stored)),
+                        &self.realms[r].id,
+                    )
                 {
                     return "it is the entry of a person who holds the Security Administrator's role".to_string();
                 }
@@ -1140,7 +1298,9 @@ impl Directory {
         }
         let need = self.security_need(r, operation, dn, types, values, &bound);
         if !need.is_empty() {
-            if self.holds_role(&bound, "security") || self.holds_realm_role(r, &bound, "security") {
+            if self.holds_role(&bound, "security")
+                || self.holds_realm_role(r, &bound, "security")
+            {
                 return None;
             }
             return Some(self.refuse(
@@ -1156,7 +1316,9 @@ impl Directory {
                 dn,
             ));
         }
-        if self.holds_role(&bound, "write") || self.holds_realm_role(r, &bound, "write") {
+        if self.holds_role(&bound, "write")
+            || self.holds_realm_role(r, &bound, "write")
+        {
             return None;
         }
         let own = operation == "modify"
@@ -1164,7 +1326,8 @@ impl Directory {
             && self.get(r, dn).is_some_and(|e| self.is_person_dn(r, &e.dn));
         if !own {
             let sentence = if operation == "modify" {
-                "only an administrator may modify an entry other than your own".to_string()
+                "only an administrator may modify an entry other than your own"
+                    .to_string()
             } else {
                 format!("only an administrator may {operation} an entry")
             };
@@ -1181,7 +1344,10 @@ impl Directory {
             .into_iter()
             .filter(|t| !SERVICE_ACCOUNT_ATTRIBUTES.contains(&t.as_str()))
             .collect();
-        let refused: Vec<String> = distinct(types).into_iter().filter(|t| !allowed.contains(t)).collect();
+        let refused: Vec<String> = distinct(types)
+            .into_iter()
+            .filter(|t| !allowed.contains(t))
+            .collect();
         if !refused.is_empty() {
             let list = refused.join(", ");
             return Some(self.refuse(
@@ -1198,13 +1364,23 @@ impl Directory {
         None
     }
 
-    fn operational_refusal(&self, r: usize, operation: &str, dn: &str, types: &[String]) -> Option<LdapError> {
-        let protected: &[&str] = if self.mode_at(r).protects_operational_attributes() {
-            CLIENT_WRITTEN_OPERATIONAL
-        } else {
-            ALWAYS_PROTECTED_OPERATIONAL
-        };
-        let named: Vec<String> = distinct(types).into_iter().filter(|t| protected.contains(&t.as_str())).collect();
+    fn operational_refusal(
+        &self,
+        r: usize,
+        operation: &str,
+        dn: &str,
+        types: &[String],
+    ) -> Option<LdapError> {
+        let protected: &[&str] =
+            if self.mode_at(r).protects_operational_attributes() {
+                CLIENT_WRITTEN_OPERATIONAL
+            } else {
+                ALWAYS_PROTECTED_OPERATIONAL
+            };
+        let named: Vec<String> = distinct(types)
+            .into_iter()
+            .filter(|t| protected.contains(&t.as_str()))
+            .collect();
         if named.is_empty() {
             return None;
         }
@@ -1221,13 +1397,24 @@ impl Directory {
         ))
     }
 
-    fn credential_refusal(&self, operation: &str, dn: &str, types: &[String]) -> Option<LdapError> {
-        let named: Vec<String> = distinct(types).into_iter().filter(|t| !credential_door(t).is_empty()).collect();
+    fn credential_refusal(
+        &self,
+        operation: &str,
+        dn: &str,
+        types: &[String],
+    ) -> Option<LdapError> {
+        let named: Vec<String> = distinct(types)
+            .into_iter()
+            .filter(|t| !credential_door(t).is_empty())
+            .collect();
         if named.is_empty() {
             return None;
         }
         let list = named.join(", ");
-        let doors: Vec<String> = named.iter().map(|t| format!("{t}: {}", credential_door(t))).collect();
+        let doors: Vec<String> = named
+            .iter()
+            .map(|t| format!("{t}: {}", credential_door(t)))
+            .collect();
         Some(self.refuse(
             Some(codes::STS_LDAP_0111),
             format!(
@@ -1243,7 +1430,12 @@ their own doors"
         ))
     }
 
-    fn pseudonym_refusal(&self, operation: &str, dn: &str, types: &[String]) -> Option<LdapError> {
+    fn pseudonym_refusal(
+        &self,
+        operation: &str,
+        dn: &str,
+        types: &[String],
+    ) -> Option<LdapError> {
         let named: Vec<String> = distinct(types)
             .into_iter()
             .filter(|t| PSEUDONYM_LDAP_ATTRIBUTES.contains(&t.as_str()))
@@ -1267,7 +1459,13 @@ their own doors"
         ))
     }
 
-    fn key_refusal(&self, r: usize, verb: &str, dn: &str, target: &str) -> Option<LdapError> {
+    fn key_refusal(
+        &self,
+        r: usize,
+        verb: &str,
+        dn: &str,
+        target: &str,
+    ) -> Option<LdapError> {
         let refusal = self
             .journal
             .dn_key_refusal(&self.realms[r].id, &normalize_dn(Some(target)))?;
@@ -1282,23 +1480,40 @@ their own doors"
 
     // `membersNamingNothing()`: the member values a group write ADDS that
     // name no stored entry.
-    fn members_naming_nothing(&self, r: usize, before: Option<&Attributes>, after: &[(String, Vec<String>)]) -> Vec<String> {
+    fn members_naming_nothing(
+        &self,
+        r: usize,
+        before: Option<&Attributes>,
+        after: &[(String, Vec<String>)],
+    ) -> Vec<String> {
         let mut missing = Vec::new();
         for (name, uid) in MEMBER_ATTRIBUTES {
             let had: Vec<String> = before
                 .and_then(|b| b.iter().find(|(k, _)| k.to_lowercase() == *name))
                 .map(|(_, v)| {
                     v.iter()
-                        .map(|s| if *uid { s.trim().to_lowercase() } else { normalize_dn(Some(s)) })
+                        .map(|s| {
+                            if *uid {
+                                s.trim().to_lowercase()
+                            } else {
+                                normalize_dn(Some(s))
+                            }
+                        })
                         .collect()
                 })
                 .unwrap_or_default();
-            let Some((_, values)) = after.iter().find(|(k, _)| k.to_lowercase() == *name) else {
+            let Some((_, values)) =
+                after.iter().find(|(k, _)| k.to_lowercase() == *name)
+            else {
                 continue;
             };
             for value in values {
                 let raw = value.trim().to_string();
-                let key = if *uid { raw.to_lowercase() } else { normalize_dn(Some(&raw)) };
+                let key = if *uid {
+                    raw.to_lowercase()
+                } else {
+                    normalize_dn(Some(&raw))
+                };
                 if had.contains(&key) {
                     continue;
                 }
@@ -1327,7 +1542,9 @@ their own doors"
         touched: &[String],
     ) -> Option<LdapError> {
         if self.mode_at(r).verifies_credentials()
-            && touched.iter().any(|t| t == "pwdhistory" || t == "pwdchangedtime")
+            && touched
+                .iter()
+                .any(|t| t == "pwdhistory" || t == "pwdchangedtime")
         {
             return Some(LdapError::new(
                 "ConstraintViolationError",
@@ -1338,8 +1555,11 @@ their own doors"
         if !touched.iter().any(|t| t == "userpassword") {
             return None;
         }
-        let at = attributes.iter().position(|(k, _)| k.to_lowercase() == "userpassword");
-        let values: Vec<String> = at.map(|i| attributes[i].1.clone()).unwrap_or_default();
+        let at = attributes
+            .iter()
+            .position(|(k, _)| k.to_lowercase() == "userpassword");
+        let values: Vec<String> =
+            at.map(|i| attributes[i].1.clone()).unwrap_or_default();
         if values.is_empty() {
             return None;
         }
@@ -1351,7 +1571,10 @@ their own doors"
             ));
         }
         let value = values[0].clone();
-        let had = previous.get("userpassword").and_then(|v| v.first()).cloned();
+        let had = previous
+            .get("userpassword")
+            .and_then(|v| v.first())
+            .cloned();
         if had.as_deref() == Some(value.as_str()) {
             return None;
         }
@@ -1366,7 +1589,8 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             }
             return None;
         }
-        let history: Vec<String> = previous.get("pwdhistory").cloned().unwrap_or_default();
+        let history: Vec<String> =
+            previous.get("pwdhistory").cloned().unwrap_or_default();
         match self.rules.prepare_password(
             &Self::username_of_dn(dn),
             &value,
@@ -1382,12 +1606,17 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                 if let Some(i) = at {
                     attributes[i].1 = vec![prepared.hash];
                 }
-                let key_of = |list: &Vec<(String, Vec<String>)>, lower: &str| {
+                let key_of = |list: &Vec<(String, Vec<String>)>,
+                              lower: &str| {
                     list.iter().position(|(k, _)| k.to_lowercase() == lower)
                 };
-                match (key_of(attributes, "pwdhistory"), prepared.history.is_empty()) {
+                match (
+                    key_of(attributes, "pwdhistory"),
+                    prepared.history.is_empty(),
+                ) {
                     (Some(i), false) => attributes[i].1 = prepared.history,
-                    (None, false) => attributes.push(("pwdhistory".to_string(), prepared.history)),
+                    (None, false) => attributes
+                        .push(("pwdhistory".to_string(), prepared.history)),
                     (Some(i), true) => {
                         attributes.remove(i);
                     }
@@ -1396,7 +1625,9 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                 let now = vec![self.clock.generalized_time()];
                 match key_of(attributes, "pwdchangedtime") {
                     Some(i) => attributes[i].1 = now,
-                    None => attributes.push(("pwdchangedtime".to_string(), now)),
+                    None => {
+                        attributes.push(("pwdchangedtime".to_string(), now))
+                    }
                 }
                 None
             }
@@ -1406,23 +1637,42 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
     // `resolveServiceAccountOwner()`: a person's or a group's kind, or "".
     fn owner_kind(&self, r: usize, value: &str) -> &'static str {
         let text = value.trim();
-        let mut stored = if text.is_empty() { None } else { self.locate(r, text) };
-        if stored.is_none() && !text.is_empty() && !crate::uuid::dn_shaped(text) {
-            stored = self.get(r, &format!("cn={},{}", escape_dn_value(Some(text)), self.groups_dn(r)));
+        let mut stored = if text.is_empty() {
+            None
+        } else {
+            self.locate(r, text)
+        };
+        if stored.is_none() && !text.is_empty() && !crate::uuid::dn_shaped(text)
+        {
+            stored = self.get(
+                r,
+                &format!(
+                    "cn={},{}",
+                    escape_dn_value(Some(text)),
+                    self.groups_dn(r)
+                ),
+            );
         }
         let Some(stored) = stored else { return "" };
         if self.is_person_dn(r, &stored.dn) {
             return "person";
         }
         let groups = self.groups_dn(r);
-        if is_under(Some(&stored.dn), Some(&groups)) && normalize_dn(Some(&stored.dn)) != normalize_dn(Some(&groups)) {
+        if is_under(Some(&stored.dn), Some(&groups))
+            && normalize_dn(Some(&stored.dn)) != normalize_dn(Some(&groups))
+        {
             return "group";
         }
         ""
     }
 
     // `serviceAccountWriteRefusal()`.
-    fn service_account_refusal(&self, r: usize, working: &Attributes, touched: &[String]) -> Option<LdapError> {
+    fn service_account_refusal(
+        &self,
+        r: usize,
+        working: &Attributes,
+        touched: &[String],
+    ) -> Option<LdapError> {
         let changed: Vec<&String> = touched
             .iter()
             .filter(|t| SERVICE_ACCOUNT_ATTRIBUTES.contains(&t.as_str()))
@@ -1445,13 +1695,19 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                 Some(codes::STS_SVCACCT_0030),
             ));
         }
-        if let Some(reference) = self.rules.service_account_reference_refusal(working) {
+        if let Some(reference) =
+            self.rules.service_account_reference_refusal(working)
+        {
             let code = if reference.code == Some(codes::STS_SVCACCT_0048) {
                 codes::STS_SVCACCT_0048
             } else {
                 codes::STS_SVCACCT_0050
             };
-            return Some(LdapError::new("ConstraintViolationError", reference.message, Some(code)));
+            return Some(LdapError::new(
+                "ConstraintViolationError",
+                reference.message,
+                Some(code),
+            ));
         }
         if !Self::is_service_account(working) {
             return None;
@@ -1465,12 +1721,18 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         };
         let owners: Vec<String> = working
             .get("stsserviceaccountowner")
-            .map(|v| v.iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect())
+            .map(|v| {
+                v.iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            })
             .unwrap_or_default();
         if owners.is_empty()
-            && self
-                .rules
-                .service_account_requires_owner(&first("stsserviceaccountpolicy"), &first("uid"))
+            && self.rules.service_account_requires_owner(
+                &first("stsserviceaccountpolicy"),
+                &first("uid"),
+            )
         {
             return Some(LdapError::new(
                 "ConstraintViolationError",
@@ -1485,14 +1747,19 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                 Some(codes::STS_SVCACCT_0031),
             ));
         }
-        if owners.iter().any(|o| !matches!(self.owner_kind(r, o), "person" | "group")) {
+        if owners
+            .iter()
+            .any(|o| !matches!(self.owner_kind(r, o), "person" | "group"))
+        {
             return Some(LdapError::new(
                 "ConstraintViolationError",
                 "stsServiceAccountOwner must name a person or a group in this realm",
                 Some(codes::STS_SVCACCT_0024),
             ));
         }
-        if first("stssecretdestination").is_empty() != first("stssecretname").is_empty() {
+        if first("stssecretdestination").is_empty()
+            != first("stssecretname").is_empty()
+        {
             return Some(LdapError::new(
                 "ConstraintViolationError",
                 "stsSecretDestination and stsSecretName go together",
@@ -1507,7 +1774,12 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         let class = self.model.object_class("serviceAccount");
         let mut classes: Vec<String> = attributes
             .get("objectclass")
-            .map(|v| v.iter().filter(|c| c.to_lowercase() != class.to_lowercase()).cloned().collect())
+            .map(|v| {
+                v.iter()
+                    .filter(|c| c.to_lowercase() != class.to_lowercase())
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
         if Self::is_service_account(attributes) {
             classes.push(class);
@@ -1539,7 +1811,9 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             };
         }
         let dn = normalize_dn(Some(&bound));
-        if self.holds_role(&bound, "read") || self.holds_realm_role(r, &bound, "read") {
+        if self.holds_role(&bound, "read")
+            || self.holds_realm_role(r, &bound, "read")
+        {
             return Reader {
                 kind: ReaderKind::Administrator,
                 dn,
@@ -1564,17 +1838,29 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         if self.is_person_dn(r, &stored.dn) {
             return EntryKind::Person;
         }
-        if !self.group_rule(r, &stored.dn, &stored.attributes).is_empty() {
+        if !self
+            .group_rule(r, &stored.dn, &stored.attributes)
+            .is_empty()
+        {
             return EntryKind::Group;
         }
         let normal = normalize_dn(Some(&stored.dn));
-        let crl_class = stored.values("objectclass").iter().any(|c| c.to_lowercase() == "crldistributionpoint");
+        let crl_class = stored
+            .values("objectclass")
+            .iter()
+            .any(|c| c.to_lowercase() == "crldistributionpoint");
         if normal.contains(",ou=crl,") && crl_class {
             return EntryKind::Public;
         }
-        let leaf = split_rdns(Some(&stored.dn)).into_iter().next().unwrap_or_default();
+        let leaf = split_rdns(Some(&stored.dn))
+            .into_iter()
+            .next()
+            .unwrap_or_default();
         let pairs = rdn_pairs(Some(&leaf));
-        let named = !pairs.is_empty() && pairs.iter().all(|p| ["ou", "dc", "o"].contains(&p.attribute.as_str()));
+        let named = !pairs.is_empty()
+            && pairs
+                .iter()
+                .all(|p| ["ou", "dc", "o"].contains(&p.attribute.as_str()));
         if named || normal == normalize_dn(Some(self.base(r))) {
             EntryKind::Container
         } else {
@@ -1589,7 +1875,10 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         for (name, uid) in MEMBER_ATTRIBUTES {
             for v in stored.values(name) {
                 out.push(if *uid {
-                    normalize_dn(Some(&format!("uid={},{users}", escape_dn_value(Some(v)))))
+                    normalize_dn(Some(&format!(
+                        "uid={},{users}",
+                        escape_dn_value(Some(v))
+                    )))
                 } else {
                     normalize_dn(Some(v))
                 });
@@ -1599,15 +1888,25 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
     }
 
     // `readViewOf()`: whether the entry is visible, and the rule.
-    fn read_view(&self, r: usize, reader: &Reader, stored: &Entry) -> (bool, Option<AttributeRule>) {
-        if matches!(reader.kind, ReaderKind::Unrestricted | ReaderKind::Administrator) {
+    fn read_view(
+        &self,
+        r: usize,
+        reader: &Reader,
+        stored: &Entry,
+    ) -> (bool, Option<AttributeRule>) {
+        if matches!(
+            reader.kind,
+            ReaderKind::Unrestricted | ReaderKind::Administrator
+        ) {
             return (true, None);
         }
         let kind = self.read_kind(r, stored);
         let facts = EntryFacts {
             kind,
             dn: normalize_dn(Some(&stored.dn)),
-            members: if kind == EntryKind::Group && reader.kind == ReaderKind::Person {
+            members: if kind == EntryKind::Group
+                && reader.kind == ReaderKind::Person
+            {
                 self.listed_member_dns(r, stored)
             } else {
                 Vec::new()
@@ -1620,13 +1919,17 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
     }
 
     fn withheld(&self, r: usize, name: &str) -> bool {
-        self.mode_at(r).withholds_directory_secrets() && self.model.is_secret(name)
+        self.mode_at(r).withholds_directory_secrets()
+            && self.model.is_secret(name)
     }
 
     // `matchable()` as a reader may see it (`matchableForReader()`).
     fn matchable(
         &self,
-        r: usize, stored: &Entry, rule: Option<&AttributeRule>) -> Attributes {
+        r: usize,
+        stored: &Entry,
+        rule: Option<&AttributeRule>,
+    ) -> Attributes {
         let mut out = Attributes::new();
         for (name, values) in &stored.attributes {
             out.insert(name.clone(), values.clone());
@@ -1641,7 +1944,8 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             return out;
         }
         out.retain(|name, _| {
-            !((secrets && self.model.is_secret(name)) || rule.is_some_and(|r| !read_policy::readable(r, name)))
+            !((secrets && self.model.is_secret(name))
+                || rule.is_some_and(|r| !read_policy::readable(r, name)))
         });
         out
     }
@@ -1649,15 +1953,22 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
     // `toSearchEntry()`.
     fn search_entry(
         &self,
-        r: usize, stored: &Entry, requested: &[String], rule: Option<&AttributeRule>) -> SearchEntry {
-        let wanted: Vec<String> = requested.iter().map(|a| a.to_lowercase()).collect();
+        r: usize,
+        stored: &Entry,
+        requested: &[String],
+        rule: Option<&AttributeRule>,
+    ) -> SearchEntry {
+        let wanted: Vec<String> =
+            requested.iter().map(|a| a.to_lowercase()).collect();
         let all = wanted.is_empty() || wanted.iter().any(|w| w == "*");
         let mut attributes: Vec<(String, Vec<String>)> = Vec::new();
         for (name, values) in &stored.attributes {
             let operational = OPERATIONAL.contains(&name.as_str());
             let ty = without_binary(name);
             let asked = wanted.contains(name)
-                || (ty != *name && (wanted.contains(&ty) || wanted.contains(&format!("{ty};binary"))));
+                || (ty != *name
+                    && (wanted.contains(&ty)
+                        || wanted.contains(&format!("{ty};binary"))));
             if self.withheld(r, name) {
                 continue;
             }
@@ -1683,7 +1994,8 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         if wanted.iter().any(|w| w == "entrydn") {
             match attributes.iter_mut().find(|(k, _)| k == "entryDN") {
                 Some(slot) => slot.1 = vec![stored.dn.clone()],
-                None => attributes.push(("entryDN".to_string(), vec![stored.dn.clone()])),
+                None => attributes
+                    .push(("entryDN".to_string(), vec![stored.dn.clone()])),
             }
         }
         SearchEntry {
@@ -1698,13 +2010,23 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             return false;
         }
         self.get(r, dn).is_some_and(|e| {
-            e.values("objectclass").iter().any(|c| c.to_lowercase() == "crldistributionpoint")
+            e.values("objectclass")
+                .iter()
+                .any(|c| c.to_lowercase() == "crldistributionpoint")
         })
     }
 
     // `directoryReadRefusal()`.
-    fn read_refusal(&self, r: usize, request: &Request, operation: &str, scope: Option<i64>) -> Option<LdapError> {
-        if !self.mode_at(r).requires_directory_bind() || !Self::bound_dn(request).is_empty() {
+    fn read_refusal(
+        &self,
+        r: usize,
+        request: &Request,
+        operation: &str,
+        scope: Option<i64>,
+    ) -> Option<LdapError> {
+        if !self.mode_at(r).requires_directory_bind()
+            || !Self::bound_dn(request).is_empty()
+        {
             return None;
         }
         if let Some(s) = scope {
@@ -1727,9 +2049,15 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
     #[tracing::instrument(level = "debug", skip(self), fields(dn = %request.dn))]
     pub fn perform(&mut self, request: &Request) -> Outcome {
         let result = match &request.operation {
-            Operation::Add { attributes } => self.add(request, attributes).map(|_| Outcome::default()),
-            Operation::Modify { changes } => self.modify(request, changes).map(|_| Outcome::default()),
-            Operation::Delete => self.delete(request).map(|_| Outcome::default()),
+            Operation::Add { attributes } => {
+                self.add(request, attributes).map(|_| Outcome::default())
+            }
+            Operation::Modify { changes } => {
+                self.modify(request, changes).map(|_| Outcome::default())
+            }
+            Operation::Delete => {
+                self.delete(request).map(|_| Outcome::default())
+            }
             Operation::ModifyDn {
                 new_rdn,
                 new_superior,
@@ -1737,10 +2065,12 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             } => self
                 .modify_dn(request, new_rdn, new_superior, *delete_old_rdn)
                 .map(|_| Outcome::default()),
-            Operation::Compare { attribute, value } => self.compare(request, attribute, value).map(|m| Outcome {
-                compared: Some(m),
-                ..Outcome::default()
-            }),
+            Operation::Compare { attribute, value } => {
+                self.compare(request, attribute, value).map(|m| Outcome {
+                    compared: Some(m),
+                    ..Outcome::default()
+                })
+            }
             Operation::Search { .. } => return self.search(request),
         };
         match result {
@@ -1752,7 +2082,11 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         }
     }
 
-    fn add(&mut self, request: &Request, given: &[(String, Vec<String>)]) -> Result<(), LdapError> {
+    fn add(
+        &mut self,
+        request: &Request,
+        given: &[(String, Vec<String>)],
+    ) -> Result<(), LdapError> {
         let dn = request.dn.clone();
         let r = self.realm_for(&dn);
         let types = values_of(given);
@@ -1790,7 +2124,8 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         }
         let parent = parent_dn(Some(&dn));
         let users = self.users_dn(r);
-        let under_users = normalize_dn(Some(&parent)) == normalize_dn(Some(&users));
+        let under_users =
+            normalize_dn(Some(&parent)) == normalize_dn(Some(&users));
         if under_users {
             let mut proposed = vec![Self::username_of_dn(&dn)];
             for (t, v) in given {
@@ -1798,13 +2133,15 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                     proposed.extend(v.iter().cloned());
                 }
             }
-            let clash = proposed
-                .iter()
-                .find_map(|c| self.existing_user_entry(r, c).map(|e| e.dn.clone()));
+            let clash = proposed.iter().find_map(|c| {
+                self.existing_user_entry(r, c).map(|e| e.dn.clone())
+            });
             if let Some(held) = clash {
                 return Err(self.refuse(
                     Some(codes::STS_LDAP_0005),
-                    format!("an add of {dn} named a username {held} already holds"),
+                    format!(
+                        "an add of {dn} named a username {held} already holds"
+                    ),
                     LdapError::new("EntryAlreadyExistsError", held, None),
                     &dn,
                 ));
@@ -1845,7 +2182,12 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             }
         }
         if let Some(e) = nul {
-            return Err(self.refuse(None, format!("an add of {dn} carried a value with a NUL byte"), e, &dn));
+            return Err(self.refuse(
+                None,
+                format!("an add of {dn} carried a value with a NUL byte"),
+                e,
+                &dn,
+            ));
         }
         if description_carries_code(&attributes) {
             return Err(self.refuse(
@@ -1861,7 +2203,13 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             if let Some(e) = self.service_account_refusal(r, &lowered, &keys) {
                 return Err(self.refuse(None, format!("an add of {dn} was refused by the service-account rules"), e, &dn));
             }
-            if let Some(e) = self.password_refusal(r, &dn, &mut attributes, &Attributes::new(), &keys) {
+            if let Some(e) = self.password_refusal(
+                r,
+                &dn,
+                &mut attributes,
+                &Attributes::new(),
+                &keys,
+            ) {
                 return Err(self.refuse(
                     None,
                     format!("an add of {dn} carried a userPassword the password policy refused"),
@@ -1878,7 +2226,10 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                         prospective.insert(t, vec![v]);
                     }
                 }
-                if let Some(refusal) = self.rules.attribute_create_refusal(&prospective, !self.mode_at(r).creates_incomplete_people()) {
+                if let Some(refusal) = self.rules.attribute_create_refusal(
+                    &prospective,
+                    !self.mode_at(r).creates_incomplete_people(),
+                ) {
                     return Err(self.refuse(
                         Some(codes::STS_LDAP_0162),
                         format!(
@@ -1893,7 +2244,8 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         }
         let added = lowered(&attributes);
         if !self.group_rule(r, &dn, &added).is_empty() {
-            let pairs: Vec<(String, Vec<String>)> = added.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+            let pairs: Vec<(String, Vec<String>)> =
+                added.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
             let nothing = self.members_naming_nothing(r, None, &pairs);
             if !nothing.is_empty() {
                 let list = nothing.join(", ");
@@ -1910,37 +2262,54 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             }
         }
         // `stampLdapRegistration()`.
-        if normalize_dn(Some(&parent)) == normalize_dn(Some(&self.applications_dn(r)))
-            && !attributes
-                .iter()
-                .any(|(k, v)| k.to_lowercase() == "appregisteredby" && !v.is_empty())
+        if normalize_dn(Some(&parent))
+            == normalize_dn(Some(&self.applications_dn(r)))
+            && !attributes.iter().any(|(k, v)| {
+                k.to_lowercase() == "appregisteredby" && !v.is_empty()
+            })
         {
             let bound = Self::bound_dn(request);
-            let by = if bound.is_empty() { "ldap".to_string() } else { format!("ldap:{bound}") };
+            let by = if bound.is_empty() {
+                "ldap".to_string()
+            } else {
+                format!("ldap:{bound}")
+            };
             match attributes.iter_mut().find(|(k, _)| k == "appRegisteredBy") {
                 Some(slot) => slot.1 = vec![by],
-                None => attributes.push(("appRegisteredBy".to_string(), vec![by])),
+                None => {
+                    attributes.push(("appRegisteredBy".to_string(), vec![by]))
+                }
             }
         }
         self.put_entry(r, &dn, &attributes, Some("ldap add"), None)?;
         self.observer.notice(DirectoryNotice::Done {
             action: "create".to_string(),
             target: dn.clone(),
-            summary: format!("added {dn} with {} attribute(s)", attributes.len()),
+            summary: format!(
+                "added {dn} with {} attribute(s)",
+                attributes.len()
+            ),
         });
         Ok(())
     }
 
-    fn modify(&mut self, request: &Request, changes: &[Change]) -> Result<(), LdapError> {
+    fn modify(
+        &mut self,
+        request: &Request,
+        changes: &[Change],
+    ) -> Result<(), LdapError> {
         let dn = request.dn.clone();
         let r = self.realm_for(&dn);
-        let types: Vec<String> = changes.iter().map(|c| c.attribute.to_lowercase()).collect();
+        let types: Vec<String> =
+            changes.iter().map(|c| c.attribute.to_lowercase()).collect();
         let written: Vec<(String, Vec<String>)> = changes
             .iter()
             .filter(|c| c.operation.to_lowercase() != "delete")
             .map(|c| (c.attribute.clone(), c.values.clone()))
             .collect();
-        if let Some(e) = self.write_refusal(r, request, "modify", &types, &written) {
+        if let Some(e) =
+            self.write_refusal(r, request, "modify", &types, &written)
+        {
             return Err(e);
         }
         if let Some(e) = self.operational_refusal(r, "modify", &dn, &types) {
@@ -1964,7 +2333,11 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             return Err(self.refuse(
                 Some(codes::STS_LDAP_0015),
                 format!("a modify of {dn} carried no changes"),
-                LdapError::new("ProtocolError", "a modify must carry at least one change", None),
+                LdapError::new(
+                    "ProtocolError",
+                    "a modify must carry at least one change",
+                    None,
+                ),
                 &dn,
             ));
         }
@@ -1974,7 +2347,12 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             let ty = change.attribute.to_lowercase();
             let values = &change.values;
             if let Some(e) = nul_refusal(&ty, values) {
-                return Err(self.refuse(None, format!("a modify of {dn} carried a value with a NUL byte"), e, &dn));
+                return Err(self.refuse(
+                    None,
+                    format!("a modify of {dn} carried a value with a NUL byte"),
+                    e,
+                    &dn,
+                ));
             }
             if (op == "add" || op == "replace")
                 && !values.is_empty()
@@ -1992,7 +2370,9 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                 "add" => {
                     let mut now = working.get(&ty).cloned().unwrap_or_default();
                     let before = now.clone();
-                    now.extend(values.iter().filter(|v| !before.contains(v)).cloned());
+                    now.extend(
+                        values.iter().filter(|v| !before.contains(v)).cloned(),
+                    );
                     working.insert(ty, now);
                 }
                 "replace" => {
@@ -2014,7 +2394,10 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                     if values.is_empty() {
                         working.shift_remove(&ty);
                     } else {
-                        let kept: Vec<String> = held.into_iter().filter(|v| !values.contains(v)).collect();
+                        let kept: Vec<String> = held
+                            .into_iter()
+                            .filter(|v| !values.contains(v))
+                            .collect();
                         if kept.is_empty() {
                             working.shift_remove(&ty);
                         } else {
@@ -2033,9 +2416,25 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             }
         }
         if self.is_person_dn(r, &stored.dn) {
-            let mut pairs: Vec<(String, Vec<String>)> = working.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            if let Some(e) = self.password_refusal(r, &stored.dn, &mut pairs, &stored.attributes, &types) {
-                return Err(self.refuse(None, format!("a modify of {dn} was refused by the password rules"), e, &dn));
+            let mut pairs: Vec<(String, Vec<String>)> = working
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            if let Some(e) = self.password_refusal(
+                r,
+                &stored.dn,
+                &mut pairs,
+                &stored.attributes,
+                &types,
+            ) {
+                return Err(self.refuse(
+                    None,
+                    format!(
+                        "a modify of {dn} was refused by the password rules"
+                    ),
+                    e,
+                    &dn,
+                ));
             }
             working = pairs.into_iter().collect();
             if let Some(e) = self.service_account_refusal(r, &working, &types) {
@@ -2074,11 +2473,20 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         if let Some(aliases) = stored.attributes.get(ENTRY_UUID_ALIAS) {
             working.insert(ENTRY_UUID_ALIAS.to_string(), aliases.clone());
         }
-        if !self.group_rule(r, &stored.dn, &stored.attributes).is_empty()
+        if !self
+            .group_rule(r, &stored.dn, &stored.attributes)
+            .is_empty()
             || !self.group_rule(r, &stored.dn, &working).is_empty()
         {
-            let pairs: Vec<(String, Vec<String>)> = working.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            let nothing = self.members_naming_nothing(r, Some(&stored.attributes), &pairs);
+            let pairs: Vec<(String, Vec<String>)> = working
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            let nothing = self.members_naming_nothing(
+                r,
+                Some(&stored.attributes),
+                &pairs,
+            );
             if !nothing.is_empty() {
                 let list = nothing.join(", ");
                 return Err(self.refuse(
@@ -2145,7 +2553,9 @@ be deleted"
             ));
         }
         let person = self.is_person_dn(r, &stored.dn);
-        let group = !self.group_rule(r, &stored.dn, &stored.attributes).is_empty();
+        let group = !self
+            .group_rule(r, &stored.dn, &stored.attributes)
+            .is_empty();
         let key = normalize_dn(Some(&stored.dn));
         self.realms[r].entries.shift_remove(&key);
         self.journal.touched(&self.realms[r].id, &key);
@@ -2156,20 +2566,32 @@ be deleted"
         if person {
             // `removePersonEntry()`.
             self.forget_group_memberships(r, &stored.dn, "an LDAP delete");
-            self.registers.forget_member("users", &Self::username_of_dn(&stored.dn));
+            self.registers
+                .forget_member("users", &Self::username_of_dn(&stored.dn));
             self.rewrite_owner_references(r, &stored.dn, "", "an LDAP delete");
         } else {
             if group {
                 self.registers
                     .forget_member("groups", stored.first("cn").unwrap_or(""));
-                self.rewrite_owner_references(r, &stored.dn, "", "an LDAP delete");
+                self.rewrite_owner_references(
+                    r,
+                    &stored.dn,
+                    "",
+                    "an LDAP delete",
+                );
             }
             self.forget_group_memberships(r, &dn, "an LDAP delete");
         }
         Ok(())
     }
 
-    fn modify_dn(&mut self, request: &Request, new_rdn: &str, new_superior: &str, delete_old_rdn: bool) -> Result<(), LdapError> {
+    fn modify_dn(
+        &mut self,
+        request: &Request,
+        new_rdn: &str,
+        new_superior: &str,
+        delete_old_rdn: bool,
+    ) -> Result<(), LdapError> {
         let dn = request.dn.clone();
         let r = self.realm_for(&dn);
         let superior = if new_superior.is_empty() {
@@ -2218,7 +2640,9 @@ would delete that account under another name"
         if self.get(r, &target).is_some() {
             return Err(self.refuse(
                 Some(codes::STS_LDAP_0004),
-                format!("a rename of {dn} named {target}, which already exists"),
+                format!(
+                    "a rename of {dn} named {target}, which already exists"
+                ),
                 LdapError::new("EntryAlreadyExistsError", target.clone(), None),
                 &dn,
             ));
@@ -2251,7 +2675,8 @@ would delete that account under another name"
         let mut moved = stored.clone();
         moved.dn = target.clone();
         if delete_old_rdn {
-            let first = split_unescaped(&dn).into_iter().next().unwrap_or_default();
+            let first =
+                split_unescaped(&dn).into_iter().next().unwrap_or_default();
             let parts: Vec<&str> = first.split('=').collect();
             if parts.len() >= 2 {
                 let old_type = parts[0].trim().to_lowercase();
@@ -2279,11 +2704,14 @@ would delete that account under another name"
                 moved.attributes.insert(ty, current);
             }
         }
-        moved
-            .attributes
-            .insert("modifytimestamp".to_string(), vec![self.clock.generalized_time()]);
+        moved.attributes.insert(
+            "modifytimestamp".to_string(),
+            vec![self.clock.generalized_time()],
+        );
         let new_key = normalize_dn(Some(&target));
-        self.realms[r].entries.insert(new_key.clone(), moved.clone());
+        self.realms[r]
+            .entries
+            .insert(new_key.clone(), moved.clone());
         self.journal.touched(&self.realms[r].id, &old_key);
         self.journal.touched(&self.realms[r].id, &new_key);
         self.observer.notice(DirectoryNotice::Renamed {
@@ -2292,21 +2720,38 @@ would delete that account under another name"
             to: Box::new(moved.clone()),
         });
         let person = self.is_person_dn(r, &moved.dn);
-        let name_after = if person { Self::person_name_of(&moved) } else { String::new() };
+        let name_after = if person {
+            Self::person_name_of(&moved)
+        } else {
+            String::new()
+        };
         self.move_group_memberships(r, &dn, &target, &name_before, &name_after);
         if person && !name_before.is_empty() {
-            self.registers.rename_member("users", &name_before, &name_after);
-        } else if !self.group_rule(r, &moved.dn, &moved.attributes).is_empty() && !group_cn_before.is_empty() {
             self.registers
-                .rename_member("groups", &group_cn_before, moved.first("cn").unwrap_or(""));
+                .rename_member("users", &name_before, &name_after);
+        } else if !self.group_rule(r, &moved.dn, &moved.attributes).is_empty()
+            && !group_cn_before.is_empty()
+        {
+            self.registers.rename_member(
+                "groups",
+                &group_cn_before,
+                moved.first("cn").unwrap_or(""),
+            );
         }
-        if person || !self.group_rule(r, &moved.dn, &moved.attributes).is_empty() {
+        if person
+            || !self.group_rule(r, &moved.dn, &moved.attributes).is_empty()
+        {
             self.rewrite_owner_references(r, &dn, &target, "an LDAP rename");
         }
         Ok(())
     }
 
-    fn compare(&mut self, request: &Request, attribute: &str, value: &str) -> Result<bool, LdapError> {
+    fn compare(
+        &mut self,
+        request: &Request,
+        attribute: &str,
+        value: &str,
+    ) -> Result<bool, LdapError> {
         let dn = request.dn.clone();
         let r = self.realm_for(&dn);
         let ty = attribute.to_lowercase();
@@ -2324,8 +2769,14 @@ would delete that account under another name"
         let stored = self.get(r, &dn).cloned();
         let reader = self.reader_of(r, request);
         let view = stored.as_ref().map(|s| self.read_view(r, &reader, s));
-        let (Some(stored), Some((true, rule))) = (stored.as_ref(), view.clone()) else {
-            let suffix = if stored.is_some() { " for this reader" } else { "" };
+        let (Some(stored), Some((true, rule))) =
+            (stored.as_ref(), view.clone())
+        else {
+            let suffix = if stored.is_some() {
+                " for this reader"
+            } else {
+                ""
+            };
             return Err(self.refuse(
                 Some(codes::STS_LDAP_0013),
                 format!("a compare named {dn}, which does not exist{suffix}"),
@@ -2359,12 +2810,17 @@ would delete that account under another name"
     fn root_dse(&self) -> Entry {
         let r = 0;
         let mut attributes = Attributes::new();
-        attributes.insert("objectclass".to_string(), vec!["top".to_string(), "LDAProotDSE".to_string()]);
+        attributes.insert(
+            "objectclass".to_string(),
+            vec!["top".to_string(), "LDAProotDSE".to_string()],
+        );
         attributes.insert("namingcontexts".to_string(), self.naming_contexts());
-        attributes.insert("supportedldapversion".to_string(), vec!["3".to_string()]);
+        attributes
+            .insert("supportedldapversion".to_string(), vec!["3".to_string()]);
         attributes.insert(
             "vendorname".to_string(),
-            vec!["IYA STS (ldapjs, unmodified, pinned as a submodule)".to_string()],
+            vec!["IYA STS (ldapjs, unmodified, pinned as a submodule)"
+                .to_string()],
         );
         if self.sasl_external {
             attributes.insert(
@@ -2411,7 +2867,12 @@ would delete that account under another name"
         let mut out = Outcome::default();
         if normalize_dn(Some(&base)).is_empty() {
             if *scope == 0 {
-                out.entries.push(self.search_entry(0, &self.root_dse(), attributes, None));
+                out.entries.push(self.search_entry(
+                    0,
+                    &self.root_dse(),
+                    attributes,
+                    None,
+                ));
             } else {
                 let name = scope_name(*scope);
                 out.error = Some(self.refuse(
@@ -2439,9 +2900,15 @@ would delete that account under another name"
         }
         let reader = self.reader_of(r, request);
         let base_entry = self.get(r, &base).cloned();
-        let visible = base_entry.as_ref().is_some_and(|e| self.read_view(r, &reader, e).0);
+        let visible = base_entry
+            .as_ref()
+            .is_some_and(|e| self.read_view(r, &reader, e).0);
         if !visible {
-            let suffix = if base_entry.is_some() { " for this reader" } else { "" };
+            let suffix = if base_entry.is_some() {
+                " for this reader"
+            } else {
+                ""
+            };
             out.error = Some(self.refuse(
                 Some(codes::STS_LDAP_0013),
                 format!("a search named the base {base}, which does not exist{suffix}"),
@@ -2452,8 +2919,13 @@ would delete that account under another name"
         }
         let parsed = Filter::parse(filter).ok();
         let server = self.settings.size_limit();
-        let limit = if *size_limit > 0 { (*size_limit).min(server) } else { server };
-        let entries: Vec<Entry> = self.realms[r].entries.values().cloned().collect();
+        let limit = if *size_limit > 0 {
+            (*size_limit).min(server)
+        } else {
+            server
+        };
+        let entries: Vec<Entry> =
+            self.realms[r].entries.values().cloned().collect();
         for stored in &entries {
             if !is_under(Some(&stored.dn), Some(&base)) {
                 continue;
@@ -2467,7 +2939,11 @@ would delete that account under another name"
                 continue;
             }
             let matched = match &parsed {
-                Some(f) => matching::matches(f, &self.matchable(r, stored, rule.as_ref())).unwrap_or(false),
+                Some(f) => matching::matches(
+                    f,
+                    &self.matchable(r, stored, rule.as_ref()),
+                )
+                .unwrap_or(false),
                 None => false,
             };
             if !matched {
@@ -2484,7 +2960,12 @@ for less with a filter, or raise ldap.sizeLimit"
                 ));
                 return out;
             }
-            out.entries.push(self.search_entry(r, stored, attributes, rule.as_ref()));
+            out.entries.push(self.search_entry(
+                r,
+                stored,
+                attributes,
+                rule.as_ref(),
+            ));
         }
         out
     }
@@ -2499,11 +2980,17 @@ for less with a filter, or raise ldap.sizeLimit"
         self.realms[r]
             .entries
             .iter()
-            .filter(|(_, e)| !self.group_rule(r, &e.dn, &e.attributes).is_empty())
+            .filter(|(_, e)| {
+                !self.group_rule(r, &e.dn, &e.attributes).is_empty()
+            })
             .filter(|(_, e)| {
                 MEMBER_ATTRIBUTES.iter().any(|(name, uid)| {
                     e.values(name).iter().any(|v| {
-                        let means = if *uid { format!("uid={v},{users}") } else { v.clone() };
+                        let means = if *uid {
+                            format!("uid={v},{users}")
+                        } else {
+                            v.clone()
+                        };
                         normalize_dn(Some(&means)) == key
                     })
                 })
@@ -2514,56 +3001,102 @@ for less with a filter, or raise ldap.sizeLimit"
 
     // `writeGroupEntry()` for an existing group: putEntry() with the row's
     // creation instant kept.
-    fn write_group(&mut self, r: usize, dn: &str, attributes: Vec<(String, Vec<String>)>, origin: &str) -> Result<(), LdapError> {
+    fn write_group(
+        &mut self,
+        r: usize,
+        dn: &str,
+        attributes: Vec<(String, Vec<String>)>,
+        origin: &str,
+    ) -> Result<(), LdapError> {
         let existing = self.get(r, dn).cloned();
         if let Some(e) = &existing {
             if self.group_rule(r, &e.dn, &e.attributes).is_empty() {
-                return Err(LdapError::new("OperationsError", "notAGroup", Some(codes::STS_LDAP_0048)));
+                return Err(LdapError::new(
+                    "OperationsError",
+                    "notAGroup",
+                    Some(codes::STS_LDAP_0048),
+                ));
             }
         }
         if self.get(r, &parent_dn(Some(dn))).is_none() {
-            return Err(LdapError::new("OperationsError", "noParent", Some(codes::STS_LDAP_0006)));
+            return Err(LdapError::new(
+                "OperationsError",
+                "noParent",
+                Some(codes::STS_LDAP_0006),
+            ));
         }
         if !self
-            .members_naming_nothing(r, existing.as_ref().map(|e| &e.attributes), &attributes)
+            .members_naming_nothing(
+                r,
+                existing.as_ref().map(|e| &e.attributes),
+                &attributes,
+            )
             .is_empty()
         {
-            return Err(LdapError::new("OperationsError", "danglingMember", Some(codes::STS_LDAP_0212)));
+            return Err(LdapError::new(
+                "OperationsError",
+                "danglingMember",
+                Some(codes::STS_LDAP_0212),
+            ));
         }
         let created = existing
             .as_ref()
             .and_then(|e| e.created_at.clone())
             .unwrap_or_else(|| self.clock.generalized_time());
-        let origin = existing.as_ref().and_then(|e| e.origin.clone()).unwrap_or_else(|| origin.to_string());
+        let origin = existing
+            .as_ref()
+            .and_then(|e| e.origin.clone())
+            .unwrap_or_else(|| origin.to_string());
         let key = self.put_entry(r, dn, &attributes, Some(&origin), None)?;
         let now = self.clock.generalized_time();
         if let Some(stored) = self.realms[r].entries.get_mut(&key) {
             stored.created_at = Some(created.clone());
-            stored.attributes.insert("createtimestamp".to_string(), vec![created]);
-            stored.attributes.insert("modifytimestamp".to_string(), vec![now]);
+            stored
+                .attributes
+                .insert("createtimestamp".to_string(), vec![created]);
+            stored
+                .attributes
+                .insert("modifytimestamp".to_string(), vec![now]);
         }
         Ok(())
     }
 
     // `forgetGroupMemberships()`: a deleted DN out of every group.
-    fn forget_group_memberships(&mut self, r: usize, dn: &str, origin: &str) -> usize {
+    fn forget_group_memberships(
+        &mut self,
+        r: usize,
+        dn: &str,
+        origin: &str,
+    ) -> usize {
         let key = normalize_dn(Some(dn));
         let users = self.users_dn(r);
         let mut changed = 0;
         for group_key in self.groups_listing(r, &key) {
-            let Some(existing) = self.realms[r].entries.get(&group_key).cloned() else { continue };
+            let Some(existing) =
+                self.realms[r].entries.get(&group_key).cloned()
+            else {
+                continue;
+            };
             let mut removed = 0;
             let attributes: Vec<(String, Vec<String>)> = existing
                 .attributes
                 .iter()
-                .filter(|(k, _)| !OPERATIONAL.contains(&k.to_lowercase().as_str()))
+                .filter(|(k, _)| {
+                    !OPERATIONAL.contains(&k.to_lowercase().as_str())
+                })
                 .map(|(k, v)| {
-                    let member = MEMBER_ATTRIBUTES.iter().find(|(n, _)| *n == k.to_lowercase());
+                    let member = MEMBER_ATTRIBUTES
+                        .iter()
+                        .find(|(n, _)| *n == k.to_lowercase());
                     let values = match member {
                         Some((_, uid)) => v
                             .iter()
                             .filter(|value| {
-                                let means = if *uid { format!("uid={value},{users}") } else { value.to_string() };
+                                let means = if *uid {
+                                    format!("uid={value},{users}")
+                                } else {
+                                    value.to_string()
+                                };
                                 let gone = normalize_dn(Some(&means)) == key;
                                 if gone {
                                     removed += 1;
@@ -2577,7 +3110,11 @@ for less with a filter, or raise ldap.sizeLimit"
                     (k.clone(), values)
                 })
                 .collect();
-            if removed > 0 && self.write_group(r, &existing.dn, attributes, origin).is_ok() {
+            if removed > 0
+                && self
+                    .write_group(r, &existing.dn, attributes, origin)
+                    .is_ok()
+            {
                 changed += 1;
             }
         }
@@ -2585,25 +3122,41 @@ for less with a filter, or raise ldap.sizeLimit"
     }
 
     // `moveGroupMemberships()`: a renamed entry's memberships moved.
-    fn move_group_memberships(&mut self, r: usize, old_dn: &str, new_dn: &str, old_name: &str, new_name: &str) -> usize {
+    fn move_group_memberships(
+        &mut self,
+        r: usize,
+        old_dn: &str,
+        new_dn: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> usize {
         let key = normalize_dn(Some(old_dn));
         let mut changed = 0;
         for group_key in self.groups_listing(r, &key) {
-            let Some(existing) = self.realms[r].entries.get(&group_key).cloned() else { continue };
+            let Some(existing) =
+                self.realms[r].entries.get(&group_key).cloned()
+            else {
+                continue;
+            };
             let mut moved = 0;
             let attributes: Vec<(String, Vec<String>)> = existing
                 .attributes
                 .iter()
-                .filter(|(k, _)| !OPERATIONAL.contains(&k.to_lowercase().as_str()))
+                .filter(|(k, _)| {
+                    !OPERATIONAL.contains(&k.to_lowercase().as_str())
+                })
                 .map(|(k, v)| {
-                    let member = MEMBER_ATTRIBUTES.iter().find(|(n, _)| *n == k.to_lowercase());
+                    let member = MEMBER_ATTRIBUTES
+                        .iter()
+                        .find(|(n, _)| *n == k.to_lowercase());
                     let values = match member {
                         Some((_, true)) => v
                             .iter()
                             .map(|value| {
                                 if !old_name.is_empty()
                                     && !new_name.is_empty()
-                                    && value.to_lowercase() == old_name.to_lowercase()
+                                    && value.to_lowercase()
+                                        == old_name.to_lowercase()
                                 {
                                     moved += 1;
                                     new_name.to_string()
@@ -2628,7 +3181,11 @@ for less with a filter, or raise ldap.sizeLimit"
                     (k.clone(), values)
                 })
                 .collect();
-            if moved > 0 && self.write_group(r, &existing.dn, attributes, "an LDAP rename").is_ok() {
+            if moved > 0
+                && self
+                    .write_group(r, &existing.dn, attributes, "an LDAP rename")
+                    .is_ok()
+            {
                 changed += 1;
             }
         }
@@ -2638,19 +3195,35 @@ for less with a filter, or raise ldap.sizeLimit"
     // `rewriteOwnerReferences()`: a deleted (`to` empty) or renamed owner
     // taken off or moved on every group's and service account's owner
     // list; the roles' and applications' are their registers'.
-    fn rewrite_owner_references(&mut self, r: usize, old_dn: &str, to: &str, origin: &str) -> usize {
+    fn rewrite_owner_references(
+        &mut self,
+        r: usize,
+        old_dn: &str,
+        to: &str,
+        origin: &str,
+    ) -> usize {
         let key = normalize_dn(Some(old_dn));
         let to = to.trim().to_string();
         if key.is_empty() || key == normalize_dn(Some(&to)) {
             return 0;
         }
         self.registers.rewrite_owner(old_dn, &to);
-        let names = |values: &[String]| values.iter().any(|v| normalize_dn(Some(v)) == key);
+        let names = |values: &[String]| {
+            values.iter().any(|v| normalize_dn(Some(v)) == key)
+        };
         let replaced = |values: &[String]| {
             let mut out: Vec<String> = Vec::new();
             for v in values {
-                let one = if normalize_dn(Some(v)) == key { to.clone() } else { v.clone() };
-                if !one.is_empty() && !out.iter().any(|k| normalize_dn(Some(k)) == normalize_dn(Some(&one))) {
+                let one = if normalize_dn(Some(v)) == key {
+                    to.clone()
+                } else {
+                    v.clone()
+                };
+                if !one.is_empty()
+                    && !out.iter().any(|k| {
+                        normalize_dn(Some(k)) == normalize_dn(Some(&one))
+                    })
+                {
                     out.push(one);
                 }
             }
@@ -2661,7 +3234,11 @@ for less with a filter, or raise ldap.sizeLimit"
         let naming: Vec<Entry> = self.realms[r]
             .entries
             .values()
-            .filter(|e| OWNER_REFERENCE_ATTRIBUTES.iter().any(|a| names(e.values(a))))
+            .filter(|e| {
+                OWNER_REFERENCE_ATTRIBUTES
+                    .iter()
+                    .any(|a| names(e.values(a)))
+            })
             .cloned()
             .collect();
         let mut changed = 0;
@@ -2672,7 +3249,11 @@ for less with a filter, or raise ldap.sizeLimit"
             {
                 continue;
             }
-            if !self.group_rule(r, &stored.dn, &stored.attributes).is_empty() && names(stored.values("owner")) {
+            if !self
+                .group_rule(r, &stored.dn, &stored.attributes)
+                .is_empty()
+                && names(stored.values("owner"))
+            {
                 // `writeGroupOwners()`: the entry's attributes sorted, the
                 // operational ones and the owners left out, the owners last.
                 let owners = replaced(stored.values("owner"));
@@ -2680,7 +3261,10 @@ for less with a filter, or raise ldap.sizeLimit"
                 keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
                 let mut attributes: Vec<(String, Vec<String>)> = keys
                     .into_iter()
-                    .filter(|k| !OPERATIONAL.contains(&k.as_str()) && k.as_str() != "owner")
+                    .filter(|k| {
+                        !OPERATIONAL.contains(&k.as_str())
+                            && k.as_str() != "owner"
+                    })
                     .map(|k| (k.clone(), stored.attributes[k].clone()))
                     .collect();
                 if !owners.is_empty() {
@@ -2690,7 +3274,9 @@ for less with a filter, or raise ldap.sizeLimit"
                     changed += 1;
                 }
             }
-            if self.is_person_dn(r, &stored.dn) && names(stored.values("stsserviceaccountowner")) {
+            if self.is_person_dn(r, &stored.dn)
+                && names(stored.values("stsserviceaccountowner"))
+            {
                 // `writeServiceAccount()`.
                 let owners = replaced(stored.values("stsserviceaccountowner"));
                 let now = self.clock.generalized_time();
@@ -2699,7 +3285,8 @@ for less with a filter, or raise ldap.sizeLimit"
                 if owners.is_empty() {
                     working.shift_remove("stsserviceaccountowner");
                 } else {
-                    working.insert("stsserviceaccountowner".to_string(), owners);
+                    working
+                        .insert("stsserviceaccountowner".to_string(), owners);
                 }
                 self.keep_service_account_class(&mut working);
                 working.insert("modifytimestamp".to_string(), vec![now]);

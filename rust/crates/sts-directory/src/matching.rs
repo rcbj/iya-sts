@@ -34,19 +34,65 @@ use crate::entry::Attributes;
 
 /// The attributes whose equality rule ignores case, lower-cased.
 pub const CASE_IGNORE_ATTRIBUTES: &[&str] = &[
-    "businesscategory", "c", "cn", "dc", "description", "destinationindicator",
-    "dnqualifier", "generationqualifier", "givenname", "houseidentifier",
-    "initials", "l", "name", "o", "ou", "physicaldeliveryofficename",
-    "postalcode", "postofficebox", "serialnumber", "sn", "st", "street",
-    "title", "uid", "commonname", "surname", "gn", "countryname",
-    "localityname", "stateorprovincename", "streetaddress",
-    "organizationname", "organizationalunitname", "domaincomponent",
-    "userid", "mail", "rfc822mailbox", "associateddomain", "buildingname",
-    "co", "friendlycountryname", "documentauthor", "documentidentifier",
-    "documentlocation", "documentpublisher", "documenttitle",
-    "documentversion", "drink", "favouritedrink", "host", "info",
-    "organizationalstatus", "roomnumber", "uniqueidentifier", "carlicense",
-    "departmentnumber", "displayname", "employeenumber", "employeetype",
+    "businesscategory",
+    "c",
+    "cn",
+    "dc",
+    "description",
+    "destinationindicator",
+    "dnqualifier",
+    "generationqualifier",
+    "givenname",
+    "houseidentifier",
+    "initials",
+    "l",
+    "name",
+    "o",
+    "ou",
+    "physicaldeliveryofficename",
+    "postalcode",
+    "postofficebox",
+    "serialnumber",
+    "sn",
+    "st",
+    "street",
+    "title",
+    "uid",
+    "commonname",
+    "surname",
+    "gn",
+    "countryname",
+    "localityname",
+    "stateorprovincename",
+    "streetaddress",
+    "organizationname",
+    "organizationalunitname",
+    "domaincomponent",
+    "userid",
+    "mail",
+    "rfc822mailbox",
+    "associateddomain",
+    "buildingname",
+    "co",
+    "friendlycountryname",
+    "documentauthor",
+    "documentidentifier",
+    "documentlocation",
+    "documentpublisher",
+    "documenttitle",
+    "documentversion",
+    "drink",
+    "favouritedrink",
+    "host",
+    "info",
+    "organizationalstatus",
+    "roomnumber",
+    "uniqueidentifier",
+    "carlicense",
+    "departmentnumber",
+    "displayname",
+    "employeenumber",
+    "employeetype",
     "preferredlanguage",
 ];
 
@@ -62,7 +108,10 @@ pub fn ignores_case(attribute: &str) -> bool {
 }
 
 /// `LdapMatching.matches()`.
-pub fn matches(filter: &Filter, entry: &Attributes) -> Result<bool, Unmatchable> {
+pub fn matches(
+    filter: &Filter,
+    entry: &Attributes,
+) -> Result<bool, Unmatchable> {
     match filter {
         Filter::And(clauses) => {
             for one in clauses {
@@ -85,8 +134,9 @@ pub fn matches(filter: &Filter, entry: &Attributes) -> Result<bool, Unmatchable>
             let value = Filter::equality_value(raw);
             if ignores_case(attribute) {
                 let wanted = value.to_lowercase();
-                return Ok(values_of(entry, attribute)
-                    .is_some_and(|v| v.iter().any(|s| s.to_lowercase() == wanted)));
+                return Ok(values_of(entry, attribute).is_some_and(|v| {
+                    v.iter().any(|s| s.to_lowercase() == wanted)
+                }));
             }
             Ok(library_equality(attribute, &value, entry))
         }
@@ -109,11 +159,19 @@ pub fn matches(filter: &Filter, entry: &Attributes) -> Result<bool, Unmatchable>
                 }
             }))
         }
-        Filter::Presence { attribute } => Ok(values_of(entry, attribute).is_some()),
-        Filter::GreaterOrEqual { attribute, value } => Ok(values_of(entry, attribute)
-            .is_some_and(|v| v.iter().any(|s| js_cmp(value, s) != Ordering::Greater))),
-        Filter::LessOrEqual { attribute, value } => Ok(values_of(entry, attribute)
-            .is_some_and(|v| v.iter().any(|s| js_cmp(s, value) != Ordering::Greater))),
+        Filter::Presence { attribute } => {
+            Ok(values_of(entry, attribute).is_some())
+        }
+        Filter::GreaterOrEqual { attribute, value } => {
+            Ok(values_of(entry, attribute).is_some_and(|v| {
+                v.iter().any(|s| js_cmp(value, s) != Ordering::Greater)
+            }))
+        }
+        Filter::LessOrEqual { attribute, value } => {
+            Ok(values_of(entry, attribute).is_some_and(|v| {
+                v.iter().any(|s| js_cmp(s, value) != Ordering::Greater)
+            }))
+        }
         Filter::Approximate { .. } | Filter::Extensible { .. } => {
             Err(Unmatchable("not implemented".to_string()))
         }
@@ -122,7 +180,10 @@ pub fn matches(filter: &Filter, entry: &Attributes) -> Result<bool, Unmatchable>
 
 // `getAttributeValue()` with `strictCase` false: the exact key, then the
 // first whose lower case matches.
-fn values_of<'a>(entry: &'a Attributes, attribute: &str) -> Option<&'a Vec<String>> {
+fn values_of<'a>(
+    entry: &'a Attributes,
+    attribute: &str,
+) -> Option<&'a Vec<String>> {
     if let Some(v) = entry.get(attribute) {
         return Some(v);
     }
@@ -197,7 +258,9 @@ mod tests {
     fn entry(pairs: &[(&str, &[&str])]) -> Attributes {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), v.iter().map(|s| s.to_string()).collect()))
+            .map(|(k, v)| {
+                (k.to_string(), v.iter().map(|s| s.to_string()).collect())
+            })
             .collect()
     }
 
@@ -207,11 +270,17 @@ mod tests {
 
     #[test]
     fn the_rules_fold_only_what_the_schema_folds() {
-        let e = entry(&[("uid", &["alice"]), ("memberuid", &["FERN"]),
-                        ("objectclass", &["inetOrgPerson"])]);
+        let e = entry(&[
+            ("uid", &["alice"]),
+            ("memberuid", &["FERN"]),
+            ("objectclass", &["inetOrgPerson"]),
+        ]);
         assert_eq!(matches(&parsed("(uid=ALICE)"), &e), Ok(true));
         assert_eq!(matches(&parsed("(memberUid=fern)"), &e), Ok(false));
-        assert_eq!(matches(&parsed("(objectClass=INETORGPERSON)"), &e), Ok(true));
+        assert_eq!(
+            matches(&parsed("(objectClass=INETORGPERSON)"), &e),
+            Ok(true)
+        );
         assert!(matches(&parsed("(cn~=x)"), &e).is_err());
     }
 
