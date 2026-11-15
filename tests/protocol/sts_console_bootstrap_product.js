@@ -743,7 +743,13 @@ async function aProductRealmInADevelopmentProcess() {
   const made = await api("POST", "/admin-api/realms/create", {
     id: PRODUCT_REALM, domain: PRODUCT_REALM + ".example.net",
     name: "Product realm " + STAMP,
+    // ITS OWN global.publicBaseUrl (run #300): a product realm accepts only
+    // the console's REGISTERED redirect URI, made from that setting, and a
+    // memory-mode process has none (run-tests.sh sets STS_PUBLIC_BASE_URL
+    // for the product modes alone), so the realm is given the address this
+    // job reaches it at — the same value where the process has one.
     overrides: { "global.mode": "product",
+                 "global.publicBaseUrl": base,
                  "authn.allowOptionalSecondFactor": "true" } });
   assert.strictEqual(made.status, 200, "creating " + PRODUCT_REALM +
                      " answered " + made.status + " " +
@@ -781,6 +787,8 @@ async function aProductRealmInADevelopmentProcess() {
   // asks for the product name (`admin-<hmac>`), so nobody could ever claim
   // this console. The name is now asked in the realm, and so is whether a
   // generated password is handed back.
+  const keepsDefault = String(await facts.setting(base + QR + "/admin-api",
+    "admin.allowDefaultUsername")) === "true";
   const bootName = String((made.body && made.body.bootstrap &&
                            made.body.bootstrap.username) || "");
   const generated = String((made.body && made.body.password) || "");
@@ -791,7 +799,10 @@ async function aProductRealmInADevelopmentProcess() {
               JSON.stringify(roster.body.bootstrap));
     assert.strictEqual(bootName, roster.body.bootstrap.username,
                        JSON.stringify(made.body.bootstrap));
-    assert.ok(/^admin-[0-9a-f]{16}$/.test(bootName), bootName);
+    // The generated name unless admin.allowDefaultUsername keeps the
+    // configured one, as the suite's stack sets it (run #300).
+    assert.ok(keepsDefault ? bootName === "admin"
+                           : /^admin-[0-9a-f]{16}$/.test(bootName), bootName);
     assert.ok(generated && made.body.username === bootName,
               JSON.stringify(made.body).slice(0, 300));
   });
