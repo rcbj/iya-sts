@@ -113,3 +113,8 @@ unsafe_code = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 let_underscore_must_use = "deny"
+
+# Compiling sts-model's generated api.rs with debuginfo took one rustc past
+# 12 GB on a shared laptop; it builds without it.
+[profile.dev.package.sts-model]
+debug = 0
