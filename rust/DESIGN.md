@@ -299,7 +299,14 @@ rust/
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/
     sts-xacml/                   the engine: no I/O; shared by the runtime and the PEP
-    sts-enrollment/              ACME, EST, SCEP over one CertEnrollment core
+    sts-enroll/                  ACME, EST, SCEP over one CertEnrollment core
+                                 (phase 6, common/cert_enrollment.ts, acme/,
+                                 est/, scep/): issued through sts-pki's
+                                 issue_enrolled, wired into the runtime; no
+                                 challenge dials out (Node has none). Held to
+                                 Node by tests/tools/enroll-vectors.js, and
+                                 over the wire by rust-enroll-e2e.sh (certbot,
+                                 sscep, curl on a directory Node wrote)
     sts-audit/                   the audit log, GET /admin-api/audit, the audit export (#641)
     sts-risk/  sts-attribute-sources/  sts-mail/  sts-cells/
     sts-authzen/  sts-uma/
