@@ -276,6 +276,14 @@ impl Views {
             "getAdminRoles" => self.rbac_list_json(asked, setup),
             "getNewUserForm" => self.new_user_json(asked),
             "getIssued" => self.tokens_json(asked),
+            id if id.ends_with("Settings")
+                && sts_mgmt_api::tables::tables()
+                    .settings_operations
+                    .get(id)
+                    .is_some() =>
+            {
+                settings_page_json(id, setup)
+            }
             "createRole"
             | "deleteRole"
             | "describeRole"
@@ -1748,6 +1756,32 @@ impl Views {
             "ldap": self.ldap_object(&wanted),
         }))
     }
+}
+
+/// A protocol settings page's operation (`admin.protocolSettingsJsonFor()`,
+/// the `apis5` slice): Node's own prose for the page, and its settings
+/// block drawn here. NOT YET: the `status` member some pages carry beside
+/// it (the mechanism's live state — the store's, the cluster's, the
+/// second factors') is absent rather than empty.
+fn settings_page_json(
+    id: &str,
+    setup: &sts_mgmt_api::setup::Setup<'_>,
+) -> Json {
+    let row = &sts_mgmt_api::tables::tables().settings_operations[id];
+    let page = row["settingsPage"].as_str().unwrap_or("");
+    let groups: Vec<&str> = row["settingsGroups"]
+        .as_array()
+        .map(|l| l.iter().filter_map(Json::as_str).collect())
+        .unwrap_or_default();
+    let mut out = Map::new();
+    for k in ["page", "title", "what", "notes", "links"] {
+        out.insert(k.into(), row[k].clone());
+    }
+    out.insert("settings".into(), setup.page_settings_only(page, &groups));
+    for k in ["leadHtml", "alsoHtml"] {
+        out.insert(k.into(), row[k].clone());
+    }
+    Json::Object(out)
 }
 
 /// The act's caller, for the audit row (`callerNameOf(res)`).

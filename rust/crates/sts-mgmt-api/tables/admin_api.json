@@ -17574,6 +17574,95 @@
     "Management API"
    ],
    "sharedWith": {}
+  },
+  "/admin/oauth2": {
+   "groups": [
+    "OAuth 2.0 / OIDC"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/vc": {
+   "groups": [
+    "OID4VCI",
+    "OID4VP",
+    "Person DIDs",
+    "W3C VC API"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/totp": {
+   "groups": [
+    "Second-factor requirement",
+    "TOTP MFA"
+   ],
+   "sharedWith": {
+    "Second-factor requirement": [
+     {
+      "path": "/admin/webauthn",
+      "label": "WebAuthn"
+     }
+    ]
+   }
+  },
+  "/admin/backup-codes": {
+   "groups": [
+    "Backup codes"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/webauthn": {
+   "groups": [
+    "Second-factor requirement",
+    "WebAuthn"
+   ],
+   "sharedWith": {
+    "Second-factor requirement": [
+     {
+      "path": "/admin/totp",
+      "label": "TOTP MFA"
+     }
+    ]
+   }
+  },
+  "/admin/kerberos": {
+   "groups": [
+    "Kerberos"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/ldap": {
+   "groups": [
+    "LDAP"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/persistence": {
+   "groups": [
+    "Persistence"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/cluster": {
+   "groups": [
+    "Cluster"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/wstrust": {
+   "groups": [
+    "WS-Trust"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/wsfed": {
+   "groups": [
+    "WS-Federation"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/tls": {
+   "groups": [],
+   "sharedWith": {}
   }
  },
  "consolePages": [
@@ -22487,6 +22576,512 @@
   "passwordSentences": {
    "minLength": "at least {{n}} characters",
    "history": "not your current password or any of the {{n}} before it"
+  }
+ },
+ "settingsOperations": {
+  "getOauth2Settings": {
+   "page": "/admin/oauth2",
+   "title": "OAuth 2.0 / OIDC settings",
+   "what": "The authorization server's own settings. Everything about what this service will ACCEPT at /oauth2/authorize and /oauth2/token and what it puts into what comes back — separately from which authorization server a flow runs against, which is Authorization servers, and from what a token CARRIES, which is Custom claims and UserInfo claims.",
+   "notes": [
+    "oauth2.rfc9700 is a MODE, and so is oauth2.oauth21; both are off unless turned on. With them off nothing below is enforced: no PKCE is required, no redirect URI is matched exactly, no client is authenticated. That is what this service is for — a client's error paths cannot be exercised against a server that refuses nothing — and it is why the mode exists rather than the checks being on. It is restart-only, because global.https derives from it and a listener's scheme is settled when the socket is bound; a TRUST REALM can be in the mode while the process is not, which is the way to have both at once.",
+    "oauth2.oauth21 is OAuth 2.1 (draft-ietf-oauth-v2-1-16), and it turns RFC 9700 mode on — everything that mode enforces is part of 2.1 — then adds the rest: PKCE for confidential clients too, a client that has registered its own redirect URI (oauth2.redirectUris below is not read), a presented credential that must verify, a JWT client assertion addressed to the issuer alone, and no SAML client authentication. It also lets a token request leave out redirect_uri, which RFC 9700 mode refuses — so a client written for 2.1 is exercised in this mode and not in that one. Restart-only and realm-settable for the same reason.",
+    "The five sender-constraint settings ask for MORE than either specification does (#34, 2026-09-15). Neither OAuth 2.1 (section 4.3.1) nor RFC 9700 requires DPoP: section 4.3.1 asks a public client's refresh token to be sender-constrained or rotated with replay detection, and a sender-constrained access token is a SHOULD. So all five are off unless set, and no mode turns one on. oauth2.refreshTokenRotation takes the rotation answer with both modes off — the modes already rotate for every client. The four Require rows REFUSE rather than downgrade: a token request that would hand out an unconstrained refresh token is refused WHOLE, access token included, because half a token set is discovered an hour later at a refresh that cannot be made; and an unbound refresh token is refused at the refresh grant rather than bound to whoever presents it first.",
+    "The two access-token rows refuse at the RESOURCE, not at the token endpoint. This service goes on issuing bearer tokens, which every surface that accepts a presented access token then refuses — UserInfo, the step-up resource, the three OpenID4VCI endpoints, /scim/v2, the Shared Signals endpoints, the management API and the embedded debugger's listener. That is deliberate: a client under test needs to MEET the refusal. What they do not cover is what is not a presented OAuth access token — GNAP's own tokens, an RFC 7592 registration access token, and the endpoints that take a token as a parameter (introspection, revocation, token exchange). Two consequences worth knowing before you turn one on: the API explorer stops working while DPoP is required, because its script sends a plain Bearer header; and the mutual TLS rows need global.https, without which every affected request is refused rather than waved through.",
+    "This console and the user portal keep working, and the debugger is an ordinary client. /admin and /portal are OpenID Connect clients of this service; since 2026-09-15 they carry a DPoP key of their own and prove it on every back-channel token call, so the DPoP rows do not lock you out. They are EXEMPT from oauth2.refreshTokenRequireMtls alone, because their token requests are loopback calls from this process to itself and there is no certificate story to tell about one. The debugger's client is not exempt from anything: point it at a realm that requires a constraint and configure it to meet one, the same as any other client here.",
+    "oauth2.breakIdTokenNonce makes this service wrong on purpose. Turn it on and every ID Token carries a nonce that is not the one the client sent, so a client that does not check gets a token it should have refused. It is the same device as the reserved password invalid and the Kerberos names that stay unknown: a permissive server is hard to write error handling against, so the errors have to be reachable deliberately. In development mode only: a realm in product mode ignores it where the ID Token is built, logs that once (STS-CORE-0106), and refuses turning it on (STS-CORE-0103)."
+   ],
+   "links": [
+    {
+     "href": "/.well-known/openid-configuration",
+     "what": "the discovery document"
+    },
+    {
+     "href": "/oauth2/rfc9700",
+     "what": "what RFC 9700 mode enforces"
+    },
+    {
+     "href": "/oauth2/oauth21",
+     "what": "what OAuth 2.1 mode enforces"
+    },
+    {
+     "href": "/oauth2/fapi",
+     "what": "which FAPI profile is in force, and what it enforces"
+    },
+    {
+     "href": "/admin/token-lifetimes",
+     "what": "how long what it issues lasts"
+    },
+    {
+     "href": "/admin/tokens",
+     "what": "what has been issued"
+    }
+   ],
+   "leadHtml": "<strong>The authorization server's own settings.</strong> Everything about what this service will ACCEPT at <code>/oauth2/authorize</code> and <code>/oauth2/token</code> and what it puts into what comes back — separately from which authorization server a flow runs against, which is <a href=\"/admin/authorization-servers\">Authorization servers</a>, and from what a token CARRIES, which is <a href=\"/admin/claims\">Custom claims</a> and <a href=\"/admin/userinfo-claims\">UserInfo claims</a>.",
+   "alsoHtml": [
+    "<strong><code>oauth2.rfc9700</code> is a MODE, and so is <code>oauth2.oauth21</code></strong>; both are off unless turned on. With them off nothing below is enforced: no PKCE is required, no redirect URI is matched exactly, no client is authenticated. That is what this service is for — a client's error paths cannot be exercised against a server that refuses nothing — and it is why the mode exists rather than the checks being on. It is restart-only, because <code>global.https</code> derives from it and a listener's scheme is settled when the socket is bound; a TRUST REALM can be in the mode while the process is not, which is the way to have both at once.",
+    "<strong><code>oauth2.oauth21</code> is OAuth 2.1 (draft-ietf-oauth-v2-1-16), and it turns RFC 9700 mode on</strong> — everything that mode enforces is part of 2.1 — then adds the rest: PKCE for confidential clients too, a client that has registered its own redirect URI (<code>oauth2.redirectUris</code> below is not read), a presented credential that must verify, a JWT client assertion addressed to the issuer alone, and no SAML client authentication. It also lets a token request leave out <code>redirect_uri</code>, which RFC 9700 mode refuses — so a client written for 2.1 is exercised in this mode and not in that one. Restart-only and realm-settable for the same reason.",
+    "<strong>The five sender-constraint settings ask for MORE than either specification does (#34, 2026-09-15).</strong> Neither OAuth 2.1 (section 4.3.1) nor RFC 9700 requires DPoP: section 4.3.1 asks a public client's refresh token to be sender-constrained <em>or</em> rotated with replay detection, and a sender-constrained access token is a SHOULD. So all five are off unless set, and no mode turns one on. <code>oauth2.refreshTokenRotation</code> takes the rotation answer with both modes off — the modes already rotate for every client. The four <code>Require</code> rows REFUSE rather than downgrade: a token request that would hand out an unconstrained refresh token is refused WHOLE, access token included, because half a token set is discovered an hour later at a refresh that cannot be made; and an unbound refresh token is refused at the refresh grant rather than bound to whoever presents it first.",
+    "<strong>The two access-token rows refuse at the RESOURCE, not at the token endpoint.</strong> This service goes on issuing bearer tokens, which every surface that accepts a presented access token then refuses — UserInfo, the step-up resource, the three OpenID4VCI endpoints, <code>/scim/v2</code>, the Shared Signals endpoints, <a href=\"/admin-api\">the management API</a> and the embedded debugger's listener. That is deliberate: a client under test needs to MEET the refusal. What they do not cover is what is not a presented OAuth access token — GNAP's own tokens, an RFC 7592 registration access token, and the endpoints that take a token as a parameter (introspection, revocation, token exchange). <strong>Two consequences worth knowing before you turn one on</strong>: <a href=\"/admin/api-explorer\">the API explorer</a> stops working while DPoP is required, because its script sends a plain <code>Bearer</code> header; and the mutual TLS rows need <code>global.https</code>, without which every affected request is refused rather than waved through.",
+    "<strong>This console and the user portal keep working, and the debugger is an ordinary client.</strong> <code>/admin</code> and <code>/portal</code> are OpenID Connect clients of this service; since 2026-09-15 they carry a DPoP key of their own and prove it on every back-channel token call, so the DPoP rows do not lock you out. They are EXEMPT from <code>oauth2.refreshTokenRequireMtls</code> alone, because their token requests are loopback calls from this process to itself and there is no certificate story to tell about one. The debugger's client is not exempt from anything: point it at a realm that requires a constraint and configure it to meet one, the same as any other client here.",
+    "<strong><code>oauth2.breakIdTokenNonce</code> makes this service wrong on purpose.</strong> Turn it on and every ID Token carries a <code>nonce</code> that is not the one the client sent, so a client that does not check gets a token it should have refused. It is the same device as the reserved password <code>invalid</code> and the Kerberos names that stay unknown: a permissive server is hard to write error handling against, so the errors have to be reachable deliberately. <strong>In development mode only</strong>: a realm in product mode ignores it where the ID Token is built, logs that once (STS-CORE-0106), and refuses turning it on (STS-CORE-0103)."
+   ],
+   "settingsPage": "/admin/oauth2",
+   "settingsGroups": [
+    "OAuth 2.0 / OIDC"
+   ]
+  },
+  "getOid4vciSettings": {
+   "page": "/admin/oid4vci",
+   "title": "OpenID4VCI",
+   "what": "The OpenID4VCI credential issuer, and the settings around it. What a credential CONTAINS is Credential claims on the combined page; these are the ones about the exchange — where a holder is sent, which authorization server the credential endpoint will take a token from, how big a batch may be, and how long a deferred issuance pretends to take.",
+   "notes": [
+    "Every credential names its status. A dc+sd-jwt and a jwt_vc_json credential carry a Token Status List reference and a jwt_vc_json and an ldp_vc a Bitstring Status List entry, served at /oid4vci/status-lists and signed with the credential key — which may be post-quantum. oid4vci.statusListTtlS is how long a verifier may keep a list; Monitoring &rarr; Verifiable Credentials suspends and revokes.",
+    "Key attestations. A wallet may say how its key is kept (OpenID4VCI Appendix D); one signed by a certificate in oid4vci.keyAttestationTrustedCertificates is recorded, and decides whether a wallet sign-in claims hwk and acr \"mfa\". oid4vci.keyAttestationRequired requires one.",
+    "A configuration may bind to the person's DID. One named in oid4vci.didHolderBinding takes only a proof whose kid is a did:jwk or did:key the person proved on their Self-issued IDs page, and its credentials carry that DID — so every copy, a batch's too, is linkable to the others. Off for every configuration by default; did:web is offered only for a DID this realm publishes for the person and they proved with a wallet, and the credential names its version.",
+    "A person may have this realm publish a did:web for them (did.personPublishing, off by default), from their Self-issued IDs page, at a random address with every version of its keys kept. did.personCustody says who holds the key: their wallet (the default), this realm, or the person after one download.",
+    "The two DID settings change what a VERIFIER has to resolve, and they are restart-only. With oid4vci.sdJwtIssuerDid or oid4vci.ldpVcIssuerDid on, the issuer names itself with a did:web identifier instead of an https URL, so the key a verifier fetches comes from a DID document rather than from JWKS. They are read while the issuer metadata is being built, which is why they cannot be changed while the service runs.",
+    "Nothing in an issued credential is verified. The values come off the holder's directory entry and the entry is created for anybody who asks; a diploma issued here says whatever Credential claims selected. What is real is the signature, the proofs and the formats — which is the half a wallet has to get right."
+   ],
+   "links": [
+    {
+     "href": "/.well-known/openid-credential-issuer",
+     "what": "the issuer metadata"
+    },
+    {
+     "href": "/admin/vc#vc-tab-claims",
+     "what": "what a credential carries"
+    }
+   ],
+   "leadHtml": "<strong>The OpenID4VCI credential issuer, and the settings around it.</strong> What a credential CONTAINS is <a href=\"/admin/vc#vc-tab-claims\">Credential claims</a> on the combined page; these are the ones about the exchange — where a holder is sent, which authorization server the credential endpoint will take a token from, how big a batch may be, and how long a deferred issuance pretends to take.",
+   "alsoHtml": [
+    "<strong>Every credential names its status.</strong> A dc+sd-jwt and a jwt_vc_json credential carry a Token Status List reference and a jwt_vc_json and an ldp_vc a Bitstring Status List entry, served at <code>/oid4vci/status-lists</code> and signed with the credential key — which may be post-quantum. <code>oid4vci.statusListTtlS</code> is how long a verifier may keep a list; <a href=\"/admin/vc/monitor\">Monitoring &rarr; Verifiable Credentials</a> suspends and revokes.",
+    "<strong>Key attestations.</strong> A wallet may say how its key is kept (OpenID4VCI Appendix D); one signed by a certificate in <code>oid4vci.keyAttestationTrustedCertificates</code> is recorded, and decides whether a wallet sign-in claims <code>hwk</code> and <code>acr \"mfa\"</code>. <code>oid4vci.keyAttestationRequired</code> requires one.",
+    "<strong>A configuration may bind to the person's DID.</strong> One named in <code>oid4vci.didHolderBinding</code> takes only a proof whose <code>kid</code> is a <code>did:jwk</code> or <code>did:key</code> the person proved on their Self-issued IDs page, and its credentials carry that DID — so every copy, a batch's too, is linkable to the others. Off for every configuration by default; <code>did:web</code> is offered only for a DID this realm publishes for the person and they proved with a wallet, and the credential names its version.",
+    "<strong>A person may have this realm publish a did:web for them</strong> (<code>did.personPublishing</code>, off by default), from their Self-issued IDs page, at a random address with every version of its keys kept. <code>did.personCustody</code> says who holds the key: their wallet (the default), this realm, or the person after one download.",
+    "<strong>The two DID settings change what a VERIFIER has to resolve, and they are restart-only.</strong> With <code>oid4vci.sdJwtIssuerDid</code> or <code>oid4vci.ldpVcIssuerDid</code> on, the issuer names itself with a <code>did:web</code> identifier instead of an https URL, so the key a verifier fetches comes from a DID document rather than from JWKS. They are read while the issuer metadata is being built, which is why they cannot be changed while the service runs.",
+    "<strong>Nothing in an issued credential is verified.</strong> The values come off the holder's directory entry and the entry is created for anybody who asks; a diploma issued here says whatever <a href=\"/admin/vc#vc-tab-claims\">Credential claims</a> selected. What is real is the signature, the proofs and the formats — which is the half a wallet has to get right."
+   ],
+   "settingsPage": "/admin/vc",
+   "settingsGroups": [
+    "OID4VCI",
+    "Person DIDs",
+    "W3C VC API"
+   ]
+  },
+  "getOid4vpSettings": {
+   "page": "/admin/oid4vp",
+   "title": "OpenID4VP",
+   "what": "The OpenID4VP Verifier, whose verifications start at POST /admin-api/verifications/start, and the settings around its request. The DCQL query — which credential, which claims — is Verifier request on the combined page; these settings are the client identifier it presents as, where it sends a holder to present, how fresh a Key Binding JWT has to be, the claims it asks for when nothing else has been chosen — the settings that govern signing in with a wallet, and how long a status list another issuer published is kept.",
+   "notes": [
+    "A presentation can sign somebody in, at /authn/wallet. oid4vp.signIn offers \"Sign in with a wallet\" on the sign-in screen: a holder-bound credential this realm issued — in any format oid4vp.signInFormats names: SD-JWT VC, JWT VC or LDP VC — on an access token it verified and nobody has disowned since, presented with a fresh holder proof, signs in the directory entry it was issued for, with amr [\"pop\"] (and hwk, and acr \"mfa\", where a verified key attestation says so). A credential from a trusted foreign issuer, another realm or a foreign access token still verifies, is recorded on /admin/users as a presentation, and signs nobody in. A verification an administrator or an application starts signs nobody in whatever it is shown: nobody there asked to be signed in.",
+    "The Digital Credentials API is the default way in, and the plain QR code is off. A browser that has the API asks a wallet on this device or a nearby one, which the browser checks is near it; oid4vp.signInDcApiResponseMode decides whether the answer is encrypted. oid4vp.signInCrossDevice adds a plain QR code for a wallet the browser cannot reach — the one path somebody can relay to a victim, which is why it is off.",
+    "Every credential's status is consulted. One this realm issued is read from Monitoring &rarr; Verifiable Credentials; one a trusted foreign issuer signed has its status list fetched, kept for its ttl and at most oid4vp.statusListMaxCacheS, and a credential whose status cannot be read is refused. So is one that names no status (oid4vp.requireStatusReference, all by default in both modes), and an ldp_vc whose presentation withheld its credentialStatus, which the request asks for; a trusted issuer that publishes no status is exempted by its certificate's thumbprint in oid4vp.statusOptionalIssuers. The result page names the rule that refused."
+   ],
+   "links": [
+    {
+     "href": "/admin/vc#vc-tab-verifier-request",
+     "what": "what it asks for"
+    }
+   ],
+   "leadHtml": "<strong>The OpenID4VP Verifier, whose verifications start at <code>POST /admin-api/verifications/start</code>, and the settings around its request.</strong> The DCQL query — which credential, which claims — is <a href=\"/admin/vc#vc-tab-verifier-request\">Verifier request</a> on the combined page; these settings are the client identifier it presents as, where it sends a holder to present, how fresh a Key Binding JWT has to be, the claims it asks for when nothing else has been chosen — the settings that govern signing in with a wallet, and how long a status list another issuer published is kept.",
+   "alsoHtml": [
+    "<strong>A presentation can sign somebody in, at <code>/authn/wallet</code>.</strong> <code>oid4vp.signIn</code> offers \"Sign in with a wallet\" on the sign-in screen: a holder-bound credential <em>this realm</em> issued — in any format <code>oid4vp.signInFormats</code> names: SD-JWT VC, JWT VC or LDP VC — on an access token it verified and nobody has disowned since, presented with a fresh holder proof, signs in the directory entry it was issued for, with <code>amr [\"pop\"]</code> (and <code>hwk</code>, and <code>acr \"mfa\"</code>, where a verified key attestation says so). A credential from a trusted foreign issuer, another realm or a foreign access token still verifies, is recorded on <a href=\"/admin/users\">/admin/users</a> as a presentation, and signs nobody in. A verification an administrator or an application starts signs nobody in whatever it is shown: nobody there asked to be signed in.",
+    "<strong>The Digital Credentials API is the default way in, and the plain QR code is off.</strong> A browser that has the API asks a wallet on this device or a nearby one, which the browser checks is near it; <code>oid4vp.signInDcApiResponseMode</code> decides whether the answer is encrypted. <code>oid4vp.signInCrossDevice</code> adds a plain QR code for a wallet the browser cannot reach — the one path somebody can relay to a victim, which is why it is off.",
+    "<strong>Every credential's status is consulted.</strong> One this realm issued is read from <a href=\"/admin/vc/monitor\">Monitoring &rarr; Verifiable Credentials</a>; one a trusted foreign issuer signed has its status list fetched, kept for its ttl and at most <code>oid4vp.statusListMaxCacheS</code>, and a credential whose status cannot be read is refused. <strong>So is one that names no status</strong> (<code>oid4vp.requireStatusReference</code>, <code>all</code> by default in both modes), and an ldp_vc whose presentation withheld its <code>credentialStatus</code>, which the request asks for; a trusted issuer that publishes no status is exempted by its certificate's thumbprint in <code>oid4vp.statusOptionalIssuers</code>. The result page names the rule that refused."
+   ],
+   "settingsPage": "/admin/vc",
+   "settingsGroups": [
+    "OID4VP"
+   ]
+  },
+  "getTotpSettings": {
+   "page": "/admin/totp",
+   "title": "TOTP MFA",
+   "what": "An authenticator app as a second factor — RFC 6238 over RFC 4226 — and the eight parameters the specification leaves open. A person enrols one at /portal/mfa or while spending an activation link: a QR code this server drew, and the same secret in base32 beside it. Codes are checked FOR REAL in both modes, which almost nothing else on this service is. Who actually holds one is Users, and clearing an enrolment is on that person's own row.",
+   "notes": [
+    "Changing the digest, the digits or the period affects NEW enrolments only. An existing secret is verified with the parameters it was enrolled under — the ones the QR code told the app — because this service cannot change them retrospectively and a setting that silently locked out everybody who had already enrolled would be the worst kind of knob. The skew window is the exception and applies to everybody: how much a deployment forgives a drifting clock is a policy rather than something the app was told.",
+    "LEAVE THE DIGEST AT SHA1 UNLESS YOU ARE TESTING EXACTLY THAT. Several widely used authenticator apps — Google Authenticator among them — IGNORE the algorithm parameter in the QR code and always compute SHA-1, so any other value produces a code that scans perfectly and then generates codes this service refuses, with nothing anywhere saying why. SHA-1 is not a weakness here: this is a keyed MAC over a counter, not a collision-resistant digest.",
+    "A shared secret can be read back and a password cannot. Verifying a code means COMPUTING it, so the secret is stored in a form this service can recover — unlike userPassword, which is a scrypt hash. In PRODUCT mode it is sealed under the same key-encryption key that protects the signing keys, so the directory page shows ciphertext; in DEVELOPMENT mode it is stored as base32, because the key-encryption key there is generated per run and sealing would mean an authenticator that silently stopped working at the next restart. That is also the whole reason this mechanism is a SECOND factor and can never be made a first one.",
+    "A code can only be used once (RFC 6238 section 5.2). The step this service last accepted is stored on the enrolment, so somebody signing in twice inside one window is asked to wait for the next code. That is correct and it surprises people, which is why the sign-in screen says which of the two happened rather than answering &ldquo;wrong code&rdquo; to both."
+   ],
+   "links": [
+    {
+     "href": "/admin/webauthn",
+     "what": "the other second factor"
+    },
+    {
+     "href": "/admin/users",
+     "what": "who holds one, and how to clear it"
+    },
+    {
+     "href": "/admin/crypto-metadata",
+     "what": "every algorithm this service performs"
+    },
+    {
+     "href": "/portal/mfa",
+     "what": "where a person enrols one"
+    }
+   ],
+   "leadHtml": "<strong>An authenticator app as a second factor — RFC 6238 over RFC 4226 — and the eight parameters the specification leaves open.</strong> A person enrols one at <code>/portal/mfa</code> or while spending an activation link: a QR code this server drew, and the same secret in base32 beside it. <strong>Codes are checked FOR REAL in both modes</strong>, which almost nothing else on this service is. Who actually holds one is <a href=\"/admin/users\">Users</a>, and clearing an enrolment is on that person's own row.",
+   "alsoHtml": [
+    "<strong>Changing the digest, the digits or the period affects NEW enrolments only.</strong> An existing secret is verified with the parameters it was enrolled under — the ones the QR code told the app — because this service cannot change them retrospectively and a setting that silently locked out everybody who had already enrolled would be the worst kind of knob. <strong>The skew window is the exception and applies to everybody</strong>: how much a deployment forgives a drifting clock is a policy rather than something the app was told.",
+    "<strong>LEAVE THE DIGEST AT SHA1 UNLESS YOU ARE TESTING EXACTLY THAT.</strong> Several widely used authenticator apps — Google Authenticator among them — IGNORE the <code>algorithm</code> parameter in the QR code and always compute SHA-1, so any other value produces a code that scans perfectly and then generates codes this service refuses, with nothing anywhere saying why. SHA-1 is not a weakness here: this is a keyed MAC over a counter, not a collision-resistant digest.",
+    "<strong>A shared secret can be read back and a password cannot.</strong> Verifying a code means COMPUTING it, so the secret is stored in a form this service can recover — unlike <code>userPassword</code>, which is a scrypt hash. In PRODUCT mode it is sealed under the same key-encryption key that protects the signing keys, so <a href=\"/admin/ldap/directory\">the directory page</a> shows ciphertext; in DEVELOPMENT mode it is stored as base32, because the key-encryption key there is generated per run and sealing would mean an authenticator that silently stopped working at the next restart. That is also the whole reason this mechanism is a SECOND factor and can never be made a first one.",
+    "<strong>A code can only be used once</strong> (RFC 6238 section 5.2). The step this service last accepted is stored on the enrolment, so somebody signing in twice inside one window is asked to wait for the next code. That is correct and it surprises people, which is why the sign-in screen says which of the two happened rather than answering &ldquo;wrong code&rdquo; to both."
+   ],
+   "settingsPage": "/admin/totp",
+   "settingsGroups": [
+    "Second-factor requirement",
+    "TOTP MFA"
+   ]
+  },
+  "getBackupCodesSettings": {
+   "page": "/admin/backup-codes",
+   "title": "Recovery codes",
+   "what": "The way back in when the second factor is not to hand. A set of single-use codes that a person generates for themselves on /portal/mfa, is shown once, and which is stored — one scrypt hash per code — only when they confirm they have kept it. Generating again REPLACES the set. There is no control here or on /admin-api that issues a set or shows a code. Who holds one is Users, and clearing a set is on that person's own row.",
+   "notes": [
+    "THIS IS THE ONLY MECHANISM ON THIS CONSOLE THAT NO SPECIFICATION DEFINES. Everything else here implements somebody's document and can be checked against it; there is no RFC for a recovery code. What every identity provider does converges anyway — a handful of random strings, shown once, each accepted once — and the decisions that are left are this service's own. common/backup_codes.ts argues each of them, and the four settings below are what it leaves open.",
+    "THEY ARE HASHED, ONE SCRYPT HASH PER CODE, AS userPassword IS (SINCE 2026-09-11). This repository's own rule is that a secret this service only VERIFIES is hashed. Until 2026-09-11 the codes were encrypted instead, so that a person could read their remaining codes back; the set is now shown exactly once, when it is generated, and nothing — the person included — can see a stored code again.",
+    "A PERSON GENERATES THEIR OWN SET, AND GENERATING AGAIN REPLACES IT. Until 2026-09-11 a set was issued automatically, once, the first time a second factor was enrolled. Now it is generated on /portal/mfa, held apart from the entry until the person confirms they have kept it, and REPLACES any earlier set whole — a set is never topped up. A person who holds a second factor and no set is prompted to generate one. An operator's Clear deletes a set.",
+    "CHANGING THESE SETTINGS AFFECTS NEW SETS ONLY, AND NOTHING HERE SAYS \"NEW ENROLMENTS ONLY\" THE WAY TOTP DOES. That page has to, because its parameters were TOLD TO AN APP this service cannot reach. Nothing here is told to anybody: a recovery code is compared against its stored hash, so shortening the length changes what the next set looks like and leaves an existing set matching exactly as it did."
+   ],
+   "links": [
+    {
+     "href": "/admin/totp",
+     "what": "one of the two factors these stand in for"
+    },
+    {
+     "href": "/admin/webauthn",
+     "what": "the other"
+    },
+    {
+     "href": "/admin/users",
+     "what": "who holds a set, and how to clear one"
+    },
+    {
+     "href": "/portal/mfa",
+     "what": "where a person generates their own set"
+    }
+   ],
+   "leadHtml": "<strong>The way back in when the second factor is not to hand.</strong> A set of single-use codes that a person generates for themselves on <code>/portal/mfa</code>, is shown once, and which is stored — one scrypt hash per code — only when they confirm they have kept it. Generating again REPLACES the set. There is no control here or on <code>/admin-api</code> that issues a set or shows a code. Who holds one is <a href=\"/admin/users\">Users</a>, and clearing a set is on that person's own row.",
+   "alsoHtml": [
+    "<strong>THIS IS THE ONLY MECHANISM ON THIS CONSOLE THAT NO SPECIFICATION DEFINES.</strong> Everything else here implements somebody's document and can be checked against it; there is no RFC for a recovery code. What every identity provider does converges anyway — a handful of random strings, shown once, each accepted once — and the decisions that are left are this service's own. <code>common/backup_codes.ts</code> argues each of them, and the four settings below are what it leaves open.",
+    "<strong>THEY ARE HASHED, ONE SCRYPT HASH PER CODE, AS <code>userPassword</code> IS (SINCE 2026-09-11).</strong> This repository's own rule is that a secret this service only VERIFIES is hashed. Until 2026-09-11 the codes were encrypted instead, so that a person could read their remaining codes back; the set is now shown exactly once, when it is generated, and nothing — the person included — can see a stored code again.",
+    "<strong>A PERSON GENERATES THEIR OWN SET, AND GENERATING AGAIN REPLACES IT.</strong> Until 2026-09-11 a set was issued automatically, once, the first time a second factor was enrolled. Now it is generated on <code>/portal/mfa</code>, held apart from the entry until the person confirms they have kept it, and REPLACES any earlier set whole — a set is never topped up. A person who holds a second factor and no set is prompted to generate one. An operator's Clear deletes a set.",
+    "<strong>CHANGING THESE SETTINGS AFFECTS NEW SETS ONLY, AND NOTHING HERE SAYS \"NEW ENROLMENTS ONLY\" THE WAY <a href=\"/admin/totp\">TOTP</a> DOES.</strong> That page has to, because its parameters were TOLD TO AN APP this service cannot reach. Nothing here is told to anybody: a recovery code is compared against its stored hash, so shortening the length changes what the next set looks like and leaves an existing set matching exactly as it did."
+   ],
+   "settingsPage": "/admin/backup-codes",
+   "settingsGroups": [
+    "Backup codes"
+   ]
+  },
+  "getWebauthnSettings": {
+   "page": "/admin/webauthn",
+   "title": "WebAuthn",
+   "what": "Security keys — W3C WebAuthn Level 3 over FIDO CTAP2 — as a second factor OR as the only credential on an account. This service is the relying party: it builds the ceremony's options, and it verifies the challenge, the origin, the RP ID hash, the flags and the signature when the result comes back. Who holds a key is Users, and removing one is on that person's own row.",
+   "notes": [
+    "NOT ONE of these settings existed until 2026-09-10, and the sentence they replace is worth knowing. This service said WebAuthn had nothing an operator could usefully turn — true of the cryptography and false of the ceremony. The RP name, the algorithms offered, the user verification requirement, the attestation conveyance and the timeout were literals in a string, so a client author trying to find out what their client does with attestation: \"none\" or with a resident key had no way to ask this service for one.",
+    "ONE of them is enforced and the rest are requests. webauthn.userVerification is sent to the browser AND checked against the UV flag when the ceremony returns, because that flag is inside the bytes the authenticator signed. Nothing signed says what the browser was asked about the attestation conveyance, the resident key or the attachment — so a check on those would be a comparison against a value this service itself supplied. What it does instead is RECORD what came back.",
+    "THE ATTESTATION STATEMENT IS VERIFIED (SINCE #105) under webauthn.attestationPolicy — in product mode by default, all eight formats of WebAuthn Level 3 section 8, the chain against this realm's anchors and the FIDO Metadata Service's roots, revocation, and MDS status reports. What each key's statement proved is on its row under Users.",
+    "Raising user verification does not change what a session CLAIMS. A passwordless sign-in still records amr [\"hwk\"] and acr \"1\" — one factor — even under required. RFC 8176 has no value for the authenticator verified the user that this service could honestly assert, and claiming mfa because the ceremony was phishing-resistant would be the exact fake this profile refuses everywhere else.",
+    "The RP ID is the host this service was reached on, and webauthn.rpId can only widen it to a registrable domain suffix. That is WebAuthn's own rule and browsers enforce it; this service enforces it too, refusing anything else by name in the log — because a browser refuses it with a SecurityError the ceremony reports as one of its several indistinguishable failures, so a wrong value looks like a broken authenticator. Widening it means every host under that suffix can assert these credentials."
+   ],
+   "links": [
+    {
+     "href": "/admin/totp",
+     "what": "the other second factor"
+    },
+    {
+     "href": "/admin/users",
+     "what": "who holds a key, and how to remove one"
+    },
+    {
+     "href": "/admin/crypto-metadata",
+     "what": "every algorithm this service performs"
+    },
+    {
+     "href": "/portal/keys",
+     "what": "where a person enrols one"
+    }
+   ],
+   "leadHtml": "<strong>Security keys — W3C WebAuthn Level 3 over FIDO CTAP2 — as a second factor OR as the only credential on an account.</strong> This service is the relying party: it builds the ceremony's options, and it verifies the challenge, the origin, the RP ID hash, the flags and the signature when the result comes back. Who holds a key is <a href=\"/admin/users\">Users</a>, and removing one is on that person's own row.",
+   "alsoHtml": [
+    "<strong>NOT ONE of these settings existed until 2026-09-10, and the sentence they replace is worth knowing.</strong> This service said WebAuthn had nothing an operator could usefully turn — true of the cryptography and false of the ceremony. The RP name, the algorithms offered, the user verification requirement, the attestation conveyance and the timeout were literals in a string, so a client author trying to find out what their client does with <code>attestation: \"none\"</code> or with a resident key had no way to ask this service for one.",
+    "<strong>ONE of them is enforced and the rest are requests.</strong> <code>webauthn.userVerification</code> is sent to the browser AND checked against the UV flag when the ceremony returns, because that flag is inside the bytes the authenticator signed. Nothing signed says what the browser was asked about the attestation conveyance, the resident key or the attachment — so a check on those would be a comparison against a value this service itself supplied. What it does instead is RECORD what came back.",
+    "<strong>THE ATTESTATION STATEMENT IS VERIFIED (SINCE #105)</strong> under <code>webauthn.attestationPolicy</code> — in product mode by default, all eight formats of WebAuthn Level 3 section 8, the chain against this realm's anchors and the FIDO Metadata Service's roots, revocation, and MDS status reports. What each key's statement proved is on its row under <a href=\"/admin/users\">Users</a>.",
+    "<strong>Raising user verification does not change what a session CLAIMS.</strong> A passwordless sign-in still records <code>amr [\"hwk\"]</code> and <code>acr \"1\"</code> — one factor — even under <code>required</code>. RFC 8176 has no value for <em>the authenticator verified the user</em> that this service could honestly assert, and claiming <code>mfa</code> because the ceremony was phishing-resistant would be the exact fake this profile refuses everywhere else.",
+    "<strong>The RP ID is the host this service was reached on, and <code>webauthn.rpId</code> can only widen it to a registrable domain suffix.</strong> That is WebAuthn's own rule and browsers enforce it; this service enforces it too, refusing anything else by name in the log — because a browser refuses it with a <code>SecurityError</code> the ceremony reports as one of its several indistinguishable failures, so a wrong value looks like a broken authenticator. Widening it means every host under that suffix can assert these credentials."
+   ],
+   "settingsPage": "/admin/webauthn",
+   "settingsGroups": [
+    "Second-factor requirement",
+    "WebAuthn"
+   ]
+  },
+  "getKerberosSettings": {
+   "page": "/admin/kerberos",
+   "title": "Kerberos settings",
+   "what": "The KDC on raw TCP and UDP 88, the same exchange over MS-KKDCP at /KdcProxy, the Kerberos-protected service, and SPNEGO over HTTP. Most of these settings are restart-only and the reason is one fact: the principal database — every long-term key in it — is built from them when the process starts, so a realm or a password changed at runtime would leave every existing ticket undecryptable by the service that issued it.",
+   "notes": [
+    "This is the one family here that cannot be permissive the way the rest of this service is. A Kerberos password IS the key: pre-authentication and the AS-REP's enc-part are both encrypted under it, so a KDC that accepted anything would still have to pick a key the client could not guess. The permissiveness moved into the ACCOUNT POLICY instead — one password shared by every user account (krb5.userPassword), an account created for any name on first sight — and the acceptor still decrypts a real ticket under a real key and refuses a replay. So the verification is real and the account policy is not, and those are two different sentences.",
+    "krb5.unknownUsers is how a client's error path is reached. Every other name gets an account, so these are the only ones that can produce KDC_ERR_C_PRINCIPAL_UNKNOWN. krb5.clockOffset is the same device for skew: it moves this KDC's idea of now so that a client can be shown KRB_AP_ERR_SKEW without anybody touching a system clock.",
+    "krb5.spnegoAuthentication is a door and not a mode. With it on, a ticket presented at /authn/spnego starts a browser sign-on session — the same session /oauth2/authorize, /wsfed, /saml2/sso and this console read — which makes Kerberos an authentication mechanism for every application here. With it off that endpoint answers 403 naming this setting."
+   ],
+   "links": [
+    {
+     "href": "/authn/spnego",
+     "what": "sign in with a ticket"
+    },
+    {
+     "href": "/admin/delegation",
+     "what": "what S4U and a forwarded TGT did here"
+    }
+   ],
+   "leadHtml": "<strong>The KDC on raw TCP and UDP 88, the same exchange over MS-KKDCP at <code>/KdcProxy</code>, the Kerberos-protected service, and SPNEGO over HTTP.</strong> Most of these settings are restart-only and the reason is one fact: the principal database — every long-term key in it — is built from them when the process starts, so a realm or a password changed at runtime would leave every existing ticket undecryptable by the service that issued it.",
+   "alsoHtml": [
+    "<strong>This is the one family here that cannot be permissive the way the rest of this service is.</strong> A Kerberos password IS the key: pre-authentication and the AS-REP's enc-part are both encrypted under it, so a KDC that accepted anything would still have to pick a key the client could not guess. The permissiveness moved into the ACCOUNT POLICY instead — one password shared by every user account (<code>krb5.userPassword</code>), an account created for any name on first sight — and the acceptor still decrypts a real ticket under a real key and refuses a replay. So the verification is real and the account policy is not, and those are two different sentences.",
+    "<strong><code>krb5.unknownUsers</code> is how a client's error path is reached.</strong> Every other name gets an account, so these are the only ones that can produce <code>KDC_ERR_C_PRINCIPAL_UNKNOWN</code>. <code>krb5.clockOffset</code> is the same device for skew: it moves this KDC's idea of now so that a client can be shown <code>KRB_AP_ERR_SKEW</code> without anybody touching a system clock.",
+    "<strong><code>krb5.spnegoAuthentication</code> is a door and not a mode.</strong> With it on, a ticket presented at <code>/authn/spnego</code> starts a browser sign-on session — the same session <code>/oauth2/authorize</code>, <code>/wsfed</code>, <code>/saml2/sso</code> and this console read — which makes Kerberos an authentication mechanism for every application here. With it off that endpoint answers 403 naming this setting."
+   ],
+   "settingsPage": "/admin/kerberos",
+   "settingsGroups": [
+    "Kerberos"
+   ]
+  },
+  "getLdapSettings": {
+   "page": "/admin/ldap",
+   "title": "LDAP / LDAPS",
+   "what": "The embedded directory: RFC 4511 on raw TCP 389, and the same handlers behind TLS on 636. One store behind both, and it is not a copy of anything — it IS where people, groups, applications, federation relationships and the SPIFFE registry live, so what a SCIM POST writes and what an ldapadd writes are one entry.",
+   "notes": [
+    "In development mode no bind is refused but the reserved password invalid: any DN, any password, anonymous, on 389 and 636 alike, because what the directory is for there is being READ by a client that expects a directory, and a bind that failed would only ever stop that. In product mode the password is verified: only a person binds, on 636, against the hashed userPassword on their entry, and an anonymous bind or any bind on 389 is refused. The mode decides it, not a setting below, which is why none of them is called authRequired.",
+    "The base DN is the DEFAULT realm's directory, and every other realm is a subtree beneath it. A search scoped to dc=example,dc=com answers from the default realm only; -b \"dc=acme,dc=example,dc=com\" answers from acme's. The realm is in the DN because a socket has no path to put a segment in — see Trust realms."
+   ],
+   "links": [
+    {
+     "href": "/admin/ldap/service",
+     "what": "the directory, and whether both sockets came up"
+    },
+    {
+     "href": "/admin/ldap/directory",
+     "what": "every entry, as a tree"
+    },
+    {
+     "href": "/admin/users",
+     "what": "the people in it"
+    },
+    {
+     "href": "/admin/groups",
+     "what": "the groups in it"
+    }
+   ],
+   "leadHtml": "<strong>The embedded directory: RFC 4511 on raw TCP 389, and the same handlers behind TLS on 636.</strong> One store behind both, and it is not a copy of anything — it IS where people, groups, applications, federation relationships and the SPIFFE registry live, so what a SCIM POST writes and what an <code>ldapadd</code> writes are one entry.",
+   "alsoHtml": [
+    "<strong>In development mode no bind is refused</strong> but the reserved password <code>invalid</code>: any DN, any password, anonymous, on 389 and 636 alike, because what the directory is for there is being READ by a client that expects a directory, and a bind that failed would only ever stop that. <strong>In product mode the password is verified</strong>: only a person binds, on 636, against the hashed <code>userPassword</code> on their entry, and an anonymous bind or any bind on 389 is refused. The mode decides it, not a setting below, which is why none of them is called <code>authRequired</code>.",
+    "<strong>The base DN is the DEFAULT realm's directory, and every other realm is a subtree beneath it.</strong> A search scoped to <code>dc=example,dc=com</code> answers from the default realm only; <code>-b \"dc=acme,dc=example,dc=com\"</code> answers from acme's. The realm is in the DN because a socket has no path to put a segment in — see <a href=\"/admin/realms\">Trust realms</a>."
+   ],
+   "settingsPage": "/admin/ldap",
+   "settingsGroups": [
+    "LDAP"
+   ]
+  },
+  "getPersistenceSettings": {
+   "page": "/admin/persistence",
+   "title": "Persistence",
+   "what": "Whether anything here survives a restart, and where it is written. Three things can be: the embedded LDAP directory — which is also where applications, federation relationships and the SPIFFE registry live — the trust realm registry, and the runtime setting changes made on pages like this one — and, in product mode on a Postgres store, a fourth: everything this process MINTS. persistence.mode decides where: memory writes nothing and is what this service did until 2026-08-27, ldif writes an RFC 2849 file per realm and needs no database, postgres writes six tables.",
+   "notes": [
+    "WHAT THIS SERVICE MINTS IS PERSISTED IN PRODUCT MODE, AND IN NO OTHER CONFIGURATION. Sessions, access tokens, ID Tokens, refresh tokens, authorization codes, pre-authorized codes, SAML artifacts, Kerberos principals and tickets, the replay caches, the statistics and the audit log all survive a restart when global.mode is product and the store is postgres. Every row is encrypted with the same key-encryption key that protects the signing keys, because a session id is a cookie value and an authorization code is redeemable — so a database dump is not a set of usable credentials.",
+    "DEVELOPMENT MODE PERSISTS NONE OF IT, and that is not unfinished either. The signing key is regenerated on every start there, so a restored token would verify against nothing and an assertion restored from a disk would be a lie. Product mode keeps its keys — which is why it requires a store — and that single fact is what makes restoring the rest of it honest. The ldif store does not hold minted state either, whatever the mode: it writes WHOLE FILES per flush, which is right for a directory somebody types into and wrong for a session table that changes on every request. The service says so once at startup rather than letting it be discovered one restart later.",
+    "SEVERAL PROCESSES AGAINST ONE STORE NOW AGREE, and this paragraph said the opposite until 2026-09-06. It read \"persistence is not coordination… one process per database\", and that was the honest description of what existed. Every change is now written to a monotonic log INSIDE the transaction that made it, and each process applies what the others committed — the directory, the realms, the settings and the minted rows alike. A LISTEN/NOTIFY nudge only makes that prompt: the log is the contract, so a missed notification costs latency and never a change. persistence.coordinate turns it off, which is what this service did before.",
+    "It shares STATE and not SOCKETS, and the difference is where the surprises are. The KDC, the two LDAP listeners, the main port and SPIFFE's sockets are bound per process and always will be. A single-use value is spent once across every process: an authorization code, a DPoP jti, a SAML artifact, a Kerberos authenticator and the rest are each spent through one atomic claim in the store, so a value one process accepted is refused by every other at once, with no window between them. A value the store cannot be asked about is refused.",
+    "A restored person shows on Users as a directory person, not as having authenticated. They exist — an entry, searchable over 389, readable over SCIM, and a token issued to them carries their attributes — and the page lists them from the directory itself. The restore does not walk them into the register of people this service has SEEN (#613): at a hundred thousand people that walk held every process for seconds at start. What the register saw in earlier runs comes back with the minted rows in product mode on postgres; in every other configuration the counts, the protocols and the per-person event list are statistics and start at zero with everything else.",
+    "A write that fails is logged and never thrown. If the database goes away, the LDAP operation that triggered the write still succeeds, this service keeps answering out of memory, and the status below turns red with the reason. Nothing is lost by the failure: the next change recomputes the same difference and writes it. A database outage taking down seventeen protocol families that do not need a database is the one failure mode this service must not have. The same is true of coordination: a process that cannot read the change log keeps answering out of its own copy, says so, and catches up when the database comes back — it does not refuse anything in the meantime."
+   ],
+   "links": [
+    {
+     "href": "/admin/ldap/service",
+     "what": "the directory, and this same status"
+    },
+    {
+     "href": "/admin/ldap/directory",
+     "what": "every entry in it"
+    },
+    {
+     "href": "/admin/realms",
+     "what": "the realms that are written down with it"
+    },
+    {
+     "href": "/admin/config",
+     "what": "the whole settings table"
+    },
+    {
+     "href": "/admin/users",
+     "what": "the people, restored and otherwise"
+    }
+   ],
+   "leadHtml": "<strong>Whether anything here survives a restart, and where it is written.</strong> Three things can be: the embedded LDAP directory — which is also where applications, federation relationships and the SPIFFE registry live — the trust realm registry, and the runtime setting changes made on pages like this one — and, in <strong>product mode</strong> on a Postgres store, a fourth: everything this process MINTS. <code>persistence.mode</code> decides where: <code>memory</code> writes nothing and is what this service did until 2026-08-27, <code>ldif</code> writes an RFC 2849 file per realm and needs no database, <code>postgres</code> writes six tables.",
+   "alsoHtml": [
+    "<strong>WHAT THIS SERVICE MINTS IS PERSISTED IN PRODUCT MODE, AND IN NO OTHER CONFIGURATION.</strong> Sessions, access tokens, ID Tokens, refresh tokens, authorization codes, pre-authorized codes, SAML artifacts, Kerberos principals and tickets, the replay caches, <a href=\"/admin/metrics\">the statistics</a> and <a href=\"/admin/audit\">the audit log</a> all survive a restart when <code>global.mode</code> is <code>product</code> and the store is <code>postgres</code>. Every row is encrypted with the same key-encryption key that protects the signing keys, because a session id is a cookie value and an authorization code is redeemable — so a database dump is not a set of usable credentials.",
+    "<strong>DEVELOPMENT MODE PERSISTS NONE OF IT, and that is not unfinished either.</strong> <strong>The signing key is regenerated on every start there</strong>, so a restored token would verify against nothing and an assertion restored from a disk would be a lie. Product mode keeps its keys — which is why it requires a store — and that single fact is what makes restoring the rest of it honest. The <code>ldif</code> store does not hold minted state either, whatever the mode: it writes WHOLE FILES per flush, which is right for a directory somebody types into and wrong for a session table that changes on every request. The service says so once at startup rather than letting it be discovered one restart later.",
+    "<strong>SEVERAL PROCESSES AGAINST ONE STORE NOW AGREE, and this paragraph said the opposite until 2026-09-06.</strong> It read \"persistence is not coordination… one process per database\", and that was the honest description of what existed. Every change is now written to a monotonic log INSIDE the transaction that made it, and each process applies what the others committed — the directory, the realms, the settings and the minted rows alike. A <code>LISTEN</code>/<code>NOTIFY</code> nudge only makes that prompt: <strong>the log is the contract</strong>, so a missed notification costs latency and never a change. <code>persistence.coordinate</code> turns it off, which is what this service did before.",
+    "<strong>It shares STATE and not SOCKETS, and the difference is where the surprises are.</strong> The KDC, the two LDAP listeners, the main port and SPIFFE's sockets are bound per process and always will be. <strong>A single-use value is spent once across every process</strong>: an authorization code, a DPoP <code>jti</code>, a SAML artifact, a Kerberos authenticator and the rest are each spent through one atomic claim in the store, so a value one process accepted is refused by every other at once, with no window between them. A value the store cannot be asked about is refused.",
+    "<strong>A restored person shows on <a href=\"/admin/users\">Users</a> as a directory person, not as having authenticated.</strong> They exist — an entry, searchable over 389, readable over SCIM, and a token issued to them carries their attributes — and the page lists them from the directory itself. The restore does not walk them into the register of people this service has SEEN (#613): at a hundred thousand people that walk held every process for seconds at start. What the register saw in earlier runs comes back with the minted rows in product mode on postgres; in every other configuration the counts, the protocols and the per-person event list are statistics and start at zero with everything else.",
+    "<strong>A write that fails is logged and never thrown.</strong> If the database goes away, the LDAP operation that triggered the write still succeeds, this service keeps answering out of memory, and the status below turns red with the reason. Nothing is lost by the failure: the next change recomputes the same difference and writes it. A database outage taking down seventeen protocol families that do not need a database is the one failure mode this service must not have. <strong>The same is true of coordination</strong>: a process that cannot read the change log keeps answering out of its own copy, says so, and catches up when the database comes back — it does not refuse anything in the meantime."
+   ],
+   "settingsPage": "/admin/persistence",
+   "settingsGroups": [
+    "Persistence"
+   ]
+  },
+  "getClusterSettings": {
+   "page": "/admin/cluster",
+   "title": "Cluster",
+   "what": "Whether several copies of this service against one postgres store behave as one service. Inside one container the processes agree because the front process coordinates them; between containers the only link used to be the change log, so a second container started, looked healthy and gave wrong answers — a code redeemed twice, a signing key one node did not publish, a revocation another node's save threw away. cluster.mode decides what happens instead: active-passive (the default in product mode on postgres) lets ONE node serve and makes the others wait before they restore or bind anything; active-active lets every node serve and refuses to start while anything in the capability table below is missing.",
+   "notes": [
+    "EVERY WRITE IS FENCED. A clustered node renews a membership row by the database's clock, and every transaction it opens checks that row — and, in active-passive mode, the service lease at the token it was acquired with — before it writes anything. A node that paused past its lifetime, lost its lease or lost its database EXITS rather than carrying on, because a node that has lost its right to write and keeps running would try again on every change.",
+    "A TAKEOVER IS ONE HEARTBEAT AFTER A CLEAN STOP — a stopping node releases its leases — and one lifetime (cluster.nodeTtlMs) after a crash. A standby has restored nothing while it waited, so it restores the store when it takes over; that is seconds, and it is the price of a standby that can never write to a store another node owns.",
+    "THE SETTINGS EVERY NODE MUST SHARE ARE CHECKED. The Kerberos keys, the mode, the public address and the rest of the list below are compared, as a digest keyed by the key-encryption key, with every live node's at startup; a node that differs does not start, because two nodes with different krbtgt keys seal tickets neither can open for the other."
+   ],
+   "links": [
+    {
+     "href": "/admin/persistence",
+     "what": "the store the cluster is built on"
+    },
+    {
+     "href": "/admin/database",
+     "what": "the database itself"
+    },
+    {
+     "href": "/admin/secrets",
+     "what": "where the key-encryption key comes from"
+    },
+    {
+     "href": "/admin/config",
+     "what": "the whole settings table"
+    }
+   ],
+   "leadHtml": "<strong>Whether several copies of this service against one postgres store behave as one service.</strong> Inside one container the processes agree because the front process coordinates them; between containers the only link used to be the change log, so a second container started, looked healthy and gave wrong answers — a code redeemed twice, a signing key one node did not publish, a revocation another node's save threw away. <code>cluster.mode</code> decides what happens instead: <code>active-passive</code> (the default in product mode on postgres) lets ONE node serve and makes the others wait before they restore or bind anything; <code>active-active</code> lets every node serve and refuses to start while anything in the capability table below is missing.",
+   "alsoHtml": [
+    "<strong>EVERY WRITE IS FENCED.</strong> A clustered node renews a membership row by the database's clock, and every transaction it opens checks that row — and, in active-passive mode, the service lease at the token it was acquired with — before it writes anything. A node that paused past its lifetime, lost its lease or lost its database EXITS rather than carrying on, because a node that has lost its right to write and keeps running would try again on every change.",
+    "<strong>A TAKEOVER IS ONE HEARTBEAT AFTER A CLEAN STOP</strong> — a stopping node releases its leases — and one lifetime (<code>cluster.nodeTtlMs</code>) after a crash. A standby has restored nothing while it waited, so it restores the store when it takes over; that is seconds, and it is the price of a standby that can never write to a store another node owns.",
+    "<strong>THE SETTINGS EVERY NODE MUST SHARE ARE CHECKED.</strong> The Kerberos keys, the mode, the public address and the rest of the list below are compared, as a digest keyed by the key-encryption key, with every live node's at startup; a node that differs does not start, because two nodes with different krbtgt keys seal tickets neither can open for the other."
+   ],
+   "settingsPage": "/admin/cluster",
+   "settingsGroups": [
+    "Cluster"
+   ]
+  },
+  "getWsTrustSettings": {
+   "page": "/admin/wstrust",
+   "title": "WS-Trust",
+   "what": "The security token service at /sts, WS-Trust 1.0 through 1.4. It answers RequestSecurityToken over SOAP for Issue, Validate, Renew and Cancel, in whichever of the four namespace versions the request used, and it will issue a SAML 1.1 or a SAML 2.0 assertion. Who its tokens say issued them is the realm's OAuth issuer, as in every protocol here (#523).",
+   "notes": [
+    "What an assertion CONTAINS is configured on the SAML pages, because it is built by the same two functions the two identity providers use — Custom SAML attributes adds attributes to it.",
+    "Every token names one issuer (#523): the realm's OAuth issuer, which is a SAML assertion's Issuer, a JWT's iss, and the entityID SAML SSO and WS-Federation publish. There is no setting for it; it follows the public base URL.",
+    "A delegation is decided by policy. An OnBehalfOf or ActAs element goes to the delegation policy (#108, #186), which refuses a may_act naming somebody else in every mode and the rest of what it decides in product mode. Delegation shows every act it recorded."
+   ],
+   "links": [
+    {
+     "href": "/sts",
+     "what": "the token service, for a person"
+    },
+    {
+     "href": "/sts/metadata",
+     "what": "its WSDL, with the credentials it accepts"
+    },
+    {
+     "href": "/sts/cert",
+     "what": "the certificate its assertions verify against"
+    },
+    {
+     "href": "/admin/saml-attributes",
+     "what": "what goes into the assertion"
+    },
+    {
+     "href": "/admin/delegation",
+     "what": "what was asked for on whose behalf"
+    }
+   ],
+   "leadHtml": "<strong>The security token service at <code>/sts</code>, WS-Trust 1.0 through 1.4.</strong> It answers <code>RequestSecurityToken</code> over SOAP for Issue, Validate, Renew and Cancel, in whichever of the four namespace versions the request used, and it will issue a SAML 1.1 or a SAML 2.0 assertion. Who its tokens say issued them is the realm's OAuth issuer, as in every protocol here (#523).",
+   "alsoHtml": [
+    "<strong>What an assertion CONTAINS is configured on the SAML pages</strong>, because it is built by the same two functions the two identity providers use — <a href=\"/admin/saml-attributes\">Custom SAML attributes</a> adds attributes to it.",
+    "<strong>Every token names one issuer (#523)</strong>: the realm's OAuth issuer, which is a SAML assertion's <code>Issuer</code>, a JWT's <code>iss</code>, and the entityID SAML SSO and WS-Federation publish. There is no setting for it; it follows the public base URL.",
+    "<strong>A delegation is decided by policy.</strong> An <code>OnBehalfOf</code> or <code>ActAs</code> element goes to the delegation policy (#108, #186), which refuses a <code>may_act</code> naming somebody else in every mode and the rest of what it decides in product mode. <a href=\"/admin/delegation\">Delegation</a> shows every act it recorded."
+   ],
+   "settingsPage": "/admin/wstrust",
+   "settingsGroups": [
+    "WS-Trust"
+   ]
+  },
+  "getWsFedSettings": {
+   "page": "/admin/wsfed",
+   "title": "WS-Federation",
+   "what": "The passive requestor profile at /wsfed, WS-Federation 1.2. A browser arrives with wa=wsignin1.0 and leaves with a SAML 1.1 assertion in a self-submitting form; wa=wsignout1.0 ends the session. The entity ID its metadata and its responses name this service by is the realm's OAuth issuer, as in every protocol here (#523), and not a setting.",
+   "notes": [
+    "The assertion is a SAML 1.1 one, so its attributes are configured next door. Custom SAML attributes decides what the assertion carries, and the SAML group on SAML 1.1 and SAML 2.0 how it is signed. This page links to them rather than drawing a third form.",
+    "Single sign-on with OAuth 2.0 / OIDC is the point of the require order. This module is loaded after the authorization server so that both read one session: sign in at /oauth2/authorize and /wsfed knows it, and the other way round.",
+    "wauth is honoured, and wreqptr is never dereferenced. A relying party that demands a security key or two factors the session does not have sends the person to sign in again with the second factor required (a step-up, since 2026-09-17), and is refused only if that one attempt still does not produce it. And this service fetches nothing from a URL a request names."
+   ],
+   "links": [
+    {
+     "href": "/wsfed",
+     "what": "the profile, for a person"
+    },
+    {
+     "href": "/FederationMetadata/2007-06/FederationMetadata.xml",
+     "what": "its metadata"
+    },
+    {
+     "href": "/admin/saml-attributes",
+     "what": "what goes into the assertion"
+    }
+   ],
+   "leadHtml": "<strong>The passive requestor profile at <code>/wsfed</code>, WS-Federation 1.2.</strong> A browser arrives with <code>wa=wsignin1.0</code> and leaves with a SAML 1.1 assertion in a self-submitting form; <code>wa=wsignout1.0</code> ends the session. The entity ID its metadata and its responses name this service by is the realm's OAuth issuer, as in every protocol here (#523), and not a setting.",
+   "alsoHtml": [
+    "<strong>The assertion is a SAML 1.1 one, so its attributes are configured next door.</strong> <a href=\"/admin/saml-attributes\">Custom SAML attributes</a> decides what the assertion carries, and the <code>SAML</code> group on <a href=\"/admin/saml11\">SAML 1.1</a> and <a href=\"/admin/saml2\">SAML 2.0</a> how it is signed. This page links to them rather than drawing a third form.",
+    "<strong>Single sign-on with OAuth 2.0 / OIDC is the point of the require order.</strong> This module is loaded after the authorization server so that both read one session: sign in at <code>/oauth2/authorize</code> and <code>/wsfed</code> knows it, and the other way round.",
+    "<strong><code>wauth</code> is honoured, and <code>wreqptr</code> is never dereferenced.</strong> A relying party that demands a security key or two factors the session does not have sends the person to sign in again with the second factor required (a step-up, since 2026-09-17), and is refused only if that one attempt still does not produce it. And this service fetches nothing from a URL a request names."
+   ],
+   "settingsPage": "/admin/wsfed",
+   "settingsGroups": [
+    "WS-Federation"
+   ]
+  },
+  "getTlsSettings": {
+   "page": "/admin/tls",
+   "title": "TLS / mutual TLS",
+   "what": "This service has no TLS listener of its own since 2026-09-16: 8443, which asked every connection for a client certificate, and 9443, which required one at the handshake, were both deleted. The main port already asks and requires none, so the first was a second socket with the same posture as the one every other protocol answers on; what this page configures is the certificate that port and LDAPS 636 present, and what this service makes of a certificate a CLIENT presents.",
+   "notes": [
+    "What each listener does at the handshake is on Listeners since #423: TLS 1.2 on or off, the TLS 1.3 cipher suites, post-quantum only, and whether a listener asks for a client certificate, requires one, or neither — a required one is verified against the truststore on this page. The TLS settings that were drawn here are drawn there.",
+    "A verified client certificate IS a login since 2026-09-05, and it is now GET /tls/sign-in on the main port. Presenting a certificate is the CLIENT's decision here — this port asks for one and requires none — and the route signs in whoever presented a verified one, for its common name, with the response carrying the cookie. What verification proved is unchanged: a chain to an anchor in the client-certificate truststore. No token is issued. The session is on Sessions and ends like any other.",
+    "The handshake refusal 9443 performed has no successor, and that is deliberate. Refusing during the handshake is a property of a SOCKET, and this socket carries OAuth, SAML, SCIM, the console and everything else, so it cannot refuse every caller who has no certificate. A certificate that does not verify is refused where it is USED instead: RFC 8705 client authentication at the token endpoint, /xacml, /scim/v2 and the sign-in above.",
+    "One self-signed certificate, regenerated on every start, is shared by two sockets — LDAPS 636, and the main port when global.https is on — so a caller trusts this service once rather than twice. The names and addresses below are what goes into it, which is why they are restart-only: it is minted before anything is listening.",
+    "Whether the MAIN port is HTTPS is not here. global.https is on Configuration with the rest of the process's own settings, and it defaults to whatever oauth2.rfc9700 is — RFC 9700 section 2.1 says an authorization response must not travel over an unencrypted connection, and the authorization endpoint is on that port."
+   ],
+   "links": [
+    {
+     "href": "/tls/server-certificate",
+     "what": "the certificate, to trust it"
+    },
+    {
+     "href": "/admin/tls-connection",
+     "what": "what this service saw of your connection, and what a proxy said about it"
+    },
+    {
+     "href": "/admin/cert-issuance#cert-spiffe-overview",
+     "what": "the one place a certificate authenticates"
+    }
+   ],
+   "leadHtml": "<strong>This service has no TLS listener of its own since 2026-09-16: 8443, which asked every connection for a client certificate, and 9443, which required one at the handshake, were both deleted.</strong> The main port already asks and requires none, so the first was a second socket with the same posture as the one every other protocol answers on; what this page configures is the certificate that port and LDAPS 636 present, and what this service makes of a certificate a CLIENT presents.",
+   "alsoHtml": [
+    "<strong>What each listener does at the handshake is on <a href=\"/admin/listeners\">Listeners</a> since #423</strong>: TLS 1.2 on or off, the TLS 1.3 cipher suites, post-quantum only, and whether a listener asks for a client certificate, requires one, or neither — a required one is verified against the truststore on this page. The TLS settings that were drawn here are drawn there.",
+    "<strong>A verified client certificate IS a login since 2026-09-05, and it is now <a href=\"/tls/sign-in\">GET /tls/sign-in</a> on the main port.</strong> Presenting a certificate is the CLIENT's decision here — this port asks for one and requires none — and the route signs in whoever presented a verified one, for its common name, with the response carrying the cookie. What verification proved is unchanged: a chain to an anchor in the <a href=\"/admin/tls/trust\">client-certificate truststore</a>. No token is issued. The session is on <a href=\"/admin/sessions\">Sessions</a> and ends like any other.",
+    "<strong>The handshake refusal 9443 performed has no successor, and that is deliberate.</strong> Refusing during the handshake is a property of a SOCKET, and this socket carries OAuth, SAML, SCIM, the console and everything else, so it cannot refuse every caller who has no certificate. A certificate that does not verify is refused where it is USED instead: RFC 8705 client authentication at the token endpoint, <code>/xacml</code>, <code>/scim/v2</code> and the sign-in above.",
+    "<strong>One self-signed certificate, regenerated on every start, is shared by two sockets</strong> — LDAPS 636, and the main port when <code>global.https</code> is on — so a caller trusts this service once rather than twice. The names and addresses below are what goes into it, which is why they are restart-only: it is minted before anything is listening.",
+    "<strong>Whether the MAIN port is HTTPS is not here.</strong> <code>global.https</code> is on <a href=\"/admin/config\">Configuration</a> with the rest of the process's own settings, and it defaults to whatever <code>oauth2.rfc9700</code> is — RFC 9700 section 2.1 says an authorization response must not travel over an unencrypted connection, and the authorization endpoint is on that port."
+   ],
+   "settingsPage": "/admin/tls",
+   "settingsGroups": []
   }
  },
  "issued": {

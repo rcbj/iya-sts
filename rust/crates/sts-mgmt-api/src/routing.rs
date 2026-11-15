@@ -106,6 +106,19 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::GetAdminRoles
         | Operation::GetNewUserForm
         | Operation::GetIssued
+        | Operation::GetTlsSettings
+        | Operation::GetWsFedSettings
+        | Operation::GetWsTrustSettings
+        | Operation::GetClusterSettings
+        | Operation::GetPersistenceSettings
+        | Operation::GetLdapSettings
+        | Operation::GetKerberosSettings
+        | Operation::GetWebauthnSettings
+        | Operation::GetBackupCodesSettings
+        | Operation::GetTotpSettings
+        | Operation::GetOid4vpSettings
+        | Operation::GetOid4vciSettings
+        | Operation::GetOauth2Settings
         | Operation::RevokePermission
         | Operation::GrantPermission
         | Operation::RemovePermission

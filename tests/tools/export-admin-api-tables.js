@@ -378,6 +378,50 @@ function tables() {
       sharedWith: block.sharedWith
     };
   });
+  // THE PROTOCOL SETTINGS PAGES (#444, the `apis5` slice): each
+  // `get…Settings` operation's answer less its settings block (computed in
+  // Rust from `pageSettings`, added here for each page) and its `status`
+  // (the mechanism's live state, not a table).
+  const settingsOperations = {};
+  api.ROUTES.forEach(function (entry) {
+    const m = /^GET (\/admin\/\S+)$/.exec(String(entry.mirrors || ''));
+    if (!m || !/^get\w+Settings$/.test(entry.operationId || '')) {
+      return;
+    }
+    // The two VC operations draw a page of their own under /admin/vc
+    // (`settingsPage` in admin_api.ts's SETTINGS_PAGES).
+    const asked = entry.operationId === 'getOid4vciSettings'
+      ? '/admin/oid4vci'
+      : (entry.operationId === 'getOid4vpSettings' ? '/admin/oid4vp' : m[1]);
+    let page = null;
+    try {
+      page = admin.protocolSettingsJsonFor(asked);
+    } catch (e) {
+      log.debug("Caught in tables(): " + ((e && e.message) || e));
+      page = null;
+    }
+    if (!page) {
+      return;
+    }
+    const out = Object.assign({}, page);
+    const block = out.settings || {};
+    delete out.settings;
+    delete out.status;
+    out.settingsPage = block.page;
+    out.settingsGroups = (block.groups || []).map(function (group) {
+      return group.group;
+    });
+    settingsOperations[entry.operationId] = out;
+    if (block.page && !pageSettings[block.page]) {
+      const whole = admin.configSettingsJson(block.page);
+      pageSettings[block.page] = {
+        groups: whole.groups.map(function (group) {
+          return group.group;
+        }),
+        sharedWith: whole.sharedWith
+      };
+    }
+  });
   // The frame drawn for nobody in particular: every section.
   const frame = admin.shellJson(null, null, null);
   const out = {
@@ -415,6 +459,7 @@ function tables() {
                                             'inetorgperson')).CLASSES,
     familyViews: familyViewTables(),
     newUserForm: newUserFormTables(),
+    settingsOperations: settingsOperations,
     // `GET /admin-api/tokens`' constant members (the `apis5` slice): the
     // issued families and the kinds the console offers to revoke.
     issued: {

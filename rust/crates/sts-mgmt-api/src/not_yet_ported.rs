@@ -169,19 +169,6 @@ macro_rules! not_yet_ported {
         | Operation::RevokeTokensByUser
         | Operation::RevokeAllTokens
         | Operation::GetConfigDump
-        | Operation::GetOauth2Settings
-        | Operation::GetOid4vciSettings
-        | Operation::GetOid4vpSettings
-        | Operation::GetTotpSettings
-        | Operation::GetBackupCodesSettings
-        | Operation::GetWebauthnSettings
-        | Operation::GetKerberosSettings
-        | Operation::GetLdapSettings
-        | Operation::GetPersistenceSettings
-        | Operation::GetClusterSettings
-        | Operation::GetWsTrustSettings
-        | Operation::GetWsFedSettings
-        | Operation::GetTlsSettings
         | Operation::GetTokenLifetimes
         | Operation::SetTokenLifetimes
         | Operation::ResetTokenLifetimes

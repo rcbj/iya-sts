@@ -127,6 +127,11 @@ pub struct Tables {
     /// `REVOCABLE_KINDS` (`common/admin_stats.js`).
     #[serde(default)]
     pub issued: Json,
+    /// Each `get…Settings` operation's answer less its settings block and
+    /// its live `status` (`admin.protocolSettingsJsonFor()`), with the
+    /// page and groups its block is drawn from.
+    #[serde(default)]
+    pub settings_operations: Json,
 }
 
 /// What the frames write for the base URL and the version.
@@ -167,6 +172,7 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
             family_views: Json::Object(Default::default()),
             new_user_form: Json::Object(Default::default()),
             issued: Json::Object(Default::default()),
+            settings_operations: Json::Object(Default::default()),
         }
     })
 });
