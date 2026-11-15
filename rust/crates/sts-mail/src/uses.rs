@@ -95,7 +95,11 @@ impl MailUses {
         settings: Arc<Settings>,
         now: Arc<dyn Fn() -> i64 + Send + Sync>,
     ) -> MailUses {
-        MailUses { mail, settings, now }
+        MailUses {
+            mail,
+            settings,
+            now,
+        }
     }
 
     /// `MailUses.said(key, params)`: words, made in the recipient's
@@ -113,7 +117,9 @@ impl MailUses {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn key_of(value: Option<&Json>) -> String {
         match value {
-            Some(v @ Json::Object(_)) | Some(v @ Json::Array(_)) => v.to_string(),
+            Some(v @ Json::Object(_)) | Some(v @ Json::Array(_)) => {
+                v.to_string()
+            }
             other => crate::js::text_or_empty(other),
         }
     }
@@ -146,42 +152,60 @@ impl MailUses {
         made: &mut Made,
     ) -> (Json, SendResult) {
         let reset = kind == "reset";
-        let ttl = self.settings.value_of(if reset {
-            "security.passwordResetTtlMinutes"
-        } else {
-            "security.activationTtlMinutes"
-        }).as_int();
+        let ttl = self
+            .settings
+            .value_of(if reset {
+                "security.passwordResetTtlMinutes"
+            } else {
+                "security.activationTtlMinutes"
+            })
+            .as_int();
         let requested = if actor.is_empty() {
             MailUses::said("requestedBy.administrator", None)
         } else {
-            MailUses::said("requestedBy.administratorNamed",
-                           Some(json!({ "actor": actor })))
+            MailUses::said(
+                "requestedBy.administratorNamed",
+                Some(json!({ "actor": actor })),
+            )
         };
-        let sent = self.sent(json!({
-            "username": username,
-            "template": if reset { "password-reset" } else {
-                "account-activation" },
-            "values": { "username": username, "requestedBy": requested,
-                        "expiresMinutes": ttl.to_string() },
-            "links": { "link": format!("{}?user={}#token={}",
-                if reset { RESET_PATH } else { ACTIVATE_PATH },
-                encode_component(username), encode_component(token)) },
-            "via": via, "actor": actor
-        }), made);
+        let sent = self.sent(
+            json!({
+                "username": username,
+                "template": if reset { "password-reset" } else {
+                    "account-activation" },
+                "values": { "username": username, "requestedBy": requested,
+                            "expiresMinutes": ttl.to_string() },
+                "links": { "link": format!("{}?user={}#token={}",
+                    if reset { RESET_PATH } else { ACTIVATE_PATH },
+                    encode_component(username), encode_component(token)) },
+                "via": via, "actor": actor
+            }),
+            made,
+        );
         if !sent.ok {
-            let code = sent.refused.first().map_or(codes::STS_MAIL_0001,
-                                                   |r| r.code);
+            let code = sent
+                .refused
+                .first()
+                .map_or(codes::STS_MAIL_0001, |r| r.code);
             let answer = json!({ "ok": false, "errors": [format!(
                 "The link was not mailed: {}.", sent.error.clone()
                     .unwrap_or_else(|| "it was refused".into()))],
                 "code": code.as_str() });
             return (answer, sent);
         }
-        let to = sent.queued.first().or(sent.duplicates.first())
-            .and_then(|v| v.get("to")).and_then(Json::as_str).unwrap_or("")
+        let to = sent
+            .queued
+            .first()
+            .or(sent.duplicates.first())
+            .and_then(|v| v.get("to"))
+            .and_then(Json::as_str)
+            .unwrap_or("")
             .to_string();
-        (json!({ "ok": true, "mailedTo": to, "message": format!(
-            "The link was mailed to {} and is not shown here.", to) }), sent)
+        (
+            json!({ "ok": true, "mailedTo": to, "message": format!(
+            "The link was mailed to {} and is not shown here.", to) }),
+            sent,
+        )
     }
 
     /// `notice(kind, username, facts)`: a security notice; with `bySystem`
@@ -215,7 +239,8 @@ impl MailUses {
                 _ => true,
             })
         }
-        let key = truthy(values.get("how")).or(truthy(values.get("why")))
+        let key = truthy(values.get("how"))
+            .or(truthy(values.get("why")))
             .or(truthy(values.get("by")));
         let text = |k: &str| crate::js::text_or_empty(facts.get(k));
         let dedup = if text("dedupKey").is_empty() {
@@ -223,28 +248,46 @@ impl MailUses {
         } else {
             text("dedupKey")
         };
-        let via = if text("via").is_empty() { "a security notice".into() }
-                  else { text("via") };
-        let out = self.sent(json!({
-            "username": username, "template": kind, "values": values,
-            "dedupKey": dedup, "via": via, "actor": text("actor")
-        }), made);
-        let by_system = facts.get("bySystem").and_then(Json::as_bool)
+        let via = if text("via").is_empty() {
+            "a security notice".into()
+        } else {
+            text("via")
+        };
+        let out = self.sent(
+            json!({
+                "username": username, "template": kind, "values": values,
+                "dedupKey": dedup, "via": via, "actor": text("actor")
+            }),
+            made,
+        );
+        let by_system = facts
+            .get("bySystem")
+            .and_then(Json::as_bool)
             .unwrap_or(false);
-        if by_system && self.settings.value_of("mail.notifyAdministrators")
-            .as_bool() {
-            let act = facts.get("act").cloned()
+        if by_system
+            && self
+                .settings
+                .value_of("mail.notifyAdministrators")
+                .as_bool()
+        {
+            let act = facts
+                .get("act")
+                .cloned()
                 .filter(|a| !a.is_null() && a != "")
                 .unwrap_or(json!(kind));
-            self.sent(json!({
-                "toAdministrators": true, "template": "administrator-alert",
-                "values": { "username": username, "when": values["when"],
-                            "act": act,
-                            "why": values.get("why").cloned()
-                                .filter(|w| !w.is_null()).unwrap_or(json!("")) },
-                "dedupKey": format!("admin:{}:{}", kind, username),
-                "via": via, "actor": "the service"
-            }), made);
+            self.sent(
+                json!({
+                    "toAdministrators": true, "template": "administrator-alert",
+                    "values": { "username": username, "when": values["when"],
+                                "act": act,
+                                "why": values.get("why").cloned()
+                                    .filter(|w| !w.is_null())
+                                    .unwrap_or(json!("")) },
+                    "dedupKey": format!("admin:{}:{}", kind, username),
+                    "via": via, "actor": "the service"
+                }),
+                made,
+            );
         }
         UseResult::Sent(out)
     }
@@ -262,31 +305,47 @@ impl MailUses {
         let text = |k: &str| crate::js::text_or_empty(n.get(k));
         let username = text("username");
         let system = text("initiatingEntity") == "system";
-        let credential = if text("credentialType").is_empty() { "password" }
-                         else { "" }.to_string();
-        let credential = if credential.is_empty() { text("credentialType") }
-                         else { credential };
-        let truthy = |k: &str| n.get(k).is_some_and(|v| match v {
-            Json::Null | Json::Bool(false) => false,
-            Json::String(s) => !s.is_empty(),
-            _ => true,
-        });
-        if act == "credentialChanged" && credential == "password"
-            && !truthy("friendlyName") {
+        let credential = if text("credentialType").is_empty() {
+            "password"
+        } else {
+            ""
+        }
+        .to_string();
+        let credential = if credential.is_empty() {
+            text("credentialType")
+        } else {
+            credential
+        };
+        let truthy = |k: &str| {
+            n.get(k).is_some_and(|v| match v {
+                Json::Null | Json::Bool(false) => false,
+                Json::String(s) => !s.is_empty(),
+                _ => true,
+            })
+        };
+        if act == "credentialChanged"
+            && credential == "password"
+            && !truthy("friendlyName")
+        {
             let how = if truthy("reasonUser") || truthy("via") {
-                json!(if truthy("reasonUser") { text("reasonUser") }
-                      else { text("via") })
+                json!(if truthy("reasonUser") {
+                    text("reasonUser")
+                } else {
+                    text("via")
+                })
             } else {
-                MailUses::said("how.by", Some(json!({ "entity":
+                MailUses::said(
+                    "how.by",
+                    Some(json!({ "entity":
                     if text("initiatingEntity").is_empty() { "someone".into() }
-                    else { text("initiatingEntity") } })))
+                    else { text("initiatingEntity") } })),
+                )
             };
             let mut facts = json!({ "values": { "how": how } });
             if let Some(v) = n.get("via") {
                 facts["via"] = v.clone();
             }
-            return self.notice("password-changed", &username, &facts,
-                               made);
+            return self.notice("password-changed", &username, &facts, made);
         }
         if act == "credentialCompromised" {
             let mut facts = json!({
@@ -298,8 +357,12 @@ impl MailUses {
             if let Some(v) = n.get("via") {
                 facts["via"] = v.clone();
             }
-            return self.notice("credential-compromised", &username, &facts,
-                               made);
+            return self.notice(
+                "credential-compromised",
+                &username,
+                &facts,
+                made,
+            );
         }
         if act == "recoveryActivated" && !truthy("mailed") {
             let by = if text("initiatingEntity") == "user" {
@@ -311,18 +374,12 @@ impl MailUses {
             if let Some(v) = n.get("via") {
                 facts["via"] = v.clone();
             }
-            return self.notice("recovery-started", &username, &facts,
-                               made);
+            return self.notice("recovery-started", &username, &facts, made);
         }
         UseResult::Skipped(skipped("not a notice"))
     }
 
-    fn waiting(
-        &self,
-        username: &str,
-        req: Json,
-        made: &mut Made,
-    ) -> UseResult {
+    fn waiting(&self, username: &str, req: Json, made: &mut Made) -> UseResult {
         if username.is_empty() || !self.mail.available() {
             return UseResult::Skipped(skipped("no transport"));
         }
@@ -332,8 +389,12 @@ impl MailUses {
     /// `accessRequested(username, facts)` (#432): a GNAP grant waiting on
     /// `/portal/ciba`.
     #[tracing::instrument(level = "debug", skip(self, f, made))]
-    pub fn access_requested(&self, username: &str, f: &Json,
-                            made: &mut Made) -> UseResult {
+    pub fn access_requested(
+        &self,
+        username: &str,
+        f: &Json,
+        made: &mut Made,
+    ) -> UseResult {
         let text = |k: &str| crate::js::text_or_empty(f.get(k));
         let rights = if text("rights").is_empty() {
             MailUses::said("rights.access", None)
@@ -345,50 +406,68 @@ impl MailUses {
         } else {
             text("dedupKey")
         };
-        self.waiting(username, json!({
-            "username": username, "template": "access-request",
-            "values": { "username": username, "client": text("client"),
-                        "rights": rights,
-                        "expiresMinutes": text("expiresMinutes") },
-            "links": { "link": "/portal/ciba" }, "dedupKey": dedup,
-            "via": "a GNAP access request", "actor": text("client")
-        }), made)
+        self.waiting(
+            username,
+            json!({
+                "username": username, "template": "access-request",
+                "values": { "username": username, "client": text("client"),
+                            "rights": rights,
+                            "expiresMinutes": text("expiresMinutes") },
+                "links": { "link": "/portal/ciba" }, "dedupKey": dedup,
+                "via": "a GNAP access request", "actor": text("client")
+            }),
+            made,
+        )
     }
 
     /// `pkiPinStatus(facts)`: to the realm's administrators.
     #[tracing::instrument(level = "debug", skip(self, f, made))]
-    pub fn pki_pin_status(&self, f: &Json, made: &mut Made)
-        -> UseResult {
+    pub fn pki_pin_status(&self, f: &Json, made: &mut Made) -> UseResult {
         let text = |k: &str| crate::js::text_or_empty(f.get(k));
-        UseResult::Sent(self.sent(json!({
-            "toAdministrators": true, "template": "pki-pin-status",
-            "values": { "changes": text("changes") },
-            "dedupKey": text("dedupKey"),
-            "via": "the pinned certificate audit", "actor": "the service"
-        }), made))
+        UseResult::Sent(self.sent(
+            json!({
+                "toAdministrators": true, "template": "pki-pin-status",
+                "values": { "changes": text("changes") },
+                "dedupKey": text("dedupKey"),
+                "via": "the pinned certificate audit", "actor": "the service"
+            }),
+            made,
+        ))
     }
 
     /// `postLoginReminder(username, facts)` (#1111).
     #[tracing::instrument(level = "debug", skip(self, f, made))]
-    pub fn post_login_reminder(&self, username: &str, f: &Json,
-                               made: &mut Made) -> UseResult {
+    pub fn post_login_reminder(
+        &self,
+        username: &str,
+        f: &Json,
+        made: &mut Made,
+    ) -> UseResult {
         let text = |k: &str| crate::js::text_or_empty(f.get(k));
         let mails = f.get("mails").and_then(Json::as_f64).unwrap_or(0.0);
-        self.waiting(username, json!({
-            "username": username, "template": "post-login-reminder",
-            "values": { "username": username },
-            "links": { "signin": "/portal" },
-            "dedupKey": format!("post-login-reminder:{}:{}:{}",
-                                text("started"), username,
-                                crate::js::string_of(&json!(mails))),
-            "via": "a started post-login activity", "actor": text("actor")
-        }), made)
+        self.waiting(
+            username,
+            json!({
+                "username": username, "template": "post-login-reminder",
+                "values": { "username": username },
+                "links": { "signin": "/portal" },
+                "dedupKey": format!("post-login-reminder:{}:{}:{}",
+                                    text("started"), username,
+                                    crate::js::string_of(&json!(mails))),
+                "via": "a started post-login activity", "actor": text("actor")
+            }),
+            made,
+        )
     }
 
     /// `umaApprovalRequested(username, facts)`.
     #[tracing::instrument(level = "debug", skip(self, f, made))]
-    pub fn uma_approval_requested(&self, username: &str, f: &Json,
-                                  made: &mut Made) -> UseResult {
+    pub fn uma_approval_requested(
+        &self,
+        username: &str,
+        f: &Json,
+        made: &mut Made,
+    ) -> UseResult {
         let text = |k: &str| crate::js::text_or_empty(f.get(k));
         let dedup = if text("dedupKey").is_empty() {
             format!("uma-approval:{}", username)
@@ -408,8 +487,12 @@ impl MailUses {
 
     /// `authzenAccessRequested(username, facts)` (#563, #1180).
     #[tracing::instrument(level = "debug", skip(self, f, made))]
-    pub fn authzen_access_requested(&self, username: &str, f: &Json,
-                                    made: &mut Made) -> UseResult {
+    pub fn authzen_access_requested(
+        &self,
+        username: &str,
+        f: &Json,
+        made: &mut Made,
+    ) -> UseResult {
         let text = |k: &str| crate::js::text_or_empty(f.get(k));
         let emergency = f.get("emergency").is_some_and(|e| e == true);
         let mut values = json!({ "username": username,
@@ -438,33 +521,58 @@ impl MailUses {
 
     /// `accountDisabled(username, why, bySystem)`.
     #[tracing::instrument(level = "debug", skip(self, made))]
-    pub fn account_disabled(&self, username: &str, why: &str, by_system: bool,
-                            made: &mut Made) -> UseResult {
-        self.notice("account-disabled", username, &json!({
+    pub fn account_disabled(
+        &self,
+        username: &str,
+        why: &str,
+        by_system: bool,
+        made: &mut Made,
+    ) -> UseResult {
+        self.notice(
+            "account-disabled",
+            username,
+            &json!({
             "values": { "why": why }, "bySystem": by_system,
             "act": MailUses::said("act.accountDisabled", None),
-            "via": "account state" }), made)
+            "via": "account state" }),
+            made,
+        )
     }
 
     /// `sessionsEnded(username, count, by)`.
     #[tracing::instrument(level = "debug", skip(self, by, made))]
-    pub fn sessions_ended(&self, username: &str, count: i64, by: &Json,
-                          made: &mut Made) -> UseResult {
+    pub fn sessions_ended(
+        &self,
+        username: &str,
+        count: i64,
+        by: &Json,
+        made: &mut Made,
+    ) -> UseResult {
         let by = match by {
             Json::Object(_) => by.clone(),
             Json::String(s) if !s.is_empty() => by.clone(),
             _ => MailUses::said("by.administrator", None),
         };
-        self.notice("sessions-ended", username, &json!({
+        self.notice(
+            "sessions-ended",
+            username,
+            &json!({
             "values": { "count": count.to_string(), "by": by },
             "dedupKey": format!("sessions-ended:{}", username),
-            "via": "an administrator" }), made)
+            "via": "an administrator" }),
+            made,
+        )
     }
 
     /// `addressChanged(username, former, new)`: told to the former address.
     #[tracing::instrument(level = "debug", skip(self, made))]
-    pub fn address_changed(&self, username: &str, former: &str,
-                           new_address: &str, made: &mut Made) -> UseResult {
+    pub fn address_changed(
+        &self,
+        username: &str,
+        former: &str,
+        new_address: &str,
+        made: &mut Made,
+    ) -> UseResult {
         if former.is_empty()
             || !self.settings.value_of("mail.securityNotices").as_bool()
             || !self.mail.available()
@@ -482,8 +590,9 @@ impl MailUses {
                         "address": address },
             "dedupKey": format!("address-changed:{}>{}", former, new_address),
             "via": "a directory change" });
-        let out = self.mail.send_to_former_address(
-            &SendRequest::from_json(&req));
+        let out = self
+            .mail
+            .send_to_former_address(&SendRequest::from_json(&req));
         made.queued.extend(out.queued.iter().cloned());
         UseResult::Sent(out)
     }

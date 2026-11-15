@@ -123,9 +123,8 @@ static TEMPLATES: LazyLock<Option<Templates>> = LazyLock::new(|| {
     Some(Templates { table, catalogs })
 });
 
-static PLACEHOLDER: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r"\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}").ok()
-});
+static PLACEHOLDER: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}").ok());
 static URL: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"(?i)https?://").ok());
 static CONTENT: LazyLock<Option<Regex>> =
@@ -140,9 +139,8 @@ static HREF_HEAD: LazyLock<Option<Regex>> =
 static WHOLE_PLACEHOLDER: LazyLock<Option<Regex>> = LazyLock::new(|| {
     Regex::new(r"^\{\{\s*([A-Za-z][A-Za-z0-9]*)\s*\}\}$").ok()
 });
-static TAG: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r"^[a-z]{1,8}(-[a-z0-9]{1,8})*$").ok()
-});
+static TAG: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"^[a-z]{1,8}(-[a-z0-9]{1,8})*$").ok());
 static QUALITY: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"^\s*q\s*=\s*([0-9.]+)\s*$").ok());
 
@@ -388,8 +386,7 @@ impl Templates {
         let layout = Templates::get().map_or("layout", |t| t.layout_id());
         if spec.id == layout {
             let once = |part: &str| {
-                CONTENT.as_ref().map_or(0, |re| re.find_iter(part).count())
-                    == 1
+                CONTENT.as_ref().map_or(0, |re| re.find_iter(part).count()) == 1
             };
             if !once(text) || !once(html) {
                 return "the layout must carry {{content}} exactly once in \
@@ -462,9 +459,7 @@ impl Templates {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn render(parts: &Parts, values: &Map<String, Json>) -> Parts {
         let fill = |text: &str, html: bool| {
-            fill_with(text, |name| {
-                values.get(name).map(|v| escaped(v, html))
-            })
+            fill_with(text, |name| values.get(name).map(|v| escaped(v, html)))
         };
         Parts {
             subject: js::trim(&fill(&parts.subject, false)).to_string(),

@@ -49,7 +49,8 @@ const ALLOWED_TAGS: &[&str] = &[
 ];
 
 fn attribute_allowed(tag: &str, name: &str) -> bool {
-    matches!(name, "dir" | "lang") || (tag == "a" && matches!(name, "href" | "title"))
+    matches!(name, "dir" | "lang")
+        || (tag == "a" && matches!(name, "href" | "title"))
 }
 
 /// htmlparser2's `decodeEntities` for what an href may carry: numeric
@@ -63,9 +64,8 @@ fn decode_entities(text: &str) -> String {
         let end = tail.find(';');
         let decoded = end.and_then(|end| {
             let body = &tail[1..end];
-            let ch = if let Some(hex) = body
-                .strip_prefix("#x")
-                .or_else(|| body.strip_prefix("#X"))
+            let ch = if let Some(hex) =
+                body.strip_prefix("#x").or_else(|| body.strip_prefix("#X"))
             {
                 u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
             } else if let Some(dec) = body.strip_prefix('#') {
@@ -163,7 +163,8 @@ pub fn changed_by_allow_list(html: &str) -> bool {
         }
         // The attributes, to the end of the tag.
         loop {
-            while j < chars.len() && (chars[j].is_whitespace() || chars[j] == '/')
+            while j < chars.len()
+                && (chars[j].is_whitespace() || chars[j] == '/')
             {
                 j += 1;
             }
@@ -213,8 +214,7 @@ pub fn changed_by_allow_list(html: &str) -> bool {
             if closing {
                 continue;
             }
-            if !attribute.is_empty() && !attribute_allowed(&name, &attribute)
-            {
+            if !attribute.is_empty() && !attribute_allowed(&name, &attribute) {
                 return true;
             }
             if attribute == "href" && naughty_href(&value) {

@@ -43,7 +43,11 @@ pub struct SendError {
 impl SendError {
     /// `sendError(message, code, retry)`.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn new(message: impl Into<String>, code: ErrorCode, retry: bool) -> Self {
+    pub fn new(
+        message: impl Into<String>,
+        code: ErrorCode,
+        retry: bool,
+    ) -> Self {
         SendError {
             message: message.into(),
             code,
@@ -76,9 +80,8 @@ pub trait Transport: Send + Sync {
 #[tracing::instrument(level = "debug")]
 pub fn address_problem(address: &str) -> String {
     let a = address;
-    let separators = |c: char| {
-        crate::js::is_space(c) || "<>,;:\"()[]\\".contains(c)
-    };
+    let separators =
+        |c: char| crate::js::is_space(c) || "<>,;:\"()[]\\".contains(c);
     if a.is_empty() || crate::js::len(a) > 254 || a.chars().any(separators) {
         return "is not one plain mailbox address".to_string();
     }
@@ -97,8 +100,7 @@ pub fn address_problem(address: &str) -> String {
     let labels: Vec<&str> = domain.split('.').collect();
     let domain_ok = labels.len() >= 2 && labels.iter().all(|l| label_ok(l));
     if a.rfind('@').is_none()
-        || at < 1
-        || at > 64
+        || !(1..=64).contains(&at)
         || domain.is_empty()
         || !domain_ok
     {
@@ -183,10 +185,18 @@ pub struct SmtpOptions {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SmtpAuth {
     /// `PLAIN` or `LOGIN`, with the password.
-    Password { user: String, pass: String, method: String },
+    Password {
+        user: String,
+        pass: String,
+        method: String,
+    },
     /// XOAUTH2 with an access token, or the refresh parameters a token is
     /// fetched with.
-    OAuth2 { user: String, access_token: String, refresh: Json },
+    OAuth2 {
+        user: String,
+        access_token: String,
+        refresh: Json,
+    },
 }
 
 /// `classifySmtp(e)`: a refused login, a TLS failure or a 5xx is final, a
@@ -200,26 +210,45 @@ pub fn classify_smtp(e: &SmtpFailure) -> SendError {
     };
     let tlsish = TLS_FAILURE.as_ref().is_some_and(|re| re.is_match(&why));
     if e.code == "EAUTH" {
-        SendError::new(format!("the relay refused the login: {}", why),
-                       codes::STS_MAIL_0021, false)
+        SendError::new(
+            format!("the relay refused the login: {}", why),
+            codes::STS_MAIL_0021,
+            false,
+        )
     } else if e.code == "ETLS" || tlsish {
         SendError::new(
-            format!("TLS with the relay failed, and nothing is sent in the \
-                     clear: {}", why),
-            codes::STS_MAIL_0014, false)
+            format!(
+                "TLS with the relay failed, and nothing is sent in the \
+                     clear: {}",
+                why
+            ),
+            codes::STS_MAIL_0014,
+            false,
+        )
     } else if e.response_code >= 500 {
         SendError::new(
-            format!("the relay refused the message ({}): {}", e.response_code,
-                    why),
-            codes::STS_MAIL_0008, false)
+            format!(
+                "the relay refused the message ({}): {}",
+                e.response_code, why
+            ),
+            codes::STS_MAIL_0008,
+            false,
+        )
     } else if e.response_code >= 400 {
         SendError::new(
-            format!("the relay deferred the message ({}): {}",
-                    e.response_code, why),
-            codes::STS_MAIL_0009, true)
+            format!(
+                "the relay deferred the message ({}): {}",
+                e.response_code, why
+            ),
+            codes::STS_MAIL_0009,
+            true,
+        )
     } else {
-        SendError::new(format!("the SMTP transaction failed: {}", why),
-                       codes::STS_MAIL_0009, true)
+        SendError::new(
+            format!("the SMTP transaction failed: {}", why),
+            codes::STS_MAIL_0009,
+            true,
+        )
     }
 }
 
@@ -237,15 +266,27 @@ pub struct CloudFailure {
 #[tracing::instrument(level = "debug")]
 pub fn classify_cloud(e: &CloudFailure, who: &str) -> SendError {
     let hay = format!("{} {}", e.name, e.message).to_lowercase();
-    let words = ["throttl", "toomanyrequests", "serviceunavailable",
-                 "requesttimeout", "econn", "etimedout", "enotfound",
-                 "eai_again", "socket"];
+    let words = [
+        "throttl",
+        "toomanyrequests",
+        "serviceunavailable",
+        "requesttimeout",
+        "econn",
+        "etimedout",
+        "enotfound",
+        "eai_again",
+        "socket",
+    ];
     let retry = e.retryable
         || e.status == 429
         || e.status >= 500
         || words.iter().any(|w| hay.contains(w));
     // `String(e.message || e)`: an error with no message is its name.
-    let said = if e.message.is_empty() { &e.name } else { &e.message };
+    let said = if e.message.is_empty() {
+        &e.name
+    } else {
+        &e.message
+    };
     let why = format!(
         "{} refused the message: {}{}",
         who,
@@ -258,7 +299,11 @@ pub fn classify_cloud(e: &CloudFailure, who: &str) -> SendError {
     );
     SendError::new(
         why,
-        if retry { codes::STS_MAIL_0009 } else { codes::STS_MAIL_0008 },
+        if retry {
+            codes::STS_MAIL_0009
+        } else {
+            codes::STS_MAIL_0008
+        },
         retry,
     )
 }
@@ -356,8 +401,12 @@ impl Transport for Smtp {
 
 impl Smtp {
     async fn deliver(&self, message: &OutMessage) -> Result<Sent, SendError> {
-        let raw = raw_message(message, self.dkim.as_ref(), &(self.boundary)(),
-                              (self.clock)())?;
+        let raw = raw_message(
+            message,
+            self.dkim.as_ref(),
+            &(self.boundary)(),
+            (self.clock)(),
+        )?;
         let info = self
             .relay
             .send(&message.from, &message.to, &raw)
@@ -436,7 +485,6 @@ pub fn cloud_request(
     }
 }
 
-
 /// The mail secrets (`common/secrets.js`'s `MAIL_*` specs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Secret {
@@ -503,24 +551,37 @@ impl crate::channel::TransportBuilder for Builder {
 }
 
 impl Builder {
-    async fn build_one(&self, cfg: &Json) -> Result<Arc<dyn Transport>, SendError> {
+    async fn build_one(
+        &self,
+        cfg: &Json,
+    ) -> Result<Arc<dyn Transport>, SendError> {
         match text(cfg, "transport").as_str() {
             "capture" => Ok(Arc::new(Capture)),
             "smtp" => self.smtp(cfg).await,
             "ses" => {
                 let client = self.clouds.client(Cloud::Ses, cfg, None)?;
-                Ok(Arc::new(CloudTransport::new(Cloud::Ses, client, cfg,
-                                                self.boundary.clone())))
+                Ok(Arc::new(CloudTransport::new(
+                    Cloud::Ses,
+                    client,
+                    cfg,
+                    self.boundary.clone(),
+                )))
             }
             "acs" => {
                 let credential = if text(cfg, "acsAuth") == "connection-string"
                 {
-                    let Some(c) = self.secrets.read(Secret::AcsConnectionString)
-                        .await.filter(|c| !c.is_empty()) else {
+                    let Some(c) = self
+                        .secrets
+                        .read(Secret::AcsConnectionString)
+                        .await
+                        .filter(|c| !c.is_empty())
+                    else {
                         return Err(SendError::new(
                             "mail.acsAuth is \"connection-string\" and \
                              mail.acsConnectionStringProvider is \"none\"",
-                            codes::STS_MAIL_0004, false));
+                            codes::STS_MAIL_0004,
+                            false,
+                        ));
                     };
                     Some(c)
                 } else {
@@ -528,43 +589,73 @@ impl Builder {
                         return Err(SendError::new(
                             "managed-identity authentication needs \
                              mail.acsEndpoint, an https URL",
-                            codes::STS_MAIL_0004, false));
+                            codes::STS_MAIL_0004,
+                            false,
+                        ));
                     }
                     None
                 };
-                let client = self.clouds.client(Cloud::Acs, cfg,
-                                                credential.as_deref())?;
-                Ok(Arc::new(CloudTransport::new(Cloud::Acs, client, cfg,
-                                                self.boundary.clone())))
+                let client = self.clouds.client(
+                    Cloud::Acs,
+                    cfg,
+                    credential.as_deref(),
+                )?;
+                Ok(Arc::new(CloudTransport::new(
+                    Cloud::Acs,
+                    client,
+                    cfg,
+                    self.boundary.clone(),
+                )))
             }
             "gmail" => {
-                let Some(key) = self.secrets.read(Secret::GmailKey).await
-                    .filter(|k| !k.is_empty()) else {
+                let Some(key) = self
+                    .secrets
+                    .read(Secret::GmailKey)
+                    .await
+                    .filter(|k| !k.is_empty())
+                else {
                     return Err(SendError::new(
                         "the gmail transport needs the service account key \
-                         (mail.gmailKeyProvider)", codes::STS_MAIL_0004, false));
+                         (mail.gmailKeyProvider)",
+                        codes::STS_MAIL_0004,
+                        false,
+                    ));
                 };
                 let parsed: Option<Json> = serde_json::from_str(&key).ok();
                 let usable = parsed.as_ref().is_some_and(|k| {
-                    k.get("client_email").and_then(Json::as_str)
+                    k.get("client_email")
+                        .and_then(Json::as_str)
                         .is_some_and(|s| !s.is_empty())
-                        && k.get("private_key").and_then(Json::as_str)
+                        && k.get("private_key")
+                            .and_then(Json::as_str)
                             .is_some_and(|s| !s.is_empty())
                 });
                 if !usable {
                     return Err(SendError::new(
                         "the Gmail service account key is not a JSON key with \
-                         client_email and private_key", codes::STS_MAIL_0004,
-                        false));
+                         client_email and private_key",
+                        codes::STS_MAIL_0004,
+                        false,
+                    ));
                 }
-                let client = self.clouds.client(Cloud::Gmail, cfg, Some(&key))?;
-                Ok(Arc::new(CloudTransport::new(Cloud::Gmail, client, cfg,
-                                                self.boundary.clone())))
+                let client =
+                    self.clouds.client(Cloud::Gmail, cfg, Some(&key))?;
+                Ok(Arc::new(CloudTransport::new(
+                    Cloud::Gmail,
+                    client,
+                    cfg,
+                    self.boundary.clone(),
+                )))
             }
             _ => Err(SendError::new(
-                format!("no mail transport is configured (mail.transport is \
-                         \"{}\")", text(cfg, "setting")),
-                codes::STS_MAIL_0001, false)),
+                format!(
+                    "no mail transport is configured (mail.transport is \
+                         \"{}\")",
+                    text(cfg, "setting")
+                ),
+                codes::STS_MAIL_0001,
+                false,
+            )),
         }
     }
 
@@ -573,7 +664,9 @@ impl Builder {
         if host.is_empty() {
             return Err(SendError::new(
                 "the smtp transport has no host (mail.smtpHost, or a preset)",
-                codes::STS_MAIL_0004, false));
+                codes::STS_MAIL_0004,
+                false,
+            ));
         }
         let server = text(cfg, "smtpServerName");
         let mut options = SmtpOptions {
@@ -581,9 +674,15 @@ impl Builder {
             port: cfg.get("smtpPort").and_then(Json::as_i64).unwrap_or(0),
             implicit_tls: text(cfg, "smtpTls") == "implicit",
             require_tls: text(cfg, "smtpTls") != "implicit",
-            server_name: if server.is_empty() { host.clone() } else { server },
+            server_name: if server.is_empty() {
+                host.clone()
+            } else {
+                server
+            },
             min_tls: "TLSv1.2".to_string(),
-            timeout_ms: cfg.get("timeoutMs").and_then(Json::as_i64)
+            timeout_ms: cfg
+                .get("timeoutMs")
+                .and_then(Json::as_i64)
                 .unwrap_or(0),
             ca_pem: String::new(),
             client_cert_pem: String::new(),
@@ -595,13 +694,16 @@ impl Builder {
             if !ca.is_empty() {
                 options.ca_pem = self.files.read(&ca)?;
             }
-            let (cert, key) = (text(cfg, "smtpClientCertFile"),
-                               text(cfg, "smtpClientKeyFile"));
+            let (cert, key) = (
+                text(cfg, "smtpClientCertFile"),
+                text(cfg, "smtpClientKeyFile"),
+            );
             if !cert.is_empty() || !key.is_empty() {
                 if cert.is_empty() || key.is_empty() {
                     return Err("mail.smtpClientCertFile and \
                                 mail.smtpClientKeyFile are set together or \
-                                not at all".to_string());
+                                not at all"
+                        .to_string());
                 }
                 options.client_cert_pem = self.files.read(&cert)?;
                 options.client_key_pem = self.files.read(&key)?;
@@ -610,65 +712,105 @@ impl Builder {
         };
         if let Err(e) = files() {
             return Err(SendError::new(
-                format!("the smtp transport's TLS files could not be read: {}",
-                        e), codes::STS_MAIL_0004, false));
+                format!(
+                    "the smtp transport's TLS files could not be read: {}",
+                    e
+                ),
+                codes::STS_MAIL_0004,
+                false,
+            ));
         }
         let auth = text(cfg, "smtpAuth");
         if !auth.is_empty() && auth != "none" {
-            let Some(secret) = self.secrets.read(Secret::SmtpPassword).await
-                .filter(|s| !s.is_empty()) else {
+            let Some(secret) = self
+                .secrets
+                .read(Secret::SmtpPassword)
+                .await
+                .filter(|s| !s.is_empty())
+            else {
                 return Err(SendError::new(
-                    format!("mail.smtpAuth is \"{}\" and \
+                    format!(
+                        "mail.smtpAuth is \"{}\" and \
                              mail.smtpPasswordProvider is \"none\", so there \
-                             is nothing to log in with", auth),
-                    codes::STS_MAIL_0004, false));
+                             is nothing to log in with",
+                        auth
+                    ),
+                    codes::STS_MAIL_0004,
+                    false,
+                ));
             };
             let user = text(cfg, "smtpUser");
             options.auth = Some(if auth == "xoauth2" {
-                match serde_json::from_str::<Json>(&secret).ok()
-                    .filter(Json::is_object) {
-                    Some(refresh) => SmtpAuth::OAuth2 { user,
-                        access_token: String::new(), refresh },
-                    None => SmtpAuth::OAuth2 { user, access_token: secret,
-                                               refresh: Json::Null },
+                match serde_json::from_str::<Json>(&secret)
+                    .ok()
+                    .filter(Json::is_object)
+                {
+                    Some(refresh) => SmtpAuth::OAuth2 {
+                        user,
+                        access_token: String::new(),
+                        refresh,
+                    },
+                    None => SmtpAuth::OAuth2 {
+                        user,
+                        access_token: secret,
+                        refresh: Json::Null,
+                    },
                 }
             } else {
-                SmtpAuth::Password { user, pass: secret,
+                SmtpAuth::Password {
+                    user,
+                    pass: secret,
                     method: if auth == "plain" { "PLAIN" } else { "LOGIN" }
-                        .to_string() }
+                        .to_string(),
+                }
             });
         }
         let mut dkim = None;
         let domain = text(cfg, "dkimDomain");
         if !domain.is_empty() {
-            let key = self.secrets.read(Secret::DkimKey).await
-                .unwrap_or_default();
+            let key =
+                self.secrets.read(Secret::DkimKey).await.unwrap_or_default();
             let selector = text(cfg, "dkimSelector");
             if key.is_empty() || selector.is_empty() {
                 return Err(SendError::new(
-                    format!("mail.dkimDomain is set, so every message must \
-                             be signed, and {}", if key.is_empty() {
-                                 "no DKIM key is configured \
+                    format!(
+                        "mail.dkimDomain is set, so every message must \
+                             be signed, and {}",
+                        if key.is_empty() {
+                            "no DKIM key is configured \
                                   (mail.dkimKeyProvider)"
-                             } else {
-                                 "mail.dkimSelector is empty"
-                             }), codes::STS_MAIL_0022, false));
+                        } else {
+                            "mail.dkimSelector is empty"
+                        }
+                    ),
+                    codes::STS_MAIL_0022,
+                    false,
+                ));
             }
-            let made = Dkim { domain: domain.clone(), selector,
-                              algorithm: text(cfg, "dkimAlgorithm"),
-                              private_key_pem: key };
+            let made = Dkim {
+                domain: domain.clone(),
+                selector,
+                algorithm: text(cfg, "dkimAlgorithm"),
+                private_key_pem: key,
+            };
             let probe = format!("From: probe@{}\r\n\r\n", domain);
             if let Err(e) = dkim_header(probe.as_bytes(), &made, (self.clock)())
             {
                 return Err(SendError::new(
                     format!("the DKIM key cannot sign: {}", e),
-                    codes::STS_MAIL_0022, false));
+                    codes::STS_MAIL_0022,
+                    false,
+                ));
             }
             dkim = Some(made);
         }
         let relay = self.relays.open(&options);
-        Ok(Arc::new(Smtp::new(relay, dkim, self.clock.clone(),
-                              self.boundary.clone())))
+        Ok(Arc::new(Smtp::new(
+            relay,
+            dkim,
+            self.clock.clone(),
+            self.boundary.clone(),
+        )))
     }
 }
 
@@ -689,49 +831,72 @@ impl CloudTransport {
         cfg: &Json,
         boundary: Arc<dyn Fn() -> String + Send + Sync>,
     ) -> CloudTransport {
-        CloudTransport { cloud, client,
-                         configuration_set: text(cfg, "sesConfigurationSet"),
-                         boundary }
+        CloudTransport {
+            cloud,
+            client,
+            configuration_set: text(cfg, "sesConfigurationSet"),
+            boundary,
+        }
     }
 
     async fn deliver(&self, message: &OutMessage) -> Result<Sent, SendError> {
         let raw = compose::compose(message, &(self.boundary)());
-        let request = cloud_request(self.cloud, message, &raw,
-                                    &self.configuration_set);
+        let request =
+            cloud_request(self.cloud, message, &raw, &self.configuration_set);
         let who = match self.cloud {
             Cloud::Ses => "SES",
             Cloud::Acs => "Azure Communication Services",
             Cloud::Gmail => "the Gmail API",
         };
-        let out = self.client.send(&request).await
+        let out = self
+            .client
+            .send(&request)
+            .await
             .map_err(|e| classify_cloud(&e, who))?;
-        let id = |v: Option<&Json>| v.and_then(Json::as_str).unwrap_or("")
-            .to_string();
+        let id = |v: Option<&Json>| {
+            v.and_then(Json::as_str).unwrap_or("").to_string()
+        };
         match self.cloud {
-            Cloud::Ses => Ok(Sent { provider_id: id(out.get("MessageId")),
-                                    detail: String::new() }),
+            Cloud::Ses => Ok(Sent {
+                provider_id: id(out.get("MessageId")),
+                detail: String::new(),
+            }),
             Cloud::Gmail => Ok(Sent {
                 provider_id: id(out.get("data").and_then(|d| d.get("id"))),
-                detail: String::new() }),
+                detail: String::new(),
+            }),
             Cloud::Acs => {
                 let status = id(out.get("status"));
                 if status != "Succeeded" {
                     let error = out.get("error").map(|e| {
                         let m = id(e.get("message"));
-                        if m.is_empty() { id(e.get("code")) } else { m }
+                        if m.is_empty() {
+                            id(e.get("code"))
+                        } else {
+                            m
+                        }
                     });
                     return Err(SendError::new(
-                        format!("Azure Communication Services ended the send \
-                                 as \"{}\"{}", if status.is_empty() {
-                                     "unknown"
-                                 } else {
-                                     &status
-                                 }, error.map(|e| format!(": {}", e))
-                                     .unwrap_or_default()),
-                        codes::STS_MAIL_0008, false));
+                        format!(
+                            "Azure Communication Services ended the send \
+                                 as \"{}\"{}",
+                            if status.is_empty() {
+                                "unknown"
+                            } else {
+                                &status
+                            },
+                            error
+                                .map(|e| format!(": {}", e))
+                                .unwrap_or_default()
+                        ),
+                        codes::STS_MAIL_0008,
+                        false,
+                    ));
                 }
-                Ok(Sent { provider_id: id(out.get("id")),
-                          detail: String::new() })
+                Ok(Sent {
+                    provider_id: id(out.get("id")),
+                    detail: String::new(),
+                })
             }
         }
     }

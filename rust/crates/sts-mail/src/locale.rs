@@ -40,13 +40,12 @@ fn parts_of(tag: &str) -> Option<Parts> {
             if script.is_empty() && region.is_empty() {
                 script = title(one);
             }
-        } else if (one.len() == 2
+        } else if ((one.len() == 2
             && one.chars().all(|c| c.is_ascii_alphabetic()))
-            || (one.len() == 3 && one.chars().all(|c| c.is_ascii_digit()))
+            || (one.len() == 3 && one.chars().all(|c| c.is_ascii_digit())))
+            && region.is_empty()
         {
-            if region.is_empty() {
-                region = one.to_uppercase();
-            }
+            region = one.to_uppercase();
         }
     }
     let explicit_region = region.clone();
@@ -75,8 +74,7 @@ fn likely(
     match language {
         "zh" => {
             let hant = script == "Hant"
-                || (script.is_empty()
-                    && matches!(region, "TW" | "HK" | "MO"));
+                || (script.is_empty() && matches!(region, "TW" | "HK" | "MO"));
             if hant {
                 ("Hant", "TW")
             } else {
@@ -130,15 +128,13 @@ pub fn canonical(tag: &str) -> String {
             stage = 1;
         } else if stage < 2
             && ((one.len() == 2 && alpha(one))
-                || (one.len() == 3
-                    && one.chars().all(|c| c.is_ascii_digit())))
+                || (one.len() == 3 && one.chars().all(|c| c.is_ascii_digit())))
         {
             out.push(one.to_uppercase());
             stage = 2;
         } else if (one.len() >= 5)
-            || (one.len() == 4 && one.chars().next().is_some_and(|c| {
-                c.is_ascii_digit()
-            }))
+            || (one.len() == 4
+                && one.chars().next().is_some_and(|c| c.is_ascii_digit()))
         {
             out.push(one.to_lowercase());
             stage = 3;

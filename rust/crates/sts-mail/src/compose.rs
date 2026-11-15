@@ -64,7 +64,10 @@ fn text_encoding(value: &str) -> char {
 }
 
 fn qp_literal(b: u8) -> bool {
-    b == 0x09 || b == 0x0a || b == 0x0d || (0x20..=0x3c).contains(&b)
+    b == 0x09
+        || b == 0x0a
+        || b == 0x0d
+        || (0x20..=0x3c).contains(&b)
         || (0x3e..=0x7e).contains(&b)
 }
 
@@ -121,7 +124,8 @@ fn qp_wrap(text: &str, line_length: usize) -> String {
             result.push_str(&String::from_utf8_lossy(&line));
             continue;
         }
-        let breakable = |b: u8| matches!(b, b' ' | b'\t' | b'.' | b',' | b'!' | b'?');
+        let breakable =
+            |b: u8| matches!(b, b' ' | b'\t' | b'.' | b',' | b'!' | b'?');
         let mut cut = false;
         if line.len() > line_length - margin {
             let tail = &line[tail_from..];
@@ -156,13 +160,15 @@ fn qp_wrap(text: &str, line_length: usize) -> String {
                     let whole_escapes = n % 3 == 0
                         && n / 3 >= 1
                         && n / 3 <= 4
-                        && line.chunks(3).all(|c| {
-                            c[0] == b'=' && hex(c[1]) && hex(c[2])
-                        });
+                        && line
+                            .chunks(3)
+                            .all(|c| c[0] == b'=' && hex(c[1]) && hex(c[2]));
                     if whole_escapes {
                         break;
                     }
-                    if !(line[n - 3] == b'=' && hex(line[n - 2]) && hex(line[n - 1]))
+                    if !(line[n - 3] == b'='
+                        && hex(line[n - 2])
+                        && hex(line[n - 1]))
                     {
                         break;
                     }
@@ -226,7 +232,10 @@ fn qp_body(bytes: &[u8]) -> String {
         while start < buf.len() {
             let stop = (start + SLICE).min(buf.len());
             let next = buf.get(stop).copied();
-            let qp = qp_wrap(&format!("{}{}", cur, qp_bytes(&buf[start..stop], next)), LINE);
+            let qp = qp_wrap(
+                &format!("{}{}", cur, qp_bytes(&buf[start..stop], next)),
+                LINE,
+            );
             let last = qp.rfind('\n').map_or(0, |i| i + 1);
             *cur = qp[last..].to_string();
             out.push_str(&qp[..last]);
@@ -278,7 +287,10 @@ fn split_encoded(text: &str, maxlen: usize) -> Vec<String> {
         while !done && !cur.is_empty() {
             done = true;
             let after = &s[cur.len()..];
-            if after.len() >= 3 && after[0] == b'=' && hex(after[1]) && hex(after[2])
+            if after.len() >= 3
+                && after[0] == b'='
+                && hex(after[1])
+                && hex(after[2])
             {
                 let chr = u8::from_str_radix(
                     &String::from_utf8_lossy(&after[1..3]),
@@ -354,7 +366,10 @@ fn encode_word(data: &str, encoding: char) -> String {
 fn header_text(value: &str) -> String {
     let control = value.chars().any(|c| {
         let u = c as u32;
-        u <= 0x08 || u == 0x0b || u == 0x0c || (0x0e..=0x1f).contains(&u)
+        u <= 0x08
+            || u == 0x0b
+            || u == 0x0c
+            || (0x0e..=0x1f).contains(&u)
             || u == 0x7f
     });
     let special = value.encode_utf16().any(|u| u == 0x22 || u >= 0x80);
@@ -367,7 +382,9 @@ fn header_text(value: &str) -> String {
 
 /// `_encodeAddressName()`.
 fn address_name(name: &str) -> String {
-    if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ' ')
+    if name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == ' ')
     {
         return name.to_string();
     }
@@ -448,13 +465,16 @@ fn date_header(ms: i64) -> String {
 fn part(content_type: &str, content: &str) -> (String, String) {
     let plain = !content.chars().any(|c| {
         let u = c as u32;
-        u <= 0x08 || u == 0x0b || u == 0x0c || (0x0e..=0x1f).contains(&u)
+        u <= 0x08
+            || u == 0x0b
+            || u == 0x0c
+            || (0x0e..=0x1f).contains(&u)
             || u >= 0x80
     });
     let long = js::len(content) > 128 * 1024
-        || content.split(['\n', '\r', '\u{2028}', '\u{2029}']).any(|line| {
-            js::len(line) > LINE
-        });
+        || content
+            .split(['\n', '\r', '\u{2028}', '\u{2029}'])
+            .any(|line| js::len(line) > LINE);
     let (encoding, body) = if plain && !long {
         ("7bit", content.to_string())
     } else if text_encoding(content) == 'Q' {
@@ -490,7 +510,11 @@ pub fn compose(message: &OutMessage, base_boundary: &str) -> Vec<u8> {
     } else {
         format!("<{}", message.message_id)
     };
-    let id = if id.ends_with('>') { id } else { format!("{}>", id) };
+    let id = if id.ends_with('>') {
+        id
+    } else {
+        format!("{}>", id)
+    };
     let headers = [
         fold("Auto-Submitted: auto-generated"),
         fold(&format!("Content-Language: {}", header_text(lang))),

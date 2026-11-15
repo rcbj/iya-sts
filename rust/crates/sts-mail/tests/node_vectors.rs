@@ -182,11 +182,21 @@ impl RealmInfo for Realm {
 struct AlwaysClaims(Arc<AtomicI64>);
 
 impl Claims for AlwaysClaims {
-    fn claim<'a>(&'a self, _: &'a str, _: &'a str, _: i64, _: &'a str)
-        -> BoxFuture<'a, ClaimAnswer> {
+    fn claim<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        _: i64,
+        _: &'a str,
+    ) -> BoxFuture<'a, ClaimAnswer> {
         let at = self.0.load(Ordering::SeqCst);
-        Box::pin(async move { ClaimAnswer { ok: true, reason: String::new(),
-                                            claimed_at: at } })
+        Box::pin(async move {
+            ClaimAnswer {
+                ok: true,
+                reason: String::new(),
+                claimed_at: at,
+            }
+        })
     }
 }
 
@@ -194,8 +204,11 @@ impl Claims for AlwaysClaims {
 struct Resolver(Mutex<Vec<Json>>);
 
 impl ValueResolver for Resolver {
-    fn resolve(&self, given: &Map<String, Json>, langs: &[String])
-        -> Map<String, Json> {
+    fn resolve(
+        &self,
+        given: &Map<String, Json>,
+        langs: &[String],
+    ) -> Map<String, Json> {
         let mut held = self.0.lock().unwrap();
         let at = held.iter().position(|r| {
             r["given"] == Json::Object(given.clone())
@@ -253,16 +266,22 @@ struct Relay {
 }
 
 impl SmtpRelay for Relay {
-    fn send<'a>(&'a self, _: &'a str, _: &'a str, raw: &'a [u8])
-        -> BoxFuture<'a, Result<SmtpAccepted, SmtpFailure>> {
+    fn send<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a str,
+        raw: &'a [u8],
+    ) -> BoxFuture<'a, Result<SmtpAccepted, SmtpFailure>> {
         Box::pin(async move {
             if let Some(f) = self.fail.lock().unwrap().pop_front() {
                 return Err(f);
             }
             self.sent.lock().unwrap().push(raw.to_vec());
-            Ok(SmtpAccepted { message_id: "<relay@x>".into(),
-                              response: "250 2.0.0 OK".into(),
-                              rejected: vec![] })
+            Ok(SmtpAccepted {
+                message_id: "<relay@x>".into(),
+                response: "250 2.0.0 OK".into(),
+                rejected: vec![],
+            })
         })
     }
 }
@@ -279,10 +298,17 @@ impl RelayFactory for Relays {
 struct NoClouds;
 
 impl CloudFactory for NoClouds {
-    fn client(&self, _: Cloud, _: &Json, _: Option<&str>)
-        -> Result<Arc<dyn CloudMail>, SendError> {
-        Err(SendError::new("no cloud here",
-                           sts_core::errors::codes::STS_MAIL_0005, false))
+    fn client(
+        &self,
+        _: Cloud,
+        _: &Json,
+        _: Option<&str>,
+    ) -> Result<Arc<dyn CloudMail>, SendError> {
+        Err(SendError::new(
+            "no cloud here",
+            sts_core::errors::codes::STS_MAIL_0005,
+            false,
+        ))
     }
 }
 
@@ -303,16 +329,20 @@ impl Transport for RecordingTransport {
     fn name(&self) -> &str {
         self.0.name()
     }
-    fn send<'a>(&'a self, m: &'a OutMessage)
-        -> BoxFuture<'a, Result<Sent, SendError>> {
+    fn send<'a>(
+        &'a self,
+        m: &'a OutMessage,
+    ) -> BoxFuture<'a, Result<Sent, SendError>> {
         self.1.lock().unwrap().push(m.clone());
         self.0.send(m)
     }
 }
 
 impl TransportBuilder for Recording {
-    fn build<'a>(&'a self, cfg: &'a Json)
-        -> BoxFuture<'a, Result<Arc<dyn Transport>, SendError>> {
+    fn build<'a>(
+        &'a self,
+        cfg: &'a Json,
+    ) -> BoxFuture<'a, Result<Arc<dyn Transport>, SendError>> {
         Box::pin(async move {
             let made = self.0.build(cfg).await?;
             let wrapped: Arc<dyn Transport> =
@@ -323,26 +353,37 @@ impl TransportBuilder for Recording {
 }
 
 fn handed_json(m: &OutMessage) -> Json {
-    let date = chrono::DateTime::from_timestamp_millis(m.date_ms).unwrap()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let date = chrono::DateTime::from_timestamp_millis(m.date_ms)
+        .unwrap()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     serde_json::json!({ "from": m.from, "fromName": m.from_name, "to": m.to,
         "subject": m.subject, "text": m.text, "html": m.html,
         "messageId": m.message_id, "date": date, "lang": m.lang })
 }
 
 fn message_of(v: &Json) -> OutMessage {
-    let date = chrono::DateTime::parse_from_rfc3339(s(&v["date"])).unwrap()
+    let date = chrono::DateTime::parse_from_rfc3339(s(&v["date"]))
+        .unwrap()
         .timestamp_millis();
-    OutMessage { from: s(&v["from"]).into(), from_name: s(&v["fromName"]).into(),
-        to: s(&v["to"]).into(), subject: s(&v["subject"]).into(),
-        text: s(&v["text"]).into(), html: s(&v["html"]).into(),
-        message_id: s(&v["messageId"]).into(), date_ms: date,
-        lang: s(&v["lang"]).into() }
+    OutMessage {
+        from: s(&v["from"]).into(),
+        from_name: s(&v["fromName"]).into(),
+        to: s(&v["to"]).into(),
+        subject: s(&v["subject"]).into(),
+        text: s(&v["text"]).into(),
+        html: s(&v["html"]).into(),
+        message_id: s(&v["messageId"]).into(),
+        date_ms: date,
+        lang: s(&v["lang"]).into(),
+    }
 }
 
 fn ids_of(send: &Json) -> Vec<String> {
-    send["result"]["queued"].as_array().map(|q| q.iter()
-        .map(|v| s(&v["id"]).to_string()).collect()).unwrap_or_default()
+    send["result"]["queued"]
+        .as_array()
+        .map(|q| q.iter().map(|v| s(&v["id"]).to_string()).collect())
+        .unwrap_or_default()
 }
 
 fn act(r: Result<Json, ActRefusal>) -> Json {
@@ -370,7 +411,8 @@ fn world(v: &Json) -> World {
     let settings = Arc::new(sts_core::settings::Settings::new(
         serde_json::json!({ "global": { "https": true, "port": 8081,
             "host": "0.0.0.0", "domain": "example.com" } }),
-        Default::default()));
+        Default::default(),
+    ));
     let mode = Arc::new(sts_core::mode::Mode::new(settings.clone()));
     let clock = Arc::new(AtomicI64::new(v["t0"].as_i64().unwrap()));
     let audits = Arc::new(Audits::default());
@@ -379,39 +421,66 @@ fn world(v: &Json) -> World {
     let relays = Arc::new(Relays(relay.clone(), Mutex::new(Vec::new())));
     let resolver = Arc::new(Resolver::default());
     let secrets = Arc::new(Secrets(Mutex::new(
-        s(&v["keys"]["rsa"]["privateKeyPem"]).to_string())));
-    let ids: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(
-        VecDeque::new()));
+        s(&v["keys"]["rsa"]["privateKeyPem"]).to_string(),
+    )));
+    let ids: Arc<Mutex<VecDeque<String>>> =
+        Arc::new(Mutex::new(VecDeque::new()));
     let c1 = clock.clone();
     let c2 = clock.clone();
     let c3 = clock.clone();
     let id_queue = ids.clone();
-    let builder = Builder { secrets: secrets.clone(), relays: relays.clone(),
-        clouds: Arc::new(NoClouds), files: Arc::new(NoFiles),
+    let builder = Builder {
+        secrets: secrets.clone(),
+        relays: relays.clone(),
+        clouds: Arc::new(NoClouds),
+        files: Arc::new(NoFiles),
         clock: Arc::new(move || c1.load(Ordering::SeqCst)),
-        boundary: Arc::new(|| "0123456789abcdef".to_string()) };
-    let holder = v["retry"]["dead"]["holder"].as_str().unwrap_or("")
+        boundary: Arc::new(|| "0123456789abcdef".to_string()),
+    };
+    let holder = v["retry"]["dead"]["holder"]
+        .as_str()
+        .unwrap_or("")
         .to_string();
     let deps = MailDeps {
-        settings: settings.clone(), mode,
+        settings: settings.clone(),
+        mode,
         store: Arc::new(MemoryStore::default()),
         directory: Arc::new(Dir {
             entries: v["entries"].as_object().unwrap().clone(),
-            groups: v["groups"].as_object().unwrap().clone() }),
+            groups: v["groups"].as_object().unwrap().clone(),
+        }),
         realm: Arc::new(Realm(v["realm"].clone())),
         claims: Arc::new(AlwaysClaims(c2)),
-        resolver: resolver.clone(), locales: Arc::new(En),
-        links: Arc::new(NoLinks), audit: audits.clone(),
+        resolver: resolver.clone(),
+        locales: Arc::new(En),
+        links: Arc::new(NoLinks),
+        audit: audits.clone(),
         transports: Arc::new(Recording(builder, handed.clone())),
-        administrators: Arc::new(|| vec!["ann".into(), "nomail".into(),
-                                         "sven".into()]),
+        administrators: Arc::new(|| {
+            vec!["ann".into(), "nomail".into(), "sven".into()]
+        }),
         now: Arc::new(move || c3.load(Ordering::SeqCst)),
-        id: Arc::new(move || id_queue.lock().unwrap().pop_front()
-            .unwrap_or_else(|| "no-id-left".into())),
+        id: Arc::new(move || {
+            id_queue
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| "no-id-left".into())
+        }),
         holder,
     };
-    World { mail: Arc::new(Mail::new(deps)), settings, clock, audits, handed,
-            relay, relays, resolver, secrets, ids }
+    World {
+        mail: Arc::new(Mail::new(deps)),
+        settings,
+        clock,
+        audits,
+        handed,
+        relay,
+        relays,
+        resolver,
+        secrets,
+        ids,
+    }
 }
 
 fn same(what: &str, rust: &Json, node: &Json, failures: &mut Vec<String>) {
@@ -432,18 +501,24 @@ async fn the_channel_is_nodes() {
     for op in v["script"].as_array().unwrap() {
         match s(&op["op"]) {
             "set" => {
-                if let Err(e) = w.settings.set_override(s(&op["key"]),
-                                                        op["value"].clone()) {
+                if let Err(e) =
+                    w.settings.set_override(s(&op["key"]), op["value"].clone())
+                {
                     eprintln!("set {} refused here: {}", op["key"], e.problem);
                 }
                 if op["key"] == "mail.dkimAlgorithm" {
-                    let key = if op["value"] == "ed25519-sha256" { "ed25519" }
-                              else { "rsa" };
+                    let key = if op["value"] == "ed25519-sha256" {
+                        "ed25519"
+                    } else {
+                        "rsa"
+                    };
                     *w.secrets.0.lock().unwrap() =
                         s(&v["keys"][key]["privateKeyPem"]).to_string();
                 }
             }
-            "now" => w.clock.store(op["at"].as_i64().unwrap(), Ordering::SeqCst),
+            "now" => {
+                w.clock.store(op["at"].as_i64().unwrap(), Ordering::SeqCst)
+            }
             "fail" => {
                 for f in op["failures"].as_array().unwrap() {
                     w.relay.fail.lock().unwrap().push_back(SmtpFailure {
@@ -451,7 +526,8 @@ async fn the_channel_is_nodes() {
                         response_code: f["responseCode"].as_u64().unwrap_or(0)
                             as u16,
                         response: s(&f["response"]).into(),
-                        message: "relay says no".into() });
+                        message: "relay says no".into(),
+                    });
                 }
             }
             "send" => {
@@ -459,7 +535,8 @@ async fn the_channel_is_nodes() {
                 let label = s(&one["label"]);
                 w.ids.lock().unwrap().extend(ids_of(one));
                 w.resolver.0.lock().unwrap().extend(
-                    one["resolutions"].as_array().unwrap().iter().cloned());
+                    one["resolutions"].as_array().unwrap().iter().cloned(),
+                );
                 let a0 = w.audits.0.lock().unwrap().len();
                 let h0 = w.handed.lock().unwrap().len();
                 let req = SendRequest::from_json(&one["request"]);
@@ -473,16 +550,30 @@ async fn the_channel_is_nodes() {
                     w.mail.send(&req)
                 };
                 w.mail.dispatch(&result.queued).await;
-                same(&format!("{} result", label), &result.to_json(),
-                     &one["result"], &mut failures);
+                same(
+                    &format!("{} result", label),
+                    &result.to_json(),
+                    &one["result"],
+                    &mut failures,
+                );
                 let handed: Vec<Json> = w.handed.lock().unwrap()[h0..]
-                    .iter().map(handed_json).collect();
-                same(&format!("{} handed", label), &Json::Array(handed),
-                     &one["handed"], &mut failures);
-                let audits = Json::Array(w.audits.0.lock().unwrap()[a0..]
-                    .to_vec());
-                same(&format!("{} audits", label), &audits, &one["audits"],
-                     &mut failures);
+                    .iter()
+                    .map(handed_json)
+                    .collect();
+                same(
+                    &format!("{} handed", label),
+                    &Json::Array(handed),
+                    &one["handed"],
+                    &mut failures,
+                );
+                let audits =
+                    Json::Array(w.audits.0.lock().unwrap()[a0..].to_vec());
+                same(
+                    &format!("{} audits", label),
+                    &audits,
+                    &one["audits"],
+                    &mut failures,
+                );
                 checked += 3;
             }
             "mark" => {
@@ -515,8 +606,12 @@ async fn mark(w: &World, v: &Json, name: &str, failures: &mut Vec<String>) {
     match name {
         "declined" => {
             let got = Json::Array(vec![
-                act(m.set_declined("declines", "notification", true,
-                                   "declines")),
+                act(m.set_declined(
+                    "declines",
+                    "notification",
+                    true,
+                    "declines",
+                )),
                 act(m.set_declined("declines", "security", true, "")),
                 act(m.set_declined("declines", "account", true, "")),
                 act(m.set_declined("declines", "bogus", true, "")),
@@ -528,44 +623,78 @@ async fn mark(w: &World, v: &Json, name: &str, failures: &mut Vec<String>) {
             let id = s(&r["id"]);
             let swept = m.sweep().await;
             same("swept", &swept, &r["swept"], failures);
-            same("dead", &m.message(id).unwrap_or(Json::Null), &r["dead"],
-                 failures);
+            same(
+                "dead",
+                &m.message(id).unwrap_or(Json::Null),
+                &r["dead"],
+                failures,
+            );
             let h0 = w.handed.lock().unwrap().len();
             let retried = m.retry(id, "admin");
             if let Ok(row) = &retried {
                 m.dispatch(&[row["row"].clone()]).await;
             }
             same("retried", &act(retried)["result"], &r["retried"], failures);
-            same("again", &m.message(id).unwrap_or(Json::Null), &r["again"],
-                 failures);
+            same(
+                "again",
+                &m.message(id).unwrap_or(Json::Null),
+                &r["again"],
+                failures,
+            );
             let not_there = act(m.retry("nope", ""));
             same("notThere", &not_there["result"], &r["notThere"], failures);
-            same("notThereCode", &not_there["code"], &r["notThereCode"],
-                 failures);
+            same(
+                "notThereCode",
+                &not_there["code"],
+                &r["notThereCode"],
+                failures,
+            );
             let first = ids_of(&v["sends"][0]);
-            same("notDead", &act(m.retry(&first[0], ""))["result"],
-                 &r["notDead"], failures);
-            let handed: Vec<Json> = w.handed.lock().unwrap()[h0..].iter()
-                .map(handed_json).collect();
+            same(
+                "notDead",
+                &act(m.retry(&first[0], ""))["result"],
+                &r["notDead"],
+                failures,
+            );
+            let handed: Vec<Json> = w.handed.lock().unwrap()[h0..]
+                .iter()
+                .map(handed_json)
+                .collect();
             same("retry handed", &Json::Array(handed), &r["handed"], failures);
         }
-        "linkBase0" => same("linkBase0", &serde_json::json!(m.link_base()),
-                            &v["linkBases"][0], failures),
-        "linkBase1" => same("linkBase1", &serde_json::json!(m.link_base()),
-                            &v["linkBases"][1], failures),
+        "linkBase0" => same(
+            "linkBase0",
+            &serde_json::json!(m.link_base()),
+            &v["linkBases"][0],
+            failures,
+        ),
+        "linkBase1" => same(
+            "linkBase1",
+            &serde_json::json!(m.link_base()),
+            &v["linkBases"][1],
+            failures,
+        ),
         "captureWrite" => {
             // The write rule that refuses `capture` in product is the
             // settings slice's (`modeWriteProblem()`), not this crate's.
             eprintln!("captureWrite: Node {}", v["captureWriteRefused"]);
         }
-        "productStartup" => same("productStartup",
+        "productStartup" => same(
+            "productStartup",
             &serde_json::json!(m.startup_problem().await),
-            &v["productStartup"], failures),
+            &v["productStartup"],
+            failures,
+        ),
         "productOverCapture" => {
-            let set = w.settings.set_override("global.mode",
-                                              serde_json::json!("product"));
-            same("productOverCapture", &serde_json::json!(set.is_ok()),
-                 &v["productOverCapture"]["ok"], failures);
+            let set = w
+                .settings
+                .set_override("global.mode", serde_json::json!("product"));
+            same(
+                "productOverCapture",
+                &serde_json::json!(set.is_ok()),
+                &v["productOverCapture"]["ok"],
+                failures,
+            );
         }
         "captureInProduct" => {
             let got = match m.transport().await {
@@ -575,12 +704,18 @@ async fn mark(w: &World, v: &Json, name: &str, failures: &mut Vec<String>) {
             };
             same("captureInProduct", &got, &v["captureInProduct"], failures);
         }
-        "startupProblem" => same("startupProblem",
+        "startupProblem" => same(
+            "startupProblem",
             &serde_json::json!(m.startup_problem().await),
-            &v["startupProblem"], failures),
-        "effective" => same("effective", &serde_json::json!(
-            [m.effective_transport(), m.available()]), &v["effective"],
-            failures),
+            &v["startupProblem"],
+            failures,
+        ),
+        "effective" => same(
+            "effective",
+            &serde_json::json!([m.effective_transport(), m.available()]),
+            &v["effective"],
+            failures,
+        ),
         "saved" => {
             let own = serde_json::json!({ "subject": "Own {{service}}",
                 "text": "Own {{link}} {{username}}",
@@ -590,12 +725,21 @@ async fn mark(w: &World, v: &Json, name: &str, failures: &mut Vec<String>) {
                 act(m.save_template("password-reset", "FR", &own, "admin")),
                 act(m.save_template("nope", "fr", &own, "")),
                 act(m.save_template("password-reset", "fr_CA", &own, "")),
-                act(m.save_template("password-reset", "fr",
-                    &serde_json::json!({ "subject": "x" }), "")),
-                act(m.save_template("layout", "sv", &serde_json::json!({
+                act(m.save_template(
+                    "password-reset",
+                    "fr",
+                    &serde_json::json!({ "subject": "x" }),
+                    "",
+                )),
+                act(m.save_template(
+                    "layout",
+                    "sv",
+                    &serde_json::json!({
                     "subject": "[{{realm}}] {{subject}}",
                     "text": "{{content}}\n-- {{reason}}",
-                    "html": "<div>{{content}}</div>" }), "")),
+                    "html": "<div>{{content}}</div>" }),
+                    "",
+                )),
                 act(m.reset_template("password-reset", "de", "")),
                 act(m.reset_template("nope", "fr", "")),
             ]);
@@ -605,14 +749,22 @@ async fn mark(w: &World, v: &Json, name: &str, failures: &mut Vec<String>) {
             let got = serde_json::json!([
                 m.template_view("password-reset", "FR-CA"),
                 m.template_view("password-reset", "en"),
-                m.template_view("x", "en")]);
+                m.template_view("x", "en")
+            ]);
             same("templateViews", &got, &v["templateViews"], failures);
         }
-        "resetBack" => same("resetBack",
+        "resetBack" => same(
+            "resetBack",
             &act(m.reset_template("password-reset", "fr", ""))["result"],
-            &v["resetBack"], failures),
-        "listTemplates" => same("listTemplates",
-            &Json::Array(m.list_templates()), &v["listTemplates"], failures),
+            &v["resetBack"],
+            failures,
+        ),
+        "listTemplates" => same(
+            "listTemplates",
+            &Json::Array(m.list_templates()),
+            &v["listTemplates"],
+            failures,
+        ),
         "uses" => {}
         other => panic!("unknown mark {}", other),
     }
@@ -631,8 +783,8 @@ fn every_raw_message_is_nodes() {
     let re = regex::Regex::new(r#"boundary="--_NmP-([0-9a-f]{16})-Part_1""#)
         .unwrap();
     let t_re = regex::Regex::new(r"; t=(\d+);").unwrap();
-    let a_re = regex::Regex::new(r"DKIM-Signature: v=1; a=([a-z0-9-]+);")
-        .unwrap();
+    let a_re =
+        regex::Regex::new(r"DKIM-Signature: v=1; a=([a-z0-9-]+);").unwrap();
     let mut checked = 0;
     let mut written = Vec::new();
     for one in v["sends"].as_array().unwrap() {
@@ -642,28 +794,49 @@ fn every_raw_message_is_nodes() {
         for raw in raws {
             let bytes = b64.decode(s(&raw["raw"])).unwrap();
             let text = String::from_utf8_lossy(&bytes).to_string();
-            let msg = handed.iter().map(message_of).find(|m| {
-                text.contains(&format!("Message-ID: {}", m.message_id))
-            }).unwrap();
+            let msg = handed
+                .iter()
+                .map(message_of)
+                .find(|m| {
+                    text.contains(&format!("Message-ID: {}", m.message_id))
+                })
+                .unwrap();
             let boundary = &re.captures(&text).unwrap()[1];
             let dkim = a_re.captures(&text).map(|a| {
                 let alg = a[1].to_string();
-                let key = if alg == "ed25519-sha256" { "ed25519" } else { "rsa" };
-                (Dkim { domain: "example.com".into(), selector: "s2026".into(),
+                let key = if alg == "ed25519-sha256" {
+                    "ed25519"
+                } else {
+                    "rsa"
+                };
+                (
+                    Dkim {
+                        domain: "example.com".into(),
+                        selector: "s2026".into(),
                         algorithm: alg,
                         private_key_pem: s(&v["keys"][key]["privateKeyPem"])
-                            .into() },
-                 key.to_string())
+                            .into(),
+                    },
+                    key.to_string(),
+                )
             });
-            let t: i64 = t_re.captures(&text).map(|c| c[1].parse().unwrap())
+            let t: i64 = t_re
+                .captures(&text)
+                .map(|c| c[1].parse().unwrap())
                 .unwrap_or(0);
-            let made = raw_message(&msg, dkim.as_ref().map(|d| &d.0),
-                                   boundary, t * 1000).unwrap();
+            let made = raw_message(
+                &msg,
+                dkim.as_ref().map(|d| &d.0),
+                boundary,
+                t * 1000,
+            )
+            .unwrap();
             if made != bytes {
                 let skip = |b: &[u8]| {
                     let t = String::from_utf8_lossy(b).to_string();
                     if t.starts_with("DKIM-Signature:") {
-                        t.split_once("\r\n").map(|x| x.1.to_string())
+                        t.split_once("\r\n")
+                            .map(|x| x.1.to_string())
                             .unwrap_or(t)
                     } else {
                         t
@@ -673,14 +846,24 @@ fn every_raw_message_is_nodes() {
                 let dir = std::env::var("STS_CRYPTO_VECTORS").unwrap();
                 std::fs::write(format!("{}/diff-rust.txt", dir), &mine).ok();
                 std::fs::write(format!("{}/diff-node.txt", dir), &text).ok();
-                let at = mine.chars().zip(text.chars())
-                    .position(|(a, b)| a != b).unwrap_or(0);
-                panic!("{}: raw differs at {}:\nrust …{}\nnode …{}",
-                       s(&one["label"]),
-                       at, mine.chars().skip(at.saturating_sub(700)).take(800)
-                           .collect::<String>(),
-                       text.chars().skip(at.saturating_sub(700)).take(800)
-                           .collect::<String>());
+                let at = mine
+                    .chars()
+                    .zip(text.chars())
+                    .position(|(a, b)| a != b)
+                    .unwrap_or(0);
+                panic!(
+                    "{}: raw differs at {}:\nrust …{}\nnode …{}",
+                    s(&one["label"]),
+                    at,
+                    mine.chars()
+                        .skip(at.saturating_sub(700))
+                        .take(800)
+                        .collect::<String>(),
+                    text.chars()
+                        .skip(at.saturating_sub(700))
+                        .take(800)
+                        .collect::<String>()
+                );
             }
             if let Some((_, key)) = &dkim {
                 if written.len() < 40 {
@@ -696,55 +879,70 @@ fn every_raw_message_is_nodes() {
     assert!(checked > 300);
     if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
         let dir = std::env::var("STS_CRYPTO_VECTORS").unwrap();
-        std::fs::write(std::path::Path::new(&dir).join("mail-rust.json"),
-                       serde_json::to_string(&serde_json::json!({
-                           "signed": written })).unwrap()).unwrap();
+        std::fs::write(
+            std::path::Path::new(&dir).join("mail-rust.json"),
+            serde_json::to_string(&serde_json::json!({
+                           "signed": written }))
+            .unwrap(),
+        )
+        .unwrap();
     }
 }
 
 /// The uses, after the script, as Node ran them.
 async fn uses(w: &World, v: &Json, failures: &mut Vec<String>) -> usize {
+    use serde_json::json;
     use sts_mail::uses::{Made, MailUses};
     let c = w.clock.clone();
-    let u = MailUses::new(w.mail.clone(), w.settings.clone(),
-                          Arc::new(move || c.load(Ordering::SeqCst)));
+    let u = MailUses::new(
+        w.mail.clone(),
+        w.settings.clone(),
+        Arc::new(move || c.load(Ordering::SeqCst)),
+    );
     let mut checked = 0;
     for one in v["uses"].as_array().unwrap() {
         let label = s(&one["label"]);
         for h in one["handed"].as_array().unwrap() {
-            let id = s(&h["messageId"]).trim_start_matches('<')
-                .split('@').next().unwrap().to_string();
+            let id = s(&h["messageId"])
+                .trim_start_matches('<')
+                .split('@')
+                .next()
+                .unwrap()
+                .to_string();
             w.ids.lock().unwrap().push_back(id);
         }
-        w.resolver.0.lock().unwrap().extend(
-            one["resolutions"].as_array().unwrap().iter().cloned());
+        w.resolver
+            .0
+            .lock()
+            .unwrap()
+            .extend(one["resolutions"].as_array().unwrap().iter().cloned());
         let a0 = w.audits.0.lock().unwrap().len();
         let h0 = w.handed.lock().unwrap().len();
         let mut made = Made::default();
         let result: Json = match label {
             "notice password-changed" => u.notice("password-changed", "fred",
-                &serde_json::json!({ "values": { "how": "by you" }, "via": "portal" }),
+                &json!({ "values": { "how": "by you" }, "via": "portal" }),
                 &mut made).to_json(),
             "notice bySystem" => u.notice("account-disabled", "sven",
-                &serde_json::json!({ "values": { "why": "policy" }, "bySystem": true,
+                &json!({ "values": { "why": "policy" }, "bySystem": true,
                       "act": "disabled" }), &mut made).to_json(),
-            "notice no user" => u.notice("password-changed", "", &serde_json::json!({}),
+            "notice no user" => u.notice("password-changed", "", &json!({}),
                                          &mut made).to_json(),
             "signal credentialChanged" => u.from_account_signal(
-                "credentialChanged", &serde_json::json!({ "username": "li",
+                "credentialChanged", &json!({ "username": "li",
                 "initiatingEntity": "admin" }), &mut made).to_json(),
             "signal app password" => u.from_account_signal(
-                "credentialChanged", &serde_json::json!({ "username": "li",
+                "credentialChanged", &json!({ "username": "li",
                 "friendlyName": "x" }), &mut made).to_json(),
             "signal compromised" => u.from_account_signal(
-                "credentialCompromised", &serde_json::json!({ "username": "wei",
+                "credentialCompromised", &json!({ "username": "wei",
                 "initiatingEntity": "system", "reasonUser": "leaked" }),
                 &mut made).to_json(),
             "signal recovery" => u.from_account_signal("recoveryActivated",
-                &serde_json::json!({ "username": "kit", "initiatingEntity": "user" }),
+                &json!({ "username": "kit", "initiatingEntity": "user" }),
                 &mut made).to_json(),
             "signal recovery mailed" => u.from_account_signal(
-                "recoveryActivated", &serde_json::json!({ "username": "kit",
+                "recoveryActivated", &json!({ "username": "kit",
                 "mailed": true }), &mut made).to_json(),
             "admin reset link" => u.mail_administrator_link("reset", "maria",
                 "tok/1", "root", "console", &mut made).0,
@@ -753,33 +951,33 @@ async fn uses(w: &World, v: &Json, failures: &mut Vec<String>) -> usize {
             "admin link no mail" => u.mail_administrator_link("reset",
                 "nomail", "tok3", "root", "console", &mut made).0,
             "access requested" => u.access_requested("bea",
-                &serde_json::json!({ "client": "app-1", "expiresMinutes": 30 }), &mut made)
+                &json!({ "client": "app-1", "expiresMinutes": 30 }), &mut made)
                 .to_json(),
             "access requested rights" => u.access_requested("pilar",
-                &serde_json::json!({ "client": "app-2", "rights": "read mail",
+                &json!({ "client": "app-2", "rights": "read mail",
                       "dedupKey": "k" }), &mut made).to_json(),
-            "pki pin status" => u.pki_pin_status(&serde_json::json!({ "changes": "two pins",
+            "pki pin status" => u.pki_pin_status(&json!({ "changes": "two pins",
                 "dedupKey": "pins:1" }), &mut made).to_json(),
             "post-login reminder" => u.post_login_reminder("mateo",
-                &serde_json::json!({ "started": "act-1", "mails": 2, "actor": "admin" }),
+                &json!({ "started": "act-1", "mails": 2, "actor": "admin" }),
                 &mut made).to_json(),
             "uma approval" => u.uma_approval_requested("maria",
-                &serde_json::json!({ "requester": "bob", "client": "app",
+                &json!({ "requester": "bob", "client": "app",
                       "resource": "photos", "scopes": "view",
                       "expiresMinutes": 10 }), &mut made).to_json(),
             "authzen request" => u.authzen_access_requested("hans",
-                &serde_json::json!({ "requester": "bob", "subject": "s", "action": "read",
+                &json!({ "requester": "bob", "subject": "s", "action": "read",
                       "resource": "r", "application": "a",
                       "expiresMinutes": 5 }), &mut made).to_json(),
             "authzen emergency" => u.authzen_access_requested("sven",
-                &serde_json::json!({ "requester": "bob", "emergency": true,
+                &json!({ "requester": "bob", "emergency": true,
                       "justification": "fire", "dedupKey": "e1" }),
                 &mut made).to_json(),
             "account disabled" => u.account_disabled("elena", "policy", false,
                                                      &mut made).to_json(),
-            "sessions ended" => u.sessions_ended("claire", 3, &serde_json::json!(""),
+            "sessions ended" => u.sessions_ended("claire", 3, &json!(""),
                                                  &mut made).to_json(),
-            "sessions ended by" => u.sessions_ended("bea", 1, &serde_json::json!("root"),
+            "sessions ended by" => u.sessions_ended("bea", 1, &json!("root"),
                                                     &mut made).to_json(),
             "address changed" => u.address_changed("wei",
                 "old-wei@example.com", "new-wei@example.com", &mut made)
@@ -795,17 +993,35 @@ async fn uses(w: &World, v: &Json, failures: &mut Vec<String>) -> usize {
         if let Some(o) = result.as_object_mut() {
             o.remove("code");
         }
-        same(&format!("use {} result", label), &result, &one["result"],
-             failures);
-        same(&format!("use {} requests", label), &Json::Array(made.requests),
-             &one["requests"], failures);
-        let handed: Vec<Json> = w.handed.lock().unwrap()[h0..].iter()
-            .map(handed_json).collect();
-        same(&format!("use {} handed", label), &Json::Array(handed),
-             &one["handed"], failures);
+        same(
+            &format!("use {} result", label),
+            &result,
+            &one["result"],
+            failures,
+        );
+        same(
+            &format!("use {} requests", label),
+            &Json::Array(made.requests),
+            &one["requests"],
+            failures,
+        );
+        let handed: Vec<Json> = w.handed.lock().unwrap()[h0..]
+            .iter()
+            .map(handed_json)
+            .collect();
+        same(
+            &format!("use {} handed", label),
+            &Json::Array(handed),
+            &one["handed"],
+            failures,
+        );
         let audits = Json::Array(w.audits.0.lock().unwrap()[a0..].to_vec());
-        same(&format!("use {} audits", label), &audits, &one["audits"],
-             failures);
+        same(
+            &format!("use {} audits", label),
+            &audits,
+            &one["audits"],
+            failures,
+        );
         checked += 4;
     }
     checked
@@ -827,27 +1043,38 @@ fn the_transports_are_nodes() {
         assert_eq!(address_problem(s(&one[0])), s(&one[1]), "{}", one[0]);
         checked += 1;
     }
-    let coded = |e: SendError| serde_json::json!({ "code": e.code.as_str(),
-        "retry": e.retry, "message": e.message });
+    let coded = |e: SendError| {
+        serde_json::json!({ "code": e.code.as_str(),
+        "retry": e.retry, "message": e.message })
+    };
     for one in t["smtp"].as_array().unwrap() {
         let e = &one[0];
         let f = SmtpFailure {
             code: s(&e["code"]).into(),
             response_code: e["responseCode"].as_u64().unwrap_or(0) as u16,
             response: s(&e["response"]).into(),
-            message: if s(&e["message"]).is_empty() { "x".into() }
-                     else { s(&e["message"]).into() },
+            message: if s(&e["message"]).is_empty() {
+                "x".into()
+            } else {
+                s(&e["message"]).into()
+            },
         };
         assert_eq!(coded(classify_smtp(&f)), one[1], "{}", e);
         checked += 1;
     }
     for one in t["cloud"].as_array().unwrap() {
         let e = &one[0];
-        let status = e["$metadata"]["httpStatusCode"].as_i64()
-            .or(e["statusCode"].as_i64()).or(e["code"].as_i64()).unwrap_or(0);
+        let status = e["$metadata"]["httpStatusCode"]
+            .as_i64()
+            .or(e["statusCode"].as_i64())
+            .or(e["code"].as_i64())
+            .unwrap_or(0);
         let f = CloudFailure {
-            name: if s(&e["name"]).is_empty() { "Error".into() }
-                  else { s(&e["name"]).into() },
+            name: if s(&e["name"]).is_empty() {
+                "Error".into()
+            } else {
+                s(&e["name"]).into()
+            },
             message: s(&e["message"]).into(),
             status,
             retryable: !e["$retryable"].is_null() || e["retryable"] == true,
@@ -878,8 +1105,10 @@ struct Clouds(Arc<Mutex<Vec<Json>>>, Json);
 struct CloudClient(Cloud, Arc<Mutex<Vec<Json>>>, Json);
 
 impl CloudMail for CloudClient {
-    fn send<'a>(&'a self, request: &'a Json)
-        -> BoxFuture<'a, Result<Json, CloudFailure>> {
+    fn send<'a>(
+        &'a self,
+        request: &'a Json,
+    ) -> BoxFuture<'a, Result<Json, CloudFailure>> {
         self.1.lock().unwrap().push(request.clone());
         let out = match self.0 {
             Cloud::Ses => serde_json::json!({ "MessageId": "ses-1" }),
@@ -891,8 +1120,12 @@ impl CloudMail for CloudClient {
 }
 
 impl CloudFactory for Clouds {
-    fn client(&self, cloud: Cloud, _: &Json, _: Option<&str>)
-        -> Result<Arc<dyn CloudMail>, SendError> {
+    fn client(
+        &self,
+        cloud: Cloud,
+        _: &Json,
+        _: Option<&str>,
+    ) -> Result<Arc<dyn CloudMail>, SendError> {
         Ok(Arc::new(CloudClient(cloud, self.0.clone(), self.1.clone())))
     }
 }
@@ -908,13 +1141,19 @@ impl FileReader for AnyFile {
 fn auth_json(auth: &Option<SmtpAuth>) -> Json {
     match auth {
         None => Json::Null,
-        Some(SmtpAuth::Password { user, pass, method }) =>
-            serde_json::json!({ "user": user, "pass": pass, "method": method }),
-        Some(SmtpAuth::OAuth2 { user, access_token, refresh }) => {
+        Some(SmtpAuth::Password { user, pass, method }) => {
+            serde_json::json!({ "user": user, "pass": pass, "method": method })
+        }
+        Some(SmtpAuth::OAuth2 {
+            user,
+            access_token,
+            refresh,
+        }) => {
             let mut out = serde_json::json!({ "type": "OAuth2", "user": user });
             if refresh.is_object() {
-                for k in ["clientId", "clientSecret", "refreshToken",
-                          "accessUrl"] {
+                for k in
+                    ["clientId", "clientSecret", "refreshToken", "accessUrl"]
+                {
                     out[k] = refresh[k].clone();
                 }
             } else {
@@ -933,11 +1172,17 @@ async fn every_build_is_nodes() {
     use base64::Engine;
     let b = &v["builds"];
     let m = &b["message"];
-    let message = OutMessage { from: s(&m["from"]).into(),
-        from_name: s(&m["fromName"]).into(), to: s(&m["to"]).into(),
-        subject: s(&m["subject"]).into(), text: s(&m["text"]).into(),
-        html: s(&m["html"]).into(), message_id: s(&m["messageId"]).into(),
-        date_ms: m["date"].as_i64().unwrap(), lang: s(&m["lang"]).into() };
+    let message = OutMessage {
+        from: s(&m["from"]).into(),
+        from_name: s(&m["fromName"]).into(),
+        to: s(&m["to"]).into(),
+        subject: s(&m["subject"]).into(),
+        text: s(&m["text"]).into(),
+        html: s(&m["html"]).into(),
+        message_id: s(&m["messageId"]).into(),
+        date_ms: m["date"].as_i64().unwrap(),
+        lang: s(&m["lang"]).into(),
+    };
     let re = regex::Regex::new(r#"boundary="--_NmP-([0-9a-f]{16})-Part_1""#)
         .unwrap();
     let mut checked = 0;
@@ -945,23 +1190,38 @@ async fn every_build_is_nodes() {
         let name = s(&one["name"]);
         let calls = one["calls"].as_array().unwrap();
         // The boundary nodemailer drew for the raw message a provider took.
-        let boundary = calls.iter().find_map(|c| {
-            let raw = c["input"]["Content"]["Raw"]["Data"].as_str()
-                .map(|d| base64::engine::general_purpose::STANDARD.decode(d))
-                .or_else(|| c["input"]["requestBody"]["raw"].as_str().map(|d|
-                    base64::engine::general_purpose::URL_SAFE_NO_PAD
-                        .decode(d)))?.ok()?;
-            let text = String::from_utf8_lossy(&raw).to_string();
-            re.captures(&text).map(|c| c[1].to_string())
-        }).unwrap_or_else(|| "0000000000000000".into());
+        let boundary = calls
+            .iter()
+            .find_map(|c| {
+                let raw = c["input"]["Content"]["Raw"]["Data"]
+                    .as_str()
+                    .map(|d| {
+                        base64::engine::general_purpose::STANDARD.decode(d)
+                    })
+                    .or_else(|| {
+                        c["input"]["requestBody"]["raw"].as_str().map(|d| {
+                            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                                .decode(d)
+                        })
+                    })?
+                    .ok()?;
+                let text = String::from_utf8_lossy(&raw).to_string();
+                re.captures(&text).map(|c| c[1].to_string())
+            })
+            .unwrap_or_else(|| "0000000000000000".into());
         let requests = Arc::new(Mutex::new(Vec::new()));
-        let relays = Arc::new(Relays(Arc::new(Relay::default()),
-                                     Mutex::new(Vec::new())));
+        let relays = Arc::new(Relays(
+            Arc::new(Relay::default()),
+            Mutex::new(Vec::new()),
+        ));
         let builder = Builder {
             secrets: Arc::new(CaseSecrets(one["secrets"].clone())),
             relays: relays.clone(),
-            clouds: Arc::new(Clouds(requests.clone(), serde_json::json!({
-                "status": "Succeeded", "id": "acs-1" }))),
+            clouds: Arc::new(Clouds(
+                requests.clone(),
+                serde_json::json!({
+                "status": "Succeeded", "id": "acs-1" }),
+            )),
             files: Arc::new(AnyFile),
             clock: Arc::new(|| 1763100000000),
             boundary: Arc::new(move || boundary.clone()),
@@ -982,29 +1242,51 @@ async fn every_build_is_nodes() {
         };
         assert_eq!(answer, one["answer"], "build {}", name);
         let sent: Vec<Json> = requests.lock().unwrap().clone();
-        let node_inputs: Vec<Json> = calls.iter()
+        let node_inputs: Vec<Json> = calls
+            .iter()
             .filter(|c| matches!(s(&c["kind"]), "ses" | "acs" | "gmail"))
-            .map(|c| c["input"].clone()).collect();
-        assert_eq!(Json::Array(sent), Json::Array(node_inputs),
-                   "requests of {}", name);
-        let opened = relays.1.lock().unwrap().clone();
-        let node_auth: Vec<Json> = calls.iter()
-            .filter(|c| s(&c["kind"]) == "smtp")
-            .map(|c| c["auth"].clone()).collect();
-        let rust_auth: Vec<Json> = opened.iter().map(|o| auth_json(&o.auth))
+            .map(|c| c["input"].clone())
             .collect();
-        assert_eq!(Json::Array(rust_auth), Json::Array(node_auth),
-                   "auth of {}", name);
+        assert_eq!(
+            Json::Array(sent),
+            Json::Array(node_inputs),
+            "requests of {}",
+            name
+        );
+        let opened = relays.1.lock().unwrap().clone();
+        let node_auth: Vec<Json> = calls
+            .iter()
+            .filter(|c| s(&c["kind"]) == "smtp")
+            .map(|c| c["auth"].clone())
+            .collect();
+        let rust_auth: Vec<Json> =
+            opened.iter().map(|o| auth_json(&o.auth)).collect();
+        assert_eq!(
+            Json::Array(rust_auth),
+            Json::Array(node_auth),
+            "auth of {}",
+            name
+        );
         checked += 1;
     }
     // Azure ending the send as Failed.
     let requests = Arc::new(Mutex::new(Vec::new()));
-    let acs = CloudTransport::new(Cloud::Acs, Arc::new(CloudClient(Cloud::Acs,
-        requests, serde_json::json!({ "status": "Failed",
-            "error": { "code": "Denied", "message": "no sender" } }))),
-        &Json::Null, Arc::new(|| "0".repeat(16)));
+    let acs = CloudTransport::new(
+        Cloud::Acs,
+        Arc::new(CloudClient(
+            Cloud::Acs,
+            requests,
+            serde_json::json!({ "status": "Failed",
+            "error": { "code": "Denied", "message": "no sender" } }),
+        )),
+        &Json::Null,
+        Arc::new(|| "0".repeat(16)),
+    );
     let e = acs.send(&message).await.unwrap_err();
-    assert_eq!(serde_json::json!({ "code": e.code.as_str(),
-        "message": e.message, "retry": e.retry }), b["acsFailed"]);
+    assert_eq!(
+        serde_json::json!({ "code": e.code.as_str(),
+        "message": e.message, "retry": e.retry }),
+        b["acsFailed"]
+    );
     eprintln!("builds: {} checks", checked + 1);
 }
