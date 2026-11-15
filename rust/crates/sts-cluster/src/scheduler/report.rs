@@ -866,14 +866,55 @@ impl Scheduler {
         reached
     }
 
-    /// One run by id, in whichever realm holds it.
-    pub fn find_run(&self, run_id: &str) -> Option<Json> {
-        self.deps.realms.ids().iter().find_map(|id| {
-            self.deps
-                .rows
-                .get(id, run_id)
-                .filter(|r| matches!(text(r, "kind"), "run" | "process"))
-                .map(|r| run_view(&r))
-        })
+    /// One run by id, in whichever realm holds it (`Scheduler.findRun()`):
+    /// this process's rows, realm by realm, then the latest finished run it
+    /// kept of each job, then ONE BY-ID READ OF THE STORE PER REALM, in the
+    /// realms' order — never a scan. The store read is what answers
+    /// `GET /admin-api/scheduler?run=` for a run a dead node left, which is
+    /// in no live node's rows and outside the job's report window (the
+    /// crash takeover's step 4, develop 3171d0aa8). As in Node, a read that
+    /// fails, or a process with no durable store, answers `None` at once
+    /// rather than asking the next realm.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn find_run(&self, run_id: &str) -> Option<Json> {
+        let is_run = |r: &Json| matches!(text(r, "kind"), "run" | "process");
+        let realms = self.deps.realms.ids();
+        let held = realms
+            .iter()
+            .find_map(|id| self.deps.rows.get(id, run_id).filter(is_run));
+        let held = held.or_else(|| {
+            self.state()
+                .index
+                .latest_run
+                .values()
+                .find(|r| text(r, "runId") == run_id && is_run(r))
+                .cloned()
+        });
+        if let Some(row) = held {
+            return Some(run_view(&row));
+        }
+        let history = self.extras.history.clone()?;
+        for realm_id in &realms {
+            let got = match history
+                .read_runs(realm_id, vec![run_id.to_string()])
+                .await
+            {
+                Ok(Some(got)) => got,
+                Ok(None) => return None,
+                Err(e) => {
+                    tracing::debug!(
+                        "scheduler: run {} was not read in {}: {}",
+                        run_id,
+                        realm_id,
+                        e
+                    );
+                    return None;
+                }
+            };
+            if let Some(row) = got.get(run_id).filter(|r| is_run(r)) {
+                return Some(run_view(row));
+            }
+        }
+        None
     }
 }

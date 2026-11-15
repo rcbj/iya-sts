@@ -3788,7 +3788,7 @@ async function schedulerHistoryVectors() {
     return [r, new Map()];
   }));
   const settles = [];
-  const sched = new S({
+  const deps = {
     log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
     config: { value: function (k) { return settings[k]; } },
     realms: { list: function () {
@@ -3823,7 +3823,8 @@ async function schedulerHistoryVectors() {
       return Promise.resolve(null);
     },
     host: 'h1', pid: 41, isRequestWorker: function () { return false; }
-  });
+  };
+  const sched = new S(deps);
   const descriptors = [
     { id: 'a.every', everyMs: 10 * 60000 },
     { id: 'a.realm', everyMs: 30 * 60000, scope: 'realm' },
@@ -3980,8 +3981,79 @@ async function schedulerHistoryVectors() {
       }
     });
   });
+  // A RUN BY ITS ID FROM THE STORE (2026-11-14, develop 3171d0aa8): the
+  // crash takeover's step 4 asks `?run=` for a run a dead node left, which
+  // is in no node's rows and outside the job's report. findRun() reads its
+  // own rows, then one by-id read per realm, in the realms' order: a read
+  // that fails, or a process with no store, answers null at once. A second
+  // Scheduler over a store of its own, so nothing above moves.
+  const durable = {
+    default: { 'kept-default': { runId: 'kept-default', kind: 'run',
+                                 jobId: 'a.every', realm: 'default',
+                                 state: 'succeeded', attempt: 1,
+                                 startedAt: now - 2 * H,
+                                 endedAt: now - 2 * H + 50,
+                                 durationMs: 50, node: 'n2' } },
+    acme: { 'dead-run': { runId: 'dead-run', kind: 'run', jobId: 'a.realm',
+                          realm: 'acme', trigger: 'schedule',
+                          state: 'abandoned', attempt: 1, fenceAt: now - H,
+                          startedAt: now - H, endedAt: now - 1000,
+                          node: 'n2', nodeName: 'node-two', pid: 9,
+                          errorCode: 'STS-SCHED-0011', why: 'its node left',
+                          updatedAt: now - 1000 },
+            'after-boom': { runId: 'after-boom', kind: 'run',
+                            jobId: 'a.realm', realm: 'acme',
+                            state: 'succeeded' },
+            'a-command': { runId: 'a-command', kind: 'command',
+                           state: 'queued' } }
+  };
+  const own = new Map(realmIds.map(function (r) {
+    return [r, new Map()];
+  }));
+  own.get('acme').set('live-run', { runId: 'live-run', kind: 'run',
+                                    jobId: 'a.realm', realm: 'acme',
+                                    state: 'running', attempt: 1,
+                                    startedAt: now - 3000, node: 'n1',
+                                    pid: 41, updatedAt: now - 3000 });
+  const reads = [];
+  let noStore = false;
+  const stored = new S(Object.assign({}, deps, {
+    store: { realmMap: function (id) {
+      if (!own.has(id)) {
+        own.set(id, new Map());
+      }
+      return own.get(id);
+    } },
+    readRuns: function (realmId, ids) {
+      reads.push(realmId + ':' + ids.join(','));
+      if (noStore) {
+        return Promise.resolve(null);
+      }
+      if (realmId === 'default' && ids.indexOf('after-boom') >= 0) {
+        return Promise.reject(new Error('the store is unreachable'));
+      }
+      const out = new Map();
+      ids.forEach(function (id) {
+        const row = (durable[realmId] || {})[id];
+        if (row) {
+          out.set(id, JSON.parse(JSON.stringify(row)));
+        }
+      });
+      return Promise.resolve(out);
+    }
+  }));
+  const foundStored = [];
+  for (const id of ['live-run', 'kept-default', 'dead-run', 'after-boom',
+                    'a-command', 'nope', 'dead-run?nostore']) {
+    noStore = id.endsWith('?nostore');
+    const from = reads.length;
+    const view = await stored.findRun(id.replace('?nostore', ''));
+    foundStored.push({ id: id, view: view, reads: reads.slice(from) });
+  }
   return { now: now, settings: settings, descriptors: descriptors,
-           realms: realmIds, rows: rows,
+           realms: realmIds, rows: rows, durable: durable,
+           ownRows: [{ realm: 'acme', row: own.get('acme').get('live-run') }],
+           foundStored: foundStored,
            plan: { deletes: keysOf(plan.deletes), pins: keysOf(plan.pins) },
            status: status, acme: acme, recent: recent, found: found,
            expiries: expiries, purged: purged, remaining: remaining,
