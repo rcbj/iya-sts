@@ -729,8 +729,10 @@ async function test() {
   // (STS-REPORT-0048). WHAT A RUNNING NODE SERVICE DOES (a memory store,
   // one process, 2026-11-15): the realm's report.schedule job runs every
   // minute and answers {"enqueued":0}, and none of the three is touched —
-  // no job, no slot, no note. The job PINS that: two ticks of this realm's
-  // report.schedule are waited for, off /admin-api/scheduler, and the three
+  // no job, no slot, no note. (By reading: the scheduler hands a job's ctx
+  // `nowMs` as a function, and reportScheduleWork() reads Number(ctx.nowMs),
+  // NaN, so cronPrev() finds no slot.) The job PINS that: two ticks of this
+  // realm's report.schedule are waited for, off /admin-api/scheduler, and the three
   // views read after them. When the defect is fixed these checks fail, and
   // the ones above them (written from the in-process file) take their place.
   let ticks = [];
