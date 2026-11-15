@@ -12,7 +12,7 @@
 // DPoP-bound token and the refresh grant — the driver
 // tests/tools/rust-signin-e2e.sh runs on the host.
 //
-//   setup  <base> <secret> <admin password> <out>
+//   setup  <base> <secret> <admin user> <admin password> <out>
 //                                  the bootstrap administrator's first
 //                                  sign-in (the password change and the
 //                                  authenticator app product asks for) and
@@ -196,10 +196,10 @@ async function firstSignIn(base, person, name) {
 }
 
 
-async function setup(base, secret, adminPassword, out) {
+async function setup(base, secret, adminUser, adminPassword, out) {
   const token = await adminToken(base, secret);
-  const people = { admin: { password: adminPassword } };
-  await firstSignIn(base, people.admin, 'admin');
+  const people = { admin: { username: adminUser, password: adminPassword } };
+  await firstSignIn(base, people.admin, adminUser);
   const made = await api(base, token, '/admin-api/users/create', {
     username: 'e2e.ann', invent: false, credential: 'generate',
     attributes: { cn: 'e2e.ann', sn: 'E2E', givenName: 'Ann',

@@ -174,7 +174,12 @@ start "$NODE_IMAGE" node-writer
 if $DRIVER setup "$BASE" "$SECRET" "$OUT/people.json" >> "$SUMMARY" 2>&1
 then pass "two people, the second with an authenticator app"
 else fail "the people were made (see summary)"; exit 1; fi
-if $CONSOLE setup "$BASE" "$SECRET" "$ADMIN_PW" "$OUT/console-people.json" \
+# The bootstrap administrator's name is the one product mode made (its
+# password is the one configured, and never printed).
+ADMIN_USER="$(docker logs "$SVC" 2>&1 | grep -o 'username: admin-[0-9a-f]*' |
+  head -1 | cut -d' ' -f2)"
+if $CONSOLE setup "$BASE" "$SECRET" "$ADMIN_USER" "$ADMIN_PW" \
+     "$OUT/console-people.json" \
      >> "$SUMMARY" 2>&1
 then pass "the bootstrap administrator and e2e.ann signed in once"
 else fail "the console's people (see summary)"; exit 1; fi
@@ -184,9 +189,10 @@ stop node-writer
 
 # The code, token and DPoP leg: one surface, one person.
 surface() {
-  local label="$1" path="$2" user="$3" pw secret got
-  pw="$(jq -r ".\"$user\".password" "$OUT/console-people.json")"
-  secret="$(jq -r ".\"$user\".secret // \"\"" "$OUT/console-people.json")"
+  local label="$1" path="$2" key="$3" user pw secret got
+  user="$(jq -r ".\"$key\".username // \"$key\"" "$OUT/console-people.json")"
+  pw="$(jq -r ".\"$key\".password" "$OUT/console-people.json")"
+  secret="$(jq -r ".\"$key\".secret // \"\"" "$OUT/console-people.json")"
   got="$OUT/$label-${path#/}.json"
   if $CONSOLE surface "$BASE" "$path" "$user" "$pw" "$secret" \
        > "$got" 2>> "$SUMMARY"; then
