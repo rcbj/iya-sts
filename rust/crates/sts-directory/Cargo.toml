@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-directory"
+version = "0.1.0"
+description = "The embedded directory's model and operations (ldap/ldap_server.js without its socket or its store): per-realm trees, the generated schema and name lists, add, modify, delete, modify DN, compare and search as the service applies them, entryUUID and the subject, and an entry as its domain concept."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-ldap.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+sts-model.workspace = true
+
+[lints]
+workspace = true

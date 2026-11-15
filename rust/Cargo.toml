@@ -44,6 +44,7 @@ members = [
   "crates/sts-tls",
   "crates/sts-kerberos",
   "crates/sts-ldap",
+  "crates/sts-directory",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -73,6 +74,7 @@ sts-xml = { path = "crates/sts-xml" }
 sts-tls = { path = "crates/sts-tls" }
 sts-kerberos = { path = "crates/sts-kerberos" }
 sts-ldap = { path = "crates/sts-ldap" }
+sts-directory = { path = "crates/sts-directory" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
