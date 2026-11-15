@@ -607,6 +607,30 @@ fn system_hostname() -> Option<String> {
         })
 }
 
+/// THE HOSTNAME THIS PEP REPORTS (#1760) on its registration and
+/// heartbeat as `hostname`: the one `derive_notify_url()` looks for in the
+/// HTTPS listener certificate, so the service can put it in the realm's
+/// default certificate. Before this, a fresh install's first certificate
+/// named only the registered name (`remote-pep-1`), the PEP registered with
+/// no notify URL (it had no certificate), and the derivation picked the
+/// registered name, which nothing resolves. Only a DNS name is reported —
+/// lower-cased, a trailing dot dropped, never an IP address — because the
+/// service refuses anything else (`STS-XACML-0261`) and refusing a
+/// registration over a hostname would cost the PEP its row. An older
+/// service ignores the member.
+pub fn reported_hostname_of(raw: Option<&str>) -> Option<String> {
+    let text = raw?.trim();
+    if !is_dns_name(text) {
+        return None;
+    }
+    Some(text.strip_suffix('.').unwrap_or(text).to_ascii_lowercase())
+}
+
+/// `reported_hostname_of()` of this machine's hostname.
+pub fn reported_hostname() -> Option<String> {
+    reported_hostname_of(system_hostname().as_deref())
+}
+
 /// `PEP_CRL_HTTP` read: `true`, `false`, or unset (`None`); anything else
 /// is unset with the text kept, so it is said once (`STS-XPEP-0115`).
 pub fn crl_http_switch(said: Option<&str>) -> (Option<bool>, Option<String>) {
@@ -1286,6 +1310,43 @@ mod tests {
         assert_eq!(derive_notify_url(None, Some("xacml-pep"),
                                      Some("host"), 9443), None,
                    "no HTTPS certificate served, nothing advertised");
+    }
+
+    /// THE FRESH INSTALL (#1760): the PEP reports its hostname, the
+    /// service's default certificate names it beside the registered name
+    /// (`xacml_pep_tls.ts`'s `derivedNames()`, held in
+    /// `tests/pep_listener_certificate.js` E2), and the derived notify URL
+    /// is then the hostname's rather than the registered name's.
+    #[test]
+    fn a_reported_hostname_makes_the_default_certificate_derive_it() {
+        let reported = reported_hostname_of(Some("Xacml-Pep.")).unwrap();
+        assert_eq!(reported, "xacml-pep");
+        // What the service names by default for a PEP registered as
+        // remote-pep-1 with no notify URL: its name, then the hostname.
+        let defaults = vec!["remote-pep-1".to_string(), reported.clone()];
+        let d = derive_notify_url(Some(&defaults), Some("remote-pep-1"),
+                                  Some("xacml-pep"), 9443).unwrap();
+        assert_eq!(d.url, "https://xacml-pep:9443/notify");
+        assert_eq!(d.from, DerivedFrom::CertificateHostname);
+        // Without it (an older service, or an older PEP) the defaults are
+        // the name alone, and the derivation falls to it, as before.
+        let before = vec!["remote-pep-1".to_string()];
+        assert_eq!(derive_notify_url(Some(&before), Some("remote-pep-1"),
+                                     Some("xacml-pep"), 9443).unwrap().url,
+                   "https://remote-pep-1:9443/notify");
+    }
+
+    /// Only a DNS name is reported, as the service accepts.
+    #[test]
+    fn only_a_dns_hostname_is_reported() {
+        assert_eq!(reported_hostname_of(Some(" 4f1c0de2a3b4\n")),
+                   Some("4f1c0de2a3b4".to_string()));
+        for bad in [None, Some(""), Some("10.0.0.1"), Some("::1"),
+                    Some("a_b"), Some("123456"), Some("*.example")] {
+            assert_eq!(reported_hostname_of(bad), None, "{:?}", bad);
+        }
+        let long = "a".repeat(254);
+        assert_eq!(reported_hostname_of(Some(&long)), None);
     }
 
     #[test]

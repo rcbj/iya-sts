@@ -26,7 +26,9 @@
 //   C. THE REFUSALS: no slot, no name, a name that is not one, a key algorithm
 //      a TLS stack does not serve.
 //   D. A REISSUE SUPERSEDES, and the register keeps no private key.
-//   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.ts`).
+//   E. THE NAMES A REGISTRATION IMPLIES (`xacml/xacml_pep_tls.ts`), and
+//      (E2, #1760) the hostname a PEP reports, named in a fresh PEP's
+//      default certificate.
 //   F. THE NUDGE TRUSTS THIS CA WITH NOTHING SET (2026-11-14): an https
 //      nudge to a listener serving this realm's `pep-tls` leaf verifies with
 //      no `xacml.pepNotifyCaFile`; a foreign CA's leaf is refused (and
@@ -309,6 +311,55 @@ async function inProcess(t) {
           'a notify URL that will not parse names no host');
   t.equal(pepTls.listFrom('a.test, b.test\nc.test').join('|'),
           'a.test|b.test|c.test', 'a typed list splits on commas and lines');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== E2. the hostname a PEP reports is named by default ===');
+  // -------------------------------------------------------------------------
+  // THE FRESH INSTALL (#1760): a PEP that derives its notify URL registers
+  // with none until it holds a certificate, so the defaults were the
+  // registered name alone and the derivation picked it. The reported
+  // hostname is the name the derivation looks for.
+  t.equal(pepTls.derivedNames({ name: 'remote-pep-1',
+                                hostname: 'xacml-pep' }).dnsNames.join(','),
+          'remote-pep-1,xacml-pep',
+          'a fresh row (no notify URL) names the reported hostname');
+  t.equal(pepTls.derivedNames({ name: 'remote-pep-1', hostname: 'xacml-pep',
+    notifyUrl: 'https://XACML-PEP:9443/notify' }).dnsNames.join(','),
+          'remote-pep-1,xacml-pep',
+          'a notify host that is the hostname is named once');
+  t.equal(pepTls.derivedNames({ name: 'remote-pep-1' }).dnsNames.join(','),
+          'remote-pep-1',
+          'an older PEP, reporting none, keeps the defaults it had');
+  t.equal(pepTls.derivedNames({ name: 'p', hostname: '10.0.0.1' })
+            .dnsNames.join(',') + '|' +
+          pepTls.derivedNames({ name: 'p', hostname: '10.0.0.1' })
+            .ipAddresses.join(','), 'p|',
+          'an IP literal is never turned into a name, of either kind');
+  const fresh = new pepTls.PepTls(Object.assign(pepTls.PepTls.defaultDeps(),
+    { peps: { read: function (name) {
+      log.debug("Entering read().");
+      log.debug("Leaving read().");
+      return name === 'remote-pep-1'
+        ? { name: 'remote-pep-1', hostname: 'xacml-pep', notifyUrl: '' }
+        : null;
+    } } }));
+  const freshIssued = await realms.run(realms.get(REALM), function () {
+    log.debug("Entering the fresh issue.");
+    log.debug("Leaving the fresh issue.");
+    return fresh.issue({ name: 'remote-pep-1' });
+  });
+  t.check(freshIssued.ok, 'a fresh PEP is issued its default certificate',
+          freshIssued.why || '');
+  const freshSan = freshIssued.ok
+    ? new nodeCrypto.X509Certificate(freshIssued.certificatePem)
+      .subjectAltName : '';
+  t.check(/DNS:xacml-pep(,|$)/.test(freshSan) &&
+          /DNS:remote-pep-1/.test(freshSan),
+          'and the certificate names the hostname it reported beside its ' +
+          'registered name, so the PEP derives https://xacml-pep:9443/' +
+          'notify (rust options.rs ' +
+          'a_reported_hostname_makes_the_default_certificate_derive_it)',
+          freshSan);
 
   await theNudgeTrustsThisCa(t);
 

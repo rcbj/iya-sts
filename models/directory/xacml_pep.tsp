@@ -114,6 +114,11 @@ model XacmlPep {
   xacmlPepVersion?: string;
   @attr(#{
     kind: "single",
+    what: "The hostname the remote PEP reports on its registration and heartbeat (#1760): the HOSTNAME environment variable, else the kernel's, else /etc/hostname — the name the container is known by on its network, and the one it derives its notify URL from when its HTTPS listener certificate names it. Held to a DNS name of at most 253 characters, lower-cased, never an IP address; a registration or heartbeat carrying anything else is refused (STS-XACML-0261). The realm's default listener certificate names it beside the PEP's registered name and its notify host. A registration without it drops it, a heartbeat without it keeps it. Absent on a PEP older than this, whose certificate names are as before."
+  })
+  xacmlPepHostname?: string;
+  @attr(#{
+    kind: "single",
     what: "What happened to the last nudge — the status, or the refusal sentence. THE ONLY PLACE A FAILED NUDGE IS RECORDED, for the reason ssf_streams.js gives about a refused push: it is invisible from the receiving end by definition."
   })
   xacmlPepLastNotify?: string;

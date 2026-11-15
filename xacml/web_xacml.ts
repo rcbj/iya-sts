@@ -2511,6 +2511,10 @@ class XacmlPage {
            code(row.registeredAt), 'consoleXacml.tip.overview.registered') +
       line(t.html('consoleXacml.pepPage.th.version'), code(row.version),
            'consoleXacml.tip.overview.version') +
+      // The hostname the PEP reports (#1760), which the realm's default
+      // listener certificate names; "not reported" from an older PEP.
+      line(t.html('consoleXacml.pepPage.th.hostname'), code(row.hostname),
+           'consoleXacml.tip.overview.hostname') +
       line(t.html('consoleXacml.pepPage.th.description'),
            row.description ? esc(row.description)
              : code(''), 'consoleXacml.tip.overview.description') +

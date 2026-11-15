@@ -2019,6 +2019,10 @@
     "en": "b6078cbbbfdb9576",
     "text": "Lo que el PEP remoto dice que es. Texto libre."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "El nombre de host que el PEP remoto comunica al registrarse y en su latido (#1760): la variable de entorno HOSTNAME, si no la del kernel, si no /etc/hostname — el nombre con el que se conoce al contenedor en su red, y del que deriva su URL de notificación cuando el certificado de su escucha HTTPS lo incluye. Limitado a un nombre DNS de 253 caracteres como máximo, en minúsculas, nunca una dirección IP; un registro o latido que lleve otra cosa se rechaza (STS-XACML-0261). El certificado de escucha predeterminado del dominio lo incluye junto al nombre registrado del PEP y su host de notificación. Un registro sin él lo elimina, un latido sin él lo conserva. Ausente en un PEP más antiguo, cuyos nombres de certificado son los de antes."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
     "en": "a4283bfe7916574e",
     "text": "Qué le ocurrió al último aviso — el estado, o la frase de rechazo. EL ÚNICO LUGAR DONDE SE REGISTRA UN AVISO FALLIDO, por la razón que da ssf_streams.js sobre un envío rechazado: por definición es invisible desde el extremo receptor."

@@ -90,8 +90,7 @@ mode, and always verifies the PEP's certificate.
   certificate's first DNS name, else `PEP_NAME` if that is a DNS name, else
   the container's hostname. So a certificate naming the PEP's registered
   name first and `xacml-pep` second, on a container named `xacml-pep`, gives
-  `xacml-pep`. When you issue the certificate, add the PEP's hostname to
-  its DNS names. A PEP with no HTTPS certificate yet
+  `xacml-pep`. A PEP with no HTTPS certificate yet
   advertises none until it has one, and a new certificate derives the URL
   again. The PEP logs the derived URL at INFO, and reports its source as
   `derived` (`GET /admin-api/xacml/peps`'
@@ -101,6 +100,19 @@ mode, and always verifies the PEP's certificate.
   host checked against it. **`docker-compose.yml` and the test stack no
   longer set a notify URL**, so they derive it. `XACML_PEP_NOTIFY_URL`
   still sets one, and an empty one now means unset.
+* **The PEP reports its hostname, and the realm's default certificate names
+  it.** The PEP sends `hostname` (the value the derivation reads) on its
+  registration and heartbeat. The service stores it and adds it to the
+  default names of the PEP's HTTPS listener certificate, beside the
+  registered name and the notify host, for both the environment pair and a
+  defined listener's certificate. So on a fresh install the derived notify
+  URL uses the hostname with no names added by hand. The PEP's Overview tab
+  and `GET /admin-api/xacml/peps` (`peps[].hostname`) show it. The service
+  accepts only a DNS name, never an IP address, and refuses anything else
+  with 400 (`STS-XACML-0261`). A PEP that reports none keeps today's
+  defaults, and an older service ignores the member. A certificate issued
+  before this does not name the hostname: issue it again, or let a defined
+  listener renew.
 
 ### The reverse proxy's fixes from the 8081 demonstration
 

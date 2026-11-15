@@ -2527,6 +2527,10 @@ class XacmlSurface {
         bias: String(body.bias || ''),
         resource: String(body.resource || ''),
         version: String(body.version || ''),
+        // The PEP's hostname (#1760), which the realm's default listener
+        // certificate names. Absent from an older PEP; validated by the
+        // registry (STS-XACML-0261), so it is passed as it arrived.
+        hostname: body.hostname,
         description: String(body.description || '')
       });
       if (!result.ok) {
@@ -3099,6 +3103,8 @@ class XacmlSurface {
         bias: body.bias,
         resource: body.resource,
         version: body.version,
+        // The PEP's hostname (#1760): absent keeps the registered one.
+        hostname: body.hostname,
         notifyUrl: body.notifyUrl === undefined ? body.notify_url
                                                 : body.notifyUrl,
         // The reverse proxy's CAEP/RISC stream health (#1760). Absent from
@@ -3115,7 +3121,9 @@ class XacmlSurface {
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0021');
-        self.fail(res, 404, 'invalid_request', result.why);
+        // 404 for a PEP that never registered; a bad `hostname` (#1760)
+        // carries its own 400.
+        self.fail(res, result.status || 404, 'invalid_request', result.why);
         return;
       }
       const row = peps.read(name);

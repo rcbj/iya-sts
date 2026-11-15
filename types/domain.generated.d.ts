@@ -1154,6 +1154,7 @@ declare namespace IyaDomain {
     refused?: number;
     undischargeable?: number;
     version?: string;
+    hostname?: string;
     lastNotify?: string;
     proxy?: string;
     signals?: string;

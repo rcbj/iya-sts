@@ -2019,6 +2019,10 @@
     "en": "b6078cbbbfdb9576",
     "text": "遠端 PEP 對自己的說明。自由文字。"
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "遠端 PEP 在註冊和心跳時回報的主機名稱（#1760）：環境變數 HOSTNAME，否則為核心的，否則為 /etc/hostname —— 容器在其網路上的名稱，也是其 HTTPS 監聽器憑證包含它時 PEP 推導通知 URL 所依據的名稱。限定為最多 253 個字元的 DNS 名稱，轉為小寫，絕不是 IP 位址；攜帶其他內容的註冊或心跳會被拒絕（STS-XACML-0261）。領域的預設監聽器憑證在 PEP 的註冊名稱和通知主機旁包含它。不含它的註冊會刪除它，不含它的心跳會保留它。較舊的 PEP 沒有此項，其憑證名稱與以前相同。"
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
     "en": "a4283bfe7916574e",
     "text": "最近一次通知的結果——狀態，或拒絕的語句。「這是唯一記錄通知失敗的地方」，理由如 ssf_streams.js 對被拒絕之推送的說明：從接收端來看，它依定義就是看不見的。"

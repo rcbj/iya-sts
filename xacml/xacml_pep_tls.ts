@@ -37,13 +37,24 @@
 // ---------------------------------------------------------------------------
 // WHAT THE CERTIFICATE NAMES.
 //
-// The PEP's registered NAME and the HOST of its notify URL, unless the caller
-// names others — and names the caller adds are ADDED rather than replacing,
-// because the notify host is where this service itself would dial the PEP and a
-// certificate that did not name it is one the nudge could never verify. The PEP
-// name is only used where it is a DNS name (a certificate subject folded into
-// an entry name may not be), and an IP host becomes an IP subjectAltName rather
-// than a DNS one, which is the difference `checkServerIdentity()` reads.
+// The PEP's registered NAME, the HOSTNAME it reports (#1760), and the HOST of
+// its notify URL, unless the caller names others — and names the caller adds
+// are ADDED rather than replacing, because the notify host is where this
+// service itself would dial the PEP and a certificate that did not name it is
+// one the nudge could never verify. The PEP name is only used where it is a
+// DNS name (a certificate subject folded into an entry name may not be), and
+// an IP host becomes an IP subjectAltName rather than a DNS one, which is the
+// difference `checkServerIdentity()` reads. A name derived twice (a notify
+// host that is the hostname) is named once.
+//
+// THE HOSTNAME IS WHAT MAKES THE DEFAULT CERTIFICATE WORK ON A FRESH INSTALL
+// (#1760). A PEP that derives its notify URL picks the certificate's DNS name
+// that equals its hostname, and registers with NO notify URL until it holds a
+// certificate — so before the PEP reported its hostname, a first
+// certificate's defaults were the registered name alone (`remote-pep-1`), the
+// derivation fell through to it, and nothing resolved it. The registry holds
+// what the PEP reports to a DNS name (`hostnameOf()`, STS-XACML-0261); an
+// older PEP reports none, and the defaults are what they were.
 //
 // ---------------------------------------------------------------------------
 // THE PRIVATE KEY IS HANDED OVER ONCE.
@@ -98,6 +109,9 @@ import pepListeners = require('./xacml_pep_listeners');
 // The part of a register row this module reads.
 interface PepRowNames {
   name?: string;
+  // The hostname the PEP reported (#1760), already held to a DNS name by
+  // the registry; absent from an older PEP.
+  hostname?: string;
   notifyUrl?: string;
   listeners?: string;
 }
@@ -265,7 +279,8 @@ class PepTls {
   // header.
   /**
    * Returns the names a certificate for a registered PEP carries by default:
-   * its name when that is a DNS name, and the host of its notify URL.
+   * its name when that is a DNS name, the hostname it reported, and the host
+   * of its notify URL, each once.
    *
    * A notify URL that does not parse contributes nothing.
    * @param row - the PEP's register row
@@ -276,8 +291,24 @@ class PepTls {
     log.debug("Entering PepTls.derivedNames().");
     const dnsNames: string[] = [];
     const ipAddresses: string[] = [];
+    // A name already derived is not derived again, case aside: a notify URL
+    // whose host is the hostname would otherwise name it twice.
+    const addDns = function (one: string): void {
+      const lower = one.toLowerCase();
+      if (!dnsNames.some(function (had) {
+        return had.toLowerCase() === lower;
+      })) {
+        dnsNames.push(one);
+      }
+    };
     if (row && this.isDnsName(row.name)) {
-      dnsNames.push(row.name);
+      addDns(row.name);
+    }
+    // THE HOSTNAME THE PEP REPORTED (#1760) — see the header: the name its
+    // notify-URL derivation looks for in this certificate.
+    if (row && row.hostname && this.isDnsName(row.hostname) &&
+        !isIP(row.hostname)) {
+      addDns(row.hostname);
     }
     if (row && row.notifyUrl) {
       try {
@@ -289,7 +320,7 @@ class PepTls {
         if (isIP(host)) {
           ipAddresses.push(host);
         } else if (this.isDnsName(host)) {
-          dnsNames.push(host);
+          addDns(host);
         }
       } catch (e) {
         // A notify URL that will not parse names no host. The row already

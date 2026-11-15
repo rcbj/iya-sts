@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5614** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5615** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 182
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 183
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 115
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5109,6 +5109,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0258` | xacml.pepNotifyAllowHttp or xacml.pepNotifySkipTlsVerification is on, and is ignored: both were retired on 2026-11-14, and a nudge is https with the PEP's certificate verified in every mode. Logged once per process per setting. | none — a warning in the log |
 | `STS-XACML-0259` | A change nudge was not sent because the PEP's notify URL is plain http: a nudge is sent over https only, in every mode, since 2026-11-14. The PEP converges by polling. | none — the PEP's row and the registration reply say the URL is unusable |
 | `STS-XACML-0260` | A change nudge was refused at the handshake: the PEP's certificate chains to this service's Root but was not issued by the realm's Remote PEP listeners (pep-tls) Issuing CA. | none — the PEP's row records the failed nudge |
+| `STS-XACML-0261` | A remote PEP's registration or heartbeat was refused: the `hostname` it reported is not a DNS name (letters, digits and hyphens in labels of at most 63 characters, 253 in all, not an IP address), and it would be put in the realm's default listener certificate. | none — 400 invalid_request on POST /xacml/pep/register or /xacml/pep/heartbeat |
 
 ## STS-XPEP
 

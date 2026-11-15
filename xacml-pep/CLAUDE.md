@@ -141,15 +141,24 @@ service's host check passes) and the name the container is known by on its
 network (it resolves). The INFO line names the rule that picked the host
 (`DerivedFrom::describe()`); the source reported is still `derived`.
 
-**THE GAP THIS LEAVES**: a PEP that derives its URL registers with NONE
-before it holds a certificate, so the realm's default names are its
-registered name alone, and a certificate issued with the defaults derives
-the registered name (rule 2). Until 2026-11-14 the compose default
-`https://xacml-pep:9443/notify` put `xacml-pep` in the defaults. The
-operator adds the hostname when issuing (`docs/remote-pep.md` says so); the
-test stacks name it (`sts_xacml_remote_pep.js` issues for the host it
-dials). Closing it in code needs the PEP to report its hostname to the
-service, which `derivedNames()` would then add — not done.
+**THE GAP THIS LEFT, CLOSED IN CODE (2026-11-14)**: a PEP that derives its
+URL registers with NONE before it holds a certificate, so the realm's
+default names were its registered name alone, and a certificate issued with
+the defaults derived the registered name (rule 2). **So the PEP REPORTS ITS
+HOSTNAME** — `options::reported_hostname()`, the value rule 4 reads, sent
+only when `is_dns_name()` holds, lower-cased, a trailing dot dropped — as
+`hostname` on the registration and every heartbeat (`sync.rs`), and the
+service stores it (`xacmlPepHostname`, `PepRegistry.hostnameOf()`, 400
+`STS-XACML-0261` for anything that is not a DNS name) and adds it to
+`derivedNames()`, so the default certificate of the environment pair and of
+a defined listener names it and rule 1 picks it. The PEP filters before it
+sends because a refused registration would cost it its row. Backwards
+compatible both ways: an older service ignores the member, and an older
+PEP sends none and keeps the defaults it had. An operator still adds a name
+by hand only where the service reaches the PEP by another one.
+`options.rs`'s `a_reported_hostname_makes_the_default_certificate_derive_it`
+and `only_a_dns_hostname_is_reported`; the service's half is
+`xacml/CLAUDE.md`'s.
 
 * **No certificate served, no URL**: `POST /notify` is HTTPS only, so there
   is nothing to advertise. Only the environment's `api-https` listener

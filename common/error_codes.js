@@ -23418,6 +23418,14 @@ const CODES = [
       'certificate chains to this service\'s Root but was not issued by the ' +
       'realm\'s Remote PEP listeners (pep-tls) Issuing CA.',
     spec: 'none — the PEP\'s row records the failed nudge' },
+  { code: 'STS-XACML-0261',
+    summary: 'A remote PEP\'s registration or heartbeat was refused: the ' +
+      '`hostname` it reported is not a DNS name (letters, digits and ' +
+      'hyphens in labels of at most 63 characters, 253 in all, not an IP ' +
+      'address), and it would be put in the realm\'s default listener ' +
+      'certificate.',
+    spec: 'none — 400 invalid_request on POST /xacml/pep/register or ' +
+      '/xacml/pep/heartbeat' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

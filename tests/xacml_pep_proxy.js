@@ -526,6 +526,27 @@ async function childBody() {
           'B2. a re-registration and a heartbeat keep xacmlPepProxy', row &&
           String(row.proxy).slice(0, 120));
 
+  // B2h. THE HOSTNAME (#1760) over the wire: a heartbeat carrying one is
+  // kept, one that is not a DNS name is 400 STS-XACML-0261 and changes
+  // nothing.
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { hostname: 'xacml-pep' });
+  const hosted = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(r.status === 200 && hosted && hosted.hostname === 'xacml-pep' &&
+          hosted.proxy === row.proxy,
+          'B2h. a heartbeat carrying a hostname is kept', brief(r));
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { hostname: '10.0.0.1', decisions: 77 });
+  const refusedHost = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(r.status === 400 && refusedHost.hostname === 'xacml-pep' &&
+          refusedHost.decisions === 3,
+          'B2h. an IP literal as a hostname is refused 400 and writes ' +
+          'nothing', brief(r));
+
   // -------------------------------------------------------------------------
   // B'. THE SIGNAL-STREAM HEALTH (#1760). An older PEP sends none and is
   // "not reported"; a newer one's is kept as counts and ages only, whatever

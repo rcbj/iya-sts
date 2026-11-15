@@ -55,7 +55,7 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
-| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 25 |
+| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
 | [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 10 |
 
 ## Application
@@ -1297,6 +1297,7 @@ Recorded in `../xacml/xacml_pep_registry`.
 | `xacmlPepCertificateSubject` | one | this service | `1.3.6.1.4.1.67607.1.1.725` | The full subject of the client certificate the registration arrived on. Held whole beside the DN because the DN is the LEAF and this is what was actually presented. |
 | `xacmlPepDecisions` | one | this service | `1.3.6.1.4.1.67607.1.1.726` | Decisions the remote PEP reports having MADE, cumulatively. Its own count, in its own process — this service did not see them, and that is the point of a remote PEP. |
 | `xacmlPepEnabled` | one | this service | `1.3.6.1.4.1.67607.1.1.727` | "TRUE" or "FALSE". A disabled PEP keeps its row and its counters and is not nudged. It does NOT stop enforcing, and the console says so — nothing here can reach into another process and turn it off. |
+| `xacmlPepHostname` | one | this service | `1.3.6.1.4.1.67607.1.1.758` | The hostname the remote PEP reports on its registration and heartbeat (#1760): the HOSTNAME environment variable, else the kernel's, else /etc/hostname — the name the container is known by on its network, and the one it derives its notify URL from when its HTTPS listener certificate names it. Held to a DNS name of at most 253 characters, lower-cased, never an IP address; a registration or heartbeat carrying anything else is refused (STS-XACML-0261). The realm's default listener certificate names it beside the PEP's registered name and its notify host. A registration without it drops it, a heartbeat without it keeps it. Absent on a PEP older than this, whose certificate names are as before. |
 | `xacmlPepIdentity` | one | this service | `1.3.6.1.4.1.67607.1.1.728` | The DN certificatePlan() names this certificate's identity with. NO ENTRY IS CREATED THERE by a registration — the naming rule is reused, not the entry creation, because a PEP is a component and ou=users counts people. |
 | `xacmlPepLastNotify` | one | this service | `1.3.6.1.4.1.67607.1.1.729` | What happened to the last nudge — the status, or the refusal sentence. THE ONLY PLACE A FAILED NUDGE IS RECORDED, for the reason ssf_streams.js gives about a refused push: it is invisible from the receiving end by definition. |
 | `xacmlPepLastSeen` | one | this service | `1.3.6.1.4.1.67607.1.1.730` | The last heartbeat or pull. xacml.pepStaleAfterS is how long since this before the console says "stale" — which changes nothing this service does, deliberately. |

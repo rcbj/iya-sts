@@ -45,7 +45,7 @@ and the nudge.
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
 | `xacml_pep_listeners.ts` | **A remote PEP's listeners (#1760)**: the environment's four, the ones defined on its page (`xacmlPepListeners`), their validation, the pull's section and the reading of what the PEP reports (`xacmlPepListenersInUse`). A LIBRARY. See *A remote PEP's listeners* below. |
 | `xacml_pep_http.ts` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
-| `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
+| `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP, the hostname it reports and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
 | `xacml_monitor.ts` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
@@ -1607,9 +1607,25 @@ realm's `pep-tls` Issuing CA.
   this PEP belongs to, and it carries the notify URL the default name comes
   from.
 * **THE NAMES** are the PEP's registered name (where it is a DNS name), the
-  host of its notify URL (an IP host becomes an IP subjectAltName), and what
-  the caller adds. Added, never replacing: the notify host is where this
-  service would dial the PEP.
+  hostname it reports, the host of its notify URL (an IP host becomes an IP
+  subjectAltName), and what the caller adds, each once. Added, never
+  replacing: the notify host is where this service would dial the PEP.
+* **THE HOSTNAME (#1760)** is what the PEP's notify-URL derivation looks for
+  in the certificate, and a PEP that derives its URL registers with none
+  until it holds one — so without it a fresh install's first certificate
+  named the registered name alone and the derivation picked that, which
+  nothing resolves. The PEP sends `hostname` (`HOSTNAME`, the kernel's,
+  `/etc/hostname`, and only a DNS name) on its registration and heartbeat;
+  `PepRegistry.hostnameOf()` holds it to a DNS name of at most 253
+  characters that is not an IP literal, lower-cased, and refuses anything
+  else with 400 `STS-XACML-0261`. It is `xacmlPepHostname` (OID 758, the
+  concept's `hostname`): a registration without it drops it, a heartbeat
+  without it keeps it. `derivedNames()` adds it, so the environment pair
+  (`issue()`) and a defined listener's CSR (`issueForListener()`) both name
+  it. Backwards compatible both ways: an older PEP sends none and the
+  defaults are as before; an older service ignores the member. The PEP
+  page's Overview draws it. `tests/pep_listener_certificate.js` E2 and
+  `tests/xacml_pep.js` hold it.
 * **THE KEY IS IN ONE REPLY.** Nothing writes it onto the PEP's entry — this
   service is never party to a handshake between the PEP and its clients, so a
   copy would be a server key held by something with no use for it. The console

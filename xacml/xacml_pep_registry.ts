@@ -105,6 +105,8 @@
 // default when this module loads. `PepRegistry` is exported for the root.
 // ---------------------------------------------------------------------------
 
+// For `hostnameOf()`: an IP literal is never a reported hostname.
+import net = require('net');
 // The one place this service hashes (#453).
 import ModelTables = require('../common/model_tables');
 import DomainClasses = require('../common/domain_classes');
@@ -154,6 +156,9 @@ interface PepRow {
   resource: string;
   description: string;
   version: string;
+  // The hostname the PEP reports (#1760), validated by `hostnameOf()`; ''
+  // when it never reported one (an older PEP).
+  hostname: string;
   enabled: boolean;
   registeredAt: string;
   lastSeen: string;
@@ -243,6 +248,9 @@ interface PepResult {
   name?: string;
   created?: boolean;
   current?: string;
+  // The HTTP status a refusal is answered with, where it is not the
+  // endpoint's usual one (a bad `hostname` is 400 on the heartbeat too).
+  status?: number;
 }
 
 // The parts of the policy repository the sync token reads.
@@ -643,6 +651,66 @@ class PepRegistry {
     return signals;
   }
 
+  // -------------------------------------------------------------------------
+  // THE HOSTNAME A PEP REPORTS (#1760).
+  //
+  // A PEP that derives its notify URL picks the DNS name of its HTTPS
+  // listener certificate that EQUALS ITS HOSTNAME, and the realm's default
+  // certificate names only what this row holds — so on a fresh install,
+  // where the PEP registered with no notify URL because it had no
+  // certificate yet, the defaults were the registered name alone and the
+  // derivation fell through to it (`remote-pep-1`, which nothing resolves).
+  // The PEP therefore reports the hostname it derives from, and
+  // `xacml_pep_tls.ts`'s `derivedNames()` puts it in the certificate.
+  //
+  // IT BECOMES A NAME IN A CERTIFICATE THIS SERVICE SIGNS, so it is held to
+  // exactly what a DNS subjectAltName may be: labels of letters, digits and
+  // hyphens, 1-63 each, 253 in all, the last not all digits, and never an
+  // IP literal (which would have to be an IP subjectAltName, and is not what
+  // a container is known by). Lower-cased, a trailing dot dropped. Anything
+  // else is REFUSED with STS-XACML-0261 rather than dropped, so a PEP that
+  // sends junk finds out; the PEP applies the same rule before it sends, so
+  // a well-behaved one never meets the refusal. Absent, null or '' is "not
+  // reported", which is what an older PEP sends.
+  // -------------------------------------------------------------------------
+  /**
+   * Validates the hostname a PEP reports on its registration or heartbeat.
+   *
+   * @param value - the `hostname` member as it arrived
+   * @returns `{ ok: true, hostname }` (lower-cased, '' when not reported),
+   *   or `{ ok: false, why, status: 400 }` carrying STS-XACML-0261
+   */
+  static hostnameOf(value: unknown): { ok: boolean; hostname?: string;
+                                       why?: string; status?: number } {
+    const { log } = helpers;
+    log.debug('Entering PepRegistry.hostnameOf().');
+    if (value === undefined || value === null || value === '') {
+      log.debug('Leaving PepRegistry.hostnameOf(). Not reported.');
+      return { ok: true, hostname: '' };
+    }
+    const text = typeof value === 'string'
+      ? value.trim().toLowerCase().replace(/\.$/, '') : null;
+    const labels = text === null ? [] : text.split('.');
+    const good = text !== null && text.length > 0 && text.length <= 253 &&
+      !net.isIP(text.replace(/^\[|\]$/g, '')) &&
+      labels.every(function (label) {
+        return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label);
+      }) &&
+      !/^[0-9]+$/.test(labels[labels.length - 1]);
+    if (!good) {
+      const why = '`hostname` must be this PEP\'s hostname as a DNS name: ' +
+        'letters, digits and hyphens in dot-separated labels of at most 63 ' +
+        'characters, 253 in all, not an IP address. It is put in the ' +
+        'realm\'s default listener certificate, so nothing else is ' +
+        'accepted. Leave it out to report none.';
+      log.debug('Leaving PepRegistry.hostnameOf(). Refused.');
+      return errorCodes.mark({ ok: false, status: 400, why: why },
+                             'STS-XACML-0261');
+    }
+    log.debug('Leaving PepRegistry.hostnameOf(). ' + text);
+    return { ok: true, hostname: text };
+  }
+
   private number(value: unknown): number {
     const { log } = this.deps;
     log.debug("Entering PepRegistry.number().");
@@ -756,6 +824,7 @@ class PepRegistry {
         resource: pep.resource || '',
         description: (pep.description || [])[0] || '',
         version: pep.version || '',
+        hostname: pep.hostname || '',
         // A missing mark is not FALSE: only one that says so disables it.
         enabled: pep.enabled !== false,
         registeredAt: pep.registeredAt || '',
@@ -868,6 +937,12 @@ class PepRegistry {
                     'underscore.' },
                              'STS-XACML-0019');
     }
+    // THE HOSTNAME (#1760), refused before anything is written.
+    const host = PepRegistry.hostnameOf(given.hostname);
+    if (!host.ok) {
+      log.debug('Leaving PepRegistry.register(). A bad hostname.');
+      return host as PepResult;
+    }
     const existing = this.read(name);
     const now = new Date().toISOString();
     const attributes: Record<string, unknown> = {
@@ -920,6 +995,12 @@ class PepRegistry {
     // reported about them is dropped, as the settings in force are.
     if (existing && existing.listeners) {
       attributes.xacmlPepListeners = existing.listeners;
+    }
+    // THE HOSTNAME IS THE REGISTRATION'S (#1760): a registration is a new
+    // process, so one without it (an older PEP) drops it, and an entry that
+    // never had one is written exactly as it always was.
+    if (host.hostname) {
+      attributes.xacmlPepHostname = host.hostname;
     }
     // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
     // when its process starts, so the last snapshot describes receivers that
@@ -990,6 +1071,15 @@ class PepRegistry {
                     'PEP nobody could nudge.' }, 'STS-XACML-0021');
     }
     const said = report || {};
+    // THE HOSTNAME (#1760): absent keeps, as every member here does; a bad
+    // one refuses the heartbeat before anything is written.
+    const host = said.hostname === undefined
+      ? { ok: true, hostname: existing.hostname }
+      : PepRegistry.hostnameOf(said.hostname);
+    if (!host.ok) {
+      log.debug('Leaving PepRegistry.heartbeat(). A bad hostname.');
+      return host as PepResult;
+    }
     // THE SIGNAL HEALTH (#1760): an absent member keeps the last snapshot,
     // as every member here does (the pull's own `heartbeat(name, {})` sends
     // none), null clears it (a PEP whose proxy is off), and an object
@@ -1008,7 +1098,8 @@ class PepRegistry {
     const attributes = this.attributesOf(
       Object.assign({}, existing, { signals: signals,
                                     settingsInUse: inUse,
-                                    listenersInUse: listening }), {
+                                    listenersInUse: listening,
+                                    hostname: host.hostname || '' }), {
       xacmlPepLastSeen: now,
       xacmlPepNotifyUrl: said.notifyUrl === undefined
         ? existing.notifyUrl : String(said.notifyUrl || ''),
@@ -1231,6 +1322,11 @@ class PepRegistry {
     if (row.description) {
       attributes.description = row.description;
     }
+    // Only when reported (#1760), so an older PEP's entry is written as it
+    // always was.
+    if (row.hostname) {
+      attributes.xacmlPepHostname = row.hostname;
+    }
     // Only when set, so an entry that never had one is written exactly as it
     // always was (#1760); `setProxy(name, null)` passes it as an override.
     if (row.proxy) {
@@ -1352,6 +1448,7 @@ export = {
   register: slot.forward('register'),
   heartbeat: slot.forward('heartbeat'),
   signalsOf: PepRegistry.signalsOf,
+  hostnameOf: PepRegistry.hostnameOf,
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
   setProxy: slot.forward('setProxy'),

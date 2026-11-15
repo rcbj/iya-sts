@@ -66,6 +66,9 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepVersion"})
   `version`?: string;
 
+  @fromAttr(#{attr: "xacmlPepHostname"})
+  `hostname`?: string;
+
   @fromAttr(#{attr: "xacmlPepLastNotify"})
   `lastNotify`?: string;
 

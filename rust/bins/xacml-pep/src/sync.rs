@@ -678,19 +678,23 @@ impl Sync {
         // What is IN FORCE (#1760): the environment's until the settings
         // pull brings the service's, which the heartbeat then reports.
         let now = o.now();
+        let mut body = json!({
+            "name": o.name,
+            "notifyUrl":
+                crate::options::advertised_notify_url(&now.notify_url),
+            "bias": now.bias.as_str(), "resource": now.resource,
+            "version": o.version, "description": now.description
+        });
+        // `hostname` (#1760): the name the realm's default listener
+        // certificate then carries, so the derived notify URL resolves on
+        // a fresh install. Only when it is a DNS name; an older service
+        // ignores it.
+        if let Some(host) = crate::options::reported_hostname() {
+            body["hostname"] = json!(host);
+        }
         let answer = self
             .client
-            .call(
-                Method::POST,
-                "/xacml/pep/register",
-                Some(Body::Json(json!({
-                    "name": o.name,
-                    "notifyUrl":
-                        crate::options::advertised_notify_url(&now.notify_url),
-                    "bias": now.bias.as_str(), "resource": now.resource,
-                    "version": o.version, "description": now.description
-                }))),
-            )
+            .call(Method::POST, "/xacml/pep/register", Some(Body::Json(body)))
             .await;
         let complain = |code: &str, why: &str| {
             if first {
@@ -1861,6 +1865,11 @@ impl Sync {
         }
         if let Some(listeners) = listeners {
             body["listeners"] = listeners;
+        }
+        // `hostname` (#1760), as on the registration: absent keeps what
+        // the service holds.
+        if let Some(host) = crate::options::reported_hostname() {
+            body["hostname"] = json!(host);
         }
         let answer = self
             .client

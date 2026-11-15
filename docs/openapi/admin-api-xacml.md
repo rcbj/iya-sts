@@ -3450,7 +3450,7 @@ Generates a key pair and certifies it from the Remote PEP listeners (`pep-tls`) 
 
 The PEP must be REGISTERED: its row is the one record that it exists in this realm. That is not a permission check on the PEP — registering is still not what lets it pull or enforce.
 
-THE CERTIFICATE NAMES the PEP's registered name (where that is a DNS name) and the host of its notify URL, plus any `dnsNames` and `ipAddresses` sent. It certifies `serverAuth` and nothing else.
+THE CERTIFICATE NAMES the PEP's registered name (where that is a DNS name), the hostname it reported on its registration or heartbeat (#1760; the name its derived notify URL looks for, so the nudge works on a fresh install), and the host of its notify URL, plus any `dnsNames` and `ipAddresses` sent. It certifies `serverAuth` and nothing else.
 
 **THE PRIVATE KEY IS IN THIS REPLY AND NOWHERE ELSE.** This service records the certificate — its issuer's CRL and OCSP responder answer for it — and keeps no copy of the key, so nothing can read it back. To put the pair in the container, write `fullChainPem` (the leaf followed by its Issuing CA, the realm Intermediate and, since #1064, the service Root) and `privateKeyPem` to the files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP picks up a pair written after it started. `anchorPem` is the service Root a client of that listener installs.
 
@@ -3780,6 +3780,7 @@ Scope: `admin:read`.
 | `peps[].dn` | string |  |  |
 | `peps[].effectiveNotifyUrl` | string |  |  |
 | `peps[].enabled` | boolean |  |  |
+| `peps[].hostname` | string |  | The hostname the PEP reports on its registration and heartbeat (#1760), a DNS name; empty from a PEP that reports none. The realm's default listener certificate names it. |
 | `peps[].identity` | string |  |  |
 | `peps[].lastNotify` | string |  |  |
 | `peps[].lastSeen` | string |  |  |

@@ -738,6 +738,7 @@
   "xacmlPepCertificateSubject": 725,
   "xacmlPepDecisions": 726,
   "xacmlPepEnabled": 727,
+  "xacmlPepHostname": 758,
   "xacmlPepIdentity": 728,
   "xacmlPepLastNotify": 729,
   "xacmlPepLastSeen": 730,

@@ -2019,6 +2019,10 @@
     "en": "b6078cbbbfdb9576",
     "text": "Vad den fjärranslutna PEP:en säger att den är. Fritext."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "Värdnamnet som fjärr-PEP:en rapporterar vid registrering och i sina livstecken (#1760): miljövariabeln HOSTNAME, annars kärnans, annars /etc/hostname — namnet containern är känd under i sitt nätverk, och det den härleder sin notifierings-URL från när certifikatet för dess HTTPS-lyssnare anger det. Begränsat till ett DNS-namn på högst 253 tecken, med gemener, aldrig en IP-adress; en registrering eller ett livstecken med något annat avvisas (STS-XACML-0261). Sfärens standardcertifikat för lyssnaren anger det bredvid PEP:ens registrerade namn och dess aviseringsvärd. En registrering utan det tar bort det, ett livstecken utan det behåller det. Saknas hos en äldre PEP, vars certifikatnamn är som förut."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
     "en": "a4283bfe7916574e",
     "text": "Vad som hände med den senaste knuffen — statusen, eller avvisningsmeningen. DET ENDA STÄLLE DÄR EN MISSLYCKAD KNUFF REGISTRERAS, av det skäl som ssf_streams.js anger om en avvisad push: den är per definition osynlig från den mottagande änden."

@@ -490,12 +490,20 @@ For example, a certificate naming `remote-pep-1, xacml-pep, localhost,
 PEP's registered name, which the realm puts in the certificate by default
 and which nothing resolves.
 
-**Name the hostname in the certificate.** The realm's default names are the
-PEP's registered name and the host of the notify URL it registered with. A
-PEP that derives its URL registers with none before it holds a certificate,
-so add the PEP's hostname (`xacml-pep` in `docker-compose.yml`) to the DNS
-names when you issue the certificate. Otherwise the derived host is the
-registered name.
+**The realm names the hostname by default.** The PEP reports its hostname
+(the same value step 4 reads) on its registration and every heartbeat, and
+the PEP's page shows it on the Overview tab. The realm's default
+certificate names the PEP's registered name, that hostname and the host of
+its notify URL, so a certificate issued with no extra names on a fresh
+install already holds the name step 1 picks. Add a DNS name by hand only if
+the service reaches the PEP by a name other than its hostname.
+
+The service accepts only a DNS name as the hostname: labels of letters,
+digits and hyphens, 253 characters at most, never an IP address. It refuses
+a registration or heartbeat that carries anything else (`STS-XACML-0261`).
+The PEP sends the member only when its hostname is such a name. A PEP
+older than this sends none, and its default names are as before. An older
+service ignores the member.
 
 * **No HTTPS certificate, no URL.** `POST /notify` is answered on HTTPS only,
   so a PEP with no pair yet advertises nothing and converges by polling. The
@@ -636,7 +644,8 @@ that is. So the order is always the same:
 
 2. Issue the pair through the management API, **in the PEP's realm**, naming
    the host your clients will dial. The certificate always names the PEP's
-   registered name and the host of its notify URL too:
+   registered name, the hostname it reported and the host of its notify URL
+   too:
 
    ```bash
    curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
