@@ -2288,6 +2288,15 @@ so must `admin-ui/admin.ts`.
    production. All five are `runtime: true` and therefore per trust realm, which
    is why every predicate is read PER REQUEST rather than cached.
 
+   **WHOSE REALM ASKS `oauth2.accessTokenRequireDpop` AT `/admin-api` (#28,
+   rcbj, 2026-11-15): the realm that ISSUED the token.** Every other resource
+   reads it in the request's realm, which is the issuing one there; the
+   management API also accepts the default realm's service-wide API client at
+   every realm's door, and a realm's switch refused that client's bearer.
+   So the gate passes `accessTokenRefusal({ dpopRequired })`, read in the
+   token's realm — a realm's own clients meet its rule, the service-wide
+   client the default realm's (`mgmt-api/CLAUDE.md`).
+
    | Setting | What it does |
    |---|---|
    | `oauth2.refreshTokenRotation` | Rotation with replay detection, with both modes off. The only one of the five that changes what is ISSUED rather than what is accepted |
@@ -6053,7 +6062,8 @@ other client are untouched, and the API explorer's unbound token still works.
     issued the token, and only for a client the list names. A BOUND token
     presented without its proof was already refused by every resource.
   * `oauth2.accessTokenRequireDpop` and `oauth2.refreshTokenRequireDpop` stay
-    the realm's own question for everybody else (rule 3ao).
+    the realm's own question for everybody else (rule 3ao) — at `/admin-api`
+    the question of the realm that issued the token (#28).
 * **IT IS THE ONE PUBLIC CLIENT A CONFIDENTIAL-ONLY FAPI PROFILE ALLOWS**
   (`fapi.js`: `PUBLIC_CLIENT_EXEMPT`, `publicClientExempt()`).
   `clientAuthenticationRefusal(method, clientId)` lets it past at the token
@@ -6211,6 +6221,18 @@ resource server here compares an `aud` whole (RFC 9068 section 4).
   `invalid_target` (RFC 8707 section 2), REDIRECTED from the authorization
   endpoint and a 400 at PAR, `STS-OAUTH-0950`. A malformed resource is left
   to the shape check that answers it after sign-in (`STS-OAUTH-0154`).
+  **REDIRECTED WITH NOBODY SIGNED IN TOO, IN RFC 9700 MODE (#26, rcbj,
+  2026-11-15)**, where it was this service's 400 page until then: RFC 9700
+  section 4.11.2's authenticate-before-redirect (`redirectPolicyFor()`)
+  showed it, so a product client never received the error RFC 8707 asks
+  for. The exception is this one refusal, and only where the request's
+  client is REGISTERED and its redirect_uri matched one of that client's OWN
+  registered URIs (`verifiedRedirect`) — not the service-wide
+  `oauth2.redirectUris` list, and not an address RFC 9126 section 2.4 let a
+  pushed request through with. A request less verified than that keeps the
+  page, which is section 4.11.2's reasoning: a browser forwarded to an
+  address nobody vouched for is the open redirector, whatever rides along.
+  Every other refusal at the endpoint keeps the rule.
 * **The token endpoint**: once above every grant but the token exchange, and
   before anything a grant spends — 400 `invalid_target`, `STS-OAUTH-0951`.
 * **The token exchange is not asked**: its `resource` and `audience` are RFC
@@ -6460,7 +6482,7 @@ to its set (`holdToModel()`, `STS-OAUTH-1005`), and `oauthError()` holds the
 code (`STS-OAUTH-1006`); the answer is sent as built. A recorded problem is a
 model gap to close in the TypeSpec. The open claim sets and the other answers
 are held by `tests/model_oauth.js`, against every answer, decoded token and
-error code `tests/oauth_model_wire.snapshot.json` recorded in development,
+error code `tests/protocol/oauth_model_wire.snapshot.json` recorded in development,
 RFC 9700, OAuth 2.1 and FAPI 2.0 modes, and it builds both discovery
 documents with every `oauth2.*` switch on in each FAPI profile — and with an
 attester trusted, since attestation-based client authentication's four members

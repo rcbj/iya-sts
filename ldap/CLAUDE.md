@@ -4523,6 +4523,16 @@ and how a presented one finds it:
   registry's naming of one (`certificateIdentity()`, which writes nothing).
   Entries it seeded before stay, and sign nobody in unless the certificate is
   stored on them.
+* **A CERTIFICATE THIS SERVICE ISSUED IS FILED ON ITS HOLDER, NOT ITS CN
+  (#33, 2026-11-15)**: `tls_server.js` passes `certificate.holder`, the name
+  the issuance register's holder subject resolves to now
+  (`currentHolderOf()`), and `certificatePlan()` places the sighting on that
+  entry before any other rule. Its "person exists" above was true only until
+  a rename: the CN is the name at issuance, so after a modifyDN the
+  handshake's sighting folded onto nobody and CREATED `cn=<old name>`,
+  `origin: authentication`, an entry an administrator then could not create
+  the name over. `tests/certificate_holder_rename.js` A3b,
+  `sts_certificate_holder_rename` 2b.
 
 
 ## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)

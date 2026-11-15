@@ -2440,6 +2440,24 @@ function size(pool) {
   return wanted;
 }
 
+// WHETHER THIS IS A FRONT PROCESS THAT HAS REQUEST WORKERS (2026-11-15): one
+// whose copy of the store can trail what a worker wrote a moment ago — a
+// realm a worker created, which `app.js`'s enterRealm() then catches up on
+// before deciding a path names no realm. False in a worker, and where no pool
+// is configured.
+/**
+ * Tells whether this process is a front process with request workers.
+ *
+ * @returns true in the front process when either pool has a worker
+ */
+function frontWithWorkers() {
+  log.debug("Entering frontWithWorkers().");
+  const answer = !IS_REQUEST_WORKER &&
+    (size(PROTOCOL_POOL) > 0 || size(SURFACE_POOL) > 0);
+  log.debug("Leaving frontWithWorkers(). " + answer);
+  return answer;
+}
+
 // ---------------------------------------------------------------------------
 // ONE LIST OF WHAT IS DISPATCHED, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.
 //
@@ -7911,6 +7929,8 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // never ran a handler for it, and sending it again on a new connection
   // cannot do anything twice. The 502 that said "it can simply be made
   // again" was right, and this process can make it again itself.
+  // (The EPIPE that comes AFTER the request was delivered was found on
+  // 2026-11-15, and is not resent: see THE LAST CHUNK IS HELD BACK, below.)
   //
   // `delivered` is set by a write callback, which node calls only once the
   // kernel has taken the bytes — from that moment the worker can read them,
@@ -8235,6 +8255,10 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     dropReplay();
     failed = false;
     upstream = open();
+    // Written and ended in the same turn as open(), before the agent hands
+    // the request a socket, so node queues all of it and flushes it as one
+    // write: there is no write after the last byte here, which is the
+    // hazard endBody() avoids (see THE LAST CHUNK IS HELD BACK, below).
     chunks.forEach(function (chunk) {
       upstream.write(chunk, wroteOn(upstream));
     });
@@ -8350,10 +8374,37 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // reached the worker. The pipe's back-pressure is kept: a write the
   // connection cannot take yet pauses the client until it drains.
   // -------------------------------------------------------------------------
-  // One chunk of the body, kept for a resend and written to the worker. A
-  // HOT PATH — every chunk of every dispatched body — so no Entering/Leaving
-  // pair, for route()'s reason.
+  // -------------------------------------------------------------------------
+  // THE LAST CHUNK IS HELD BACK AND SENT WITH THE END (2026-11-15), BECAUSE
+  // NOTHING MAY BE WRITTEN TO THE WORKER AFTER THE BYTE IT ANSWERS ON.
+  //
+  // This is what the `write EPIPE` above and the 502 in
+  // `tests/request_ryw_session.js` (R15, R16, GitHub Actions run
+  // 43672106260) were. Node's `ClientRequest.end()` with no chunk writes an
+  // EMPTY string when anything is still queued on its socket — the socket
+  // still connecting, as it is when a body arrives a tick after open() —
+  // and that empty write is a SEPARATE write, issued after the one that
+  // carries the last body byte. A worker answers the moment that byte is
+  // in, and with `Connection: close` (above) it then closes the
+  // connection. Closing a unix socket marks this end SEND_SHUTDOWN, so the
+  // empty write fails EPIPE: the request is answered and recorded by the
+  // worker, and this process tells the client 502. It needs this thread to
+  // be preempted between two writes long enough for the worker thread to
+  // read, answer and close — rare alone, and three runs in five of the unit
+  // pool on a two-CPU runner. A worker that answered is not resent to (a
+  // POST is not idempotent, and `delivered` is true), so nothing above
+  // could recover it; the only fix is not to make the write.
+  //
+  // `end(chunk)` corks the socket and writes the chunk and node's trailing
+  // empty write as ONE writev, so the worker cannot have the last byte
+  // without the rest. `tests/request_proxy_last_write.js` delays every
+  // write after the first and fails without this.
+  // -------------------------------------------------------------------------
+  // One chunk of the body, kept for a resend; the one before it is written
+  // to the worker. A HOT PATH — every chunk of every dispatched body — so
+  // no Entering/Leaving pair, for route()'s reason.
   let draining = false;
+  let held = null;
   const forward = function (chunk) {
     if (replay.kept && !delivered) {
       replay.bytes += chunk.length;
@@ -8366,10 +8417,16 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     // An early answer's drain (#215) and a failed connection take nothing
     // more: the one stopped reading, the other cannot be written to.
     if (detached || failed) {
+      held = null;
+      return;
+    }
+    const previous = held;
+    held = chunk;
+    if (!previous) {
       return;
     }
     const writing = upstream;
-    if (!writing.write(chunk, wroteOn(writing))) {
+    if (!writing.write(previous, wroteOn(writing))) {
       req.pause();
       draining = true;
       writing.once('drain', function () {
@@ -8381,8 +8438,14 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   const endBody = function () {
     log.debug("Entering endBody().");
     ended = true;
+    const last = held;
+    held = null;
     if (!detached && !failed) {
-      upstream.end(wroteOn(upstream));
+      if (last) {
+        upstream.end(last, wroteOn(upstream));
+      } else {
+        upstream.end(wroteOn(upstream));
+      }
     }
     log.debug("Leaving endBody().");
   };
@@ -9579,6 +9642,8 @@ module.exports = {
   // Where the scheduler's leader runs a cluster job's body (#408).
   schedulerRunner: schedulerRunner,
   size: size,
+  // Whether app.js's realm middleware catches up on an unknown realm here.
+  frontWithWorkers: frontWithWorkers,
   start: start,
   confirmCoordination: confirmCoordination,
   stop: stop,

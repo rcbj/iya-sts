@@ -3354,7 +3354,11 @@ class ScimAuth {
   private consoleGroupsOf(name: unknown): string[] {
     const { log } = this.deps;
     log.debug("Entering ScimAuth.consoleGroupsOf().");
-    const held = require('../admin-ui/admin_rbac').rolesOf(String(name || ''));
+    // THIS REALM'S ROSTER (2026-11-14, found by #444's D12): with no realm
+    // named, `rolesOf()` inherits the installed view, the DEFAULT realm's, so
+    // a trust realm's own Admin Read and Admin Write were never seen here.
+    const held = require('../admin-ui/admin_rbac').rolesOf(String(name || ''),
+                                                          realms.currentId());
     log.debug("Leaving ScimAuth.consoleGroupsOf().");
     return ((held && held.groups) || []).map(function (one: any) {
       return one.cn;

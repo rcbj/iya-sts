@@ -118,7 +118,8 @@
 
 const ModelTables = require('./model_tables');
 const DomainClasses = require('./domain_classes');
-const { log } = require('./helpers');
+const helpers = require('./helpers');
+const { log } = helpers;
 const config = require('./config');
 // The error-code registry. A LEAF that requires nothing here, so this file
 // stays one (the header argues why that matters). A refusal's code is marked on
@@ -1689,10 +1690,19 @@ function normalizeContext(who) {
   log.debug("Entering normalizeContext().");
   const given = who || {};
   const kind = given.kind === 'application' ? 'application' : 'user';
+  const name = String(given.name || '');
   log.debug("Leaving normalizeContext().");
   return {
     kind: kind,
-    name: String(given.name || ''),
+    name: name,
+    // THE NAMES A DIRECT MEMBERSHIP IS MATCHED UNDER (2026-11-14). A role
+    // names its people by username (`roleMemberUser`), and a person also
+    // arrives here as their subject, `urn:uuid:<entryUUID>` — the `sub` a
+    // remote PEP asks `POST /xacml/pip` about. The group half already found
+    // them (`groupsOfUser()` looks a subject up), the direct half compared
+    // the username list against the subject and missed, so the same person
+    // was Permit by name and Deny by subject. See `memberNamesOf()`.
+    memberNames: memberNamesOf(kind, name, given.crossRealm === true),
     authenticated: given.authenticated === true,
     groups: Array.isArray(given.groups) ? given.groups.map(String) : null,
     // THE APPLICATION(S) THIS DECISION OR TOKEN IS FOR (#310): a role
@@ -1784,7 +1794,10 @@ function configuredRolesOf(context) {
     if (context.kind === 'application') {
       return contains(role.applications, context.name);
     }
-    if (contains(role.users, context.name)) {
+    const names = context.memberNames || [context.name];
+    if (names.some(function (one) {
+      return contains(role.users, one);
+    })) {
       return true;
     }
     return role.groups.some(function (group) {
@@ -1796,6 +1809,30 @@ function configuredRolesOf(context) {
   }).map(function (role) {
     return context.ids || !role.application ? role.name : role.localName;
   });
+}
+
+// The names a person's DIRECT membership of a role is matched under: the name
+// as given, and where that is a subject this service issued, `urn:uuid:` and
+// an entryUUID, the username its entry is filed under as well. The lookup is
+// `helpers.nameForSubject()`, the subject resolver `ldap/ldap_server.js`
+// fills, which reads one entry by its entryUUID — indexed, never a scan. A
+// subject that names nobody, a process with no directory, and a resolver
+// that fails all leave the name as given, which is what was matched before.
+// Only a person: an application is named by its client_id, and a principal
+// that arrived through a Kerberos trust (#430) has no entry here to name.
+function memberNamesOf(kind, name, crossRealm) {
+  log.debug("Entering memberNamesOf().");
+  const out = [name];
+  if (kind !== 'user' || crossRealm || !/^urn:uuid:/i.test(name.trim())) {
+    log.debug("Leaving memberNamesOf(). Not a subject.");
+    return out;
+  }
+  const filed = helpers.nameForSubject(name);
+  if (filed && filed.toLowerCase() !== name.toLowerCase()) {
+    out.push(filed);
+  }
+  log.debug("Leaving memberNamesOf(). " + out.length + " name(s).");
+  return out;
 }
 
 // Case-insensitively, because a username here arrives from a login form, a

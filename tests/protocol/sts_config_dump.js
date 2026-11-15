@@ -70,6 +70,100 @@ function rowOf(rows, key) {
   })[0];
 }
 
+// THE MASKING RULES OF tests/config_dump.js, in this job's realm (D12).
+async function realmMasking(inRealm) {
+  log.debug("Entering realmMasking().");
+  const writes = {
+    "krb5.serviceSalt": "salt-" + REALM_CANARY,
+    "mail.smtpPasswordRef": "secret/data/smtp-" + STAMP,
+    "spiffe.k8sTokenFile": "/var/run/k8s/token-" + STAMP,
+    "branding.displayName": "postgres://sts:url-" + REALM_CANARY +
+                            "@db:5432/sts",
+    "totp.issuer": "Bearer hdr-" + REALM_CANARY,
+    "webauthn.rpName": "Endpoint=sb://x;AccessKey=cs-" + REALM_CANARY
+  };
+  for (const key of Object.keys(writes)) {
+    await must(inRealm + "/admin-api/config/set",
+               { key: key, value: writes[key] });
+  }
+  const answer = await call("GET", inRealm + "/admin-api/config-dump");
+  assert.strictEqual(answer.status, 200, answer.text);
+  assert.ok(answer.text.indexOf(REALM_CANARY) < 0,
+            "no realm canary in the realm's dump: " +
+            answer.text.slice(0, 200));
+  const dump = JSON.parse(answer.text);
+  const mask = dump.masking.mask;
+  const salt = rowOf(dump.settings, "krb5.serviceSalt");
+  assert.strictEqual(salt.value, mask, "a secret-named value is masked");
+  assert.strictEqual(salt.masked, true, "and the row says so");
+  assert.strictEqual(salt.description, undefined,
+                     "a dump row carries no prose");
+  log.info("  [ok] a value whose name reads as a secret is masked by name");
+  assert.strictEqual(rowOf(dump.settings, "mail.smtpPasswordRef").value,
+                     writes["mail.smtpPasswordRef"]);
+  assert.strictEqual(rowOf(dump.settings, "spiffe.k8sTokenFile").value,
+                     writes["spiffe.k8sTokenFile"]);
+  log.info("  [ok] a reference and a file name are shown as written");
+  assert.strictEqual(rowOf(dump.settings, "branding.displayName").value,
+                     "postgres://sts:" + mask + "@db:5432/sts");
+  assert.strictEqual(rowOf(dump.settings, "totp.issuer").value,
+                     "Bearer " + mask);
+  assert.strictEqual(rowOf(dump.settings, "webauthn.rpName").value,
+                     "Endpoint=sb://x;AccessKey=" + mask);
+  log.info("  [ok] a URL's password, a header and a connection string's " +
+           "key are masked in place, the rest standing");
+  assert.strictEqual(typeof rowOf(dump.settings, "global.port").value,
+                     "number");
+  assert.ok(Array.isArray(rowOf(dump.settings, "gnap.tokenFormats").value));
+  log.info("  [ok] a number and a list are shown");
+
+  const table = await call("GET", inRealm + "/admin-api/config");
+  assert.strictEqual(table.status, 200, table.text);
+  assert.ok(table.text.indexOf(REALM_CANARY) < 0, "the table masks them");
+  const rows = JSON.parse(table.text).groups.reduce(function (all, group) {
+    return all.concat(group.settings);
+  }, []);
+  const tableSalt = rowOf(rows, "krb5.serviceSalt");
+  assert.strictEqual(tableSalt.value, mask);
+  assert.strictEqual(tableSalt.text, mask);
+  assert.strictEqual(tableSalt.masked, true);
+  assert.ok(typeof tableSalt.description === "string" &&
+            tableSalt.description.length > 0, "the table keeps the prose");
+  log.info("  [ok] the settings table masks the value and the copy a form " +
+           "is drawn from, and keeps the rest of the row");
+
+  const echoed = await call("POST", inRealm + "/admin-api/config/set",
+    { key: "branding.displayName",
+      value: "postgres://sts:" + mask + "@db:5432/sts" });
+  assert.strictEqual(echoed.status, 200, echoed.text);
+  assert.ok(/unchanged: the value posted was its mask/
+    .test(JSON.parse(echoed.text).message), echoed.text.slice(0, 300));
+  const again = JSON.parse((await call("GET", inRealm +
+    "/admin-api/config-dump")).text);
+  assert.strictEqual(rowOf(again.settings, "branding.displayName").value,
+                     "postgres://sts:" + mask + "@db:5432/sts");
+  log.info("  [ok] a partly masked value posted back keeps what is held");
+
+  const audited = await call("GET", inRealm + "/admin-api/audit?per=20&" +
+                             "action=admin.config-dump");
+  const rowsRead = JSON.parse(audited.text).events || [];
+  assert.ok(rowsRead.length >= 2, "the reads are audited");
+  const read = rowsRead[0];
+  assert.strictEqual(read.target, REALM);
+  assert.ok(read.actor && read.actor.length > 0, "with who asked");
+  assert.strictEqual(read.detail.scope, "realm");
+  assert.strictEqual(read.detail.realms, 0);
+  assert.ok(read.detail.maskedValues > 0, "and the masked count");
+  assert.ok(JSON.stringify(rowsRead).indexOf(REALM_CANARY) < 0,
+            "and the audit rows carry no value");
+  log.info("  [ok] the read is audited with who asked and the count, and " +
+           "no value");
+  for (const key of Object.keys(writes)) {
+    await must(inRealm + "/admin-api/config/reset", { key: key });
+  }
+  log.debug("Leaving realmMasking().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const inRealm = base + "/realm/" + REALM;
@@ -145,6 +239,7 @@ async function test() {
     assert.strictEqual(confined.realm, REALM);
     assert.strictEqual(confined.realms.length, 0);
     assert.strictEqual(rowOf(confined.settings, KEY).source, "realm");
+    await realmMasking(inRealm);
   } finally {
     // RESET rather than set back: a value set back is still a runtime
     // override, and later jobs assert that none is in force.

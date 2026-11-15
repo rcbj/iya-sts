@@ -66,6 +66,7 @@ const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
 const prim = require('../kerberos/krb5_primitives.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
+const stsCrypto = require('../common/crypto');
 const kpac = require('../kerberos/krb5_pac.js');
 const wire = require('./protocol/krb5_wire.js');
 
@@ -136,7 +137,10 @@ async function tgtFor(name, password, opts) {
   const profile = kcrypto.etypeById(18);
   const key = await profile.stringToKey(password, prim.utf8(info.salt),
                                         info.s2kparams || null);
-  const nonce = 0x2000 + Math.floor(Math.random() * 0x7fff0000);
+  // From node's generator through common/crypto.js section 13, never
+  // Math.random() (tests/random_values.js): a uniform nonce in the same
+  // range, [0x2000, 0x7fff2000).
+  const nonce = stsCrypto.randomInt(0x2000, 0x2000 + 0x7fff0000);
   const reply = msgs.readKdcResponse(await T.send(msgs.encKdcReq({
     msgType: msgs.MSG_TYPE.AS_REQ,
     padata: [{ type: msgs.PA_TYPE.ENC_TIMESTAMP,

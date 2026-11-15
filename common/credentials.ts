@@ -10003,13 +10003,19 @@ class Credentials {
     }
     if (!verdict.ok) {
       log.info('credentials: a security key enrolment for ' + name +
-               ' did not verify — ' + (verdict.failed || []).join('; '));
+               ' did not verify; failed: ' +
+               (verdict.failed || []).join('; '));
       log.debug('Leaving Credentials.verifyKeyRegistration(). It did not ' +
                 'verify.');
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
-               errors: ['The registration did not verify — ' +
-                        (verdict.failed || []).join('; ') + '.'] });
+               // WHAT FAILED, SAID AS FAILED (2026-11-14, found by #444's
+               // D12): a check is named for what must hold, so a bare list
+               // read "did not verify — credential algorithm was offered"
+               // where it meant the algorithm was NOT offered.
+               errors: ['The registration did not verify; this check ' +
+                        'failed: ' + (verdict.failed || []).join('; ') +
+                        '.'] });
     }
 
     // **THE EXCLUSION, CHECKED HERE AS WELL AS REQUESTED.**
@@ -10537,8 +10543,8 @@ class Credentials {
     if (!verdict.ok) {
       log.debug("Leaving Credentials.proveKeyUpgrade(). It did not verify.");
       return Promise.resolve(dropped(webauthnPolicy.failureCodeFor(verdict),
-        'The passkey did not verify — ' + (verdict.failed || []).join('; ') +
-        '. Nothing was changed.'));
+        'The passkey did not verify; this check failed: ' +
+        (verdict.failed || []).join('; ') + '. Nothing was changed.'));
     }
     log.debug("Leaving Credentials.proveKeyUpgrade(). Spending the proof.");
     return this.spendAssertion({

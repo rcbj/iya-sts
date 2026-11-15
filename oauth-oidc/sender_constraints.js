@@ -510,7 +510,9 @@ function refreshRedemptionRefusal(opts) {
  * @param opts - `where`, `boundJkt`, `proofOk`, `boundThumbprint`,
  *   `certificate`, `certificateMatches`, `mtlsAvailable`, and `clientBound`
  *   (true when the token was issued to a client `dpopBoundPublicClient()`
- *   names)
+ *   names), and `dpopRequired` (`oauth2.accessTokenRequireDpop` as the
+ *   caller read it in the realm that issued the token; the ambient realm's
+ *   when absent)
  * @returns null, or `{ ok: false, errorCode, error, setting, description }`
  */
 function accessTokenRefusal(opts) {
@@ -528,7 +530,13 @@ function accessTokenRefusal(opts) {
       'when it is DPoP-bound (RFC 9449), because the console is a public ' +
       'client, and this token carries no cnf.jkt.');
   }
-  if (accessTokenDpopRequired()) {
+  // `dpopRequired` (#28): the management API asks the setting in the realm
+  // that ISSUED the token, so a realm's switch does not refuse the
+  // service-wide API client's bearer; every other caller leaves it to the
+  // ambient realm, as before.
+  const dpopRequired = o.dpopRequired === undefined
+    ? accessTokenDpopRequired() : !!o.dpopRequired;
+  if (dpopRequired) {
     if (!o.boundJkt) {
       log.debug("Leaving accessTokenRefusal(). Token unbound.");
       return refusal('STS-OAUTH-0528', 'invalid_token',

@@ -309,6 +309,17 @@ function checkWritingEnd(t) {
   t.check(typeof scheme === 'string',
           'a realm may NOT carry global.https — it binds no socket',
           JSON.stringify(scheme));
+  // #39 (2026-11-15): the two SAML assertion lifetimes have a floor of one
+  // minute at every layer; 0 was accepted, and read back as sixty.
+  ['saml2.assertionLifetimeMin', 'saml11.assertionLifetimeMin']
+    .forEach(function (key) {
+      t.check(typeof config.checkOverride(key, '0', true) === 'string' &&
+              typeof config.checkOverride(key, '0') === 'string' &&
+              config.checkOverride(key, '1', true) === null,
+              key + ' refuses 0 on a realm and process-wide, and accepts 1 ' +
+              '(#39)', JSON.stringify([config.checkOverride(key, '0', true),
+                                       config.checkOverride(key, '1', true)]));
+    });
   log.debug("Leaving checkWritingEnd().");
 }
 
@@ -345,6 +356,29 @@ function checkRealmWrites(t) {
           JSON.stringify(badCreate.errors));
   if (badCreate.ok) {
     realms.remove('trl-bad');
+  }
+
+  // #39 (2026-11-15): a lifetime of 0 is refused on a create, and a realm
+  // READ BACK holding one — stored before the row had `min: 1` — is
+  // restored without it rather than refused whole.
+  const zeroCreate = realms.create({ id: 'trl-zero', name: 'trl-zero',
+    overrides: { 'saml11.assertionLifetimeMin': 0 } });
+  t.check(!zeroCreate.ok, 'create() refuses saml11.assertionLifetimeMin 0 ' +
+          '(#39)', JSON.stringify(zeroCreate.errors));
+  if (zeroCreate.ok) {
+    realms.remove('trl-zero');
+  }
+  const restored = realms.create({ id: 'trl-restored', name: 'trl-restored',
+    restored: true, overrides: { 'saml11.assertionLifetimeMin': 0,
+                                 'saml2.assertionLifetimeMin': 5 } });
+  t.check(restored.ok && restored.realm &&
+          !('saml11.assertionLifetimeMin' in restored.realm.overrides) &&
+          restored.realm.overrides['saml2.assertionLifetimeMin'] === 5,
+          'a restored realm holding a lifetime of 0 is restored, without ' +
+          'that one value (#39)', JSON.stringify(restored.errors ||
+            (restored.realm && restored.realm.overrides)));
+  if (restored.ok) {
+    realms.remove('trl-restored');
   }
 
   withRealm(t, 'trl-set', {}, function (realm) {

@@ -249,6 +249,25 @@ module.exports = {
       }) === 'STS-KEYS-0186', 'an unlisted COSE signature is not made');
       config.clearOverride('cose.algorithms');
 
+      // JOSE THROUGH THE LIBRARY PATH (2026-11-14, #444's D12): an ES256 JWS
+      // — which jsonwebtoken verifies, not the shared verifier — is refused
+      // under keys.acceptedSigningAlgorithms=RS256 with STS-KEYS-0179, as the
+      // shared verifier's algorithms are. A client's private_key_jwt goes
+      // this way.
+      const jwtLib = require('jsonwebtoken');
+      const es256 = jwtLib.sign({ iss: 'c', sub: 'c', aud: 'a' },
+        ec.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+        { algorithm: 'ES256', expiresIn: 60 });
+      const ecPub = ec.publicKey.export({ type: 'spki', format: 'pem' });
+      t.check(!!stsCrypto.verifyJws(es256, ecPub, { algorithms: ['ES256'] }),
+        'an ES256 JWS verifies by default');
+      config.setOverride('keys.acceptedSigningAlgorithms', 'RS256');
+      t.check(codeThrownBy(function () {
+        return stsCrypto.verifyJws(es256, ecPub, { algorithms: ['ES256'] });
+      }) === 'STS-KEYS-0179', 'and is refused, STS-KEYS-0179, when the ' +
+        'accepted list leaves ES256 out');
+      config.clearOverride('keys.acceptedSigningAlgorithms');
+
       // XML: the verdict, and digests as a second list.
       const RSA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
       const SHA256 = 'http://www.w3.org/2001/04/xmlenc#sha256';
@@ -357,6 +376,50 @@ module.exports = {
       t.check(!write('saml.signatureAlgorithm', 'rsa-sha512').problem,
         'and may name what is in it');
       config.clearOverride('saml.signatureAlgorithms');
+      // A REALM'S OVERRIDES ARE ONE WRITE (2026-11-14, #444's D12): the
+      // chosen algorithm is judged against the list beside it in the same
+      // object, at a create and an update, as config/set judges it.
+      const realms = require('../common/realms');
+      const RID = 'sigpol' + process.pid;
+      const madeBad = realms.create({ id: RID, name: 'Signature policy',
+        overrides: { 'keys.signingAlgorithms': 'RS256',
+                     'oauth2.accessTokenSigningAlg': 'ES256' } });
+      t.check(madeBad && madeBad.ok === false &&
+              errorCodes.codeOf(madeBad) === 'STS-KEYS-0192',
+              'a realm created with a chosen algorithm outside the list in ' +
+              'the same overrides is refused, STS-KEYS-0192',
+              JSON.stringify(madeBad && (madeBad.errors || madeBad.ok)));
+      const madeOk = realms.create({ id: RID, name: 'Signature policy',
+        overrides: { 'keys.signingAlgorithms': 'RS256,ES256',
+                     'oauth2.accessTokenSigningAlg': 'ES256' } });
+      t.check(madeOk && madeOk.ok === true,
+              'and taken when the list beside it holds it',
+              JSON.stringify(madeOk && (madeOk.errors || madeOk.ok)));
+      const updated = realms.update(RID, { overrides: {
+        'keys.signingAlgorithms': 'RS256',
+        'oauth2.signedMetadataAlgorithm': 'ES256' } });
+      t.check(updated && updated.ok === false &&
+              errorCodes.codeOf(updated) === 'STS-KEYS-0192',
+              'an update is judged the same way',
+              JSON.stringify(updated && (updated.errors || updated.ok)));
+      // And one setting at a time (`/admin-api/realms/set`): the realm's own
+      // list is the companion, not the caller's realm's.
+      const RID2 = RID + 'b';
+      realms.create({ id: RID2, name: 'Signature policy, one setting',
+        overrides: { 'keys.signingAlgorithms': 'RS256' } });
+      const setBad = realms.setOverride(RID2, 'oauth2.accessTokenSigningAlg',
+                                        'ES256');
+      t.check(setBad && setBad.ok === false &&
+              errorCodes.codeOf(setBad) === 'STS-KEYS-0192',
+              'realms/set of a chosen algorithm outside the realm\'s own ' +
+              'list is refused, STS-KEYS-0192',
+              JSON.stringify(setBad && (setBad.errors || setBad.ok)));
+      const setOk = realms.setOverride(RID2, 'oauth2.accessTokenSigningAlg',
+                                       'RS256');
+      t.check(setOk && setOk.ok === true, 'and one within it is taken',
+              JSON.stringify(setOk && (setOk.errors || setOk.ok)));
+      realms.remove(RID2);
+      realms.remove(RID);
       config.setOverride(PQ, false);
       t.check(write('keys.pqcOnly', true).code === 'STS-KEYS-0193',
         'pqcOnly cannot go on with post-quantum signing off');

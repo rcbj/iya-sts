@@ -43,6 +43,17 @@
 //      verification recorded through /admin-api, verified_claims chosen by
 //      trust framework and evidence type, omitted when nothing satisfies it,
 //      and section 6's refusal of a request with no verification.
+//   q. D12 (#444), tests/client_response_attributes.js over the wire: the
+//      eleven response members as attributes — offered as closed choices;
+//      the grammar refused at a set and the field grid's update-fields,
+//      recorded STS-REG-0340; an alg then its enc taken; a registration
+//      naming a symmetric UserInfo encryption refused
+//      invalid_client_metadata, STS-REG-0339; an RFC 7591 registration
+//      writing each member to its attribute, an operator's edit handed back
+//      by the RFC 7592 read, an RFC 7592 update that leaves a member out
+//      clearing it; and a console-set JARM algorithm used on the response.
+//      Not carried: the source checks of which reader each module calls
+//      (class (d)).
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -435,6 +446,217 @@ async function setUp() {
       "created " + who);
   }
   log.debug("Leaving setUp().");
+}
+
+// =========================================================================
+// q. D12 (#444): tests/client_response_attributes.js over the wire.
+// =========================================================================
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  let n = 0;
+  const r = await send(realmApi + "/audit?per=500&code=" +
+                       encodeURIComponent(code));
+  n = Number((r.body && r.body.matched) || 0);
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
+async function codesSettle(code, atLeast) {
+  log.debug("Entering codesSettle(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 20 && n < atLeast; i += 1) {
+    await new Promise(function (resolve) { setTimeout(resolve, 150); });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving codesSettle(). " + n);
+  return n;
+}
+
+async function fieldsOf(id) {
+  log.debug("Entering fieldsOf(). " + id);
+  const r = await send(realmApi + "/applications?application=" +
+                       encodeURIComponent(id));
+  assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+  log.debug("Leaving fieldsOf().");
+  return r.body.fields || {};
+}
+
+function one(value) {
+  log.debug("Entering one().");
+  log.debug("Leaving one().");
+  return value === undefined ? undefined : [].concat(value)[0];
+}
+
+async function responseAttributes() {
+  log.debug("Entering responseAttributes().");
+  log.info("=== q. the response members as attributes (#290) ===");
+  const rows = ((await send(realmApi + "/applications/new")).body || {})
+    .fields || [];
+  const rowOf = function (name) {
+    return rows.filter(function (row) {
+      return row.attribute === name;
+    })[0] || { choices: [] };
+  };
+  check("q1. the algorithms are offered as closed choices: no none for an " +
+        "ID Token, none for UserInfo, no symmetric key wrap for JARM",
+        function () {
+    const idAlg = rowOf("oauthIdTokenSignedResponseAlg").choices || [];
+    const uiAlg = rowOf("oauthUserinfoSignedResponseAlg").choices || [];
+    const jarm = rowOf("oauthAuthorizationEncryptedResponseAlg").choices ||
+                 [];
+    assert.ok(idAlg.indexOf("ES256") >= 0 && idAlg.indexOf("none") < 0,
+              JSON.stringify(idAlg));
+    assert.ok(uiAlg.indexOf("none") >= 0, JSON.stringify(uiAlg));
+    assert.ok(jarm.indexOf("RSA-OAEP-256") >= 0 &&
+              jarm.indexOf("A128KW") < 0, JSON.stringify(jarm));
+  });
+  const ID = "q-console-" + STAMP.toLowerCase().slice(-8);
+  const SECRET = "q-secret-" + STAMP + "-0123456789abcdef0123456789abcdef";
+  await ok(realmApi + "/applications/create", { identifier: ID, name: ID,
+    kind: "oauth2-client", protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [ID], oauthClientSecret: SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_basic",
+              oauthRedirectUri: [REDIRECT],
+              oauthGrantType: ["authorization_code"],
+              oauthResponseType: ["code"],
+              oauthIdTokenSignedResponseAlg: "ES256",
+              oauthAuthorizationSignedResponseAlg: "PS256",
+              oauthDefaultAcrValues: "mfa 1",
+              oauthDefaultMaxAge: "300" } },
+    "created a client with usable response members");
+  const made = await fieldsOf(ID);
+  check("q2. a create with usable values stores them", function () {
+    assert.strictEqual(one(made.oauthIdTokenSignedResponseAlg), "ES256");
+    assert.strictEqual(one(made.oauthAuthorizationSignedResponseAlg),
+                       "PS256");
+    assert.strictEqual(one(made.oauthDefaultAcrValues), "mfa 1");
+  });
+  const before = await codeCount("STS-REG-0340");
+  const cases = [
+    ["oauthUserinfoEncryptedResponseAlg", "A128KW",
+     "a symmetric UserInfo encryption"],
+    ["oauthUserinfoEncryptedResponseEnc", "A256GCM",
+     "a UserInfo enc with no alg on the entry"],
+    ["oauthIdTokenEncryptedResponseEnc", "A256GCM",
+     "an ID Token enc with no alg on the entry"],
+    ["oauthAuthorizationSignedResponseAlg", "none",
+     "an unsigned JARM response"],
+    ["oauthDefaultMaxAge", "-5", "a negative max age"],
+    ["oauthDefaultMaxAge", "soon", "a max age that is not a number"],
+    ["oauthDefaultAcrValues", "mfa \"x", "a malformed acr value"]
+  ];
+  for (const c of cases) {
+    const r = await postJson(realmApi + "/applications/set", {
+      application: ID, attribute: c[0], value: c[1] });
+    check("q3. a set of " + c[2] + " is refused 400, naming " + c[0],
+          function () {
+      assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+      assert.ok((r.body.errors || []).join(" ").indexOf(c[0]) >= 0,
+                r.raw.slice(0, 300));
+    });
+  }
+  const grid = await postJson(realmApi + "/applications/update-fields", {
+    application: ID, fields: { oauthUserinfoSignedResponseAlg: "NOPE256" } });
+  check("q4. the field grid's update-fields refuses an unknown algorithm " +
+        "the same way", function () {
+    assert.strictEqual(grid.status, 400, grid.raw.slice(0, 300));
+    assert.ok(/oauthUserinfoSignedResponseAlg/.test(
+      (grid.body.errors || []).join(" ")), grid.raw.slice(0, 300));
+  });
+  const counted = await codesSettle("STS-REG-0340", before + cases.length);
+  check("q5. the grammar's refusals are recorded STS-REG-0340", function () {
+    assert.ok(counted - before >= cases.length,
+              "rows added: " + (counted - before));
+  });
+  const paired = await postJson(realmApi + "/applications/update-fields", {
+    application: ID, fields: { oauthUserinfoSignedResponseAlg: "RS256",
+      oauthUserinfoEncryptedResponseAlg: "RSA-OAEP-256" } });
+  const enc = await postJson(realmApi + "/applications/set", {
+    application: ID, attribute: "oauthUserinfoEncryptedResponseEnc",
+    value: "A256GCM" });
+  check("q6. an alg and then its enc are taken", function () {
+    assert.strictEqual(paired.status, 200, paired.raw.slice(0, 300));
+    assert.strictEqual(enc.status, 200, enc.raw.slice(0, 300));
+  });
+  const regBefore = await codeCount("STS-REG-0339");
+  const symmetric = await register({
+    userinfo_encrypted_response_alg: "A128KW" });
+  const regAfter = await codesSettle("STS-REG-0339", regBefore + 1);
+  check("q7. a registration naming a symmetric UserInfo encryption is " +
+        "refused invalid_client_metadata, recorded STS-REG-0339",
+        function () {
+    assert.strictEqual(symmetric.status, 400, symmetric.raw.slice(0, 300));
+    assert.strictEqual(symmetric.body.error, "invalid_client_metadata");
+    assert.ok(regAfter - regBefore >= 1, "rows added: " +
+              (regAfter - regBefore));
+  });
+  const reg = await register({ id_token_signed_response_alg: "ES384",
+    userinfo_signed_response_alg: "PS256",
+    authorization_signed_response_alg: "ES256",
+    default_acr_values: ["mfa", "1"], default_max_age: 120 });
+  assert.strictEqual(reg.status, 201, "a registration: " +
+                     reg.raw.slice(0, 300));
+  const dcr = reg.body;
+  const written = await fieldsOf(dcr.client_id);
+  check("q8. a registration writes each member to its attribute, the acr " +
+        "values in order in one value", function () {
+    assert.strictEqual(one(written.oauthIdTokenSignedResponseAlg), "ES384",
+                       JSON.stringify(written).slice(0, 600));
+    assert.strictEqual(one(written.oauthUserinfoSignedResponseAlg), "PS256");
+    assert.strictEqual(one(written.oauthAuthorizationSignedResponseAlg),
+                       "ES256");
+    assert.strictEqual(one(written.oauthDefaultAcrValues), "mfa 1");
+    assert.strictEqual(one(written.oauthDefaultMaxAge), "120");
+  });
+  await ok(realmApi + "/applications/add", { application: dcr.client_id,
+    attribute: "appAllowedProtocol", value: "oidc" },
+    "declared the registered client for OpenID Connect");
+  await ok(realmApi + "/applications/set", { application: dcr.client_id,
+    attribute: "oauthIdTokenSignedResponseAlg", value: "PS384" },
+    "an operator changed the registered client's algorithm");
+  const managed = { Authorization: "Bearer " +
+                    dcr.registration_access_token };
+  const read = await send(dcr.registration_client_uri,
+                          { headers: managed });
+  check("q9. the RFC 7592 read hands them back from the attributes, the " +
+        "operator's edit included", function () {
+    assert.strictEqual(read.status, 200, read.raw.slice(0, 300));
+    assert.strictEqual(read.body.id_token_signed_response_alg, "PS384");
+    assert.deepStrictEqual(read.body.default_acr_values, ["mfa", "1"]);
+    assert.strictEqual(read.body.default_max_age, 120);
+  });
+  const put = await send(dcr.registration_client_uri, { method: "PUT",
+    headers: Object.assign({ "Content-Type": "application/json" }, managed),
+    body: JSON.stringify({ client_id: dcr.client_id,
+      client_name: read.body.client_name, redirect_uris: [REDIRECT],
+      grant_types: ["authorization_code"], response_types: ["code"],
+      token_endpoint_auth_method: "client_secret_basic",
+      id_token_signed_response_alg: "ES256" }) });
+  const cleared = await fieldsOf(dcr.client_id);
+  check("q10. an RFC 7592 update that leaves a member out clears it",
+        function () {
+    assert.strictEqual(put.status, 200, put.raw.slice(0, 300));
+    assert.strictEqual(one(cleared.oauthIdTokenSignedResponseAlg), "ES256");
+    assert.strictEqual(cleared.oauthUserinfoSignedResponseAlg, undefined);
+    assert.strictEqual(cleared.oauthAuthorizationSignedResponseAlg,
+                       undefined);
+    assert.strictEqual(cleared.oauthDefaultAcrValues, undefined);
+    assert.strictEqual(cleared.oauthDefaultMaxAge, undefined);
+    assert.strictEqual(put.body.default_max_age, undefined);
+  });
+  await ok(realmApi + "/consent/grant-global-consent", { client: ID,
+    scope: "openid" }, "consented openid for " + ID);
+  const b = browser("q");
+  const asked = codeRequest({ client_id: ID }, { response_mode: "jwt" });
+  const r = await authorize(b, asked.params, ALICE);
+  const back = atClient(r);
+  const response = back && back.params.get("response");
+  check("q11. the console-set JARM algorithm signs the response: PS256",
+        function () {
+    assert.ok(response, r.status + " " + r.location);
+    assert.strictEqual(decode(response).header.alg, "PS256");
+  });
+  log.debug("Leaving responseAttributes().");
 }
 
 async function test() {
@@ -1014,7 +1236,9 @@ async function test() {
     assert.strictEqual(back.params.get("error"), "invalid_request");
   });
 
-  assert.ok(checks >= 34, "only " + checks + " checks ran; a section has " +
+  await responseAttributes();
+
+  assert.ok(checks >= 62, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -1031,7 +1255,30 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe) the
+// realm this run made is removed at the end, pass or fail. A suite run
+// leaves it standing (tests/CLAUDE.md, *No job removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  const r = await postJson(base + "/admin-api/realms/remove", { id: REALM });
+  log.info("removed the realm " + REALM + " (" + r.status + ")");
+  log.debug("Leaving removeRealms().");
+}
+
+test().then(function () {
+  return removeRealms();
+}, async function (e) {
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  await removeRealms().catch(function (f) {
+    log.debug("Caught in removeRealms(): " + ((f && f.message) || f));
+  });
+  log.error(e.stack || e.message);
+  process.exit(1);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

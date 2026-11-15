@@ -957,8 +957,13 @@ class SsfAuth {
     if (!checked.ok) {
       websecurity.doorFailed('ssf-basic', req, user);
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
+      // A RIGHT PASSWORD REFUSED FOR WANT OF A SECOND FACTOR is recorded as
+      // the verifier's STS-AUTHN-0213, as LDAP and SCIM record it; the
+      // answer is the same (2026-11-14, found by #444's D12).
       return this.refusal(checked.reason === 'reserved-refusal'
-        ? 'STS-SSF-0008' : 'STS-SSF-0009', 401,
+        ? 'STS-SSF-0008'
+        : (checked.reason === 'second-factor-required' ? 'STS-AUTHN-0213'
+                                                       : 'STS-SSF-0009'), 401,
         checked.reason === 'reserved-refusal'
         ? 'The password "' + REFUSED_PASSWORD + '" is reserved and always ' +
           'refused, so that a wrong-credential path exists at all. In ' +
@@ -977,7 +982,11 @@ class SsfAuth {
     // A PASSWORD CARRIES NO SCOPE (#1473, ASVS 5.0.0 8.2.1): both scopes are
     // granted below, so in product the person must hold Admin Write.
     if (mode.restrictsUnscopedPeople()) {
-      const held = (require('../admin-ui/admin_rbac').rolesOf(user) || {}).groups;
+      // THIS REALM'S ROSTER (2026-11-14, found by #444's D12): with no realm
+      // named, `rolesOf()` read the default realm's, so a trust realm's own
+      // Admin Write was never seen here.
+      const held = (require('../admin-ui/admin_rbac').rolesOf(user,
+        require('../common/realms').currentId()) || {}).groups;
       const writes = Array.isArray(held) && held.some(function (one: any) {
         return one.role === 'write';
       });

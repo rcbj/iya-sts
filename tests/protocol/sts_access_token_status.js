@@ -267,7 +267,85 @@ async function test() {
     assert.strictEqual(r.status, 501, r.text);
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  // ===========================================================================
+  // 6. D12 (#444): WHAT tests/access_token_status.js HELD IN PROCESS THAT A
+  //    CLIENT CAN SEE — the list's own members, Vary, the code a historical
+  //    request is recorded under, one index per token, and the RS-facing
+  //    discovery naming both lists.
+  // ===========================================================================
+  r = await send(listUri);
+  const listed = verifyJws(r.text, jwks);
+  check("6a. the list is served as application/statuslist+jwt, one bit per " +
+        "token, ttl 60, an exp after its iat, and names the aggregation",
+        function () {
+    assert.ok(/^application\/statuslist\+jwt/
+      .test(String(r.headers.get("content-type"))),
+              String(r.headers.get("content-type")));
+    assert.strictEqual(listed.claims.status_list.bits, 1);
+    assert.strictEqual(listed.claims.ttl, 60);
+    assert.ok(listed.claims.exp > listed.claims.iat,
+              JSON.stringify(listed.claims).slice(0, 200));
+    assert.strictEqual(listed.claims.status_list.aggregation_uri,
+                       realmBase + "/status-lists");
+  });
+  check("6b. and it varies by Accept", function () {
+    assert.ok(/accept/i.test(String(r.headers.get("vary"))),
+              String(r.headers.get("vary")));
+  });
+  let historical = 0;
+  for (let i = 0; i < 20 && historical < 1; i += 1) {
+    const a = await send(realmApi + "/audit?per=50&code=STS-OAUTH-0819");
+    historical = Number((a.json && a.json.matched) || 0);
+    if (historical < 1) {
+      await new Promise(function (resolve) { setTimeout(resolve, 150); });
+    }
+  }
+  check("6c. the historical request's 501 is recorded STS-OAUTH-0819, and " +
+        "the answer names no code", function () {
+    assert.ok(historical >= 1, "STS-OAUTH-0819 rows: " + historical);
+  });
+  const idxs = [];
+  for (let i = 0; i < 4; i += 1) {
+    const t = await send(realmBase + "/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: form });
+    assert.strictEqual(t.status, 200, "a token: " + t.text);
+    const st = verifyJws(t.json.access_token, jwks).claims.status;
+    idxs.push(st.status_list.idx);
+  }
+  check("6d. every token gets its own index in the one list", function () {
+    assert.strictEqual(new Set(idxs.concat([ref.idx])).size, 5,
+                       JSON.stringify(idxs));
+  });
+  const fresh = await statusBit({ uri: listUri, idx: idxs[0] }, jwks);
+  check("6e. a fresh token's bit is 0 beside the revoked one's 1",
+        function () {
+    assert.strictEqual(fresh, 0);
+  });
+  const disc = await send(realmBase + "/.well-known/gnap-as-rs");
+  const gkeys = await send(realmBase + "/gnap/keys");
+  check("6f. the RS-facing discovery and /gnap/keys name the aggregation " +
+        "and the biscuit revocation list", function () {
+    assert.strictEqual(disc.json.status_list_aggregation_endpoint,
+                       realmBase + "/status-lists", disc.text.slice(0, 300));
+    assert.strictEqual(disc.json.biscuit_revocation_endpoint,
+                       realmBase + "/gnap/biscuit/revocations");
+    assert.strictEqual(gkeys.json.biscuit.revocation_endpoint,
+                       realmBase + "/gnap/biscuit/revocations");
+    assert.strictEqual(gkeys.json.jwt.status_list_aggregation_endpoint,
+                       realmBase + "/status-lists");
+  });
+  const bl = await send(realmBase + "/gnap/biscuit/revocations");
+  check("6g. the biscuit revocation list carries a ttl and a matching " +
+        "max-age", function () {
+    assert.strictEqual(bl.status, 200, bl.text.slice(0, 200));
+    assert.ok(Array.isArray(bl.json.revocation_ids));
+    assert.strictEqual(bl.json.ttl, 60);
+    assert.strictEqual(bl.headers.get("cache-control"), "max-age=60");
+  });
+
+  assert.ok(checks >= 15, "only " + checks + " checks ran; a section has " +
                          "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -284,7 +362,32 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe) the
+// realm this run made is removed at the end, pass or fail. A suite run leaves
+// it standing (tests/CLAUDE.md, *No job removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  const r = await send(api + "/realms/remove", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: REALM }) });
+  log.info("removed the realm " + REALM + " (" + r.status + ")");
+  log.debug("Leaving removeRealms().");
+}
+
+test().then(function () {
+  return removeRealms();
+}, async function (e) {
+  log.debug("Caught in test(): " + ((e && e.message) || e));
+  await removeRealms().catch(function (f) {
+    log.debug("Caught in removeRealms(): " + ((f && f.message) || f));
+  });
+  log.error(e.stack || e.message);
+  process.exit(1);
+}).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);
 });

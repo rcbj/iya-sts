@@ -6985,8 +6985,21 @@ function certificatePlan(info) {
         : null);
 
   let dn;
-  const already = naming ? existingUserEntry(naming.value) : null;
-  if (subject && isUnder(subject, baseDn()) && getEntry(parentDn(subject))) {
+  // A CERTIFICATE THIS SERVICE ISSUED NAMES ITS HOLDER, NOT A NAME (#33,
+  // 2026-11-15). `tls_server.js` passes `holder`, the person the issuance
+  // register's holder subject resolves to now (`tls_client_certificates.js`'s
+  // `currentHolderOf()`), because the CN is the name the person had when it
+  // was issued. Read off the CN, a certificate presented after an LDAP rename
+  // folded onto nobody and CREATED an entry under the old name — `origin:
+  // authentication`, a phantom an administrator could then not create the
+  // name over. With a holder, the holder's entry is the one, and it exists.
+  const holder = String(certificate.holder || '').trim();
+  const heldBy = holder ? existingUserEntry(holder) : null;
+  const already = heldBy || (naming ? existingUserEntry(naming.value) : null);
+  if (heldBy) {
+    dn = heldBy.dn;
+  } else if (subject && isUnder(subject, baseDn()) &&
+             getEntry(parentDn(subject))) {
     dn = subject;
   } else if (already) {
     // THE PERSON THIS CERTIFICATE NAMES IS ALREADY HERE, so this is not a new
@@ -21500,8 +21513,9 @@ server.del('', function (req, res, next) {
   if (isBootstrapAdministratorEntry(stored)) {
     log.debug('Leaving the LDAP delete handler. The bootstrap administrator.');
     return next(ldapRefusal(req, 'STS-LDAP-0077', 'a delete of ' + dn +
-      ' was refused: it is the default realm\'s bootstrap administrator, ' +
-      'which cannot be deleted', new ldap.UnwillingToPerformError(dn), dn));
+      ' was refused: it is ' + bootstrapAdministratorOwner() + ' bootstrap ' +
+      'administrator, which cannot be deleted',
+      new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
     log.debug('Leaving the LDAP delete handler. It is not a leaf.');
@@ -21935,8 +21949,9 @@ server.modifyDN('', function (req, res, next) {
   if (isBootstrapAdministratorEntry(stored)) {
     log.debug('Leaving the LDAP modifyDN handler. The bootstrap administrator.');
     return next(ldapRefusal(req, 'STS-LDAP-0077', 'a rename of ' + dn +
-      ' was refused: it is the default realm\'s bootstrap administrator, ' +
-      'and a rename would delete that account under another name',
+      ' was refused: it is ' + bootstrapAdministratorOwner() + ' bootstrap ' +
+      'administrator, and a rename would delete that account under another ' +
+      'name',
       new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
@@ -28079,20 +28094,43 @@ function writePerson(dn, attributes, options) {
 // was seeded, say — is still an ordinary person; the default realm's account
 // is protected by name, as before.
 // ---------------------------------------------------------------------------
+//
+// **THE NAME IS THE ONE IN FORCE IN THIS REALM, AND THE CONFIGURED ONE
+// (2026-11-14, #444's D12).** Product mode seeds a generated `admin-<hmac>`
+// where the configured name is a default one (#1447,
+// `common/bootstrap_name.ts`), and a realm can be product in a development
+// process, so comparing with `admin.bootstrapUsername` alone left the seeded
+// account unprotected. Both names are recognised: the generated one is the
+// account seeded now, the configured one an account seeded before #1447.
 function isBootstrapAdministratorEntry(stored) {
   log.debug('Entering isBootstrapAdministratorEntry().');
-  const wanted = String(config.value('admin.bootstrapUsername') || '')
-    .trim().toLowerCase();
+  const wanted = [String(config.value('admin.bootstrapUsername') || ''),
+                  String(require('../common/bootstrap_name').current() || '')]
+    .map(function (one) {
+      return one.trim().toLowerCase();
+    }).filter(Boolean);
   const flagged = !!(stored && stored.attributes &&
     (stored.attributes.stsbootstrapadministrator || [])
       .some(function (value) {
         return String(value).toUpperCase() === 'TRUE';
       }));
-  const answer = !!(stored && wanted && (realms.isDefault() || flagged) &&
+  const answer = !!(stored && wanted.length &&
+                    (realms.isDefault() || flagged) &&
                     isPersonEntry(stored) &&
-                    String(usernameOfEntry(stored)).toLowerCase() === wanted);
+                    wanted.indexOf(String(usernameOfEntry(stored))
+                      .toLowerCase()) >= 0);
   log.debug('Leaving isBootstrapAdministratorEntry(). ' + answer);
   return answer;
+}
+
+// Whose bootstrap administrator it is, for a refusal's words: the realm the
+// directory is answering in (2026-11-14, #444's D12 — a trust realm's seeded
+// account was called "the default realm's bootstrap administrator").
+function bootstrapAdministratorOwner() {
+  log.debug('Entering bootstrapAdministratorOwner().');
+  log.debug('Leaving bootstrapAdministratorOwner().');
+  return realms.isDefault() ? 'the default realm\'s'
+                            : 'the "' + realms.currentId() + '" realm\'s';
 }
 
 // ---------------------------------------------------------------------------
@@ -28810,8 +28848,8 @@ function deletePerson(dn, options) {
   }
   if (isBootstrapAdministratorEntry(stored)) {
     log.warn(errorCodes.tag('STS-LDAP-0077') + 'ldap: refused to delete ' +
-             stored.dn + ' — it is its realm\'s bootstrap ' +
-             'administrator (admin.bootstrapUsername).');
+             stored.dn + ' — it is ' + bootstrapAdministratorOwner() +
+             ' bootstrap administrator.');
     log.debug('Leaving deletePerson(). The bootstrap administrator.');
     return coded('STS-LDAP-0077', { ok: false, reason: 'protected',
                                     dn: stored.dn });

@@ -28,6 +28,20 @@
 //      refresh of the grant bound in 4 still needs its key, and drops the
 //      scope.
 //
+// AND D12 (#444, 2026-11-15), what `tests/device_key_binding.js` held in
+// process that a client sees, each read off the realm's audit log: before
+// the device code in 3 is redeemed, no proof at all (STS-OAUTH-0701, the
+// key-bound device code's own refusal, which comes first), a c_s256 that
+// is not the code's (0703), a proof header's jwk carrying private material
+// (0101) or of another key type than its alg (0102); in 5 the unproved
+// presentation (0707). STS-OAUTH-0702 (a bound_key code redeemed with no
+// proof) has no door over the wire: bound_key requires dpop_jkt at the
+// authorization request, and a code bound by dpop_jkt is refused
+// invalid_grant without a proof before Key Binding is asked. Not carried
+// (class (d)): the device codes held under their digests, the user code's
+// normalisation and the interval arithmetic of the store (only the answers
+// are on the wire, and sections 2 and 3 assert them).
+//
 // OWNED HERE (local: true): this repository's authorization server, portal
 // and API. Since #568 the person approves on the STATIC portal: signed in as
 // it signs in (`portal_signin.js`), `/portal/device` its operation's answer
@@ -325,6 +339,48 @@ function headerOf(jwt) {
     .toString("utf8"));
 }
 
+// THE CODES ARE RECORDED, NEVER SENT (D12): read off this realm's audit log.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await fetch(api + "/audit?per=500&code=" +
+                        encodeURIComponent(code));
+  const body = await r.json();
+  log.debug("Leaving codeCount().");
+  return Number((body && body.matched) || 0);
+}
+
+async function codesSettle(code, atLeast) {
+  log.debug("Entering codesSettle(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 40 && n < atLeast; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving codesSettle(). " + n);
+  return n;
+}
+
+// One refused token request, its error, and the code it is recorded under.
+async function refusedAt(code, fields, dpop, what) {
+  log.debug("Entering refusedAt(). " + code);
+  const before = await codeCount(code);
+  const headers = dpop ? { DPoP: dpop } : {};
+  const r = await hop(null, "POST", TOKEN, { form: fields,
+                                             headers: headers });
+  const after = await codesSettle(code, before + 1);
+  check("refused invalid_dpop_proof, recorded " + code + ": " + what,
+        function () {
+    assert.strictEqual(r.json && r.json.error, "invalid_dpop_proof",
+                       r.text.slice(0, 300));
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.text), r.text.slice(0, 300));
+    assert.ok(after > before, code + " " + before + " -> " + after);
+  });
+  log.debug("Leaving refusedAt().");
+  return r;
+}
+
 async function register(extra) {
   log.debug("Entering register().");
   const r = await hop(null, "POST", base + "/oauth2/register", { json:
@@ -437,6 +493,26 @@ async function test() {
   });
 
   log.info("=== 3. Key Binding at the device_code grant ===");
+  // D12 (device_key_binding.js 1, 2): what a proof may not be, by code,
+  // before the grant is redeemed — none of these spends the device code.
+  const grant = form(client, { grant_type: DEVICE_GRANT,
+                               device_code: codes.device_code });
+  // A device code bound to a key answers its own refusal first: 0701.
+  await refusedAt("STS-OAUTH-0701", grant, null,
+                  "a key-bound device code redeemed with no DPoP proof");
+  await refusedAt("STS-OAUTH-0703", grant,
+                  proof(key, TOKEN, { c_s256: sha256("not the code") }),
+                  "a c_s256 that is not the hash of the code");
+  const exported = key.privateKey.export({ format: "jwk" });
+  await refusedAt("STS-OAUTH-0101", grant,
+                  proof(Object.assign({}, key, { jwk: Object.assign({},
+                    key.jwk, { d: exported.d }) }), TOKEN,
+                        { c_s256: sha256(codes.device_code) }),
+                  "a proof header's jwk carrying private material");
+  await refusedAt("STS-OAUTH-0102", grant,
+                  proof(Object.assign({}, key, { alg: "RS256" }), TOKEN,
+                        { c_s256: sha256(codes.device_code) }),
+                  "a proof header's jwk whose key type is not its alg's");
   const noHash = await hop(null, "POST", TOKEN, { form: form(client, {
     grant_type: DEVICE_GRANT, device_code: codes.device_code }),
     headers: { DPoP: proof(key, TOKEN) } });
@@ -479,6 +555,7 @@ async function test() {
   });
 
   log.info("=== 5. section 7: a bound ID Token presented ===");
+  const unproved = await codeCount("STS-OAUTH-0707");
   const bare = await hop(null, "POST", TOKEN, { form: form(client, {
     grant_type: EXCHANGE_GRANT, subject_token: idToken,
     subject_token_type: "urn:ietf:params:oauth:token-type:id_token" }) });
@@ -492,6 +569,10 @@ async function test() {
                        bare.text.slice(0, 200));
     assert.ok(!proved.json || proved.json.error !== "invalid_dpop_proof",
               proved.text.slice(0, 200));
+  });
+  const unprovedAfter = await codesSettle("STS-OAUTH-0707", unproved + 1);
+  check("the unproved presentation is recorded STS-OAUTH-0707", function () {
+    assert.ok(unprovedAfter > unproved, unproved + " -> " + unprovedAfter);
   });
 
   log.info("=== 6. the authorization request, and ML-DSA ===");
@@ -576,7 +657,7 @@ async function test() {
       .indexOf("bound_key") < 0, offRenewed.json.scope);
   });
 
-  assert.ok(checks >= 10, "only " + checks + " checks ran");
+  assert.ok(checks >= 15, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

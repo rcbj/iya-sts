@@ -102,6 +102,14 @@ operation's answers and refusals to the record taken before the switch.
   `parseCsr()`'s own `type=value` spelling), and the subjectAltName compared as a
   set, case-folded where the name is case-insensitive. The renewed serial is
   handed to the core as `replaces`, which supersedes it on the EST CRL.
+* **`/serverkeygen` AUTHENTICATES BEFORE IT ASKS `est.serverKeyGeneration`
+  (#36, 2026-11-15)**: the switch is asked by `enrollmentRequest()`'s
+  `afterAuthentication` hook, once the credential is checked and before the
+  template is read. It was asked first, before anybody was authenticated, so
+  an anonymous caller was told the realm's setting (501, `STS-EST-0005`)
+  where every other refusal asks for a credential, and its two exceptions —
+  an administrator, an application whose `estServerKeyGeneration` turns it on
+  — never applied, `ctx.principal` being empty. `sts_enrollment_codes` F.
 * **A KEM KEY IS CERTIFIED FOR `key-encipherment` ONLY**, in `/serverkeygen` and
   in the console's issue-server-key. The core would issue an ML-KEM key under a
   `digitalSignature` profile; a certificate whose key usage its key cannot

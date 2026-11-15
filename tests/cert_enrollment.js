@@ -271,6 +271,27 @@ async function checkCsr(t) {
           'read as its first value');
   t.equal(codeOf(await core.parseCsr(Buffer.alloc(0))), 'STS-ENROLL-0030',
           'an empty body is refused');
+  // #35 (2026-11-15): an RSA key below 2048 bits is a key this authority
+  // cannot certify, in every mode; ACME, EST and SCEP all read it here.
+  for (const bits of [1024, 1536]) {
+    const weak = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+    const weakCsr = await x509.certificationRequest({
+      subject: 'CN=enrollment test',
+      publicKeyPem: weak.publicKey.export({ type: 'spki', format: 'pem' }),
+      privateKeyPem: weak.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      subjectAltName: [] });
+    for (const m of ['development', 'product']) {
+      config.setOverride('global.mode', m);
+      let answer;
+      try {
+        answer = await core.parseCsr(Buffer.from(weakCsr.der));
+      } finally {
+        config.clearOverride('global.mode');
+      }
+      t.equal(codeOf(answer), 'STS-ENROLL-0031',
+              'an RSA-' + bits + ' key is refused in ' + m + ' (#35)');
+    }
+  }
 
   // A KEM key cannot sign, so no library will build such a request. Take a
   // good request and swap its SubjectPublicKeyInfo for an ML-KEM one: the key

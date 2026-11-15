@@ -743,6 +743,27 @@ oldest-due order as its mutant. **What it does not change** is the load:
 the front (`report/CLAUDE.md`), so their cost grows with the realms whether
 or not anything is queued in them.
 
+**ONE RUN OF A JOB IN A REALM AT A TIME (#1757, rcbj 2026-11-15: "prevent
+the overlap").** A manual run and the scheduled run of the same job in the
+same realm have different run ids, so each won its own `scheduler.run`
+claim and the bodies overlapped (`federation.partner-refresh` claimed each
+entry against it, #1756; any other body was exposed). Now, after its own
+claim, a run takes one more in the same table and scope —
+`exclusive|<job>|<realm>`, for the run's time limit — and gives it back when
+it ends, however it ends. **It is not a second lock**: it is a claim, so it
+lapses with the run's own, and a crashed node's hold ends exactly when its
+run can be taken over. A run that cannot have it gives its run claim back
+and WAITS, as a run waiting for the cap does — not claimed, so still due at
+the next tick: a manual run until it runs, a scheduled one until it runs or
+its slot ends (only the current slot is due). The waiting run is recorded
+once, `STS-SCHED-0024` in an info line, and on a manual run's queued row as
+its `errorCode` and `why` until it starts; a scheduled run's row is not
+written while it waits, since a queued row its slot left behind would stay
+for good. In one process the wait is decided before any claim
+(`exclusiveHolders`); between nodes the claim decides. The line's order,
+`nice`, the cap and the takeover are unchanged. `tests/scheduler.js`
+section T holds it, on one node and two, both ways round.
+
 **A TICK READS THE PENDING ROWS, NOT THE HISTORY (#623).** Finding the
 queued manual runs read every row of `scheduler.runs` in every realm, and
 the step-down commands the default realm's whole partition, at every tick:

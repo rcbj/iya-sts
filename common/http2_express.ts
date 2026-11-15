@@ -169,6 +169,22 @@ export = class Http2Express {
    */
   static refuseHostMismatch(res: any): void {
     errorCodes.mark(res, 'STS-HTTP-0024');
+    // ITS OWN AUDIT ROW (2026-11-14, found by #444's D12): the refusal is
+    // made before the call log's middleware, which writes a marked
+    // refusal's row, so it reached neither the audit log nor the service's
+    // log. Required here, lazily: this module is loaded with the server,
+    // ahead of the stores the audit log writes to.
+    const req = res && res.req;
+    const audit = require('./audit');
+    audit.failure('STS-HTTP-0024', {
+      protocol: 'HTTP/2', channel: 'https',
+      address: req ? require('./client_address').clientAddressOf(req) : '',
+      target: req ? audit.redactedPath(String(req.originalUrl || req.url ||
+                                              '').split('?')[0]) : '',
+      summary: 'An HTTP/2 request whose :authority and Host name different ' +
+               'hosts was refused 400 (RFC 9113 section 8.3.1).',
+      outcome: 'refused'
+    });
     res.statusCode = 400;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');

@@ -10826,7 +10826,9 @@ const SETTINGS = [
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
     env: 'STS_SAML2_ASSERTION_LIFETIME_MIN', type: 'int', dflt: 60,
-    runtime: true,
+    // `min: 1` (#39, 2026-11-15): with no bound a realm or an application
+    // could store 0, which the readers' `|| 60` then read as an hour.
+    min: 1, runtime: true,
     description: 'How long an issued assertion is valid for: it becomes ' +
                  'Conditions/NotOnOrAfter and the bearer ' +
                  'SubjectConfirmationData/NotOnOrAfter alike. Set it to 1 to ' +
@@ -11289,7 +11291,9 @@ const SETTINGS = [
   { key: 'saml11.assertionLifetimeMin', group: 'SAML 1.1 assertions',
     label: 'Assertion lifetime (minutes)',
     env: 'STS_SAML11_ASSERTION_LIFETIME_MIN', type: 'int', dflt: 60,
-    runtime: true,
+    // `min: 1` (#39, 2026-11-15): with no bound a realm or an application
+    // could store 0, which the readers' `|| 60` then read as an hour.
+    min: 1, runtime: true,
     description: 'How long the browser profiles\' assertions are valid for, ' +
                  'in the NotBefore and NotOnOrAfter of <saml:Conditions>. It ' +
                  'is separate from the WS-Federation lifetime for the same ' +
