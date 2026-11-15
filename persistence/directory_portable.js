@@ -265,6 +265,45 @@ function create(deps) {
     log.debug("Leaving inChunks().");
   }
 
+  // -------------------------------------------------------------------------
+  // A WRITE NAMES ITS ROWS BY COLUMN EQUALITIES, NEVER BY A ROW CONSTRUCTOR
+  // (2026-11-14). MariaDB 11.8 plans a DELETE or UPDATE whose WHERE is
+  // `(a, b) IN ((?, ?), …)` as a scan — `type ALL` for one tuple, `type
+  // index` for the counts' fold — though the tuple is the whole primary key,
+  // and a scanning write at READ COMMITTED waits on every row another
+  // transaction holds: the deadlocks `sql_dialect.js`'s `whereKeys()` removed
+  // from the Knex-built writes (7b4af8837). This library's statements are
+  // text, so this is that predicate's text: `((a = ? AND b = ?) OR …)`, the
+  // values tuple by tuple in the order the IN list took them, which plans a
+  // range on PRIMARY. A SELECT keeps the row constructor, which MariaDB
+  // plans on the key. `tests/directory_portable.js` A13 holds that no write
+  // here carries one, and C31 EXPLAINs each write against MariaDB.
+  // -------------------------------------------------------------------------
+  /**
+   * The WHERE text naming `count` rows by their key columns.
+   *
+   * @param columns - the key columns
+   * @param count - how many rows, each `columns.length` values
+   * @returns the parenthesised predicate
+   */
+  function keysMatch(columns, count) {
+    log.debug("Entering keysMatch(). " + count + " row(s).");
+    if (!count) {
+      // An empty OR would match every row.
+      log.debug("Leaving keysMatch(). None.");
+      return '(1 = 0)';
+    }
+    const one = '(' + columns.map(function (c) {
+      return c + ' = ?';
+    }).join(' AND ') + ')';
+    const all = [];
+    for (let i = 0; i < count; i += 1) {
+      all.push(one);
+    }
+    log.debug("Leaving keysMatch().");
+    return '(' + all.join(' OR ') + ')';
+  }
+
   // =========================================================================
   // READS
   // =========================================================================
@@ -461,8 +500,8 @@ function create(deps) {
         values.push(row.n);
       });
       const r = await send(client, 'fold', 'UPDATE ' + table + ' SET n = n ' +
-        '+ CASE ' + cases.join(' ') + ' ELSE 0 END WHERE shard = ? AND (' +
-        columns.join(', ') + ') IN (' + inList + ')',
+        '+ CASE ' + cases.join(' ') + ' ELSE 0 END WHERE shard = ? AND ' +
+        keysMatch(columns, chunk.length),
         values.concat([shard], keys));
       if (dialect.affected(r) !== chunk.length) {
         // Only a removed realm deletes count rows; a fold that lost one to it
@@ -677,9 +716,7 @@ function create(deps) {
         values.push(String(one.realm), String(one.key));
       });
       await send(client, 'keys.delete', 'DELETE FROM sts_ldap_entry_keys ' +
-        'WHERE (realm, dn_key) IN (' + chunk.map(function () {
-          return '(?, ?)';
-        }).join(', ') + ')', values);
+        'WHERE ' + keysMatch(['realm', 'dn_key'], chunk.length), values);
     });
     const rows = [];
     entries.forEach(function (one) {
@@ -840,9 +877,7 @@ function create(deps) {
         values.push(String(row.realm), String(row.dn_key));
       });
       await send(client, 'delete', 'DELETE FROM sts_ldap_entries WHERE ' +
-        '(realm, dn_key) IN (' + chunk.map(function () {
-          return '(?, ?)';
-        }).join(', ') + ')', values);
+        keysMatch(['realm', 'dn_key'], chunk.length), values);
       chunk.forEach(function (row) {
         contribute(tally, stateOfRow(row), -1);
       });
