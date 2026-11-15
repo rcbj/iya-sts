@@ -209,7 +209,8 @@ async function prepare(realm) {
   for (const one of [["jch-rs", null], ["jch-es", "ES256"],
                      ["jch-hs", "HS256"]]) {
     await ok(rb + "/admin-api/applications/create", { identifier: one[0],
-      name: one[0], protocols: ["oauth2", "oidc"], fields: fields(one[0], one[1]) },
+      name: one[0], protocols: ["oauth2", "oidc"],
+      fields: fields(one[0], one[1]) },
       "registered " + one[0]);
   }
   log.debug("Leaving prepare().");
