@@ -6693,6 +6693,20 @@ The DIRECTORY arrives through a slot pointing the other way, as
 `group_claims.ts`, `applications.js` and `xacml_store.js` do it: only
 `ldap/ldap_server.js` can answer what is in `ou=roles`, and it is required at 21.
 
+**A person is held to the same roles by username and by subject
+(2026-11-14).** `roleMemberUser` holds usernames, and a person also arrives as
+`urn:uuid:<entryUUID>` — the `sub` a remote PEP asks `POST /xacml/pip` about.
+The group half always found them (`groupsOfUser()` looks a subject up); the
+direct half compared the username list against the subject string and missed,
+so on 8081 `pepdemo3` was Permit by name and Deny by `sub`.
+`normalizeContext()` now carries `memberNames`: the name as given and, for a
+person's `urn:uuid:`, the username `helpers.nameForSubject()` files them
+under (one indexed lookup by entryUUID, through the subject resolver; no new
+require). A subject naming nobody, no directory, an application and a
+principal across a trust keep the name as given, which is what was matched
+before. Every caller of `rolesOf()`, `claimFor()` and
+`role_permissions.configuredRolesOf()` gets it. `tests/roles_subject_names.js`.
+
 ### An empty decider means ISSUE, and the fail-closed case is not in this file
 
 `issuance_gate.js` is absent-safe on purpose, and the reason is about failure
