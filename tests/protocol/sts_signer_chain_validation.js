@@ -37,12 +37,10 @@
 //
 // NOT carried, and why: `pki.verifyLeaf()` and `verifySignerChain()` as
 // library calls (the same inputs drive them here through the grant),
-// STS-PKI-0159 (a CA as signer, and a leaf without digitalSignature: the
-// former needs a CA's private key this service holds; the latter is built
-// here but the grant reports the signature first — see the notes),
-// STS-PKI-0161 (an unreadable certificate is refused at the registration
-// door before any use), and RFC 7522 by value (owed by the SAML bearer
-// grant's job, `sts_saml2_bearer_grant.js`).
+// STS-PKI-0159 (an Issuing CA presented as the signer needs that CA's
+// private key, which only this service holds; a leaf without
+// digitalSignature is owed), and RFC 7522 by value, managed and pinned
+// (owed by the SAML bearer grant's job, `sts_saml2_bearer_grant.js`).
 //
 // OWNED HERE (local: true): this repository's own management API.
 // ---------------------------------------------------------------------------
