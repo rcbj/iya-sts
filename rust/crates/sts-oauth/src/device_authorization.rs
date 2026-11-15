@@ -174,8 +174,9 @@ impl DeviceCodes {
             "clientName": if client_name.is_empty() { client_id }
                           else { client_name },
             "scope": scope, "dpopJkt": dpop_jkt, "state": "pending",
-            "createdAt": now, "expiresAt": now + lifetime * 1000.0,
-            "interval": interval, "lastPolledAt": 0, "username": "",
+            "createdAt": crate::js::number(now),
+            "expiresAt": crate::js::number(now + lifetime * 1000.0),
+            "interval": crate::js::number(interval), "lastPolledAt": 0, "username": "",
             "approval": null,
         });
         self.save(&record);
@@ -235,7 +236,7 @@ impl DeviceCodes {
         } else {
             Json::Null
         };
-        record["finishedAt"] = json!((self.now_ms)());
+        record["finishedAt"] = crate::js::number((self.now_ms)());
         self.save(&record);
         self.codes
             .delete(&format!("u|{}", text(record.get("userCodeKey"))));
@@ -262,7 +263,7 @@ impl DeviceCodes {
         let now = (self.now_ms)();
         if record["state"] == "pending" && num(record.get("expiresAt")) <= now {
             record["state"] = json!("expired");
-            record["finishedAt"] = json!(now);
+            record["finishedAt"] = crate::js::number(now);
             self.save(&record);
         }
         if record["state"] != "pending" {
@@ -272,9 +273,9 @@ impl DeviceCodes {
         let interval = num(record.get("interval"));
         let too_soon = last != 0.0 && now - last < interval * 1000.0;
         if too_soon {
-            record["interval"] = json!(interval + 5.0);
+            record["interval"] = crate::js::number(interval + 5.0);
         }
-        record["lastPolledAt"] = json!(now);
+        record["lastPolledAt"] = crate::js::number(now);
         self.save(&record);
         (
             if too_soon { "slow_down" } else { "pending" }.into(),
@@ -302,7 +303,7 @@ impl DeviceCodes {
         }
         let mut record = record.clone();
         record["state"] = json!("redeemed");
-        record["redeemedAt"] = json!((self.now_ms)());
+        record["redeemedAt"] = crate::js::number((self.now_ms)());
         self.save(&record);
         true
     }
@@ -322,7 +323,7 @@ impl DeviceCodes {
             if row["state"] == "pending" && num(row.get("expiresAt")) <= now {
                 let mut row = row.clone();
                 row["state"] = json!("expired");
-                row["finishedAt"] = json!(now);
+                row["finishedAt"] = crate::js::number(now);
                 self.save(&row);
                 gone.push(user);
                 expired += 1;

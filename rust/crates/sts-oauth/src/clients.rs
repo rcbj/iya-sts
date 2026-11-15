@@ -106,6 +106,12 @@ pub trait Clients: Send + Sync {
     fn ciba_mode_of(&self, _client_id: &str) -> String {
         String::new()
     }
+    /// `applications.cibaOf(clientId)`: `{ mode, endpoint, signingAlg,
+    /// userCode }`.
+    fn ciba_of(&self, client_id: &str) -> Json {
+        json!({ "mode": self.ciba_mode_of(client_id), "endpoint": "",
+                "signingAlg": "", "userCode": false })
+    }
     /// `registrationOf(clientId).client_name`: the RFC 7591 registration's
     /// `client_name`, '' for none or a client that was not registered.
     fn registered_client_name(&self, _client_id: &str) -> String {
@@ -282,6 +288,35 @@ pub struct RegisterClients {
 }
 
 impl Clients for RegisterClients {
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn ciba_of(&self, client_id: &str) -> Json {
+        let who = client_id.trim();
+        let fields = if who.is_empty() {
+            None
+        } else {
+            self.registry
+                .for_client_id(who)
+                .or_else(|| self.registry.get(who))
+                .map(|f| f["fields"].clone())
+        }
+        .unwrap_or(Json::Null);
+        let one = |k: &str| {
+            values_of(fields.get(k))
+                .into_iter()
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        };
+        json!({
+            "mode": self.ciba_mode_of(client_id),
+            "endpoint": one("oauthBackchannelClientNotificationEndpoint"),
+            "signingAlg": one("oauthBackchannelAuthenticationRequestSigningAlg"),
+            "userCode": one("oauthBackchannelUserCodeParameter")
+                .eq_ignore_ascii_case("TRUE"),
+        })
+    }
+
     #[tracing::instrument(level = "debug", skip(self))]
     fn ciba_mode_of(&self, client_id: &str) -> String {
         let who = client_id.trim();

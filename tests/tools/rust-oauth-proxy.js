@@ -52,8 +52,7 @@ fs.rmSync(dir, { recursive: true, force: true });
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
   '/account-api/device|' +
   '/oauth2/(register|' +
-  'fapi|challenge|' +
-  'bc-authorize)|' +
+  'fapi|challenge)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
 // THE GRANTS THE RUST TOKEN ENDPOINT DOES NOT ISSUE YET (#444 phase 5,
 // the `oauth6` slice): a token request is routed by its `grant_type` as
@@ -99,7 +98,23 @@ function forward(req, res, toNode, body) {
     upstream.end(body);
   }
 }
+// CIBA's backchannel authentication left with `oauth8`, but for a SIGNED
+// request (section 7.1.1), whose verifier is Node's still.
+const BC_PATH = new RegExp('^(/realm/[^/]+)?(/[^/]+)?/oauth2/bc-authorize' +
+  '(\\?|$)');
 https.createServer({ key: key, cert: cert }, function (req, res) {
+  if (req.method === 'POST' && BC_PATH.test(req.url)) {
+    const parts = [];
+    req.on('data', function (c) {
+      parts.push(c);
+    });
+    req.on('end', function () {
+      const body = Buffer.concat(parts);
+      forward(req, res, !!new URLSearchParams(body.toString('utf8'))
+        .get('request'), body);
+    });
+    return;
+  }
   if (req.method === 'POST' && TOKEN_PATH.test(req.url)) {
     const chunks = [];
     req.on('data', function (c) {

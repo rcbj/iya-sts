@@ -1082,6 +1082,16 @@ impl OAuthStack {
                 settings.clone(),
                 Arc::new(ProcessClaims::default()),
                 Arc::new(sts_core::time::now_ms_f64),
+                {
+                    // `readCibaUserCode()`: `stsCibaUserCode` on the entry.
+                    let ports = parts.directory_ports.clone();
+                    Arc::new(move |username: &str| {
+                        ports
+                            .person_attribute(username, "stsCibaUserCode")
+                            .and_then(|v| v.into_iter().next())
+                            .unwrap_or_default()
+                    })
+                },
             )),
         });
         let servers = AuthorizationServers::declare(
@@ -1326,6 +1336,18 @@ impl OAuthStack {
         );
         // RFC 7662 introspection (with RFC 9701's JWT answer) and RFC 7009
         // revocation.
+        // CIBA's backchannel authentication endpoint (#131).
+        let routes = routes.route(
+            "/oauth2/bc-authorize",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.bc_authorize(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         // RFC 8628's device authorization endpoint (#150).
         let routes = routes.route(
             "/oauth2/device_authorization",
@@ -1983,6 +2005,31 @@ impl OAuthStack {
                 .await
                 .into_response()
         }
+    }
+
+    /// `POST /oauth2/bc-authorize` (CIBA Core section 7).
+    async fn bc_authorize(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let ask = sts_oauth::introspection::EndpointAsk {
+            base,
+            address,
+            body,
+            authorization: header_of(&headers, "authorization"),
+            accept: header_of(&headers, "accept"),
+            peer: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(self.tokens.bc_authorize(&ask))
+            .await
+            .into_response()
     }
 
     /// `POST /oauth2/device_authorization` (RFC 8628 section 3.1).
