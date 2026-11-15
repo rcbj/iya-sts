@@ -287,9 +287,12 @@ fn steady_claims(claims: &Json) -> Json {
 fn steady_record(record: &Json) -> Json {
     let mut r = record.clone();
     if let Some(o) = r.as_object_mut() {
+        // Node reads the clock once for each: `expires` may be a
+        // millisecond past `granted_at` + `ttlMs`.
         let at = o.get("granted_at").and_then(Json::as_i64).unwrap_or(0);
+        let ttl = o.get("ttlMs").and_then(Json::as_i64).unwrap_or(0);
         if let Some(e) = o.get("expires").and_then(Json::as_i64) {
-            o.insert("expires".into(), json!(e - at));
+            o.insert("expires".into(), json!((e - at - ttl).abs() <= 2));
         }
         o.insert("granted_at".into(), json!("<ms>"));
     }
