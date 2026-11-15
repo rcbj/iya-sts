@@ -1,12 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
-//! Configuration, all of it from the environment — the same variables, the
-//! same defaults and the same meanings as `pep.js`. No appconfig file and no
-//! settings table: this container is one component with a dozen knobs and no
-//! console to change them while it runs.
+//! Configuration, from the environment — the same variables, the same
+//! defaults and the same meanings as `pep.js` — and, since #1760, from the
+//! service: every setting that is not needed to reach the service the first
+//! time may be set on the PEP's console page and is pulled
+//! (`settings.rs`). The fields below are the ENVIRONMENT's values (or the
+//! defaults); `Options::now()` is what is in force, the service's value
+//! where it set one. Read a managed setting through `now()`, never the
+//! field, or a change made on the console never reaches the reader.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use crate::settings::{self, Held};
 
 use sts_core::log::tag;
 
@@ -108,6 +115,81 @@ pub struct Options {
     /// signals stop deciding session liveness (never less than three
     /// polls).
     pub proxy_signals_stale_ms: u64,
+    /// `PEP_LOG_LEVEL` as given; the level in force is `now().log_level`.
+    pub log_level: String,
+    /// What the service set (#1760), shared by every clone.
+    pub managed: Arc<Held>,
+}
+
+/// THE SETTINGS IN FORCE NOW: the service's value where it set one, else
+/// the environment's, else the default (`settings.rs`).
+#[derive(Debug, Clone)]
+pub struct Now {
+    pub description: String,
+    pub resource: String,
+    pub notify_url: String,
+    pub bias: Bias,
+    pub pip: bool,
+    pub poll_interval_ms: u64,
+    pub heartbeat_interval_ms: u64,
+    pub backoff_max_ms: u64,
+    pub timeout_ms: u64,
+    pub max_body_bytes: usize,
+    pub https_reload_interval_ms: u64,
+    pub log_level: String,
+    pub authzen: bool,
+    pub authzen_pdp_identifier: String,
+    pub authzen_forward_timeout_ms: u64,
+    pub proxy_session_recheck_ms: u64,
+    pub proxy_session_ttl_ms: u64,
+    pub proxy_max_sessions: usize,
+    pub proxy_jwks_ttl_ms: u64,
+    pub proxy_upstream_insecure: bool,
+    pub proxy_rp_allow_insecure: bool,
+    pub proxy_signals_poll_ms: u64,
+    pub proxy_signals_stale_ms: u64,
+}
+
+impl Now {
+    /// Each setting's value as JSON, by the service's member name.
+    pub fn values(&self) -> serde_json::Map<String, serde_json::Value> {
+        let value = serde_json::json!({
+            "description": self.description, "resource": self.resource,
+            "notifyUrl": self.notify_url, "bias": self.bias.as_str(),
+            "pip": self.pip, "pollIntervalMs": self.poll_interval_ms,
+            "heartbeatIntervalMs": self.heartbeat_interval_ms,
+            "backoffMaxMs": self.backoff_max_ms,
+            "timeoutMs": self.timeout_ms,
+            "maxBodyBytes": self.max_body_bytes,
+            "httpsReloadIntervalMs": self.https_reload_interval_ms,
+            "logLevel": self.log_level, "authzen": self.authzen,
+            "authzenPdpIdentifier": self.authzen_pdp_identifier,
+            "authzenForwardTimeoutMs": self.authzen_forward_timeout_ms,
+            "proxySessionRecheckMs": self.proxy_session_recheck_ms,
+            "proxySessionTtlMs": self.proxy_session_ttl_ms,
+            "proxyMaxSessions": self.proxy_max_sessions,
+            "proxyJwksTtlMs": self.proxy_jwks_ttl_ms,
+            "proxyUpstreamInsecure": self.proxy_upstream_insecure,
+            "proxyRpAllowInsecure": self.proxy_rp_allow_insecure,
+            "proxySignalsPollMs": self.proxy_signals_poll_ms,
+            "proxySignalsStaleMs": self.proxy_signals_stale_ms
+        });
+        match value {
+            serde_json::Value::Object(map) => map,
+            _ => serde_json::Map::new(),
+        }
+    }
+}
+
+/// A bunyan level name as the environment gives it, folded to one of the
+/// closed set (`parse_level()` reads any other as `info`).
+fn level_name(raw: &str) -> String {
+    let folded = raw.trim().to_ascii_lowercase();
+    if settings::LOG_LEVELS.contains(&folded.as_str()) {
+        folded
+    } else {
+        "info".to_string()
+    }
 }
 
 /// One caller `PEP_AUTHZEN_CALLERS` names: the certificate it presents, by
@@ -266,6 +348,85 @@ fn env_or(name: &str, fallback: &str) -> String {
 }
 
 impl Options {
+    /// The settings in force now (#1760). No `instrument`: every decision
+    /// asks it, and a pair of lines per decision would drown the log.
+    pub fn now(&self) -> Now {
+        let m = self.managed.current();
+        let int = |key: &str, env: u64| m.u64(key).unwrap_or(env);
+        let flag = |key: &str, env: bool| m.bool(key).unwrap_or(env);
+        let text = |key: &str, env: &str| {
+            m.str(key).unwrap_or_else(|| env.to_string())
+        };
+        Now {
+            description: text("description", &self.description),
+            resource: text("resource", &self.resource),
+            notify_url: text("notifyUrl", &self.notify_url),
+            bias: match m.str("bias").as_deref() {
+                Some("permit-biased") => Bias::PermitBiased,
+                Some("deny-biased") => Bias::DenyBiased,
+                _ => self.bias,
+            },
+            pip: flag("pip", self.pip_enabled),
+            poll_interval_ms: int("pollIntervalMs", self.poll_interval_ms),
+            heartbeat_interval_ms: int(
+                "heartbeatIntervalMs",
+                self.heartbeat_interval_ms,
+            ),
+            backoff_max_ms: int("backoffMaxMs", self.backoff_max_ms),
+            timeout_ms: int("timeoutMs", self.timeout_ms),
+            max_body_bytes: int("maxBodyBytes", self.max_body_bytes as u64)
+                as usize,
+            https_reload_interval_ms: int(
+                "httpsReloadIntervalMs",
+                self.https_reload_interval_ms,
+            ),
+            log_level: text("logLevel", &level_name(&self.log_level)),
+            authzen: flag("authzen", self.authzen_enabled),
+            authzen_pdp_identifier: text(
+                "authzenPdpIdentifier",
+                &self.authzen_pdp_identifier,
+            ),
+            authzen_forward_timeout_ms: int(
+                "authzenForwardTimeoutMs",
+                self.authzen_forward_timeout_ms,
+            ),
+            proxy_session_recheck_ms: int(
+                "proxySessionRecheckMs",
+                self.proxy_session_recheck_ms,
+            ),
+            proxy_session_ttl_ms: int(
+                "proxySessionTtlMs",
+                self.proxy_session_ttl_ms,
+            ),
+            proxy_max_sessions: int(
+                "proxyMaxSessions",
+                self.proxy_max_sessions as u64,
+            ) as usize,
+            proxy_jwks_ttl_ms: int("proxyJwksTtlMs", self.proxy_jwks_ttl_ms),
+            proxy_upstream_insecure: flag(
+                "proxyUpstreamInsecure",
+                self.proxy_upstream_insecure,
+            ),
+            proxy_rp_allow_insecure: flag(
+                "proxyRpAllowInsecure",
+                self.proxy_rp_allow_insecure,
+            ),
+            proxy_signals_poll_ms: int(
+                "proxySignalsPollMs",
+                self.proxy_signals_poll_ms,
+            ),
+            proxy_signals_stale_ms: int(
+                "proxySignalsStaleMs",
+                self.proxy_signals_stale_ms,
+            ),
+        }
+    }
+
+    /// `now()` as `GET /` and the heartbeat report it (`settings::report`).
+    pub fn settings_report(&self) -> serde_json::Value {
+        settings::report(&self.managed, &self.now().values())
+    }
+
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn from_env(version: &str) -> Options {
         let cert_path = std::env::var("PEP_TLS_CERT").unwrap_or_default();
@@ -373,6 +534,8 @@ impl Options {
                 60000u64,
             )
             .max(1),
+            log_level: std::env::var("PEP_LOG_LEVEL").unwrap_or_default(),
+            managed: Arc::new(Held::from_env()),
         }
     }
 }

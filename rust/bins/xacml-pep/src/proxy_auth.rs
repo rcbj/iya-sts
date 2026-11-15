@@ -132,7 +132,8 @@ struct JwksCache {
 /// The mechanisms, and the JWKS they share.
 pub struct Authenticator {
     client: PdpClient,
-    jwks_ttl: Duration,
+    /// Moved by a settings pull (#1760, `set_jwks_ttl()`).
+    jwks_ttl_ms: std::sync::atomic::AtomicU64,
     jwks: Mutex<Option<JwksCache>>,
 }
 
@@ -215,9 +216,15 @@ impl Authenticator {
     pub fn new(client: PdpClient, jwks_ttl_ms: u64) -> Authenticator {
         Authenticator {
             client,
-            jwks_ttl: Duration::from_millis(jwks_ttl_ms),
+            jwks_ttl_ms: std::sync::atomic::AtomicU64::new(jwks_ttl_ms),
             jwks: Mutex::new(None),
         }
+    }
+
+    /// How long a fetched JWKS is used from now on.
+    pub fn set_jwks_ttl(&self, jwks_ttl_ms: u64) {
+        self.jwks_ttl_ms
+            .store(jwks_ttl_ms, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The realm's JWKS: the cached one while it is fresh, else fetched.
@@ -237,7 +244,11 @@ impl Authenticator {
                 .map(|c| (c.keys.clone(), c.fetched.elapsed(), c.forced))
         };
         if let Some((keys, age, was_forced)) = &held {
-            let fresh = *age < self.jwks_ttl;
+            let fresh = *age
+                < Duration::from_millis(
+                    self.jwks_ttl_ms
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                );
             let throttled = *was_forced && *age < FORCED_REFETCH_FLOOR;
             if (!force && fresh) || (force && throttled) {
                 return keys.clone();

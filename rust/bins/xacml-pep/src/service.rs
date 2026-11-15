@@ -64,7 +64,6 @@ pub struct Pep {
     pub version: VersionInfo,
     pub sync: Arc<Sync>,
     pub(crate) pip: RemotePip,
-    enforcer: Enforcer,
     pub(crate) pdp: Pdp,
     pub listener: Arc<HttpsListener>,
     last_pip_report: Mutex<Option<Value>>,
@@ -114,6 +113,14 @@ fn status_json(status: &Status) -> Value {
 }
 
 impl Pep {
+    /// The enforcement rule with the bias in force now (#1760: the service
+    /// may set it while this PEP runs).
+    pub(crate) fn enforcer(&self) -> Enforcer {
+        Enforcer::new(self.options.now().bias)
+    }
+}
+
+impl Pep {
     pub fn new(
         options: Options,
         version: VersionInfo,
@@ -122,7 +129,6 @@ impl Pep {
         listener: Arc<HttpsListener>,
     ) -> Pep {
         Pep {
-            enforcer: Enforcer::new(options.bias),
             options,
             version,
             sync,
@@ -163,10 +169,11 @@ impl Pep {
             let batch = path == authzen::EVALUATIONS_PATH;
             let limit = if batch {
                 self.options
+                    .now()
                     .max_body_bytes
                     .max(self.sync.catalogue().settings.max_body_bytes + 1)
             } else {
-                self.options.max_body_bytes
+                self.options.now().max_body_bytes
             };
             let body = axum::body::to_bytes(request.into_body(), limit)
                 .await
@@ -253,7 +260,7 @@ impl Pep {
                 "xacml-pep: nudged by the PDP; pulling now rather than \
                  waiting up to {}ms for the next poll. Nothing in the nudge \
                  was read — what changed is discovered by pulling.",
-                self.options.poll_interval_ms
+                self.options.now().poll_interval_ms
             );
             let sync = self.sync.clone();
             tokio::spawn(async move {
@@ -309,7 +316,7 @@ impl Pep {
             .filter(|r| !r.is_empty())
             .cloned()
             .or_else(|| {
-                Some(self.options.resource.clone()).filter(|r| !r.is_empty())
+                Some(self.options.now().resource).filter(|r| !r.is_empty())
             })
             .unwrap_or_else(|| "urn:xacml-pep:protected".to_string());
         let action = query
@@ -386,7 +393,7 @@ impl Pep {
             .requested_action(action);
         let answer = self.evaluate(req.build()).await;
         let outcome =
-            self.enforcer.enforce(answer.decision, &answer.obligations);
+            self.enforcer().enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
         (answer.decision, outcome)
     }
@@ -400,7 +407,7 @@ impl Pep {
                  root policy, so it is NotApplicable and the {} bias settles \
                  it.",
                 tag("STS-XPEP-0005"),
-                self.options.bias.as_str()
+                self.options.now().bias.as_str()
             );
             return Answer {
                 decision: Decision::NotApplicable,
@@ -445,7 +452,7 @@ impl Pep {
                     .as_ref()
                     .map(|m| format!(": {}", m))
                     .unwrap_or_default(),
-                self.options.bias.as_str()
+                self.options.now().bias.as_str()
             );
         }
         let identifiers = response
@@ -474,7 +481,7 @@ impl Pep {
     ) -> (StatusCode, Value) {
         let answer = self.decide(query).await;
         let outcome =
-            self.enforcer.enforce(answer.decision, &answer.obligations);
+            self.enforcer().enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
         let obligations: Vec<Value> = answer
             .obligations
@@ -582,7 +589,8 @@ impl Pep {
     /// missed heartbeats, and the two can disagree.
     fn overview(&self) -> Value {
         let o = &self.options;
-        let stale_after_ms = o.poll_interval_ms * 3;
+        let now = o.now();
+        let stale_after_ms = now.poll_interval_ms * 3;
         let last_pull =
             chrono::DateTime::parse_from_rfc3339(&self.sync.last_pull_at());
         let stale = match last_pull {
@@ -653,7 +661,7 @@ impl Pep {
                          unless both were built as the same release."
             },
             "pdp": o.pdp_url,
-            "bias": o.bias.as_str(),
+            "bias": now.bias.as_str(),
             "protectedAt": "/protected",
             "https": self.listener.overview(),
             "authzen": self.authzen_overview(),
@@ -663,10 +671,14 @@ impl Pep {
             "staleAfterMs": stale_after_ms,
             "registration": self.sync.registration_json(),
             "enforced": self.sync.counters_json(),
-            "notify": if o.notify_url.is_empty() { Value::Null }
-                      else { Value::from(o.notify_url.clone()) },
-            "poll": { "intervalMs": o.poll_interval_ms,
-                      "heartbeatMs": o.heartbeat_interval_ms },
+            "notify": if now.notify_url.is_empty() { Value::Null }
+                      else { Value::from(now.notify_url.clone()) },
+            "poll": { "intervalMs": now.poll_interval_ms,
+                      "heartbeatMs": now.heartbeat_interval_ms },
+            // EVERY SETTING IN FORCE AND WHERE IT CAME FROM (#1760): the
+            // service, the environment or the default, and the settings
+            // pull's own state.
+            "settings": self.sync.settings_json(),
             "contract": "THE PULL IS THE CONTRACT. This PEP polls the PDP on \
                          its own interval and converges whether or not a \
                          nudge ever arrives. A PDP that is unreachable leaves \
@@ -676,5 +688,45 @@ impl Pep {
                          is not enforced here until the next successful \
                          pull."
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pdp_client::PdpClient;
+    use crate::options::Bias;
+    use crate::settings::Managed;
+
+    /// A bias the service sets (#1760) is the one a decision is enforced
+    /// with, from the next decision on, and clearing it puts the
+    /// environment's back.
+    #[test]
+    fn the_bias_in_force_is_the_service_s() {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.bias = Bias::DenyBiased;
+        options.pip_enabled = false;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+        let pep = Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            RemotePip::new(client, false).governed_by(options.clone()),
+            Arc::new(HttpsListener::new("", "", 0, 1000, None)),
+        );
+        let na = Decision::NotApplicable;
+        assert!(!pep.enforcer().enforce(na, &[]).allowed);
+        assert!(!pep.pip.enabled());
+        options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({ "bias": "permit-biased", "pip": true }),
+        ));
+        assert!(pep.enforcer().enforce(na, &[]).allowed);
+        assert!(pep.pip.enabled());
+        options.managed.apply(Managed::default());
+        assert!(!pep.enforcer().enforce(na, &[]).allowed);
     }
 }

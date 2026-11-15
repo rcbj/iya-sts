@@ -30,7 +30,6 @@
 
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
-use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use openssl::asn1::{Asn1Time, Asn1TimeRef};
@@ -527,10 +526,6 @@ impl HttpsListener {
 
     pub fn port(&self) -> u16 {
         self.port
-    }
-
-    pub fn interval(&self) -> Duration {
-        Duration::from_millis(self.reload_interval_ms.max(100))
     }
 
     /// `https` on `GET /`.

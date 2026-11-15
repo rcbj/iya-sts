@@ -82,7 +82,9 @@ pub const LOGOUT_PATH: &str = "/.iya-pep/logout";
 pub struct Proxy {
     pep: Arc<Pep>,
     auth: Authenticator,
-    upstream: Mutex<Option<(u64, reqwest::Client)>>,
+    /// The upstream client, by (timeout, verify-off) — both may move with
+    /// the settings (#1760), so either changing builds a new one.
+    upstream: Mutex<Option<((u64, bool), reqwest::Client)>>,
     /// The session mechanism's relying parties (`rp_set.rs`).
     rps: Arc<RpSet>,
     /// Mode `jwt`'s tokens and mode `saml`'s jars (D11, `identity.rs`).
@@ -256,9 +258,21 @@ fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// The relying parties' bounds from the settings in force.
+fn rp_limits(now: &crate::options::Now) -> RpLimits {
+    RpLimits {
+        allow_insecure: now.proxy_rp_allow_insecure,
+        poll_ms: now.proxy_signals_poll_ms,
+        stale_ms: now.proxy_signals_stale_ms,
+        max_sessions: now.proxy_max_sessions,
+        session_ttl_ms: now.proxy_session_ttl_ms,
+    }
+}
+
 impl Proxy {
     pub fn new(pep: Arc<Pep>, client: PdpClient) -> Proxy {
-        let ttl = pep.options.proxy_jwks_ttl_ms;
+        let now = pep.options.now();
+        let ttl = now.proxy_jwks_ttl_ms;
         // A session the library's receiver ends is ended here too.
         let sync = pep.sync.clone();
         let on_end: rp_set::OnEnd = Arc::new(move |ended: Vec<String>| {
@@ -273,17 +287,7 @@ impl Proxy {
                 }
             }
         });
-        let o = &pep.options;
-        let rps = Arc::new(RpSet::new(
-            RpLimits {
-                allow_insecure: o.proxy_rp_allow_insecure,
-                poll_ms: o.proxy_signals_poll_ms,
-                stale_ms: o.proxy_signals_stale_ms,
-                max_sessions: o.proxy_max_sessions,
-                session_ttl_ms: o.proxy_session_ttl_ms,
-            },
-            on_end,
-        ));
+        let rps = Arc::new(RpSet::new(rp_limits(&now), on_end));
         // `GET /` reports the streams' health as it is when asked.
         let reporting = rps.clone();
         pep.sync
@@ -789,7 +793,7 @@ impl Proxy {
             party.as_ref().is_some_and(|p| p.rp.session(&id).is_some())
         } else {
             let recheck = Duration::from_millis(
-                self.pep.options.proxy_session_recheck_ms,
+                self.pep.options.now().proxy_session_recheck_ms,
             );
             if session.last_checked.elapsed() < recheck {
                 true
@@ -1116,6 +1120,17 @@ impl Proxy {
     }
 
     pub async fn reconcile(&self) {
+        // THE SETTINGS IN FORCE (#1760), handed to the two parts that hold
+        // a bound of their own: a relying party built under other bounds
+        // is rebuilt by the reconcile below.
+        let now = self.pep.options.now();
+        self.auth.set_jwks_ttl(now.proxy_jwks_ttl_ms);
+        if self.rps.set_limits(rp_limits(&now)) {
+            tracing::info!(
+                "xacml-pep: proxy: the relying parties' bounds changed with \
+                 the settings; each is rebuilt."
+            );
+        }
         let pulled = self.pep.sync.proxy();
         self.rps.reconcile(&pulled).await;
         self.pep.sync.set_relying_parties(self.rps.counts());
@@ -1129,17 +1144,18 @@ impl Proxy {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
+        let o = &self.pep.options;
+        let insecure = o.now().proxy_upstream_insecure;
         if let Some((held, client)) = slot.as_ref() {
-            if *held == timeout_ms {
+            if *held == (timeout_ms, insecure) {
                 return Ok(client.clone());
             }
         }
-        let o = &self.pep.options;
         let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_millis(timeout_ms))
             .no_proxy();
-        if o.proxy_upstream_insecure {
+        if insecure {
             builder = builder
                 .danger_accept_invalid_certs(true)
                 .danger_accept_invalid_hostnames(true);
@@ -1166,7 +1182,7 @@ impl Proxy {
                 &format!("the upstream client would not build: {}", error),
             )
         })?;
-        *slot = Some((timeout_ms, client.clone()));
+        *slot = Some(((timeout_ms, insecure), client.clone()));
         Ok(client)
     }
 

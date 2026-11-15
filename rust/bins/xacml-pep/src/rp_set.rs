@@ -123,11 +123,11 @@ struct Entry {
 
 /// Every relying party the pull calls for.
 pub struct RpSet {
-    allow_insecure: bool,
-    poll_ms: u64,
-    stale_ms: u64,
-    store_max: usize,
-    store_ttl_sec: u64,
+    /// The bounds in force, moved by a settings pull (#1760,
+    /// `set_limits()`). A party built under other bounds is rebuilt on the
+    /// next reconcile; a library session store keeps the bounds it was
+    /// built with, since it outlives rebuilds and holds signed-in people.
+    limits: Mutex<Bounds>,
     on_end: OnEnd,
     entries: Mutex<HashMap<String, Entry>>,
     /// The library's session stores, one per client, outliving rebuilds.
@@ -217,7 +217,32 @@ pub fn wanted(pulled: &Pulled) -> HashMap<String, bool> {
     out
 }
 
-/// What `RpSet::new` is given, from `Options`.
+/// `RpLimits` as the set holds them, normalised.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Bounds {
+    allow_insecure: bool,
+    poll_ms: u64,
+    stale_ms: u64,
+    store_max: usize,
+    store_ttl_sec: u64,
+}
+
+impl Bounds {
+    fn of(limits: &RpLimits) -> Bounds {
+        let poll_ms = limits.poll_ms.max(10);
+        Bounds {
+            allow_insecure: limits.allow_insecure,
+            poll_ms,
+            // Never shorter than three polls, or one slow answer would
+            // flip a working stream to stale.
+            stale_ms: limits.stale_ms.max(poll_ms * 3),
+            store_max: limits.max_sessions.max(1).saturating_mul(2),
+            store_ttl_sec: limits.session_ttl_ms.div_ceil(1000).max(1),
+        }
+    }
+}
+
+/// What `RpSet::new` is given, from `Options::now()`.
 pub struct RpLimits {
     pub allow_insecure: bool,
     pub poll_ms: u64,
@@ -228,28 +253,35 @@ pub struct RpLimits {
 
 impl RpSet {
     pub fn new(limits: RpLimits, on_end: OnEnd) -> RpSet {
-        let poll_ms = limits.poll_ms.max(10);
         RpSet {
-            allow_insecure: limits.allow_insecure,
-            poll_ms,
-            // Never shorter than three polls, or one slow answer would
-            // flip a working stream to stale.
-            stale_ms: limits.stale_ms.max(poll_ms * 3),
-            store_max: limits.max_sessions.max(1).saturating_mul(2),
-            store_ttl_sec: limits.session_ttl_ms.div_ceil(1000).max(1),
+            limits: Mutex::new(Bounds::of(&limits)),
             on_end,
             entries: Mutex::new(HashMap::new()),
             stores: Mutex::new(HashMap::new()),
         }
     }
 
+    /// The bounds from now on; true when they changed.
+    pub fn set_limits(&self, limits: RpLimits) -> bool {
+        let next = Bounds::of(&limits);
+        let mut held = lock(&self.limits);
+        let changed = *held != next;
+        *held = next;
+        changed
+    }
+
+    fn bounds(&self) -> Bounds {
+        *lock(&self.limits)
+    }
+
     fn store_for(&self, client_id: &str) -> Arc<MemorySessionStore> {
+        let bounds = self.bounds();
         lock(&self.stores)
             .entry(client_id.to_string())
             .or_insert_with(|| {
                 Arc::new(MemorySessionStore::new(
-                    self.store_max,
-                    self.store_ttl_sec,
+                    bounds.store_max,
+                    bounds.store_ttl_sec,
                 ))
             })
             .clone()
@@ -270,15 +302,24 @@ impl RpSet {
             .clients
             .get(client_id)
             .ok_or_else(|| "the pull carries no such client".to_string())?;
+        let bounds = self.bounds();
         let config = library_config(
             &pulled.realm.issuer,
             client_id,
             client,
             &pulled.realm.tls_ca_chain,
             signals,
-            self.allow_insecure,
+            bounds.allow_insecure,
         );
-        let digest = digest_of(&config);
+        // The poll and stale bounds are the receiver's and the party's, not
+        // the library's configuration, so they go in the digest beside it:
+        // a change of either rebuilds the party on the next reconcile.
+        let digest = format!(
+            "{}|{}|{}",
+            digest_of(&config),
+            bounds.poll_ms,
+            bounds.stale_ms
+        );
         if let Some(entry) = lock(&self.entries).get(client_id) {
             if entry.digest == digest {
                 return Ok(entry.party.clone());
@@ -289,7 +330,7 @@ impl RpSet {
         let issuer = pulled.realm.issuer.clone();
         let tls_ca =
             Some(pulled.realm.tls_ca_chain.clone()).filter(|c| !c.is_empty());
-        let poll_ms = self.poll_ms as i64;
+        let poll_ms = bounds.poll_ms as i64;
         let described =
             format!("iya-sts xacml-pep reverse proxy ({})", client_id);
         let rp = Arc::new(
@@ -352,7 +393,7 @@ impl RpSet {
             receiver,
             signals,
             client_id: client_id.to_string(),
-            stale_ms: self.stale_ms,
+            stale_ms: bounds.stale_ms,
             stale: Arc::new(AtomicBool::new(false)),
         };
         let replaced = lock(&self.entries).insert(
@@ -425,6 +466,7 @@ impl RpSet {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
+        let bounds = self.bounds();
         let entries = lock(&self.entries);
         let (mut receivers, mut healthy) = (0u64, 0u64);
         let (mut worst_failures, mut accepted, mut refused, mut ended) =
@@ -436,7 +478,7 @@ impl RpSet {
             };
             receivers += 1;
             let h = receiver.health();
-            if h.is_healthy_at(now, self.stale_ms as f64 / 1000.0) {
+            if h.is_healthy_at(now, bounds.stale_ms as f64 / 1000.0) {
                 healthy += 1;
             }
             worst_failures = worst_failures.max(h.consecutive_failures);
@@ -461,8 +503,8 @@ impl RpSet {
             "receivers": receivers,
             "healthy": healthy,
             "stale": receivers - healthy,
-            "staleAfterMs": self.stale_ms,
-            "pollIntervalMs": self.poll_ms,
+            "staleAfterMs": bounds.stale_ms,
+            "pollIntervalMs": bounds.poll_ms,
             "oldestSuccessAgeMs": oldest_success_ms,
             "mostConsecutiveFailures": worst_failures,
             "setsAccepted": accepted,
@@ -470,8 +512,8 @@ impl RpSet {
             "sessionsEnded": ended,
             "librarySessions": {
                 "held": held,
-                "max": self.store_max,
-                "ttlSec": self.store_ttl_sec,
+                "max": bounds.store_max,
+                "ttlSec": bounds.store_ttl_sec,
                 "evicted": evicted,
                 "expired": expired
             }

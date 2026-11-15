@@ -30,6 +30,7 @@
 //! evicting would sign somebody else out.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -83,8 +84,11 @@ struct Inner {
 /// Both stores.
 pub struct Stores {
     inner: Mutex<Inner>,
-    max_sessions: usize,
-    ttl: Duration,
+    /// Both bounds follow the settings the service sets (#1760,
+    /// `set_limits()`): a lower bound refuses the next session rather than
+    /// ending any held, and a shorter life ends a held one at its next use.
+    max_sessions: AtomicUsize,
+    ttl_ms: AtomicU64,
 }
 
 /// Why a session could not be made.
@@ -100,9 +104,24 @@ impl Stores {
                 pending: HashMap::new(),
                 sessions: HashMap::new(),
             }),
-            max_sessions: max_sessions.max(1),
-            ttl: Duration::from_millis(ttl_ms.max(1)),
+            max_sessions: AtomicUsize::new(max_sessions.max(1)),
+            ttl_ms: AtomicU64::new(ttl_ms.max(1)),
         }
+    }
+
+    /// The bounds in force from now on.
+    pub fn set_limits(&self, max_sessions: usize, ttl_ms: u64) {
+        self.max_sessions
+            .store(max_sessions.max(1), Ordering::Relaxed);
+        self.ttl_ms.store(ttl_ms.max(1), Ordering::Relaxed);
+    }
+
+    fn max(&self) -> usize {
+        self.max_sessions.load(Ordering::Relaxed)
+    }
+
+    fn ttl(&self) -> Duration {
+        Duration::from_millis(self.ttl_ms.load(Ordering::Relaxed))
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -118,7 +137,7 @@ impl Stores {
         inner
             .pending
             .retain(|_, p| p.created.elapsed() < PENDING_TTL);
-        while inner.pending.len() >= self.max_sessions {
+        while inner.pending.len() >= self.max() {
             let oldest = inner
                 .pending
                 .iter()
@@ -149,9 +168,9 @@ impl Stores {
     /// under it).
     pub fn create(&self, id: &str, session: Session) -> Result<(), Full> {
         let mut inner = self.lock();
-        let ttl = self.ttl;
+        let ttl = self.ttl();
         inner.sessions.retain(|_, s| s.created.elapsed() < ttl);
-        if inner.sessions.len() >= self.max_sessions {
+        if inner.sessions.len() >= self.max() {
             return Err(Full::Full);
         }
         inner.sessions.insert(id.to_string(), session);
@@ -163,16 +182,16 @@ impl Stores {
     /// is spent.
     pub fn has_room(&self) -> bool {
         let mut inner = self.lock();
-        let ttl = self.ttl;
+        let ttl = self.ttl();
         inner.sessions.retain(|_, s| s.created.elapsed() < ttl);
-        inner.sessions.len() < self.max_sessions
+        inner.sessions.len() < self.max()
     }
 
     /// The live session a cookie names.
     pub fn get(&self, id: &str) -> Option<Session> {
         let mut inner = self.lock();
         match inner.sessions.get(id) {
-            Some(s) if s.created.elapsed() < self.ttl => Some(s.clone()),
+            Some(s) if s.created.elapsed() < self.ttl() => Some(s.clone()),
             Some(_) => {
                 inner.sessions.remove(id);
                 None
@@ -205,7 +224,7 @@ impl Stores {
             inner
                 .sessions
                 .values()
-                .filter(|s| s.created.elapsed() < self.ttl)
+                .filter(|s| s.created.elapsed() < self.ttl())
                 .count(),
             inner
                 .pending

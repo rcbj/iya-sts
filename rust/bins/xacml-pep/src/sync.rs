@@ -45,6 +45,14 @@
 //!   by D2's own rules (`proxy_config.rs`) and refused WHOLE when one part
 //!   does not validate (`STS-XPEP-0062`): a route table loaded in part
 //!   forwards what nobody configured. It converges on the poll, unnudged.
+//! * **AND THIS PEP'S OWN SETTINGS FIRST OF ALL** (#1760), from `GET
+//!   /xacml/pep/settings`: what an administrator set on the PEP's console
+//!   page, with its own sync token, `?since=` and `If-None-Match`. A failed
+//!   pull keeps what is held (`STS-XPEP-0100`); an older service's 404 is
+//!   the environment in force, said once (`STS-XPEP-0101`); each value is
+//!   read again by `settings.rs` and one that fails is left to the
+//!   environment (`STS-XPEP-0102`). Pulled first so the timers, the
+//!   timeouts and the bias the rest of the round uses are the new ones.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -63,6 +71,7 @@ use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
 use crate::proxy_config::{self, Mechanism, Pulled};
 use crate::rp_session::Stores;
+use crate::settings::Managed;
 
 /// What this PEP decides with, replaced WHOLE on a successful pull so the
 /// root and the repository can never disagree mid-decision.
@@ -210,6 +219,19 @@ pub struct ProxyHolding {
     pub last_pull_at: String,
     pub last_pull_ok: bool,
     pub last_pull_why: String,
+}
+
+/// The settings pull's state (#1760).
+#[derive(Debug, Clone, Default)]
+struct SettingsHolding {
+    sync_token: String,
+    etag: String,
+    last_pull_at: String,
+    last_pull_ok: bool,
+    last_pull_why: String,
+    /// The service answered 404: it has no settings endpoint (an older
+    /// service), so the environment is in force. Said once.
+    not_offered: bool,
 }
 
 /// What the reverse proxy has answered, cumulative in this process: by
@@ -406,6 +428,8 @@ struct State {
     /// (relying parties, CAEP/RISC receivers) the proxy holds, as of its
     /// last reconcile.
     relying_parties: (usize, usize),
+    settings: SettingsHolding,
+    last_settings_kept_why: String,
 }
 
 /// What `GET /` asks the proxy's relying parties about their CAEP/RISC
@@ -469,6 +493,11 @@ impl Sync {
                 last_proxy_kept_why: String::new(),
                 proxy_counters: ProxyCounters::default(),
                 relying_parties: (0, 0),
+                settings: SettingsHolding {
+                    last_pull_why: "No pull has been attempted yet.".into(),
+                    ..SettingsHolding::default()
+                },
+                last_settings_kept_why: String::new(),
             }),
             signals_reporter: Mutex::new(None),
         }
@@ -634,15 +663,18 @@ impl Sync {
         let attempts = self.lock().registration.attempts + 1;
         let first = attempts == 1;
         let o = &self.options;
+        // What is IN FORCE (#1760): the environment's until the settings
+        // pull brings the service's, which the heartbeat then reports.
+        let now = o.now();
         let answer = self
             .client
             .call(
                 Method::POST,
                 "/xacml/pep/register",
                 Some(Body::Json(json!({
-                    "name": o.name, "notifyUrl": o.notify_url,
-                    "bias": o.bias.as_str(), "resource": o.resource,
-                    "version": o.version, "description": o.description
+                    "name": o.name, "notifyUrl": now.notify_url,
+                    "bias": now.bias.as_str(), "resource": now.resource,
+                    "version": o.version, "description": now.description
                 }))),
             )
             .await;
@@ -756,6 +788,7 @@ impl Sync {
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn pull(&self, cause: &str) -> bool {
         let changed_before = self.lock().held.last_change_at.clone();
+        self.pull_settings().await;
         self.pull_once(cause).await;
         self.pull_catalogue().await;
         self.pull_callers().await;
@@ -775,6 +808,196 @@ impl Sync {
             .to_string();
         }
         state.held.last_pull_ok
+    }
+
+    // -----------------------------------------------------------------------
+    // THE SETTINGS (#1760). See the header: first in every round, its own
+    // token, a failure keeps what is held, an older service's 404 is the
+    // environment.
+    // -----------------------------------------------------------------------
+    async fn pull_settings(&self) {
+        let (token, etag) = {
+            let state = self.lock();
+            (state.settings.sync_token.clone(), state.settings.etag.clone())
+        };
+        let query = if token.is_empty() {
+            String::new()
+        } else {
+            format!("?since={}", encode(&token))
+        };
+        let headers: Vec<(&str, String)> = if etag.is_empty() {
+            Vec::new()
+        } else {
+            vec![("If-None-Match", etag)]
+        };
+        let answer = self
+            .client
+            .call_with(
+                Method::GET,
+                &format!("/xacml/pep/settings{}", query),
+                None,
+                &headers,
+                None,
+            )
+            .await;
+        if let Some(error) = &answer.error {
+            self.keep_settings(
+                &format!("Could not reach the PDP: {}", error),
+                "STS-XPEP-0100",
+            );
+            return;
+        }
+        if answer.status == 304 {
+            let mut state = self.lock();
+            state.settings.last_pull_at = iso_now();
+            state.settings.last_pull_ok = true;
+            state.settings.last_pull_why =
+                "Unchanged; these settings are current.".into();
+            state.last_settings_kept_why.clear();
+            return;
+        }
+        if answer.status == 404 {
+            // AN OLDER SERVICE (before #1760's settings): nothing is
+            // managed there, so the environment is in force — and what an
+            // earlier pull applied from a newer one is dropped, since that
+            // service is not the one answering now.
+            let first = {
+                let mut state = self.lock();
+                let first = !state.settings.not_offered;
+                state.settings = SettingsHolding {
+                    last_pull_at: iso_now(),
+                    last_pull_ok: true,
+                    last_pull_why: "The PDP has no settings endpoint (it \
+                                    is older than this PEP), so every \
+                                    setting is the environment's or the \
+                                    default."
+                        .into(),
+                    not_offered: true,
+                    ..SettingsHolding::default()
+                };
+                first
+            };
+            if first {
+                tracing::info!(
+                    "{}xacml-pep: the PDP has no GET /xacml/pep/settings (it \
+                     is older than this PEP); every setting is the \
+                     environment's or the default.",
+                    tag("STS-XPEP-0101")
+                );
+                self.options.managed.apply(Managed::default());
+                self.apply_settings_effects();
+            }
+            return;
+        }
+        if answer.status != 200 {
+            let detail = answer
+                .error_description()
+                .map(|d| format!(": {}", d))
+                .unwrap_or_default();
+            self.keep_settings(
+                &format!(
+                    "The PDP answered {} to the settings pull{}.",
+                    answer.status, detail
+                ),
+                "STS-XPEP-0100",
+            );
+            return;
+        }
+        let Some(said) = answer.json.filter(Value::is_object) else {
+            self.keep_settings(
+                "The PDP answered 200 to the settings pull with something \
+                 that is not a JSON object.",
+                "STS-XPEP-0100",
+            );
+            return;
+        };
+        self.receive_settings(&said, answer.etag);
+    }
+
+    /// One pulled settings answer, applied. Apart from the transport so a
+    /// test can hand it a document.
+    pub fn receive_settings(&self, said: &Value, etag: Option<String>) {
+        let token = said["syncToken"].as_str().unwrap_or("").to_string();
+        let configured = said["configured"].as_bool().unwrap_or(false);
+        let managed = Managed::parse(
+            &token,
+            configured,
+            if configured { &said["settings"] } else { &Value::Null },
+        );
+        let count = managed.values.len();
+        self.options.managed.apply(managed);
+        {
+            let mut state = self.lock();
+            state.last_settings_kept_why.clear();
+            state.settings = SettingsHolding {
+                sync_token: token.clone(),
+                etag: etag.unwrap_or_default(),
+                last_pull_at: iso_now(),
+                last_pull_ok: true,
+                last_pull_why: if configured {
+                    format!("Pulled {} setting(s) set by the service.", count)
+                } else {
+                    "The service sets nothing for this PEP; every setting is \
+                     the environment's or the default."
+                        .into()
+                },
+                not_offered: false,
+            };
+        }
+        tracing::info!(
+            "xacml-pep: settings pulled, token {}: {} set by the service.",
+            token,
+            count
+        );
+        self.apply_settings_effects();
+    }
+
+    /// What a change of settings must reach that does not read `now()` at
+    /// its use: the PDP client's timeout and body bound, the proxy session
+    /// store's bounds, and the log's level. Everything else reads `now()`.
+    pub fn apply_settings_effects(&self) {
+        let now = self.options.now();
+        self.client.set_limits(now.timeout_ms, now.max_body_bytes);
+        self.proxy_sessions
+            .set_limits(now.proxy_max_sessions, now.proxy_session_ttl_ms);
+        sts_core::log::set_level(sts_core::log::parse_level(&now.log_level));
+    }
+
+    /// A failed settings pull keeps what is held, warned once per reason.
+    fn keep_settings(&self, why: &str, code: &str) {
+        let mut state = self.lock();
+        state.settings.last_pull_ok = false;
+        state.settings.last_pull_why = format!(
+            "{} KEEPING the settings held{}.",
+            why,
+            if state.settings.sync_token.is_empty() {
+                " (none from the service: the environment's are in force)"
+                    .to_string()
+            } else {
+                format!(", pulled at {}", state.settings.last_pull_at)
+            }
+        );
+        if state.last_settings_kept_why != why {
+            state.last_settings_kept_why = why.to_string();
+            tracing::warn!(
+                "{}xacml-pep: {}",
+                tag(code),
+                state.settings.last_pull_why
+            );
+        }
+    }
+
+    /// `settings` on `GET /`: the pull's state and every value in force.
+    pub fn settings_json(&self) -> Value {
+        let s = self.lock().settings.clone();
+        let mut report = self.options.settings_report();
+        report["lastPullAt"] = json!(s.last_pull_at);
+        report["lastPullOk"] = json!(s.last_pull_ok);
+        report["lastPullWhy"] = json!(s.last_pull_why);
+        report["offered"] = json!(!s.not_offered);
+        report["configured"] =
+            json!(self.options.managed.current().configured);
+        report
     }
 
     async fn pull_once(&self, cause: &str) {
@@ -1525,7 +1748,7 @@ impl Sync {
                 "sessionsEnded": c.sessions_ended
             },
             "sessions": { "live": live, "signInsInFlight": pending,
-                          "max": o.proxy_max_sessions },
+                          "max": o.now().proxy_max_sessions },
             "what": "A reverse proxy in front of one application, on ports \
                      of its own: deny-by-default over the route table pulled \
                      from the service, each route's mechanism verified here \
@@ -1563,13 +1786,19 @@ impl Sync {
             )
         };
         let o = &self.options;
+        let now = o.now();
+        // `settings` (#1760): every setting's value in force and whether it
+        // is the service's, the environment's or the default, with the
+        // settings token it was applied from — so the PEP's page can say
+        // whether this PEP holds what was set. An older service ignores it.
         let mut body = json!({
             "name": o.name, "syncToken": token, "policyCount": count,
             "decisions": c.decisions, "allowed": c.allowed,
             "refused": c.refused,
             "undischargeable": c.undischargeable,
-            "bias": o.bias.as_str(), "resource": o.resource,
-            "version": o.version, "notifyUrl": o.notify_url
+            "bias": now.bias.as_str(), "resource": now.resource,
+            "version": o.version, "notifyUrl": now.notify_url,
+            "settings": o.settings_report()
         });
         if let Some(signals) = signals {
             body["signals"] = signals;
@@ -1734,5 +1963,125 @@ mod tests {
         ] {
             assert!(parse_fga_applications(&bad).is_err(), "{}", bad);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // THE SETTINGS PULL (#1760), against a mock service on a loopback
+    // socket: applied, kept on a failure, the environment's on a 404.
+    // -----------------------------------------------------------------------
+    type Answer = Arc<Mutex<(u16, Value, Vec<String>)>>;
+
+    async fn settings_service(answer: Answer) -> String {
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let app = axum::Router::new().route(
+            "/xacml/pep/settings",
+            axum::routing::get(
+                move |uri: axum::http::Uri| {
+                    let answer = answer.clone();
+                    async move {
+                        let mut held = answer.lock().unwrap();
+                        held.2.push(uri.query().unwrap_or("").to_string());
+                        let status =
+                            axum::http::StatusCode::from_u16(held.0).unwrap();
+                        (status, axum::Json(held.1.clone()))
+                    }
+                },
+            ),
+        );
+        tokio::spawn(async move {
+            axum::serve(socket, app).await.unwrap();
+        });
+        format!("http://127.0.0.1:{}", port)
+    }
+
+    fn settings_sync(base: &str) -> Sync {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = base.to_string();
+        options.bias = crate::options::Bias::DenyBiased;
+        options.poll_interval_ms = 15000;
+        options.timeout_ms = 5000;
+        options.proxy_max_sessions = 10000;
+        let client = PdpClient::new(&options).unwrap();
+        Sync::new(client, options)
+    }
+
+    #[tokio::test]
+    async fn the_service_settings_win_and_a_404_is_the_environment() {
+        let answer: Answer = Arc::new(Mutex::new((
+            200,
+            json!({ "syncToken": "s1", "pep": "pep-1", "configured": true,
+                    "settings": { "bias": "permit-biased",
+                                  "pollIntervalMs": 2000, "timeoutMs": 900,
+                                  "maxBodyBytes": 65536,
+                                  "proxyMaxSessions": 7,
+                                  "logLevel": "debug",
+                                  "aNewerSetting": true } }),
+            Vec::new(),
+        )));
+        let sync = settings_sync(&settings_service(answer.clone()).await);
+        // Before any pull: the environment's.
+        assert_eq!(sync.options.now().poll_interval_ms, 15000);
+        sync.pull_settings().await;
+        let now = sync.options.now();
+        assert_eq!(now.bias, crate::options::Bias::PermitBiased);
+        assert_eq!(now.poll_interval_ms, 2000);
+        assert_eq!(now.log_level, "debug");
+        // The parts that hold a bound of their own were handed it.
+        assert_eq!(sync.client.limits(), (900, 65536));
+        let report = sync.settings_json();
+        assert_eq!(report["token"], "s1");
+        assert_eq!(report["values"]["bias"]["source"], "service");
+        assert_ne!(
+            report["values"]["heartbeatIntervalMs"]["source"],
+            "service"
+        );
+        assert_eq!(report["configured"], true);
+        // The next pull asks with the token, and a 304 keeps what is held.
+        answer.lock().unwrap().0 = 304;
+        sync.pull_settings().await;
+        assert!(answer.lock().unwrap().2[1].contains("since=s1"));
+        assert_eq!(sync.options.now().poll_interval_ms, 2000);
+        // A failure keeps it too.
+        answer.lock().unwrap().0 = 500;
+        sync.pull_settings().await;
+        let bias = sync.options.now().bias;
+        assert_eq!(bias, crate::options::Bias::PermitBiased);
+        assert!(!sync.lock().settings.last_pull_ok);
+        // An older service: no endpoint, so the environment is in force.
+        answer.lock().unwrap().0 = 404;
+        sync.pull_settings().await;
+        let now = sync.options.now();
+        assert_eq!(now.bias, crate::options::Bias::DenyBiased);
+        assert_eq!(now.poll_interval_ms, 15000);
+        assert_eq!(sync.client.limits(), (5000, 4 * 1024 * 1024));
+        assert_eq!(sync.settings_json()["offered"], false);
+    }
+
+    #[tokio::test]
+    async fn nothing_set_and_a_refused_value_fall_back_to_the_environment() {
+        let answer: Answer = Arc::new(Mutex::new((
+            200,
+            json!({ "syncToken": "s2", "configured": true,
+                    "settings": { "pollIntervalMs": 5, "bias": "loud",
+                                  "heartbeatIntervalMs": 3000 } }),
+            Vec::new(),
+        )));
+        let sync = settings_sync(&settings_service(answer.clone()).await);
+        sync.pull_settings().await;
+        let now = sync.options.now();
+        assert_eq!(now.poll_interval_ms, 15000, "out of bounds is refused");
+        assert_eq!(now.bias, crate::options::Bias::DenyBiased);
+        assert_eq!(now.heartbeat_interval_ms, 3000, "the rest applies");
+        // The service sets nothing any more: every setting goes back.
+        *answer.lock().unwrap() = (
+            200,
+            json!({ "syncToken": "s3", "configured": false, "note": "x" }),
+            Vec::new(),
+        );
+        sync.pull_settings().await;
+        assert_ne!(sync.options.now().heartbeat_interval_ms, 3000);
+        assert_eq!(sync.settings_json()["configured"], false);
     }
 }

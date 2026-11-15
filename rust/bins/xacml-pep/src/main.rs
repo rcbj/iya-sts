@@ -32,6 +32,7 @@ mod rp_session;
 mod rp_set;
 mod saml_verify;
 mod service;
+mod settings;
 mod sync;
 
 use std::collections::HashMap;
@@ -57,16 +58,20 @@ use crate::service::Pep;
 use crate::sync::Sync;
 
 /// A timer that backs off while the PDP refuses: each failed round doubles
-/// the wait up to `cap_ms`, the first success puts it back. A round never
-/// overlaps itself.
-fn on_backoff<F>(label: &'static str, base_ms: u64, cap_ms: u64, work: F)
+/// the wait up to the cap, the first success puts it back. A round never
+/// overlaps itself. The interval and the cap are asked before EVERY wait
+/// (`intervals`), so a setting the service changes (#1760) takes effect
+/// from the next round.
+fn on_backoff<F, I>(label: &'static str, intervals: I, work: F)
 where
     F: Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + 'static,
+    I: Fn() -> (u64, u64) + Send + 'static,
 {
-    let ceiling = base_ms.max(cap_ms);
     tokio::spawn(async move {
         let mut failures: u32 = 0;
         loop {
+            let (base_ms, cap_ms) = intervals();
+            let ceiling = base_ms.max(cap_ms);
             let wait = base_ms
                 .saturating_mul(2u64.saturating_pow(failures))
                 .min(ceiling);
@@ -77,7 +82,7 @@ where
                         "xacml-pep: {} succeeded again; back to \
                                     every {}ms.",
                         label,
-                        base_ms
+                        intervals().0
                     );
                 }
                 failures = 0;
@@ -254,7 +259,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         "xacml-pep: starting. PDP={} name={} bias={}",
         options.pdp_url,
         options.name,
-        options.bias.as_str()
+        options.now().bias.as_str()
     );
     if options.insecure {
         tracing::warn!(
@@ -290,7 +295,8 @@ async fn start(options: Options, info: version::VersionInfo) {
     };
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
     let proxy_client = client.clone();
-    let pip = RemotePip::new(client, options.pip_enabled);
+    let pip = RemotePip::new(client, options.pip_enabled)
+        .governed_by(options.clone());
     let https = Arc::new(HttpsListener::new(
         &options.https_cert_path,
         &options.https_key_path,
@@ -323,10 +329,13 @@ async fn start(options: Options, info: version::VersionInfo) {
 
     let poll_sync = sync.clone();
     let poll_proxy = proxy.clone();
+    let poll_options = options.clone();
     on_backoff(
         "the poll",
-        options.poll_interval_ms,
-        options.backoff_max_ms,
+        move || {
+            let now = poll_options.now();
+            (now.poll_interval_ms, now.backoff_max_ms)
+        },
         move || {
             let sync = poll_sync.clone();
             let proxy = poll_proxy.clone();
@@ -341,10 +350,13 @@ async fn start(options: Options, info: version::VersionInfo) {
         },
     );
     let beat_sync = sync.clone();
+    let beat_options = options.clone();
     on_backoff(
         "the heartbeat",
-        options.heartbeat_interval_ms,
-        options.backoff_max_ms,
+        move || {
+            let now = beat_options.now();
+            (now.heartbeat_interval_ms, now.backoff_max_ms)
+        },
         move || {
             let sync = beat_sync.clone();
             Box::pin(async move {
@@ -375,16 +387,17 @@ async fn start(options: Options, info: version::VersionInfo) {
             options.https_reload_interval_ms
         );
         let (watcher, served) = (https.clone(), pep.clone());
+        let reload_options = options.clone();
         tokio::spawn(async move {
             loop {
                 if watcher.reload() {
                     tokio::spawn(serve_https(served.clone(), watcher.clone()));
                 }
-                tokio::time::sleep(watcher.interval()).await;
+                tokio::time::sleep(reload_interval(&reload_options)).await;
             }
         });
     }
-    if options.authzen_enabled {
+    if options.now().authzen {
         tracing::info!(
             "xacml-pep: the AuthZEN edge PDP answers POST {} and {} on the \
              HTTPS listener, to the callers pulled from the PDP ({}) \
@@ -423,6 +436,7 @@ async fn start(options: Options, info: version::VersionInfo) {
             options.https_reload_interval_ms,
         ));
         if proxy_https.is_configured() {
+            let reload_options = options.clone();
             tokio::spawn(async move {
                 loop {
                     if proxy_https.reload() {
@@ -431,7 +445,8 @@ async fn start(options: Options, info: version::VersionInfo) {
                             proxy_https.clone(),
                         ));
                     }
-                    tokio::time::sleep(proxy_https.interval()).await;
+                    tokio::time::sleep(reload_interval(&reload_options))
+                        .await;
                 }
             });
         }
@@ -445,6 +460,12 @@ async fn start(options: Options, info: version::VersionInfo) {
     }
     install_fault_handler();
     serve_http(pep, options.port).await;
+}
+
+/// How long the HTTPS listeners wait before re-reading their pair: the
+/// setting in force, so the service may change it (#1760).
+fn reload_interval(options: &Options) -> Duration {
+    Duration::from_millis(options.now().https_reload_interval_ms.max(100))
 }
 
 /// The image's HEALTHCHECK: liveness only, as `/healthcheck` itself is.
