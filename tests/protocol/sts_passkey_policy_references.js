@@ -85,7 +85,7 @@ async function refusedWith(realm, code, act) {
   if (!recorded) {
     const last = await K.call(realm, "GET", "/audit?per=3&outcome=refused");
     log.info("no " + code + " row; the newest refusals: " +
-             JSON.stringify(((last.body && last.body.rows) || [])
+             JSON.stringify(((last.body && last.body.events) || [])
                .map(function (row) {
                  return row.errorCode;
                })));

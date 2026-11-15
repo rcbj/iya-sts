@@ -284,6 +284,36 @@ async function codeCount(code) {
   return Number(body.matched || (body.rows || body.events || []).length || 0);
 }
 
+// The code's count once it has passed `before` (the audit ring is written
+// as the answer leaves), or what it is after three seconds.
+async function settled(code, before) {
+  log.debug("Entering settled(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 20 && n <= before; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving settled(). " + n);
+  return n;
+}
+
+// REMOVAL IS OPT-IN (D12, #444): with STS_TEST_REMOVE_REALMS=1, a private
+// probe's switch, the realm this run made is removed at the end, pass or
+// fail. A suite run leaves it standing (tests/CLAUDE.md, *No job removes a
+// realm*).
+async function removeRealm() {
+  log.debug("Entering removeRealm().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealm(). Not asked to.");
+    return;
+  }
+  const r = await call("POST", "/realms/remove", { id: REALM }, serviceApi);
+  log.info("removed the realm " + REALM + " (" + r.status + ")");
+  log.debug("Leaving removeRealm().");
+}
+
 // The sign-in screen of an authorization request, its passkey ceremony
 // armed (a pending record exists only there).
 async function theSignInScreen() {
@@ -427,11 +457,14 @@ async function test() {
   log.info("=== the save ===");
   const defaults = await defaultRows();
   const narrowed = await setting("webauthn.algorithms", "ES256,RS256");
+  const noPqBefore = await codeCount("STS-AUTHN-0357");
   const refused = await requirement(defaults, "sign-in");
+  const noPqAfter = await settled("STS-AUTHN-0357", noPqBefore);
   const widened = await setting("webauthn.algorithms", "ML-DSA-65,ES256");
   const accepted = await requirement(defaults, "sign-in");
   check("A. REQUIRING A POST-QUANTUM PASSKEY WHILE THE REALM OFFERS NO " +
-        "ML-DSA IS REFUSED AT THE SAVE, AND ACCEPTED ONCE IT DOES",
+        "ML-DSA IS REFUSED AT THE SAVE (STS-AUTHN-0357), AND ACCEPTED ONCE " +
+        "IT DOES",
         function () {
     assert.ok(narrowed.status === 200 && widened.status === 200,
       "a setting write answered " + narrowed.status + " / " + widened.status);
@@ -439,6 +472,9 @@ async function test() {
       .slice(0, 300));
     assert.ok(/offers no ML-DSA/.test(String(refused.raw)),
       String(refused.raw).slice(0, 300));
+    // D12 (#444): the code the refusal records, off the audit log.
+    assert.ok(noPqAfter > noPqBefore, "no new STS-AUTHN-0357 row (" +
+              noPqBefore + " then " + noPqAfter + ").");
     assert.ok(accepted.status === 200 && accepted.body &&
               accepted.body.ok !== false, String(accepted.raw)
       .slice(0, 300));
@@ -515,12 +551,17 @@ async function test() {
   log.info("=== registration ===");
   const both = await requirement(defaults, "registration-and-sign-in");
   const late = makeAuthenticator(-7);
+  // D12 (#444): THE WIRE RECORDS STS-AUTHN-0228. The ceremony offered only
+  // ML-DSA, so an ES256 answer is refused as not offered before the one
+  // writer, addKey(), is reached; its own STS-AUTHN-0355 is in-process only.
+  const classicalBefore = await codeCount("STS-AUTHN-0228");
   const d = await enrol(fresh, late, "");
+  const classicalAfter = await settled("STS-AUTHN-0228", classicalBefore);
   if (d.pending && d.pending.id && !(d.done && d.done.status === 200)) {
     await fresh.api("POST", "/account-api/keys", { action: "cancel" });
   }
   check("D. registration-and-sign-in: AN ENROLMENT OFFERS ONLY ML-DSA, AND " +
-        "AN ES256 REGISTRATION IS REFUSED", function () {
+        "AN ES256 REGISTRATION IS REFUSED (STS-AUTHN-0228)", function () {
     assert.ok(both.status === 200, String(both.raw).slice(0, 300));
     assert.ok(d.pending, "no enrolment was begun: " +
               JSON.stringify(d.begun.json).slice(0, 300));
@@ -528,6 +569,9 @@ async function test() {
     assert.ok(d.done && d.done.status === 400, "the ES256 registration " +
       "answered " + (d.done && d.done.status) + " " +
       JSON.stringify(d.done && d.done.json).slice(0, 300));
+    // D12 (#444): the refusal recorded as the algorithm not offered.
+    assert.ok(classicalAfter > classicalBefore, "no new STS-AUTHN-0228 row (" +
+              classicalBefore + " then " + classicalAfter + ").");
   });
 
   // E. Off again.
@@ -561,7 +605,14 @@ program
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+test().then(function () {
+  return removeRealm();
+}, function (e) {
   log.error(e.stack || e.message);
-  process.exit(1);
+  return removeRealm().then(function () {
+    process.exit(1);
+  }, function (again) {
+    log.error("removing the realm failed: " + again.message);
+    process.exit(1);
+  });
 });
