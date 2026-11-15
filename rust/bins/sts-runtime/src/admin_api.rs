@@ -171,6 +171,9 @@ pub struct LiveDir {
     persistence: Arc<Persistence>,
     tree: Arc<Mutex<Directory>>,
     touched: Arc<Touched>,
+    /// The live directory's change count and the realms the copy was made
+    /// at: a copy still current is not made again.
+    copied_at: Mutex<Option<(u64, Vec<String>)>>,
 }
 
 impl LiveDir {
@@ -194,8 +197,31 @@ impl LiveDir {
     /// request reads it.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn reload(&self) {
+        // A COPY STILL CURRENT IS KEPT: rebuilding the whole directory
+        // before every request made each request cost the directory's size
+        // (a bulk load of 5,000 creates slowed from 11 to 6 a second). The
+        // copy is current while nothing has written the live directory
+        // since it was made or since this copy's own writes went back, and
+        // the realms are the same.
+        let realms: Vec<String> =
+            self.registry.list().iter().map(|r| r.id.clone()).collect();
+        let now = self.live.changes();
+        let mut at = self
+            .copied_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if at.as_ref() == Some(&(now, realms.clone())) {
+            self.touched
+                .0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clear();
+            return;
+        }
         let fresh = self.fresh();
         *self.tree.lock().unwrap_or_else(PoisonError::into_inner) = fresh;
+        *at = Some((now, realms));
+        drop(at);
         self.touched
             .0
             .lock()
@@ -219,6 +245,8 @@ impl LiveDir {
             return;
         }
         let tree = self.tree.lock().unwrap_or_else(PoisonError::into_inner);
+        let before = self.live.changes();
+        let mut applied: u64 = 0;
         for (realm_id, key) in touched {
             let Some(r) = tree.realms().iter().position(|t| t.id == realm_id)
             else {
@@ -226,7 +254,25 @@ impl LiveDir {
             };
             let entry = tree.get(r, &key).cloned();
             self.live.apply_entry(&realm_id, &key, entry);
+            applied += 1;
             self.persistence.directory_changed(Some(&key));
+        }
+        // This copy's own writes are in the live directory now: the copy
+        // stays current through them — unless somebody else wrote while
+        // they went back, when the next request copies again.
+        let after = self.live.changes();
+        if after != before + applied {
+            return;
+        }
+        if let Some(at) = self
+            .copied_at
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
+            if at.0 == before {
+                at.0 = after;
+            }
         }
     }
 
@@ -2148,6 +2194,7 @@ impl AdminStack {
             persistence: parts.persistence.clone(),
             tree: tree.clone(),
             touched: Arc::new(Touched::default()),
+            copied_at: Mutex::new(None),
         });
         let apps = Arc::new(ApplicationRegistry::new(
             Some(tree),

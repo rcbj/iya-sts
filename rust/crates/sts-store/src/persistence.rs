@@ -1577,11 +1577,26 @@ impl Persistence {
 #[derive(Default)]
 pub struct MemoryDirectory {
     realms: Mutex<IndexMap<String, IndexMap<String, StoredEntry>>>,
+    /// How many writes it has taken, so a reader that copied it can tell
+    /// whether its copy is still current without comparing every entry.
+    changes: std::sync::atomic::AtomicU64,
 }
 
 impl MemoryDirectory {
+    /// The writes taken so far. A hot path (asked before every request a
+    /// copy is kept for), so it carries no span.
+    pub fn changes(&self) -> u64 {
+        self.changes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn changed(&self) {
+        self.changes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
     /// Puts an entry under its DN, lower-cased as its key.
     pub fn put(&self, realm: &str, entry: StoredEntry) {
+        self.changed();
         let key = entry.dn.to_lowercase();
         self.realms
             .lock()
@@ -1613,6 +1628,7 @@ impl LiveDirectory for MemoryDirectory {
             .unwrap_or_default()
     }
     fn replace_realm(&self, realm: &str, entries: Vec<StoredEntry>) {
+        self.changed();
         let rows = entries
             .into_iter()
             .map(|e| (e.dn.to_lowercase(), e))
@@ -1623,6 +1639,7 @@ impl LiveDirectory for MemoryDirectory {
             .insert(realm.to_string(), rows);
     }
     fn apply_entry(&self, realm: &str, key: &str, entry: Option<StoredEntry>) {
+        self.changed();
         let mut realms =
             self.realms.lock().unwrap_or_else(PoisonError::into_inner);
         let rows = realms.entry(realm.to_string()).or_default();
