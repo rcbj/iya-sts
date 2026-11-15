@@ -339,6 +339,12 @@ pub struct AuthorizationEndpoint {
     pub random_id: Arc<dyn Fn(usize) -> String + Send + Sync>,
 }
 
+/// What vetting accepts: the parameters, the response types, the client.
+type Accepted = (Map<String, Json>, Vec<String>, Json);
+
+/// What vetting refuses: the parameters where they were read, and why.
+type Refused = (Option<Map<String, Json>>, Vetted);
+
 /// One refusal of vetting: `redirect` says whether it goes to the client.
 struct Vetted {
     redirect: bool,
@@ -648,12 +654,9 @@ impl AuthorizationEndpoint {
         &self,
         ask: &AuthorizeAsk,
         input: &Map<String, Json>,
-    ) -> Result<
-        (Map<String, Json>, Vec<String>, Json),
-        (Option<Map<String, Json>>, Vetted),
-    > {
+    ) -> Result<Accepted, Box<Refused>> {
         let refuse = |code, error, description: String| {
-            (
+            Box::new((
                 None,
                 Vetted {
                     redirect: false,
@@ -662,7 +665,7 @@ impl AuthorizationEndpoint {
                     error,
                     description,
                 },
-            )
+            ))
         };
         let mut q = match crate::model::check("authorize", input, "query") {
             Ok(v) => v,
@@ -714,7 +717,7 @@ impl AuthorizationEndpoint {
         }
         let redirectable =
             |q: &Map<String, Json>, code, error, description: String| {
-                (
+                Box::new((
                     Some(q.clone()),
                     Vetted {
                         redirect: true,
@@ -723,7 +726,7 @@ impl AuthorizationEndpoint {
                         error,
                         description,
                     },
-                )
+                ))
             };
         if self.bcp_enabled() && client_id.trim().is_empty() {
             return Err(refuse(codes::STS_OAUTH_0144, "invalid_request", "RFC 9700 section 4.11.2, citing RFC 6749 section 4.1.2.1: an authorization server must not automatically redirect the user agent for an invalid combination of client_id and redirect_uri. This request names no client_id at all, so there is no client the redirect_uri could belong to — and reporting that BY redirecting to the URI is exactly what that paragraph forbids. It is answered here instead.".into()));
@@ -1059,16 +1062,13 @@ impl AuthorizationEndpoint {
         }
         let (q, types, client) = match self.vet(ask, &input) {
             Ok(v) => v,
-            Err((None, v))
-            | Err((
-                Some(_),
-                v @ Vetted {
-                    redirect: false, ..
-                },
-            )) => {
+            Err(e) if e.0.is_none() || !e.1.redirect => {
+                let v = e.1;
                 return self.refuse(v.code, v.status, v.error, &v.description);
             }
-            Err((Some(q), v)) => {
+            Err(e) => {
+                let (q, v) = *e;
+                let q = q.unwrap_or_default();
                 let session = self.sign_on.session_of(&ask.request);
                 return self.fail(
                     ask,

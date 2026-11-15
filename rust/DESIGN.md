@@ -286,6 +286,15 @@ rust/
                                  the wire by rust-signin-e2e.sh (the unchanged
                                  bundle in Chrome on a store Node wrote)
     sts-oauth/                   authorization server and OpenID provider
+                                 (phase 5): the resource-server checks, DPoP,
+                                 client authentication, /oauth2/authorize with
+                                 the hand-off to sign-in, the code, refresh and
+                                 client credentials grants, refresh families,
+                                 RFC 8414 discovery, the JWKS, the core ID Token.
+                                 Held to Node by tests/tools/oauth-vectors.js
+                                 both ways (the code flow: 78 requests alike)
+                                 and over the wire by rust-console-e2e.sh (the
+                                 unchanged console and portal bundles)
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/
     sts-xacml/                   the engine: no I/O; shared by the runtime and the PEP

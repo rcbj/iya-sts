@@ -33,6 +33,23 @@
 //! * [`jwks`] — `GET /oauth2/jwks` as Node builds it;
 //! * [`answer`] and [`js`] — an endpoint's answer, and the JavaScript
 //!   behaviours the sentences depend on.
+//!
+//! The rest of the core (#444, phase 5, the `oauth2` slice), which the
+//! hosted console and portal sign in through:
+//!
+//! * [`authorize`] — `/oauth2/authorize`: the vetting, RFC 6749 section
+//!   4.1.2.1's redirect-or-answer, the session hand-off to sign-in
+//!   ([`signin`], `beginAuthentication()` over `authn.pending`), consent as
+//!   far as global consent answers it, and the code in Node's record;
+//! * [`token_endpoint`]'s `authorization_code` and `refresh_token` grants:
+//!   single use and replay, PKCE, DPoP verified here and binding the code
+//!   and the tokens, RFC 8707's audience, refresh families with rotation
+//!   and reuse detection, the core ID Token ([`id_token`]);
+//! * [`grants`] — the codes, redemptions, transactions and refresh
+//!   families, in Node's stores;
+//! * [`scopes`] — the scope policy, delegated permissions and RFC 8707's
+//!   registered targets;
+//! * [`metadata`] — RFC 8414 discovery.
 
 #![forbid(unsafe_code)]
 
