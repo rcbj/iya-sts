@@ -607,6 +607,21 @@ registers outside `sts-core` are ports (`GatePorts`, `AccessPolicy`,
 `SetupPorts`, `KeySource`). `mgmt-api-node.json` is the proof: 60 requests
 answered byte for byte as Node answers them, both ways.
 
+**Mounted in the runtime (phase 5, the `apis` slice).** `sts-runtime`'s
+`admin_api.rs` answers the ports over what the runtime holds — the store's
+key sets, the authorization server's DPoP stores and token register, the
+session core, `sts-credentials`, the application register, and
+`sts-registers`' `RolePermissions` over `Roles` and the roster's ported
+read (`Rbac::roles_of`) — on a directory refilled from the live one before
+each request, whose touched entries are written back after it. The
+console's first screen (`me`, the frame, the dashboard, the announcements),
+`users/create` and the families' acts (`families.rs`, answered by `sts-pki`
+and `sts-enroll`) are ported, and `/account-api` (`account.rs`) with its
+gate and `me`, `overview` and `announcements`. Not yet: the server prose
+translation of an answer (#543, an answer is English whatever
+`Accept-Language` says), the owner roles, the security-change and realm
+confinement classifiers outside `/admin/config`, and the families' views.
+
 ### 5.2 The decisions
 
 1. **The console calls `/admin-api` with the signed-in operator's access

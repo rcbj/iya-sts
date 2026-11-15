@@ -1395,6 +1395,7 @@ pub fn announcements_for(
 
 /// What `/account-api` reads, in the ambient realm.
 struct Account {
+    settings: Arc<Settings>,
     dir: Arc<LiveDir>,
     tokens: Arc<sts_oauth::minted::TokenRegister>,
     sessions: Arc<sts_authn::Sessions>,
@@ -1464,9 +1465,21 @@ impl sts_mgmt_api::account::AccountPorts for Account {
     fn photo_path(&self, _name: &str) -> String {
         String::new()
     }
-    fn photo_view(&self, _name: &str) -> Json {
-        json!({ "path": "", "origin": "", "selfService": true,
-                "limits": { "maxBytes": 0, "types": [] } })
+    fn photo_view(&self, name: &str) -> Json {
+        // `ProfilePhoto.viewFor(name)`: the photos themselves are not
+        // ported (#719), so there is no path and no origin; the settings
+        // are the realm's.
+        let n = |k: &str| self.settings.value_of(k).as_int();
+        json!({ "path": self.photo_path(name), "origin": "",
+                "selfService":
+                    self.settings.value_of("profilePhoto.selfService").as_bool(),
+                "limits": {
+                    "maxFileBytes": n("profilePhoto.maxFileBytes"),
+                    "maxStoredBytes": n("profilePhoto.maxStoredBytes"),
+                    "minPixels": n("profilePhoto.minPixels"),
+                    "maxPixels": n("profilePhoto.maxPixels"),
+                    "types": ["image/jpeg", "image/png"],
+                } })
     }
     fn locale(&self, headers: &HeaderMap, _username: &str) -> Json {
         sts_mgmt_api::console::locale_data(
@@ -1665,6 +1678,7 @@ impl AdminStack {
         let account = Arc::new(sts_mgmt_api::account::AccountApi {
             services: services.clone(),
             ports: Arc::new(Account {
+                settings: settings.clone(),
                 dir: dir.clone(),
                 tokens: parts.oauth.tokens.register.clone(),
                 sessions: parts.sessions.clone(),
