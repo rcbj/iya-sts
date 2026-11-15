@@ -495,7 +495,8 @@ async function statements() {
       body: JSON.stringify(Object.assign({ client_id: admitted.client_id,
         token_endpoint_auth_method: "client_secret_basic" }, json)) });
   };
-  const away = await put({ redirect_uris: ["https://attacker.crs.example/cb"] });
+  const away = await put({
+    redirect_uris: ["https://attacker.crs.example/cb"] });
   const otherIssuer = await put({ software_statement: realmStatement });
   const same = await put({ software_statement: trusted,
                            client_name: "Renamed" });
