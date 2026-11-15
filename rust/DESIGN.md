@@ -444,6 +444,53 @@ on the same store: the two never run together in production (D11), but they
 must read and write the cluster tables' rows alike, and they agree on who
 leads at every token.
 
+### 4.7 Phase 3 end-to-end: Rust opens a store Node wrote (2026-11-14)
+
+`tests/tools/rust-store-e2e.sh <postgres|mariadb> <node image> <rust image>
+<tests image>` is phase 3's closing check, run on both engines. A Node 1.x
+probe in product mode, on a PostgreSQL 18 (or MariaDB 11.8) store over TLS
+with a key-encryption key in a file, writes a real store through
+`/admin-api` — the realms `acme` and `diff`, a process-wide and a realm
+setting, a person and an application — and is stopped. The Rust image
+(`rust/Dockerfile`) is started on the same store, KEK, appconfig and host
+name. On both engines 35 checks passed and none failed:
+
+* **It opens the store, adopts the origin and reads the KEK**: schema 32
+  present, origin `n:sts:front` (the one Node wrote under), 3 realm key sets
+  read and checked, coordinating from the change log's head, 18 run rows
+  restored with `scheduler.runs`' expiring rows left in the table (#883).
+* **It restores the realms and their settings**: 2 realms and the override
+  with the directory (195 entries on postgres, 197 on MariaDB), so `acme`'s
+  accent colour is in its `/web/theme.css`, byte for byte Node's.
+* **The same keys**: the current RSA key of both realms is Node's, and every
+  key both publish has Node's id and public members. The DOCUMENT differs
+  and is phase 5's: Rust also publishes ES256K, EdDSA and Ed448, which
+  Node's signing policy leaves out in product, the RS256 key's `x5c` is one
+  certificate shorter, and in one MariaDB run of four Node published a
+  second whole generation of keys beside the current set (#42's key
+  generations), which Rust's JWKS does not.
+* **Shells, `/web` and `/healthcheck` over HTTPS**; an undefined realm is the
+  ordinary 404.
+* **`http-differential.js` against Node rerun on a copy of the store**: 326
+  cases, 326 the same, 91 with differences later phases own. Rust is given
+  the Node image's `version.json`, since no two image builds share a build
+  instant.
+* **`tls-handshake-compare.sh`**: the two listeners answered alike.
+* **Not yet, listed rather than failed**: discovery, `/oauth2/token`,
+  `/authn/login`, `/admin-api`, SCIM and `/home-api` answer 404.
+
+What closing the first pass found and fixed: the postgres driver refused
+`sslmode=verify-full`, the compose file's own default (`dialOptions()` is
+ported now), and the runtime read `persistence.databaseTlsRejectUnauthorized`
+without the mode, so a product process told `false` dialled its database
+unverified where Node reads `true` (`STS-CORE-0106`). The postgres driver
+adds `persistence.databaseTlsCaFile`'s anchors to the platform's store,
+where Node puts them in its place (only the crypto module may build a
+store). The origin claim is renewed beside a clustered node's heartbeat;
+without a heartbeat (development, `cluster.mode=off`) it is renewed by the
+per-process job `persistence.origin-renew`, the one job Node's scheduler page
+does not list.
+
 ## 5. The management API is the console's and the portal's only door
 
 ### 5.1 What exists, and the gap
@@ -619,7 +666,7 @@ in CMS, RS1 unless `webauthn.insecureAlgorithms`, SHA-1 in XML unless
 | **WebAuthn** | COSE ES256/384/512, ESP256/384/512, EdDSA, Ed25519 (-19), Ed448 (-53), ES256K (-47), RS256/384/512, PS256/384/512, ML-DSA-44/65/87; RS1 only when allowed; formats packed, tpm, android-key, android-safetynet, fido-u2f, apple, compound, none; FIDO MDS3 | A port of this repository's own verifier (there is no library covering every format and the PQ algorithms), over `coset` and `ciborium` and the `sts-crypto` registry |
 | **GNAP tokens and HTTP signatures** | rsa-pss-sha512, rsa-v1_5-sha256, hmac-sha256, ecdsa-p256-sha256, ecdsa-p384-sha384, ed25519, and the JWS algs; Content-Digest sha-256/512; Biscuit (Ed25519); macaroons (HMAC-SHA256); ZCAP (Ed25519Signature2020) | HTTP Message Signatures written in `sts-gnap` over `sfv` (RFC 8941 structured fields); `biscuit-auth` (the native crate the wasm build is made from); `macaroon`; ZCAP ported |
 | **Passwords and KDFs** | scrypt `$scrypt$N$r$p$salt$hash` (logN 14–20, r 8, p 1, 32-byte output) for every secret; a PERSON'S password under the policy's spec (#847, #872): argon2id `$argon2id$v=19$m=…,t=…,p=…$salt$hash` or scrypt at OWASP's pairs, 2^15 r=8 p=3 by default; PBES2 at 600,000 iterations, derived off the event loop; TOTP/HOTP HMAC-SHA1/256/512; HKDF-SHA256 keyed digests; CSRF HMAC-SHA256 | `openssl` scrypt (the same output) and argon2id (OpenSSL 3.2's KDF, ported in `sts_crypto::secrets` with the policy spec's clamps and the upgrade-on-sign-in questions); `totp-rs`'s algorithm set, or the 30-line RFC 4226 over `openssl` HMAC if its parameter checks disagree with today's |
-| **Envelope encryption** | `$aesgcm$2$` (AES-256-GCM, 96-bit IV, AAD = version + DEK id); `$aessiv$` (AES-256-SIV, RFC 5297); `$dekwrap$1$` (AES-256-GCM under HKDF-SHA256(KEK)); KMS wrapping in Vault transit, AWS KMS, GCP KMS, Azure Key Vault | `openssl` AES-GCM; `aes-siv` (RustCrypto) where OpenSSL's SIV is not exposed; `aws-sdk-kms` and `aws-sdk-secretsmanager`, `google-cloud-kms`, `azure_security_keyvault_keys` and `_secrets`, `vaultrs` |
+| **Envelope encryption** | `$aesgcm$2$` (AES-256-GCM, 96-bit IV, AAD = version + DEK id); `$aessiv$` (AES-256-SIV, RFC 5297); `$dekwrap$1$` (AES-256-GCM under HKDF-SHA256(KEK)); KMS wrapping in Vault transit, AWS KMS, GCP KMS, Azure Key Vault | `openssl` AES-GCM; `aes-siv` (RustCrypto) where OpenSSL's SIV is not exposed; `aws-sdk-kms` and `aws-sdk-secretsmanager` over `aws-config`'s chain, Google's `google-cloud-kms-v1` and `google-cloud-secretmanager-v1` over Application Default Credentials, `azure_security_keyvault_keys` and `_secrets` over `azure_identity` walked as JavaScript's `DefaultAzureCredential` (sts-core's `aws`, `gcp`, `azure` features, on by default; phase 3); Vault and OpenBao over `reqwest` |
 | **DKIM** | rsa-sha256 (≥ 2048 bits), ed25519-sha256, relaxed/relaxed | Ported (`sts-crypto::dkim`) rather than `mail-auth`: the signature is Node's byte for byte |
 | **SSH and Sigstore** | ssh-rsa, ecdsa-sha2-nistp256/384/521, ssh-ed25519; Sigstore/TUF ECDSA-SHA256, RSA PKCS#1-SHA256, Ed25519; canonical JSON; DSSE PAE | `ssh-key`; `sigstore` for the TUF client; canonical JSON, thresholds, Rekor SETs and DSSE ported (`sts-crypto::sigstore`, Node's answers both ways) |
 | **TLS** | TLS 1.0–1.3 (`tls.minVersion`; 1.3-only by default); TLS 1.2 ECDHE-ECDSA/RSA-AES-GCM; TLS 1.3 AES-256-GCM, AES-128-GCM, CHACHA20-POLY1305, AES-128-CCM, CCM-8; groups X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024, X25519, P-256, X448, P-384, P-521, pure MLKEM512/768/1024 (`tls.pqcOnly`); signature schemes including mldsa44/65/87 and ed448; RSA and ML-DSA certificates together, chosen per client; optional client certificates; session tickets with rotation; JA4 | `openssl` with `tokio-openssl`. **`rustls` was considered and rejected for the listeners**: it has no TLS 1.0/1.1, no CCM suites, no Ed448 and no ML-DSA certificates, and any of those is an option an operator can select today. `rustls` with `aws-lc-rs` remains the outbound client where only verified TLS 1.2+ is ever offered |

@@ -139,6 +139,7 @@
 // UUID, v5 or v4. A leaf `common/helpers.js` has already loaded, and it
 // registers no route.
 const ModelTables = require('../common/model_tables');
+const DirectorySecrets = require('./directory_secrets');
 const stsCrypto = require('../common/crypto');
 const ldap = require('ldapjs');
 const app = require('../common/app');
@@ -12241,8 +12242,9 @@ function directoryWriteRefusal(req, operation, dn, changedTypes,
 // evidence. pwdHistory and pwdChangedTime are refused by
 // `passwordWriteRefusal()` already.
 // ---------------------------------------------------------------------------
-// The list is written in models/directory/names.tsp (#1390).
-const SECRET_ATTRIBUTES = ModelTables.names().secret;
+// The list is written in models/directory/names.tsp (#1390), and read, with
+// the mask every answer applies, through `ldap/directory_secrets.ts`.
+const SECRET_ATTRIBUTES = DirectorySecrets.SECRET_ATTRIBUTES;
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
                                     'entrydn', 'entryuuid', ENTRY_UUID_ALIAS,
@@ -12261,7 +12263,7 @@ const ALWAYS_PROTECTED_OPERATIONAL = ['entryuuid', ENTRY_UUID_ALIAS,
 function isSecretAttribute(name) {
   log.debug("Entering isSecretAttribute().");
   log.debug("Leaving isSecretAttribute().");
-  return SECRET_ATTRIBUTES.indexOf(String(name || '').toLowerCase()) !== -1;
+  return DirectorySecrets.isSecret(name);
 }
 
 // AN ENTRY'S ROW WITH ITS CREDENTIALS MASKED (#446, rcbj 2026-10-05). The
@@ -12269,36 +12271,13 @@ function isSecretAttribute(name) {
 // `GET /admin-api/ldap/*`, and no GET carries a credential: every attribute
 // SECRET_ATTRIBUTES names is replaced, in `attributes` and `fields` and in an
 // `entry`'s attributes, by one sentence per value. What can be used is
-// revealed on its owner's page (`reveal-secret`), audited.
+// revealed on its owner's page (`reveal-secret`), audited. The masking is
+// `ldap/directory_secrets.ts`'s since 2026-11-14, so that
+// `POST /admin-api/users/create` masks with the same function.
 function withoutSecrets(row) {
   log.debug("Entering withoutSecrets().");
-  const mask = '(set — not returned)';
-  const masked = function (bag) {
-    const copy = Object.assign({}, bag);
-    Object.keys(copy).forEach(function (name) {
-      if (isSecretAttribute(name)) {
-        const value = copy[name];
-        copy[name] = Array.isArray(value)
-          ? value.map(function () { return mask; })
-          : (value === undefined || value === null || value === ''
-            ? value : mask);
-      }
-    });
-    return copy;
-  };
-  const out = Object.assign({}, row);
-  if (row && row.attributes) {
-    out.attributes = masked(row.attributes);
-  }
-  if (row && row.fields) {
-    out.fields = masked(row.fields);
-  }
-  if (row && row.entry && row.entry.attributes) {
-    out.entry = Object.assign({}, row.entry,
-                              { attributes: masked(row.entry.attributes) });
-  }
   log.debug("Leaving withoutSecrets().");
-  return out;
+  return DirectorySecrets.withoutSecrets(row);
 }
 
 // Whether THIS reader of the socket is refused sight of an attribute. One

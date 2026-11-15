@@ -13,7 +13,8 @@
 //   A. ALWAYS: every statement the library sends — every question, the
 //      flush, the lost-row merge, a removed realm, the counts' fold, the
 //      sealed counts and the re-encryption pass — carries none of
-//      PostgreSQL's syntax, against a runner that records it; every
+//      PostgreSQL's syntax, against a runner that records it, and no write
+//      names its rows by a row constructor (A12, A13: the source too); every
 //      `directory_queries.js` question has a MariaDB spelling; a lookup form
 //      over 344 characters is digested; a DN key over 352 is refused
 //      STS-STORE-0140 before anything is sent.
@@ -28,7 +29,8 @@
 //      concurrent flushes of one container keep the counts; a removed realm
 //      takes its rows, key rows and counts; a long DN is refused with
 //      nothing written; a long lookup value is found; and the data-key
-//      counts and the re-encryption pass move what is sealed under a key.
+//      counts and the re-encryption pass move what is sealed under a key;
+//      and no write the flush sends is planned as a scan (C31, EXPLAIN).
 //   D. THE DRIVER'S DOORS on the same database: `persistence_postgres.js`
 //      created for `engine: 'mariadb'` restores, reads and asks through this
 //      library.
@@ -368,6 +370,53 @@ function offendingIn(statements) {
   return out;
 }
 
+// Every `send(…)` call in the library's source, read as a whole call rather
+// than a line (root CLAUDE.md, code style), whose statement is a DELETE or
+// an UPDATE and names its rows with `(a, b) IN (`. Parentheses inside a
+// quoted string do not count towards the call's own.
+function writesWithRowConstructors() {
+  log.debug("Entering writesWithRowConstructors().");
+  const source = require('fs').readFileSync(
+    require.resolve('../persistence/directory_portable'), 'utf8');
+  const out = [];
+  const opener = /\bsend\(/g;
+  let found = opener.exec(source);
+  while (found) {
+    let depth = 1;
+    let at = found.index + found[0].length;
+    let quote = '';
+    while (at < source.length && depth > 0) {
+      const ch = source[at];
+      if (quote) {
+        if (ch === '\\') {
+          at += 1;
+        } else if (ch === quote) {
+          quote = '';
+        }
+      } else if (ch === "'" || ch === '"' || ch === '`') {
+        quote = ch;
+      } else if (ch === '(') {
+        depth += 1;
+      } else if (ch === ')') {
+        depth -= 1;
+      }
+      at += 1;
+    }
+    const call = source.slice(found.index, at);
+    // The statement's text, its string pieces joined by a space: the name
+    // piece before it (`'keys.delete'`) would otherwise run into `DELETE`.
+    const text = (call.match(/'[^']*'/g) || []).map(function (piece) {
+      return piece.slice(1, -1);
+    }).join(' ').replace(/\s+/g, ' ');
+    if (/\b(DELETE FROM|UPDATE) /.test(text) && /\) IN \(/.test(text)) {
+      out.push(text.slice(0, 120));
+    }
+    found = opener.exec(source);
+  }
+  log.debug("Leaving writesWithRowConstructors(). " + out.length);
+  return out;
+}
+
 async function staticChecks(t) {
   log.debug("Entering staticChecks().");
   t.log.info('=== A. statements for MariaDB, none of PostgreSQL ===');
@@ -477,9 +526,26 @@ async function staticChecks(t) {
   t.check(statements.some(function (text) {
     return /^INSERT INTO sts_ldap_entry_keys/.test(text);
   }) && statements.some(function (text) {
-    return /^DELETE FROM sts_ldap_entry_keys WHERE \(realm, dn_key\) IN/
+    return /^DELETE FROM sts_ldap_entry_keys WHERE \(\(realm = \? AND dn_key = \?\)/
       .test(text);
   }), 'A6. and writes the entries\' key rows');
+  // A WRITE NAMES ITS ROWS BY COLUMN EQUALITIES (2026-11-14): MariaDB 11.8
+  // plans a DELETE or UPDATE on a row-constructor IN as a scan, which is
+  // the deadlock 7b4af8837 removed from the Knex-built writes. A13 reads
+  // the library's source, so a write this run does not reach is held too.
+  const constructed = statements.filter(function (text) {
+    return /^(DELETE|UPDATE)\b/.test(text) && /\)\s+IN\s+\(\s*\(/.test(text);
+  });
+  t.check(constructed.length === 0 && statements.some(function (text) {
+    return /^UPDATE sts_ldap_counts .* WHERE shard = \? AND \(\(/.test(text);
+  }), 'A12. NO WRITE IT SENT NAMES ITS ROWS BY A ROW CONSTRUCTOR — the ' +
+      'key rows\' DELETE and the counts\' fold name them by equalities',
+      constructed.join(' | ').slice(0, 400));
+  const unguarded = writesWithRowConstructors();
+  t.check(unguarded.length === 0,
+          'A13. AND NO DELETE OR UPDATE IN directory_portable.js IS WRITTEN ' +
+          'WITH ONE (the source, statement by statement)',
+          unguarded.join(' | ').slice(0, 400));
   t.check(statements.some(function (text) {
     return /^INSERT IGNORE INTO sts_ldap_counts/.test(text);
   }) && statements.some(function (text) {
@@ -1028,7 +1094,81 @@ async function plans(t, pool) {
   }
   t.check(scans.length === 0, 'C30. NO INDEXED QUESTION SCANS A TABLE ' +
           '(EXPLAIN of every statement)', scans.join(' | '));
+  await writePlans(t, pool);
   log.debug("Leaving plans().");
+}
+
+// C31. EVERY WRITE THE FLUSH SENDS IS PLANNED ON THE KEY (2026-11-14): an
+// entry written, written again and deleted through a pool that records each
+// statement, then every DELETE and UPDATE on a directory table EXPLAINed.
+// A row-constructor IN planned `type ALL` (the key rows' DELETE, the
+// entry's DELETE) and `type index` (the counts' fold) on MariaDB 11.8.
+async function writePlans(t, pool) {
+  log.debug("Entering writePlans().");
+  const sent = [];
+  const keep = function (text, values) {
+    if (/^(DELETE|UPDATE) /.test(String(text))) {
+      sent.push({ text: String(text), values: values || [] });
+    }
+  };
+  const recording = {
+    query: function (text, values) {
+      log.debug("Entering recording.query().");
+      keep(text, values);
+      log.debug("Leaving recording.query().");
+      return pool.query(text, values);
+    },
+    connect: async function () {
+      log.debug("Entering recording.connect().");
+      const client = await pool.connect();
+      log.debug("Leaving recording.connect().");
+      return {
+        query: function (text, values) {
+          keep(text, values);
+          return client.query(text, values);
+        },
+        release: function () {
+          client.release();
+        }
+      };
+    }
+  };
+  const store = storeOver(recording, pool, sqlDialect.create('mariadb'),
+                          'node-plans');
+  const dn = 'uid=planned,' + USERS;
+  const first = entry(dn, { uid: ['planned'], mail: ['p@example.com'],
+                            entryUUID: ['u-planned'],
+                            objectClass: ['inetOrgPerson'] });
+  const second = entry(dn, { uid: ['planned'], mail: ['q@example.com'],
+                             entryUUID: ['u-planned'],
+                             objectClass: ['inetOrgPerson'] },
+                       '20261103130000Z');
+  await save(store, { upserts: [put('default', dn, first)] });
+  await save(store, { upserts: [put('default', dn, second, first)] });
+  await save(store, { deletes: [{ realm: 'default', key: dn }] });
+  const scans = [];
+  const seen = new Set();
+  for (const one of sent) {
+    const plan = (await pool.query('EXPLAIN ' + one.text, one.values)).rows;
+    plan.forEach(function (row) {
+      const table = String(row.table || '');
+      if (!/^sts_ldap/.test(table)) {
+        return;
+      }
+      seen.add(table + ' ' + row.type);
+      if (row.type === 'ALL' || row.type === 'index') {
+        scans.push(table + ' ' + row.type + ': ' + one.text.slice(0, 100));
+      }
+    });
+  }
+  const tables = Array.from(seen).join(', ');
+  t.check(scans.length === 0 && /sts_ldap_entry_keys/.test(tables) &&
+          /sts_ldap_counts/.test(tables) &&
+          /sts_ldap_entries /.test(tables),
+          'C31. NO WRITE THE FLUSH SENDS SCANS A DIRECTORY TABLE — the key ' +
+          'rows\' DELETE, the counts\' fold and the entry\'s DELETE ' +
+          '(EXPLAIN of each)', scans.length ? scans.join(' | ') : tables);
+  log.debug("Leaving writePlans().");
 }
 
 async function againstMariadb(t) {

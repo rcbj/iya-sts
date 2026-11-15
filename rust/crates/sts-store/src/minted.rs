@@ -621,6 +621,72 @@ impl Minted {
         }
     }
 
+    /// `journalled()`: whether a store's key waits to be written — asked
+    /// before a held copy is dropped (`realms.map()`'s `dropHeld()`), since
+    /// that absence would be written as a delete.
+    // Hot path (every finished run the scheduler releases): no span.
+    pub fn journalled(&self, handle: &str, realm: &str, key: &str) -> bool {
+        self.state()
+            .journal
+            .get(handle)
+            .and_then(|by_realm| by_realm.get(realm))
+            .is_some_and(|keys| keys.contains(key))
+    }
+
+    /// `onDemandReadMany()`: the rows of `names` in one realm of one store,
+    /// read in one round trip and opened, by name. A name with no row (or a
+    /// tombstone, which is not a row) is absent from the answer, and so is a
+    /// row that will not open — what Node's `openedBody()` leaves out. A
+    /// store nothing declares is "no batched read", as Node rejects.
+    #[tracing::instrument(level = "debug", skip(self, keys, names))]
+    pub async fn read_many(
+        &self,
+        keys: &DataKeys,
+        handle: &str,
+        realm: &str,
+        names: &[String],
+    ) -> Result<HashMap<String, Json>, String> {
+        let Some(h) = self.handles.handle_for(handle) else {
+            return Err("no batched read".to_string());
+        };
+        let realm = sts_core::realm_store::partition_id(realm);
+        let mut by_column: HashMap<String, String> = HashMap::new();
+        let refs: Vec<(String, String, String)> = names
+            .iter()
+            .map(|name| {
+                let column = Minted::key_column_of(
+                    keys,
+                    handle,
+                    realm,
+                    &stored_key(&h, name, &self.origin),
+                );
+                by_column.insert(column.clone(), name.clone());
+                (handle.to_string(), realm.to_string(), column)
+            })
+            .collect();
+        if refs.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let rows = self
+            .driver
+            .read_minted_many(refs)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let Some(name) = by_column.get(&row.key) else {
+                continue;
+            };
+            let Some(text) = keys.open(&row.body, BODY_LABEL) else {
+                continue;
+            };
+            if let Ok(value) = serde_json::from_str::<Json>(&text) {
+                out.insert(name.clone(), value);
+            }
+        }
+        Ok(out)
+    }
+
     /// `nullExpiryOnly()`.
     fn null_expiry_only(&self) -> Vec<String> {
         self.null_expiry

@@ -35,15 +35,25 @@
 //! * **Product refuses a key-encryption key in a file** (STS-KEYS-0197, ASVS
 //!   5.0.0 13.3.1) unless `secrets.allowLocalSecrets` is on.
 //!
-//! **NOT YET: AWS Secrets Manager, Google Secret Manager, Azure Key Vault and
-//! their three KMS** (`aws`, `gcp`, `azure`, `aws-kms`, `gcp-kms`,
-//! `azure-keys`). Node reaches them through their SDKs, which carry the
-//! credential chains; the Rust SDKs are a dependency decision of their own
-//! (DESIGN section 6 names them) and a request signed by hand is the failure
-//! `secrets.js`'s header argues against. A deployment configured for one is
-//! refused at start (STS-KEYS-0045, the code Node gives a provider whose SDK
-//! is not installed), never started on another key. Nor are the mail
-//! secrets (#63), read when the mail channel is ported.
+//! * **The three clouds, through their official SDKs** (rcbj's decision,
+//!   2026-11-14), which carry the credential chains `secrets.js`'s header
+//!   argues are not a thing to reimplement: AWS Secrets Manager (`aws`) and
+//!   AWS KMS (`aws-kms`) through `aws-sdk-*` and `aws-config`'s chain;
+//!   Google Secret Manager (`gcp`) and Cloud KMS (`gcp-kms`) through
+//!   Google's own Rust client libraries and Application Default
+//!   Credentials; Azure Key Vault secrets (`azure`) and keys (`azure-keys`)
+//!   through `azure_security_keyvault_*` and the chain JavaScript's
+//!   `DefaultAzureCredential` walks. Each is in `secrets/aws.rs`,
+//!   `secrets/gcp.rs` and `secrets/azure.rs`, behind an sts-core feature of
+//!   the same name, on by default; a build without one refuses the provider
+//!   at start with STS-KEYS-0045, the code Node gives a provider whose SDK
+//!   is not installed. What is not an SDK call — the settings read, the
+//!   refusals, the stored text of a wrapped data key — is here and in
+//!   `secrets/forms.rs`, compiled always.
+//!
+//! **Not here: the mail secrets** (#63), read when the mail channel is
+//! ported, and `describe()` and the `/admin/secrets` probes, which are the
+//! console's.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -172,23 +182,63 @@ pub const PROVIDER_IDS: &[&str] = &[
 /// The providers that are key management services.
 const REMOTE: &[&str] = &["vault-transit", "aws-kms", "gcp-kms", "azure-keys"];
 
-/// The SDK each provider Node reaches through one needs, for the refusal.
-fn sdk_of(provider: &str) -> &'static str {
+mod cloud;
+mod forms;
+pub use forms::{
+    aws_context, azure_body, gcp_body, gcp_version_of, is_azure_key_name,
+    is_gcp_key_name, node_base64, AZURE_RSA_MIN_BITS,
+};
+
+#[cfg(feature = "aws")]
+mod aws;
+#[cfg(feature = "azure")]
+mod azure;
+#[cfg(feature = "gcp")]
+mod gcp;
+
+/// The crate each cloud provider is reached through, and the sts-core
+/// feature that builds it in, for `missingModule()`'s refusal.
+#[allow(dead_code)] // every provider is built in by default
+fn sdk_of(provider: &str) -> (&'static str, &'static str) {
     match provider {
-        "aws" => "@aws-sdk/client-secrets-manager",
-        "gcp" => "@google-cloud/secret-manager",
-        "azure" => "@azure/keyvault-secrets",
-        "aws-kms" => "@aws-sdk/client-kms",
-        "gcp-kms" => "@google-cloud/kms",
-        _ => "@azure/keyvault-keys",
+        "aws" => ("aws-sdk-secretsmanager", "aws"),
+        "gcp" => ("google-cloud-secretmanager-v1", "gcp"),
+        "azure" => ("azure_security_keyvault_secrets", "azure"),
+        "aws-kms" => ("aws-sdk-kms", "aws"),
+        "gcp-kms" => ("google-cloud-kms-v1", "gcp"),
+        _ => ("azure_security_keyvault_keys", "azure"),
     }
 }
 
-/// A refusal from a provider: its code, and the sentence without one.
+/// `missingModule()`: the one sentence for a provider this build carries
+/// no SDK for, in the Rust runtime's terms (a crate and a feature, where
+/// Node names a package to install).
+#[allow(dead_code)] // every provider is built in by default
+fn missing_sdk(provider: &str) -> Failure {
+    let (krate, feature) = sdk_of(provider);
+    Failure::new(
+        codes::STS_KEYS_0045,
+        format!(
+            "the \"{}\" key-encryption-key provider needs the {} crate, and \
+             this build of the service was made without sts-core's `{}` \
+             feature. Build it with the feature (it is on by default), or \
+             use keys.kekProvider=file, which needs nothing.",
+            provider, krate, feature
+        ),
+    )
+}
+
+/// A refusal from a provider: the condition's code, the sentence without
+/// it, and whether `secrets.js` MARKS the condition. An unmarked failure —
+/// what an SDK or a store said — carries STS-KEYS-0043, the code a caller
+/// that tags `code` (the keystore's unwrap) has always written for one,
+/// and the refusal to start carries the secret's code alone, as
+/// `tagReadFailure()` writes it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Failure {
     pub code: ErrorCode,
     pub message: String,
+    pub marked: bool,
 }
 
 impl Failure {
@@ -196,6 +246,16 @@ impl Failure {
         Failure {
             code,
             message: message.into(),
+            marked: true,
+        }
+    }
+
+    /// An unmarked failure: what a store or an SDK said.
+    fn uncoded(message: impl Into<String>) -> Failure {
+        Failure {
+            code: codes::STS_KEYS_0043,
+            message: message.into(),
+            marked: false,
         }
     }
 }
@@ -220,6 +280,37 @@ impl std::fmt::Debug for Secret {
     }
 }
 
+/// The digest and the comparison Azure's RSA wrapping binds a data key's
+/// AAD with, and the PKCS#12 an Azure client certificate in PEM is handed
+/// to `azure_identity` as: cryptography, which is sts-crypto's (rcbj's
+/// rule, #453), so the composition root fills this slot from it, as it
+/// fills [`KeyNormalizer`]. With it empty, an `azure-keys` RSA key and a
+/// PEM certificate in AZURE_CLIENT_CERTIFICATE_PATH are refused by name.
+pub trait KmsCrypto: Send + Sync {
+    /// SHA-256 of `data` (`crypto.digest('sha256', …)`).
+    fn sha256(&self, data: &[u8]) -> Vec<u8>;
+    /// `crypto.bytesEqualConstantTime()`.
+    fn equal(&self, a: &[u8], b: &[u8]) -> bool;
+    /// A PKCS#12 holding the certificate and private key of `pem`, under
+    /// `password` (empty for none).
+    fn pkcs12_of_pem(
+        &self,
+        pem: &[u8],
+        password: &str,
+    ) -> Result<Vec<u8>, String>;
+}
+
+/// Where a test points an SDK at an emulator: Google's client libraries,
+/// like Node's, have no variable that names one (AWS's honour
+/// `AWS_ENDPOINT_URL`, and Azure's endpoint is the vault URL). The Rust
+/// half of Node's `setSdkLoader()`: nothing in the service sets it.
+#[derive(Debug, Clone, Default)]
+pub struct Emulators {
+    /// Google's REST endpoint (`http://127.0.0.1:4588`), reached with
+    /// anonymous credentials.
+    pub gcp: Option<String>,
+}
+
 /// A key that never leaves its key management service (#391 P3): the
 /// handle `secrets.js`'s KMS providers answer. `aad` is the data key's own
 /// (`keystore.js`'s `dekAad()`).
@@ -242,7 +333,9 @@ pub trait RemoteKek: Send + Sync {
     fn owns(&self, text: &str) -> bool;
     /// Whether `text` was wrapped under an older version of the key.
     fn is_stale(&self, text: &str) -> bool;
-    /// A new version, made in the KMS (#391 P5): its name.
+    /// A new version, made in the KMS (#391 P5): its name — empty for AWS
+    /// KMS, which keeps its earlier material behind the same key id, so no
+    /// data key needs re-wrapping.
     fn rotate(&self) -> BoxFuture<'_, Result<String, Failure>>;
 }
 
@@ -307,6 +400,8 @@ pub struct Secrets {
     env: HashMap<String, String>,
     ledger: Mutex<Vec<LedgerRow>>,
     normalizer: std::sync::OnceLock<Arc<dyn KeyNormalizer>>,
+    kms_crypto: std::sync::OnceLock<Arc<dyn KmsCrypto>>,
+    emulators: std::sync::OnceLock<Emulators>,
 }
 
 impl Secrets {
@@ -322,7 +417,22 @@ impl Secrets {
             env,
             ledger: Mutex::new(Vec::new()),
             normalizer: std::sync::OnceLock::new(),
+            kms_crypto: std::sync::OnceLock::new(),
+            emulators: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Fills the cloud providers' cryptography slot, once (see
+    /// [`KmsCrypto`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_kms_crypto(&self, slot: Arc<dyn KmsCrypto>) -> bool {
+        self.kms_crypto.set(slot).is_ok()
+    }
+
+    /// Points the SDKs at emulators, once, for a test (see [`Emulators`]).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_emulators(&self, emulators: Emulators) -> bool {
+        self.emulators.set(emulators).is_ok()
     }
 
     /// Fills the key normalizer's slot, once (see [`KeyNormalizer`]).
@@ -496,17 +606,15 @@ impl Secrets {
                 "file" => self.read_file(spec),
                 "vault" => self.read_vault(spec).await,
                 "vault-transit" => self.transit(spec).await,
-                other => Err(Failure::new(
-                    codes::STS_KEYS_0045,
-                    format!(
-                        "the \"{}\" key-encryption-key provider is reached \
-                         through {} in the Node runtime, and the Rust runtime \
-                         does not reach it yet. Use keys.kekProvider=file, \
-                         vault or vault-transit, or run the Node image.",
-                        other,
-                        sdk_of(other)
-                    ),
-                )),
+                // BOXED: the SDKs' futures are deep, and inlined into this
+                // one they pushed the layout of every future that awaits a
+                // read (the runtime's start) past rustc's query depth.
+                "aws" => self.boxed(self.read_aws(spec)).await,
+                "gcp" => self.boxed(self.read_gcp(spec)).await,
+                "azure" => self.boxed(self.read_azure(spec)).await,
+                "aws-kms" => self.boxed(self.aws_kms(spec)).await,
+                "gcp-kms" => self.boxed(self.gcp_kms(spec)).await,
+                _ => self.boxed(self.azure_keys(spec)).await,
             }
         };
         self.record(spec, &provider, began.elapsed(), answer.as_ref().err());
@@ -516,8 +624,24 @@ impl Secrets {
             } else {
                 codes::STS_KEYS_0044
             };
-            format!("{}{}{}", tag(which), tag(failure.code), failure.message)
+            format!(
+                "{}{}{}",
+                tag(which),
+                if failure.marked {
+                    tag(failure.code)
+                } else {
+                    String::new()
+                },
+                failure.message
+            )
         })
+    }
+
+    fn boxed<'a>(
+        &self,
+        read: impl Future<Output = Result<Secret, Failure>> + Send + 'a,
+    ) -> BoxFuture<'a, Result<Secret, Failure>> {
+        Box::pin(read)
     }
 
     fn record(
@@ -770,7 +894,7 @@ impl Secrets {
         let cert = self.text("keys.vaultClientCert");
         let key = self.text("keys.vaultClientKey");
         let ca = self.text("keys.vaultCaCert");
-        let fail = |what: String| Failure::new(codes::STS_KEYS_0043, what);
+        let fail = |what: String| Failure::uncoded(what);
         let mut builder = reqwest::Client::builder()
             .pool_max_idle_per_host(8)
             .timeout(Duration::from_secs(30));
@@ -1074,9 +1198,7 @@ impl Vault {
         if let Some(body) = body {
             ask = ask.json(&body);
         }
-        let failed = |status: u16, why: String| {
-            (status, Failure::new(codes::STS_KEYS_0043, why))
-        };
+        let failed = |status: u16, why: String| (status, Failure::uncoded(why));
         let answer = ask.send().await.map_err(|e| failed(0, e.to_string()))?;
         let status = answer.status().as_u16();
         let text = answer
@@ -1350,10 +1472,76 @@ mod tests {
             panic!()
         };
         assert_eq!(bytes, b"k");
-        // Unknown and not-yet providers.
+        // A cloud provider with no location, refused before any SDK call
+        // (or, in a build without the SDK, as Node's missing package is).
         let s = secrets(&[("STS_KEYS_KEK_PROVIDER", "aws")]);
         let refused = s.read(&KEK).await.unwrap_err();
-        assert!(refused.contains(&tag(codes::STS_KEYS_0045)));
+        let want = if cfg!(feature = "aws") {
+            codes::STS_KEYS_0046
+        } else {
+            codes::STS_KEYS_0045
+        };
+        assert_eq!(
+            refused,
+            format!(
+                "{}{}{}",
+                tag(codes::STS_KEYS_0043),
+                tag(want),
+                if cfg!(feature = "aws") {
+                    "keys.kekProvider is \"aws\" and keys.kekRef names no \
+                     secret. Set it to the secret's name or ARN."
+                        .to_string()
+                } else {
+                    missing_sdk("aws").message
+                }
+            )
+        );
+        for (provider, ref_, code, says) in [
+            (
+                "gcp-kms",
+                "projects/p/keyRings/r",
+                codes::STS_KEYS_0102,
+                "keys.kekRef is \"projects/p/keyRings/r\", which is not a \
+              CryptoKey's resource name.",
+            ),
+            (
+                "azure-keys",
+                "",
+                codes::STS_KEYS_0046,
+                "keys.kekProvider is \"azure-keys\" and it needs both \
+              keys.kekVault",
+            ),
+            (
+                "aws-kms",
+                "",
+                codes::STS_KEYS_0046,
+                "keys.kekProvider is \"aws-kms\" and keys.kekRef names no key.",
+            ),
+        ] {
+            let s = secrets(&[
+                ("STS_KEYS_KEK_PROVIDER", provider),
+                ("STS_KEYS_KEK_REF", ref_),
+            ]);
+            let refused = s.read(&KEK).await.unwrap_err();
+            assert!(
+                refused.starts_with(&format!(
+                    "{}{}{}",
+                    tag(codes::STS_KEYS_0043),
+                    tag(code),
+                    says
+                )),
+                "{}",
+                refused
+            );
+        }
+        let s = secrets(&[
+            ("STS_KEYS_KEK_PROVIDER", "azure-keys"),
+            ("STS_KEYS_KEK_REF", "a_b"),
+            ("STS_KEYS_KEK_VAULT", "https://v.vault.azure.net/"),
+        ]);
+        assert!(s.read(&KEK).await.unwrap_err().contains(
+            "keys.kekRef is \"a_b\", which is not a Key Vault key name"
+        ));
         let s = secrets(&[("STS_DATABASE_PASSWORD_PROVIDER", "vault-transit")]);
         let refused = s.read(&DATABASE_PASSWORD).await.unwrap_err();
         assert!(refused.contains(&tag(codes::STS_KEYS_0101)));

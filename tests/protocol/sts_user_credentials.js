@@ -31,6 +31,9 @@
 //     still signs with the key they were given and this service holds none.
 //   * `GET /admin-api/users?user=` ANSWERS `credentials` WITH NO PRIVATE KEY,
 //     and taking one profile off leaves the other working at the endpoint.
+//   * `POST /admin-api/users/create` ANSWERS A GENERATED PASSWORD AND AN
+//     ACTIVATION LINK, AND NO STORED CREDENTIAL (2026-11-14, found by #444):
+//     the entry it answers masks every secret attribute, in product too.
 //
 // `local: true`, on `tests/CLAUDE.md`'s first question: the controls are this
 // repository's own console and `/admin-api`, and the assertion spans those
@@ -84,7 +87,60 @@ var TOKEN_ENDPOINT = realmBase + "/oauth2/token";
 
 var PERSON = usernameFor("usercredalice");
 var OTHER = usernameFor("usercredbob");
+var GENERATED = usernameFor("usercredgen");
+var ACTIVATED = usernameFor("usercredact");
 var APP = "usercreds-app";
+
+// The credential attributes a create can write, from the list in
+// `models/directory/names.tsp` (a job drives a stack and has no generated
+// copy of it), and the sentence `/admin-api` answers in place of a value.
+// The hash-shape check below covers every other attribute.
+var SECRET_FLOOR = ["userpassword", "pwdhistory", "stsactivationtoken",
+                    "stspasswordresettoken"];
+var MASK = "(set \u2014 not returned)";
+
+// Every string in a value, however deep.
+function stringsIn(value, out) {
+  log.debug("Entering stringsIn().");
+  if (typeof value === "string") {
+    out.push(value);
+  } else if (Array.isArray(value)) {
+    value.forEach(function (one) {
+      stringsIn(one, out);
+    });
+  } else if (value && typeof value === "object") {
+    Object.keys(value).forEach(function (key) {
+      stringsIn(value[key], out);
+    });
+  }
+  log.debug("Leaving stringsIn().");
+  return out;
+}
+
+// No stored credential in a create's answer: every secret attribute its
+// entry names is the mask, and no string anywhere in it has the shape of a
+// stored hash (`$scheme$…$…`) — except the values the caller is handed.
+function assertNoStoredSecret(answer, handed) {
+  log.debug("Entering assertNoStoredSecret().");
+  const attrs = (answer.entry && answer.entry.attributes) || {};
+  Object.keys(attrs).forEach(function (name) {
+    if (SECRET_FLOOR.indexOf(name.toLowerCase()) >= 0) {
+      [].concat(attrs[name]).forEach(function (one) {
+        assert.strictEqual(one, MASK, name + " was answered: " +
+                           String(one).slice(0, 12) + "…");
+      });
+    }
+  });
+  stringsIn(answer, []).forEach(function (one) {
+    if (handed.indexOf(one) >= 0) {
+      return;
+    }
+    assert.ok(!/^\$[a-z0-9-]+\$.*\$/i.test(one),
+              "a stored hash's shape is in the answer: " +
+              one.slice(0, 12) + "…");
+  });
+  log.debug("Leaving assertNoStoredSecret().");
+}
 var JWT_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 var SAML_GRANT = "urn:ietf:params:oauth:grant-type:saml2-bearer";
 
@@ -310,6 +366,40 @@ async function test() {
            "created an application to issue a certificate to");
 
   // -------------------------------------------------------------------------
+  log.info("=== 0b. a create answers what was handed over, and no stored " +
+           "credential ===");
+  // #444's port found `entry` answered as stored, after the password and
+  // the activation token had been written to it. In product mode too, which
+  // is why it is asserted here rather than only in `tests/`.
+  const generated = await ok(realmApi + "/users/create",
+           { username: GENERATED, invent: false, credential: "generate",
+             attributes: { cn: "Usercreds Gen", givenName: "Usercreds",
+                           sn: GENERATED,
+                           mail: GENERATED + "@" + REALM + ".example.net" } },
+           "created a person with a generated password");
+  check("THE GENERATED PASSWORD IS ANSWERED, ONCE, AND THE ENTRY CARRIES " +
+        "NO STORED HASH — every secret attribute it names is masked",
+        function () {
+          assert.ok(typeof generated.password === "string" &&
+                    generated.password.length > 0,
+                    JSON.stringify(Object.keys(generated)));
+          assert.strictEqual(generated.passwordSet, true);
+          assertNoStoredSecret(generated, [generated.password]);
+        });
+  const activated = await ok(realmApi + "/users/create",
+           { username: ACTIVATED, invent: false, credential: "activation",
+             attributes: { cn: "Usercreds Act", givenName: "Usercreds",
+                           sn: ACTIVATED,
+                           mail: ACTIVATED + "@" + REALM + ".example.net" } },
+           "created a person with an activation link");
+  check("THE ACTIVATION LINK IS ANSWERED AND THE ENTRY CARRIES NO STORED " +
+        "TOKEN HASH", function () {
+          assert.ok(/#token=/.test(String(activated.activationUrl || "")),
+                    JSON.stringify(Object.keys(activated)));
+          assertNoStoredSecret(activated, [activated.activationUrl]);
+        });
+
+  // -------------------------------------------------------------------------
   log.info("=== 1. an RFC 7522 key pair issued to a person ===");
   const samlIssued = await ok(realmApi + "/pki/issue",
     { identifier: PERSON, target: "person", purpose: "saml",
@@ -510,7 +600,7 @@ async function test() {
             JSON.stringify(jwtStays.body).slice(0, 300));
         });
 
-  assert.ok(checks >= 18,
+  assert.ok(checks >= 20,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

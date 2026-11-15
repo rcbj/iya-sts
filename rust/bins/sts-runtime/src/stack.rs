@@ -8,10 +8,14 @@
 //!
 //! What phase 3 builds: the settings and the mode; the realm registry and
 //! the realms' lifecycle, which is the settings' realm layer; the declared
-//! stores; persistence (memory or ldif) over the directory; the scheduler,
-//! leading at once in a service of one process, with its own history job;
-//! and the HTTP layer every route will sit behind. No protocol family is
-//! served yet, so every path answers the ordinary 404.
+//! stores; persistence (memory, ldif, postgres or mariadb, `store.rs`) over
+//! the directory, with this process's origin adopted the moment the store
+//! is open; the cluster node where the mode clusters; the scheduler —
+//! leading at once in a service of one process — with its run history over
+//! minted persistence; and the HTTP layer every route sits behind, its read
+//! barrier a change-log pull that started after the request. No protocol
+//! family is served yet, so every path but the shells, `/web` and
+//! `/oauth2/jwks` answers the ordinary 404.
 
 use std::sync::{Arc, OnceLock, Weak};
 
@@ -21,10 +25,10 @@ use sts_cluster::coordination::{
     READ_BARRIER_TIMEOUT_DEFAULT_MS,
 };
 use sts_cluster::membership::ClusterNode;
-use sts_cluster::membership::{resolve_mode, ModeSettings};
+use sts_cluster::membership::{resolve_mode, ClusterMode, ModeSettings};
 use sts_cluster::schedule::BoxFuture;
 use sts_cluster::schedule::{compare_rows, Schedules};
-use sts_cluster::scheduler::{Deps, Extras, RunRows, RuntimeLoad, Scheduler};
+use sts_cluster::scheduler::{Deps, Extras, RuntimeLoad, Scheduler};
 use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_core::mode::Mode;
@@ -32,13 +36,18 @@ use sts_core::realm::{RealmRegistry, SettingsEnvironment};
 use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::{RealmMap, StoreHandles, StoreSpec};
 use sts_core::settings::Settings;
-use sts_crypto::random::random_bytes;
+use sts_crypto::random::random_uuid;
 use sts_store::ldif_driver::LdifDriver;
-use sts_store::persistence::{MemoryDirectory, Persistence, StoreMode};
-use sts_store::postgres::PostgresDriver;
+use sts_store::persistence::{
+    MemoryDirectory, Persistence, StoreHooks, StoreMode,
+};
 use sts_store::Driver;
 
 use crate::solo::{LocalClaims, LocalClock, LogAudit, RunStore, SoloCluster};
+use crate::store::{
+    open_database, pull_interval_ms, store_mode, MintedRunHistory,
+    OriginKeeper, RunsReconcile, RUNS_HANDLE,
+};
 
 /// Everything the runtime built, held for its lifetime. Later phases read
 /// the fields this one only holds.
@@ -64,22 +73,31 @@ pub struct Stack {
     pub gate: Arc<CommitGate>,
     /// Every cache describing itself (`common/cache_registry.js`).
     pub caches: Arc<sts_cache::CacheRegistry>,
-    runs: Arc<RunStore>,
+    /// This process's origin in the change log; `None` without a database.
+    pub origin: Option<Arc<OriginKeeper>>,
+    /// The cluster mode the settings resolved to, and why.
+    pub cluster_mode: (ClusterMode, String),
 }
 
-/// The change-log pull the read barrier waits on: `Persistence`'s.
+/// The change-log pull the read barrier waits on: `syncNow()`, a pull that
+/// STARTED after the request was asked about, so every row committed
+/// before it is visible to that pull's snapshots. Not caught up within the
+/// replication's own deadline is said so (`STS-STORE-0039`), and the
+/// barrier asks again until `workers.readBarrierTimeoutMs`.
 struct PersistencePull(Weak<Persistence>);
 
 impl ChangePull for PersistencePull {
     fn pull(&self) -> BoxFuture<'_, Result<bool, String>> {
         let p = self.0.upgrade();
         Box::pin(async move {
-            match p {
-                // A pull that returns has applied everything that was
-                // visible when it began: caught up.
-                Some(p) => p.pull_changes().await.map(|_| true),
-                None => Ok(true),
-            }
+            let Some(p) = p else {
+                return Ok(true);
+            };
+            Ok(match p.sync_now().await {
+                Some(synced) => synced.caught_up || !synced.coordinating,
+                // Nothing to coordinate with: nothing to wait for.
+                None => true,
+            })
         })
     }
 
@@ -111,30 +129,32 @@ impl CommitLog for PersistenceCommits {
     }
 }
 
-/// A node id for this process: random, as Node's is per start.
-fn node_id() -> String {
-    let buf = match random_bytes(8) {
-        Ok(buf) => buf,
-        Err(e) => {
-            tracing::error!("runtime: no random bytes for the node id: {}", e);
-            vec![0u8; 8]
-        }
-    };
-    buf.iter().map(|b| format!("{:02x}", b)).collect()
+/// A node id for this process: a UUID made per start, as Node's
+/// `plannedNodeId()` is.
+fn node_id() -> Result<String, String> {
+    random_uuid().map_err(|e| format!("no random bytes for the node id: {}", e))
 }
 
-/// `persistence.mode` as this runtime can serve it, or why not.
-fn store_mode(settings: &Settings) -> Result<StoreMode, String> {
-    match settings.value_of("persistence.mode").as_str() {
-        "memory" => Ok(StoreMode::Memory),
-        "ldif" => Ok(StoreMode::Ldif),
-        "postgres" => Ok(StoreMode::Postgres),
-        other => Err(format!(
-            "{}persistence: \"{}\" is not a mode this module knows (memory, ldif, postgres).",
-            tag(codes::STS_STORE_0003),
-            other
-        )),
-    }
+/// `cluster.js`'s `resolve()`: which cluster mode, and the refusals that
+/// are configuration's. Pure: reads the settings.
+fn cluster_mode(
+    settings: &Settings,
+    mode: &Mode,
+) -> Result<(ClusterMode, String), String> {
+    let s = settings;
+    resolve_mode(&ModeSettings {
+        cluster_mode: s.value_of("cluster.mode").as_str().to_string(),
+        persistence_mode: s.value_of("persistence.mode").as_str().to_string(),
+        product: mode.current() == "product",
+        global_mode: s.value_of("global.mode").as_str().to_string(),
+        keys_source: s.value_of("keys.source").as_str().to_string(),
+        public_base_url: s
+            .value_of("global.publicBaseUrl")
+            .as_str()
+            .to_string(),
+        minted: s.value_of("persistence.minted").as_bool(),
+    })
+    .map_err(|r| format!("{}cluster: {}", tag(r.code), r.why))
 }
 
 /// `GET /oauth2/jwks`: the ambient realm's published keys, served
@@ -188,6 +208,9 @@ async fn jwks(persistence: Weak<Persistence>) -> axum::response::Response {
     }
 }
 
+/// 503 with `Retry-After`, marked with the refusal's code: rule 1's read
+/// barrier (`codes::STS_WORKER_0053`) or rule 2's commit gate
+/// (`codes::STS_STORE_0066`), each named where it is called.
 fn unavailable(code: sts_core::errors::ErrorCode) -> axum::response::Response {
     use axum::response::IntoResponse;
     sts_http::mark(
@@ -210,14 +233,16 @@ async fn guarded(
     next: axum::middleware::Next,
 ) -> axum::response::Response {
     let _in_flight = load.enter();
-    if let Err(refused) = barrier.wait().await {
-        return unavailable(refused.code);
+    // The barrier's one refusal: never a stale answer.
+    if barrier.wait().await.is_err() {
+        return unavailable(codes::STS_WORKER_0053);
     }
     let before = gate.mark();
     let response = next.run(request).await;
+    // The gate's one refusal: never the success of an uncommitted write.
     match gate.hold(before).await {
         Ok(()) => response,
-        Err(refused) => unavailable(refused.code),
+        Err(_) => unavailable(codes::STS_STORE_0066),
     }
 }
 
@@ -239,22 +264,11 @@ impl Stack {
         let directory = Arc::new(MemoryDirectory::default());
 
         let chosen = store_mode(&settings)?;
-        let postgres: Option<Arc<PostgresDriver>> = match chosen {
-            StoreMode::Postgres => Some(Arc::new(
-                PostgresDriver::new(
-                    settings.value_of("persistence.databaseUrl").as_str(),
-                    settings
-                        .value_of("persistence.databaseTlsRejectUnauthorized")
-                        .as_bool(),
-                    10,
-                )
-                .map_err(|e| e.to_string())?,
-            )),
-            _ => None,
-        };
+        // A database store: postgres, or the same store on MariaDB (#677).
+        let database = open_database(&settings, &mode, chosen)?;
         let driver: Option<Arc<dyn Driver>> = match chosen {
-            StoreMode::Postgres => {
-                postgres.clone().map(|p| p as Arc<dyn Driver>)
+            StoreMode::Postgres | StoreMode::Mariadb => {
+                database.as_ref().map(|d| d.driver())
             }
             StoreMode::Ldif => {
                 let dir = settings
@@ -300,24 +314,45 @@ impl Stack {
                     .and_then(Weak::upgrade)
                     .and_then(|s| s.expiry_of(row))
             })),
-            ..StoreSpec::persisted("scheduler.runs")
+            ..StoreSpec::persisted(RUNS_HANDLE)
         };
-        let runs = RealmMap::new(&lifecycle, &handles, spec);
+        // Every row admitted from outside this process is shown to the
+        // scheduler's watch, and a finished interval run is not held (the
+        // `scheduler.runs` reconcile, #623 and #883).
+        let runs = RealmMap::with_reconcile(
+            &lifecycle,
+            &handles,
+            spec,
+            Some(Arc::new(RunsReconcile(scheduler_slot.clone()))),
+        );
         let run_store = Arc::new(RunStore { rows: runs });
         let host = std::env::var("HOSTNAME")
             .unwrap_or_else(|_| "localhost".to_string());
-        // Several nodes share a postgres store; anything else is one
+        let node_name = {
+            let configured = settings
+                .value_of("cluster.nodeName")
+                .as_str()
+                .trim()
+                .to_string();
+            if configured.is_empty() {
+                host.clone()
+            } else {
+                configured
+            }
+        };
+        // WHICH CLUSTER MODE (`resolve()`), and the refusals that are
+        // configuration's: several nodes share a database store in
+        // active-passive or active-active mode; anything else is one
         // process, which leads at once.
-        let clustered = postgres.is_some()
-            && settings.value_of("cluster.mode").as_str() != "off";
+        let resolved = cluster_mode(&settings, &mode)?;
+        let clustered = resolved.0 != ClusterMode::Off;
+        let planned = node_id()?;
         let node: Option<Arc<ClusterNode>> =
-            postgres.as_ref().filter(|_| clustered).map(|p| {
-                let name =
-                    settings.value_of("cluster.nodeName").as_str().to_string();
+            database.as_ref().filter(|_| clustered).map(|d| {
                 ClusterNode::new(
-                    p.clone(),
-                    &node_id(),
-                    if name.is_empty() { &host } else { &name },
+                    d.cluster_store(),
+                    &planned,
+                    &node_name,
                     settings.value_of("cluster.heartbeatMs").as_int() as f64,
                     settings.value_of("cluster.nodeTtlMs").as_int() as f64,
                     Arc::new(|code: &'static str, why: String| {
@@ -326,6 +361,16 @@ impl Stack {
                     }),
                 )
             });
+        // THIS PROCESS'S ORIGIN (`adoptStableOrigin()`): the front's slot of
+        // this node, joined under the membership planned above — '' with
+        // clustering off, where nothing is taken over.
+        let origin = database.as_ref().map(|d| {
+            OriginKeeper::new(
+                d.clone(),
+                &node_name,
+                if clustered { &planned } else { "" },
+            )
+        });
         let (cluster, claims, clock): (
             Arc<dyn sts_cluster::scheduler::Cluster>,
             Arc<dyn sts_cluster::scheduler::Claims>,
@@ -358,13 +403,16 @@ impl Stack {
                 thread: None,
                 is_request_worker: false,
             },
-            // The durable run history (#883) reads run rows back from the
-            // minted table by id, which the store slice's minted API does
-            // not offer yet; without it every row is kept in the map, as
-            // development keeps them. Cells (#98) are not ported.
+            // The durable run history (#883): a run row the map does not
+            // hold — a finished interval run, which a start does not read
+            // back — is read from minted persistence by id. Cells (#98) are
+            // not ported.
             Extras {
                 loads: Some(load.clone()),
-                history: None,
+                history: Some(Arc::new(MintedRunHistory {
+                    persistence: Arc::downgrade(&persistence),
+                    handles: handles.clone(),
+                })),
                 cells_multi: None,
             },
         );
@@ -374,7 +422,12 @@ impl Stack {
         scheduler.register_history_job()?;
         // Applies, in this process, what every other process committed to
         // the change log since this one last looked: per process, recorded
-        // quietly, on persistence.pollInterval.
+        // quietly, on persistence.pollInterval — every second on a store
+        // that sends no nudge, unless the interval was set (`intervalMs()`).
+        let without_nudge = database
+            .as_ref()
+            .and_then(|d| d.driver().dialect())
+            .and_then(|dialect| dialect.poll_without_nudge_ms());
         let mut pull = sts_cluster::schedule::JobSpec::new(
             "persistence.change-log-pull",
             "Change-log pull",
@@ -383,9 +436,7 @@ impl Stack {
             "persistence/persistence_replication.js",
             sts_cluster::schedule::Schedule::Every({
                 let settings = settings.clone();
-                Arc::new(move || {
-                    (settings.value_of("persistence.pollInterval").as_int() as f64).max(250.0)
-                })
+                Arc::new(move || pull_interval_ms(&settings, without_nudge))
             }),
         );
         pull.kind = sts_cluster::schedule::Kind::PerProcess;
@@ -410,6 +461,49 @@ impl Stack {
             })
         }));
         scheduler.register(pull)?;
+        if let Some(origin) = &origin {
+            scheduler.register(origin.renew_job(clustered))?;
+            if let Some(n) = &node {
+                origin.ride_on(n);
+            }
+        }
+        // THE STORE'S LIFE, AT THE POINTS ONLY THIS ROOT CAN FILL: the
+        // origin adopted the moment the store is open and before anything
+        // reads it; what the run store files beside its rows, and that a
+        // start reads only its rows with no expiry (#883), before minted
+        // state is restored; and, after the last write and before the pool
+        // closes, the cluster left and the origin given back (Node's
+        // `stop()` chain).
+        let opening = origin.clone();
+        let closing = (origin.clone(), node.clone());
+        persistence.set_hooks(StoreHooks {
+            after_open: opening.map(|o| {
+                let step: sts_store::persistence::StoreStep =
+                    Arc::new(move || {
+                        let o = o.clone();
+                        Box::pin(async move { o.adopt().await })
+                    });
+                step
+            }),
+            configure_minted: Some(Arc::new(crate::store::configure_minted)),
+            before_close: Some(Arc::new(move || {
+                let (origin, node) = closing.clone();
+                Box::pin(async move {
+                    if let Some(node) = node {
+                        if let Err(e) = node.leave().await {
+                            tracing::warn!(
+                                "runtime: leaving the cluster failed: {}",
+                                e
+                            );
+                        }
+                    }
+                    if let Some(origin) = origin {
+                        origin.release().await;
+                    }
+                    Ok(())
+                })
+            })),
+        });
         // The two sweeps of the minted table, each once for the cluster:
         // the tombstones of ended rows past persistence.mintedRetention, and
         // the rows no start will read again (#333).
@@ -531,7 +625,8 @@ impl Stack {
             barrier,
             gate,
             caches,
-            runs: run_store,
+            origin,
+            cluster_mode: resolved,
         })
     }
 
@@ -547,25 +642,7 @@ impl Stack {
         if let Some(sets) = self.persistence.key_sets() {
             sets.open_or_make("").await?;
         }
-        // WHICH CLUSTER MODE, and the refusals that are configuration's
-        // (`cluster.js`'s `resolve()`), before this node joins.
-        let s = &self.settings;
-        let (cluster_mode, why) = resolve_mode(&ModeSettings {
-            cluster_mode: s.value_of("cluster.mode").as_str().to_string(),
-            persistence_mode: s
-                .value_of("persistence.mode")
-                .as_str()
-                .to_string(),
-            product: self.mode.current() == "product",
-            global_mode: s.value_of("global.mode").as_str().to_string(),
-            keys_source: s.value_of("keys.source").as_str().to_string(),
-            public_base_url: s
-                .value_of("global.publicBaseUrl")
-                .as_str()
-                .to_string(),
-            minted: s.value_of("persistence.minted").as_bool(),
-        })
-        .map_err(|r| format!("{}cluster: {}", tag(r.code), r.why))?;
+        let (cluster_mode, why) = self.cluster_mode.clone();
         tracing::debug!("cluster: {:?} ({})", cluster_mode, why);
         // A STORE IS SHARED BY COORDINATION (`coordinationRefusal()`):
         // several processes on one store with no change log answer wrongly.
@@ -579,27 +656,9 @@ impl Stack {
             node.set_mode(cluster_mode);
             node.join().await?;
         }
-        // The run rows the store gave back: a finished run's row is let
-        // go, every other is admitted to the scheduler's watch (the
-        // `scheduler.runs` restore hook's work, done here until the store
-        // offers the hook).
-        for realm in self.registry.list() {
-            let id = realm.id.clone();
-            for row in self.runs.rows(&id) {
-                let key = row
-                    .get("runId")
-                    .and_then(Json::as_str)
-                    .unwrap_or_default()
-                    .to_string();
-                if self.scheduler.is_expiring_run(&row) {
-                    if !key.is_empty() {
-                        self.runs.delete(&id, &key);
-                    }
-                } else {
-                    self.scheduler.note_admitted(&id, &row);
-                }
-            }
-        }
+        // The run rows the store gave back went through the run store's
+        // reconcile as they were restored: each shown to the scheduler's
+        // watch, a finished interval run not held.
         self.scheduler.start(false);
         Ok(())
     }
@@ -637,11 +696,8 @@ impl Stack {
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn stop(&self) {
         self.scheduler.stop();
-        if let Some(node) = &self.node {
-            if let Err(e) = node.leave().await {
-                tracing::warn!("runtime: leaving the cluster failed: {}", e);
-            }
-        }
+        // The last flush, then the cluster left and the origin released
+        // (the store's `before_close` step), then the pool closed.
         if let Err(e) = self.persistence.stop().await {
             tracing::error!(
                 "{}runtime: the store could not be closed cleanly: {}",
