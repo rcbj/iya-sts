@@ -98,6 +98,9 @@ pub type StoreStep = Arc<
         + Sync,
 >;
 
+/// What configures minted persistence before it restores.
+pub type MintedSetup = Arc<dyn Fn(&crate::minted::Minted) + Send + Sync>;
+
 /// What the composition root runs at the points of [`Persistence::start`]
 /// and [`Persistence::stop`] that only it can fill, because what runs there
 /// is not the store's (`openStore()`'s and `stop()`'s chains in Node, which
@@ -115,8 +118,7 @@ pub struct StoreHooks {
     /// store files beside its rows and which rows a start reads
     /// (`set_index_hooks()`, `set_restore_expiring()`), which a store's
     /// declaration says in Node and the composition root says here.
-    pub configure_minted:
-        Option<Arc<dyn Fn(&crate::minted::Minted) + Send + Sync>>,
+    pub configure_minted: Option<MintedSetup>,
     /// Every write this process owed made, and the store not yet closed:
     /// `cluster.leave()` and `releaseOrigin()`, each a statement. A failure
     /// is logged; the store is closed anyway.
