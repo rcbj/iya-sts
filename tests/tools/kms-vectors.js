@@ -427,7 +427,22 @@ function forgeOpen(der, password) {
   const forge = require('node-forge');
   const asn1 = forge.asn1.fromDer(forge.util.createBuffer(
     der.toString('binary')));
-  const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, true, password);
+  // A PBES2 PASSWORD IS ITS UTF-8 BYTES to OpenSSL — what built this, what
+  // `azure_identity` opens it with and what node's TLS opened it with above
+  // — while forge hands PBES2 the string's char codes; its MAC, a BMPString,
+  // is right either way. So PBES2 is given the UTF-8 form here, or a
+  // password beyond ASCII would be refused by forge alone.
+  const getCipher = forge.pki.pbe.getCipher;
+  forge.pki.pbe.getCipher = function (oid, params, pw) {
+    return getCipher(oid, params, oid === forge.pki.oids.pkcs5PBES2 ?
+      forge.util.encodeUtf8(pw) : pw);
+  };
+  let p12;
+  try {
+    p12 = forge.pkcs12.pkcs12FromAsn1(asn1, true, password);
+  } finally {
+    forge.pki.pbe.getCipher = getCipher;
+  }
   const certBags = p12.getBags({ bagType: forge.pki.oids.certBag })[
     forge.pki.oids.certBag] || [];
   const keyBags = (p12.getBags({
