@@ -44,6 +44,7 @@ members = [
   "crates/sts-tls",
   "crates/sts-kerberos",
   "crates/sts-ldap",
+  "crates/sts-policy",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -73,6 +74,7 @@ sts-xml = { path = "crates/sts-xml" }
 sts-tls = { path = "crates/sts-tls" }
 sts-kerberos = { path = "crates/sts-kerberos" }
 sts-ldap = { path = "crates/sts-ldap" }
+sts-policy = { path = "crates/sts-policy" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
@@ -113,6 +115,9 @@ md4 = "0.11"
 md-5 = "0.11"
 rc4 = "0.2"
 thiserror = "2.0"
+# NFKC, for the password policy's context-word check (#1505), as node's
+# String.prototype.normalize does it.
+unicode-normalization = "0.1"
 brotli = "8"
 futures-util = "0.3"
 encoding_rs = "0.8"

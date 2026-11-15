@@ -2519,6 +2519,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-policy"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "sts-model",
+ "tracing",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "sts-runtime"
 version = "0.1.0"
 dependencies = [
