@@ -648,6 +648,13 @@ impl AuditExport {
             .unwrap_or_default()
     }
 
+    /// A destination's cursor as the store holds it, for a page or a
+    /// test.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn stored_cursor(&self, id: &str) -> Option<Json> {
+        self.ports.maps.cursor(id)
+    }
+
     fn put_cursor(&self, id: &str, cursor: &Cursor) {
         let value = serde_json::to_value(cursor).unwrap_or(Json::Null);
         self.ports.maps.put_cursor(id, value);
@@ -1156,8 +1163,12 @@ impl AuditExport {
             } else {
                 None
             };
-            let servername =
-                if address::is_ip(&host) { None } else { Some(host) };
+            // `tls.connect()`'s server name; `net.connect()` takes none.
+            let servername = if transport != "tls" || address::is_ip(&host) {
+                None
+            } else {
+                Some(host)
+            };
             let opened = self
                 .ports
                 .syslog

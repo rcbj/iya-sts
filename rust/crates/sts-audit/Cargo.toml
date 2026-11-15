@@ -25,6 +25,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+regex.workspace = true
 sts-store.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
