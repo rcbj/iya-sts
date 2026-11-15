@@ -527,6 +527,51 @@ impl SignIn {
             truthy(Some(&self.facts.setting("authn.unauthenticatedSessions")))
                 && locked.is_empty()
                 && restricted.is_empty();
+        // `passkeyOffered(record)`: the realm's settings, then the record's.
+        let passkey = screen_offered
+            && truthy(key_policy.get("enabled"))
+            && truthy(key_policy.get("primaryAllowed"))
+            && truthy(key_policy.get("usernameless"))
+            && locked.is_empty()
+            && self.facts.authn_allows("passkey", "primary")
+            && SignIn::offers(&restricted, "webauthn");
+        let force_key = truthy(record.get("forceKey"));
+        let force_mfa = truthy(record.get("forceMfa"));
+        let id = text(record.get("id"));
+        let on = |key: &str| truthy(Some(&self.facts.setting(key)));
+        // `kerberosOption(record)`.
+        let kerberos = if !on("krb5.spnegoAuthentication")
+            || !on("krb5.spnegoLoginButton")
+        {
+            Json::Null
+        } else if force_key && !force_mfa {
+            json!({ "state": "withheld-key", "href": "" })
+        } else if force_mfa {
+            json!({ "state": "withheld-mfa", "href": "" })
+        } else {
+            let at = if self.facts.predicate("hidesStepIds") {
+                String::new()
+            } else {
+                format!("?authn={}", encode_component(&id))
+            };
+            json!({ "state": "offered", "href": format!("/authn/spnego{}", at) })
+        };
+        // `walletOption(record)`.
+        let wallet = if !on("oid4vp.signIn") {
+            Json::Null
+        } else if force_key {
+            json!({ "state": "withheld", "mfaNote": false, "href": "",
+                    "siop": "" })
+        } else {
+            let href = format!("/authn/wallet?authn={}", encode_component(&id));
+            let siop = if on("oid4vp.signInSelfIssued") {
+                format!("{}&siop=1", href)
+            } else {
+                String::new()
+            };
+            json!({ "state": "offered", "mfaNote": force_mfa, "href": href,
+                    "siop": siop })
+        };
         let partners_offered =
             locked.is_empty() && SignIn::offers(&restricted, "federation");
         let kerberos_offered =
@@ -552,7 +597,7 @@ impl SignIn {
                          "via": text(record.get("mechanismVia")) },
             "remember": remember,
             "anonymous": anonymous,
-            "passkey": false,
+            "passkey": passkey,
             "usernameless": false,
             "email": email,
             "clientDisplay": self.facts.client_display(&text(record.get("application"))),
@@ -566,8 +611,8 @@ impl SignIn {
                     .filter(|p| p.as_array().is_some_and(|a| !a.is_empty()))
                     .map(|_| Json::Null).unwrap_or(Json::Null)
             } else { Json::Null },
-            "kerberos": if kerberos_offered { Json::Null } else { Json::Null },
-            "wallet": if wallet_offered { Json::Null } else { Json::Null },
+            "kerberos": if kerberos_offered { kerberos } else { Json::Null },
+            "wallet": if wallet_offered { wallet } else { Json::Null },
             "verifiesCredentials": self.facts.predicate("verifiesCredentials"),
             "fingerprint": self.facts.fingerprinting(),
             "details": details,
@@ -1630,9 +1675,22 @@ impl SignIn {
         }
         links["totp"] = json!(page == "webauthn" && alternate == "totp");
         links["webauthn"] = json!(page == "totp" && alternate == "webauthn");
-        // The wallet as a second factor is phase 9's (OID4VP): offered
-        // only where `oid4vp.signIn` is on, which it is not by default.
-        links["wallet"] = json!(false);
+        // The wallet as the second factor (#38): its doors are phase 9's
+        // (OID4VP), the link Node's (`stepAllowsWallet()`).
+        let allowed: Vec<String> = step
+            .get("mfaAllowed")
+            .and_then(Json::as_array)
+            .map(|l| l.iter().map(|v| text(Some(v))).collect())
+            .unwrap_or_default();
+        let allows_wallet = truthy(step.get("thenEnrol"))
+            || allowed.is_empty()
+            || allowed.iter().any(|a| a == "wallet");
+        links["wallet"] = json!(
+            !SignIn::first_amr_of(step).iter().any(|a| a == "pop")
+                && !truthy(step.get("passwordless"))
+                && truthy(Some(&self.facts.setting("oid4vp.signIn")))
+                && allows_wallet
+        );
         links["password"] = json!(truthy(step.get("passwordAlternate")));
         let email = text(step.get("email"));
         links["email"] = json!(if email == "code" || email == "link" {

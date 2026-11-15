@@ -320,9 +320,9 @@ impl authn_ports::Accounts for DirectoryPorts {
 
 impl cred_ports::CredentialDirectory for DirectoryPorts {
     fn read_password(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self
-            .person(name)
-            .and_then(|(_, _, e)| first(&e, "userPassword")))
+        Ok(self.person(name).and_then(|(_, _, e)| {
+            first(&e, sts_credentials::credentials::PASSWORD_ATTRIBUTE)
+        }))
     }
 
     fn write_password(
@@ -371,19 +371,23 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
     }
 
     fn read_totp(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self
-            .person(name)
-            .and_then(|(_, _, e)| first(&e, "stsTotpSecret")))
+        Ok(self.person(name).and_then(|(_, _, e)| {
+            first(&e, sts_credentials::credentials::TOTP_ATTRIBUTE)
+        }))
     }
 
     fn write_totp(&self, name: &str, value: Option<&str>) -> Hook<bool> {
-        self.write(name, "stsTotpSecret", value.map(|v| vec![v.to_string()]))
+        self.write(
+            name,
+            sts_credentials::credentials::TOTP_ATTRIBUTE,
+            value.map(|v| vec![v.to_string()]),
+        )
     }
 
     fn read_backup_codes(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self
-            .person(name)
-            .and_then(|(_, _, e)| first(&e, "stsBackupCodes")))
+        Ok(self.person(name).and_then(|(_, _, e)| {
+            first(&e, sts_credentials::credentials::BACKUP_CODES_ATTRIBUTE)
+        }))
     }
 
     fn write_backup_codes(
@@ -391,13 +395,17 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
         name: &str,
         value: Option<&str>,
     ) -> Hook<bool> {
-        self.write(name, "stsBackupCodes", value.map(|v| vec![v.to_string()]))
+        self.write(
+            name,
+            sts_credentials::credentials::BACKUP_CODES_ATTRIBUTE,
+            value.map(|v| vec![v.to_string()]),
+        )
     }
 
     fn read_app_passwords(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self
-            .person(name)
-            .and_then(|(_, _, e)| first(&e, "stsAppPassword")))
+        Ok(self.person(name).and_then(|(_, _, e)| {
+            first(&e, sts_credentials::credentials::APP_PASSWORDS_ATTRIBUTE)
+        }))
     }
 
     fn write_app_passwords(
@@ -405,7 +413,11 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
         name: &str,
         value: Option<&str>,
     ) -> Hook<bool> {
-        self.write(name, "stsAppPassword", value.map(|v| vec![v.to_string()]))
+        self.write(
+            name,
+            sts_credentials::credentials::APP_PASSWORDS_ATTRIBUTE,
+            value.map(|v| vec![v.to_string()]),
+        )
     }
 
     fn read_webauthn(&self, name: &str) -> Hook<Vec<Json>> {
@@ -731,9 +743,12 @@ impl SignInFacts for Facts {
 
     fn key_policy(&self) -> Json {
         let u = &self.unconfigured;
+        // `usernameless`: the passkey policy's allowUsernameless, on by
+        // default (no named passkey policy is read here yet).
         json!({ "enabled": u.key_setting("webauthn.enabled", true),
                 "mfaAllowed": u.key_setting("webauthn.mfaAllowed", true),
-                "primaryAllowed": u.key_setting("webauthn.primaryAllowed", true) })
+                "primaryAllowed": u.key_setting("webauthn.primaryAllowed", true),
+                "usernameless": true })
     }
 
     fn key_use_allowed(
@@ -790,7 +805,7 @@ impl SignInFacts for Facts {
     }
 
     fn remembers_browsers(&self) -> bool {
-        false
+        self.env.setting("devices.browserDevices") != Json::Bool(false)
     }
 
     fn offers_password_reset(&self) -> bool {
