@@ -146,6 +146,8 @@ pub struct AdminParts {
     /// The identity register, written by every sign-in and read by the
     /// views (`admin_identity.rs`).
     pub identities: Arc<identity::IdentityRecords>,
+    /// The audit log (`sts-audit`), for `GET /admin-api/audit`.
+    pub audit: Arc<sts_audit::AuditLog>,
 }
 
 /// The journal of a request's writes: `(realm, key)` of every entry the
@@ -709,18 +711,20 @@ impl rp::BootstrapName for Bootstrap {
     }
 }
 
-/// The audit rows the registers write, to the log.
-struct LogAudit;
+/// The audit rows the registers write, into the audit log
+/// (`common/audit.js`): `record()` is `audit()` here, the ring's one
+/// entry point that cannot fail.
+struct LogAudit(Arc<sts_audit::AuditLog>);
 
 impl rp::Audit for LogAudit {
     fn audit(&self, row: &Json) {
-        tracing::info!("audit: {}", row);
+        self.0.audit(row);
     }
     fn record(&self, row: &Json) {
-        tracing::info!("audit: {}", row);
+        self.0.audit(row);
     }
     fn failure(&self, code: sts_core::errors::ErrorCode, row: &Json) {
-        tracing::info!("{}audit: {}", sts_core::log::tag(code), row);
+        self.0.failure(code.as_str(), row);
     }
 }
 
@@ -858,6 +862,7 @@ struct RosterRoles {
     dir: Arc<LiveDir>,
     settings: Arc<Settings>,
     mode: Arc<RegMode>,
+    audit: Arc<sts_audit::AuditLog>,
 }
 
 impl RosterRoles {
@@ -868,7 +873,7 @@ impl RosterRoles {
                 realm: realm_id.to_string(),
             })),
             Arc::new(RegSettings(self.settings.clone())),
-            Arc::new(LogAudit),
+            Arc::new(LogAudit(self.audit.clone())),
             self.mode.clone(),
             Arc::new(Bootstrap(self.settings.clone(), self.mode.mode.clone())),
         )
@@ -1866,7 +1871,7 @@ impl AdminStack {
                 },
                 persistence: parts.persistence.clone(),
             }),
-            Arc::new(sts_registers::applications::env::NoEffects),
+            Arc::new(crate::solo::AuditedEffects(parts.audit.clone())),
         ));
         let accepts = mode.clone();
         let clients: Arc<dyn Clients> =
@@ -1891,6 +1896,7 @@ impl AdminStack {
             dir: dir.clone(),
             settings: settings.clone(),
             mode: reg_mode.clone(),
+            audit: parts.audit.clone(),
         });
         let roles = Arc::new(sts_registers::roles::Roles::new(
             Some(Arc::new(RoleDir(dir.clone(), settings.clone()))),
@@ -1924,7 +1930,7 @@ impl AdminStack {
                 sts_registers::role_permissions::RolePermissionsDeps {
                     roles,
                     applications: Arc::new(RegApps(apps.clone())),
-                    audit: Arc::new(LogAudit),
+                    audit: Arc::new(LogAudit(parts.audit.clone())),
                     roster: roster.clone(),
                     ownership: Arc::new(owners::Owns(ownership.clone())),
                     gate: Arc::new(RoleIssuance),
@@ -1954,14 +1960,14 @@ impl AdminStack {
                     mode: mode.clone(),
                     registry: parts.registry.clone(),
                 }),
-                audit: Arc::new(LogAudit),
+                audit: Arc::new(LogAudit(parts.audit.clone())),
             },
             Arc::new(sts_registers::people::AccountState::new(
                 credentials,
                 Arc::new(Names),
                 Some(Arc::new(EndEverything(parts.logout.clone()))),
                 Arc::new(NoEffects),
-                Arc::new(LogAudit),
+                Arc::new(LogAudit(parts.audit.clone())),
             )),
         ));
         let announcements = RealmMap::new(
@@ -2056,6 +2062,8 @@ impl AdminStack {
                         parts.oauth.tokens.register.clone(),
                         dir.clone(),
                     )),
+                    audit: parts.audit.clone(),
+                    persistence: parts.persistence.clone(),
                 }),
                 persistence: parts.persistence.clone(),
                 apps,

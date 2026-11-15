@@ -646,6 +646,8 @@ pub struct Host {
     pub registry: Arc<RealmRegistry>,
     pub people: Arc<dyn People>,
     pub secret: Vec<u8>,
+    /// The audit log (the HTTP layer's); `None` writes rows to the log.
+    pub audit: Option<Arc<sts_audit::AuditLog>>,
 }
 
 impl HostPort for Host {
@@ -661,14 +663,24 @@ impl HostPort for Host {
         self.mode.verifies_credentials()
     }
 
-    // `sts-audit` is not in the runtime yet: the row goes to the log, as
-    // the sign-in surface's do.
+    // `audit.audit(row)` and `audit.failure(code, row)`, into the ring the
+    // HTTP layer writes its call log to.
     fn audit(&self, row: &Value) {
-        tracing::info!("audit: {}", row);
+        match &self.audit {
+            Some(log) => {
+                log.audit(row);
+            }
+            None => tracing::info!("audit: {}", row),
+        }
     }
 
     fn audit_failure(&self, code: &str, row: &Value) {
-        tracing::info!("audit: {} {}", code, row);
+        match &self.audit {
+            Some(log) => {
+                log.failure(code, row);
+            }
+            None => tracing::info!("audit: {} {}", code, row),
+        }
     }
 
     fn subject_for_name(&self, name: &str) -> String {
@@ -827,6 +839,7 @@ impl LogoutStack {
                 registry: parts.registry.clone(),
                 people: parts.people.clone(),
                 secret: result_secret(),
+                audit: parts.http.audit_log(),
             }),
         };
         let logout = Arc::new(Logout::new(deps));

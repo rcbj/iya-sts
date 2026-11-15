@@ -106,6 +106,10 @@ pub struct Stack {
     pub node_name: String,
     /// SAML 2.0 (`10a`, #444 phase 7): its stores and the routes ported.
     pub saml: Arc<crate::saml::SamlStack>,
+    /// The audit log (`common/audit.js`).
+    pub audit: Arc<sts_audit::AuditLog>,
+    /// Its two stores, read back into it once the store is open.
+    pub audit_ring: Arc<sts_audit::store::StoreRing>,
 }
 
 /// The change-log pull the read barrier waits on: `syncNow()`, a pull that
@@ -343,7 +347,7 @@ impl Stack {
         };
         let persistence = Persistence::new(
             chosen,
-            driver,
+            driver.clone(),
             settings.clone(),
             lifecycle.clone(),
             directory.clone(),
@@ -351,6 +355,36 @@ impl Stack {
         // Every declared store's writes are minted state, journalled for
         // the store once it opens (where minted state is persisted).
         persistence.attach_minted(handles.clone());
+        // The audit log (`common/audit.js`): the ring per realm every row
+        // of this process lands in, the call log's included, mirrored into
+        // `audit.events` and `audit.nums` (persisted where minted state
+        // is), the other processes' rows read through the fan-in, each row
+        // checksummed under the keystore's digest key, and its origin the
+        // change log's.
+        let audit_ring =
+            sts_audit::store::StoreRing::declare(&lifecycle, &handles);
+        let audit = {
+            let mut ports = sts_audit::AuditPorts::local(settings.clone());
+            ports.sink = Some(audit_ring.clone());
+            ports.replication =
+                Some(Arc::new(sts_audit::store::FanInReplication(Arc::new(
+                    crate::solo::StoreContributions(Arc::downgrade(
+                        &persistence,
+                    )),
+                ))));
+            let keys = Arc::downgrade(&persistence);
+            ports.digest = Some(Arc::new(move |label: &str, text: &str| {
+                keys.upgrade()?.data_keys().keyed_digest(label, text)
+            }));
+            let log_of = driver.clone();
+            ports.origin = Arc::new(move || {
+                log_of
+                    .as_ref()
+                    .and_then(|d| d.change_log().map(|l| l.origin()))
+                    .unwrap_or_default()
+            });
+            Arc::new(sts_audit::AuditLog::new(ports))
+        };
 
         // The scheduler's run rows: persisted, tombstoned, merged by rank,
         // each row's expiry the scheduler's own (a forward reference, read
@@ -458,7 +492,7 @@ impl Stack {
                 claims,
                 rows: run_store.clone(),
                 realms: registry.clone(),
-                audit: Arc::new(LogAudit),
+                audit: Arc::new(LogAudit(audit.clone())),
                 clock,
                 host,
                 pid: std::process::id(),
@@ -670,6 +704,7 @@ impl Stack {
             settings.clone(),
             mode.clone(),
         );
+        http.set_audit(audit.clone());
         let root = sts_http::files::WebRoot::from_env();
         let version_info = sts_core::version::load(&root.0);
         let version = version_info.version.clone();
@@ -757,6 +792,7 @@ impl Stack {
                 persistence: persistence.clone(),
                 version,
                 records: Some(records.clone()),
+                audit: Some(audit.clone()),
             },
         );
         // THE REALM CHOOSER in front of /admin, /portal and /report
@@ -786,6 +822,7 @@ impl Stack {
         });
         let oauth =
             crate::oauth::OAuthStack::declare(crate::oauth::OAuthParts {
+                audit: audit.clone(),
                 settings: settings.clone(),
                 mode: mode.clone(),
                 registry: registry.clone(),
@@ -860,6 +897,7 @@ impl Stack {
                 version: version_info,
                 logout: logout.logout.clone(),
                 identities,
+                audit: audit.clone(),
             },
         );
         let authn_routes = authn_routes.merge(admin.router());
@@ -919,6 +957,8 @@ impl Stack {
             listener_keys,
             node_name,
             saml,
+            audit,
+            audit_ring,
         })
     }
 
@@ -927,6 +967,10 @@ impl Stack {
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
+        // The ring the store kept, per realm (`realms.arr()` restored).
+        let realms: Vec<String> =
+            self.registry.list().iter().map(|r| r.id.clone()).collect();
+        self.audit_ring.restore_into(&self.audit, &realms);
         // THE SECRETS EVERY NODE AGREES ON (`clusterSecrets.start()`,
         // after the keystore opens and before anything is served): the
         // pairwise key among them, Node's row read as Node sealed it.

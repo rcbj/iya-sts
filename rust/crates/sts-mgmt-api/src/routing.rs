@@ -104,7 +104,9 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::GrantAdminRole
         | Operation::RevokeAdminRole
         | Operation::GetDirectoryEntries
-        | Operation::GetDirectoryService => Some(Handler::View),
+        | Operation::GetDirectoryService
+        | Operation::GetAudit
+        | Operation::GetAuditIntegrity => Some(Handler::View),
         Operation::CreateGroup | Operation::AddGroupMember => {
             Some(Handler::GroupsAction)
         }

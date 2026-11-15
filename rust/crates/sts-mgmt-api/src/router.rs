@@ -463,6 +463,10 @@ pub fn handle(
         ),
         (None, None) => express_404(method, &original_url_path(original_url)),
     };
+    // `res.locals.apiCaller`: the call log's row names the token's subject.
+    if let Some(c) = caller.as_deref() {
+        sts_http::call_log::set_api_caller(&c.name, c.owner);
+    }
     response.extensions_mut().insert(ApiCaller(caller));
     response
 }

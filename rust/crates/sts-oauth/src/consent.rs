@@ -29,9 +29,9 @@
 //! runtime reads no `authorization_details`, so no detail is ever asked
 //! about and no limit lowered), the issuance gate's consent stage
 //! (`gate.checkScopes()`, whose default policy is the rule ported here: a
-//! scope needs an answer where consent is required and nothing covers it),
-//! and the audit ring (the rows go to the log, as the runtime's other audit
-//! rows do).
+//! scope needs an answer where consent is required and nothing covers it).
+//! The audit rows go into the request's ring (`sts_http::call_log::audit`),
+//! to the log where there is none.
 
 use std::sync::Arc;
 
@@ -892,14 +892,23 @@ impl ConsentScreen {
             .unwrap_or_default();
         let return_to = s(record.get("returnTo"));
         if action != "allow" {
-            tracing::info!(
-                "{}audit: consent.deny actor={} target={} protocol=OAuth \
-                 2.0 / OIDC outcome=refused detail=refused {}",
-                sts_core::log::tag(codes::STS_OAUTH_0152),
-                username,
-                client_id,
-                scopes.join(", ")
-            );
+            let row = json!({
+                "action": "consent.deny",
+                "actor": username,
+                "target": client_id,
+                "protocol": "OAuth 2.0 / OIDC",
+                "channel": "http",
+                "outcome": "refused",
+                "errorCode": codes::STS_OAUTH_0152.as_str(),
+                "detail": format!("refused {}", scopes.join(", ")),
+            });
+            if !sts_http::call_log::audit(&row) {
+                tracing::info!(
+                    "{}audit: {}",
+                    sts_core::log::tag(codes::STS_OAUTH_0152),
+                    row
+                );
+            }
             tracing::info!(
                 "consent: \"{}\" refused \"{}\" the scope(s) {}. Nothing was \
                  recorded and nothing was issued; the client is told \
@@ -931,13 +940,12 @@ impl ConsentScreen {
         }
         let (stored, reason) =
             self.register.record(&username, &client_id, &scopes);
-        tracing::info!(
-            "audit: consent.grant actor={} target={} protocol={} outcome={} \
-             detail=consented {}{}",
-            username,
-            client_id,
-            s(record.get("protocol")),
-            if stored { "success" } else { "warning" },
+        let protocol = match s(record.get("protocol")) {
+            p if p.is_empty() => "OAuth 2.0 / OIDC".to_string(),
+            p => p,
+        };
+        let detail = format!(
+            "consented {}{}",
             scopes.join(", "),
             if stored {
                 String::new()
@@ -952,6 +960,18 @@ impl ConsentScreen {
                 )
             }
         );
+        let row = json!({
+            "action": "consent.grant",
+            "actor": username,
+            "target": client_id,
+            "protocol": protocol,
+            "channel": "http",
+            "outcome": if stored { "success" } else { "warning" },
+            "detail": detail,
+        });
+        if !sts_http::call_log::audit(&row) {
+            tracing::info!("audit: {}", row);
+        }
         ActOutcome::Back {
             target: return_to,
             username,

@@ -17,8 +17,9 @@
 //!   of the group `admin.writeGroup` names. The open-console bootstrap is
 //!   not here, which is what the enrollment core asks of it anyway ("an
 //!   empty roster grants nothing here").
-//! * The issuance gate, the audit, the signals and the monitor are
-//!   [`crate::ports::Quiet`] until their families are in the runtime.
+//! * The issuance gate and the signals are [`crate::ports::Quiet`] until
+//!   their families are in the runtime; the audit rows go to the audit log
+//!   the HTTP layer writes its call log to ([`RingAudit`]).
 //!
 //! [`EnrollStack::declare`] declares the stores before the store opens;
 //! [`EnrollStack::router`] builds the three families once the certificate
@@ -468,6 +469,29 @@ pub struct RuntimeParts {
     pub http: Arc<sts_http::HttpLayer>,
 }
 
+/// `audit.record(row)` and `audit.failure(code, row)` into the audit log;
+/// to the log where the runtime has none (`Quiet`'s answer).
+pub struct RingAudit(pub Option<Arc<sts_audit::AuditLog>>);
+
+impl crate::ports::Audit for RingAudit {
+    fn record(&self, row: &Json) {
+        match &self.0 {
+            Some(log) => {
+                log.audit(row);
+            }
+            None => crate::ports::Audit::record(&Quiet, row),
+        }
+    }
+    fn failure(&self, code: sts_core::errors::ErrorCode, row: &Json) {
+        match &self.0 {
+            Some(log) => {
+                log.failure(code.as_str(), row);
+            }
+            None => crate::ports::Audit::failure(&Quiet, code, row),
+        }
+    }
+}
+
 /// The three families' stores, declared before the store opens.
 pub struct EnrollStack {
     pub acme: AcmeStore,
@@ -553,7 +577,7 @@ impl EnrollStack {
                 settings: parts.settings.clone(),
             }),
             gate: quiet.clone(),
-            audit: quiet.clone(),
+            audit: Arc::new(RingAudit(parts.http.audit_log())),
             signals: quiet.clone(),
             monitor: monitor.clone(),
             keystore,

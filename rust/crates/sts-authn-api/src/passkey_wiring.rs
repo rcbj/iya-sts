@@ -10,7 +10,7 @@
 //! | `PolicySource` | the settings and mode, and the stored passkey profiles read by `sts-policy`'s passkey kind over the live directory's `ou=passkeyPolicies` |
 //! | `KeyPorts` | the live directory's `stsWebauthnCredential` and user-handle attributes (`writeWebauthn()`, `readWebauthnUserHandle()`, `writeWebauthnUserHandle()`, `webauthnUserHandleOwner()`), a process's claims and counters, and the ceremony log |
 //! | `AttestationPorts` | the WebAuthn policy's attestation settings; no FIDO metadata BLOB, no Android status list and no revocation service is loaded in this runtime, so each answers as Node does with none loaded |
-//! | `AuditSink` | the log (`sts-audit` is not in the sign-in stack yet, as for every other audit row here) |
+//! | `AuditSink` | the audit log (`sts-audit`) the runtime hands in, else the log |
 //! | `PostLogin` | a process's progress rows; no post-login policy is read here, so none is ever due |
 //!
 //! WHAT REPLACED WHAT, AND WHAT IS OWED. Node's `claims.claim()` and
@@ -339,12 +339,18 @@ impl PolicySource for Source {
     }
 }
 
-/// The audit rows the ceremony log writes, to the log.
-pub struct LogAudit;
+/// The audit rows the ceremony log writes: to the audit log, or to the
+/// log where the runtime handed none.
+pub struct LogAudit(pub Option<Arc<sts_audit::AuditLog>>);
 
 impl AuditSink for LogAudit {
     fn audit(&self, row: &Json) {
-        tracing::info!("audit: {}", row);
+        match &self.0 {
+            Some(log) => {
+                log.audit(row);
+            }
+            None => tracing::info!("audit: {}", row),
+        }
     }
 }
 

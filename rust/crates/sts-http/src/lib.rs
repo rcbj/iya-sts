@@ -37,14 +37,17 @@
 //!    it. Do not make it prettier.
 //!
 //! A refusal carries its error code on the response ([`mark`]); it is
-//! recorded, never sent. The call log and the audit rows are the audit
-//! slice's, a later phase's: this layer logs what it refused.
+//! recorded, never sent. **The call log** ([`call_log`]) writes one audit
+//! row per answered request in the request's realm, carrying that code or
+//! the generic code of a failed status, once [`HttpLayer::set_audit`] has
+//! been given the log.
 
 #![forbid(unsafe_code)]
 
 pub mod assets;
 pub mod body;
 pub mod branding;
+pub mod call_log;
 pub mod client_address;
 pub mod cookie_wire;
 pub mod cors;
@@ -208,6 +211,7 @@ pub async fn not_found(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static("default-src 'none'"),
     );
+    response.extensions_mut().insert(call_log::Unrouted);
     response
 }
 
@@ -516,6 +520,10 @@ pub struct HttpLayer {
     pre_route: RwLock<Vec<Arc<dyn PreRoute>>>,
     routes: RwLock<Vec<Arc<dyn Routes>>>,
     budget: Mutex<Budget>,
+    /// The audit log the call log writes to (`call_log.rs`); none is no
+    /// row, as before the audit slice.
+    audit: RwLock<Option<Arc<sts_audit::AuditLog>>>,
+    actors: RwLock<Option<Arc<dyn call_log::ActorResolver>>>,
 }
 
 impl HttpLayer {
@@ -553,7 +561,31 @@ impl HttpLayer {
                 counts: std::collections::HashMap::new(),
                 told: std::collections::HashSet::new(),
             }),
+            audit: RwLock::new(None),
+            actors: RwLock::new(None),
         }
+    }
+
+    /// Fills the audit log every answered request is recorded in.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_audit(&self, log: Arc<sts_audit::AuditLog>) {
+        if let Ok(mut slot) = self.audit.write() {
+            *slot = Some(log);
+        }
+    }
+
+    /// Fills the actor resolver (`setActorResolver()`).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_actor_resolver(&self, r: Arc<dyn call_log::ActorResolver>) {
+        if let Ok(mut slot) = self.actors.write() {
+            *slot = Some(r);
+        }
+    }
+
+    /// The audit log the layer writes to, where it was given one.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn audit_log(&self) -> Option<Arc<sts_audit::AuditLog>> {
+        self.audit.read().ok().and_then(|a| a.clone())
     }
 
     /// Fills the applications' half of the CORS decision.
@@ -795,9 +827,83 @@ fn repeated_parameter(path: &str, query: &str, body: Option<&str>) -> bool {
         || b.iter().any(|n| repeated(&b, n))
 }
 
-/// The whole of the middleware, in Node's order.
+/// The whole of the middleware, in Node's order, inside the request's
+/// call-log state (`call_log.rs`); the row is written once the answer is
+/// final.
 async fn serve(
     State(layer): State<Arc<HttpLayer>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let log = layer.audit_log();
+    let Some(log) = log else {
+        return serve_inner(layer, request, next).await;
+    };
+    let started = std::time::Instant::now();
+    let method = request.method().to_string();
+    let original_url = request
+        .uri()
+        .path_and_query()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| "/".to_string());
+    let query = call_log::query_map(request.uri().query().unwrap_or(""));
+    let peer = request.extensions().get::<client_address::Peer>().copied();
+    let address = layer.client_address_of(request.headers(), peer.as_ref());
+    let (actor, session) = layer
+        .actors
+        .read()
+        .ok()
+        .and_then(|a| a.clone())
+        .map(|r| r.actor_of(request.headers()))
+        .unwrap_or_default();
+    let realm = layer
+        .registry
+        .match_path(request.uri().path())
+        .map(|found| found.realm.clone());
+    let state = call_log::CallState::new(Some(log.clone()));
+    let response = call_log::CALL
+        .scope(
+            state.clone(),
+            sts_audit::AuditLog::scope_source(
+                address.clone(),
+                serve_inner(layer, request, next),
+            ),
+        )
+        .await;
+    let (content_type, body) = state
+        .body
+        .lock()
+        .ok()
+        .and_then(|b| b.clone())
+        .map_or((String::new(), None), |(t, b)| (t, Some(b)));
+    let exchange = sts_audit::HttpExchange {
+        method,
+        original_url,
+        query,
+        body,
+        content_type,
+        status: response.status().as_u16(),
+        marked: code_of(&response).map(|c| c.as_str().to_string()),
+        route: String::new(),
+        matched: response.extensions().get::<call_log::Unrouted>().is_none(),
+        duration_ms: started.elapsed().as_millis() as f64,
+        address,
+        actor,
+        session,
+        api_caller: state.caller.lock().ok().and_then(|c| c.clone()),
+        quiet_when_ok: false,
+        incident: Some(state.take_incident()).filter(|n| *n > 0),
+    };
+    match realm {
+        Some(r) => realm::run_sync(r, || log.record_http(&exchange)),
+        None => log.record_http(&exchange),
+    };
+    response
+}
+
+/// The middleware itself.
+async fn serve_inner(
+    layer: Arc<HttpLayer>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -989,6 +1095,14 @@ async fn below_security(
                     .get::<body::ParsedBody>()
                     .and_then(|p| p.text.clone())
                     .unwrap_or_default();
+                if !cors_request.body.is_empty() {
+                    let content_type = request
+                        .headers()
+                        .get(header::CONTENT_TYPE)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("");
+                    call_log::keep_body(content_type, &cors_request.body);
+                }
                 let refuses_repeats = layer
                     .mode
                     .as_ref()

@@ -21,8 +21,9 @@ pub mod export;
 mod js;
 pub mod log;
 pub mod row;
+pub mod store;
 pub mod view;
 pub mod vocabulary;
 
-pub use log::{AuditLog, AuditPorts, HttpExchange};
+pub use log::{ApiCaller, AuditLog, AuditPorts, HttpExchange};
 pub use row::AuditRow;

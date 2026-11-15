@@ -28,8 +28,8 @@
 //! * no device is recognised, no risk is assessed, no attribute source is
 //!   read, no browser is remembered, no client display is registered, no
 //!   service account and no console role is known;
-//! * the identity register's refusal rows and the audit rows go to the
-//!   log (`sts-audit` is not in the runtime yet).
+//! * the identity register's refusal rows go to the log; the audit rows go
+//!   to the audit log the runtime hands in (`RuntimeParts::audit`).
 
 use std::sync::Arc;
 
@@ -554,6 +554,7 @@ pub struct Unconfigured {
     pub env: Arc<Environment>,
     pub webauthn: Arc<WebauthnPolicy>,
     pub ceremonies: Arc<Ceremonies>,
+    pub audit: Option<Arc<sts_audit::AuditLog>>,
 }
 
 impl Unconfigured {
@@ -647,7 +648,12 @@ impl authn_ports::Records for Unconfigured {
 
 impl authn_ports::AuditLog for Unconfigured {
     fn audit(&self, row: &Json) {
-        tracing::info!("audit: {}", row);
+        match &self.audit {
+            Some(log) => {
+                log.audit(row);
+            }
+            None => tracing::info!("audit: {}", row),
+        }
     }
 }
 
@@ -780,7 +786,7 @@ impl cred_ports::PasskeyRules for Unconfigured {
     fn credential_changed(&self, _facts: &Json) {}
 
     fn audit(&self, row: &Json) {
-        tracing::info!("audit: {}", row);
+        authn_ports::AuditLog::audit(self, row);
     }
 }
 
@@ -898,7 +904,7 @@ impl SignInFacts for Facts {
     }
 
     fn audit(&self, row: &Json) {
-        tracing::info!("audit: {}", row);
+        authn_ports::AuditLog::audit(self.unconfigured.as_ref(), row);
     }
 
     fn note_refused(&self, row: &Json) {
@@ -975,6 +981,9 @@ pub struct RuntimeParts {
     /// (#1449 in product, RFC 9700's refresh rule always); `None` revokes
     /// nothing, the identity register not being in the runtime.
     pub records: Option<Arc<dyn authn_ports::Records>>,
+    /// The audit log the session core's and the ceremonies' rows land in
+    /// (`common/audit.js`); `None` writes them to the log.
+    pub audit: Option<Arc<sts_audit::AuditLog>>,
 }
 
 impl SignInStack {
@@ -1009,12 +1018,13 @@ impl SignInStack {
             },
         )));
         let ceremonies = Arc::new(Ceremonies::new(Arc::new(
-            crate::passkey_wiring::LogAudit,
+            crate::passkey_wiring::LogAudit(parts.audit.clone()),
         )));
         let unconfigured = Arc::new(Unconfigured {
             env: env.clone(),
             webauthn: webauthn.clone(),
             ceremonies: ceremonies.clone(),
+            audit: parts.audit.clone(),
         });
         let credentials = Arc::new(Credentials::new(CredentialsDeps {
             env: env.clone(),

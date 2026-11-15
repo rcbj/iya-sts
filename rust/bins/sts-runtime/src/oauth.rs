@@ -86,6 +86,8 @@ pub struct OAuthParts {
     /// The identity funnel the session core records through, which the
     /// password grant records through too (`stats.recordAuthentication()`).
     pub records: Arc<dyn sts_authn::ports::Records>,
+    /// The audit log the application register's rows land in.
+    pub audit: Arc<sts_audit::AuditLog>,
 }
 
 /// The authorization server, built.
@@ -880,7 +882,7 @@ impl OAuthStack {
                 },
                 persistence: parts.persistence.clone(),
             }),
-            Arc::new(sts_registers::applications::env::NoEffects),
+            Arc::new(crate::solo::AuditedEffects(parts.audit.clone())),
         ));
         let accepts = mode.clone();
         let clients: Arc<dyn sts_oauth::clients::Clients> =
@@ -1164,9 +1166,8 @@ impl OAuthStack {
             pages: Arc::new(CatalogPages {
                 catalogs: parts.catalogs.clone(),
                 footer: parts.footer.clone(),
-                // The runtime writes its audit rows to the log (`LogAudit`):
-                // no ring, so no incident ID to reserve.
-                incident: Arc::new(|| 0),
+                // The incident ID the request's call-log row will carry.
+                incident: Arc::new(sts_http::call_log::reserve_incident),
             }),
             signer: Some(signer.clone()),
             // `capabilityFor(req, member)`: the document this request's
@@ -1211,8 +1212,8 @@ impl OAuthStack {
             hints: authorize.clone(),
             catalogs: parts.catalogs.clone(),
             footer: parts.footer.clone(),
-            // No audit ring here (`LogAudit`): no incident ID to reserve.
-            incident: Arc::new(|| 0),
+            // The incident ID the request's call-log row will carry.
+            incident: Arc::new(sts_http::call_log::reserve_incident),
             channels: Arc::new(sts_oauth::logout_endpoint::NoChannels),
         });
         Arc::new(OAuthStack {

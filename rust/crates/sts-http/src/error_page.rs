@@ -18,9 +18,9 @@
 //!
 //! WHAT REPLACED WHAT: Node reserves the incident ID from the audit ring
 //! (`audit.reserveIncident(res)`) inside `send()`; here the caller hands
-//! the number in, so a runtime with no audit ring (the phase-5 runtime
-//! writes its rows to the log) passes 0 and the page says "none recorded",
-//! as Node's does for 0.
+//! the number in — `call_log::reserve_incident()`, which the request's
+//! call-log row then carries — and a caller with no audit ring passes 0,
+//! when the page says "none recorded", as Node's does for 0.
 
 use crate::express::escape_html as esc;
 use crate::i18n::{Catalogs, Translator};

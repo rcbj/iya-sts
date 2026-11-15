@@ -24,6 +24,9 @@ use serde_json::{Map, Value as Json};
 use sts_core::mode::Mode;
 use sts_model_management_components_1 as model;
 
+/// The page settings block a [`ViewPorts`] answers.
+pub use sts_model_management_components_1::AuditListSettings;
+
 use crate::js;
 use crate::log::AuditLog;
 use crate::row::AuditRow;

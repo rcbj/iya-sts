@@ -441,7 +441,6 @@ macro_rules! not_yet_ported {
         | Operation::RotateKerberosTrustKey
         | Operation::RemoveKerberosTrust
         | Operation::PairKerberosTrust
-        | Operation::GetAudit
         | Operation::GetErrorCodes
         | Operation::GetUsedAssertions
         | Operation::GetDelegation
@@ -618,7 +617,6 @@ macro_rules! not_yet_ported {
         | Operation::GetMalwareScanning
         | Operation::TestMalwareScanning
         | Operation::EndAllSessions
-        | Operation::GetAuditIntegrity
         | Operation::GetApiExplorer
         | Operation::SetConsoleLanguage
         | Operation::GetDelegationMap

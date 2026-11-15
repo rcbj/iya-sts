@@ -796,6 +796,26 @@ impl TokenEndpoint {
             _ => s(claims.get("azp")),
         };
         if caller.identified && owner != caller.client_id {
+            sts_http::call_log::audit(&serde_json::json!({
+                "action": "oauth.token.revoke",
+                "actor": caller.client_id,
+                "target": if owner.is_empty() { "(no client)" } else { &owner },
+                "protocol": "OAuth 2.0 / OIDC",
+                "channel": "http",
+                "outcome": "refused",
+                "errorCode": codes::STS_OAUTH_0612.as_str(),
+                "detail": format!(
+                    "client \"{}\" asked to revoke a {} token issued to \
+                     \"{}\", jti {}",
+                    caller.client_id,
+                    kind,
+                    if owner.is_empty() { "(no client)" } else { &owner },
+                    match s(claims.get("jti")) {
+                        j if j.is_empty() => "(none)".to_string(),
+                        j => j,
+                    }
+                ),
+            }));
             tracing::info!(
                 "{}revocation: client \"{}\" asked to revoke a {} token \
                  issued to \"{}\". Refused; nothing was revoked.",
@@ -858,9 +878,9 @@ impl TokenEndpoint {
                 self.revoke_family_by_id(&family, &owner).await;
             }
         }
-        tracing::info!(
-            "audit: oauth.token.revoke {} revoked a {} token issued to \"{}\"; \
-             {} jti(s) newly revoked",
+        let detail =
+            format!(
+            "{} revoked a {} token issued to \"{}\"; {} jti(s) newly revoked",
             if caller.identified {
                 format!("client \"{}\"", caller.client_id)
             } else {
@@ -870,6 +890,18 @@ impl TokenEndpoint {
             if owner.is_empty() { "(no client)" } else { &owner },
             revoked
         );
+        // `audit.record()`: into the request's ring, else the log.
+        if !sts_http::call_log::audit(&serde_json::json!({
+            "action": "oauth.token.revoke",
+            "actor": caller.client_id,
+            "target": if owner.is_empty() { "(no client)" } else { &owner },
+            "protocol": "OAuth 2.0 / OIDC",
+            "channel": "http",
+            "outcome": "success",
+            "detail": detail,
+        })) {
+            tracing::info!("audit: oauth.token.revoke {}", detail);
+        }
         ok()
     }
 }

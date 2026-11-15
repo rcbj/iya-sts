@@ -233,6 +233,32 @@ pub struct Views {
     pub dir: Arc<LiveDir>,
     pub settings: Arc<Settings>,
     pub register: Arc<IdentityRegister>,
+    /// The audit log `GET /admin-api/audit` reads (`sts-audit`).
+    pub audit: Arc<sts_audit::AuditLog>,
+    pub persistence: Arc<sts_store::persistence::Persistence>,
+}
+
+/// What `auditView()` reads from outside the log, for one request: the
+/// register's user keys (`knownUserKeys()`), the page's settings block and
+/// whether minted state persists.
+struct AuditViewPorts {
+    known: std::collections::BTreeSet<String>,
+    settings: Option<sts_audit::view::AuditListSettings>,
+    persisted: bool,
+}
+
+impl sts_audit::view::ViewPorts for AuditViewPorts {
+    fn known_user(&self, name: &str) -> bool {
+        self.known.contains(name)
+    }
+
+    fn page_settings(&self) -> Option<sts_audit::view::AuditListSettings> {
+        self.settings.clone()
+    }
+
+    fn persisted(&self) -> bool {
+        self.persisted
+    }
 }
 
 /// `dnKey(dn)`: trimmed, lower-cased, the spaces around each comma gone.
@@ -265,6 +291,9 @@ impl Views {
             "getUsers" => self.users_json(asked)?,
             "getDirectoryEntries" => self.directory_entries_json(asked),
             "getDirectoryService" => self.directory_service_json(asked),
+            "getAudit" => self.audit_json(asked, setup),
+            // `verifyIntegrity()` over every process's rows of the realm.
+            "getAuditIntegrity" => self.audit.verify_integrity(None),
             "grantGlobalConsent" => return Some(self.grant_global(asked)),
             "grantAdminRole" | "revokeAdminRole" => {
                 return Some(self.rbac_action(asked))
@@ -276,6 +305,36 @@ impl Views {
             body,
             code: None,
         })
+    }
+
+    /// `auditView(req)`: the realm's log, filtered and paged.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn audit_json(
+        &self,
+        asked: &Asked<'_>,
+        setup: &sts_mgmt_api::setup::Setup<'_>,
+    ) -> Json {
+        let query: serde_json::Map<String, Json> = asked
+            .query
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let ports: Arc<dyn sts_audit::view::ViewPorts> =
+            Arc::new(AuditViewPorts {
+                known: self.register.user_keys(),
+                settings: serde_json::from_value(
+                    setup.page_settings("/admin/audit"),
+                )
+                .ok(),
+                persisted: self.persistence.minted().is_some(),
+            });
+        let list = sts_audit::view::audit_view(
+            &self.audit,
+            &self.mode,
+            &ports,
+            &sts_audit::view::AuditQuery::from_map(&query),
+        );
+        serde_json::to_value(list).unwrap_or(Json::Null)
     }
 
     fn admin_groups(&self) -> Json {

@@ -13,6 +13,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use sts_registers::applications::env::NoEffects as NoAppEffects;
+use sts_registers::applications::AppEffects;
+
 use serde_json::Value as Json;
 use sts_cluster::schedule::{compare_rows, BoxFuture};
 use sts_cluster::scheduler::{
@@ -96,12 +99,13 @@ impl Clock for LocalClock {
     }
 }
 
-/// The audit log, until it is ported: one log line per event.
-pub struct LogAudit;
+/// The scheduler's rows (`scheduler.run`, `scheduler.step-down`), into
+/// the audit log (`common/audit.js`).
+pub struct LogAudit(pub Arc<sts_audit::AuditLog>);
 
 impl Audit for LogAudit {
     fn record(&self, event: Json) {
-        tracing::info!("audit: {}", event);
+        self.0.audit(&event);
     }
 }
 
@@ -134,5 +138,77 @@ impl RunRows for RunStore {
     }
     fn delete(&self, realm: &str, key: &str) {
         self.rows.in_realm(realm).delete(key);
+    }
+}
+
+/// The application register's side effects (`AppEffects`): its audit rows
+/// into the audit log, every other effect the not-yet-loaded families'
+/// answer (`NoEffects`).
+pub struct AuditedEffects(pub Arc<sts_audit::AuditLog>);
+
+impl AppEffects for AuditedEffects {
+    fn audit(&self, row: &Json) {
+        self.0.audit(row);
+    }
+    fn failure(&self, code: sts_core::errors::ErrorCode, row: &Json) {
+        self.0.failure(code.as_str(), row);
+    }
+    fn credential_changed(&self, notice: &Json) {
+        NoAppEffects.credential_changed(notice)
+    }
+    fn certificate_changed(&self, notice: &Json) {
+        NoAppEffects.certificate_changed(notice)
+    }
+    fn application_removed(&self, identifier: &str, dn: &str, via: &str) {
+        NoAppEffects.application_removed(identifier, dn, via)
+    }
+    fn end_gnap_grants(&self, id: &str, changed: bool, how: &Json) -> i64 {
+        NoAppEffects.end_gnap_grants(id, changed, how)
+    }
+    fn claims_fan_out(&self, id: &str, a: &str, removed: &str, aud: &str) {
+        NoAppEffects.claims_fan_out(id, a, removed, aud)
+    }
+    fn scope_kept(&self, scope: &str, identifier: &str) -> bool {
+        NoAppEffects.scope_kept(scope, identifier)
+    }
+    fn certificate_registration_problem(
+        &self,
+        usage: &str,
+        der: &[u8],
+    ) -> Option<(String, sts_core::errors::ErrorCode)> {
+        NoAppEffects.certificate_registration_problem(usage, der)
+    }
+    fn dial_problem(&self, url: &str) -> String {
+        NoAppEffects.dial_problem(url)
+    }
+    fn ssf_event_known(&self, uri: &str) -> bool {
+        NoAppEffects.ssf_event_known(uri)
+    }
+    fn kerberos_accepts_realm(&self, realm: &str) -> bool {
+        NoAppEffects.kerberos_accepts_realm(realm)
+    }
+}
+
+/// What the other processes contributed to the audit ring, as the minted
+/// store's fan-in holds it (`persistence_replication`); nothing where
+/// minted state is not persisted.
+pub struct StoreContributions(
+    pub std::sync::Weak<sts_store::persistence::Persistence>,
+);
+
+impl sts_audit::store::Contributions for StoreContributions {
+    fn segmented_rows(&self, handle: &str) -> Vec<Vec<Json>> {
+        self.0
+            .upgrade()
+            .and_then(|p| p.minted())
+            .map(|m| m.fan_in().remote_segmented_rows(handle, None))
+            .unwrap_or_default()
+    }
+    fn rows(&self, handle: &str) -> Vec<Json> {
+        self.0
+            .upgrade()
+            .and_then(|p| p.minted())
+            .map(|m| m.fan_in().remote_rows(handle, None, ""))
+            .unwrap_or_default()
     }
 }
