@@ -37,7 +37,8 @@
 //      `admin-password`, and after the forced change the API's
 //      set-password also sets, the sign-in draws the recovery set-up step;
 //      under `any` it leaves nothing pending and the password signs in;
-//      `reset-person-keytab` in a realm whose KDC is off is refused (STS-KRB-0128) and leaves nothing pending;
+//      `reset-person-keytab` in a realm whose KDC is off is refused
+//      (STS-KRB-0128) and leaves nothing pending;
 //   E. A RECOVERY CODE AT THE SECOND-FACTOR STEP, for a person whose
 //      passkey is their second factor: under `operator-only` the step
 //      offers no recovery code and one spent anyway is refused
