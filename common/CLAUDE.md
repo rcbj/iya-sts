@@ -8123,9 +8123,30 @@ other node's tier (`STS-PKI-0182` at warn), a deliberate Build is refused with
 it. It is a claim and not `cluster.withLease()`, because a lease there is a role a
 node keeps, and a Build pressed on any other node would be refused for as long as
 the holder lived. `STS-PKI-0183` is a store that could not be asked,
-`STS-PKI-0184` a claim held past three minutes. `scep/scep_ra.ts` uses the same
-function under a claim of its own. `buildScopeNow()` also writes its branch onto
-the row as it is when it saves, not as it was read before nine awaits.
+`STS-PKI-0184` a build waited for past the caller's deadline. `scep/scep_ra.ts`
+uses the same function under a claim of its own. `buildScopeNow()` also writes
+its branch onto the row as it is when it saves, not as it was read before nine
+awaits.
+
+**ONE DEADLINE PER CALLER, AND NOTHING WAITS FOR EVER (CI run #250,
+2026-11-15).** The fuzz mode's schemathesis waited 300 s, unanswered, for
+`build-scope`, `policies/transfer/export`, `scep/reissue-ra` and
+`scim/clients/issue-certificate`. Each ends in `oneBuildAtATime()`'s per-scope
+queue — the issuers through `ensureScope()`, which asks for the branch inside
+it — and the queue had no bound, while the claim's three minutes were counted
+from the claim, not the caller: a caller behind a build that waited out a held
+claim (a starved pool, a release that failed, `STS-CLUSTER-0014`) waited that
+build's wait and then its own, and a build nested in a build (the Root under a
+branch) started a bound of its own. Now `buildWaitFrame()` sets one deadline,
+`CLUSTER_BUILD_WAIT_MS` from when the caller joins the queue, carried by an
+`AsyncLocalStorage` to every wait of the builds it runs and honoured only while
+that build runs; the queue (`turnBefore()`, the order still kept), the claim's
+wait (polling backs off to 2 s) and any nested build all end there, with
+`STS-PKI-0184`. `/admin-api/pki/*` answers `0184` and `0183` 503 with
+Retry-After (`isBusyRefusal()`). And `buildScope()` asks `scopeBuildChecks()` —
+the listener-loadable key, the algorithms, the process chain, the lifetimes —
+BEFORE the queue, so a body refused for what it asks for is answered at once.
+`tests/pki_build_wait.js` holds all three.
 
 **CRL NUMBERS ACROSS NODES** — `pki_revocation.js`'s `agreedCrlNumber()` advances
 the clock-based candidate in `cluster/cluster_counters.js` wherever a shared

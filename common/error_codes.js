@@ -4632,11 +4632,15 @@ const CODES = [
   { code: 'STS-PKI-0183',
     summary: 'A certificate authority was not built because the store could ' +
       'not be asked whether another node is building it.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+    spec: 'HTTP 503 with Retry-After from /admin-api/pki; the caller\'s ' +
+      'refusal (errors on a console reply) elsewhere' },
   { code: 'STS-PKI-0184',
-    summary: 'Another node held the build of a certificate authority for ' +
-      'longer than this node waits, and nothing appeared in the store.',
-    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+    summary: 'A build of a certificate authority was waited for longer than ' +
+      'a caller waits — held by another node or process under its claim, or ' +
+      'queued behind builds of the same scope in this process — so the ' +
+      'caller was refused rather than left waiting.',
+    spec: 'HTTP 503 with Retry-After from /admin-api/pki; the caller\'s ' +
+      'refusal (errors on a console reply) elsewhere' },
   { code: 'STS-PKI-0185',
     summary: 'A CRL was not signed because its CRL number could not be ' +
       'advanced in the store shared by this service\'s nodes.',
