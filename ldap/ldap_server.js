@@ -21744,7 +21744,7 @@ function ldapModifyNow(req, res, next) {
     const accountRefusal = serviceAccountWriteRefusal(working,
       req.changes.map(function (change) {
         return String(change.modification.type || '').toLowerCase();
-      }));
+      }), stored.attributes, boundDnOf(req));
     if (accountRefusal) {
       log.debug('Leaving the LDAP modify handler. The service account was ' +
                 'refused.');
@@ -25088,14 +25088,21 @@ function resolveServiceAccountOwner(value) {
 //     name come together;
 //   * `stsServiceAccountPolicy` (#1240) is held by a service account only,
 //     and names `default` or a named profile of this realm — whose
-//     `requireOwner` is then the one asked above.
+//     `requireOwner` is then the one asked above;
+//   * and, on a modify (`before` is the entry as it was), rcbj's rules of
+//     2026-11-15: a service account is never made a person again
+//     (STS-SVCACCT-0064), its owners are never all taken away (-0065,
+//     asked before `requireOwner`'s -0023), and the bound DN does not take
+//     itself off, nor the group that was its only way of owning the
+//     account (-0066, -0067) — `service_accounts.ownerChangeRefusal()`,
+//     the rules `set()` holds with the management API's codes.
 //
 // Answers null or the ldapjs error, recorded by the caller.
 const SERVICE_ACCOUNT_MAINTAINED = ['stspasswordrotatedat',
   'stspreviouspassword', 'stspreviouspasswordexpires',
   'stsrotationfailures', 'stsrotationlasterror', 'stsrotationlastattempt'];
 
-function serviceAccountWriteRefusal(working, touched) {
+function serviceAccountWriteRefusal(working, touched, before, boundDn) {
   log.debug('Entering serviceAccountWriteRefusal().');
   const changed = (touched || []).filter(function (type) {
     return SERVICE_ACCOUNT_ATTRIBUTES.indexOf(type) >= 0;
@@ -25103,6 +25110,16 @@ function serviceAccountWriteRefusal(working, touched) {
   if (!changed.length) {
     log.debug('Leaving serviceAccountWriteRefusal(). Not one of them.');
     return null;
+  }
+  // ONCE A SERVICE ACCOUNT, ALWAYS ONE: a delete or a replace of the flag on
+  // an entry that carries it. Deleting the whole entry is still allowed.
+  const wasOne = !!before && serviceAccounts.isServiceAccount(before);
+  if (wasOne && !serviceAccounts.isServiceAccount(working)) {
+    log.debug('Leaving serviceAccountWriteRefusal(). The flag was cleared.');
+    return coded('STS-SVCACCT-0064', new ldap.ConstraintViolationError(
+      'a service account cannot be made an ordinary person again: ' +
+      'stsServiceAccount may not be removed or changed; delete the entry ' +
+      'to end the account'));
   }
   const maintained = changed.filter(function (type) {
     return SERVICE_ACCOUNT_MAINTAINED.indexOf(type) >= 0;
@@ -25139,6 +25156,19 @@ function serviceAccountWriteRefusal(working, touched) {
   }).filter(function (one) {
     return !!one;
   });
+  if (wasOne) {
+    // THE OWNERS AS THEY WERE, against the owners as they will be, and who
+    // is bound: the rules every other door holds.
+    const ownerRefusal = serviceAccounts.ownerChangeRefusal(
+      (before.stsserviceaccountowner || []).map(String), owners,
+      String(boundDn || ''), 'ldap');
+    if (ownerRefusal) {
+      log.debug('Leaving serviceAccountWriteRefusal(). The owner rules.');
+      // STS-SVCACCT-0065, -0066 or -0067: `OWNER_RULE_CODES.ldap`.
+      return coded(ownerRefusal.code,
+                   new ldap.ConstraintViolationError(ownerRefusal.message));
+    }
+  }
   if (!owners.length && serviceAccountPolicy.requiresOwner(
     serviceAccountPolicy.profileForReference(
       first('stsserviceaccountpolicy'), first('uid')))) {

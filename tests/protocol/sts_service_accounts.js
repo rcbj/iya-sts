@@ -16,15 +16,16 @@
 //      and filters it with ?kind=service and ?kind=person;
 //   c. its person page describes it — its owners, and the policy's
 //      defaults: no browser sign-in, no exemption, no rotation; and (#600)
-//      it may name two owners, and an empty list is refused while the
-//      policy requires one;
+//      it may name two owners, and an empty list is refused once it names
+//      one;
 //   d. the service-account policy is the third kind on /admin-api/policies,
 //      and a save of it is read back, inherited by nothing else;
 //   e. Rotate now is REFUSED for an account that names no destination, and
 //      for a person;
 //   f. GET /admin-api/service-accounts lists it with the realm's rotation
 //      settings;
-//   g. set-service-account false makes them an ordinary person again.
+//   g. set-service-account false is refused: a service account is never
+//      made an ordinary person again (rcbj, 2026-11-15).
 //
 // D12 (#444) carries over what `tests/service_accounts.js` holds that a
 // client sees, in two more throwaway realms — one development, one born in
@@ -33,7 +34,8 @@
 //   h. the refusals of `set-service-account` by their codes on the realm's
 //      audit: nobody (STS-SVCACCT-0021), no owner while one is required
 //      (0023), an owner who is nobody (0024), the account as its own owner
-//      (0025), half a destination (0026); a create with a bad owner is
+//      (0025), half a destination (0026), `serviceAccount` false on a
+//      service account (0060); a create with a bad owner is
 //      0024; Rotate now refuses a person (0040) and an account naming no
 //      destination (0041);
 //   i. the policy: a save leaving a field out is refused by name; rotation
@@ -51,7 +53,11 @@
 //      the realm exempts service accounts; the screen refuses it there too;
 //   l. an LDAP modify making a person a service account with no owner is
 //      refused while one is required, and with an owner is accepted with
-//      the auxiliary class beside the flag.
+//      the auxiliary class beside the flag;
+//   m. over LDAP, a modify deleting the flag (STS-SVCACCT-0064) or the last
+//      owner (0065) is refused, an owner bound as themselves cannot take
+//      themselves off (0066), and another owner may take them off while an
+//      owner remains (rcbj, 2026-11-15).
 //
 // What stays in process (its D12 note): the rotation's push, commit,
 // overlap and alarm against a fake destination, the KDC's question, the
@@ -399,18 +405,19 @@ async function theRefusalsByCode() {
   refusedWith(await coded(api, "STS-SVCACCT-0041", function () {
     return postJson(api + "/users/rotate-password", { user: "svc-h" });
   }), "STS-SVCACCT-0041", "and an account naming no destination");
-  await ok(api + "/users/set-service-account", { user: "svc-h",
-    serviceAccount: false }, "cleared the flag");
+  // ONCE A SERVICE ACCOUNT, ALWAYS ONE (rcbj, 2026-11-15).
+  refusedWith(await coded(api, "STS-SVCACCT-0060", setTo({
+    user: "svc-h", serviceAccount: false })),
+    "STS-SVCACCT-0060", "a service account is not made a person again");
   const cleared = await send(api + "/users?user=svc-h");
-  check("clearing the flag takes the class and the owner with it",
-        function () {
+  check("and the class and the owner stay on the entry", function () {
     const attrs = attributesOf(cleared.body);
     const keys = Object.keys(attrs).map(function (k) {
       return k.toLowerCase();
     });
-    assert.ok(keys.indexOf("stsserviceaccountowner") < 0, keys.join(","));
+    assert.ok(keys.indexOf("stsserviceaccountowner") >= 0, keys.join(","));
     assert.ok((attrs.objectClass || attrs.objectclass || [])
-      .indexOf("stsServiceAccount") < 0);
+      .indexOf("stsServiceAccount") >= 0);
   });
   log.debug("Leaving theRefusalsByCode().");
 }
@@ -604,6 +611,61 @@ async function anLdapModify() {
     assert.ok((attrs.objectClass || attrs.objectclass || [])
       .indexOf("stsServiceAccount") >= 0, JSON.stringify(attrs.objectClass));
   });
+
+  // m. FOR GOOD, OVER LDAP (rcbj, 2026-11-15): the flag is never taken
+  // away, the last owner never goes, and the bound DN does not take itself
+  // off. Each is constraintViolation (19).
+  await person(api, "svc-l-two");
+  const ownerDn = dnOf(DEV, "svc-l-owner");
+  const twoDn = dnOf(DEV, "svc-l-two");
+  // The sentence is what a client is sent; the code is recorded, never
+  // sent, so it is held by the in-process twin
+  // (`tests/service_account_irreversible.js`).
+  const refusedOverLdap = function (got, said, what) {
+    log.debug("Entering refusedOverLdap().");
+    check(what, function () {
+      assert.strictEqual(got.code, 0, "the bind failed");
+      assert.strictEqual(got.then.code, 19, JSON.stringify(got));
+      assert.ok(said.test(got.then.message), got.then.message);
+    });
+    log.debug("Leaving refusedOverLdap().");
+  };
+  refusedOverLdap(await overLdap(dn, PASSWORD, function (client) {
+    return modify(client, dn, [["delete", "stsServiceAccount", []]]);
+  }), /cannot be made an ordinary person again/,
+  "an LDAP modify deleting the flag is refused");
+  const flagged = await send(api + "/users?user=svc-l");
+  check("and it is still a service account", function () {
+    assert.ok(flagged.body.serviceAccount,
+              JSON.stringify(flagged.body.serviceAccount));
+  });
+  refusedOverLdap(await overLdap(dn, PASSWORD, function (client) {
+    return modify(client, dn, [["delete", "stsServiceAccountOwner",
+                                [ownerDn]]]);
+  }), /at least one owner/, "an LDAP modify deleting the last owner is " +
+     "refused");
+  const added = await overLdap(dn, PASSWORD, function (client) {
+    return modify(client, dn, [["add", "stsServiceAccountOwner", [twoDn]]]);
+  });
+  check("a second owner is added over LDAP", function () {
+    assert.strictEqual(added.then.code, 0, JSON.stringify(added));
+  });
+  refusedOverLdap(await overLdap(ownerDn, PASSWORD, function (client) {
+    return modify(client, dn, [["delete", "stsServiceAccountOwner",
+                                [ownerDn]]]);
+  }), /cannot remove themselves/, "an owner bound as themselves cannot " +
+     "take themselves off");
+  const byAnother = await overLdap(twoDn, PASSWORD, function (client) {
+    return modify(client, dn, [["delete", "stsServiceAccountOwner",
+                                [ownerDn]]]);
+  });
+  const left = await send(api + "/users?user=svc-l");
+  check("another owner may take them off while an owner remains",
+        function () {
+    assert.strictEqual(byAnother.then.code, 0, JSON.stringify(byAnother));
+    assert.strictEqual(left.body.serviceAccount.owners.length, 1,
+                       JSON.stringify(left.body.serviceAccount));
+  });
   log.debug("Leaving anLdapModify().");
 }
 
@@ -694,7 +756,7 @@ async function testBody() {
   });
   const emptied = await postJson(realmApi + "/users/set-service-account", {
     user: ACCOUNT, owners: [] });
-  check("an empty list is refused while the policy requires an owner",
+  check("an empty list is refused: an account that names owners keeps one",
         function () {
     assert.ok(emptied.status === 400, emptied.status + " " +
               emptied.raw.slice(0, 300));
@@ -762,14 +824,16 @@ async function testBody() {
     assert.ok(monitor.body.paging, JSON.stringify(monitor.body));
   });
 
-  log.info("=== g. an ordinary person again ===");
-  await ok(realmApi + "/users/set-service-account", { user: ACCOUNT,
-    serviceAccount: false }, "cleared the flag");
-  const cleared = await send(realmApi + "/users?user=" +
-                             encodeURIComponent(ACCOUNT));
-  check("their page no longer describes a service account", function () {
-    assert.strictEqual(cleared.body.serviceAccount, null,
-                       JSON.stringify(cleared.body.serviceAccount));
+  log.info("=== g. never an ordinary person again ===");
+  const cleared = await postJson(realmApi + "/users/set-service-account",
+                                 { user: ACCOUNT, serviceAccount: false });
+  const still = await send(realmApi + "/users?user=" +
+                           encodeURIComponent(ACCOUNT));
+  check("set-service-account false is refused, and their page still " +
+        "describes a service account", function () {
+    assert.strictEqual(cleared.status, 400, cleared.raw.slice(0, 300));
+    assert.ok(still.body.serviceAccount,
+              JSON.stringify(still.body.serviceAccount));
   });
 
   await aRealmWithClients(DEV, null);

@@ -24,11 +24,12 @@
 //      one for a person who is not a service account (STS-SVCACCT-0048)
 //      and a name the realm does not hold (STS-LDAP-0106); an LDAP modify
 //      refuses both (STS-SVCACCT-0048, STS-SVCACCT-0050); a create refuses
-//      it without the flag; clearing the flag clears it.
+//      it without the flag; clearing the flag is refused, so it stays.
 //   C. THE READERS, each through the account's own profile: a door, the
 //      browser and the second-factor exemption
 //      (`credentials.serviceAccountRefusesDoor()`, `mfaRequirementFor()`),
-//      and `requireOwner` at edit and at create.
+//      and `requireOwner` at create (at edit an account that names an
+//      owner keeps one whatever its profile says, rcbj 2026-11-15).
 //   D. A REFERENCE THE REALM DOES NOT HOLD gets `default` and is logged
 //      (STS-SVCACCT-0047).
 //   E. A NAMED PROFILE AN ACCOUNT NAMES IS NOT DELETED (STS-SVCACCT-0049),
@@ -276,12 +277,17 @@ async function reference(t) {
             !stored('svcb-new'),
             'B6. a create naming it without the flag is refused before ' +
             'anybody exists', JSON.stringify(created.errors));
+    // A service account is never made a person again (rcbj, 2026-11-15),
+    // so the reference stays with the flag.
     const cleared = serviceAccounts.set('svcb-acct',
                                         { serviceAccount: false });
     const after = stored('svcb-acct');
-    t.check(cleared.ok && !Object.keys(after.attributes).some(function (k) {
-      return k.toLowerCase() === 'stsserviceaccountpolicy';
-    }), 'B7. making the account a person again clears the reference');
+    t.check(cleared.ok === false &&
+            errorCodes.codeOf(cleared) === 'STS-SVCACCT-0060' &&
+            Object.keys(after.attributes).some(function (k) {
+              return k.toLowerCase() === 'stsserviceaccountpolicy';
+            }), 'B7. the account cannot be made a person again, and keeps ' +
+            'the reference');
   });
   log.debug('Leaving reference().');
 }
@@ -316,9 +322,12 @@ async function readers(t) {
                                         { serviceAccount: true });
     const plainNoOwner = serviceAccounts.set('svcc-plain',
                                              { serviceAccount: true });
-    t.check(noOwner.ok &&
-            errorCodes.codeOf(plainNoOwner) === 'STS-SVCACCT-0023',
-            'C4. requireOwner at edit is the account\'s own profile\'s',
+    // Both name an owner, so neither may lose it whatever its profile
+    // says (rcbj, 2026-11-15); requireOwner is asked at the create below.
+    t.check(errorCodes.codeOf(noOwner) === 'STS-SVCACCT-0061' &&
+            errorCodes.codeOf(plainNoOwner) === 'STS-SVCACCT-0061',
+            'C4. an account that names an owner keeps one, whatever its ' +
+            'profile\'s requireOwner',
             JSON.stringify([noOwner.errors, plainNoOwner.errors]));
     const base = { action: 'create', invent: 'no', credential: 'none',
                    serviceAccount: 'true', 'field.givenName': 'New',
