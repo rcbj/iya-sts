@@ -22239,6 +22239,23 @@ function withWriteBatch(values, fn) {
   }
 }
 
+/**
+ * The values of the write batch in force, as a copy, or null outside one.
+ * `realms.setOverride()` layers them over a realm's stored overrides when
+ * it builds its own batch (2026-11-15): its batch REPLACES this one for the
+ * length of its check, so without them a pair posted together was judged
+ * by the realm's old value of the one not yet written (`Branding`'s
+ * colours, a realm's `set-many`).
+ *
+ * @returns {Object<string, *>|null}
+ */
+function currentWriteBatch() {
+  log.debug("Entering currentWriteBatch().");
+  const out = writeBatch ? Object.assign({}, writeBatch) : null;
+  log.debug("Leaving currentWriteBatch(). " + !!out);
+  return out;
+}
+
 // A companion setting's value as a rule should judge it: the batch's, where
 // it carries a valid one, else the value in force.
 function besideValue(other) {
@@ -23400,5 +23417,6 @@ module.exports = {
   TLS_LISTENERS: TLS_LISTENERS,
   PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
   addWriteRule: addWriteRule,
-  withWriteBatch: withWriteBatch
+  withWriteBatch: withWriteBatch,
+  currentWriteBatch: currentWriteBatch
 };
