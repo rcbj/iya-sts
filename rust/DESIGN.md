@@ -273,8 +273,11 @@ rust/
                                  picker's data, by account-set-vectors.js
     sts-credentials/             the credentials a sign-in step checks (phase 5):
                                  passwords, app passwords, TOTP, recovery codes,
-                                 emailed codes, WebAuthn ceremonies and attestation
-                                 statements, the rate limit, and what each earns;
+                                 emailed codes, WebAuthn ceremonies, the eight
+                                 attestation formats and their trust (FIDO MDS3,
+                                 the path, revocation, Google's Android list),
+                                 passkey enrolment and the signature counter,
+                                 the rate limit, and what each earns;
                                  sts-authn's CredentialChecks. Held to Node by
                                  tests/tools/credentials-vectors.js, both ways
     sts-oauth/                   authorization server and OpenID provider

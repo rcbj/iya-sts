@@ -16,9 +16,6 @@
 //! `assess()` — the FIDO Metadata Service, the trust path to the anchors,
 //! revocation, the policy that demands trust — is [`super::trust`].
 
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde_json::Value as Json;
 use sts_core::errors::{codes, ErrorCode};
 use sts_crypto::jws;
@@ -770,12 +767,24 @@ fn android_key(st: &Cbor, ctx: &Context) -> Statement {
     verified(f, "basic", chain, None)
 }
 
-static GOOGLE_SAN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(^|,\s*)DNS:attest\.android\.com(,|$)").expect("a literal")
-});
-static GOOGLE_CN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(^|\n)CN=attest\.android\.com(\n|$)").expect("a literal")
-});
+/// `/(^|,\s*)DNS:attest\.android\.com(,|$)/` over the subjectAltName.
+fn names_google_san(san: &str) -> bool {
+    const WANT: &str = "DNS:attest.android.com";
+    san.split(',').enumerate().any(|(i, part)| {
+        if i == 0 {
+            part == WANT
+        } else {
+            part.trim_start() == WANT
+        }
+    })
+}
+
+/// `/(^|\n)CN=attest\.android\.com(\n|$)/` over the subject's lines.
+fn names_google_cn(subject: &str) -> bool {
+    subject
+        .split('\n')
+        .any(|line| line == "CN=attest.android.com")
+}
 
 /// Section 8.5: Basic, a SafetyNet JWS. Verified, and TRUSTED only where
 /// `webauthn.attestationAllowSafetynet` says (`trustOf()`).
@@ -810,8 +819,8 @@ fn safetynet(st: &Cbor, ctx: &Context) -> Statement {
             "the response is not a JWS carrying an x5c chain".to_string(),
         );
     };
-    if !GOOGLE_SAN.is_match(facts["subjectAltName"].as_str().unwrap_or(""))
-        && !GOOGLE_CN.is_match(facts["subjectText"].as_str().unwrap_or(""))
+    if !names_google_san(facts["subjectAltName"].as_str().unwrap_or(""))
+        && !names_google_cn(facts["subjectText"].as_str().unwrap_or(""))
     {
         return fail(
             codes::STS_AUTHN_0234,

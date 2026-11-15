@@ -520,6 +520,7 @@ impl Credentials {
 
     /// `rewriteKey(username, credentialId, mutate)`: `Ok(Some(result))`
     /// written, `Ok(None)` no store, no such key or unchanged, `Err` threw.
+    #[tracing::instrument(level = "debug", skip(self, mutate))]
     pub(crate) fn rewrite_key(
         &self,
         username: &str,
