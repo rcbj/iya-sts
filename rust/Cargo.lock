@@ -4758,6 +4758,7 @@ dependencies = [
  "sts-core",
  "sts-credentials",
  "sts-crypto",
+ "sts-directory",
  "sts-http",
  "sts-registers",
  "sts-store",
