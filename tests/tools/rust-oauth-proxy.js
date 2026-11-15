@@ -41,13 +41,13 @@ const cert = fs.readFileSync(path.join(dir, 'cert.pem'));
 fs.rmSync(dir, { recursive: true, force: true });
 
 // What the Rust runtime does not answer yet (#444 phase 5, the `oauth3`
+// slice; the consent screen and `/authn-api/consent` left with the `oauth4`
 // slice): beside the slice-two set, UserInfo, pushed authorization requests,
 // the two mode reports, the FAPI report, the attestation challenge and the
 // device and CIBA endpoints — each under a named authorization server too.
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
-  '/authn-api/consent|' +
-  '/oauth2/(register|introspect|revoke|consent(\\.js)?|logout|userinfo|' +
-  'par|oauth21|rfc9700|fapi|challenge|device_authorization|' +
+  '/oauth2/(register|introspect|revoke|logout|userinfo|' +
+  'oauth21|rfc9700|fapi|challenge|device_authorization|' +
   'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
 const counts = { rust: 0, node: 0 };

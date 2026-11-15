@@ -26,8 +26,7 @@ use sts_authn::ports::Request;
 use sts_core::mode::Mode;
 use sts_core::settings::Settings;
 use sts_oauth::authorize::{
-    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoConsents,
-    NoGatedScopes, SignOn,
+    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoGatedScopes, SignOn,
 };
 use sts_oauth::client_auth::{
     AssertionHistory, ClientAuth, Clock, MemoryAssertionHistory,
@@ -91,6 +90,25 @@ impl SignOn for VecSignOn {
         None
     }
     fn note_account_ambiguous(&self, _: &Request, _: &str) {}
+}
+
+/// Nobody has consented to anything, and nothing is written.
+struct NoEntries;
+impl sts_oauth::consent::ConsentDirectory for NoEntries {
+    fn values_of(&self, _: &str, _: &str) -> Option<Vec<String>> {
+        Some(Vec::new())
+    }
+    fn add_values(
+        &self,
+        _: &str,
+        _: &str,
+        _: &[String],
+    ) -> Result<bool, String> {
+        Ok(true)
+    }
+    fn name_for_subject(&self, _: &str) -> String {
+        String::new()
+    }
 }
 
 struct NoChoices(f64);
@@ -416,7 +434,37 @@ async fn the_code_flow() {
                 now_ms: Arc::new(move || *n1.lock().unwrap() as f64),
             }),
             gated: Arc::new(NoGatedScopes),
-            consents: Arc::new(NoConsents),
+            consent: Some(Arc::new(sts_oauth::consent::ConsentScreen {
+                register: Arc::new(sts_oauth::consent::ConsentRegister {
+                    settings: settings.clone(),
+                    clients: clients.clone(),
+                    directory: Arc::new(NoEntries),
+                    answers: sts_core::realm_store::RealmMap::new(
+                        &lifecycle,
+                        &handles,
+                        sts_core::realm_store::StoreSpec::memory(),
+                    ),
+                    now_ms: Arc::new(|| 0.0),
+                }),
+                pending: sts_core::realm_store::RealmMap::new(
+                    &lifecycle,
+                    &handles,
+                    sts_core::realm_store::StoreSpec::memory(),
+                ),
+                sign_on: Arc::new(VecSignOn {
+                    cookie: s(&realm_row["cookie"]),
+                    session: realm_row["session"].clone(),
+                }),
+                client_display: Arc::new(|_| Json::Null),
+                random_id: Arc::new(|n| {
+                    sts_crypto::b64::encode(
+                        &sts_crypto::random::random_bytes(n).unwrap(),
+                    )
+                }),
+            })),
+            request_objects: None,
+            tokens: None,
+            pairwise: None,
             pages: Arc::new(CatalogPages {
                 catalogs: catalogs.clone(),
                 footer: sts_http::footer::Facts {
@@ -467,8 +515,10 @@ async fn the_code_flow() {
             if let Some((_, how)) = KNOWN.iter().find(|(n, _)| *n == name) {
                 let node_location = s(&case["location"]);
                 let known = match *how {
+                    // The consent screen: Node's address carries the realm's
+                    // prefix, which the HTTP layer puts on here.
                     "consent" if node_location.contains("/oauth2/consent") => {
-                        location.contains("error=server_error")
+                        location.contains("/oauth2/consent?consent=")
                             || location.contains("error=invalid_scope")
                     }
                     "implicit" => {
@@ -621,6 +671,7 @@ async fn the_code_flow() {
                 clients: clients.clone(),
                 signer: signer.clone(),
                 now_s: Arc::new(move || *n3.lock().unwrap() / 1000),
+                pairwise: None,
             })),
             scopes,
             grants: grants.clone(),

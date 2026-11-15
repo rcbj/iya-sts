@@ -93,6 +93,10 @@ pub struct AuthnApi {
     /// is built (a late binding: Node reaches the module by a lazy
     /// `require()`); empty, they are not answered here (Express's 404).
     pub sign_out: std::sync::OnceLock<Arc<dyn crate::ports::SignOutPages>>,
+    /// The consent screen's operations, filled by the OAuth crate once it
+    /// is built (a late binding, as the sign-out's); empty, they are not
+    /// answered here.
+    pub consent: std::sync::OnceLock<Arc<dyn crate::ports::ConsentPages>>,
 }
 
 fn header_of(headers: &HeaderMap, name: &str) -> String {
@@ -209,6 +213,93 @@ impl AuthnApi {
         if self.sign_out.set(pages).is_err() {
             tracing::warn!("authn-api: the sign-out was filled twice.");
         }
+    }
+
+    /// Fills the consent screen's operations (once).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_consent(&self, pages: Arc<dyn crate::ports::ConsentPages>) {
+        if self.consent.set(pages).is_err() {
+            tracing::warn!("authn-api: the consent screen was filled twice.");
+        }
+    }
+
+    /// `AuthnApi.consent()`: `GET` and `POST /authn-api/consent/{id}` — the
+    /// id's shape, the binding of an act, the body; the record's three
+    /// checks and what an answer does are the screen's.
+    async fn consent_door(
+        &self,
+        op: &Operation,
+        id: &str,
+        arrived: &Arrived,
+        call: &Call,
+    ) -> Outcome {
+        let done = Outcome::Answered;
+        let Some(pages) = self.consent.get() else {
+            return Outcome::Unported("consent");
+        };
+        if !id_fits(id) {
+            return done(refuse(
+                400,
+                "That is not the id of a consent.",
+                codes::STS_OAUTH_0148,
+            ));
+        }
+        if arrived.method.eq_ignore_ascii_case("GET") {
+            return done(match pages.view(call, id) {
+                Err((code, why)) => refuse(400, &why, code),
+                Ok((view, ui, username)) => {
+                    let mut out = json!({ "ok": true, "view": view,
+                                          "csrf": self.csrf_of(&call.request),
+                                          "uiLocales": ui });
+                    if let Some(own) =
+                        self.signin.facts.preferred_language_of(&username)
+                    {
+                        out["preferredLanguage"] = own;
+                    }
+                    Answer::json(200, out)
+                }
+            });
+        }
+        if let Err(a) = self.bound(arrived, &call.request) {
+            return done(a);
+        }
+        let body = match self.body_of(arrived, op) {
+            Ok(b) => b,
+            Err(mut a) => {
+                a.code = Some(codes::STS_OAUTH_0148);
+                return done(a);
+            }
+        };
+        let action = text(body.get("action"));
+        let acted = pages.act(call, id, &action);
+        pages.settle().await;
+        done(match acted {
+            crate::ports::ConsentAnswer::Refused { code, why } => Answer::json(
+                400,
+                json!({ "ok": false, "next": "refused", "errors": [why],
+                            "error": "invalid_request",
+                            "error_description": why }),
+            )
+            .marked(code),
+            crate::ports::ConsentAnswer::Back {
+                target,
+                username,
+                code,
+            } => {
+                let target = self.signin.sessions.account_ticket_for(
+                    &call.request,
+                    &target,
+                    &json!({ "loginHint": username }),
+                );
+                let mut a = Answer::json(
+                    200,
+                    json!({ "ok": true, "next": "redirect",
+                            "location": self.signin.location_of(call, &target) }),
+                );
+                a.code = code;
+                a
+            }
+        })
     }
 
     /// `logoutView()` / `logoutAccountsView()`: the query held to the
@@ -561,19 +652,23 @@ impl AuthnApi {
                 if self.https { "; Secure" } else { "" }
             ));
         }
-        if kind == "consent" {
-            // The consent screen's claim is the OAuth slice's
-            // (`consent_screen.claimForBrowser()`); its operations are not
-            // answered here yet.
-            return (None, cookies);
-        }
         let sid = self
             .signin
             .sessions
             .cookie_session(Some(&call.request), SESSION_COOKIE)
             .map(|(id, _)| id)
             .unwrap_or_default();
-        if !self.signin.claim_step_for_browser(&id, &sid, kind) {
+        // THE CONSENT SCREEN'S CLAIM is the screen's own
+        // (`consent_screen.claimForBrowser()`).
+        let held = if kind == "consent" {
+            match self.consent.get() {
+                Some(pages) => pages.claim(&id, &sid, call),
+                None => return (None, cookies),
+            }
+        } else {
+            self.signin.claim_step_for_browser(&id, &sid, kind)
+        };
+        if !held {
             return (
                 Some(refuse(
                     400,
@@ -1014,7 +1109,7 @@ impl AuthnApi {
                     pages.accounts_act(call, &asked, &body)
                 })
             }
-            Handler::Consent => Outcome::Unported("consent"),
+            Handler::Consent => self.consent_door(op, id, arrived, call).await,
         }
     }
 

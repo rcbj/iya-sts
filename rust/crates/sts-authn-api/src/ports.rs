@@ -139,3 +139,55 @@ pub trait SignOutPages: Send + Sync {
         body: &serde_json::Map<String, Json>,
     ) -> crate::flow::Answer;
 }
+
+/// What a consent answer does (`consentAct()`), for the door to send.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConsentAnswer {
+    /// Refused with the record left alone: the sentence and its code.
+    Refused { code: ErrorCode, why: String },
+    /// Back to the authorization request, as `username`; `code` is the
+    /// refusal the request carries back (`consent_error`), if any.
+    Back {
+        target: String,
+        username: String,
+        code: Option<ErrorCode>,
+    },
+}
+
+/// THE OAUTH CONSENT SCREEN'S OPERATIONS (#576, `consent_screen.ts`'s
+/// `claimForBrowser()`, `askedOf()`, `consentView()` and `consentAct()`),
+/// which Node's door reaches by a lazy `require()`: the screen is the
+/// OAuth crate's (`sts-oauth`), built after this one, so it is a late
+/// binding, [`crate::door::AuthnApi::set_consent`].
+pub trait ConsentPages: Send + Sync {
+    /// `claimForBrowser(id, sessionId, req)` (#1454).
+    fn claim(
+        &self,
+        id: &str,
+        session_id: &str,
+        call: &crate::flow::Call,
+    ) -> bool;
+    /// `askedOf(req, id, false)` and `consentView()`: the view, the
+    /// record's `uiLocales` and the person asked — or the code and why.
+    fn view(
+        &self,
+        call: &crate::flow::Call,
+        id: &str,
+    ) -> Result<(Json, String, String), (ErrorCode, String)>;
+    /// `consentAct(req, res, id, { action })`.
+    fn act(
+        &self,
+        call: &crate::flow::Call,
+        id: &str,
+        action: &str,
+    ) -> ConsentAnswer;
+    /// What the answer wrote, committed before it is sent (Node's barrier
+    /// holds a response until its writes are in the store, so the next
+    /// request — on any node — reads them).
+    fn settle(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>
+    {
+        Box::pin(async {})
+    }
+}

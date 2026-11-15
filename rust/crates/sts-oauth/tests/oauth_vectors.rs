@@ -530,8 +530,15 @@ async fn token_endpoint() {
             if let Some(at) =
                 want_body.get("access_token").and_then(Json::as_str)
             {
-                // Node's signature verifies under the realm's key.
-                let checks = sts_crypto::jws::ClaimChecks::default();
+                // Node's signature verifies under the realm's key, its
+                // lifetime read at the instant the token was minted (a
+                // vector set older than the token's life is not stale).
+                let checks = sts_crypto::jws::ClaimChecks {
+                    now: case["accessToken"]["claims"]["iat"]
+                        .as_i64()
+                        .or_else(|| case["nowMs"].as_i64().map(|ms| ms / 1000)),
+                    ..sts_crypto::jws::ClaimChecks::default()
+                };
                 set.verify_own_jws(
                     at,
                     None,
