@@ -13,10 +13,15 @@ publish.workspace = true
 [dependencies]
 sts-core.workspace = true
 sts-crypto.workspace = true
+sts-cluster.workspace = true
+tokio.workspace = true
 indexmap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

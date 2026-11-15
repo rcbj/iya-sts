@@ -14,9 +14,13 @@ publish.workspace = true
 sts-core.workspace = true
 sts-crypto.workspace = true
 sts-cluster.workspace = true
+sts-cache.workspace = true
 sts-http.workspace = true
+sts-ldap.workspace = true
 sts-pki.workspace = true
 sts-store.workspace = true
+sts-tls.workspace = true
+chrono.workspace = true
 axum.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
@@ -25,8 +29,6 @@ serde_json.workspace = true
 tokio.workspace = true
 tokio-openssl.workspace = true
 tracing.workspace = true
-
-[dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 
 [lints]

@@ -112,6 +112,21 @@ pub trait Descriptor: Send + Sync {
     fn counted(&self) -> Result<(), String> {
         Ok(())
     }
+    /// The store COUNTED WITHOUT BEING LISTED (#704, `tally()`): its size,
+    /// fullest realm and still-valid entries, for the cluster snapshot every
+    /// heartbeat carries, so taking it never builds a row per entry. `None`
+    /// (the default) lists the store instead.
+    fn tally(&self, _now: i64) -> Option<Tally> {
+        None
+    }
+}
+
+/// What [`Descriptor::tally`] counts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tally {
+    pub size: usize,
+    pub largest_realm: usize,
+    pub valid: usize,
 }
 
 #[derive(Default)]
@@ -205,9 +220,11 @@ pub struct Detail {
     pub rows: Vec<Row>,
 }
 
-/// One store in the compact form another node reads.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+/// One store in the compact form another node reads — on the wire, Node's
+/// array `[name, size, largestRealm, valid, maxEntries, hits, misses,
+/// evictions, refusals]`, which the heartbeat writes into the membership
+/// row's `info` and `/admin/caches` on every other node reads.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotRow {
     pub name: String,
     pub size: usize,
@@ -220,10 +237,33 @@ pub struct SnapshotRow {
     pub refusals: u64,
 }
 
-/// `snapshot()`: sizes and counters, never a row.
+impl Serialize for SnapshotRow {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        out: S,
+    ) -> Result<S::Ok, S::Error> {
+        (
+            &self.name,
+            self.size,
+            self.largest_realm,
+            self.valid,
+            self.max_entries,
+            self.hits,
+            self.misses,
+            self.evictions,
+            self.refusals,
+        )
+            .serialize(out)
+    }
+}
+
+/// `snapshot()`: sizes and counters, never a row. `pid` is the process's
+/// tag (`WorkerChannel.processTag()`: the pid, there being no worker
+/// threads to add).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Snapshot {
     pub at: i64,
+    pub pid: String,
     pub caches: Vec<SnapshotRow>,
 }
 
@@ -345,21 +385,54 @@ impl CacheRegistry {
     /// The compact form a cluster node publishes on its membership row.
     pub fn snapshot(&self, now: i64) -> Snapshot {
         let caches = self
-            .report(now)
+            .snapshot_of()
             .into_iter()
-            .map(|s| SnapshotRow {
-                name: s.name,
-                size: s.size,
-                largest_realm: s.largest_realm,
-                valid: s.valid,
-                max_entries: s.max_entries,
-                hits: s.hits,
-                misses: s.misses,
-                evictions: s.evictions,
-                refusals: s.refusals,
-            })
+            .map(|(d, c)| snapshot_row_of(d.as_ref(), &c, now))
             .collect();
-        Snapshot { at: now, caches }
+        Snapshot {
+            at: now,
+            pid: std::process::id().to_string(),
+            caches,
+        }
+    }
+
+    /// [`CacheRegistry::snapshot`], giving the runtime a turn between
+    /// stores (`snapshotAsync()`, #704): what `cluster.cache-report` runs.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn snapshot_async(&self, now: i64) -> Snapshot {
+        let mut caches = Vec::new();
+        for (d, c) in self.snapshot_of() {
+            caches.push(snapshot_row_of(d.as_ref(), &c, now));
+            tokio::task::yield_now().await;
+        }
+        Snapshot {
+            at: now,
+            pid: std::process::id().to_string(),
+            caches,
+        }
+    }
+
+    /// [`CacheRegistry::eject_expired`], a turn between stores
+    /// (`ejectExpiredAsync()`, #704): what `caches.eject-expired` runs.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn eject_expired_async(&self, now: i64) -> Ejected {
+        let mut out = Ejected::default();
+        for (d, c) in self.snapshot_of() {
+            if !d.ejects() {
+                continue;
+            }
+            match d.eject(now) {
+                Ok(0) => {}
+                Ok(n) => {
+                    out.by_cache.insert(d.name().to_string(), n);
+                    out.ejected += n;
+                    c.evicted(n);
+                }
+                Err(e) => out.failed.push(format!("{}: {}", d.name(), e)),
+            }
+            tokio::task::yield_now().await;
+        }
+        out
     }
 
     /// Calls every store's ejector. Housekeeping, never correctness: every
@@ -405,6 +478,42 @@ fn rows_of(d: &dyn Descriptor, now: i64) -> (Vec<Row>, Option<String>) {
             );
             (Vec::new(), Some(e))
         }
+    }
+}
+
+/// One snapshot row (`snapshotRowOf()`): the store's tally where it has
+/// one, its rows otherwise.
+fn snapshot_row_of(d: &dyn Descriptor, c: &Counter, now: i64) -> SnapshotRow {
+    let (hits, misses, evictions, refusals) = c.read();
+    let (size, largest_realm, valid) = match d.tally(now) {
+        Some(t) => (
+            t.size,
+            match d.scope() {
+                Scope::Realm => t.largest_realm,
+                Scope::Process => t.size,
+            },
+            t.valid,
+        ),
+        None => {
+            let (rows, _) = rows_of(d, now);
+            let largest = match d.scope() {
+                Scope::Realm => largest_realm_of(&rows),
+                Scope::Process => rows.len(),
+            };
+            (rows.len(), largest, rows.iter().filter(|r| r.valid).count())
+        }
+    };
+    let counted = d.counted().is_ok();
+    SnapshotRow {
+        name: d.name().to_string(),
+        size,
+        largest_realm,
+        valid,
+        max_entries: d.max_entries(),
+        hits: counted.then_some(hits),
+        misses: counted.then_some(misses),
+        evictions,
+        refusals,
     }
 }
 

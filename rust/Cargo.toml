@@ -19,8 +19,31 @@ members = [
   "crates/sts-oauth",
   "crates/sts-mgmt-api",
   "crates/sts-model",
+  # The API types sts-model gathers (models/lib/rust_lib.mjs, `SPLIT`).
+  "crates/sts-model-base",
+  "crates/sts-model-account",
+  "crates/sts-model-authn",
+  "crates/sts-model-console",
+  "crates/sts-model-console-components-1",
+  "crates/sts-model-console-components-2",
+  "crates/sts-model-console-components-3",
+  "crates/sts-model-management-components-1",
+  "crates/sts-model-management-components-2",
+  "crates/sts-model-management-components-3",
+  "crates/sts-model-management-components-4",
+  "crates/sts-model-management-operations-1",
+  "crates/sts-model-management-operations-2",
+  "crates/sts-model-management-operations-3",
+  "crates/sts-model-management-operations-4",
+  "crates/sts-model-management-operations-5",
+  "crates/sts-model-management-operations-6",
+  "crates/sts-model-management-operations-7",
+  "crates/sts-model-management-operations-8",
+  "crates/sts-model-report",
   "crates/sts-guards",
+  "crates/sts-tls",
   "crates/sts-kerberos",
+  "crates/sts-ldap",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -47,7 +70,9 @@ sts-oauth = { path = "crates/sts-oauth" }
 sts-mgmt-api = { path = "crates/sts-mgmt-api" }
 sts-model = { path = "crates/sts-model" }
 sts-xml = { path = "crates/sts-xml" }
+sts-tls = { path = "crates/sts-tls" }
 sts-kerberos = { path = "crates/sts-kerberos" }
+sts-ldap = { path = "crates/sts-ldap" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
@@ -68,6 +93,9 @@ tokio-openssl = "0.6"
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
 deadpool-postgres = "0.14"
 postgres-openssl = "0.5"
+# MariaDB (#677): the async MySQL-protocol client of the tokio ecosystem,
+# over native TLS (OpenSSL on Linux, as the postgres connection is).
+mysql_async = { version = "0.37", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
 tracing-subscriber = { version = "0.3", features = ["registry"] }
 indexmap = { version = "2.14", features = ["serde"] }
 num-bigint = "0.5"
@@ -85,7 +113,18 @@ md4 = "0.11"
 md-5 = "0.11"
 rc4 = "0.2"
 thiserror = "2.0"
+brotli = "8"
+futures-util = "0.3"
+encoding_rs = "0.8"
+icu_locale = "2"
+# Kanidm's LDAPv3 codec: sts-ldap compares its own against it in a test.
+ldap3_proto = "0.9"
+bytes = "1"
+tokio-util = { version = "0.7", features = ["codec"] }
 tracing = "0.1"
+# The appconfig file a 1.x operator wrote is a JavaScript module (D11):
+# QuickJS evaluates it with no I/O but the appconfig files it requires.
+rquickjs = "0.11"
 
 [workspace.lints.rust]
 # DENY here and FORBID at each crate root: the one exception (rust/DESIGN.md
@@ -98,3 +137,76 @@ unsafe_code = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 let_underscore_must_use = "deny"
+
+# THE GENERATED API TYPES ARE BUILT WITHOUT DEBUG INFO (2026-11-14). sts-model's
+# api.rs was about 145,000 generated lines of serde types, and at the default
+# debuginfo one rustc compiling it grew past 12 GB and was killed; several
+# builds at once took the laptop down twice that day. Nobody steps through
+# generated serde code, so the cost buys nothing. `test` inherits `dev`.
+#
+# The same day the types were split across the `sts-model-*` crates
+# (models/lib/rust_lib.mjs, `planCrates()`), since even without debuginfo
+# one rustc of them all peaked at 12.5 GB. Every one of them is listed here:
+# a profile cannot name crates by pattern.
+[profile.dev.package.sts-model]
+debug = 0
+
+[profile.dev.package.sts-model-base]
+debug = 0
+
+[profile.dev.package.sts-model-account]
+debug = 0
+
+[profile.dev.package.sts-model-authn]
+debug = 0
+
+[profile.dev.package.sts-model-console]
+debug = 0
+
+[profile.dev.package.sts-model-console-components-1]
+debug = 0
+
+[profile.dev.package.sts-model-console-components-2]
+debug = 0
+
+[profile.dev.package.sts-model-console-components-3]
+debug = 0
+
+[profile.dev.package.sts-model-management-components-1]
+debug = 0
+
+[profile.dev.package.sts-model-management-components-2]
+debug = 0
+
+[profile.dev.package.sts-model-management-components-3]
+debug = 0
+
+[profile.dev.package.sts-model-management-components-4]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-1]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-2]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-3]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-4]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-5]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-6]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-7]
+debug = 0
+
+[profile.dev.package.sts-model-management-operations-8]
+debug = 0
+
+[profile.dev.package.sts-model-report]
+debug = 0

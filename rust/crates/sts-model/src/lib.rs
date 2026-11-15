@@ -8,7 +8,7 @@
 //! request and answer of the five published APIs. Its build writes them as
 //! TypeScript for the Node service and, through `models/lib/rust_lib.mjs`,
 //! as the Rust types here, so both implementations are held to one model.
-//! The three files under `generated/` are written by
+//! The files under `generated/` are written by
 //! `tests/tools/regenerate-model-docs.sh` and never by hand;
 //! `tests/model_domain.js` fails when they differ from what the model
 //! makes.
@@ -17,6 +17,18 @@
 //! * [`api`]: a module per document, and in it a module per operation with
 //!   its `METHOD`, `PATH`, `OPERATION_ID`, `Body`, `Query` and `AnswerNNN`.
 //! * [`unions`]: the unions of scalars the documents share.
+//!
+//! THE API TYPES ARE NOT COMPILED HERE (2026-11-14). As one crate they
+//! were about 145,000 lines and 7,500 serde types, and one rustc compiling
+//! them peaked at 12.5 GB (`cargo check` alone at 12.2 GB), which took the
+//! laptop down twice that day. The emitter writes them across the
+//! `sts-model-*` crates instead (`planCrates()` in
+//! `models/lib/rust_lib.mjs`: a document's components, its operations
+//! grouped by tag, and each small document whole), and `generated/api.rs`
+//! here only gathers them, so every path a caller names is the one it was:
+//! `sts_model::api::<document>::<operation>::Body`,
+//! `sts_model::api::<document>::components::*`,
+//! `sts_model::api::<document>::read_body` and `read_answer`.
 //!
 //! The types carry shapes, not rules: a value's bounds, patterns and
 //! formats are checked against the served document at runtime, as Node
@@ -34,12 +46,6 @@ pub mod domain {
 #[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
 pub mod api {
     include!("generated/api.rs");
-}
-
-#[rustfmt::skip]
-#[allow(clippy::all, clippy::pedantic, missing_docs, non_camel_case_types)]
-pub mod unions {
-    include!("generated/unions.rs");
 }
 
 /// What a domain concept is made from: the directory entry it reads, or the
@@ -71,35 +77,9 @@ pub struct FieldSource {
     pub embedded: bool,
 }
 
-/// A member that may be absent or `null`, kept as two answers: absent is
-/// `None`, `null` is `Some(None)`. Serde reads an absent member through
-/// `default` and a present one through here.
-pub mod double_option {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+/// A member that may be absent or `null`, kept as two answers; it lives in
+/// `sts-model-base`, which every crate of the API types depends on.
+pub use sts_model_base::double_option;
 
-    /// Reads a present member: `null` is `Some(None)`.
-    pub fn deserialize<'de, T, D>(
-        deserializer: D,
-    ) -> Result<Option<Option<T>>, D::Error>
-    where
-        T: Deserialize<'de>,
-        D: Deserializer<'de>,
-    {
-        Option::<T>::deserialize(deserializer).map(Some)
-    }
-
-    /// Writes a present member; `skip_serializing_if` leaves `None` out.
-    pub fn serialize<T, S>(
-        value: &Option<Option<T>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        T: Serialize,
-        S: Serializer,
-    {
-        match value {
-            Some(inner) => inner.serialize(serializer),
-            None => serializer.serialize_none(),
-        }
-    }
-}
+/// The unions of scalars the documents share, from `sts-model-base`.
+pub use sts_model_base::unions;

@@ -111,11 +111,15 @@ fn err(m: String) -> Krb5Error {
 }
 
 /// A UTF8String: Node's `encUtf8()`.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn enc_utf8(text: &str) -> Vec<u8> {
     asn1::tlv(tag::UTF8_STRING, text.as_bytes())
 }
 
 /// Node's `decUtf8()`.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn dec_utf8(t: Option<&Tlv<'_>>) -> Krb5Result<String> {
     match t {
         Some(t) if t.tag == tag::UTF8_STRING => {
@@ -133,6 +137,8 @@ pub fn dec_utf8(t: Option<&Tlv<'_>>) -> Krb5Result<String> {
 
 /// The one element inside an explicit `[n]` at the front of some bytes:
 /// Node's `explicit()`.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn explicit(bytes: &[u8], n: u8) -> Krb5Result<Tlv<'_>> {
     let outer = asn1::read_tlv(bytes, 0, 0)?;
     if outer.tag != asn1::context_tag(n)? {
@@ -153,6 +159,8 @@ pub fn explicit(bytes: &[u8], n: u8) -> Krb5Result<Tlv<'_>> {
 }
 
 /// A SEQUENCE's explicit fields: Node's `fieldsOf()`.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn fields_of<'a>(
     t: Option<&Tlv<'a>>,
     what: &str,
@@ -166,6 +174,8 @@ pub fn fields_of<'a>(
 }
 
 /// Node's `required()`.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn required<'f, 'a>(
     f: &'f Fields<'a>,
     n: u8,
@@ -181,6 +191,8 @@ fn padata_list(t: &Tlv<'_>) -> Krb5Result<Vec<PaData>> {
 
 /// Node's `implicit(n, encoded)`: the first octet replaced by `[n]`,
 /// constructed if the element was.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn implicit(n: u8, encoded: Vec<u8>) -> Vec<u8> {
     let mut out = encoded;
     if let Some(first) = out.first_mut() {
@@ -195,6 +207,8 @@ pub fn implicit(n: u8, encoded: Vec<u8>) -> Vec<u8> {
 
 /// Node's `asUniversal(t, tag)`: an implicit field re-read under its
 /// universal tag.
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn as_universal(t: &Tlv<'_>, universal: u8) -> Vec<u8> {
     let mut raw = t.raw.to_vec();
     raw[0] = universal;
@@ -219,6 +233,8 @@ pub struct ImplicitFields<'a> {
 }
 
 impl<'a> ImplicitFields<'a> {
+    // A hot path: a per-TLV helper, run for every field of every FAST
+    // message; no span (an Entering/Leaving pair here would drown the log).
     pub fn get(&self, n: u8) -> Option<&Tlv<'a>> {
         self.map.get(&n)
     }
@@ -230,6 +246,8 @@ impl<'a> ImplicitFields<'a> {
     }
 }
 
+// A hot path: a per-TLV helper, run for every field of every FAST
+// message; no span (an Entering/Leaving pair here would drown the log).
 pub fn implicit_fields<'a>(
     t: &Tlv<'a>,
     what: &str,
@@ -281,6 +299,7 @@ pub struct Armor {
 }
 
 impl Armor {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, Some(asn1::enc_integer(self.r#type))),
@@ -288,6 +307,7 @@ impl Armor {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let f = fields_of(Some(t), "KrbFastArmor")?;
         Ok(Armor {
@@ -308,6 +328,7 @@ pub struct FastRequest {
 }
 
 impl FastRequest {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_context(
             0,
@@ -319,6 +340,7 @@ impl FastRequest {
         )
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let inner = explicit(bytes, 0)?;
         let f = fields_of(Some(&inner), "KrbFastArmoredReq")?;
@@ -348,6 +370,7 @@ pub struct FastReq {
 }
 
 impl FastReq {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         Ok(asn1::enc_tagged_sequence(&[
             (0, Some(asn1::enc_flags(&self.fast_options)?)),
@@ -356,6 +379,7 @@ impl FastReq {
         ]))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let t = asn1::read_tlv(bytes, 0, 0)?;
         let f = fields_of(Some(&t), "KrbFastReq")?;
@@ -372,6 +396,7 @@ impl FastReq {
 }
 
 /// PA-FX-FAST-REPLY: Node's `encFastReply()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_fast_reply(enc_fast_rep: &EncryptedData) -> Vec<u8> {
     asn1::enc_context(
         0,
@@ -380,6 +405,7 @@ pub fn enc_fast_reply(enc_fast_rep: &EncryptedData) -> Vec<u8> {
 }
 
 /// Node's `readFastReply()`: the KrbFastArmoredRep's enc-fast-rep.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_fast_reply(bytes: &[u8]) -> Krb5Result<EncryptedData> {
     let inner = explicit(bytes, 0)?;
     let f = fields_of(Some(&inner), "KrbFastArmoredRep")?;
@@ -398,6 +424,7 @@ pub struct FastFinished {
 }
 
 impl FastFinished {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, Some(asn1::enc_kerberos_time(self.timestamp))),
@@ -408,6 +435,7 @@ impl FastFinished {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let w = "KrbFastFinished";
         let f = fields_of(Some(t), w)?;
@@ -432,6 +460,7 @@ pub struct FastResponse {
 }
 
 impl FastResponse {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, Some(enc_padata_list(&self.padata))),
@@ -441,6 +470,7 @@ impl FastResponse {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let w = "KrbFastResponse";
         let t = asn1::read_tlv(bytes, 0, 0)?;
@@ -472,6 +502,7 @@ pub struct TokenInfo {
 }
 
 impl TokenInfo {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         Ok(implicit_sequence(vec![
             Some(implicit(0, asn1::enc_flags(&self.flags)?)),
@@ -484,6 +515,7 @@ impl TokenInfo {
         ]))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let w = "OTP-TOKENINFO";
         let f = implicit_fields(t, w)?;
@@ -527,6 +559,7 @@ pub struct OtpChallenge {
 }
 
 impl OtpChallenge {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         let infos = self
             .token_info
@@ -543,6 +576,7 @@ impl OtpChallenge {
         ]))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let w = "PA-OTP-CHALLENGE";
         let t = asn1::read_tlv(bytes, 0, 0)?;
@@ -583,6 +617,7 @@ pub struct OtpRequest {
 impl OtpRequest {
     /// Node's `encOtpRequest()`: the OTP value is written as its UTF-8;
     /// an empty PIN IS written (only an absent one is not).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         Ok(implicit_sequence(vec![
             Some(implicit(0, asn1::enc_flags(&self.flags)?)),
@@ -596,6 +631,7 @@ impl OtpRequest {
         ]))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let w = "PA-OTP-REQUEST";
         let t = asn1::read_tlv(bytes, 0, 0)?;
@@ -633,6 +669,7 @@ impl OtpRequest {
 }
 
 /// PA-OTP-ENC-REQUEST: Node's `encOtpEncRequest()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_otp_enc_request(nonce: &[u8]) -> Vec<u8> {
     implicit_sequence(vec![i_octets(0, Some(nonce))])
 }
@@ -651,6 +688,7 @@ pub enum OtpEncData {
 }
 
 /// Node's `readOtpEncData()`: a PA-ENC-TS-ENC or a PA-OTP-ENC-REQUEST.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_otp_enc_data(bytes: &[u8]) -> Krb5Result<OtpEncData> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     if t.tag != tag::SEQUENCE {
@@ -683,6 +721,7 @@ pub struct VerifierMac {
 }
 
 impl VerifierMac {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, self.identifier.as_ref().map(PrincipalName::encode)),
@@ -692,6 +731,7 @@ impl VerifierMac {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(t: &Tlv<'_>) -> Krb5Result<Self> {
         let w = "Verifier-MAC";
         let f = fields_of(Some(t), w)?;
@@ -718,6 +758,7 @@ pub struct Cammac {
 
 impl Cammac {
     /// Node's `encCammac()`: the elements are written from their bytes.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, Some(self.elements_bytes.clone())),
@@ -726,6 +767,7 @@ impl Cammac {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let w = "AD-CAMMAC";
         let t = asn1::read_tlv(bytes, 0, 0)?;
@@ -741,12 +783,14 @@ impl Cammac {
 }
 
 /// AD-AUTHENTICATION-INDICATOR (RFC 8129): Node's `encIndicators()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_indicators(list: &[String]) -> Vec<u8> {
     let items: Vec<Vec<u8>> = list.iter().map(|s| enc_utf8(s)).collect();
     asn1::enc_sequence(&items)
 }
 
 /// Node's `readIndicators()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_indicators(bytes: &[u8]) -> Krb5Result<Vec<String>> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     asn1::dec_sequence_of(&t)?

@@ -22,9 +22,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value as Json};
+use sts_core::errors::codes;
 use sts_core::errors::ErrorCode;
-use sts_core::mode::{Mode, OAuthBcpWaivers};
-use sts_core::settings::{RealmLayer, Refusal, SettingValue, Settings};
+use sts_core::mode::{BlockingPin, Mode, OAuthBcpWaivers, PinnedSigners};
+use sts_core::settings::{
+    AdvertisedBase, RealmLayer, Refusal, SettingValue, Settings, WriteRule,
+    Written,
+};
 
 /// The ambient realm as the probe tool holds it: one map, or none.
 #[derive(Default)]
@@ -39,6 +43,22 @@ impl Ambient {
 impl RealmLayer for Ambient {
     fn ambient_overrides(&self) -> Option<Arc<HashMap<String, Json>>> {
         self.0.lock().unwrap().clone()
+    }
+
+    fn ambient_id(&self) -> Option<String> {
+        self.0.lock().unwrap().as_ref().map(|_| "acme".to_string())
+    }
+
+    /// As the probe tool's `ambient.overrides[key] = raw`.
+    fn write_ambient(&self, key: &str, raw: Option<Json>) -> Option<String> {
+        let mut held = self.0.lock().unwrap();
+        let mut map = (**held.as_ref()?).clone();
+        match raw {
+            Some(raw) => map.insert(key.to_string(), raw),
+            None => map.remove(key),
+        };
+        *held = Some(Arc::new(map));
+        Some("acme".to_string())
     }
 }
 
@@ -160,6 +180,187 @@ fn map_of(map: &Json) -> Option<HashMap<String, Json>> {
         .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
+/// The probe tool's certificate authority stub: `pins`, each in the realm
+/// asked about (`default` process-wide).
+#[derive(Default)]
+struct Pins(Mutex<Vec<Json>>);
+
+impl PinnedSigners for Pins {
+    fn blocking_signers_off(
+        &self,
+        realm: &str,
+        process: bool,
+    ) -> Vec<BlockingPin> {
+        self.0
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|one| BlockingPin {
+                unit: one["unit"].as_str().unwrap().to_string(),
+                kid: one["kid"].as_str().unwrap().to_string(),
+                realm: if process {
+                    "default".into()
+                } else {
+                    realm.into()
+                },
+                role: one["role"].as_str().unwrap().to_string(),
+            })
+            .collect()
+    }
+}
+
+/// The probe tool's listener-map stub.
+#[derive(Default)]
+struct Advertised(Mutex<String>);
+
+impl AdvertisedBase for Advertised {
+    fn advertised_base(&self, _: &str) -> String {
+        self.0.lock().unwrap().clone()
+    }
+}
+
+/// The probe tool's rule: an organization name of `needs-display` only
+/// beside a display name, read through `beside()`.
+struct NeedsDisplay(std::sync::Weak<Settings>);
+
+impl WriteRule for NeedsDisplay {
+    fn problem(
+        &self,
+        key: &str,
+        parsed: &SettingValue,
+        _: bool,
+    ) -> Option<(String, ErrorCode)> {
+        let settings = self.0.upgrade()?;
+        if key == "saml.organizationName"
+            && parsed.as_str() == "needs-display"
+            && settings.beside("saml.organizationDisplayName").as_str()
+                != "present"
+        {
+            return Some((
+                "needs a display name beside it".to_string(),
+                codes::STS_CORE_0006,
+            ));
+        }
+        None
+    }
+}
+
+fn done(result: Result<Written, Refusal>) -> Json {
+    match result {
+        Ok(w) => {
+            json!({"ok": true, "errors": [], "code": "", "realm": w.realm})
+        }
+        Err(r) => json!({"ok": false, "errors": [r.problem],
+                         "code": r.code.to_string(), "realm": null}),
+    }
+}
+
+/// The layers sequence (`out.layers`), replayed step by step.
+fn layers(p: &mut Probe, v: &Json, operator: &Json) {
+    let seq = &v["layers"];
+    let env = env_of(&seq["env"]);
+    let settings = Arc::new(Settings::new(operator.clone(), env));
+    let ambient = Arc::new(Ambient::default());
+    settings.set_realm_layer(ambient.clone());
+    let mode = Mode::shared(settings.clone());
+    let pins = Arc::new(Pins::default());
+    mode.set_pinned_signers(pins.clone());
+    let advertised = Arc::new(Advertised::default());
+    settings.set_advertised_base(advertised.clone());
+    settings.add_write_rule(Arc::new(NeedsDisplay(Arc::downgrade(&settings))));
+    let snapshot = |ambient: &Ambient| -> Json {
+        match ambient.0.lock().unwrap().as_ref() {
+            Some(map) => json!(map.as_ref()),
+            None => Json::Null,
+        }
+    };
+    let node_done = |p: &Probe, n: &Json| -> Json {
+        let errors: Vec<Json> = n["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| p.text(e))
+            .collect();
+        json!({"ok": n["ok"], "errors": errors, "code": n["code"], "realm": n["realm"]})
+    };
+    let steps = seq["steps"].as_array().unwrap();
+    for (i, (step, node)) in steps
+        .iter()
+        .zip(seq["answers"].as_array().unwrap())
+        .enumerate()
+    {
+        let op = step["op"].as_str().unwrap();
+        let key = step["key"].as_str().unwrap_or("");
+        let what = format!("layers step {} {} {}", i, op, key);
+        match op {
+            "read" => {
+                let got = json!([
+                    settings.source_named(key).as_str(),
+                    to_json(&settings.value_of(key))
+                ]);
+                p.check("layers read", &what, &got, node);
+            }
+            "deliver" => {
+                let got = match settings
+                    .set_delivered(key, step["raw"].as_str().unwrap())
+                {
+                    Ok(()) => json!("ok"),
+                    Err(e) => json!(e),
+                };
+                let want = if node == "ok" {
+                    node.clone()
+                } else {
+                    p.text(node)
+                };
+                p.check("layers deliver", &what, &got, &want);
+            }
+            "set" | "reset" => {
+                let result = if op == "set" {
+                    settings.set_override(key, step["raw"].clone())
+                } else {
+                    settings.reset_override(key)
+                };
+                let got = json!([done(result), snapshot(&ambient)]);
+                let want = json!([node_done(p, &node[0]), node[1]]);
+                p.check("layers write", &what, &got, &want);
+            }
+            "realm" => ambient.set(map_of(&step["overrides"])),
+            "batch" => {
+                let values = step["values"].as_object().unwrap();
+                let raw = step["raw"].clone();
+                let set = step["set"].as_bool().unwrap_or(false);
+                let got = settings.with_write_batch(values, || {
+                    if set {
+                        done(settings.set_override(key, raw.clone()))
+                    } else {
+                        answer(settings.check_override(key, &raw, None))
+                    }
+                });
+                let want = if set {
+                    node_done(p, node)
+                } else {
+                    p.refusal(node)
+                };
+                p.check("layers batch", &what, &got, &want);
+            }
+            "pins" => {
+                *pins.0.lock().unwrap() =
+                    step["pins"].as_array().unwrap().clone()
+            }
+            "advertise" => {
+                *advertised.0.lock().unwrap() =
+                    step["base"].as_str().unwrap().to_string()
+            }
+            "base" => {
+                let got = json!(settings.management_api_base_url());
+                p.check("layers base", &what, &got, node);
+            }
+            other => panic!("no step {}", other),
+        }
+    }
+    ambient.set(None);
+}
+
 #[test]
 fn settings_and_mode_as_node_answers() {
     let Ok(dir) = std::env::var("STS_CORE_VECTORS") else {
@@ -176,6 +377,17 @@ fn settings_and_mode_as_node_answers() {
     };
     let v = read("settings-mode-node.json");
     let operator = read("appconfig.json");
+    // The same file as the JavaScript module the probe tool started Node
+    // on, read through this runtime's evaluator: the two must be one.
+    let evaluated = sts_core::appconfig::evaluate(
+        dir.join("appconfig.js").to_str().unwrap(),
+        &HashMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        evaluated, operator,
+        "appconfig.js evaluates as appconfig.json"
+    );
     let keys: Vec<String> = v["keys"]
         .as_array()
         .unwrap()
@@ -350,6 +562,8 @@ fn settings_and_mode_as_node_answers() {
         }
         ambient.set(None);
     }
+
+    layers(&mut p, &v, &operator);
 
     eprintln!(
         "settings and mode: {} answers checked against Node, {} differ; \
