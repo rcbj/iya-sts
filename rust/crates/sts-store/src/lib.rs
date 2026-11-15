@@ -15,20 +15,25 @@
 #![forbid(unsafe_code)]
 
 pub mod codec;
+pub mod dialect;
 pub mod driver;
 pub mod fan_in;
 pub mod key_sets;
 pub mod keystore;
 pub mod ldif;
 pub mod ldif_driver;
+pub mod mariadb;
 pub mod memory;
 pub mod merge;
 pub mod minted;
 pub mod model;
+pub mod origin;
 pub mod persistence;
 pub mod postgres;
 pub mod replication;
+pub mod schema;
 pub mod shadow;
+pub mod side;
 
 pub use driver::{Driver, StoreError, StoreFuture, StoreResult};
 pub use model::{

@@ -41,56 +41,6 @@ use sts_guards::{is_service_code, listed, ratchet, Workspace};
 /// it is listed rather than edited, or in the XACML engine, which depends
 /// on nothing of the service's and so has no `ErrorCode` to name.
 const LITERALS: &[(&str, &str)] = &[
-    // sts-cluster's scheduler: its run rows and refusals spell the code as
-    // text (the scheduler's own slice converts them to constants).
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0001",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0002",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0004",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0005",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0006",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0010",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0011",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0011",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0011",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0011",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0012",
-        "cluster slice",
-    ),
-    (
-        "crates/sts-cluster/src/scheduler.rs|STS-SCHED-0015",
-        "cluster slice",
-    ),
     // sts-xacml is the ENGINE, shared by the runtime and the remote PEP,
     // and depends on no crate of the service's — `ErrorCode` is sts-core's.
     // Whether the engine takes sts-core (and its tokio and tracing
@@ -117,12 +67,6 @@ const REFUSAL_TYPES: &[(&str, &str)] = &[
     (
         "crates/sts-cluster/src/scheduler.rs|ClaimRefused",
         "an internal outcome",
-    ),
-    // The scheduler's 4xx refusal: `error_code: &'static str`. The cluster
-    // slice's to change.
-    (
-        "crates/sts-cluster/src/scheduler.rs|Refusal",
-        "cluster slice",
     ),
     // The XACML engine's `Refused::code()` answers `&'static str`, for the
     // reason LITERALS gives.

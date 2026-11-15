@@ -16,6 +16,7 @@ pub type Krb5Result<T> = Result<T, Krb5Error>;
 
 impl Krb5Error {
     /// An error with this message.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(message: impl Into<String>) -> Self {
         Krb5Error(message.into())
     }
@@ -28,6 +29,7 @@ impl Krb5Error {
     /// decoders, `value` for the structure readers. Ported as the message
     /// it is, because it is what the KDC proxy answers in development
     /// (`the KDC-PROXY-MESSAGE does not decode: …`).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn missing(property: &str) -> Self {
         Krb5Error(format!(
             "Cannot read properties of undefined (reading '{}')",
@@ -36,14 +38,9 @@ impl Krb5Error {
     }
 
     /// The message.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn message(&self) -> &str {
         &self.0
-    }
-}
-
-impl From<openssl::error::ErrorStack> for Krb5Error {
-    fn from(e: openssl::error::ErrorStack) -> Self {
-        Krb5Error(format!("krb5: {}", e))
     }
 }
 

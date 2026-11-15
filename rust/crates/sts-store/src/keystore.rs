@@ -37,6 +37,7 @@ use serde_json::{json, Value as Json};
 use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_core::mode::Mode;
+use sts_core::secrets::{KeyNormalizer, RemoteKek, Secret, Secrets};
 use sts_core::settings::Settings;
 use sts_crypto::secrets::{self, KekInput};
 
@@ -140,6 +141,9 @@ struct Dek {
     values: f64,
     counted_at: f64,
     derived: bool,
+    /// Made under a key management service and not yet wrapped by it
+    /// (`needsWrap`): its row's write wraps it first (`wrapPending()`).
+    needs_wrap: bool,
 }
 
 impl Dek {
@@ -269,6 +273,18 @@ struct State {
     reloaded_at: Option<Instant>,
 }
 
+/// `secrets.js`'s client-key normalization, from the crypto module: any PEM
+/// private key — OpenBao's seeded PKCS#1 RSA key among them — as the PKCS#8
+/// the TLS client takes (`sts_crypto::keys::private_key_pem_to_pkcs8`).
+pub struct Pkcs8Normalizer;
+
+impl KeyNormalizer for Pkcs8Normalizer {
+    fn pkcs8_pem(&self, key_pem: &[u8]) -> Result<Vec<u8>, String> {
+        sts_crypto::keys::private_key_pem_to_pkcs8(key_pem)
+            .map_err(|e| e.to_string())
+    }
+}
+
 /// The data keys of one process.
 pub struct DataKeys {
     /// The key-encryption key, as its provider handed it back (text, or
@@ -281,6 +297,15 @@ pub struct DataKeys {
     settings: Option<Arc<Settings>>,
     state: Mutex<State>,
     writing: tokio::sync::Mutex<()>,
+    /// A key-encryption key that never leaves its key management service
+    /// (#391 P3, `isRemote()`): DEKs are wrapped and unwrapped by the
+    /// handle, asynchronously, and `kek` holds nothing.
+    remote: Option<Arc<dyn RemoteKek>>,
+    /// This keystore, for an unwrap begun where nothing may wait
+    /// (`unwrapLater()`).
+    me: std::sync::Weak<DataKeys>,
+    /// The DEKs a KMS unwrap is running for, one at a time each.
+    unwrapping: Mutex<HashSet<String>>,
 }
 
 impl DataKeys {
@@ -342,6 +367,41 @@ impl DataKeys {
             settings,
             state: Mutex::new(State::default()),
             writing: tokio::sync::Mutex::new(()),
+            remote: None,
+            me: std::sync::Weak::new(),
+            unwrapping: Mutex::new(HashSet::new()),
+        }
+    }
+
+    /// A key-encryption key held by a key management service (`readKek()`
+    /// answered a handle) over a store that keeps the DEKs: each DEK is
+    /// wrapped by the KMS before its row is written, as `$dekkms$1$…`, and
+    /// unwrapped by it, under the DEK's own `dekAad()`.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn durable_remote(
+        remote: Arc<dyn RemoteKek>,
+        driver: Arc<dyn Driver>,
+        settings: Option<Arc<Settings>>,
+    ) -> Arc<DataKeys> {
+        Arc::new_cyclic(|me| {
+            let mut keys =
+                DataKeys::bare(None, false, true, Some(driver), settings);
+            keys.remote = Some(remote);
+            keys.me = me.clone();
+            keys
+        })
+    }
+
+    /// The provider whose key-encryption key this is, for a sentence.
+    fn provider(&self) -> String {
+        match self.remote.as_ref() {
+            Some(r) => r.provider().to_string(),
+            None => self
+                .settings
+                .as_ref()
+                .map(|s| s.value_of("keys.kekProvider").as_str().to_string())
+                .filter(|p| !p.is_empty())
+                .unwrap_or_else(|| "file".to_string()),
         }
     }
 
@@ -431,19 +491,24 @@ impl DataKeys {
                 settings.value_of("keys.source").as_str()
             ));
         };
-        let provider =
-            settings.value_of("keys.kekProvider").as_str().to_string();
-        if provider != "file" {
-            return Err(format!(
-                "{}keys.kekProvider is \"{}\", and this runtime reads a key-encryption key only from a file so far.",
-                tag(codes::STS_KEYS_0046),
-                provider
-            ));
-        }
-        let (kek, is_text) = DataKeys::read_kek_file(
-            settings.value_of("keys.kekFile").as_str(),
-        )?;
-        let keys = DataKeys::durable(kek, is_text, driver, Some(settings))?;
+        // THE KEY-ENCRYPTION KEY FROM ITS PROVIDER (`secrets.readKek()`):
+        // a value from a file or a secret store, or a key management
+        // service's handle, which never hands its key over.
+        let secrets =
+            Secrets::new(settings.clone(), std::env::vars().collect());
+        let keys = match secrets.read_kek(mode).await? {
+            Secret::Value { bytes, text } => {
+                DataKeys::durable(bytes, text, driver, Some(settings))?
+            }
+            Secret::Remote(handle) => {
+                tracing::info!(
+                    "keystore: the key-encryption key is {}, held by its key management service; data keys are \
+                     wrapped and unwrapped there.",
+                    handle.label()
+                );
+                DataKeys::durable_remote(handle, driver, Some(settings))
+            }
+        };
         keys.load(true).await?;
         keys.ensure_digest_key().await;
         Ok(keys)
@@ -464,7 +529,7 @@ impl DataKeys {
 
     /// `sealed()`: whether a key-encryption key is held.
     pub fn sealed(&self) -> bool {
-        self.kek.is_some()
+        self.kek.is_some() || self.remote.is_some()
     }
 
     /// `deksStored()`.
@@ -474,7 +539,7 @@ impl DataKeys {
 
     /// The scope a key is wrapped under: only the service's so far.
     fn wraps(&self, scope: &str) -> bool {
-        scope == "service" && self.kek.is_some()
+        scope == "service" && self.sealed()
     }
 
     fn cipher_for(&self, cls: &str) -> &'static str {
@@ -580,6 +645,7 @@ impl DataKeys {
             values: 0.0,
             counted_at: 0.0,
             derived: true,
+            needs_wrap: false,
         };
         st.deks.insert(rec.id.clone(), rec.clone());
         Some(rec)
@@ -593,7 +659,6 @@ impl DataKeys {
         realm: &str,
         cls: &str,
     ) -> Result<Dek, String> {
-        let input = self.kek_input().ok_or("no key-encryption key is held")?;
         let now = now_ms();
         let key = secrets::generate_dek(self.cipher_for(cls))
             .map_err(|e| e.to_string())?;
@@ -612,10 +677,21 @@ impl DataKeys {
             values: 0.0,
             counted_at: 0.0,
             derived: false,
+            needs_wrap: false,
         };
-        let key = rec.key.as_deref().unwrap_or_default();
-        rec.wrapped = secrets::wrap_dek(input, key, &rec.aad())
-            .map_err(|e| e.to_string())?;
+        if self.remote.is_some() {
+            // A KEY MANAGEMENT SERVICE WRAPS IT, which is a network call:
+            // the DEK is usable here at once, and its row's write wraps it
+            // first (`wrapPending()`); every writer of sealed rows waits
+            // for that write (`settle()`).
+            rec.needs_wrap = true;
+        } else {
+            let input =
+                self.kek_input().ok_or("no key-encryption key is held")?;
+            let key = rec.key.as_deref().unwrap_or_default();
+            rec.wrapped = secrets::wrap_dek(input, key, &rec.aad())
+                .map_err(|e| e.to_string())?;
+        }
         st.deks.insert(rec.id.clone(), rec.clone());
         st.dirty.insert((scope.to_string(), realm.to_string()));
         Ok(rec)
@@ -670,6 +746,12 @@ impl DataKeys {
             if rec.wrapped.is_empty() || !self.wraps(&rec.scope) {
                 return None;
             }
+            if self.remote.is_some() {
+                let rec = rec.clone();
+                drop(st);
+                self.unwrap_later(rec);
+                return None;
+            }
             let key = secrets::unwrap_dek(
                 self.kek_input()?,
                 &rec.wrapped,
@@ -702,7 +784,9 @@ impl DataKeys {
         label: &str,
         realm: &str,
     ) -> Option<String> {
-        self.kek.as_ref()?;
+        if !self.sealed() {
+            return None;
+        }
         let rec =
             self.active("service", &dek_realm(realm), &dek_class(label))?;
         let key = rec.key.as_deref()?;
@@ -794,7 +878,9 @@ impl DataKeys {
     /// key (or, where nothing is stored, the key-encryption key), base64url;
     /// `None` without one.
     pub fn keyed_digest(&self, label: &str, text: &str) -> Option<String> {
-        self.kek.as_ref()?;
+        if !self.sealed() {
+            return None;
+        }
         let ikm = if self.stored {
             self.digest_key()?
         } else {
@@ -882,8 +968,12 @@ impl DataKeys {
         };
         for (scope, realm) in dirty {
             let row_key = dek_row_key(&scope, &realm);
-            let result =
-                self.write_row(&driver, &row_key, &scope, &realm).await;
+            let result = match self.wrap_pending(&scope, &realm).await {
+                Ok(()) => {
+                    self.write_row(&driver, &row_key, &scope, &realm).await
+                }
+                Err(e) => Err(e),
+            };
             match result {
                 Ok(Some(material)) => {
                     if let Err(e) = self.adopt(&row_key, &material, false) {
@@ -1022,7 +1112,16 @@ impl DataKeys {
                 values: num(one.get("values")),
                 counted_at: num(one.get("countedAt")),
                 derived: false,
+                needs_wrap: false,
             };
+            if !rec.destroyed && self.wraps(&rec.scope) && self.remote.is_some()
+            {
+                // Unwrapped by the KMS once the lock is let go
+                // (`unwrap_held()`), asynchronously.
+                st.deks.insert(rec.id.clone(), rec);
+                adopted += 1;
+                continue;
+            }
             if !rec.destroyed && self.wraps(&rec.scope) {
                 let unwrapped = self
                     .kek_input()
@@ -1040,12 +1139,13 @@ impl DataKeys {
                         let why = format!(
                             "{}the data encryption key \"{}\" ({}, \"{}\" realm, {}) could not be unwrapped. The \
                              key-encryption key is almost certainly not the one it was wrapped under (provider: \
-                             file): {}",
+                             {}): {}",
                             tag(codes::STS_KEYS_0091),
                             rec.id,
                             rec.cls,
                             rec.realm,
                             rec.scope,
+                            self.provider(),
                             e
                         );
                         if fatal {
@@ -1129,7 +1229,162 @@ impl DataKeys {
                 Err(e) => tracing::error!("keystore: {}.", e),
             }
         }
+        self.unwrap_held(fatal).await?;
         Ok(adopted)
+    }
+
+    /// `unwrapUnder()` for a KMS: the key it answers must be 32 or 64
+    /// bytes (STS-KEYS-0103).
+    async fn remote_unwrap(
+        remote: &Arc<dyn RemoteKek>,
+        wrapped: &str,
+        aad: &str,
+    ) -> Result<Vec<u8>, String> {
+        let key = remote
+            .unwrap(wrapped, aad)
+            .await
+            .map_err(|f| format!("{}{}", tag(f.code), f.message))?;
+        if key.len() != 32 && key.len() != 64 {
+            return Err(format!(
+                "{}the KMS unwrapped something that is not a 32- or 64-byte key",
+                tag(codes::STS_KEYS_0103)
+            ));
+        }
+        Ok(key)
+    }
+
+    /// Every adopted DEK of ours still wrapped, unwrapped by the KMS (the
+    /// load's half of `adoptDekRow()` for a remote key); one that will not
+    /// is the wrong key, and `fatal` makes that stop the start.
+    async fn unwrap_held(&self, fatal: bool) -> Result<(), String> {
+        let Some(remote) = self.remote.clone() else {
+            return Ok(());
+        };
+        let waiting: Vec<Dek> = self
+            .state()
+            .deks
+            .values()
+            .filter(|r| {
+                r.key.is_none()
+                    && !r.destroyed
+                    && !r.wrapped.is_empty()
+                    && self.wraps(&r.scope)
+            })
+            .cloned()
+            .collect();
+        for rec in waiting {
+            match DataKeys::remote_unwrap(&remote, &rec.wrapped, &rec.aad())
+                .await
+            {
+                Ok(key) => {
+                    if let Some(held) = self.state().deks.get_mut(&rec.id) {
+                        held.alg = secrets::dek_alg_of(&key).to_string();
+                        held.key = Some(key);
+                    }
+                }
+                Err(e) => {
+                    let why = format!(
+                        "{}the data encryption key \"{}\" ({}, \"{}\" realm, {}) could not be unwrapped. The \
+                         key-encryption key is almost certainly not the one it was wrapped under (provider: {}): {}",
+                        tag(codes::STS_KEYS_0091),
+                        rec.id,
+                        rec.cls,
+                        rec.realm,
+                        rec.scope,
+                        remote.provider(),
+                        e
+                    );
+                    if fatal {
+                        return Err(format!(
+                            "{}. This service will NOT start rather than make new keys, because everything \
+                             sealed under this one would stop opening.",
+                            why
+                        ));
+                    }
+                    tracing::error!("keystore: {}.", why);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `unwrapLater()`: a KMS unwrap begun for a DEK met where nothing may
+    /// wait (a seal or an open), one at a time per DEK; the value that
+    /// asked is answered as unopened meanwhile, as Node answers it.
+    fn unwrap_later(&self, rec: Dek) {
+        let (Some(remote), Some(me)) = (self.remote.clone(), self.me.upgrade())
+        else {
+            return;
+        };
+        if !self
+            .unwrapping
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(rec.id.clone())
+        {
+            return;
+        }
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            me.unwrapping
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&rec.id);
+            return;
+        };
+        runtime.spawn(async move {
+            match DataKeys::remote_unwrap(&remote, &rec.wrapped, &rec.aad()).await {
+                Ok(key) => {
+                    if let Some(held) = me.state().deks.get_mut(&rec.id) {
+                        held.key = Some(key);
+                    }
+                }
+                Err(e) => tracing::error!(
+                    "{}keystore: the data encryption key \"{}\" could not be unwrapped by the key management \
+                     service: {}",
+                    tag(codes::STS_KEYS_0103),
+                    rec.id,
+                    e
+                ),
+            }
+            me.unwrapping.lock().unwrap_or_else(PoisonError::into_inner).remove(&rec.id);
+        });
+    }
+
+    /// `wrapPending()`: every DEK of a row waiting for the KMS wrapped
+    /// before the row is written — a row never carries a DEK without its
+    /// wrap.
+    async fn wrap_pending(
+        &self,
+        scope: &str,
+        realm: &str,
+    ) -> Result<(), String> {
+        let Some(remote) = self.remote.clone() else {
+            return Ok(());
+        };
+        let waiting: Vec<(String, Vec<u8>, String)> = self
+            .state()
+            .deks
+            .values()
+            .filter(|r| {
+                r.scope == scope
+                    && r.realm == realm
+                    && r.needs_wrap
+                    && !r.destroyed
+            })
+            .filter_map(|r| r.key.clone().map(|k| (r.id.clone(), k, r.aad())))
+            .collect();
+        for (id, key, aad) in waiting {
+            let wrapped = remote
+                .wrap(&key, &aad)
+                .await
+                .map_err(|f| format!("{}{}", tag(f.code), f.message))?;
+            if let Some(rec) = self.state().deks.get_mut(&id) {
+                rec.wrapped = wrapped;
+                rec.wrapped_at = now_ms().max(rec.wrapped_at + 1.0);
+                rec.needs_wrap = false;
+            }
+        }
+        Ok(())
     }
 
     /// `reloadDekRows()`: the stored rows read again, at most every two

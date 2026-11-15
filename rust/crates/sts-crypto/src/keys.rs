@@ -431,6 +431,22 @@ pub fn ec_point_of(
     Ok(point)
 }
 
+/// Any PEM private key — PKCS#1 RSA, SEC1 EC, or PKCS#8 already — as
+/// PKCS#8 PEM: node's `crypto.createPrivateKey(pem).export({ type:
+/// 'pkcs8', format: 'pem' })`, the form a TLS client takes. OpenBao's
+/// seeded client key is PKCS#1 (`openbao/seed.js`); `sts-core`'s
+/// `KeyNormalizer` is filled from this. An encrypted key is refused, as
+/// node refuses one without its passphrase.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn private_key_pem_to_pkcs8(pem: &[u8]) -> CryptoResult<Vec<u8>> {
+    let key = PKey::private_key_from_pem(pem).map_err(|e| {
+        CryptoError::new(format!("the private key does not read: {}", e))
+    })?;
+    key.private_key_to_pem_pkcs8().map_err(|e| {
+        CryptoError::new(format!("the private key will not export: {}", e))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

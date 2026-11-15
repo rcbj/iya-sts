@@ -14,7 +14,12 @@
 #   types/domain.generated.d.ts
 #   types/api.generated.d.ts
 #   common/domain_classes.ts
-#   rust/crates/sts-model/src/generated/{domain,api,unions}.rs
+#   rust/crates/sts-model/src/generated/{domain,api}.rs
+#   rust/crates/sts-model-base/src/generated/unions.rs
+#   rust/crates/sts-model-*/ (the crates the API types are split across,
+#     models/lib/rust_lib.mjs's planCrates(): each one's Cargo.toml,
+#     src/lib.rs and src/generated/api.rs)
+#   rust/crates/sts-store/src/generated/persistence.rs
 #   rust/crates/sts-mgmt-api/src/generated/operations.rs and the two
 #     documents /admin-api serves (openapi.{management,console,every}.json)
 #   docs/data-model-directory.md
@@ -29,14 +34,15 @@ tests/tools/corpora-preflight.sh
 # shellcheck disable=SC2046
 docker build -q $(tests/tools/mirror-contexts.sh) -f tests/Dockerfile \
   -t "${TAG}" . > /dev/null
-mkdir -p docs postgres mariadb
+mkdir -p docs postgres mariadb rust/crates/sts-store/src/generated
 docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/docs:/out/docs" \
   -v "${PWD}/postgres:/out/postgres" \
   -v "${PWD}/mariadb:/out/mariadb" \
   -v "${PWD}/types:/out/types" \
   -v "${PWD}/common:/out/common" \
-  -v "${PWD}/rust/crates/sts-model/src/generated:/out/rust" \
+  -v "${PWD}/rust/crates:/out/rust" \
+  -v "${PWD}/rust/crates/sts-store/src/generated:/out/rust-store" \
   "${TAG}" bash -c \
   "node common/model_emit.js --docs && \
    cp docs/data-model-directory.md docs/data-model-persistence.md /out/docs/ && \
@@ -45,8 +51,12 @@ docker run --rm --label com.docker.compose.project=none \
    cp models/generated/domain.d.ts /out/types/domain.generated.d.ts && \
    cp models/generated/api.d.ts /out/types/api.generated.d.ts && \
    cp models/generated/domain_classes.txt /out/common/domain_classes.ts && \
-   cp models/generated/domain.rs models/generated/api.rs \
-     models/generated/unions.rs /out/rust/ && \
+   for crate in \$(ls models/generated/rust); do \
+     rm -rf /out/rust/\${crate}/src/generated && \
+     cp -r models/generated/rust/\${crate} /out/rust/ && \
+     chown -R $(id -u):$(id -g) /out/rust/\${crate} || exit 1; \
+   done && \
+   cp models/generated/persistence.rs /out/rust-store/ && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
@@ -55,7 +65,7 @@ docker run --rm --label com.docker.compose.project=none \
      /out/types/domain.generated.d.ts \
      /out/types/api.generated.d.ts \
      /out/common/domain_classes.ts \
-     /out/rust/domain.rs /out/rust/api.rs /out/rust/unions.rs"
+     /out/rust-store/persistence.rs"
 # sts-mgmt-api's copy (#444, phase 4): the operation enum it routes by and the
 # two documents /admin-api serves and validates against, as the image's model
 # build wrote them.

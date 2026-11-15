@@ -3389,6 +3389,383 @@ function schedulerVectors() {
                       90061000, -5].map(S.span) };
 }
 
+// THE SCHEDULER'S TICK (`cluster/scheduler.ts`, #408, #623, #883, #98): the
+// TypeScript Scheduler's own `tick()` over stand-in claims, a runner whose
+// load each scenario sets, and a durable run reader that answers, is empty
+// or fails as the scenario says. Per tick: the claims asked (scope, value,
+// realm), the reads asked (realm, ids) and the held bodies dropped; after
+// the ticks, every run row's state, where it ran and how long it was held.
+// Rust drives its own Scheduler through the same scenarios
+// (`sts-cluster/tests/tick_vectors.rs`).
+async function schedulerTickVectors() {
+  const S = require(path.join(ROOT, 'cluster', 'scheduler.js')).Scheduler;
+  const bunyan = require('bunyan');
+  const cells = require(path.join(ROOT, 'common', 'cells.js'));
+  const t0 = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const base = { 'scheduler.enabled': true, 'scheduler.tickS': 15,
+                 'scheduler.disabledJobs': [],
+                 'scheduler.maxConcurrentRuns': 10,
+                 'scheduler.runTimeoutS': 300,
+                 'scheduler.runHistoryCount': 50,
+                 'scheduler.runHistoryHours': 24,
+                 'scheduler.niceBusyThreshold': 3,
+                 'scheduler.niceLagMs': 200,
+                 'scheduler.niceMaxDeferS': 120 };
+  const settle = async function () {
+    for (let i = 0; i < 20; i++) {
+      await new Promise(function (r) { setImmediate(r); });
+    }
+  };
+  // One scenario: `jobs` as descriptors, `realms`, and per tick `{ at,
+  // loads, reads, claim }` (loads null: no runner at all).
+  const scenario = async function (sc) {
+    const settings = Object.assign({}, base, sc.settings || {});
+    const store = new Map();
+    const mapOf = function (id) {
+      if (!store.has(id)) {
+        store.set(id, new Map());
+      }
+      return store.get(id);
+    };
+    let clock = sc.ticks[0].at;
+    let current = sc.ticks[0];
+    let events = [];
+    let watcher = null;
+    const deps = {
+      log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
+      config: { value: function (k) { return settings[k]; } },
+      realms: { list: function () {
+        return sc.realms.map(function (id) { return { id: id }; });
+      }, run: function (r, fn) { return fn(); },
+      get: function (id) {
+        return sc.realms.indexOf(id) >= 0 ? { id: id } : null;
+      }, DEFAULT_ID: 'default' },
+      errorCodes: require(path.join(ROOT, 'common', 'error_codes.js')),
+      audit: { record: function () {} },
+      cluster: { enabled: function () { return true; },
+                 nodeId: function () { return 'n1'; },
+                 nodeName: function () { return 'node-one'; },
+                 stepDown: function () {
+                   events.push({ stepDown: true });
+                   return Promise.resolve({ ok: true });
+                 } },
+      claims: {
+        claim: function (o) {
+          events.push({ claim: [o.scope, o.value, o.realm] });
+          const used = current.claimUsed &&
+            current.claimUsed.indexOf(o.scope) >= 0;
+          return Promise.resolve(used ? { ok: false, reason: 'used' } :
+            { ok: true, claimedAt: clock, handle: { v: o.value } });
+        },
+        release: function () { return Promise.resolve(null); }
+      },
+      store: { realmMap: mapOf,
+               watch: function (fn) { watcher = fn; },
+               dropHeld: function (realm, key) {
+                 events.push({ drop: [realm, key] });
+                 mapOf(realm).delete(key);
+                 return true;
+               },
+               restoreRow: function (realm, key, row) {
+                 mapOf(realm).set(key, row);
+                 if (watcher) {
+                   watcher(realm, row);
+                 }
+               } },
+      dbNow: function () { return Promise.resolve(clock); },
+      now: function () { return clock; },
+      setTimer: function () { return null; }, clearTimer: function () {},
+      cronPrev: S.cronPrev, cronNext: S.cronNext,
+      host: 'h1', pid: 41, isRequestWorker: function () { return false; }
+    };
+    if (sc.history) {
+      deps.persisted = function () { return true; };
+      deps.readRuns = function (realm, ids) {
+        events.push({ read: [realm, ids.slice()] });
+        const how = (current.reads || {})[realm];
+        if (how === 'fail' ||
+            (how === 'fail-batch' && ids.length > 2) ||
+            (Array.isArray(how) && ids.some(function (id) {
+              return how.indexOf(id) >= 0;
+            }))) {
+          return Promise.reject(new Error('the store is unwell'));
+        }
+        if (how === 'none') {
+          return Promise.resolve(null);
+        }
+        const out = new Map();
+        (sc.stored || []).forEach(function (r) {
+          if (r.realm === realm && ids.indexOf(r.runId) >= 0) {
+            out.set(r.runId, r);
+          }
+        });
+        return Promise.resolve(out);
+      };
+    }
+    deps.runner = function () {
+      if (!current.loads) {
+        return null;
+      }
+      return { workers: function () { return current.loads; },
+               run: function () {
+                 return Promise.resolve({ ok: true, result: null });
+               },
+               fence: function () {}, renew: function () {} };
+    };
+    const sched = new S(deps);
+    const specOf = function (d) {
+      const spec = { id: d.id, title: 'T ' + d.id, describe: 'D', owner: 'O',
+                     run: function () { return null; } };
+      ['kind', 'scope', 'manualOnly', 'onFront', 'nice'].forEach(function (k) {
+        if (d[k] !== undefined) {
+          spec[k] = d[k];
+        }
+      });
+      if (d.everyMs !== undefined) {
+        spec.everyMs = function () { return d.everyMs; };
+      }
+      return spec;
+    };
+    sc.jobs.forEach(function (d) {
+      sched.register(specOf(d));
+    });
+    (sc.admitted || []).forEach(function (one) {
+      mapOf(one.realm).set(one.row.runId, Object.assign({}, one.row));
+      if (one.watched) {
+        watcher(one.realm, Object.assign({}, one.row));
+      }
+    });
+    sched.leading = true;
+    const ticks = [];
+    const wasMulti = cells.isMulti;
+    cells.isMulti = function () { return !!sc.cells; };
+    try {
+      for (const t of sc.ticks) {
+        current = t;
+        clock = t.at;
+        events = [];
+        await sched.tick();
+        await settle();
+        ticks.push(events);
+      }
+    } finally {
+      cells.isMulti = wasMulti;
+    }
+    const rows = [];
+    store.forEach(function (m, realm) {
+      m.forEach(function (row) {
+        if (row.kind !== 'run') {
+          return;
+        }
+        rows.push({ realm: realm, runId: row.runId, jobId: row.jobId,
+                    state: row.state, trigger: row.trigger,
+                    attempt: row.attempt, ranIn: row.ranIn === undefined ?
+                      null : row.ranIn,
+                    deferredMs: row.deferredMs === undefined ? null :
+                      row.deferredMs });
+      });
+    });
+    rows.sort(function (a, b) {
+      return (a.realm + a.runId).localeCompare(b.realm + b.runId);
+    });
+    return { name: sc.name, ticks: ticks, rows: rows };
+  };
+  const heavy = [{ id: 5, inFlight: 4, lagMs: 10 },
+                 { id: 3, inFlight: 4, lagMs: null }];
+  const lagging = [{ id: 2, inFlight: 0, lagMs: 250 }];
+  const light = [{ id: 7, inFlight: 1, lagMs: 20 },
+                 { id: 4, inFlight: 1, lagMs: 20 }];
+  const H = function (job, realm, slot) {
+    return S.prototype.runIdFor.call({ deps: { log: { debug: function () {} } } },
+                                     { id: job }, realm, slot);
+  };
+  const realmJobs = [{ id: 'a.one', everyMs: 600000, scope: 'realm' },
+                     { id: 'a.two', everyMs: 600000, scope: 'realm' },
+                     { id: 'a.three', everyMs: 600000, scope: 'realm' },
+                     { id: 'a.four', everyMs: 600000, scope: 'realm' }];
+  const slotNow = Math.floor(t0 / 600000);
+  const scenarios = [
+    { name: 'hold-for-load', realms: ['default'],
+      jobs: [{ id: 'n.patient', everyMs: 600000, nice: 19 },
+             { id: 'n.zero', everyMs: 600000, nice: 0 },
+             { id: 'n.front', everyMs: 600000, onFront: 'it holds a socket' },
+             { id: 'n.mid', everyMs: 60000, nice: 10 },
+             { id: 'n.lag', everyMs: 600000, nice: 5 }],
+      ticks: [{ at: t0, loads: heavy }, { at: t0 + 20000, loads: heavy },
+              { at: t0 + 40000, loads: heavy },
+              { at: t0 + 50000, loads: light }] },
+    { name: 'lag-alone', realms: ['default'],
+      jobs: [{ id: 'n.lag', everyMs: 600000, nice: 5 }],
+      ticks: [{ at: t0, loads: lagging }, { at: t0 + 1000, loads: [] },
+              { at: t0 + 2000, loads: lagging }] },
+    { name: 'no-runner', realms: ['default'],
+      jobs: [{ id: 'n.patient', everyMs: 600000, nice: 19 }],
+      ticks: [{ at: t0, loads: null }] },
+    { name: 'pending-index', realms: ['default', 'acme'],
+      jobs: [{ id: 'm.manual', manualOnly: true }],
+      admitted: [
+        { realm: 'default', watched: true, row: {
+          runId: 'm1', kind: 'run', jobId: 'm.manual', realm: 'default',
+          trigger: 'manual', state: 'queued', params: null, attempt: 0,
+          fenceAt: 0, queuedAt: t0 - 2000, updatedAt: t0 - 2000 } },
+        { realm: 'acme', watched: false, row: {
+          runId: 'm2', kind: 'run', jobId: 'm.manual', realm: 'acme',
+          trigger: 'manual', state: 'queued', params: null, attempt: 0,
+          fenceAt: 0, queuedAt: t0 - 3000, updatedAt: t0 - 3000 } },
+        { realm: 'acme', watched: true, row: {
+          runId: 'm3', kind: 'run', jobId: 'm.manual', realm: 'acme',
+          trigger: 'manual', state: 'queued', params: null, attempt: 0,
+          fenceAt: 0, queuedAt: t0 - 1000, updatedAt: t0 - 1000 } },
+        { realm: 'default', watched: false, row: {
+          runId: 'command|silent', kind: 'command', command: 'step-down',
+          state: 'queued', queuedAt: t0 - 500, updatedAt: t0 - 500 } }],
+      ticks: [{ at: t0, loads: null }] },
+    { name: 'finished-slots', realms: ['default', 'acme'], history: true,
+      jobs: realmJobs,
+      stored: [{ runId: H('a.one', 'default', slotNow), kind: 'run',
+                 jobId: 'a.one', realm: 'default', trigger: 'schedule',
+                 state: 'succeeded', attempt: 1, fenceAt: t0 - 9,
+                 startedAt: t0 - 9, endedAt: t0 - 5, updatedAt: t0 - 5 }],
+      ticks: [{ at: t0 + 1000, loads: null,
+                reads: { acme: [H('a.two', 'acme', slotNow),
+                                H('a.three', 'acme', slotNow)] } },
+              { at: t0 + 2000, loads: null, reads: { acme: 'none' } }] },
+    { name: 'read-outage', realms: ['default', 'acme'], history: true,
+      jobs: realmJobs,
+      ticks: [{ at: t0 + 1000, loads: null,
+                reads: { default: 'fail', acme: 'fail' } }] },
+    { name: 'global-claim', realms: ['default'], cells: true,
+      jobs: [{ id: 'signing.rotate', everyMs: 600000 },
+             { id: 'x.local', everyMs: 600000 }],
+      ticks: [{ at: t0, loads: null, claimUsed: ['scheduler.run.global'] },
+              { at: t0 + 1000, loads: null,
+                claimUsed: ['scheduler.run.global'] }] },
+    { name: 'global-claim-one-cell', realms: ['default'], cells: false,
+      jobs: [{ id: 'signing.rotate', everyMs: 600000 }],
+      ticks: [{ at: t0, loads: null }] }
+  ];
+  const out = [];
+  for (const sc of scenarios) {
+    out.push(Object.assign({ scenario: sc }, await scenario(sc)));
+  }
+  // The default cap with request workers (2026-11-10): the larger of two
+  // and one fewer than the workers, never every store connection.
+  let workers = 0;
+  let pool = 0;
+  const capSched = new S({
+    log: bunyan.createLogger({ name: 'vectors', level: 'fatal' }),
+    config: { value: function (k) {
+      return k === 'scheduler.maxConcurrentRuns' ? 0 : base[k];
+    } },
+    realms: { list: function () { return []; }, DEFAULT_ID: 'default',
+              get: function () { return null; } },
+    errorCodes: require(path.join(ROOT, 'common', 'error_codes.js')),
+    store: { realmMap: function () { return new Map(); } },
+    requestWorkers: function () { return workers; },
+    storeConnections: function () { return pool; },
+    now: function () { return 0; }, host: 'h', pid: 1,
+    isRequestWorker: function () { return false; }
+  });
+  const caps = [];
+  [0, 1, 2, 3, 8].forEach(function (w) {
+    [0, 3, 20].forEach(function (p) {
+      workers = w;
+      pool = p;
+      caps.push({ workers: w, pool: p, cap: capSched.maxConcurrentRuns() });
+    });
+  });
+  return { settings: base, scenarios: out, caps: caps,
+           leastLoaded: [heavy, lagging, light, [], [
+             { id: 9, inFlight: 0, lagMs: null },
+             { id: 8, inFlight: 0, lagMs: 0 }]].map(function (l) {
+             return { loads: l, id: S.leastLoaded(l) };
+           }) };
+}
+
+// THE CACHE REGISTRY (`common/cache_registry.js`, rule 3ap, #74, #704): three
+// stores the vectors describe — one per process with entries expired and not,
+// one per realm whose lookup is not counted, and one replay store that
+// TALLIES rather than lists — asked for the report `/admin/caches` draws, one
+// store's detail, the compact snapshot a heartbeat carries, and an ejection,
+// with the report after it. The registry is the process's one, so every store
+// another module registered is forgotten first.
+async function cacheRegistryVectors() {
+  const reg = require(path.join(ROOT, 'common', 'cache_registry.js'));
+  reg.names().forEach(function (n) {
+    reg.forget(n);
+  });
+  const now = Date.UTC(2026, 9, 5, 12, 0, 0);
+  const procRows = new Map([['k1', now - 5], ['k2', now + 1000],
+                            ['k3', null]]);
+  const realmRows = [{ realm: 'acme', key: 'a1', validUntil: now + 5 },
+                     { realm: 'acme', key: 'a2', validUntil: now - 1 },
+                     { realm: null, key: 'd1', validUntil: now + 9 }];
+  const descriptors = [
+    { name: 'v.process', title: 'Process store', description: 'D one',
+      owner: 'o/one.js', scope: 'process', bound: 'ENFORCED: three.',
+      settings: ['v.max'] },
+    { name: 'v.realm', title: 'Realm store', description: 'D two',
+      owner: 'o/two.js', scope: 'realm', counted: false,
+      notCountedWhy: 'its lookup is elsewhere' },
+    { name: 'v.tally', title: 'Replay store', description: 'D three',
+      owner: 'o/three.js', scope: 'realm', kind: 'replay', persisted: true,
+      hitMeaning: 'a value seen before' }
+  ];
+  const c1 = reg.register(Object.assign({}, descriptors[0], {
+    maxEntries: function () { return 3; },
+    lifetime: function () { return 'five minutes'; },
+    entries: function (at) {
+      return Array.from(procRows.entries()).map(function (e) {
+        return { realm: null, key: e[0], validUntil: e[1],
+                 valid: e[1] === null || e[1] > at,
+                 basis: e[1] === null ? 'no expiry' : 'time' };
+      });
+    },
+    eject: function (at) {
+      let n = 0;
+      procRows.forEach(function (until, key) {
+        if (until !== null && until <= at) {
+          procRows.delete(key);
+          n += 1;
+        }
+      });
+      return n;
+    }
+  }));
+  const c2 = reg.register(Object.assign({}, descriptors[1], {
+    maxEntries: function () { return 2; },
+    lifetime: function () { return 'an hour'; },
+    entries: function (at) {
+      return realmRows.map(function (r) {
+        return { realm: r.realm, key: r.key, validUntil: r.validUntil,
+                 valid: r.validUntil > at, basis: 'time' };
+      });
+    }
+  }));
+  const c3 = reg.register(Object.assign({}, descriptors[2], {
+    maxEntries: function () { return 100; },
+    lifetime: function () { return 'a day'; },
+    entries: function () { return []; },
+    tally: function () { return { size: 10, largestRealm: 6, valid: 7 }; }
+  }));
+  c1.hit(); c1.hit(); c1.hit(); c1.miss(); c1.evicted(2);
+  c2.hit(); c2.refused();
+  c3.miss();
+  const out = { now: now, descriptors: descriptors,
+                procRows: Array.from(procRows.entries()),
+                realmRows: realmRows,
+                report: reg.report(now),
+                detail: reg.detail('v.process', now),
+                snapshot: reg.snapshot(now) };
+  out.ejected = await reg.ejectExpiredAsync(now);
+  out.after = reg.report(now);
+  out.snapshotAsync = await reg.snapshotAsync(now);
+  ['v.process', 'v.realm', 'v.tally'].forEach(function (n) {
+    reg.forget(n);
+  });
+  return out;
+}
+
 // THE SCHEDULER'S HISTORY AND REPORT (`cluster/scheduler.ts`, #338 and the
 // status /admin/scheduler draws): the TypeScript Scheduler over a store the
 // vectors carry — runs finished, running and queued, old and new, process
@@ -5089,6 +5466,10 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'scheduler-node.json', build: schedulerVectors },
                  { file: 'scheduler-history-node.json',
                    build: schedulerHistoryVectors },
+                 { file: 'scheduler-tick-node.json',
+                   build: schedulerTickVectors },
+                 { file: 'cache-registry-node.json',
+                   build: cacheRegistryVectors },
                  { file: 'realm-lifecycle-node.json',
                    build: realmLifecycleVectors },
                  { file: 'http-node.json', build: httpVectors },
@@ -5098,7 +5479,45 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./xacml-vectors.js').build(ROOT);
                    } },
-                 { file: 'krb5-codec-node.json', build: krb5Codec }];
+                 { file: 'krb5-codec-node.json', build: krb5Codec },
+                 // The directory's wire layer: tests/tools/ldap-wire-vectors.js.
+                 { file: 'ldap-wire-node.json',
+                   build: function () {
+                     return require('./ldap-wire-vectors.js').build(ROOT);
+                   } },
+                 { file: 'pkcs8-node.json', build: pkcs8Vectors }];
+
+// A PRIVATE KEY MADE PKCS#8 (#444, phase 3): the conversion `sts-core`'s
+// secrets reader needs for OpenBao's PKCS#1 client key, as node does it —
+// `createPrivateKey(pem).export({ type: 'pkcs8', format: 'pem' })` — for an
+// RSA key in PKCS#1 and in PKCS#8, an EC key in SEC1 and an Ed25519 key in
+// PKCS#8, each generated per run; and a key that is not one, refused.
+function pkcs8Vectors() {
+  const nodeCrypto = require('crypto');
+  const cases = [];
+  const add = function (name, input) {
+    let pkcs8 = null;
+    let refusal = null;
+    try {
+      pkcs8 = nodeCrypto.createPrivateKey(input)
+        .export({ type: 'pkcs8', format: 'pem' });
+    } catch (e) {
+      refusal = (e && e.message) || String(e);
+    }
+    cases.push({ name: name, input: input, pkcs8: pkcs8, refusal: refusal });
+  };
+  const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  add('rsa pkcs1', rsa.privateKey.export({ type: 'pkcs1', format: 'pem' }));
+  add('rsa pkcs8', rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+  const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  add('ec sec1', ec.privateKey.export({ type: 'sec1', format: 'pem' }));
+  const ed = nodeCrypto.generateKeyPairSync('ed25519');
+  add('ed25519 pkcs8', ed.privateKey.export({ type: 'pkcs8',
+                                               format: 'pem' }));
+  add('not a key', '-----BEGIN PRIVATE KEY-----\nAAAA\n' +
+                   '-----END PRIVATE KEY-----\n');
+  return { cases: cases };
+}
 
 // THE KEYSTORE'S DATA KEYS (#444): values sealed by `common/keystore.js`
 // under a durable key-encryption key — with the data-key rows it wrote to

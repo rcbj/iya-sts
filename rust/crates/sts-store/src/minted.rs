@@ -37,11 +37,12 @@ use sts_core::realm_store::{DeclaredHandle, Merge, Retain, StoreHandles};
 use sts_core::settings::Settings;
 
 use crate::driver::{
-    ChangeRow, Driver, MintedDecided, MintedFilter, MintedMerge, MintedRow,
-    MintedWrite, PurgeKind,
+    ChangeRow, Driver, MergedRow, MintedDecided, MintedFilter, MintedMerge,
+    MintedRow, MintedWrite, PurgeKind,
 };
 use crate::fan_in::FanIn;
 use crate::keystore::DataKeys;
+use crate::side::{IndexHooks, SESSIONS_HANDLE};
 
 /// What a row's NAME is sealed and digested under.
 const NAME_LABEL: &str = "minted-key";
@@ -96,6 +97,11 @@ pub struct Minted {
     fan_in: Arc<FanIn>,
     prefetched: Mutex<Option<Page>>,
     scheduler: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// What each declared store files beside its rows (Node's `indexOf`,
+    /// `lookupsOf` and `sortOf`, declared with the store), by handle.
+    index_hooks: std::sync::RwLock<HashMap<String, IndexHooks>>,
+    /// The stores declared `restoreExpiring: false` (#883).
+    null_expiry: std::sync::RwLock<Vec<String>>,
 }
 
 fn b64(text: &str) -> String {
@@ -154,7 +160,35 @@ impl Minted {
             fan_in: Arc::new(FanIn::default()),
             prefetched: Mutex::new(None),
             scheduler: Mutex::new(None),
+            // The sign-on session store files its session index (#350)
+            // whoever declares it: what `sts_sessions` holds is a property
+            // of the store's format, which a Node process reads.
+            index_hooks: std::sync::RwLock::new(HashMap::from([(
+                SESSIONS_HANDLE.to_string(),
+                IndexHooks::sessions(),
+            )])),
+            null_expiry: std::sync::RwLock::new(Vec::new()),
         })
+    }
+
+    /// Declares what a store files beside its rows (`realms.map()`'s
+    /// `indexOf`, `lookupsOf`, `sortOf`): its session index, its on-demand
+    /// index digests and its sort value.
+    #[tracing::instrument(level = "debug", skip(self, hooks))]
+    pub fn set_index_hooks(&self, handle: &str, hooks: IndexHooks) {
+        self.index_hooks
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(handle.to_string(), hooks);
+    }
+
+    fn hooks_for(&self, handle: &str) -> IndexHooks {
+        self.index_hooks
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(handle)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
@@ -339,6 +373,7 @@ impl Minted {
                     let name = stored_key(&h, key, &self.origin);
                     let (column, sealed_name) =
                         Minted::columns_for(keys, handle, realm, &name);
+                    let hooks = self.hooks_for(handle);
                     let Some(value) = h.access.read(realm, key) else {
                         deletes.push(MintedWrite {
                             handle: handle.clone(),
@@ -351,9 +386,20 @@ impl Minted {
                             own: h.spec.merge == Merge::Own,
                             tombstone: h.spec.tombstone,
                             merge: None,
+                            session_index: None,
+                            lookups: None,
+                            sort_at: None,
+                            indexed: hooks.indexed(),
                         });
                         continue;
                     };
+                    // Of the plaintext about to be sealed, not of the
+                    // ciphertext (`indexColumns()`, `indexKeysFor()`).
+                    let session_index =
+                        hooks.index_of.as_ref().and_then(|f| f(keys, &value));
+                    let lookups =
+                        hooks.lookups(keys, handle, realm, key, &value);
+                    let sort_at = hooks.sort_at(&value, key);
                     let Some(body) =
                         keys.seal(&value.to_string(), BODY_LABEL, realm)
                     else {
@@ -365,6 +411,7 @@ impl Minted {
                         let keys = keys.clone();
                         let mine = value.clone();
                         let hook = h.spec.expires_at.clone();
+                        let hooks = hooks.clone();
                         let (handle, realm, key) = (handle.clone(), realm.clone(), key.clone());
                         Box::new(move |stored: &str| {
                             let Some(text) = keys.open(stored, BODY_LABEL) else {
@@ -385,7 +432,14 @@ impl Minted {
                                 .and_then(|f| f(&merged, &key))
                                 .filter(|n| n.is_finite() && *n > 0.0)
                                 .map(|n| n.floor() as i64);
-                            Some((keys.seal(&merged.to_string(), BODY_LABEL, &realm)?, expires))
+                            // ...and so are its side-table columns.
+                            Some(MergedRow {
+                                body: keys.seal(&merged.to_string(), BODY_LABEL, &realm)?,
+                                expires_at: expires,
+                                session_index: hooks.index_of.as_ref().and_then(|f| f(&keys, &merged)),
+                                lookups: hooks.lookups(&keys, &handle, &realm, &key, &merged),
+                                sort_at: hooks.sort_at(&merged, &key),
+                            })
                         }) as MintedMerge
                     });
                     upserts.push(MintedWrite {
@@ -399,6 +453,10 @@ impl Minted {
                         own: h.spec.merge == Merge::Own,
                         tombstone: h.spec.tombstone,
                         merge,
+                        session_index,
+                        lookups,
+                        sort_at,
+                        indexed: hooks.indexed(),
                     });
                 }
             }
@@ -542,7 +600,33 @@ impl Minted {
                 .filter(|h| h.spec.retain == Retain::Age)
                 .map(|h| h.handle.clone())
                 .collect(),
+            null_expiry_handles: self.null_expiry_only(),
         }
+    }
+
+    /// Declares a store `restoreExpiring: false` (#883, `realms.map()`): a
+    /// start reads its rows whose `expires_at` is NULL — the operational
+    /// ones, a leader, a queued or running run — and leaves its expiring
+    /// rows, finished history, in the table until the expiry purge, never
+    /// opened into this process. `scheduler.runs` is the store that says so.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn set_restore_expiring(&self, handle: &str, restore: bool) {
+        let mut held = self
+            .null_expiry
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        held.retain(|h| h != handle);
+        if !restore {
+            held.push(handle.to_string());
+        }
+    }
+
+    /// `nullExpiryOnly()`.
+    fn null_expiry_only(&self) -> Vec<String> {
+        self.null_expiry
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// `restore()`: the stored rows put back into the stores, once, at the
@@ -581,6 +665,11 @@ impl Minted {
             return Ok(0);
         }
         let filter = self.restore_filter(now);
+        // An expiring row of a store that asked not to restore one (#883),
+        // dropped here as well as in the query: a driver that does not know
+        // the clause still cannot admit it. A row with no expiry is kept.
+        let null_expiry: HashSet<String> =
+            filter.null_expiry_handles.iter().cloned().collect();
         let partitions = filter.realms.len();
         let rows = self.driver.load_minted(filter).await.map_err(|e| {
             format!(
@@ -598,6 +687,9 @@ impl Minted {
             (0u64, 0u64, 0u64, 0u64);
         let mut stale: BTreeSet<String> = BTreeSet::new();
         for row in rows {
+            if null_expiry.contains(&row.handle) && row.expires_at.is_some() {
+                continue;
+            }
             let Some(h) = self.handles.handle_for(&row.handle) else {
                 unknown += 1;
                 stale.insert(row.handle);

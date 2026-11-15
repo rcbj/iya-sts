@@ -72,6 +72,8 @@ fn err(m: &str) -> Krb5Error {
 /// An OBJECT IDENTIFIER, every arc base-128 (the first one included,
 /// unlike [`crate::spnego`]'s): Node's `encOid()`, over BigInt there and
 /// u128 here.
+// A hot path: a per-TLV codec primitive, run for every field of every
+// PKINIT structure; no span (an Entering/Leaving pair would drown the log).
 pub fn enc_oid(dotted: &str) -> Krb5Result<Vec<u8>> {
     let arcs = dotted
         .split('.')
@@ -102,6 +104,8 @@ pub fn enc_oid(dotted: &str) -> Krb5Result<Vec<u8>> {
 }
 
 /// Node's `decOid()`.
+// A hot path: a per-TLV codec primitive, run for every field of every
+// PKINIT structure; no span (an Entering/Leaving pair would drown the log).
 pub fn dec_oid(t: Option<&Tlv<'_>>) -> Krb5Result<String> {
     let t = match t {
         Some(t) if t.tag == tag::OBJECT_IDENTIFIER && !t.value.is_empty() => t,
@@ -132,6 +136,8 @@ pub fn dec_oid(t: Option<&Tlv<'_>>) -> Krb5Result<String> {
 }
 
 /// A BIT STRING of whole octets: Node's `encBitString()`.
+// A hot path: a per-TLV codec primitive, run for every field of every
+// PKINIT structure; no span (an Entering/Leaving pair would drown the log).
 pub fn enc_bit_string(bytes: &[u8]) -> Vec<u8> {
     let mut v = vec![0];
     v.extend_from_slice(bytes);
@@ -139,6 +145,8 @@ pub fn enc_bit_string(bytes: &[u8]) -> Vec<u8> {
 }
 
 /// Node's `decBitString()`.
+// A hot path: a per-TLV codec primitive, run for every field of every
+// PKINIT structure; no span (an Entering/Leaving pair would drown the log).
 pub fn dec_bit_string<'a>(t: Option<&Tlv<'a>>) -> Krb5Result<&'a [u8]> {
     match t {
         Some(t)
@@ -183,6 +191,7 @@ pub struct Krb5PrincipalName {
 
 impl Krb5PrincipalName {
     /// Node's `encKrb5PrincipalName(realm, name)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, Some(asn1::enc_general_string(&self.realm))),
@@ -190,6 +199,7 @@ impl Krb5PrincipalName {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let w = "KRB5PrincipalName";
         let t = asn1::read_tlv(bytes, 0, 0)?;
@@ -215,6 +225,7 @@ pub struct PaPkAsReq {
 }
 
 impl PaPkAsReq {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         implicit_sequence(vec![
             i_octets(0, Some(&self.signed_auth_pack)),
@@ -222,6 +233,7 @@ impl PaPkAsReq {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let t = asn1::read_tlv(bytes, 0, 0)?;
         let f = implicit_fields(&t, "PA-PK-AS-REQ")?;
@@ -264,6 +276,7 @@ pub struct AuthPack {
 }
 
 impl AuthPack {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         let authenticator = asn1::enc_tagged_sequence(&[
             (0, Some(asn1::enc_integer(self.cusec))),
@@ -296,6 +309,7 @@ impl AuthPack {
         ]))
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let t = asn1::read_tlv(bytes, 0, 0)?;
         let f = fields_of(Some(&t), "AuthPack")?;
@@ -331,11 +345,13 @@ impl AuthPack {
 }
 
 /// KDFAlgorithmId: Node's `encKdfAlgorithmId()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_kdf_algorithm_id(oid: &str) -> Krb5Result<Vec<u8>> {
     Ok(asn1::enc_tagged_sequence(&[(0, Some(enc_oid(oid)?))]))
 }
 
 /// Node's `readKdfAlgorithmId()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_kdf_algorithm_id(t: &Tlv<'_>) -> Krb5Result<String> {
     let f = fields_of(Some(t), "KDFAlgorithmId")?;
     dec_oid(Some(required(&f, 0, "KDFAlgorithmId")?))
@@ -351,6 +367,7 @@ pub struct KdcDhKeyInfo {
 }
 
 impl KdcDhKeyInfo {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         asn1::enc_tagged_sequence(&[
             (0, Some(enc_bit_string(&self.subject_public_key))),
@@ -358,6 +375,7 @@ impl KdcDhKeyInfo {
         ])
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let w = "KDCDHKeyInfo";
         let t = asn1::read_tlv(bytes, 0, 0)?;
@@ -380,6 +398,7 @@ pub struct PaPkAsRep {
 }
 
 impl PaPkAsRep {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Krb5Result<Vec<u8>> {
         let mut fields = vec![i_octets(0, Some(&self.dh_signed_data))];
         if let Some(kdf) = self.kdf.as_deref().filter(|k| !k.is_empty()) {
@@ -391,6 +410,7 @@ impl PaPkAsRep {
 
     /// Node's `readPaPkAsRep()`: the DHRepInfo SEQUENCE inside `[0]`, or
     /// its fields directly (the implicit form).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read(bytes: &[u8]) -> Krb5Result<Self> {
         let outer = asn1::read_tlv(bytes, 0, 0)?;
         if outer.tag != 0xa0 {
@@ -440,6 +460,7 @@ pub struct OtherInfo<'a> {
     pub pk_as_rep: &'a [u8],
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_other_info(o: &OtherInfo<'_>) -> Krb5Result<Vec<u8>> {
     let supp = asn1::enc_tagged_sequence(&[
         (0, Some(asn1::enc_integer(o.etype))),
@@ -463,6 +484,7 @@ pub struct TypedData {
 }
 
 /// Node's `encTypedData()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn enc_typed_data(list: &[TypedData]) -> Vec<u8> {
     let items: Vec<Vec<u8>> = list
         .iter()
@@ -477,6 +499,7 @@ pub fn enc_typed_data(list: &[TypedData]) -> Vec<u8> {
 }
 
 /// Node's `readTypedData()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn read_typed_data(bytes: &[u8]) -> Krb5Result<Vec<TypedData>> {
     let t = asn1::read_tlv(bytes, 0, 0)?;
     asn1::dec_sequence_of(&t)?
@@ -495,6 +518,8 @@ pub fn read_typed_data(bytes: &[u8]) -> Krb5Result<Vec<TypedData>> {
 }
 
 /// A SEQUENCE OF already-encoded elements: Node's `encSequenceOfRaw()`.
+// A hot path: a per-TLV codec primitive, run for every field of every
+// PKINIT structure; no span (an Entering/Leaving pair would drown the log).
 pub fn enc_sequence_of_raw(elements: &[Vec<u8>]) -> Vec<u8> {
     asn1::enc_sequence(elements)
 }
@@ -508,6 +533,7 @@ pub struct ExternalPrincipalIdentifier {
 }
 
 impl ExternalPrincipalIdentifier {
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn encode(&self) -> Vec<u8> {
         implicit_sequence(vec![
             i_octets(0, self.subject_name.as_deref()),
@@ -519,6 +545,7 @@ impl ExternalPrincipalIdentifier {
 
 /// AD-INITIAL-VERIFIED-CAS: Node's `initialVerifiedCas()`, as the
 /// authorization-data entry it becomes.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn initial_verified_cas(
     epis: &[ExternalPrincipalIdentifier],
 ) -> crate::messages::AuthorizationEntry {
