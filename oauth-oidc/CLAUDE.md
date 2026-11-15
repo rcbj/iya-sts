@@ -2288,6 +2288,15 @@ so must `admin-ui/admin.ts`.
    production. All five are `runtime: true` and therefore per trust realm, which
    is why every predicate is read PER REQUEST rather than cached.
 
+   **WHOSE REALM ASKS `oauth2.accessTokenRequireDpop` AT `/admin-api` (#28,
+   rcbj, 2026-11-15): the realm that ISSUED the token.** Every other resource
+   reads it in the request's realm, which is the issuing one there; the
+   management API also accepts the default realm's service-wide API client at
+   every realm's door, and a realm's switch refused that client's bearer.
+   So the gate passes `accessTokenRefusal({ dpopRequired })`, read in the
+   token's realm — a realm's own clients meet its rule, the service-wide
+   client the default realm's (`mgmt-api/CLAUDE.md`).
+
    | Setting | What it does |
    |---|---|
    | `oauth2.refreshTokenRotation` | Rotation with replay detection, with both modes off. The only one of the five that changes what is ISSUED rather than what is accepted |
@@ -6053,7 +6062,8 @@ other client are untouched, and the API explorer's unbound token still works.
     issued the token, and only for a client the list names. A BOUND token
     presented without its proof was already refused by every resource.
   * `oauth2.accessTokenRequireDpop` and `oauth2.refreshTokenRequireDpop` stay
-    the realm's own question for everybody else (rule 3ao).
+    the realm's own question for everybody else (rule 3ao) — at `/admin-api`
+    the question of the realm that issued the token (#28).
 * **IT IS THE ONE PUBLIC CLIENT A CONFIDENTIAL-ONLY FAPI PROFILE ALLOWS**
   (`fapi.js`: `PUBLIC_CLIENT_EXEMPT`, `publicClientExempt()`).
   `clientAuthenticationRefusal(method, clientId)` lets it past at the token

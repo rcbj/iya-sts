@@ -753,6 +753,17 @@ that one door out of nine kept its own opinion. The refusal carries its own code
 Both are off by default and neither compliance mode implies one;
 `oauth-oidc/CLAUDE.md` rule 3ao argues the five.
 
+**`oauth2.accessTokenRequireDpop` IS ASKED IN THE REALM THAT ISSUED THE TOKEN
+(#28, rcbj, 2026-11-15), not the realm whose `/admin-api` was called.** Asked
+in the ambient realm, a realm turning it on refused the SERVICE-WIDE API
+client's bearer token at that realm's `/admin-api` (`STS-OAUTH-0528`) — the
+default realm's `sts-api-client`, which operators and automation use at every
+realm's door. Now a realm's switch holds the tokens its own clients hold, and
+the service-wide client keeps the default realm's rule: the gate reads the
+setting under `tokenRealm` and passes it as `dpopRequired`, and the
+`WWW-Authenticate` scheme follows the same answer.
+`oauth2.accessTokenRequireMtls` is unchanged, still the ambient realm's.
+
 **`/admin/api-explorer` STOPS WORKING while `oauth2.accessTokenRequireDpop` is
 on**, and that is stated rather than worked around: the explorer's script sends
 a plain `Bearer` header and has no key to prove. An operator wanting both runs
