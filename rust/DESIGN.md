@@ -267,7 +267,10 @@ rust/
                                  the cookie, the clocks, the merge and the
                                  doors, held to Node by
                                  tests/tools/session-vectors.js and over a
-                                 real store by tests/tools/session-interop.js
+                                 real store by tests/tools/session-interop.js;
+                                 then browsers' account sets (#561): the
+                                 sts_accounts cookie, the tickets, the
+                                 picker's data, by account-set-vectors.js
     sts-credentials/             the credentials a sign-in step checks (phase 5):
                                  passwords, app passwords, TOTP, recovery codes,
                                  emailed codes, WebAuthn ceremonies and attestation

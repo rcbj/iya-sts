@@ -5607,6 +5607,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'session-node.json',
                    build: function () {
                      return require('./session-vectors.js').build(ROOT);
+                   } },
+                 // Browsers' account sets (#561; #444, phase 5,
+                 // sts-authn): tests/tools/account-set-vectors.js.
+                 { file: 'account-sets-node.json',
+                   build: function () {
+                     return require('./account-set-vectors.js').build(ROOT);
                    } }];
 
 // THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and

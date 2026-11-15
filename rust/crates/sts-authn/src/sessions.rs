@@ -36,9 +36,11 @@
 //! observer slot is a `RwLock` the SSF family fills; `Date.now()` and
 //! `randomId()` are the [`Clock`] port; and a session Node edits in place
 //! through a shared object is edited here through
-//! [`Sessions::note_session_changed`], which writes the held row. Account
-//! sets (#561), the session window (#350) and the relying-party sessions
-//! are not this crate's yet — see the crate's documentation.
+//! [`Sessions::note_session_changed`], which writes the held row. The
+//! account sets (#561) are [`accounts`]'s, over
+//! [`crate::account_sets::AccountSets`]. The session window (#350) and the
+//! relying-party sessions are not this crate's yet — see the crate's
+//! documentation.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
@@ -50,12 +52,15 @@ use sts_core::realm;
 use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::{RealmMap, RealmView, StoreHandles};
 
+use crate::account_sets::AccountSets;
 use crate::cookie;
 use crate::js::{self, Object};
 use crate::merge;
 use crate::ports::*;
 use crate::record::{self, Context, ANONYMOUS_USERNAME, DEFAULT_VIA};
 use crate::record::{MAX_SESSION_EVENTS, SESSION_COOKIE};
+
+pub mod accounts;
 
 /// The absolute lifetime's default, `authn.sessionLifetimeS` unset.
 const SESSION_TTL_MS: f64 = 60.0 * 60.0 * 1000.0;
@@ -96,6 +101,8 @@ struct Attempt {
 pub struct Sessions {
     deps: SessionsDeps,
     store: RealmMap<Value>,
+    /// The browsers' account sets and their tickets (#561).
+    accounts: AccountSets,
     /// THE ONE INVERTED HOOK (`setSessionObserver()`): `ssf/` fills it, after
     /// this is built. Advisory and fire-and-forget.
     observer: RwLock<Option<Arc<dyn SessionObserver>>>,
@@ -159,9 +166,16 @@ impl Sessions {
     ) -> Sessions {
         let clock = deps.clock.clone();
         let spec = merge::spec(Arc::new(move || clock.now_ms()));
+        let accounts = AccountSets::new(
+            deps.settings.clone(),
+            deps.clock.clone(),
+            lifecycle,
+            handles,
+        );
         Sessions {
             deps,
             store: RealmMap::new(lifecycle, handles, spec),
+            accounts,
             observer: RwLock::new(None),
             capacity_log: Mutex::new((0, 0.0)),
             refuse_log: Mutex::new((0, 0.0)),
@@ -1119,10 +1133,35 @@ impl Sessions {
             return None;
         }
         let arrived = request.and_then(|r| self.arrival_session_of(r));
-        let current =
+        let default_found =
             request.and_then(|r| self.cookie_session(Some(r), SESSION_COOKIE));
-        if self.setting("authn.multipleAccounts") == Value::Bool(true) {
-            self.note_accounts_unported();
+        // SEVERAL ACCOUNTS IN ONE BROWSER (#561): a browser's own
+        // authenticated sign-in is checked against its ACCOUNT SET — the
+        // same person live in it is a re-authentication of THAT session,
+        // whichever the cookie names; a different person ADDS a session,
+        // so the previous one is not ended below.
+        let multi_account = request.is_some()
+            && !keyed
+            && detail.get("cookie") != Some(&json!(false))
+            && authenticated
+            && self.accounts.enabled();
+        let account_set = if multi_account {
+            self.account_set_of(request)
+        } else {
+            None
+        };
+        let mut current = default_found.clone();
+        if multi_account
+            && !default_found.as_ref().is_some_and(|(_, s)| {
+                js::truthy(s.get("user"))
+                    && self.same_identity(&s["user"], username)
+            })
+        {
+            if let Some(theirs) =
+                self.account_session_for(account_set.as_ref(), username)
+            {
+                current = Some(theirs);
+            }
         }
         let reauthenticating = match &current {
             Some((_, s)) => {
@@ -1139,6 +1178,54 @@ impl Sessions {
             }
             None => false,
         };
+        // A FULL SET REFUSES A NEW ACCOUNT (D11): every place
+        // `authn.maxBrowserAccounts` allows is held by a live account.
+        if multi_account && !reauthenticating {
+            let held = self.live_account_count(
+                account_set.as_ref(),
+                default_found.as_ref(),
+            );
+            if held as f64 >= self.accounts.max_accounts() {
+                let why = format!(
+                    "This browser is already signed in to {} accounts, the \
+                     most it may hold. Sign out of one of them first.",
+                    held
+                );
+                tracing::info!(
+                    "{}authn: a session for \"{}\" was REFUSED at the {} \
+                     door: its browser's account set is full ({} signed in, \
+                     authn.maxBrowserAccounts).",
+                    tag(codes::STS_AUTHN_0340.as_str()),
+                    username,
+                    door,
+                    held
+                );
+                let mut more = facts.clone();
+                more.insert(
+                    "accountSet".into(),
+                    json!(account_set
+                        .as_ref()
+                        .map(|r| js::string_of(r.get("id")))
+                        .unwrap_or_default()),
+                );
+                more.insert("signedIn".into(), json!(held));
+                self.deps.audit.audit(&json!({
+                    "action": "session.refuse", "actor": username,
+                    "errorCode": codes::STS_AUTHN_0340.as_str(),
+                    "protocol": protocol, "channel": "http", "target": "",
+                    "summary": format!("a session for {} was refused at the \
+                        {} door: the browser is signed in to as many accounts \
+                        as it may hold", username, door),
+                    "detail": more,
+                }));
+                detail.insert(
+                    "refusedWith".into(),
+                    json!(codes::STS_AUTHN_0340.as_str()),
+                );
+                detail.insert("refusedWhy".into(), json!(why));
+                return None;
+            }
+        }
         let mut replace_id = String::new();
         if request.is_some() {
             let previous =
@@ -1147,11 +1234,29 @@ impl Sessions {
                 .as_ref()
                 .map(|a| js::or_empty(a.get("id")))
                 .unwrap_or_default();
+            let upgraded = arrived.is_some() && arrival_id == previous;
             if !previous.is_empty()
                 && !reauthenticating
-                && !(arrived.is_some() && arrival_id == previous)
+                && !multi_account
+                && !upgraded
             {
-                replace_id = previous;
+                replace_id = previous.clone();
+            }
+            // A DEVICE-BOUND SESSION OF THE SAME PERSON, FROM A BROWSER
+            // THAT DOES NOT PROVE ITS KEY (#725 with #561): replaced, as
+            // with the setting off — the set never holds two live sessions
+            // of one subject.
+            if let Some((_, s)) = current.as_ref().filter(|_| {
+                multi_account && !previous.is_empty() && !reauthenticating
+            }) {
+                if js::truthy(s.get("user"))
+                    && self.same_identity(&s["user"], username)
+                    && self.session_ended(Some(s), 0.0).is_empty()
+                    && !self.deps.binding.honours(s, request)
+                    && !upgraded
+                {
+                    replace_id = previous;
+                }
             }
         }
         let mechanism_event = if keyed {
@@ -1483,6 +1588,16 @@ impl Sessions {
             self.deps
                 .credentials
                 .recovery_completed(username, &Value::Object(detail.clone()));
+            if multi_account {
+                let mut held = obj(&again);
+                self.enrol_in_account_set(
+                    request,
+                    response,
+                    &mut held,
+                    default_found.as_ref(),
+                );
+                return Some(Value::Object(held));
+            }
             return Some(again);
         }
         let session_id = match &arrived {
@@ -1646,6 +1761,16 @@ impl Sessions {
             self.deps
                 .binding
                 .offer(response, &Value::Object(session.clone()));
+        }
+        // INTO THE BROWSER'S ACCOUNT SET (#561), after the session cookie:
+        // that one is written by replacing, the set's is appended.
+        if multi_account {
+            self.enrol_in_account_set(
+                request,
+                response,
+                &mut session,
+                default_found.as_ref(),
+            );
         }
         let mut more = Object::new();
         more.insert("sessionId".into(), json!(session_id));
@@ -1845,15 +1970,6 @@ impl Sessions {
             );
         }
         s
-    }
-
-    fn note_accounts_unported(&self) {
-        tracing::warn!(
-            "authn: authn.multipleAccounts is on, and this runtime does not \
-             hold browsers' account sets yet (#561): a sign-in in a browser \
-             already signed in REPLACES the session, as with the setting \
-             off."
-        );
     }
 
     /// `backdateAuthentication(session, seconds)` (#1554): a federated
@@ -2117,6 +2233,24 @@ impl Sessions {
         request: &Request,
         ignore_binding: bool,
     ) -> Option<Value> {
+        // SEVERAL ACCOUNTS IN ONE BROWSER (#561): the account set's choice
+        // — a ticket, a hint, the only live session — or nobody; a browser
+        // with no set, or none live in it, falls through to the cookie.
+        if self.accounts.enabled() {
+            let resolved = self.resolve_account(Some(request), true);
+            if !resolved.fallback {
+                if resolved.sid.is_empty() {
+                    return None;
+                }
+                let held = self.account_session_read(&resolved.sid)?;
+                return self.honoured_session(
+                    request,
+                    &resolved.sid,
+                    held,
+                    ignore_binding,
+                );
+            }
+        }
         let (id, session) =
             self.cookie_session(Some(request), SESSION_COOKIE)?;
         self.honoured_session(request, &id, session, ignore_binding)
@@ -2562,6 +2696,9 @@ impl Sessions {
                 );
             }
         }
+        // THE ACCOUNT IS REMEMBERED AS SIGNED OUT in its browser's set
+        // (#561), whoever ended the session.
+        self.account_session_ended(session.as_ref());
         match &session {
             Some(s) => {
                 let planned = self.plan_backchannel(
@@ -2685,9 +2822,20 @@ impl Sessions {
     }
 
     /// `endSession(req, res)`: the browser's own sign-out — the cookie's
-    /// session ended, the cookie cleared.
+    /// session ended, the cookie cleared; with several accounts on, the
+    /// next live account made the default
+    /// ([`Sessions::end_session_for`]).
     #[tracing::instrument(level = "debug", skip(self, request, response))]
     pub fn end_session(
+        &self,
+        request: &Request,
+        response: &mut Response,
+    ) -> Option<Value> {
+        self.end_session_for(request, response, "")
+    }
+
+    /// `endSession()`'s body with the setting off.
+    fn end_session_alone(
         &self,
         request: &Request,
         response: &mut Response,
@@ -2735,6 +2883,8 @@ impl Sessions {
         why: &str,
     ) {
         self.here().delete(id);
+        // An expiry and an eviction move the account to remembered (#561).
+        self.account_session_ended(Some(session));
         let idle = why == "idle";
         let evicted = why == "capacity";
         let on_expiry = self

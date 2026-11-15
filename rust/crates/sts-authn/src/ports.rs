@@ -15,6 +15,8 @@
 //! Each trait method is called once per session act at most, and none
 //! carries a span of its own: the act's span covers it.
 
+use std::sync::{Arc, Mutex, PoisonError};
+
 use serde_json::Value;
 
 use crate::js::Object;
@@ -31,6 +33,70 @@ pub struct Request {
     pub address: String,
     /// The sign-in form's `device_fp`, where it posted one (#62 P6).
     pub device_fp: String,
+    /// The address as express's `req.url` holds it once the realm prefix
+    /// is off: the path and its query. What a selection ticket is bound to
+    /// (#561) and taken off ([`crate::Sessions::spend_account_ticket`]).
+    pub url: String,
+    /// What the account set's doors leave on the request (#561).
+    pub accounts: AccountMarks,
+}
+
+/// A protocol's hint about which account a request is for (#561,
+/// `hintAccount()`): `req.stsAccountHint`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AccountHint {
+    pub login_hint: String,
+    pub sub: String,
+    pub sid: String,
+    pub soft: bool,
+}
+
+/// A ticket's choice that this request cannot honour (#731): who it named.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EndedSelection {
+    pub username: String,
+    pub sid: String,
+}
+
+/// Node's `req.stsAccount*` members, and `req.res` for D12.
+#[derive(Debug, Default)]
+pub struct AccountMarksInner {
+    /// `stsAccountSetId`: the set this request created or rotated.
+    pub set_id: String,
+    /// `stsAccountSetUnread`: the set's read failed, which is not absence.
+    pub set_unread: bool,
+    /// `stsAccountSelection`: the sid a ticket spent on this request chose.
+    pub selection: String,
+    /// `stsAccountSelectionEnded`.
+    pub selection_ended: Option<EndedSelection>,
+    /// `stsAccountHint`.
+    pub hint: Option<AccountHint>,
+    /// Whether the request's own response can still take a cookie (Node's
+    /// `req.res`, not yet sent): what lets D12 make a set around a session
+    /// from a door handed no response, such as `sessionOf()`.
+    pub response_open: bool,
+    /// The cookies appended to the request's response from such a door, in
+    /// order, for the HTTP layer to append (`req.res.append`).
+    pub appended: Vec<String>,
+}
+
+/// The request's marks, shared by every clone of it: Node's doors write
+/// them on the one `req` object every later door of the request reads.
+#[derive(Debug, Clone, Default)]
+pub struct AccountMarks(pub Arc<Mutex<AccountMarksInner>>);
+
+impl AccountMarks {
+    /// The marks, locked for one read or write.
+    // A hot path: every session read; no span.
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, AccountMarksInner> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The cookies a door appended to the request's response, taken.
+    // A hot path: once per request; no span.
+    pub fn take_appended(&self) -> Vec<String> {
+        std::mem::take(&mut self.lock().appended)
+    }
 }
 
 /// A response a session door writes cookies on: `set` replaces, `append`
@@ -195,6 +261,10 @@ pub trait Records: Send + Sync {
         opts: &Value,
         tags: &[String],
     ) -> usize;
+    /// `recordAccountChoice(kind, n)` (#561): `selected`, `ambiguous`,
+    /// `selectFailed`, `added`, `forgotten`, `expired`, `switched`; `n` is
+    /// `None` where Node passed one argument (a count of one).
+    fn record_account_choice(&self, kind: &str, n: Option<u64>);
 }
 
 /// The audit log (`common/audit.js`'s `audit()`).
@@ -235,6 +305,9 @@ pub trait Backchannel: Send + Sync {
 pub trait SessionManagement: Send + Sync {
     fn enabled(&self) -> bool;
     fn write_cookie(&self, response: &mut Response, value: &str);
+    /// `browserStatesValue(sessions.map(browserStateOf))`: the cookie value
+    /// naming every account's OP browser state (#561 with #121).
+    fn browser_states_value(&self, sessions: &[Value]) -> String;
 }
 
 /// The risk engine's assessment of a new authentication (#62): the risk

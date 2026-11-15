@@ -131,12 +131,14 @@ function recorder() {
 }
 
 /**
- * Builds the vectors.
+ * The recorded ports and the real `Authn` over them, for this file's
+ * steps and for `account-set-vectors.js`'s (#561).
  *
  * @param {string} ROOT - the repository root
- * @returns {any} the vector document
+ * @param {any} more - `{ overrides, people }` added to the defaults
+ * @returns {any} what the steps are written with
  */
-function build(ROOT) {
+function harness(ROOT, more) {
   const req = function (rel) {
     return require(path.join(ROOT, rel));
   };
@@ -174,6 +176,7 @@ function build(ROOT) {
     'risk.fingerprinting': false,
     'global.https': true
   };
+  Object.assign(overrides, (more && more.overrides) || {});
   config.value = rec.fn('settings', 'value', function (key) {
     if (Object.prototype.hasOwnProperty.call(overrides, key)) {
       return overrides[key];
@@ -191,9 +194,9 @@ function build(ROOT) {
   });
 
   const realms = req('common/realms');
-  let retiring = null;
+  const state = { retiring: null };
   realms.retiringRefusal = rec.fn('realms', 'retiringRefusal', function () {
-    return retiring;
+    return state.retiring;
   });
 
   // ---- the directory: who exists, and their subjects ----------------------
@@ -204,6 +207,7 @@ function build(ROOT) {
     svc: '9a8b7c66-3e2d-4f1a-8c9b-7d6e5f4a3c44',
     anonymous: 'aa11bb22-cc33-4dd4-8ee5-ff66aa77bb88'
   };
+  Object.assign(people, (more && more.people) || {});
   const gone = {};
   const subjectOf = function (name) {
     const key = String(name || '');
@@ -293,7 +297,11 @@ function build(ROOT) {
       }),
     revokeWhere: rec.fn('stats', 'revokeWhere', function () {
       return 0;
-    })
+    }),
+    recordAccountChoice: rec.fn('stats', 'recordAccountChoice',
+      function () {
+        return undefined;
+      })
   });
   const audit = req('common/audit');
   const wrappedAudit = Object.assign(Object.create(audit), {
@@ -384,10 +392,20 @@ function build(ROOT) {
   authn.backchannelLibrary = function () {
     return backchannel;
   };
+  const smState = { enabled: false };
   const sessionManagement = {
     enabled: rec.fn('sessionManagement', 'enabled', function () {
-      return false;
+      return smState.enabled;
     }),
+    // Its OP browser states for a browser's accounts (#561), recorded as
+    // one call: `browserStateOf` of each, joined.
+    browserStateOf: function (session) {
+      return String((session && session.browserState) || '');
+    },
+    browserStatesValue: rec.fn('sessionManagement', 'browserStatesValue',
+      function (states) {
+        return (states || []).join('|');
+      }),
     writeCookie: rec.fn('sessionManagement', 'writeCookie', function () {
       return undefined;
     })
@@ -474,6 +492,48 @@ function build(ROOT) {
     return { answer: answer, res: res };
   };
   rec.opaque.push({ value: config, name: '[module]' });
+  return { req, rec, clock, realNow, randomId, config, overrides, mode, realms,
+           state, people, gone, subjectOf, nameOf, helpers, userFor, disabled,
+           policy, due, gateAnswers, stats, audit, deviceBound, authnModule,
+           Authn, authn, passkeyRefusals, mechanisms, backchannel,
+           sessionManagement, smState, observed, sessions, storeOf, request,
+           response, cookieOf, steps, step };
+}
+
+/**
+ * Builds the vectors.
+ *
+ * @param {string} ROOT - the repository root
+ * @returns {any} the vector document
+ */
+function build(ROOT) {
+  const h = harness(ROOT, {});
+  const req = h.req;
+  const rec = h.rec;
+  const clock = h.clock;
+  const realNow = h.realNow;
+  const config = h.config;
+  const overrides = h.overrides;
+  const mode = h.mode;
+  const realms = h.realms;
+  const state = h.state;
+  const people = h.people;
+  const gone = h.gone;
+  const helpers = h.helpers;
+  const disabled = h.disabled;
+  const policy = h.policy;
+  const due = h.due;
+  const gateAnswers = h.gateAnswers;
+  const authn = h.authn;
+  const passkeyRefusals = h.passkeyRefusals;
+  const mechanisms = h.mechanisms;
+  const observed = h.observed;
+  const sessions = h.sessions;
+  const request = h.request;
+  const response = h.response;
+  const cookieOf = h.cookieOf;
+  const steps = h.steps;
+  const step = h.step;
 
   // ---- start: a new session ----------------------------------------------
   const start = function (name, username, amr, acr, via, detail, cookie) {
@@ -616,11 +676,11 @@ function build(ROOT) {
         { application: 'app-one', credential: { kind: 'webauthn',
                                                 id: 'cred-dora' } });
   delete passkeyRefusals.dora;
-  retiring = { why: 'The realm is being removed.' };
+  state.retiring = { why: 'The realm is being removed.' };
   start('a realm being removed refuses', 'dora', ['pwd'], '1',
         'OAuth 2.0 / OIDC', { application: 'app-one',
                               credential: { kind: 'password' } });
-  retiring = null;
+  state.retiring = null;
   start('nobody in the directory', 'zed', ['pwd'], '1', 'OAuth 2.0 / OIDC',
         { application: 'app-one', credential: { kind: 'password' } });
   start('nobody, through federation with provisioning off', 'zed', ['pwd'],
@@ -1085,7 +1145,7 @@ function checkRust(ROOT, v, check) {
   }
 }
 
-module.exports = { build: build, checkRust: checkRust };
+module.exports = { build: build, checkRust: checkRust, harness: harness };
 
 if (require.main === module) {
   const out = build(path.join(__dirname, '..', '..'));

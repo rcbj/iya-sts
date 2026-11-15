@@ -62,12 +62,135 @@ const bunyan = require('bunyan');
 const log = bunyan.createLogger({ name: 'session-interop',
                                   level: process.env.STS_LOG_LEVEL });
 
+// Whether `authn.multipleAccounts` is on (#561): for the browser holding
+// two accounts, and for reading Rust's.
+const ACCOUNTS = { on: false };
+
 // The people the sessions are for, and their subjects.
 const PEOPLE = {
   dora: '0b6f6c1e-8c55-4b8a-9b2e-3d1f0d5c2a11',
   fay: '3c9e7b55-2d8a-4e1f-9b3c-6a5d4e2f1b33',
-  gil: '5e4d3c2b-1a09-4f8e-9d7c-6b5a4e3d2c55'
+  gil: '5e4d3c2b-1a09-4f8e-9d7c-6b5a4e3d2c55',
+  emil: '7d0f2a44-1b9c-4f3e-8a6d-5c2b1e9f4d22'
 };
+
+/**
+ * A browser's cookies, kept as each answer's Set-Cookie lines say.
+ *
+ * @returns {any} the jar
+ */
+function cookieJar() {
+  log.debug('Entering cookieJar().');
+  const held = {};
+  log.debug('Leaving cookieJar().');
+  return {
+    take: function (res) {
+      res.cookies.forEach(function (line) {
+        const first = String(line).split(';')[0];
+        const at = first.indexOf('=');
+        if (/Max-Age=0/.test(line) || at === first.length - 1) {
+          delete held[first.slice(0, at)];
+        } else {
+          held[first.slice(0, at)] = first.slice(at + 1);
+        }
+      });
+    },
+    header: function () {
+      return Object.keys(held).map(function (k) {
+        return k + '=' + held[k];
+      }).join('; ');
+    }
+  };
+}
+
+/**
+ * ONE BROWSER, TWO ACCOUNTS (#561): dora and then emil sign in in one
+ * browser with `authn.multipleAccounts` on, so the second joins the set the
+ * first made rather than replacing her session.
+ *
+ * @param {any} s - `started()`'s answer
+ * @returns {any} `{ cookie, setId, sids }`
+ */
+function twoAccounts(s) {
+  log.debug('Entering twoAccounts().');
+  ACCOUNTS.on = true;
+  const jar = cookieJar();
+  const sids = [];
+  try {
+    ['dora', 'emil'].forEach(function (username) {
+      const req = { headers: { 'user-agent': 'Interop/1.0',
+                               cookie: jar.header() }, body: {}, url: '/' };
+      const res = response(req);
+      const d = { request: req, application: 'app-one',
+                  credential: { kind: 'password' } };
+      const session = s.authn.startSession(res, username, ['pwd'], '1',
+                                           'OAuth 2.0 / OIDC', d);
+      if (!session) {
+        throw new Error('session-interop: ' + username + ' was refused (' +
+                        d.refusedWith + ')');
+      }
+      sids.push(session.id);
+      jar.take(res);
+    });
+  } finally {
+    ACCOUNTS.on = false;
+  }
+  const setId = String(s.authn.sessions.get(sids[0]).accountSetId || '');
+  log.debug('Leaving twoAccounts().');
+  return { cookie: jar.header(), setId: setId, sids: sids };
+}
+
+/**
+ * What a browser's set says to Node's doors: the set its cookie opens, the
+ * accounts listed, and who the request acts as with no hint and with each
+ * account's name as one.
+ *
+ * @param {any} s - `started()`'s answer
+ * @param {any} browser - `{ cookie, set, sids }`
+ * @param {string[]} failures - where a difference is written
+ */
+function holdBrowser(s, browser, failures) {
+  log.debug('Entering holdBrowser().');
+  const AccountSets = require(path.join(ROOT, 'authn', 'account_sets.js'));
+  ACCOUNTS.on = true;
+  try {
+    const req = function () {
+      return { headers: { cookie: browser.cookie }, url: '/' };
+    };
+    const opened = AccountSets.setOf(s.authn.cookiesOf(req()));
+    if (!opened || opened.id !== browser.set.id) {
+      failures.push('the browser\'s sts_accounts cookie opens no set');
+      return;
+    }
+    if (JSON.stringify(opened) !== JSON.stringify(browser.set)) {
+      failures.push('the account set: Node read ' + JSON.stringify(opened) +
+                    ', the other side wrote ' + JSON.stringify(browser.set));
+    }
+    const listed = s.authn.browserAccounts(req());
+    const live = (listed.accounts || []).filter(function (a) {
+      return a.state === 'signed-in';
+    }).length;
+    if (live !== browser.sids.length) {
+      failures.push('browserAccounts() lists ' + live + ' signed-in, not ' +
+                    browser.sids.length);
+    }
+    if (s.authn.sessionOf(req())) {
+      failures.push('sessionOf() chose an account where nothing chose one');
+    }
+    browser.sids.forEach(function (sid) {
+      const r = req();
+      const name = s.authn.sessions.get(sid).user.username;
+      s.authn.hintAccount(r, { loginHint: name });
+      const chosen = s.authn.sessionOf(r);
+      if (!chosen || chosen.id !== sid) {
+        failures.push('a hint naming ' + name + ' does not choose ' + sid);
+      }
+    });
+  } finally {
+    ACCOUNTS.on = false;
+  }
+  log.debug('Leaving holdBrowser().');
+}
 
 /**
  * A query against the store, outside the driver.
@@ -114,8 +237,10 @@ async function started() {
     if (key === 'secrets.allowLocalSecrets') {
       return true;
     }
+    // Off for the sessions above, as the session slice proved them; on
+    // for the one browser that holds two accounts (#561).
     if (key === 'authn.multipleAccounts') {
-      return false;
+      return ACCOUNTS.on;
     }
     // THE FULL MAP, as the Rust runtime holds it: the window (#350) reads
     // through a store this process has not opened as `persistence.js`
@@ -252,6 +377,7 @@ async function write() {
                      { application: 'app-one',
                        credential: { kind: 'password' } });
   s.authn.endSessionById(gone.session.id, 'the interop proof', 'admin');
+  const two = twoAccounts(s);
   await s.minted.flush();
   await s.keystore.settleAll();
   const sessions = out.map(function (one) {
@@ -262,6 +388,13 @@ async function write() {
   fs.writeFileSync(path.join(DIR, 'session-interop-node.json'),
     JSON.stringify({ now: now, sessions: sessions,
                      ended: gone.session.id,
+                     browser: { cookie: two.cookie, sids: two.sids,
+                                set: require(path.join(ROOT, 'authn',
+                                  'account_sets.js')).byId(two.setId),
+                                rows: two.sids.map(function (sid) {
+                                  return JSON.parse(JSON.stringify(
+                                    s.authn.sessions.get(sid)));
+                                }) },
                      sessionIndexRows: Number(counted.rows[0].n) }, null, 1) +
     '\n');
   await s.driver.close();
@@ -313,6 +446,11 @@ async function read() {
     });
     if (v.ended && s.authn.sessions.get(v.ended)) {
       failures.push('the session Rust ended came back in Node');
+    }
+    if (v.browser) {
+      holdBrowser(s, v.browser, failures);
+    } else {
+      failures.push('Rust wrote no browser with two accounts');
     }
   } finally {
     Date.now = realNow;
