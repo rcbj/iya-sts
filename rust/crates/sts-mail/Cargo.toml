@@ -24,7 +24,11 @@ tracing.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+base64.workspace = true
+chrono.workspace = true
+regex.workspace = true
 serde_json.workspace = true
+sts-core.workspace = true
 tokio.workspace = true
 
 [lints]

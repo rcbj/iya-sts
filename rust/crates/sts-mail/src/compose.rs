@@ -111,9 +111,10 @@ fn qp_wrap(text: &str, line_length: usize) -> String {
             result.push_str(&String::from_utf8_lossy(&line));
             continue;
         }
-        // `line.substr(-lineMargin).match(/\n.*?$/)`.
+        // `line.substr(-lineMargin).match(/\n.*?$/)`: `.` stops at a line
+        // feed and `$` is the end, so it is the LAST line feed that matches.
         let tail_from = line.len().saturating_sub(margin);
-        if let Some(nl) = line[tail_from..].iter().position(|&b| b == b'\n') {
+        if let Some(nl) = line[tail_from..].iter().rposition(|&b| b == b'\n') {
             let matched = line.len() - (tail_from + nl);
             line.truncate(line.len() - (matched - 1));
             pos += line.len();

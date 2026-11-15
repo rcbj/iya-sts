@@ -159,16 +159,33 @@ pub trait SmtpRelay: Send + Sync {
     ) -> BoxFuture<'a, Result<SmtpAccepted, SmtpFailure>>;
 }
 
-/// How the SMTP session is opened (`createTransport()`'s options).
+/// How the SMTP session is opened (`createTransport()`'s options): never
+/// in the clear — STARTTLS required where not implicit TLS — the relay's
+/// certificate verified against `server_name` and the system store plus
+/// `ca_pem`, TLS 1.2 at the least.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SmtpOptions {
     pub host: String,
     pub port: i64,
     pub implicit_tls: bool,
+    pub require_tls: bool,
     pub server_name: String,
+    pub min_tls: String,
     pub timeout_ms: i64,
-    /// `{ user, method }`, or `None` for no login.
-    pub auth: Option<(String, String)>,
+    pub ca_pem: String,
+    pub client_cert_pem: String,
+    pub client_key_pem: String,
+    pub auth: Option<SmtpAuth>,
+}
+
+/// The SMTP login (`auth`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum SmtpAuth {
+    /// `PLAIN` or `LOGIN`, with the password.
+    Password { user: String, pass: String, method: String },
+    /// XOAUTH2 with an access token, or the refresh parameters a token is
+    /// fetched with.
+    OAuth2 { user: String, access_token: String, refresh: Json },
 }
 
 /// `classifySmtp(e)`: a refused login, a TLS failure or a 5xx is final, a
@@ -412,5 +429,321 @@ pub fn cloud_request(
             "userId": "me",
             "requestBody": { "raw": URL_SAFE_NO_PAD.encode(raw) }
         }),
+    }
+}
+
+
+/// The mail secrets (`common/secrets.js`'s `MAIL_*` specs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Secret {
+    SmtpPassword,
+    DkimKey,
+    AcsConnectionString,
+    GmailKey,
+}
+
+/// `readSecret(spec)`: the secret's text, or `None` where its provider is
+/// `none`.
+pub trait MailSecrets: Send + Sync {
+    fn read(&self, which: Secret) -> BoxFuture<'_, Option<String>>;
+}
+
+/// Opens the SMTP session `build()` describes (nodemailer's
+/// `createTransport()`); the runtime's is `lettre`'s.
+pub trait RelayFactory: Send + Sync {
+    fn open(&self, options: &SmtpOptions) -> Arc<dyn SmtpRelay>;
+}
+
+/// A cloud provider's client, authenticated: SES by the default credential
+/// chain, Azure by its connection string or a managed identity, Gmail by a
+/// service account with domain-wide delegation impersonating `subject`.
+pub trait CloudFactory: Send + Sync {
+    fn client(
+        &self,
+        cloud: Cloud,
+        cfg: &Json,
+        credential: Option<&str>,
+    ) -> Result<Arc<dyn CloudMail>, SendError>;
+}
+
+/// Reads a named file (`outbound_tls.assertNamedFile()` first).
+pub trait FileReader: Send + Sync {
+    fn read(&self, path: &str) -> Result<String, String>;
+}
+
+/// `MailTransports.build(cfg)` over its ports.
+pub struct Builder {
+    pub secrets: Arc<dyn MailSecrets>,
+    pub relays: Arc<dyn RelayFactory>,
+    pub clouds: Arc<dyn CloudFactory>,
+    pub files: Arc<dyn FileReader>,
+    pub clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    pub boundary: Arc<dyn Fn() -> String + Send + Sync>,
+}
+
+fn text(cfg: &Json, key: &str) -> String {
+    match cfg.get(key) {
+        Some(Json::String(s)) => s.clone(),
+        Some(Json::Null) | None => String::new(),
+        Some(other) => crate::js::string_of(other),
+    }
+}
+
+impl crate::channel::TransportBuilder for Builder {
+    fn build<'a>(
+        &'a self,
+        cfg: &'a Json,
+    ) -> BoxFuture<'a, Result<Arc<dyn Transport>, SendError>> {
+        Box::pin(self.build_one(cfg))
+    }
+}
+
+impl Builder {
+    async fn build_one(&self, cfg: &Json) -> Result<Arc<dyn Transport>, SendError> {
+        match text(cfg, "transport").as_str() {
+            "capture" => Ok(Arc::new(Capture)),
+            "smtp" => self.smtp(cfg).await,
+            "ses" => {
+                let client = self.clouds.client(Cloud::Ses, cfg, None)?;
+                Ok(Arc::new(CloudTransport::new(Cloud::Ses, client, cfg,
+                                                self.boundary.clone())))
+            }
+            "acs" => {
+                let credential = if text(cfg, "acsAuth") == "connection-string"
+                {
+                    let Some(c) = self.secrets.read(Secret::AcsConnectionString)
+                        .await.filter(|c| !c.is_empty()) else {
+                        return Err(SendError::new(
+                            "mail.acsAuth is \"connection-string\" and \
+                             mail.acsConnectionStringProvider is \"none\"",
+                            codes::STS_MAIL_0004, false));
+                    };
+                    Some(c)
+                } else {
+                    if !text(cfg, "acsEndpoint").starts_with("https://") {
+                        return Err(SendError::new(
+                            "managed-identity authentication needs \
+                             mail.acsEndpoint, an https URL",
+                            codes::STS_MAIL_0004, false));
+                    }
+                    None
+                };
+                let client = self.clouds.client(Cloud::Acs, cfg,
+                                                credential.as_deref())?;
+                Ok(Arc::new(CloudTransport::new(Cloud::Acs, client, cfg,
+                                                self.boundary.clone())))
+            }
+            "gmail" => {
+                let Some(key) = self.secrets.read(Secret::GmailKey).await
+                    .filter(|k| !k.is_empty()) else {
+                    return Err(SendError::new(
+                        "the gmail transport needs the service account key \
+                         (mail.gmailKeyProvider)", codes::STS_MAIL_0004, false));
+                };
+                let parsed: Option<Json> = serde_json::from_str(&key).ok();
+                let usable = parsed.as_ref().is_some_and(|k| {
+                    k.get("client_email").and_then(Json::as_str)
+                        .is_some_and(|s| !s.is_empty())
+                        && k.get("private_key").and_then(Json::as_str)
+                            .is_some_and(|s| !s.is_empty())
+                });
+                if !usable {
+                    return Err(SendError::new(
+                        "the Gmail service account key is not a JSON key with \
+                         client_email and private_key", codes::STS_MAIL_0004,
+                        false));
+                }
+                let client = self.clouds.client(Cloud::Gmail, cfg, Some(&key))?;
+                Ok(Arc::new(CloudTransport::new(Cloud::Gmail, client, cfg,
+                                                self.boundary.clone())))
+            }
+            _ => Err(SendError::new(
+                format!("no mail transport is configured (mail.transport is \
+                         \"{}\")", text(cfg, "setting")),
+                codes::STS_MAIL_0001, false)),
+        }
+    }
+
+    async fn smtp(&self, cfg: &Json) -> Result<Arc<dyn Transport>, SendError> {
+        let host = text(cfg, "smtpHost");
+        if host.is_empty() {
+            return Err(SendError::new(
+                "the smtp transport has no host (mail.smtpHost, or a preset)",
+                codes::STS_MAIL_0004, false));
+        }
+        let server = text(cfg, "smtpServerName");
+        let mut options = SmtpOptions {
+            host: host.clone(),
+            port: cfg.get("smtpPort").and_then(Json::as_i64).unwrap_or(0),
+            implicit_tls: text(cfg, "smtpTls") == "implicit",
+            require_tls: text(cfg, "smtpTls") != "implicit",
+            server_name: if server.is_empty() { host.clone() } else { server },
+            min_tls: "TLSv1.2".to_string(),
+            timeout_ms: cfg.get("timeoutMs").and_then(Json::as_i64)
+                .unwrap_or(0),
+            ca_pem: String::new(),
+            client_cert_pem: String::new(),
+            client_key_pem: String::new(),
+            auth: None,
+        };
+        let mut files = || -> Result<(), String> {
+            let ca = text(cfg, "smtpCaFile");
+            if !ca.is_empty() {
+                options.ca_pem = self.files.read(&ca)?;
+            }
+            let (cert, key) = (text(cfg, "smtpClientCertFile"),
+                               text(cfg, "smtpClientKeyFile"));
+            if !cert.is_empty() || !key.is_empty() {
+                if cert.is_empty() || key.is_empty() {
+                    return Err("mail.smtpClientCertFile and \
+                                mail.smtpClientKeyFile are set together or \
+                                not at all".to_string());
+                }
+                options.client_cert_pem = self.files.read(&cert)?;
+                options.client_key_pem = self.files.read(&key)?;
+            }
+            Ok(())
+        };
+        if let Err(e) = files() {
+            return Err(SendError::new(
+                format!("the smtp transport's TLS files could not be read: {}",
+                        e), codes::STS_MAIL_0004, false));
+        }
+        let auth = text(cfg, "smtpAuth");
+        if !auth.is_empty() && auth != "none" {
+            let Some(secret) = self.secrets.read(Secret::SmtpPassword).await
+                .filter(|s| !s.is_empty()) else {
+                return Err(SendError::new(
+                    format!("mail.smtpAuth is \"{}\" and \
+                             mail.smtpPasswordProvider is \"none\", so there \
+                             is nothing to log in with", auth),
+                    codes::STS_MAIL_0004, false));
+            };
+            let user = text(cfg, "smtpUser");
+            options.auth = Some(if auth == "xoauth2" {
+                match serde_json::from_str::<Json>(&secret).ok()
+                    .filter(Json::is_object) {
+                    Some(refresh) => SmtpAuth::OAuth2 { user,
+                        access_token: String::new(), refresh },
+                    None => SmtpAuth::OAuth2 { user, access_token: secret,
+                                               refresh: Json::Null },
+                }
+            } else {
+                SmtpAuth::Password { user, pass: secret,
+                    method: if auth == "plain" { "PLAIN" } else { "LOGIN" }
+                        .to_string() }
+            });
+        }
+        let mut dkim = None;
+        let domain = text(cfg, "dkimDomain");
+        if !domain.is_empty() {
+            let key = self.secrets.read(Secret::DkimKey).await
+                .unwrap_or_default();
+            let selector = text(cfg, "dkimSelector");
+            if key.is_empty() || selector.is_empty() {
+                return Err(SendError::new(
+                    format!("mail.dkimDomain is set, so every message must \
+                             be signed, and {}", if key.is_empty() {
+                                 "no DKIM key is configured \
+                                  (mail.dkimKeyProvider)"
+                             } else {
+                                 "mail.dkimSelector is empty"
+                             }), codes::STS_MAIL_0022, false));
+            }
+            let made = Dkim { domain: domain.clone(), selector,
+                              algorithm: text(cfg, "dkimAlgorithm"),
+                              private_key_pem: key };
+            let probe = format!("From: probe@{}\r\n\r\n", domain);
+            if let Err(e) = dkim_header(probe.as_bytes(), &made, (self.clock)())
+            {
+                return Err(SendError::new(
+                    format!("the DKIM key cannot sign: {}", e),
+                    codes::STS_MAIL_0022, false));
+            }
+            dkim = Some(made);
+        }
+        let relay = self.relays.open(&options);
+        Ok(Arc::new(Smtp::new(relay, dkim, self.clock.clone(),
+                              self.boundary.clone())))
+    }
+}
+
+/// SES, Azure or Gmail: the request built here, the call the client's.
+pub struct CloudTransport {
+    cloud: Cloud,
+    client: Arc<dyn CloudMail>,
+    configuration_set: String,
+    boundary: Arc<dyn Fn() -> String + Send + Sync>,
+}
+
+impl CloudTransport {
+    /// From the client and the realm's settings.
+    pub fn new(
+        cloud: Cloud,
+        client: Arc<dyn CloudMail>,
+        cfg: &Json,
+        boundary: Arc<dyn Fn() -> String + Send + Sync>,
+    ) -> CloudTransport {
+        CloudTransport { cloud, client,
+                         configuration_set: text(cfg, "sesConfigurationSet"),
+                         boundary }
+    }
+
+    async fn deliver(&self, message: &OutMessage) -> Result<Sent, SendError> {
+        let raw = compose::compose(message, &(self.boundary)());
+        let request = cloud_request(self.cloud, message, &raw,
+                                    &self.configuration_set);
+        let who = match self.cloud {
+            Cloud::Ses => "SES",
+            Cloud::Acs => "Azure Communication Services",
+            Cloud::Gmail => "the Gmail API",
+        };
+        let out = self.client.send(&request).await
+            .map_err(|e| classify_cloud(&e, who))?;
+        let id = |v: Option<&Json>| v.and_then(Json::as_str).unwrap_or("")
+            .to_string();
+        match self.cloud {
+            Cloud::Ses => Ok(Sent { provider_id: id(out.get("MessageId")),
+                                    detail: String::new() }),
+            Cloud::Gmail => Ok(Sent {
+                provider_id: id(out.get("data").and_then(|d| d.get("id"))),
+                detail: String::new() }),
+            Cloud::Acs => {
+                let status = id(out.get("status"));
+                if status != "Succeeded" {
+                    let error = out.get("error").map(|e| {
+                        let m = id(e.get("message"));
+                        if m.is_empty() { id(e.get("code")) } else { m }
+                    });
+                    return Err(SendError::new(
+                        format!("Azure Communication Services ended the send \
+                                 as \"{}\"{}", if status.is_empty() {
+                                     "unknown"
+                                 } else {
+                                     &status
+                                 }, error.map(|e| format!(": {}", e))
+                                     .unwrap_or_default()),
+                        codes::STS_MAIL_0008, false));
+                }
+                Ok(Sent { provider_id: id(out.get("id")),
+                          detail: String::new() })
+            }
+        }
+    }
+}
+
+impl Transport for CloudTransport {
+    fn name(&self) -> &str {
+        match self.cloud {
+            Cloud::Ses => "ses",
+            Cloud::Acs => "acs",
+            Cloud::Gmail => "gmail",
+        }
+    }
+    fn send<'a>(
+        &'a self,
+        message: &'a OutMessage,
+    ) -> BoxFuture<'a, Result<Sent, SendError>> {
+        Box::pin(self.deliver(message))
     }
 }
