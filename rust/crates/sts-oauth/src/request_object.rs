@@ -571,6 +571,22 @@ impl RequestObjects {
     /// `lookUp(once)`: a `jti` already spent is refused.
     fn look_up(&self, once: &Option<(String, String, i64)>) -> Option<Refusal> {
         let (client, jti, _) = once.as_ref()?;
+        // THE SHARED HISTORY, where the door claimed this object on arrival
+        // (`usedAssertions.peek()`'s look, answered by that claim): a row
+        // another request or process holds is a replay.
+        if let Some(found) =
+            crate::used_assertions::arrival().and_then(|a| a.look(client, jti))
+        {
+            if let Err(crate::used_assertions::Refused::Replay(_)) = found {
+                tracing::warn!(
+                    "request_object: client \"{}\" sent a request object \
+                     whose jti {} has been used already; it is refused.",
+                    client,
+                    json!(jti)
+                );
+                return Some(refusal(codes::STS_OAUTH_0374, "invalid_request_object", "this request object has been used already. Its `jti` is remembered until the object expires, because a signed request object captured off the wire is a credential for the request inside it until then. Sign a fresh one, with a new `jti`, for each authorization request.".into()));
+            }
+        }
         let now = (self.now_s)();
         let mut seen = self.seen.lock().unwrap_or_else(|p| p.into_inner());
         seen.retain(|_, exp| *exp >= now);
@@ -589,6 +605,10 @@ impl RequestObjects {
     /// `spend(once)`: the `jti` noted when a response is issued on it.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn spend(&self, once: &(String, String, i64)) {
+        // Kept in the shared history: the arrival claim is accepted.
+        if let Some(a) = crate::used_assertions::arrival() {
+            let _ = a.take(&once.0, &once.1);
+        }
         let mut seen = self.seen.lock().unwrap_or_else(|p| p.into_inner());
         seen.insert(format!("{} {}", once.0, once.1), once.2);
     }

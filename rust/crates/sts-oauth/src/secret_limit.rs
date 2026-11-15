@@ -57,9 +57,14 @@ pub trait SharedWindows: Send + Sync {
         key: &'a str,
         window_ms: i64,
     ) -> WindowFuture<'a, Result<Window, String>>;
-    fn peek<'a>(&'a self, key: &'a str)
-        -> WindowFuture<'a, Result<Window, String>>;
-    fn clear<'a>(&'a self, key: &'a str) -> WindowFuture<'a, Result<bool, String>>;
+    fn peek<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> WindowFuture<'a, Result<Window, String>>;
+    fn clear<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> WindowFuture<'a, Result<bool, String>>;
 }
 
 /// No shared store.
@@ -192,7 +197,8 @@ impl SharedLimits {
     // This process's fixed windows: the same arithmetic as the store's.
     fn local_count(&self, key: &str, span: i64) -> Window {
         let now = (self.now_ms)();
-        let mut held = self.local.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut held =
+            self.local.lock().unwrap_or_else(PoisonError::into_inner);
         let row = held.entry(key.to_string()).or_insert((0, now));
         if row.1 <= now {
             *row = (1, now + span);
@@ -250,7 +256,10 @@ impl SharedLimits {
                 what
             );
         }
-        checks.iter().map(|c| self.local_count(&c.key, span)).collect()
+        checks
+            .iter()
+            .map(|c| self.local_count(&c.key, span))
+            .collect()
     }
 
     /// `attemptShared(what, req, identity)`: one attempt counted in both
@@ -283,7 +292,12 @@ impl SharedLimits {
             self.window_ms() / 1000,
             retry
         );
-        Some(Self::refusal(check.kind, check.limit, retry, "Too many attempts."))
+        Some(Self::refusal(
+            check.kind,
+            check.limit,
+            retry,
+            "Too many attempts.",
+        ))
     }
 
     /// `peekShared()`: the refusal where a bucket is AT its limit, and the

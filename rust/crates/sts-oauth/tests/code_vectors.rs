@@ -688,6 +688,7 @@ async fn the_code_flow() {
             sessions: Arc::new(Live),
             limits: None,
             passwords: None,
+            used: None,
         };
         // ---- Discovery ---------------------------------------------------
         for case in cases

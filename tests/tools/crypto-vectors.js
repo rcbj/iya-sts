@@ -5602,6 +5602,14 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./oauth-vectors.js').build(ROOT);
                    } },
+                 // The used-assertion history's keys and answers (#444
+                 // phase 5, the `oauth6` slice):
+                 // tests/tools/used-assertions-vectors.js.
+                 { file: 'used-assertions-node.json',
+                   build: function () {
+                     return require('./used-assertions-vectors.js')
+                       .build(ROOT);
+                   } },
                  // The secrets every node agrees on, the pairwise key
                  // among them (#444 phase 5, the `oauth5` slice):
                  // tests/tools/cluster-secrets-vectors.js.

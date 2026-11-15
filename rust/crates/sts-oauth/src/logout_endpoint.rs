@@ -308,10 +308,7 @@ impl LogoutEndpoint {
         let url = if ask.query.is_empty() {
             format!("{}{}/oauth2/logout", ask.prefix, ask.as_path)
         } else {
-            format!(
-                "{}{}/oauth2/logout?{}",
-                ask.prefix, ask.as_path, ask.query
-            )
+            format!("{}{}/oauth2/logout?{}", ask.prefix, ask.as_path, ask.query)
         };
         let label = |k: &str| Self::text(&t, k);
         let spec = ErrorPageSpec {
@@ -515,8 +512,8 @@ impl LogoutEndpoint {
     /// read UNVERIFIED and only to choose what it is verified against —
     /// `azp`, else the one audience.
     fn hint_client_of(hint: &str) -> String {
-        let claims =
-            crate::js::segment_json(hint, 1).unwrap_or(Json::Object(Map::new()));
+        let claims = crate::js::segment_json(hint, 1)
+            .unwrap_or(Json::Object(Map::new()));
         let azp = s(claims.get("azp"));
         if !azp.is_empty() {
             return azp;
@@ -533,7 +530,8 @@ impl LogoutEndpoint {
     /// shown.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn confirm_for(session: Option<&Json>) -> String {
-        let handle = session.map(|x| s(x.get("handleHash"))).unwrap_or_default();
+        let handle =
+            session.map(|x| s(x.get("handleHash"))).unwrap_or_default();
         if handle.is_empty() {
             return String::new();
         }
@@ -624,7 +622,8 @@ impl LogoutEndpoint {
         let mut unfollowed: Option<Unfollowed> = None;
         let mut refused_detail = String::new();
         let target = s(q.get("post_logout_redirect_uri"));
-        let names_no_client = hint.is_empty() && s(q.get("client_id")).is_empty();
+        let names_no_client =
+            hint.is_empty() && s(q.get("client_id")).is_empty();
         if !target.is_empty() && names_no_client && Self::considered(&target) {
             mark = Some(codes::STS_OAUTH_0785);
             tracing::info!(
@@ -643,10 +642,8 @@ impl LogoutEndpoint {
         } else if !target.is_empty() && Self::considered(&target) {
             match self.check_post_logout_redirect_uri(&target, &client) {
                 Ok(()) => {
-                    return_to = Self::with_logout_state(
-                        &target,
-                        &s(q.get("state")),
-                    );
+                    return_to =
+                        Self::with_logout_state(&target, &s(q.get("state")));
                 }
                 Err((code, description)) => {
                     mark = Some(code);
@@ -677,10 +674,8 @@ impl LogoutEndpoint {
         }
         // --- 4. confirmation ----------------------------------------------
         let several = self.sessions.multiple_accounts();
-        let hinted_sid = hinted
-            .as_ref()
-            .map(|h| s(h.get("sid")))
-            .unwrap_or_default();
+        let hinted_sid =
+            hinted.as_ref().map(|h| s(h.get("sid"))).unwrap_or_default();
         if several && !hinted_sid.is_empty() {
             self.sessions.hint_account(
                 &ask.request,
@@ -697,9 +692,11 @@ impl LogoutEndpoint {
         } else {
             Vec::new()
         };
-        let cookie_presented = ask.request.cookie.split(';').any(|part| {
-            part.trim_start().starts_with("sts_session=")
-        });
+        let cookie_presented = ask
+            .request
+            .cookie
+            .split(';')
+            .any(|part| part.trim_start().starts_with("sts_session="));
         let post = ask.method.eq_ignore_ascii_case("POST");
         let confirmed = post
             && s(q.get("confirm")) == "yes"
@@ -756,7 +753,8 @@ impl LogoutEndpoint {
         // A GET THAT IS NOT A TOP-LEVEL NAVIGATION ENDS NOTHING (#1443).
         let not_navigating = ask.method.eq_ignore_ascii_case("GET")
             && ((!ask.fetch_dest.is_empty() && ask.fetch_dest != "document")
-                || (!ask.fetch_mode.is_empty() && ask.fetch_mode != "navigate"));
+                || (!ask.fetch_mode.is_empty()
+                    && ask.fetch_mode != "navigate"));
         let must_ask = !confirmed
             && match &session {
                 Some(held) => {
@@ -806,12 +804,9 @@ impl LogoutEndpoint {
             (Some(held), true) => s(held.get("id")),
             _ => String::new(),
         };
-        let ended =
-            self.sessions.end_session_for(&ask.request, response, &sid);
+        let ended = self.sessions.end_session_for(&ask.request, response, &sid);
         let clear_site_data = session.is_some()
-            && self
-                .sessions
-                .clear_site_data_after_sign_out(&ask.request);
+            && self.sessions.clear_site_data_after_sign_out(&ask.request);
         let partly = unfollowed.as_ref().map(|u| Partly {
             client_id: client_id.clone(),
             uri: u.uri.clone(),
@@ -959,7 +954,11 @@ impl LogoutEndpoint {
                 .collect();
             let count = list.len().to_string();
             let ask_text = if app.is_empty() {
-                Self::html(t, "oauthPages.logout.askWhich", &[("count", &count)])
+                Self::html(
+                    t,
+                    "oauthPages.logout.askWhich",
+                    &[("count", &count)],
+                )
             } else {
                 Self::html(
                     t,
@@ -1336,7 +1335,8 @@ mod tests {
     #[test]
     fn a_hint_names_the_client_by_azp_or_its_one_audience() {
         let b = |v: &Json| sts_crypto::b64::encode(v.to_string().as_bytes());
-        let jwt = |c: Json| format!("{}.{}.x", b(&json!({"alg":"RS256"})), b(&c));
+        let jwt =
+            |c: Json| format!("{}.{}.x", b(&json!({"alg":"RS256"})), b(&c));
         assert_eq!(
             LogoutEndpoint::hint_client_of(&jwt(json!({"aud":["a"]}))),
             "a"
@@ -1346,9 +1346,9 @@ mod tests {
             ""
         );
         assert_eq!(
-            LogoutEndpoint::hint_client_of(
-                &jwt(json!({"aud":["a","b"],"azp":"b"}))
-            ),
+            LogoutEndpoint::hint_client_of(&jwt(
+                json!({"aud":["a","b"],"azp":"b"})
+            )),
             "b"
         );
     }

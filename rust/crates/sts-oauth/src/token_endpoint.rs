@@ -244,6 +244,9 @@ pub struct TokenEndpoint {
     /// The password grant's credential checks (RFC 6749 section 4.3);
     /// `None` refuses the grant as unsupported.
     pub passwords: Option<Arc<dyn PasswordChecks>>,
+    /// The shared used-assertion history (`common/used_assertions.js`);
+    /// `None` leaves the client-assertion verifier to its own.
+    pub used: Option<Arc<crate::used_assertions::UsedAssertions>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -417,7 +420,10 @@ impl TokenEndpoint {
             codes::STS_OAUTH_0284,
             429,
             "invalid_client",
-            &crate::secret_limit::lockout_description(client_id, &locked.detail),
+            &crate::secret_limit::lockout_description(
+                client_id,
+                &locked.detail,
+            ),
         );
         a.set("Retry-After", &locked.retry_after_s.to_string());
         a
@@ -457,9 +463,29 @@ impl TokenEndpoint {
         }
     }
 
-    /// The token endpoint.
+    /// The token endpoint. A `client_assertion`'s `jti` is claimed in
+    /// the shared used-assertion history on arrival, and the claim is
+    /// settled by the answer: kept for a 2xx the verifier accepted it for,
+    /// released otherwise (`bindToResponse()`).
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn answer(&self, ask: &TokenAsk) -> Answer {
+        let Some(used) = self.used.as_ref() else {
+            return self.answer_inner(ask).await;
+        };
+        let folded = crate::js::fold(&crate::js::form_decode(&ask.body));
+        let client_id = client_from(&ask.authorization, &folded).client_id;
+        let arrival = crate::used_assertions::reserve_for_token(
+            used, &folded, &client_id,
+        )
+        .await;
+        let answer = crate::used_assertions::ARRIVAL
+            .scope(arrival.clone(), self.answer_inner(ask))
+            .await;
+        arrival.settle(used, answer.status, 300).await;
+        answer
+    }
+
+    async fn answer_inner(&self, ask: &TokenAsk) -> Answer {
         let pairs = crate::js::form_decode(&ask.body);
         let spent = self.spend_presented_code(&crate::js::fold(&pairs)).await;
         let folded = crate::js::fold(&pairs);
@@ -1185,7 +1211,12 @@ impl TokenEndpoint {
         resources: &[String],
     ) -> Answer {
         let Some(checks) = self.passwords.as_ref() else {
-            return self.refusal(codes::STS_OAUTH_0227, 400, "unsupported_grant_type", "grant_type \"password\" is not supported.");
+            return self.refusal(
+                codes::STS_OAUTH_0227,
+                400,
+                "unsupported_grant_type",
+                "grant_type \"password\" is not supported.",
+            );
         };
         let username = s(issuing.body.get("username"));
         let password = s(issuing.body.get("password"));
@@ -1250,8 +1281,7 @@ impl TokenEndpoint {
         }
         // `provisionedPerson(username)`: no entry, no subject.
         let user = self.people.user_for(&username);
-        if s(user.get("sub")).is_empty() && self.people.has_subject_resolver()
-        {
+        if s(user.get("sub")).is_empty() && self.people.has_subject_resolver() {
             return self.refusal(codes::STS_OAUTH_0510, 400, "invalid_grant", &format!(
                 "There is no directory entry for {}, so there is no subject to issue a token about; the person has to be provisioned first.",
                 username));

@@ -494,6 +494,7 @@ async fn token_endpoint() {
                 sessions: Arc::new(NoSessions),
                 limits: None,
                 passwords: None,
+                used: None,
             };
             let form: Vec<(String, String)> = case["form"]
                 .as_object()

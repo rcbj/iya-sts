@@ -333,6 +333,73 @@ const CLAIM_WRITE: &str = crate::written!(
     expires_at
 );
 const LOCK_WRITE: &str = crate::written!(MARIADB, "sts_cluster_locks", name);
+/// What a statement writes to `sts_used_assertions`.
+const USED_WRITE: &str = crate::written!(
+    MARIADB,
+    "sts_used_assertions",
+    realm,
+    key,
+    format,
+    used_as,
+    issuer,
+    identifier,
+    client_id,
+    subject,
+    state,
+    reservation,
+    origin,
+    used_at,
+    spent_at,
+    expires_at
+);
+/// What a used-assertion read answers (`USED_COLUMNS`).
+const USED_READ: &str = "format, used_as, issuer, identifier, client_id, \
+    subject, state, origin, used_at, spent_at, expires_at";
+
+fn used_row_of(
+    realm: &str,
+    key: &str,
+    r: &Row,
+) -> crate::driver::UsedAssertionRow {
+    let t = |name: &str| text(r, name).unwrap_or_default();
+    let n = |name: &str| {
+        r.get_opt::<i64, _>(name).and_then(Result::ok).unwrap_or(0)
+    };
+    crate::driver::UsedAssertionRow {
+        realm: realm.to_string(),
+        key: key.to_string(),
+        format: t("format"),
+        used_as: t("used_as"),
+        issuer: t("issuer"),
+        identifier: t("identifier"),
+        client_id: t("client_id"),
+        subject: t("subject"),
+        state: t("state"),
+        reservation: String::new(),
+        origin: t("origin"),
+        used_at: n("used_at"),
+        spent_at: n("spent_at"),
+        expires_at: n("expires_at"),
+    }
+}
+
+/// `liveCount(realm, now)`: the realm's unexpired used-assertion rows.
+async fn used_live(
+    conn: &mut Conn,
+    realm: &str,
+    now_ms: i64,
+) -> StoreResult<i64> {
+    let n: Option<i64> = conn
+        .exec_first(
+            "SELECT count(*) FROM sts_used_assertions WHERE realm = ? AND \
+             expires_at >= ?",
+            (realm, now_ms),
+        )
+        .await
+        .map_err(err)?;
+    Ok(n.unwrap_or(0))
+}
+
 /// What a statement writes to `sts_cluster_windows`.
 const WINDOW_WRITE: &str = crate::written!(
     MARIADB,
@@ -2084,6 +2151,153 @@ impl Driver for MariadbDriver {
             self.record_changes(&mut tx, &[("keys", realm, "")]).await?;
             tx.commit().await.map_err(err)?;
             Ok(Some(next))
+        })
+    }
+
+    fn holds_used_assertions(&self) -> bool {
+        true
+    }
+
+    // `claimUsedAssertion()`, the portable form (`store_portable.js`): an
+    // expired row with the key deleted, the realm's live rows counted
+    // against the cap, then an insert that does nothing on a duplicate key
+    // — the primary key's lock is what makes it exactly once.
+    fn claim_used_assertion<'a>(
+        &'a self,
+        row: &'a crate::driver::UsedAssertionRow,
+        cap: i64,
+        now_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::UsedClaim>> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            conn.exec_drop(
+                "DELETE FROM sts_used_assertions WHERE realm = ? AND `key` = ? \
+                 AND expires_at < ?",
+                (row.realm.as_str(), row.key.as_str(), now_ms),
+            )
+            .await
+            .map_err(err)?;
+            let held = used_live(&mut conn, &row.realm, now_ms).await?;
+            let mut inserted = false;
+            if held < cap {
+                conn.exec_drop(
+                    format!(
+                        "INSERT IGNORE INTO sts_used_assertions ({}) VALUES \
+                         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        USED_WRITE
+                    ),
+                    vec![
+                        Value::from(row.realm.as_str()),
+                        Value::from(row.key.as_str()),
+                        Value::from(row.format.as_str()),
+                        Value::from(row.used_as.as_str()),
+                        Value::from(row.issuer.as_str()),
+                        Value::from(row.identifier.as_str()),
+                        Value::from(row.client_id.as_str()),
+                        Value::from(row.subject.as_str()),
+                        Value::from(row.state.as_str()),
+                        Value::from(row.reservation.as_str()),
+                        Value::from(row.origin.as_str()),
+                        Value::from(row.used_at),
+                        Value::from(row.spent_at),
+                        Value::from(row.expires_at),
+                    ],
+                )
+                .await
+                .map_err(err)?;
+                inserted = conn.affected_rows() > 0;
+            }
+            if inserted {
+                return Ok(Some(crate::driver::UsedClaim {
+                    claimed: true,
+                    ..Default::default()
+                }));
+            }
+            let found: Option<Row> = conn
+                .exec_first(
+                    format!(
+                        "SELECT {} FROM sts_used_assertions WHERE realm = ? \
+                         AND `key` = ? AND expires_at >= ?",
+                        USED_READ
+                    ),
+                    (row.realm.as_str(), row.key.as_str(), now_ms),
+                )
+                .await
+                .map_err(err)?;
+            let live = used_live(&mut conn, &row.realm, now_ms).await?;
+            Ok(Some(crate::driver::UsedClaim {
+                claimed: false,
+                live,
+                existing: found.map(|r| used_row_of(&row.realm, &row.key, &r)),
+            }))
+        })
+    }
+
+    fn settle_used_assertion<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+        reservation: &'a str,
+        spent: bool,
+        at_ms: i64,
+    ) -> StoreFuture<'a, u64> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            if spent {
+                conn.exec_drop(
+                    "UPDATE sts_used_assertions SET state = 'spent', \
+                     spent_at = ? WHERE realm = ? AND `key` = ? AND \
+                     reservation = ?",
+                    (at_ms, realm, key, reservation),
+                )
+                .await
+                .map_err(err)?;
+            } else {
+                conn.exec_drop(
+                    "DELETE FROM sts_used_assertions WHERE realm = ? AND \
+                     `key` = ? AND reservation = ? AND state = 'reserved'",
+                    (realm, key, reservation),
+                )
+                .await
+                .map_err(err)?;
+            }
+            Ok(conn.affected_rows())
+        })
+    }
+
+    fn find_used_assertion<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+        now_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::UsedAssertionRow>> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            let found: Option<Row> = conn
+                .exec_first(
+                    format!(
+                        "SELECT {} FROM sts_used_assertions WHERE realm = ? \
+                         AND `key` = ? AND expires_at >= ?",
+                        USED_READ
+                    ),
+                    (realm, key, now_ms),
+                )
+                .await
+                .map_err(err)?;
+            Ok(found.map(|r| used_row_of(realm, key, &r)))
+        })
+    }
+
+    fn purge_used_assertions(&self, now_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            conn.exec_drop(
+                "DELETE FROM sts_used_assertions WHERE expires_at < ?",
+                (now_ms,),
+            )
+            .await
+            .map_err(err)?;
+            Ok(conn.affected_rows())
         })
     }
 

@@ -85,5 +85,7 @@ pub mod scopes;
 pub mod secret_limit;
 pub mod sender_constraints;
 pub mod signin;
+pub mod step_up;
 pub mod token_endpoint;
+pub mod used_assertions;
 pub mod userinfo;

@@ -4756,6 +4756,7 @@ dependencies = [
  "sts-authn",
  "sts-cluster",
  "sts-core",
+ "sts-credentials",
  "sts-crypto",
  "sts-http",
  "sts-registers",
