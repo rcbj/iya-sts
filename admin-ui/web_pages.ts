@@ -164,6 +164,11 @@ interface WebPage {
     sample: (listView: Json) => string | null;
     render: (view: Json, ctx?: Json) => string;
   };
+  // A DRILL-DOWN AT A PATH OF ITS OWN WHOSE LIST IS A TAB OF ANOTHER PAGE
+  // (#1760): `/admin/xacml/pep?pep=` is one row of `/admin/xacml`'s Remote
+  // PEPs tab, so its trail's section crumb, and the nav it marks, are that
+  // page's, and the crumb lands on the tab.
+  upTo?: { path: string; fragment?: string };
   render: (view: Json, ctx?: Json) => string;
   // A PICTURE'S `?format=svg` (#444 phase 2b): the drawing as a document on
   // its own, with no links, drawn from the page's answer in the browser as
@@ -1119,6 +1124,25 @@ const PAGES: WebPage[] = [
                     'kerberosTrusts'],
     render: function (view: Json, ctx?: Json): string {
       return ProtocolSettingsPage.render(view, ctx || WebKit.context());
+    } },
+  // ONE REMOTE PEP (#1760), reached from a row of the Remote PEPs tab: the
+  // same operation asked with `pep`, as `/admin/applications` is with
+  // `application`.
+  { path: '/admin/xacml/pep', title: 'Remote PEP',
+    operation: '/admin-api/xacml/peps',
+    upTo: { path: '/admin/xacml', fragment: 'xacml-tab-peps' },
+    drill: {
+      param: 'pep',
+      sample: function (list: Json): string | null {
+        const rows = list.peps || [];
+        return rows[0] ? rows[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.pepDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.pepsBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
     compose: {

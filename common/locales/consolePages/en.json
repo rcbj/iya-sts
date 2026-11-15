@@ -126,6 +126,7 @@
   "title.xacml": "XACML",
   "title.xacml-decide": "Try a decision",
   "title.xacml-monitor": "XACML decisions",
+  "title.xacml-pep": "Remote PEP",
   "title.xacml-peps": "Remote PEPs",
   "title.xacml-policies": "XACML policies",
   "title.backup-codes": "Recovery codes",

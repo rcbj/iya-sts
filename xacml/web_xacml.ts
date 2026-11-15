@@ -787,8 +787,141 @@ class XacmlPage {
       t.html('consoleXacml.th.actions') + '</th></tr>' + rows + '</table>';
   }
 
+  // ONE PEP's STATE, its certificate, its notify address, its listener
+  // certificate and its two row actions: drawn on the Remote PEPs table and
+  // on the PEP's own page (#1760) from the same row.
+  static pepState(t: Json, row: Json): string {
+    const state = [];
+    state.push(row.current
+      ? '<span title="' + esc(t.text('consoleXacml.pep.currentTip')) +
+        '">' + t.html('consoleXacml.pep.current') + '</span>'
+      : '<strong title="' + esc(t.text('consoleXacml.pep.notCurrentTip')) +
+        '">' + t.html('consoleXacml.pep.notCurrent') + '</strong>');
+    state.push(row.stale
+      ? '<strong title="' + esc(t.text('consoleXacml.pep.staleTip')) +
+        '">' + t.html('consoleXacml.pep.stale') + '</strong>'
+      : t.html('consoleXacml.pep.live'));
+    if (!row.enabled) {
+      state.push('<em>' + t.html('consoleXacml.pep.notNudged') + '</em>');
+    }
+    return state.join(', ') +
+      '<div class="sub">' + t.html('consoleXacml.pep.lastSeen', {
+        at: row.lastSeen || t.text('consoleXacml.pep.never') }) + '</div>';
+  }
+
+  // THE AUTHENTICATION IS ON THE ROW AND NOT IN A FOOTNOTE. A registration
+  // that proved nothing must not look the same as one that proved
+  // something, which is the whole reason the flag is stored rather than
+  // inferred from whether a subject happens to be present.
+  static pepWho(t: Json, row: Json): string {
+    return row.authenticated
+      ? '<code>' + esc(row.certificateSubject) + '</code>'
+      : '<strong>' + t.html('consoleXacml.pep.unauthenticated') +
+        '</strong><div class="sub">' +
+        t.html('consoleXacml.pep.unauthenticatedNote') + '</div>';
+  }
+
+  // The address the nudge dials: the one set on the PEP's page, else the
+  // one it registered with (#1760).
+  static pepNotify(t: Json, row: Json): string {
+    const url = row.effectiveNotifyUrl || row.notifyUrl;
+    return url
+      ? '<code>' + esc(url) + '</code>' +
+        (row.notifyProblem
+          ? '<div class="sub xacml-alert">' + esc(row.notifyProblem) +
+            '</div>'
+          : '') +
+        (row.lastNotify
+          ? '<div class="sub">' + esc(row.lastNotify) + '</div>'
+          : '')
+      : '<span class="sub">' + t.html('consoleXacml.pep.noNotify') +
+        '</span>';
+  }
+
+  // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
+  // and never whether the PEP is serving it: nothing on this page reaches
+  // into another process, and the PEP's own GET / is where that is said.
+  // The issue control is on the PEP's own page (#1760).
+  static pepListener(ctx: Json, json: Json, row: Json,
+                     withForm: boolean): string {
+    const t = ctx.t;
+    const self = this;
+    const held = row.listenerCertificate;
+    return (held
+      ? '<code>' + esc(held.serialHex) + '</code>' +
+        '<div class="sub">' +
+        esc(held.dnsNames.concat(held.ipAddresses).join(', ')) + '</div>' +
+        '<div class="sub">' +
+        (held.expired
+          ? '<strong>' + t.html('consoleXacml.pep.expired') + '</strong> '
+          : '') +
+        t.html('consoleXacml.pep.until', { at: held.notAfter }) + '</div>'
+      : '<span class="sub">' + t.html('consoleXacml.pep.noneIssued') +
+        '</span>') +
+      (withForm && ctx.write
+        ? '<form method="post" action="/admin/xacml/peps">' +
+          self.hidden('action', 'issue-pep-certificate') +
+          self.hidden('name', row.name) +
+          '<div class="sub">' + t.html('consoleXacml.pep.moreDns') +
+          ' <input name="dnsNames" ' +
+          'size="18" placeholder="pep.example.test"></div>' +
+          '<div class="sub">' + t.html('consoleXacml.pep.ipAddresses') +
+          ' <input name="ipAddresses" ' +
+          'size="14" placeholder="10.0.0.5"></div>' +
+          '<div class="sub">' + t.html('consoleXacml.pep.key') + ' ' +
+          self.select('keyAlg', json.listenerCertificates.keyAlgorithms
+            .map(function (one) {
+              return { value: one, label: one };
+            }), json.listenerCertificates.defaultKeyAlg) + ' ' +
+          '<button type="submit">' + (held
+            ? t.html('consoleXacml.pep.reissue')
+            : t.html('consoleXacml.pep.issue')) +
+          '</button></div></form>'
+        : '');
+  }
+
+  static pepActions(ctx: Json, row: Json): string {
+    const t = ctx.t;
+    const self = this;
+    return ctx.write
+      ? '<form method="post" action="/admin/xacml/peps" ' +
+        'class="inline">' +
+        self.hidden('action', row.enabled ? 'disable-pep' : 'enable-pep') +
+        self.hidden('name', row.name) +
+        '<button type="submit">' +
+        (row.enabled ? t.html('consoleXacml.pep.stopNudging')
+                     : t.html('consoleXacml.pep.nudge')) +
+        '</button></form> ' +
+        '<form method="post" action="/admin/xacml/peps" ' +
+        'class="inline">' +
+        self.hidden('action', 'forget-pep') +
+        self.hidden('name', row.name) +
+        '<button type="submit">' + t.html('consoleXacml.pep.forget') +
+        '</button></form>'
+      : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
+  }
+
+  static pepCounts(t: Json, row: Json): string {
+    return t.html('consoleXacml.pep.counts', {
+      decisions: row.decisions, allowed: row.allowed,
+      refused: row.refused }) +
+      (row.undischargeable
+        ? '<div class="sub">' +
+          t.html('consoleXacml.pep.undischargeable',
+            { n: row.undischargeable }) +
+          '</div>'
+        : '');
+  }
+
+  // ONE PEP's PAGE (#1760): its row drills down to `/admin/xacml/pep`.
+  static pepHref(name: string): string {
+    return '/admin/xacml/pep?pep=' + encodeURIComponent(name);
+  }
+
   /**
-   * Draws Remote PEPs from its view.
+   * Draws Remote PEPs from its view: the register as a table, each row a
+   * link to the PEP's own page (#1760), where the listener certificate's
+   * control, the reverse proxy and the managed settings are.
    *
    * @param ctx - the render context (`WebKit.context()`)
    * @param json - `pepsJson()`'s answer
@@ -797,97 +930,27 @@ class XacmlPage {
   static pepsBody(ctx, json) {
     const t = ctx.t;
     const self = this;
-    const writable = ctx.write;
 
     const rows = json.peps.map(function (row) {
-      const state = [];
-      state.push(row.current
-        ? '<span title="' + esc(t.text('consoleXacml.pep.currentTip')) +
-          '">' + t.html('consoleXacml.pep.current') + '</span>'
-        : '<strong title="' + esc(t.text('consoleXacml.pep.notCurrentTip')) +
-          '">' + t.html('consoleXacml.pep.notCurrent') + '</strong>');
-      state.push(row.stale
-        ? '<strong title="' + esc(t.text('consoleXacml.pep.staleTip')) +
-          '">' + t.html('consoleXacml.pep.stale') + '</strong>'
-        : t.html('consoleXacml.pep.live'));
-      if (!row.enabled) {
-        state.push('<em>' + t.html('consoleXacml.pep.notNudged') + '</em>');
-      }
-      // THE AUTHENTICATION IS ON THE ROW AND NOT IN A FOOTNOTE. A
-      // registration that proved nothing must not look the same as one that
-      // proved something, which is the whole reason the flag is stored rather
-      // than inferred from whether a subject happens to be present.
-      const who = row.authenticated
-        ? '<code>' + esc(row.certificateSubject) + '</code>'
-        : '<strong>' + t.html('consoleXacml.pep.unauthenticated') +
-          '</strong><div class="sub">' +
-          t.html('consoleXacml.pep.unauthenticatedNote') +
-          '</div>';
-      const notify = row.notifyUrl
-        ? '<code>' + esc(row.notifyUrl) + '</code>' +
-          (row.notifyProblem
+      const proxy = row.proxy
+        ? t.html('consoleXacml.pepPage.proxySummary',
+                 { n: row.proxy.routes.length }) +
+          (row.proxy.enabled ? ''
+            : ' <strong>' + t.html('consoleXacml.proxy.disabled') +
+              '</strong>') +
+          ((row.proxyRoutes || []).some(function (one) {
+            return !one.usable;
+          })
             ? '<div class="sub xacml-alert">' +
-            esc(row.notifyProblem) +
-              '</div>'
-            : '') +
-          (row.lastNotify
-            ? '<div class="sub">' + esc(row.lastNotify) + '</div>'
+              t.html('consoleXacml.proxy.unusable') + '</div>'
             : '')
-        : '<span class="sub">' +
-          t.html('consoleXacml.pep.noNotify') +
-          '</span>';
-      // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
-      // and never whether the PEP is serving it: nothing on this page reaches
-      // into another process, and the PEP's own GET / is where that is said.
-      const held = row.listenerCertificate;
-      const listener = (held
-        ? '<code>' + esc(held.serialHex) + '</code>' +
-          '<div class="sub">' +
-          esc(held.dnsNames.concat(held.ipAddresses).join(', ')) + '</div>' +
-          '<div class="sub">' +
-          (held.expired
-            ? '<strong>' + t.html('consoleXacml.pep.expired') + '</strong> '
-              : '') +
-          t.html('consoleXacml.pep.until', { at: held.notAfter }) + '</div>'
-        : '<span class="sub">' + t.html('consoleXacml.pep.noneIssued') +
-        '</span>') +
-        (writable
-          ? '<form method="post" action="/admin/xacml/peps">' +
-            self.hidden('action', 'issue-pep-certificate') +
-            self.hidden('name', row.name) +
-            '<div class="sub">' + t.html('consoleXacml.pep.moreDns') +
-            ' <input name="dnsNames" ' +
-            'size="18" placeholder="pep.example.test"></div>' +
-            '<div class="sub">' + t.html('consoleXacml.pep.ipAddresses') +
-            ' <input name="ipAddresses" ' +
-            'size="14" placeholder="10.0.0.5"></div>' +
-            '<div class="sub">' + t.html('consoleXacml.pep.key') + ' ' +
-            self.select('keyAlg', json.listenerCertificates.keyAlgorithms
-              .map(function (one) {
-                return { value: one, label: one };
-              }), json.listenerCertificates.defaultKeyAlg) + ' ' +
-            '<button type="submit">' + (held
-              ? t.html('consoleXacml.pep.reissue')
-              : t.html('consoleXacml.pep.issue')) +
-            '</button></div></form>'
-          : '');
-      const actions = writable
-        ? '<form method="post" action="/admin/xacml/peps" ' +
-          'class="inline">' +
-          self.hidden('action', row.enabled ? 'disable-pep' : 'enable-pep') +
-          self.hidden('name', row.name) +
-          '<button type="submit">' +
-          (row.enabled ? t.html('consoleXacml.pep.stopNudging')
-                       : t.html('consoleXacml.pep.nudge')) +
-          '</button></form> ' +
-          '<form method="post" action="/admin/xacml/peps" ' +
-          'class="inline">' +
-          self.hidden('action', 'forget-pep') +
-          self.hidden('name', row.name) +
-          '<button type="submit">' + t.html('consoleXacml.pep.forget') +
-          '</button></form>'
-        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
-      return '<tr><td><code>' + esc(row.name) + '</code>' +
+        : (row.proxyProblem
+            ? '<span class="xacml-alert">' +
+              t.html('consoleXacml.proxy.problem') + '</span>'
+            : '<span class="sub">' +
+              t.html('consoleXacml.pepPage.proxyNone') + '</span>');
+      return '<tr><td><a href="' + esc(self.pepHref(row.name)) +
+        '"><code>' + esc(row.name) + '</code></a>' +
         (row.resource ? '<div class="sub">' +
                         t.html('consoleXacml.pep.guards',
                           { resource: row.resource }) +
@@ -895,25 +958,15 @@ class XacmlPage {
         (row.version
           ? '<div class="sub">' + esc(row.version) + '</div>'
           : '') +
-        '</td><td>' + who + '</td><td>' + state.join(', ') +
-        '<div class="sub">' + t.html('consoleXacml.pep.lastSeen', {
-          at: row.lastSeen || t.text('consoleXacml.pep.never') }) +
-        '</div></td><td>' +
+        '</td><td>' + self.pepWho(t, row) + '</td><td>' +
+        self.pepState(t, row) + '</td><td>' +
         esc(row.bias || t.text('consoleXacml.pep.notReported')) +
-        '</td><td>' + t.html('consoleXacml.pep.counts', {
-          decisions: row.decisions, allowed: row.allowed,
-          refused: row.refused }) +
-        (row.undischargeable
-          ? '<div class="sub">' +
-            t.html('consoleXacml.pep.undischargeable',
-              { n: row.undischargeable }) +
-            '</div>'
-          : '') +
-        '</td><td>' + notify + '</td><td>' + listener + '</td><td>' +
-        actions +
-        '</td></tr>';
+        '</td><td>' + self.pepCounts(t, row) +
+        '</td><td>' + self.pepNotify(t, row) + '</td><td>' +
+        self.pepListener(ctx, json, row, false) + '</td><td>' + proxy +
+        '</td><td>' + self.pepActions(ctx, row) + '</td></tr>';
     }).join('') ||
-      '<tr><td colspan="8">' + self.noPepsHere(json.elsewhere, t) +
+      '<tr><td colspan="9">' + self.noPepsHere(json.elsewhere, t) +
       '</td></tr>';
 
     const body = kit.note(
@@ -933,12 +986,16 @@ class XacmlPage {
       (json.notify.on ? ''
         : '<p>' + t.html('consoleXacml.peps.notifyOff') +
           '</p>') +
+      (json.peps.length
+        ? '<p class="sub">' + t.html('consoleXacml.pepPage.openRow') + '</p>'
+        : '') +
       '<table><tr><th>PEP</th><th>' + t.html('consoleXacml.th.certificate') +
       '</th><th>' + t.html('consoleXacml.th.state') + '</th>' +
       '<th>' + t.html('consoleXacml.th.itsBias') + '</th><th>' +
       t.html('consoleXacml.th.enforced') + '</th><th>' +
       t.html('consoleXacml.th.notify') + '</th>' +
       '<th>' + t.html('consoleXacml.th.listener') + '</th>' +
+      '<th>' + t.html('consoleXacml.pepPage.th.proxy') + '</th>' +
       '<th>' + t.html('consoleXacml.th.actions') + '</th></tr>' + rows +
       '</table>' +
       kit.note(
@@ -950,8 +1007,7 @@ class XacmlPage {
         '<p>' + t.html('consoleXacml.peps.numbers1') +
         '</p><p>' + t.html('consoleXacml.peps.numbers2') +
         '</p>',
-        t.text('consoleXacml.peps.numbersLabel')) +
-      self.proxySections(ctx, json);
+        t.text('consoleXacml.peps.numbersLabel'));
     return body;
   }
 
@@ -1144,61 +1200,334 @@ class XacmlPage {
       '</div>' + reported;
   }
 
-  static proxySections(ctx: Json, json: Json): string {
+  // ONE PEP's REVERSE PROXY, on its page's Reverse proxy tab (#1760): its
+  // state and routes, each non-public route's identity form, and the
+  // document as the editor.
+  static proxySection(ctx: Json, row: Json): string {
     const t = ctx.t;
     const self = this;
-    const sections = (json.peps || []).map(function (row: Json) {
-      const proxy = row.proxy || null;
-      const state = proxy
-        ? '<p>' + t.html('consoleXacml.proxy.configured', {
-            upstream: proxy.upstream, n: proxy.routes.length }) + ' ' +
-          (proxy.enabled ? t.html('consoleXacml.proxy.enabled')
-                         : '<strong>' + t.html('consoleXacml.proxy.disabled') +
-                           '</strong>') + '</p>' +
-          self.proxyRoutesTable(t, proxy, row.proxyRoutes)
-        : '<p>' + t.html('consoleXacml.proxy.none') + '</p>';
-      const problem = row.proxyProblem
-        ? '<div class="sub xacml-alert">' +
-          t.html('consoleXacml.proxy.problem') + ' ' +
-          esc(row.proxyProblem) + '</div>'
-        : '';
-      const editor = ctx.write
-        ? '<form method="post" action="/admin/xacml/peps">' +
-          self.hidden('action', 'set-pep-proxy') +
-          self.hidden('name', row.name) +
-          '<label>' + t.html('consoleXacml.proxy.editLabel') +
-          '<br><textarea name="proxy" rows="18" cols="88">' +
-          esc(JSON.stringify(proxy || self.proxyTemplate(), null, 2)) +
-          '</textarea></label><div class="sub">' +
-          t.html('consoleXacml.proxy.editNote') + '</div>' +
-          '<button type="submit">' + t.html('consoleXacml.proxy.save') +
-          '</button></form>' +
-          (proxy
-            ? '<form method="post" action="/admin/xacml/peps" ' +
-              'class="inline">' +
-              self.hidden('action', 'clear-pep-proxy') +
-              self.hidden('name', row.name) +
-              '<button type="submit">' + t.html('consoleXacml.proxy.clear') +
-              '</button></form>'
-            : '')
-        : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
-      const identities = ctx.write && proxy
-        ? proxy.routes.filter(function (route: Json) {
-            return !route.public;
-          }).map(function (route: Json) {
-            return self.identityForm(t, row.name, route);
-          }).join('')
-        : '';
-      return '<h3>' + t.html('consoleXacml.proxy.heading',
-                             { name: row.name }) + '</h3>' + state + problem +
-        self.signalsPanel(t, row.signals) + identities + editor;
-    }).join('');
-    if (!sections) {
-      return '';
+    const proxy = row.proxy || null;
+    const state = proxy
+      ? '<p>' + t.html('consoleXacml.proxy.configured', {
+          upstream: proxy.upstream, n: proxy.routes.length }) + ' ' +
+        (proxy.enabled ? t.html('consoleXacml.proxy.enabled')
+                       : '<strong>' + t.html('consoleXacml.proxy.disabled') +
+                         '</strong>') + '</p>' +
+        self.proxyRoutesTable(t, proxy, row.proxyRoutes)
+      : '<p>' + t.html('consoleXacml.proxy.none') + '</p>';
+    const problem = row.proxyProblem
+      ? '<div class="sub xacml-alert">' +
+        t.html('consoleXacml.proxy.problem') + ' ' +
+        esc(row.proxyProblem) + '</div>'
+      : '';
+    const editor = ctx.write
+      ? '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'set-pep-proxy') +
+        self.hidden('name', row.name) +
+        '<label>' + t.html('consoleXacml.proxy.editLabel') +
+        '<br><textarea name="proxy" rows="18" cols="88">' +
+        esc(JSON.stringify(proxy || self.proxyTemplate(), null, 2)) +
+        '</textarea></label><div class="sub">' +
+        t.html('consoleXacml.proxy.editNote') + '</div>' +
+        '<button type="submit">' + t.html('consoleXacml.proxy.save') +
+        '</button></form>' +
+        (proxy
+          ? '<form method="post" action="/admin/xacml/peps" ' +
+            'class="inline">' +
+            self.hidden('action', 'clear-pep-proxy') +
+            self.hidden('name', row.name) +
+            '<button type="submit">' + t.html('consoleXacml.proxy.clear') +
+            '</button></form>'
+          : '')
+      : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
+    const identities = ctx.write && proxy
+      ? proxy.routes.filter(function (route: Json) {
+          return !route.public;
+        }).map(function (route: Json) {
+          return self.identityForm(t, row.name, route);
+        }).join('')
+      : '';
+    return kit.note('<p>' + t.html('consoleXacml.proxy.p1') + '</p>',
+                    t.text('consoleXacml.proxy.label')) +
+      '<h3>' + t.html('consoleXacml.proxy.heading', { name: row.name }) +
+      '</h3>' + state + problem + identities + editor;
+  }
+
+  // Each managed setting's label, by its own key so the catalogs' check
+  // finds them (#1760).
+  static settingLabel(t: Json, key: string): string {
+    const labels: Json = {
+      description: t.html('consoleXacml.pepSettings.key.description'),
+      resource: t.html('consoleXacml.pepSettings.key.resource'),
+      notifyUrl: t.html('consoleXacml.pepSettings.key.notifyUrl'),
+      bias: t.html('consoleXacml.pepSettings.key.bias'),
+      pip: t.html('consoleXacml.pepSettings.key.pip'),
+      pollIntervalMs: t.html('consoleXacml.pepSettings.key.pollIntervalMs'),
+      heartbeatIntervalMs:
+        t.html('consoleXacml.pepSettings.key.heartbeatIntervalMs'),
+      backoffMaxMs: t.html('consoleXacml.pepSettings.key.backoffMaxMs'),
+      timeoutMs: t.html('consoleXacml.pepSettings.key.timeoutMs'),
+      maxBodyBytes: t.html('consoleXacml.pepSettings.key.maxBodyBytes'),
+      httpsReloadIntervalMs:
+        t.html('consoleXacml.pepSettings.key.httpsReloadIntervalMs'),
+      logLevel: t.html('consoleXacml.pepSettings.key.logLevel'),
+      authzen: t.html('consoleXacml.pepSettings.key.authzen'),
+      authzenPdpIdentifier:
+        t.html('consoleXacml.pepSettings.key.authzenPdpIdentifier'),
+      authzenForwardTimeoutMs:
+        t.html('consoleXacml.pepSettings.key.authzenForwardTimeoutMs'),
+      proxySessionRecheckMs:
+        t.html('consoleXacml.pepSettings.key.proxySessionRecheckMs'),
+      proxySessionTtlMs:
+        t.html('consoleXacml.pepSettings.key.proxySessionTtlMs'),
+      proxyMaxSessions: t.html('consoleXacml.pepSettings.key.proxyMaxSessions'),
+      proxyJwksTtlMs: t.html('consoleXacml.pepSettings.key.proxyJwksTtlMs'),
+      proxyUpstreamInsecure:
+        t.html('consoleXacml.pepSettings.key.proxyUpstreamInsecure'),
+      proxyRpAllowInsecure:
+        t.html('consoleXacml.pepSettings.key.proxyRpAllowInsecure'),
+      proxySignalsPollMs:
+        t.html('consoleXacml.pepSettings.key.proxySignalsPollMs'),
+      proxySignalsStaleMs:
+        t.html('consoleXacml.pepSettings.key.proxySignalsStaleMs')
+    };
+    return Object.prototype.hasOwnProperty.call(labels, key)
+      ? labels[key] : esc(key);
+  }
+
+  static settingWords(t: Json): Json {
+    return {
+      group: {
+        registration: t.html('consoleXacml.pepSettings.group.registration'),
+        enforcement: t.html('consoleXacml.pepSettings.group.enforcement'),
+        sync: t.html('consoleXacml.pepSettings.group.sync'),
+        listener: t.html('consoleXacml.pepSettings.group.listener'),
+        logging: t.html('consoleXacml.pepSettings.group.logging'),
+        authzen: t.html('consoleXacml.pepSettings.group.authzen'),
+        proxy: t.html('consoleXacml.pepSettings.group.proxy')
+      },
+      source: {
+        service: t.html('consoleXacml.pepSettings.source.service'),
+        environment: t.html('consoleXacml.pepSettings.source.environment'),
+        default: t.html('consoleXacml.pepSettings.source.default')
+      },
+      applies: {
+        now: t.html('consoleXacml.pepSettings.applies.now'),
+        nextRound: t.html('consoleXacml.pepSettings.applies.nextRound'),
+        nextReload: t.html('consoleXacml.pepSettings.applies.nextReload'),
+        nextReconcile: t.html('consoleXacml.pepSettings.applies.nextReconcile')
+      },
+      reason: {
+        connect: t.html('consoleXacml.pepSettings.reason.connect'),
+        bind: t.html('consoleXacml.pepSettings.reason.bind'),
+        file: t.html('consoleXacml.pepSettings.reason.file'),
+        listeners: t.html('consoleXacml.pepSettings.reason.listeners'),
+        narrowing: t.html('consoleXacml.pepSettings.reason.narrowing')
+      }
+    };
+  }
+
+  // One setting's box: what is set here, or empty for "not set".
+  static settingInput(t: Json, row: Json, value: Json,
+                      writable: boolean): string {
+    const set = value !== undefined && value !== null;
+    const off = writable ? '' : ' disabled';
+    if (row.type === 'boolean' || row.type === 'enum') {
+      const options = row.type === 'boolean' ? ['true', 'false']
+        : (row.values || []);
+      return '<select name="' + esc(row.key) + '"' + off + '>' +
+        '<option value="">' + t.html('consoleXacml.pepSettings.notSet') +
+        '</option>' + options.map(function (one: string) {
+          return '<option value="' + esc(one) + '"' +
+            (set && String(value) === one ? ' selected' : '') + '>' +
+            esc(one) + '</option>';
+        }).join('') + '</select>' +
+        (row.refusedInProduct
+          ? '<div class="sub">' +
+            t.html('consoleXacml.pepSettings.refusedInProduct') + '</div>'
+          : '');
     }
-    return '<h2>' + t.html('consoleXacml.proxy.label') + '</h2>' +
-      kit.note('<p>' + t.html('consoleXacml.proxy.p1') + '</p>',
-               t.text('consoleXacml.proxy.label')) + sections;
+    if (row.type === 'integer') {
+      return '<input type="number" name="' + esc(row.key) + '" min="' +
+        esc(row.min) + '" max="' + esc(row.max) + '" step="1" value="' +
+        (set ? esc(value) : '') + '"' + off + '>' +
+        '<div class="sub">' + t.html('consoleXacml.pepSettings.range',
+          { min: row.min, max: row.max }) + '</div>';
+    }
+    return '<input type="text" name="' + esc(row.key) + '" size="32"' +
+      (row.maxLength ? ' maxlength="' + esc(row.maxLength) + '"' : '') +
+      ' value="' + (set ? esc(value) : '') + '"' + off + '>';
+  }
+
+  /**
+   * Draws a remote PEP's Settings tab (#1760): every managed setting with
+   * what is set here, what the PEP reports in force and from where, and
+   * the environment that stays the PEP's own.
+   *
+   * @param ctx - the render context
+   * @param json - `pepsJson(name)`'s answer
+   * @param row - the PEP's row
+   * @returns the tab's HTML
+   */
+  static settingsBody(ctx: Json, json: Json, row: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const words = self.settingWords(t);
+    const catalogue = json.settingsCatalogue || { settings: [],
+                                                  bootstrap: [] };
+    const set = row.settings || {};
+    const inUse = row.settingsInUse;
+    let lastGroup = '';
+    const body = catalogue.settings.map(function (one: Json) {
+      const heading = one.group !== lastGroup
+        ? '<tr><th colspan="5">' + (words.group[one.group] || esc(one.group)) +
+          '</th></tr>' : '';
+      lastGroup = one.group;
+      const reported = inUse && inUse.values ? inUse.values[one.key] : null;
+      return heading + '<tr><td>' + self.settingLabel(t, one.key) +
+        '<div class="sub"><code>' + esc(one.env) + '</code></div></td><td>' +
+        self.settingInput(t, one, set[one.key], !!ctx.write) + '</td><td>' +
+        (reported
+          ? '<code>' + esc(String(reported.value)) + '</code>' +
+            '<div class="sub">' + (words.source[reported.source] ||
+                                   esc(reported.source)) + '</div>'
+          : '<span class="sub">' +
+            t.html('consoleXacml.pepSettings.notReported') + '</span>') +
+        '</td><td><code>' + esc(String(one.default)) + '</code></td><td>' +
+        (words.applies[one.applies] || esc(one.applies)) + '</td></tr>';
+    }).join('');
+    const status = !inUse
+      ? '<p class="sub">' +
+        t.html('consoleXacml.pepSettings.inUseNotReported') + '</p>'
+      : (row.settingsCurrent
+          ? '<p>' + t.html('consoleXacml.pepSettings.current') + '</p>'
+          : '<p class="xacml-alert">' +
+            t.html('consoleXacml.pepSettings.notCurrent') + '</p>');
+    const problem = row.settingsProblem
+      ? '<div class="sub xacml-alert">' +
+        t.html('consoleXacml.pepSettings.problem') + ' ' +
+        esc(row.settingsProblem) + '</div>'
+      : '';
+    const table = '<table><tr><th>' +
+      t.html('consoleXacml.pepSettings.th.setting') + '</th><th>' +
+      t.html('consoleXacml.pepSettings.th.setHere') + '</th><th>' +
+      t.html('consoleXacml.pepSettings.th.inUse') + '</th><th>' +
+      t.html('consoleXacml.pepSettings.th.default') + '</th><th>' +
+      t.html('consoleXacml.pepSettings.th.applies') + '</th></tr>' + body +
+      '</table>';
+    const form = ctx.write
+      ? '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'set-pep-settings') +
+        self.hidden('name', row.name) + table +
+        '<button type="submit">' + t.html('consoleXacml.pepSettings.save') +
+        '</button></form>' +
+        (row.settings
+          ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
+            self.hidden('action', 'clear-pep-settings') +
+            self.hidden('name', row.name) +
+            '<button type="submit">' +
+            t.html('consoleXacml.pepSettings.clear') + '</button></form>'
+          : '')
+      : table + '<span class="sub">' + t.html('consoleXacml.readOnly') +
+        '</span>';
+    const bootstrap = '<h3>' +
+      t.html('consoleXacml.pepSettings.bootstrap.heading') + '</h3><p>' +
+      t.html('consoleXacml.pepSettings.bootstrap.lead') + '</p>' +
+      '<table><tr><th>' + t.html('consoleXacml.pepSettings.th.variable') +
+      '</th><th>' + t.html('consoleXacml.pepSettings.th.default') +
+      '</th><th>' + t.html('consoleXacml.pepSettings.th.why') + '</th></tr>' +
+      catalogue.bootstrap.map(function (one: Json) {
+        return '<tr><td><code>' + esc(one.env) + '</code></td><td><code>' +
+          esc(one.default) + '</code></td><td>' +
+          (words.reason[one.reason] || esc(one.reason)) + '</td></tr>';
+      }).join('') + '</table>';
+    return kit.note('<p>' + t.html('consoleXacml.pepSettings.lead') +
+                    '</p><p>' + t.html('consoleXacml.pepSettings.lead2') +
+                    '</p>', t.text('consoleXacml.pepPage.tab.settings')) +
+      status + problem + form + bootstrap;
+  }
+
+  /**
+   * Draws one remote PEP's page (#1760), `/admin/xacml/pep?pep=<name>`:
+   * tabs for its overview, its decisions, the settings this service sets
+   * for it, its listener certificate, its reverse proxy and its CAEP/RISC
+   * signal streams. The breadcrumb leads back to the Remote PEPs tab.
+   *
+   * @param ctx - the render context
+   * @param json - `GET /admin-api/xacml/peps?pep=<name>`'s answer
+   * @returns the body as HTML
+   */
+  static pepDetail(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const row = (json.peps || [])[0];
+    const back = '<p><a href="/admin/xacml#xacml-tab-peps">' +
+      t.html('consoleXacml.pepPage.back') + '</a></p>';
+    if (!json.found || !row) {
+      return '<p class="warn">' + t.html('consoleXacml.pepPage.notFound',
+        { name: String(json.pep || '') }) + '</p>' + back;
+    }
+    const line = function (label: string, value: string): string {
+      return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
+    };
+    const code = function (value: unknown): string {
+      return value === undefined || value === null || value === ''
+        ? '<span class="sub">' + t.html('consoleXacml.pep.notReported') +
+          '</span>'
+        : '<code>' + esc(String(value)) + '</code>';
+    };
+    const overview = kit.note('<p>' + t.html('consoleXacml.pepPage.lead') +
+                              '</p>') +
+      '<table>' +
+      line(t.html('consoleXacml.pepPage.th.name'), code(row.name)) +
+      line(t.html('consoleXacml.th.certificate'), self.pepWho(t, row)) +
+      line(t.html('consoleXacml.pepPage.th.identity'), code(row.identity)) +
+      line(t.html('consoleXacml.pepPage.th.thumbprint'),
+           code(row.thumbprint)) +
+      line(t.html('consoleXacml.pepPage.th.registered'),
+           code(row.registeredAt)) +
+      line(t.html('consoleXacml.pepPage.th.version'), code(row.version)) +
+      line(t.html('consoleXacml.pepPage.th.description'),
+           row.description ? esc(row.description)
+             : code('')) +
+      line(t.html('consoleXacml.pepPage.th.resource'), code(row.resource)) +
+      line(t.html('consoleXacml.th.itsBias'), code(row.bias)) +
+      line(t.html('consoleXacml.th.state'), self.pepState(t, row)) +
+      line(t.html('consoleXacml.pepPage.th.syncToken'),
+           code(row.syncToken)) +
+      line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row)) +
+      line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row)) +
+      '</table>';
+    const decisions = '<table>' +
+      line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row)) +
+      line(t.html('consoleXacml.pepPage.th.policies'),
+           code(row.policyCount)) + '</table>' +
+      kit.note('<p>' + t.html('consoleXacml.peps.numbers1') + '</p><p>' +
+               t.html('consoleXacml.peps.numbers2') + '</p>',
+               t.text('consoleXacml.peps.numbersLabel'));
+    const listener = self.pepListener(ctx, json, row, true) +
+      kit.note('<p>' + t.html('consoleXacml.peps.cert1') + '</p><p>' +
+               t.html('consoleXacml.peps.cert2') + '</p>',
+               t.text('consoleXacml.peps.certLabel'));
+    return kit.tabbedPanels('xacml-pep-pages', [
+      { id: 'xacml-pep-tab-overview',
+        label: t.text('consoleXacml.pepPage.tab.overview'), html: overview },
+      { id: 'xacml-pep-tab-decisions',
+        label: t.text('consoleXacml.pepPage.tab.decisions'),
+        html: decisions },
+      { id: 'xacml-pep-tab-settings',
+        label: t.text('consoleXacml.pepPage.tab.settings'),
+        html: self.settingsBody(ctx, json, row) },
+      { id: 'xacml-pep-tab-listener',
+        label: t.text('consoleXacml.pepPage.tab.listener'),
+        html: listener },
+      { id: 'xacml-pep-tab-proxy',
+        label: t.text('consoleXacml.pepPage.tab.proxy'),
+        html: self.proxySection(ctx, row) },
+      { id: 'xacml-pep-tab-signals',
+        label: t.text('consoleXacml.pepPage.tab.signals'),
+        html: self.signalsPanel(t, row.signals) }
+    ]) + back;
   }
 
   /**

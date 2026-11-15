@@ -1833,17 +1833,23 @@ class ConsoleRuntime extends SpaClient {
     const security = !!(this.me && this.me.security);
     const ctx = kit.context(query, write, this.t, security);
     const drilled = page.drill && query[page.drill.param];
+    // A drill-down whose list is a tab of another page (`upTo`, #1760)
+    // leads back to that tab, and marks that page in the nav.
+    const listPath = page.upTo ? page.upTo.path : page.path;
     const up = drilled
-      ? { href: page.path + kit.queryWith(kit.listViewOf(page.path, query),
-                                          {}),
-          label: (this.shell.navLabels || {})[page.path] || page.title,
+      ? { href: listPath + kit.queryWith(kit.listViewOf(listPath, query),
+                                         {}) +
+                (page.upTo && page.upTo.fragment
+                  ? '#' + page.upTo.fragment : ''),
+          label: (this.shell.navLabels || {})[listPath] || page.title,
           leaf: String(query[page.drill.param]),
-          filtered: Object.keys(kit.listViewOf(page.path, query)).length > 0 }
+          filtered: Object.keys(kit.listViewOf(listPath, query)).length > 0 }
       : null;
     // The title in the reader's language (#539 phase 5).
     const title = WebPages.titleOf(page, this.t);
     this.draw(drilled ? title + ' ' + query[page.drill.param] : title,
-              page.path, WebPages.render(page.path, json, ctx), up, banner);
+              drilled ? listPath : page.path,
+              WebPages.render(page.path, json, ctx), up, banner);
   }
 
   /**
