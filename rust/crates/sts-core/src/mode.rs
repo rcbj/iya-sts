@@ -29,7 +29,7 @@ use crate::errors::codes;
 use crate::log::tag;
 use crate::settings::{
     js_string, js_trim, keys, row, rows, DefaultValue, Key, Refusal,
-    SettingRow, SettingValue, Settings,
+    SettingRow, SettingValue, Settings, WriteGate,
 };
 
 /// `global.mode`'s two values.
@@ -302,6 +302,19 @@ impl Mode {
             bcp_waivers: OnceLock::new(),
             pinned_signers: OnceLock::new(),
         }
+    }
+
+    /// The mode, built and installed as the settings' [`WriteGate`], so a
+    /// write through `Settings::set_override()` is held to the mode's rule
+    /// and a reset to the pinned-signer one, as `config.js`'s
+    /// `setOverride()` and `clearOverride()` are. The composition root
+    /// builds the one Mode this way.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn shared(settings: Arc<Settings>) -> Arc<Mode> {
+        let mode = Arc::new(Mode::new(settings.clone()));
+        let gate: Arc<dyn WriteGate> = mode.clone();
+        settings.set_write_gate(Arc::downgrade(&gate));
+        mode
     }
 
     /// Fills the RFC 9700 waivers slot, once.
@@ -661,12 +674,12 @@ impl Mode {
             return None;
         }
         let slot = self.pinned_signers.get()?;
-        let in_realm = self.settings.ambient_realm();
-        let realm = if in_realm {
-            crate::realm::current_id()
-        } else {
-            "default".to_string()
-        };
+        let ambient = self
+            .settings
+            .ambient_realm_id()
+            .filter(|_| self.settings.ambient_realm());
+        let in_realm = ambient.is_some();
+        let realm = ambient.unwrap_or_else(|| "default".to_string());
         let pins = slot.blocking_signers_off(&realm, !in_realm);
         if pins.is_empty() {
             return None;
@@ -928,6 +941,27 @@ fn js_truthy(answer: &Json) -> bool {
         Json::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
         Json::String(text) => !text.is_empty(),
         Json::Array(_) | Json::Object(_) => true,
+    }
+}
+
+/// The mode's half of `setOverride()` and `clearOverride()`.
+impl WriteGate for Mode {
+    fn write_problem(&self, key: &str, raw: &Json) -> Option<Refusal> {
+        Mode::write_problem(self, key, raw)
+    }
+
+    fn reset_problem(
+        &self,
+        key: &str,
+        after: &SettingValue,
+    ) -> Option<Refusal> {
+        if key != "pki.pinnedSigners" {
+            return None;
+        }
+        self.pinned_signer_problem(after).map(|problem| Refusal {
+            problem,
+            code: codes::STS_PKI_0215,
+        })
     }
 }
 

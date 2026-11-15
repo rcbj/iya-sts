@@ -96,11 +96,13 @@ const NEG_STATE_INFO: [(&str, &str); 4] = [
 ];
 
 /// Node's `mechByOid()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn mech_by_oid(oid: &str) -> Option<&'static Mech> {
     MECHS.iter().find(|m| m.oid == oid)
 }
 
 /// Node's `mechName()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn mech_name(oid: &str) -> &'static str {
     mech_by_oid(oid)
         .map(|m| m.name)
@@ -108,6 +110,7 @@ pub fn mech_name(oid: &str) -> &'static str {
 }
 
 /// Node's `isKerberosMech()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn is_kerberos_mech(oid: &str) -> bool {
     oid == KRB5_MECH_OID || oid == MS_KRB5_MECH_OID
 }
@@ -119,6 +122,7 @@ pub struct NegStateInfo {
     pub meaning: String,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn neg_state_info(value: i64) -> NegStateInfo {
     match usize::try_from(value)
         .ok()
@@ -145,6 +149,8 @@ fn arc_number(a: &str) -> Option<u64> {
 }
 
 /// Node's `encodeOidContent()` (see the module note on its first octet).
+// A hot path: a per-TLV codec primitive, run for every OID of every
+// mechType list; no span (an Entering/Leaving pair would drown the log).
 pub fn encode_oid_content(dotted: &str) -> Krb5Result<Vec<u8>> {
     let arcs: Option<Vec<u64>> = dotted.split('.').map(arc_number).collect();
     let arcs = match arcs {
@@ -179,6 +185,8 @@ pub fn encode_oid_content(dotted: &str) -> Krb5Result<Vec<u8>> {
     Ok(out)
 }
 
+// A hot path: a per-TLV codec primitive, run for every OID of every
+// mechType list; no span (an Entering/Leaving pair would drown the log).
 pub fn encode_oid(dotted: &str) -> Krb5Result<Vec<u8>> {
     Ok(asn1::tlv(
         tag::OBJECT_IDENTIFIER,
@@ -187,6 +195,8 @@ pub fn encode_oid(dotted: &str) -> Krb5Result<Vec<u8>> {
 }
 
 /// Node's `decodeOidContent()`.
+// A hot path: a per-TLV codec primitive, run for every OID of every
+// mechType list; no span (an Entering/Leaving pair would drown the log).
 pub fn decode_oid_content(b: &[u8]) -> Krb5Result<String> {
     if b.is_empty() {
         return Err(Krb5Error::new("krb5: a zero-length OBJECT IDENTIFIER"));
@@ -216,12 +226,15 @@ pub fn decode_oid_content(b: &[u8]) -> Krb5Result<String> {
 }
 
 /// Node's `decodeOid()`.
+// A hot path: a per-TLV codec primitive, run for every OID of every
+// mechType list; no span (an Entering/Leaving pair would drown the log).
 pub fn decode_oid(t: &asn1::Tlv<'_>) -> Krb5Result<String> {
     asn1::expect_tag(t, tag::OBJECT_IDENTIFIER, "an OBJECT IDENTIFIER")?;
     decode_oid_content(t.value)
 }
 
 /// The DER of a MechTypeList: Node's `mechTypeListDer()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn mech_type_list_der(oids: &[String]) -> Krb5Result<Vec<u8>> {
     if oids.is_empty() {
         return Err(Krb5Error::new(
@@ -650,6 +663,7 @@ fn decode_neg_token_resp_body(
 
 /// The mechListMIC: a GSS MIC over the list DER. Node's
 /// `computeMechListMic()`, the role an initiator's by default.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn compute_mech_list_mic(
     key: &[u8],
     etype: i64,
@@ -669,6 +683,7 @@ pub fn compute_mech_list_mic(
 }
 
 /// Node's `verifyMechListMic()`.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn verify_mech_list_mic(
     key: &[u8],
     etype: i64,
@@ -686,6 +701,7 @@ pub struct MicRequirement {
     pub reason: String,
 }
 
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn mic_requirement(
     mech_types: &[String],
     selected: Option<&str>,

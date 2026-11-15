@@ -7,7 +7,7 @@
 
 // The unions of scalars the five documents use (`number | string`
 // and the like), each an untagged enum named by its kinds. Included by
-// sts-model's lib.rs.
+// sts-model-base's lib.rs.
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]

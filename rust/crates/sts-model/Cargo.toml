@@ -13,6 +13,30 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# The API types, written across these crates by models/lib/rust_lib.mjs
+# (`planCrates()`) so that no one rustc compiles all of them; src/generated/
+# api.rs re-exports them under `sts_model::api`. The list follows the
+# emitter's `SPLIT`: a change there owes one here.
+sts-model-base = { path = "../sts-model-base" }
+sts-model-account = { path = "../sts-model-account" }
+sts-model-authn = { path = "../sts-model-authn" }
+sts-model-console = { path = "../sts-model-console" }
+sts-model-console-components-1 = { path = "../sts-model-console-components-1" }
+sts-model-console-components-2 = { path = "../sts-model-console-components-2" }
+sts-model-console-components-3 = { path = "../sts-model-console-components-3" }
+sts-model-management-components-1 = { path = "../sts-model-management-components-1" }
+sts-model-management-components-2 = { path = "../sts-model-management-components-2" }
+sts-model-management-components-3 = { path = "../sts-model-management-components-3" }
+sts-model-management-components-4 = { path = "../sts-model-management-components-4" }
+sts-model-management-operations-1 = { path = "../sts-model-management-operations-1" }
+sts-model-management-operations-2 = { path = "../sts-model-management-operations-2" }
+sts-model-management-operations-3 = { path = "../sts-model-management-operations-3" }
+sts-model-management-operations-4 = { path = "../sts-model-management-operations-4" }
+sts-model-management-operations-5 = { path = "../sts-model-management-operations-5" }
+sts-model-management-operations-6 = { path = "../sts-model-management-operations-6" }
+sts-model-management-operations-7 = { path = "../sts-model-management-operations-7" }
+sts-model-management-operations-8 = { path = "../sts-model-management-operations-8" }
+sts-model-report = { path = "../sts-model-report" }
 
 [lints]
 workspace = true

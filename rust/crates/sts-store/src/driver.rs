@@ -84,8 +84,32 @@ pub trait ChangeLog: Send + Sync {
     ) -> StoreFuture<'a, Option<StoredEntry>>;
 }
 
+/// A minted row's change-log key (`mintedChangeRow()`): the handle and the
+/// name, each base64url, joined by '.'; a sealed name is its own half.
+// Hot path (every row a flush writes): no span.
+pub fn minted_change_key(handle: &str, key: &str, key_sealed: &str) -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    format!(
+        "{}.{}",
+        URL_SAFE_NO_PAD.encode(handle.as_bytes()),
+        if key_sealed.is_empty() {
+            URL_SAFE_NO_PAD.encode(key.as_bytes())
+        } else {
+            key_sealed.to_string()
+        }
+    )
+}
+
 /// The contract every store implements.
 pub trait Driver: Send + Sync {
+    /// The engine a database store runs on, for a caller choosing how
+    /// often to poll its change log (`dialect.rs`); `None` for a store that
+    /// is not a database.
+    fn dialect(&self) -> Option<&'static dyn crate::dialect::Dialect> {
+        None
+    }
+
     /// The change log, for a store several processes share.
     fn change_log(&self) -> Option<&dyn ChangeLog> {
         None
@@ -261,13 +285,27 @@ pub struct MintedFilter {
     /// dropped; 0 keeps every one.
     pub stale_before: i64,
     pub age_handles: Vec<String>,
+    /// The stores whose expiring rows a start does not read
+    /// (`nullExpiryHandles`, #883): only their rows with a NULL expiry.
+    pub null_expiry_handles: Vec<String>,
+}
+
+/// What an in-place edit's merge answers: the merged body sealed, and the
+/// columns `mergerFor()` takes from the merged record rather than from this
+/// process's copy — its expiry, its session index, its lookups and its sort
+/// value (another node may have extended or refiled it).
+#[derive(Clone, Debug, Default)]
+pub struct MergedRow {
+    pub body: String,
+    pub expires_at: Option<i64>,
+    pub session_index: Option<crate::side::SessionIndex>,
+    pub lookups: Option<Vec<String>>,
+    pub sort_at: Option<i64>,
 }
 
 /// An in-place edit's merge (`mergerFor()`): handed the stored body, it
-/// answers the body to write and its expiry, or `None` to write this
-/// process's copy as it is.
-pub type MintedMerge =
-    Box<dyn FnOnce(&str) -> Option<(String, Option<i64>)> + Send>;
+/// answers the merged row, or `None` to write this process's copy as it is.
+pub type MintedMerge = Box<dyn FnOnce(&str) -> Option<MergedRow> + Send>;
 
 /// One minted row to write or delete.
 pub struct MintedWrite {
@@ -286,6 +324,17 @@ pub struct MintedWrite {
     /// refused.
     pub tombstone: bool,
     pub merge: Option<MintedMerge>,
+    /// `sts_sessions`' columns for an `authn.sessions` upsert (#350), or
+    /// `None`, which writes no index row.
+    pub session_index: Option<crate::side::SessionIndex>,
+    /// An on-demand store's index digests (#820): `Some` replaces the row's
+    /// index rows (an empty list removes them), `None` leaves them.
+    pub lookups: Option<Vec<String>>,
+    /// The store's `sortBy` value, filed as the row's sort row while
+    /// `lookups` is written.
+    pub sort_at: Option<i64>,
+    /// A delete of an indexed store's row removes its index rows.
+    pub indexed: bool,
 }
 
 /// What the store decided for rows another node had changed.
