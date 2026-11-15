@@ -15458,7 +15458,11 @@ file's header is the argument; what a maintainer must not undo:
   `<133>1`). The structured-data id is `iyaAudit`, a local name, not an
   IANA enterprise number. The message has no trailing newline; TCP and TLS
   use an RFC 6587 octet-counted frame. UDP is `transmitted` when `dgram.send`
-  calls back. One socket per destination per tick. LogRhythm is this adapter
+  calls back, bounded by a timer of the send's own: a `dgram.Socket` has no
+  `setTimeout()`, and until #444 found it every UDP send threw
+  (`STS-AUDIT-0006`) and its cursor never moved (Y2). One socket per
+  destination per tick, so each frame's and the connect's listeners are
+  removed when they settle (Y3). LogRhythm is this adapter
   with `type: 'logrhythm'`. Plain TCP is its own transport.
   `auditExport.allowHttp` does not govern it.
 * **A FILE IS ONE APPEND.** `fs.promises` `write` of the NDJSON line on an

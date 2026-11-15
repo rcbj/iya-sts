@@ -145,6 +145,7 @@ import config = require('../common/config');
 // library, required in the ordinary direction, as `admin_views.ts` does.
 import persistence = require('../persistence/persistence');
 import credentials = require('../common/credentials');
+import DirectorySecrets = require('../ldap/directory_secrets');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
 import rbac = require('../admin-ui/admin_rbac');
@@ -5559,6 +5560,20 @@ class AdminActions {
           answer.credentialError + ' Set one from their row on Users rather ' +
           'than creating them again — the name is taken now, by this entry.';
       }
+      // THE ENTRY WITH ITS CREDENTIALS MASKED, AND MASKED HERE, LAST
+      // (2026-11-14, found by #444's port). `result.entry` is the entry as
+      // the directory holds it, so by now the credential step above has
+      // written to it: `userPassword` and `pwdHistory` for a password, and
+      // `stsActivationToken` for an activation link — a scrypt hash and a
+      // token's hash this answer carried until then. Masked with the one
+      // function every `GET /admin-api/ldap/*` answer uses, over the list
+      // in `models/directory/names.tsp`; masked after the credential step
+      // because a copy taken before it would still share the live entry.
+      // The value an administrator hands over is not on the entry and is
+      // untouched: a generated password stays in `password`, once, and an
+      // activation link in `activationUrl`.
+      answer.entry = result.entry
+        ? DirectorySecrets.withoutSecrets(result.entry) : result.entry;
       log.debug("Leaving AdminActions.usersAction(). Created " + result.dn +
                 ".");
       answer.message = result.dn + ' now exists in the directory' +
