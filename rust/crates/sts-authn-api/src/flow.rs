@@ -202,6 +202,12 @@ impl SignIn {
         self.facts.now_ms()
     }
 
+    /// `record.expires < Date.now()`: false for a missing or NaN expiry,
+    /// as JavaScript's comparison is.
+    fn expired(&self, record: &Json) -> bool {
+        number(record.get("expires")) < self.now()
+    }
+
     // -------------------------------------------------------------------
     // The registers.
     // -------------------------------------------------------------------
@@ -345,8 +351,7 @@ impl SignIn {
         post_quantum_required: bool,
     ) -> Answer {
         let id = text(record.get("id"));
-        let live =
-            !id.is_empty() && !(number(record.get("expires")) < self.now());
+        let live = !id.is_empty() && !self.expired(record);
         if live {
             record["screenError"] = json!(if from_step {
                 message.to_string()
@@ -1327,8 +1332,9 @@ impl SignIn {
             let mut step = json!({ "authn": record, "username": username,
                 "challenge": self.facts.random_id(32),
                 "factor": factor, "alternate": alternate,
-                "email": if force_key || factor.starts_with("email-") { "" }
-                         else { "" },
+                // The emailed factor is held by nobody here yet
+                // (`mechanisms_for()`), so the step offers none.
+                "email": "",
                 "backup": backup, "passwordless": passwordless,
                 "riskKey": false, "mfaAllowed": mfa_allowed,
                 "thenEnrol": false,
@@ -1471,17 +1477,17 @@ impl SignIn {
         };
         let why = text(said.get("refusedWhy"));
         let says = [
-            "STS-AUTHN-0010",
-            "STS-AUTHN-0298",
-            "STS-AUTHN-0305",
-            "STS-AUTHN-0313",
-            "STS-AUTHN-0315",
-            "STS-AUTHN-0356",
-            "STS-AUTHN-0380",
-            "STS-AUTHN-0381",
-            "STS-AUTHN-0473",
+            codes::STS_AUTHN_0010,
+            codes::STS_AUTHN_0298,
+            codes::STS_AUTHN_0305,
+            codes::STS_AUTHN_0313,
+            codes::STS_AUTHN_0315,
+            codes::STS_AUTHN_0356,
+            codes::STS_AUTHN_0380,
+            codes::STS_AUTHN_0381,
+            codes::STS_AUTHN_0473,
         ]
-        .contains(&code.as_str())
+        .contains(&code)
             && !why.is_empty();
         let message = if says {
             why
@@ -1497,7 +1503,7 @@ impl SignIn {
         let id = text(record.get("id"));
         if !id.is_empty()
             && !self.stores.pending.has(&id)
-            && !(number(record.get("expires")) < self.now())
+            && !self.expired(record)
         {
             self.stores.pending.set(&id, record.clone());
         }
@@ -1558,7 +1564,7 @@ impl SignIn {
         if page == "setup" {
             let setup = self.stores.mfa.get(id);
             let live = setup.as_ref().filter(|s| {
-                !(number(s.get("expires")) < self.now())
+                !self.expired(s)
                     && ["enrol", "enrol-totp"]
                         .contains(&text(s.get("factor")).as_str())
             });
@@ -2199,9 +2205,7 @@ impl SignIn {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn password_change_step(&self, id: &str) -> Result<Json, Answer> {
         match self.stores.password_change.get(id) {
-            Some(step) if !(number(step.get("expires")) < self.now()) => {
-                Ok(step)
-            }
+            Some(step) if !self.expired(&step) => Ok(step),
             _ => {
                 self.stores.password_change.delete(id);
                 Err(Answer::json(
@@ -2324,9 +2328,7 @@ impl SignIn {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn password_change_start_over(&self, call: &Call, id: &str) -> Answer {
         let step = self.stores.password_change.get(id);
-        let Some(step) =
-            step.filter(|s| !(number(s.get("expires")) < self.now()))
-        else {
+        let Some(step) = step.filter(|s| !self.expired(s)) else {
             self.stores.password_change.delete(id);
             return SignIn::already_ended();
         };

@@ -28,6 +28,11 @@
 //! recorded on the response (`sts_http::mark`), never sent.
 
 #![forbid(unsafe_code)]
+// A refusal is an `Answer` (the status, the JSON, the cookies, the code),
+// carried back as an `Err` through the door's checks exactly as Node
+// returns from the handler with the refusal sent; it is the rare path, and
+// boxing every one would only move the allocation.
+#![allow(clippy::result_large_err)]
 
 pub mod body;
 pub mod door;

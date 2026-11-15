@@ -31,9 +31,12 @@ use indexmap::IndexMap;
 use regex::Regex;
 use serde_json::{Map, Value as Json};
 
-/// `validation.js`'s refusal: `code`, the field and the sentence.
+/// What `validation.js` found wrong with a request's shape: its kind
+/// (`missing`, `invalid`, `repeated`, …), the field and the sentence. The
+/// door that asked attaches the error code (the operation's own, or its
+/// access's), as Node's handler marks it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Refusal {
+pub struct Problem {
     pub code: &'static str,
     pub field: String,
     pub detail: String,
@@ -75,10 +78,10 @@ fn scalar(
     value: &Json,
     field: &str,
     allow_text: bool,
-) -> Result<Option<String>, Refusal> {
+) -> Result<Option<String>, Problem> {
     match value {
         Json::Null => Ok(None),
-        Json::Array(list) => Err(Refusal {
+        Json::Array(list) => Err(Problem {
             code: "repeated",
             field: field.into(),
             detail: format!(
@@ -90,7 +93,7 @@ fn scalar(
                 list.len()
             ),
         }),
-        Json::Object(_) => Err(Refusal {
+        Json::Object(_) => Err(Problem {
             code: "structured",
             field: field.into(),
             detail: format!(
@@ -103,7 +106,7 @@ fn scalar(
         other => {
             let text = text_of(other);
             if has_control(&text, allow_text) {
-                return Err(Refusal {
+                return Err(Problem {
                     code: "control-character",
                     field: field.into(),
                     detail: format!(
@@ -146,7 +149,7 @@ fn flatten(
     input: &Json,
     properties: Option<&Map<String, Json>>,
     allow_text: bool,
-) -> Result<IndexMap<String, Json>, Refusal> {
+) -> Result<IndexMap<String, Json>, Problem> {
     let mut out = IndexMap::new();
     let Some(source) = input.as_object() else {
         return Ok(out);
@@ -158,7 +161,7 @@ fn flatten(
                  is refused everywhere in this service.",
                 key
             );
-            return Err(Refusal {
+            return Err(Problem {
                 code: "polluting-key",
                 field: key.clone(),
                 detail: format!(
@@ -469,13 +472,13 @@ pub fn check_parsed(
     value: &Json,
     where_: &str,
     schema: &Json,
-) -> Result<Map<String, Json>, Refusal> {
+) -> Result<Map<String, Json>, Problem> {
     let properties = schema.get("properties").and_then(Json::as_object);
     let members = flatten(value, properties, where_ == "body")?;
     if let Some(issue) = first_issue(schema, &members) {
         let field = issue.path.clone().unwrap_or_else(|| "(request)".into());
         let missing = issue.missing && issue.code == "invalid_type";
-        return Err(Refusal {
+        return Err(Problem {
             code: if missing { "missing" } else { "invalid" },
             field: field.clone(),
             detail: if missing {
