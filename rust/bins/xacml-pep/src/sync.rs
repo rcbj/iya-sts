@@ -79,6 +79,13 @@ use crate::settings::Managed;
 pub struct Policies {
     pub root: Option<PolicyNode>,
     pub repository: Repository,
+    /// Every entry that loaded, by its NAME (#1760): what a proxy route's
+    /// `authorization.policy` names and is decided by, never the root. The
+    /// repository stays keyed by PolicyId, which is what a
+    /// PolicyIdReference names. A name two rows carry is in neither — a
+    /// route naming it is refused rather than decided by whichever came
+    /// last.
+    pub by_name: HashMap<String, PolicyNode>,
     /// The document the PDP marked as the root would not load HERE. The
     /// service answers a root that will not load as a fault
     /// (`STS-XACML-0012`), so the AuthZEN endpoints do too, rather than
@@ -1078,6 +1085,8 @@ impl Sync {
     fn load(&self, said: &Value, cause: &str) {
         let rows = said["policies"].as_array().cloned().unwrap_or_default();
         let mut repository = HashMap::new();
+        let mut by_name: HashMap<String, PolicyNode> = HashMap::new();
+        let mut names_twice: Vec<String> = Vec::new();
         let mut refused = Vec::new();
         let mut root = None;
         let mut root_refused = false;
@@ -1087,6 +1096,16 @@ impl Sync {
                 Ok(parsed) => {
                     if let Some(id) = row["policyId"].as_str() {
                         repository.insert(id.to_string(), parsed.clone());
+                    }
+                    if let Some(name) =
+                        row["name"].as_str().filter(|n| !n.is_empty())
+                    {
+                        if by_name
+                            .insert(name.to_string(), parsed.clone())
+                            .is_some()
+                        {
+                            names_twice.push(name.to_string());
+                        }
                     }
                     if row["isRoot"].as_bool() == Some(true) {
                         root = Some(parsed);
@@ -1104,6 +1123,13 @@ impl Sync {
                     ))
                 }
             }
+        }
+        // A name that is not unique names nothing. The service keeps names
+        // unique per realm, so it cannot happen there; if it does, a route
+        // naming it is refused (`STS-XPEP-0117`, which says so) rather than
+        // decided by whichever row came last.
+        for name in &names_twice {
+            by_name.remove(name);
         }
         // Exactly one policy is unambiguously the root — restated, so this
         // PEP cannot decide differently from the PDP about where to start.
@@ -1154,6 +1180,7 @@ impl Sync {
             policies: Arc::new(Policies {
                 root,
                 repository,
+                by_name,
                 root_refused,
             }),
             policy_count: count,
@@ -1763,12 +1790,14 @@ impl Sync {
             "syncToken": h.sync_token,
             "routes": active.map_or(0, |p| p.routes.len()),
             "publicRoutes": active
-                .map_or(0, |p| p.routes.iter().filter(|r| r.public).count()),
+                .map_or(0, |p| {
+                    p.routes.iter().filter(|r| r.is_public()).count()
+                }),
             "routesByMechanism": mechanisms,
             "unusableRoutes": active.map_or(0, |p| {
                 p.routes
                     .iter()
-                    .filter(|r| !r.public && !r.resolved.usable)
+                    .filter(|r| !r.is_public() && !r.resolved.usable)
                     .count()
             }),
             "sessionClients": h.pulled.realm.clients.len(),

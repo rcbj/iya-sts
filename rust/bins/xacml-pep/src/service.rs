@@ -35,6 +35,7 @@ use sts_core::version::VersionInfo;
 use sts_xacml::builder::{vocabulary, AuthorizationRequest};
 use sts_xacml::model::{attribute, category, types, Decision};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
+use sts_xacml::policy::PolicyNode;
 use sts_xacml::request::{ResolvedObligation, Status};
 
 use crate::authzen::{self, Reply};
@@ -42,7 +43,7 @@ use crate::enforce::Enforcer;
 use crate::listener::{HttpsListener, Transport};
 use crate::options::Options;
 use crate::pip::RemotePip;
-use crate::sync::Sync;
+use crate::sync::{Policies, Sync};
 
 /// The attribute prefix the service's PIP answers beside the bare name.
 const PIP_PREFIX: &str = "urn:sts:xacml:attribute:";
@@ -415,12 +416,30 @@ impl Pep {
     /// `subject-id`, the resource typed anyURI, the action as `action-id` —
     /// evaluated by the same path (the PIP asked first), enforced by the
     /// same rule and counted with the same counters.
+    ///
+    /// **AGAINST THE POLICY THE ROUTE NAMES, NEVER THE ROOT** (rcbj's
+    /// decision on #1760): `policy` is an entry's NAME in what this PEP
+    /// last pulled, and the PIP walks that policy (the repository answering
+    /// its references). `None` is "not held" — never pulled, withheld,
+    /// disabled, renamed, failed to load, or a name two entries carry — and
+    /// is NOT a NotApplicable for the bias to settle: a permit-biased PEP
+    /// would otherwise open every route whose policy went missing. Nothing
+    /// is counted then, there having been no decision. It does not ask
+    /// whether a ROOT is held (`loaded`): a route needs only its own.
+    ///
+    /// An empty `subject` is the ANONYMOUS subject of a public route: the
+    /// access-subject category is sent with no attribute in it, as
+    /// `/protected` sends a request with no `subject`, so a policy matches
+    /// it by `subject-id` being absent (`MustBePresent="false"`).
     pub(crate) async fn decide_proxy(
         &self,
         subject: &str,
         resource: &str,
         action: &str,
-    ) -> (Decision, crate::enforce::Outcome) {
+        policy: &str,
+    ) -> Option<(Decision, crate::enforce::Outcome)> {
+        let (policies, _) = self.sync.current();
+        let named = policies.by_name.get(policy)?;
         let mut req = AuthorizationRequest::default();
         for id in [
             category::ACCESS_SUBJECT,
@@ -435,14 +454,14 @@ impl Pep {
         }
         req.target(resource, Some(types::ANYURI))
             .requested_action(action);
-        let answer = self.evaluate(req.build()).await;
+        let answer = self.evaluate_against(named, &policies, req.build()).await;
         let outcome =
             self.enforcer().enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
-        (answer.decision, outcome)
+        Some((answer.decision, outcome))
     }
 
-    /// One built request evaluated against what was pulled.
+    /// One built request evaluated against what was pulled, from the root.
     async fn evaluate(&self, request: sts_xacml::request::Request) -> Answer {
         let (policies, loaded) = self.sync.current();
         let Some(root) = policies.root.as_ref().filter(|_| loaded) else {
@@ -468,9 +487,21 @@ impl Pep {
                 pip: None,
             };
         };
+        self.evaluate_against(root, &policies, request).await
+    }
+
+    /// One built request evaluated from `start` — the root, or a proxy
+    /// route's own policy — with the PIP asked first and the repository
+    /// answering references.
+    async fn evaluate_against(
+        &self,
+        start: &PolicyNode,
+        policies: &Policies,
+        request: sts_xacml::request::Request,
+    ) -> Answer {
         let resolution = self
             .pip
-            .resolver_for(&request, root, &policies.repository)
+            .resolver_for(&request, start, &policies.repository)
             .await;
         if let Ok(mut last) = self.last_pip_report.lock() {
             *last = Some(resolution.report.clone());
@@ -483,7 +514,7 @@ impl Pep {
             repository: Some(&policies.repository),
             now: None,
         };
-        let response = self.pdp.evaluate(root, &request, &options);
+        let response = self.pdp.evaluate(start, &request, &options);
         if response.decision == Decision::Indeterminate {
             tracing::warn!(
                 "{}xacml-pep: the engine answered Indeterminate ({}{}), so \

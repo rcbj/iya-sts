@@ -21,6 +21,13 @@
 //! in `realm.clients`, never in the route. A route the service says is not
 //! usable is refused at request time, never admitted on a stale copy.
 //!
+//! **EVERY ROUTE IS DECIDED IN XACML, BY ITS OWN POLICY** (rcbj's decision
+//! on #1760): `authorization` names the policy entry the route is decided
+//! by, what resource-id and action-id the request carries, and whether the
+//! route is public — which now means only that it establishes no identity,
+//! never that it skips the decision. No route falls back to the realm's
+//! root policy. `methods` is required, and an EMPTY list allows no method.
+//!
 //! Pure: no I/O, no clock. `parse_pulled()` is the one door.
 
 use std::collections::{BTreeMap, HashSet};
@@ -66,6 +73,109 @@ impl Mechanism {
     }
 }
 
+/// What a route's authorization is (#1760): the closed set the service
+/// writes. `Policy` is an administrator's own policy entry; `Simple` the
+/// one the service generated from the route's roles; `Public` a generated
+/// policy too, and a route that establishes no identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthorizationKind {
+    Policy,
+    Simple,
+    Public,
+}
+
+/// Which action-id a request on the route is sent with (#1760).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionModel {
+    /// The HTTP method itself.
+    Method,
+    /// read, create, update, delete.
+    Crud,
+    /// read, write.
+    ReadWrite,
+}
+
+impl ActionModel {
+    /// The action-id for `method`. A method outside `METHODS` (TRACE,
+    /// CONNECT, an extension method) is sent as itself under every model:
+    /// it can reach a decision only on a route whose `methods` is empty,
+    /// and that route refuses it after the decision whatever was said.
+    pub fn action_for(self, method: &str) -> &str {
+        match (self, method) {
+            (ActionModel::Method, _) => method,
+            (_, "GET" | "HEAD" | "OPTIONS") => "read",
+            (ActionModel::Crud, "POST") => "create",
+            (ActionModel::Crud, "PUT" | "PATCH") => "update",
+            (ActionModel::Crud, "DELETE") => "delete",
+            (ActionModel::ReadWrite, "POST" | "PUT" | "PATCH" | "DELETE") => {
+                "write"
+            }
+            _ => method,
+        }
+    }
+}
+
+/// A route's `authorization` (#1760), read strictly. `roles` is the
+/// service's own (which roles its generated policy names) and is not kept:
+/// the policy already says it, and a second copy here could only disagree.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Authorization {
+    pub kind: AuthorizationKind,
+    /// The NAME of the policy entry (the `name` of a row of the policies
+    /// pull), never its PolicyId: the entry is what the administrator
+    /// picked, and two entries may carry one PolicyId.
+    pub policy: String,
+    /// The resource-id every request on the route is sent with; empty is
+    /// the normalised request path.
+    pub resource: String,
+    pub action_model: ActionModel,
+}
+
+fn authorization_of(said: &Value, what: &str) -> Result<Authorization, String> {
+    let at = format!("{}.authorization", what);
+    if !said.is_object() {
+        return Err(format!("{} is not an object", at));
+    }
+    let kind = match string_member(said, "kind", &at)?.as_str() {
+        "policy" => AuthorizationKind::Policy,
+        "simple" => AuthorizationKind::Simple,
+        "public" => AuthorizationKind::Public,
+        _ => {
+            return Err(format!("{}.kind is not policy, simple or public", at))
+        }
+    };
+    // Required for every kind: the service names the policy it generated
+    // for a simple or public route as well, so a route never has nothing
+    // to be decided by — and an empty name would otherwise have to mean
+    // "the root", which is exactly the fall-back this design removed.
+    let policy = string_member(said, "policy", &at)?;
+    if policy.trim().is_empty() {
+        return Err(format!("{}.policy names no policy", at));
+    }
+    let action_model =
+        match string_member(said, "actionModel", &at)?.as_str() {
+            "method" => ActionModel::Method,
+            "crud" => ActionModel::Crud,
+            "read-write" => ActionModel::ReadWrite,
+            _ => {
+                return Err(format!(
+                    "{}.actionModel is not method, crud or read-write",
+                    at
+                ))
+            }
+        };
+    match said.get("roles") {
+        None | Some(Value::Null) | Some(Value::Object(_)) => {}
+        Some(_) => return Err(format!("{}.roles is not an object", at)),
+    }
+    Ok(Authorization {
+        kind,
+        policy,
+        resource: string_member(said, "resource", &at)?,
+        action_model,
+    })
+}
+
 /// Whether a route's path is a prefix (at a segment boundary) or exact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Match {
@@ -81,9 +191,12 @@ pub struct Route {
     /// kept), so `/api/` and `/api` match alike.
     pub path: String,
     pub matching: Match,
-    /// Empty means any method.
+    /// The methods the route takes. EMPTY MEANS NONE (#1760): a request
+    /// on such a route is decided and then refused whatever the policy
+    /// said. "Any" is the whole of `METHODS`, stated.
     pub methods: Vec<String>,
-    pub public: bool,
+    /// How the route is decided, and whether it is public (#1760).
+    pub authorization: Authorization,
     pub mechanisms: Vec<Mechanism>,
     /// The application the route fronts (D10), for logs: empty on a
     /// public route.
@@ -93,8 +206,6 @@ pub struct Route {
     pub signals: bool,
     /// What the service resolved the application to, at the pull.
     pub resolved: Resolved,
-    pub resource: String,
-    pub action: String,
     /// How the identity reaches the application (D11).
     pub identity: IdentitySpec,
     pub forward_credentials: bool,
@@ -258,6 +369,12 @@ fn identity_of(said: &Value, what: &str) -> Result<IdentitySpec, String> {
 }
 
 impl Route {
+    /// A public route establishes no identity and is decided for the
+    /// anonymous subject — decided all the same.
+    pub fn is_public(&self) -> bool {
+        self.authorization.kind == AuthorizationKind::Public
+    }
+
     pub fn allows(&self, mechanism: Mechanism) -> bool {
         self.mechanisms.contains(&mechanism)
     }
@@ -275,8 +392,9 @@ impl Route {
         }
     }
 
+    /// Membership only: an empty list takes nothing.
     pub fn takes(&self, method: &str) -> bool {
-        self.methods.is_empty() || self.methods.iter().any(|m| m == method)
+        self.methods.iter().any(|m| m == method)
     }
 }
 
@@ -561,8 +679,13 @@ fn route_of(
         "exact" => Match::Exact,
         _ => return Err(format!("{}.match is not prefix or exact", what)),
     };
+    // REQUIRED (#1760): an absent list used to mean "any", and an empty
+    // one now means "none", so a document that says nothing cannot be
+    // read either way without guessing.
     let methods = match said.get("methods") {
-        None | Some(Value::Null) => Vec::new(),
+        None | Some(Value::Null) => {
+            return Err(format!("{}.methods is required", what))
+        }
         Some(Value::Array(list)) => {
             let mut out: Vec<String> = Vec::new();
             for one in list {
@@ -584,7 +707,13 @@ fn route_of(
         }
         Some(_) => return Err(format!("{}.methods is not an array", what)),
     };
-    let public = bool_member(said, "public", false, &what)?;
+    let authorization = match said.get("authorization") {
+        None | Some(Value::Null) => {
+            return Err(format!("{}.authorization is required", what))
+        }
+        Some(one) => authorization_of(one, &what)?,
+    };
+    let public = authorization.kind == AuthorizationKind::Public;
     let mechanisms = match said.get("mechanisms") {
         None | Some(Value::Null) => Vec::new(),
         Some(Value::Array(list)) => {
@@ -629,13 +758,11 @@ fn route_of(
         path,
         matching,
         methods,
-        public,
+        authorization,
         mechanisms,
         application,
         signals: bool_member(said, "signals", true, &what)?,
         resolved,
-        resource: string_member(said, "resource", &what)?,
-        action: string_member(said, "action", &what)?,
         identity: identity_of(&said["identity"], &what)?,
         forward_credentials: bool_member(
             said,
@@ -950,23 +1077,36 @@ mod tests {
             "maxBodyBytes": 1048576,
             "routes": [
                 { "id": "public", "path": "/public", "match": "prefix",
-                  "methods": ["GET", "HEAD"], "public": true },
+                  "methods": ["GET", "HEAD"],
+                  "authorization": { "kind": "public",
+                    "policy": "pep-p-public", "resource": "",
+                    "actionModel": "method" } },
                 { "id": "api", "path": "/api", "match": "prefix",
                   "methods": ["GET", "POST"],
                   "mechanisms": ["oauth2", "basic"],
                   "application": "pep-app",
                   "resolved": { "usable": true,
                                 "audiences": ["https://app.example/api"] },
-                  "resource": "", "action": "",
+                  "authorization": { "kind": "simple",
+                    "policy": "pep-p-api",
+                    "resource": "https://pep.example:9543/pep-app/api",
+                    "actionModel": "crud",
+                    "roles": { "read": ["reader"] } },
                   "identity": { "mode": "headers", "separator": ";",
                     "headers": [ { "name": "X-Remote-User", "claim": "username" },
                                  { "name": "X-Remote-Auth", "claim": "mechanism" } ] },
                   "forwardCredentials": false },
                 { "id": "app", "path": "/app/", "match": "exact",
+                  "methods": [],
+                  "authorization": { "kind": "policy", "policy": "mine",
+                                     "actionModel": "read-write" },
                   "mechanisms": ["session"], "application": "pep-app",
                   "signals": false,
                   "resolved": { "usable": true, "clientId": "app-client" } },
                 { "id": "gone", "path": "/gone", "mechanisms": ["saml2"],
+                  "methods": ["GET"],
+                  "authorization": { "kind": "policy", "policy": "mine",
+                                     "actionModel": "method" },
                   "application": "deleted-app",
                   "resolved": { "usable": false, "why": "deleted",
                                 "code": "STS-XACML-0001" } }
@@ -1011,6 +1151,21 @@ mod tests {
         );
         assert_eq!(config.routes[2].path, "/app", "the trailing / is dropped");
         assert!(config.routes[2].methods.is_empty());
+        assert!(config.routes[0].is_public() && !api.is_public());
+        assert_eq!(
+            api.authorization,
+            Authorization {
+                kind: AuthorizationKind::Simple,
+                policy: "pep-p-api".into(),
+                resource: "https://pep.example:9543/pep-app/api".into(),
+                action_model: ActionModel::Crud,
+            }
+        );
+        assert_eq!(config.routes[2].authorization.resource, "");
+        assert_eq!(
+            config.routes[2].authorization.action_model,
+            ActionModel::ReadWrite
+        );
         assert!(!config.routes[2].signals);
         assert_eq!(config.routes[2].resolved.client_id, "app-client");
         let gone = &config.routes[3].resolved;
@@ -1149,17 +1304,87 @@ mod tests {
             ),
             "not mode headers",
         );
+        // #1760: every route states its methods and its authorization.
+        refused(
+            &|d| {
+                d["routes"][1].as_object_mut().unwrap().remove("methods");
+            },
+            "methods is required",
+        );
+        refused(&|d| d["routes"][1]["methods"] = Value::Null, "required");
+        refused(
+            &|d| {
+                d["routes"][1].as_object_mut().unwrap().remove("authorization");
+            },
+            "authorization is required",
+        );
+        // The members it replaced do not stand in for it.
+        refused(
+            &|d| {
+                let r = d["routes"][0].as_object_mut().unwrap();
+                r.remove("authorization");
+                r.insert("public".into(), json!(true));
+            },
+            "authorization is required",
+        );
+        let authz = |key: &'static str, v: Value| {
+            move |d: &mut Value| {
+                d["routes"][1]["authorization"][key] = v.clone()
+            }
+        };
+        refused(&authz("kind", json!("open")), "kind is not");
+        refused(&authz("kind", Value::Null), "kind is not");
+        refused(&authz("actionModel", json!("rest")), "actionModel is not");
+        refused(&authz("actionModel", Value::Null), "actionModel is not");
+        refused(&authz("policy", json!("")), "names no policy");
+        refused(&authz("policy", json!(" ")), "names no policy");
+        refused(&authz("policy", json!(7)), "not a string");
+        refused(&authz("resource", json!(true)), "not a string");
+        refused(&authz("roles", json!(["reader"])), "roles is not");
+        refused(
+            &|d| d["routes"][1]["authorization"] = json!("simple"),
+            "authorization is not an object",
+        );
+        // A public route takes no mechanism, whatever its kind used to be
+        // spelled as.
+        refused(
+            &|d| d["routes"][1]["authorization"]["kind"] = json!("public"),
+            "public and names mechanisms",
+        );
         refused(&|d| d["publicBaseUrl"] = json!(""), "publicBaseUrl");
         refused(&|d| d["enabled"] = json!("yes"), "boolean");
         refused(
             &|d| {
                 d["routes"] = json!((0..65)
                     .map(|i| json!({ "id": format!("r{}", i),
-                        "path": "/x", "public": true }))
+                        "path": "/x", "methods": ["GET"],
+                        "authorization": { "kind": "public",
+                            "policy": "p", "actionModel": "method" } }))
                     .collect::<Vec<_>>())
             },
             "more than 64",
         );
+    }
+
+    #[test]
+    fn each_action_model_names_the_action() {
+        let method = ActionModel::Method;
+        let crud = ActionModel::Crud;
+        let rw = ActionModel::ReadWrite;
+        for (m, c, w) in [
+            ("GET", "read", "read"),
+            ("HEAD", "read", "read"),
+            ("OPTIONS", "read", "read"),
+            ("POST", "create", "write"),
+            ("PUT", "update", "write"),
+            ("PATCH", "update", "write"),
+            ("DELETE", "delete", "write"),
+        ] {
+            assert_eq!(method.action_for(m), m);
+            assert_eq!(crud.action_for(m), c, "crud {}", m);
+            assert_eq!(rw.action_for(m), w, "read-write {}", m);
+        }
+        assert_eq!(crud.action_for("TRACE"), "TRACE");
     }
 
     #[test]
@@ -1175,7 +1400,11 @@ mod tests {
         assert_eq!(id("/"), None);
         let api = &config.routes[1];
         assert!(api.takes("GET") && !api.takes("DELETE"));
-        assert!(config.routes[2].takes("DELETE"), "no methods is any");
+        let none = &config.routes[2];
+        assert!(
+            METHODS.iter().all(|m| !none.takes(m)),
+            "an empty list takes no method"
+        );
     }
 
     #[test]

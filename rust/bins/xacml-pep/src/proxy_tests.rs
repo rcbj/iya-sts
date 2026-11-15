@@ -87,6 +87,9 @@ struct ServiceState {
 /// What the application has seen of its SAML sessions.
 #[derive(Default)]
 struct UpState {
+    /// Every request that reached it, whatever it was (#1760: a refused
+    /// request must not be one).
+    hits: u32,
     /// The application sessions it holds.
     valid: HashSet<String>,
     acs_posts: u32,
@@ -133,6 +136,7 @@ async fn upstream(app: Arc<Mutex<UpState>>) -> u16 {
     let echo = move |request: Request| {
         let app = app.clone();
         async move {
+            app.lock().unwrap().hits += 1;
             let (parts, body) = request.into_parts();
             let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();
             if parts.uri.path() == "/pep-app/acs" {
@@ -623,6 +627,103 @@ async fn service(
     port
 }
 
+/// Every method a route may name: "any", stated (#1760, where an empty
+/// list is none).
+const ALL: [&str; 7] = crate::proxy_config::METHODS;
+
+/// The resource-id `/full` is decided as (#1760, `authorization.resource`).
+const FULL_URI: &str = "https://pep.example:9543/pep-app/full";
+
+/// A route decided by the policy entry `policy` (#1760).
+fn simple_on(policy: &str) -> Value {
+    json!({ "kind": "simple", "policy": policy, "resource": "",
+            "actionModel": "method", "roles": {} })
+}
+
+/// A public route, decided by `policy` for the anonymous subject.
+fn public_on(policy: &str) -> Value {
+    json!({ "kind": "public", "policy": policy, "resource": "",
+            "actionModel": "method" })
+}
+
+/// A policy whose one Permit rule matches `value` (`function`, `datatype`)
+/// against `attribute` of `category`, and denies everything else — so a
+/// test reads exactly which value the engine was given.
+fn permitting(
+    id: &str,
+    category: &str,
+    attribute: &str,
+    datatype: &str,
+    function: &str,
+    value: &str,
+) -> String {
+    format!(
+        r#"<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17" PolicyId="{id}" Version="1.0" RuleCombiningAlgId="urn:oasis:names:tc:xacml:1.0:rule-combining-algorithm:first-applicable"><Target/>
+<Rule RuleId="only" Effect="Permit"><Target><AnyOf><AllOf><Match MatchId="urn:oasis:names:tc:xacml:1.0:function:{function}"><AttributeValue DataType="{datatype}">{value}</AttributeValue><AttributeDesignator Category="{category}" AttributeId="{attribute}" DataType="{datatype}" MustBePresent="false"/></Match></AllOf></AnyOf></Target></Rule>
+<Rule RuleId="else" Effect="Deny"/></Policy>"#
+    )
+}
+
+const STRING: &str = "http://www.w3.org/2001/XMLSchema#string";
+const ANYURI: &str = "http://www.w3.org/2001/XMLSchema#anyURI";
+const ACTION: &str = "urn:oasis:names:tc:xacml:3.0:attribute-category:action";
+const ACTION_ID: &str = "urn:oasis:names:tc:xacml:1.0:action:action-id";
+const RESOURCE: &str =
+    "urn:oasis:names:tc:xacml:3.0:attribute-category:resource";
+const RESOURCE_ID: &str = "urn:oasis:names:tc:xacml:1.0:resource:resource-id";
+const SUBJECT: &str =
+    "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject";
+const SUBJECT_ID: &str = "urn:oasis:names:tc:xacml:1.0:subject:subject-id";
+
+fn one_effect(id: &str, effect: &str) -> String {
+    format!(
+        r#"<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17" PolicyId="{id}" Version="1.0" RuleCombiningAlgId="urn:oasis:names:tc:xacml:1.0:rule-combining-algorithm:first-applicable"><Target/><Rule RuleId="all" Effect="{effect}"/></Policy>"#
+    )
+}
+
+/// What the harness pulls (#1760): `t`, the root, which every older route
+/// names; and one entry per new route, by NAME. `root` is the entry
+/// marked as the root.
+fn policy_rows(root: &str) -> Value {
+    let row = |name: &str, document: String| {
+        json!({ "policyId": format!("pid-{}", name), "name": name,
+                "isRoot": name == root, "document": document })
+    };
+    let mut rows = vec![
+        json!({ "policyId": "proxy-test", "name": "t", "isRoot": root == "t",
+                "document": POLICY }),
+        row("deny-all", one_effect("pid-deny-all", "Deny")),
+        row("permit-all", one_effect("pid-permit-all", "Permit")),
+    ];
+    for (name, value) in [
+        ("permit-update", "update"),
+        ("permit-write", "write"),
+        ("permit-put", "PUT"),
+    ] {
+        let id = format!("pid-{}", name);
+        let doc = permitting(&id, ACTION, ACTION_ID, STRING, "string-equal",
+                             value);
+        rows.push(row(name, doc));
+    }
+    for (name, value) in
+        [("permit-uri", FULL_URI), ("permit-path", "/bypath/x")]
+    {
+        let id = format!("pid-{}", name);
+        let doc = permitting(&id, RESOURCE, RESOURCE_ID, ANYURI, "anyURI-equal",
+                             value);
+        rows.push(row(name, doc));
+    }
+    // Permits only a request carrying NO subject-id: the regexp `.` matches
+    // any value one carries, and that is denied.
+    let anon = format!(
+        r#"<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17" PolicyId="pid-anon-only" Version="1.0" RuleCombiningAlgId="urn:oasis:names:tc:xacml:1.0:rule-combining-algorithm:first-applicable"><Target/>
+<Rule RuleId="someone" Effect="Deny"><Target><AnyOf><AllOf><Match MatchId="urn:oasis:names:tc:xacml:1.0:function:string-regexp-match"><AttributeValue DataType="{STRING}">.</AttributeValue><AttributeDesignator Category="{SUBJECT}" AttributeId="{SUBJECT_ID}" DataType="{STRING}" MustBePresent="false"/></Match></AllOf></AnyOf></Target></Rule>
+<Rule RuleId="nobody" Effect="Permit"/></Policy>"#
+    );
+    rows.push(row("anon-only", anon));
+    json!({ "syncToken": format!("root-{}", root), "policies": rows })
+}
+
 fn resolved_for(audiences: bool, saml: bool, client: &str) -> Value {
     let mut out = json!({ "usable": true });
     if audiences {
@@ -642,6 +743,149 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
         "tokenEndpointAuthMethod": "client_secret_basic",
         "redirectUri": "https://proxy.example/.iya-pep/callback",
         "scopes": ["openid", "profile"] });
+    // Two literals: one would pass `json!`'s recursion limit.
+    let mut routes = json!([
+        { "id": "public", "path": "/public",
+          "methods": ["GET", "HEAD"], "authorization": public_on("t"),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Remote-User", "claim": "username" } ] } },
+        { "id": "api", "path": "/api", "methods": ["GET", "POST"],
+          "mechanisms": ["oauth2", "basic"], "application": "api-app",
+          "authorization": simple_on("t"),
+          "resolved": resolved_for(true, false, ""),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Remote-User", "claim": "username" },
+            { "name": "X-Remote-Auth", "claim": "mechanism" } ] } },
+        { "id": "saml", "path": "/saml", "mechanisms": ["saml2"],
+          "application": "saml-app",
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": resolved_for(false, true, ""),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Remote-User", "claim": "username" } ] } },
+        { "id": "app", "path": "/app", "mechanisms": ["session"],
+          "application": CLIENT,
+          "authorization": simple_on("t"), "methods": ALL,
+          "signals": false,
+          "resolved": resolved_for(false, false, CLIENT),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Remote-User", "claim": "username" } ] } },
+        { "id": "live", "path": "/live", "mechanisms": ["session"],
+          "application": LIVE_CLIENT,
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": resolved_for(false, false, LIVE_CLIENT),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Remote-User", "claim": "username" } ] } },
+        { "id": "fwd", "path": "/fwd", "mechanisms": ["basic"],
+          "application": "fwd-app",
+          "authorization": simple_on("t"), "methods": ALL,
+          "forwardCredentials": true,
+          "resolved": resolved_for(false, false, "") },
+        { "id": "secret", "path": "/secret", "match": "exact",
+          "mechanisms": ["basic"], "methods": ALL,
+          "authorization": { "kind": "simple", "policy": "t",
+            "resource": "urn:app:secret", "actionModel": "method" },
+          "application": "secret-app",
+          "resolved": resolved_for(false, false, "") },
+        { "id": "gone", "path": "/gone", "mechanisms": ["basic"],
+          "application": "deleted-app",
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": { "usable": false,
+                        "why": "the application was deleted",
+                        "code": "STS-XACML-0217" } },
+        { "id": "slow", "path": "/slow", "match": "exact",
+          "methods": ALL, "authorization": public_on("t") },
+        { "id": "hdr", "path": "/hdr", "mechanisms": ["basic"],
+          "application": "hdr-app",
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "identity": { "mode": "headers", "separator": ",",
+            "headers": [
+              { "name": "X-Iya-Email", "claim": "email" },
+              { "name": "X-Iya-Groups", "claim": "groups" },
+              { "name": "X-Iya-Via", "claim": "mechanism" } ] } },
+        { "id": "tok", "path": "/tok", "mechanisms": ["basic"],
+          "application": "tok-app",
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "identity": { "mode": "jwt" } },
+        { "id": "apptok", "path": "/apptok",
+          "mechanisms": ["session"], "application": CLIENT,
+          "authorization": simple_on("t"), "methods": ALL,
+          "signals": false,
+          "resolved": resolved_for(false, false, CLIENT),
+          "identity": { "mode": "jwt" } },
+        { "id": "sso", "path": "/sso", "mechanisms": ["basic"],
+          "application": "sso-app",
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "identity": { "mode": "saml" } },
+        { "id": "livehdr", "path": "/livehdr",
+          "mechanisms": ["session"], "application": LIVE_CLIENT,
+          "authorization": simple_on("t"), "methods": ALL,
+          "resolved": resolved_for(false, false, LIVE_CLIENT),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Iya-Groups", "claim": "groups" } ] } },
+        { "id": "multi", "path": "/multi", "mechanisms": ["session"],
+          "application": LIVE_CLIENT,
+          "authorization": simple_on("t"), "methods": ALL,
+          "multipleAccounts": true,
+          "resolved": resolved_for(false, false, LIVE_CLIENT),
+          "identity": { "mode": "headers", "headers": [
+            { "name": "X-Remote-User", "claim": "username" } ] } }
+    ]);
+    // #1760: each route decided by the policy it names.
+    let decided = json!([
+        { "id": "named", "path": "/named", "mechanisms": ["basic"],
+          "application": "named-app", "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "authorization": simple_on("deny-all") },
+        { "id": "crud", "path": "/crud", "mechanisms": ["basic"],
+          "application": "crud-app", "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "authorization": { "kind": "policy",
+            "policy": "permit-update", "actionModel": "crud" } },
+        { "id": "rw", "path": "/rw", "mechanisms": ["basic"],
+          "application": "rw-app", "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "authorization": { "kind": "policy",
+            "policy": "permit-write", "actionModel": "read-write" } },
+        { "id": "bymethod", "path": "/bymethod",
+          "mechanisms": ["basic"], "application": "m-app",
+          "methods": ALL, "resolved": resolved_for(false, false, ""),
+          "authorization": { "kind": "policy",
+            "policy": "permit-put", "actionModel": "method" } },
+        { "id": "full", "path": "/full", "mechanisms": ["basic"],
+          "application": "full-app", "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "authorization": { "kind": "policy", "policy": "permit-uri",
+            "resource": FULL_URI, "actionModel": "method" } },
+        { "id": "bypath", "path": "/bypath", "mechanisms": ["basic"],
+          "application": "path-app", "methods": ALL,
+          "resolved": resolved_for(false, false, ""),
+          "authorization": { "kind": "policy",
+            "policy": "permit-path", "resource": "",
+            "actionModel": "method" } },
+        { "id": "anon", "path": "/anon", "methods": ["GET"],
+          "authorization": public_on("anon-only") },
+        { "id": "missing", "path": "/missing",
+          "mechanisms": ["basic"], "application": "missing-app",
+          "methods": ALL, "resolved": resolved_for(false, false, ""),
+          "authorization": simple_on("never-pulled") },
+        { "id": "closed", "path": "/closed", "mechanisms": ["basic"],
+          "application": "closed-app", "methods": [],
+          "resolved": resolved_for(false, false, ""),
+          "authorization": simple_on("t") },
+        { "id": "closedpub", "path": "/closedpub", "methods": [],
+          "authorization": public_on("t") },
+        { "id": "closedgone", "path": "/closedgone",
+          "mechanisms": ["basic"], "application": "cg-app",
+          "methods": [], "resolved": resolved_for(false, false, ""),
+          "authorization": simple_on("never-pulled") }
+    ]);
+    if let (Some(all), Value::Array(more)) = (routes.as_array_mut(), decided)
+    {
+        all.extend(more);
+    }
     json!({
         "syncToken": "p1", "pep": "pep-1", "configured": true,
         "proxy": {
@@ -650,77 +894,7 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
             "publicBaseUrl": "https://proxy.example",
             "upstreamTimeoutMs": 500,
             "maxBodyBytes": 64,
-            "routes": [
-                { "id": "public", "path": "/public", "methods": ["GET", "HEAD"],
-                  "public": true, "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Remote-User", "claim": "username" } ] } },
-                { "id": "api", "path": "/api", "methods": ["GET", "POST"],
-                  "mechanisms": ["oauth2", "basic"], "application": "api-app",
-                  "resolved": resolved_for(true, false, ""),
-                  "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Remote-User", "claim": "username" },
-                    { "name": "X-Remote-Auth", "claim": "mechanism" } ] } },
-                { "id": "saml", "path": "/saml", "mechanisms": ["saml2"],
-                  "application": "saml-app",
-                  "resolved": resolved_for(false, true, ""),
-                  "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Remote-User", "claim": "username" } ] } },
-                { "id": "app", "path": "/app", "mechanisms": ["session"],
-                  "application": CLIENT, "signals": false,
-                  "resolved": resolved_for(false, false, CLIENT),
-                  "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Remote-User", "claim": "username" } ] } },
-                { "id": "live", "path": "/live", "mechanisms": ["session"],
-                  "application": LIVE_CLIENT,
-                  "resolved": resolved_for(false, false, LIVE_CLIENT),
-                  "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Remote-User", "claim": "username" } ] } },
-                { "id": "fwd", "path": "/fwd", "mechanisms": ["basic"],
-                  "application": "fwd-app", "forwardCredentials": true,
-                  "resolved": resolved_for(false, false, "") },
-                { "id": "secret", "path": "/secret", "match": "exact",
-                  "mechanisms": ["basic"], "resource": "urn:app:secret",
-                  "application": "secret-app",
-                  "resolved": resolved_for(false, false, "") },
-                { "id": "gone", "path": "/gone", "mechanisms": ["basic"],
-                  "application": "deleted-app",
-                  "resolved": { "usable": false,
-                                "why": "the application was deleted",
-                                "code": "STS-XACML-0217" } },
-                { "id": "slow", "path": "/slow", "match": "exact",
-                  "public": true },
-                { "id": "hdr", "path": "/hdr", "mechanisms": ["basic"],
-                  "application": "hdr-app",
-                  "resolved": resolved_for(false, false, ""),
-                  "identity": { "mode": "headers", "separator": ",",
-                    "headers": [
-                      { "name": "X-Iya-Email", "claim": "email" },
-                      { "name": "X-Iya-Groups", "claim": "groups" },
-                      { "name": "X-Iya-Via", "claim": "mechanism" } ] } },
-                { "id": "tok", "path": "/tok", "mechanisms": ["basic"],
-                  "application": "tok-app",
-                  "resolved": resolved_for(false, false, ""),
-                  "identity": { "mode": "jwt" } },
-                { "id": "apptok", "path": "/apptok",
-                  "mechanisms": ["session"], "application": CLIENT,
-                  "signals": false,
-                  "resolved": resolved_for(false, false, CLIENT),
-                  "identity": { "mode": "jwt" } },
-                { "id": "sso", "path": "/sso", "mechanisms": ["basic"],
-                  "application": "sso-app",
-                  "resolved": resolved_for(false, false, ""),
-                  "identity": { "mode": "saml" } },
-                { "id": "livehdr", "path": "/livehdr",
-                  "mechanisms": ["session"], "application": LIVE_CLIENT,
-                  "resolved": resolved_for(false, false, LIVE_CLIENT),
-                  "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Iya-Groups", "claim": "groups" } ] } },
-                { "id": "multi", "path": "/multi", "mechanisms": ["session"],
-                  "application": LIVE_CLIENT, "multipleAccounts": true,
-                  "resolved": resolved_for(false, false, LIVE_CLIENT),
-                  "identity": { "mode": "headers", "headers": [
-                    { "name": "X-Remote-User", "claim": "username" } ] } }
-            ]
+            "routes": routes
         },
         "realm": {
             "issuer": service, "jwksUri": format!("{}/jwks", service),
@@ -740,6 +914,10 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
 }
 
 async fn harness() -> Harness {
+    harness_with(|_| {}).await
+}
+
+async fn harness_with(edit: impl FnOnce(&mut Options)) -> Harness {
     let key = Arc::new(rsa_key());
     let state = Arc::new(Mutex::new(ServiceState {
         jwks: json!({ "keys": [jwk_of(&key, "k1")] }),
@@ -762,11 +940,10 @@ async fn harness() -> Harness {
     // Short enough for the stale-stream test, long enough that a busy
     // machine never makes a working stream look stale.
     options.proxy_signals_stale_ms = 2000;
+    edit(&mut options);
     let client = PdpClient::new(&options).unwrap();
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
-    sync.load_for_test(&json!({ "syncToken": "1", "policies": [
-        { "policyId": "proxy-test", "name": "t", "isRoot": true,
-          "document": POLICY } ] }));
+    sync.load_for_test(&policy_rows("t"));
     let saml_signer = saml::signer();
     let cert_pem = String::from_utf8(saml_signer.1.to_pem().unwrap()).unwrap();
     sync.receive_proxy(
@@ -879,7 +1056,8 @@ impl HttpBody for Chunks {
 #[tokio::test]
 async fn routes_paths_methods_and_bodies() {
     let h = harness().await;
-    // A public route: no credential, no decision, no identity header —
+    // A public route: no credential and no identity header (decided for
+    // the anonymous subject by its own policy, which permits it) —
     // and the client's own forwarding and identity headers are gone.
     let said = echoed(
         h.get("/public/page?x=1&y=%20")
@@ -1762,7 +1940,7 @@ async fn the_configuration_is_pulled_with_its_token_and_etag() {
         overview["active"], true,
         "kept through a 304, a 500 and a document refused whole"
     );
-    assert_eq!(overview["routes"], 15);
+    assert_eq!(overview["routes"], 26);
     assert_eq!(overview["lastPullOk"], false);
     assert!(overview["lastPullWhy"]
         .as_str()
@@ -2342,4 +2520,283 @@ async fn an_account_without_a_username_claim_is_named_by_the_service() {
         .unwrap();
     assert!(page.contains("<strong>carol</strong>"), "{}", page);
     assert!(!page.contains("urn:uuid:carol"), "{}", page);
+}
+
+/// A request on `path` as alice over Basic, with `method`.
+async fn as_alice(h: &Harness, method: reqwest::Method, path: &str) -> u16 {
+    h.http
+        .request(method, format!("{}{}", h.proxy, path))
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}
+
+fn hits(h: &Harness) -> u32 {
+    h.app.lock().unwrap().hits
+}
+
+/// #1760: a route is decided by the policy it NAMES, never the root —
+/// whichever way round the two disagree.
+#[tokio::test]
+async fn a_route_is_decided_by_its_own_policy_not_the_root() {
+    let h = harness().await;
+    // The root (`t`) permits alice; `/named` names `deny-all`.
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
+    let before = hits(&h);
+    let r = h
+        .get("/named/x")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403, "the route's deny-all, not the root's permit");
+    let body: Value = r.json().await.unwrap();
+    assert!(body["error_description"]
+        .as_str()
+        .unwrap()
+        .contains("said Deny"));
+    assert_eq!(hits(&h), before, "nothing reached the application");
+    // Now the ROOT denies everything and `t` is no longer the root: the
+    // routes that name `t` are still decided by it, and admitted.
+    h.sync.load_for_test(&policy_rows("deny-all"));
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/named/x").await, 403);
+    // No root at all is not "nothing to decide by" for a route either.
+    h.sync.load_for_test(&json!({ "syncToken": "x", "policies": [
+        { "policyId": "proxy-test", "name": "t", "isRoot": false,
+          "document": POLICY },
+        { "policyId": "other", "name": "other", "isRoot": false,
+          "document": one_effect("other", "Deny") } ] }));
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
+}
+
+/// #1760: a route whose policy this PEP does not hold is refused without a
+/// decision — and a permit-biased PEP, which would admit a NotApplicable,
+/// refuses it too.
+#[tokio::test]
+async fn a_route_naming_a_policy_not_held_is_refused_whatever_the_bias() {
+    for bias in [
+        crate::options::Bias::DenyBiased,
+        crate::options::Bias::PermitBiased,
+    ] {
+        let h = harness_with(|o| o.bias = bias).await;
+        let before = hits(&h);
+        let decided = h.sync.counters_json();
+        let r = h
+            .get("/missing/x")
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403, "{:?}", bias);
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(
+            body["error_description"], "This route cannot be decided now.",
+            "{:?}: STS-XPEP-0117's body, which names no policy",
+            bias
+        );
+        assert_eq!(hits(&h), before, "{:?}: the upstream was not hit", bias);
+        assert_eq!(
+            h.sync.counters_json(),
+            decided,
+            "{:?}: nothing decided it, so nothing is counted",
+            bias
+        );
+        // Held, it is decided; withheld again (a later pull without it),
+        // refused again.
+        assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
+        let mut rows = policy_rows("t");
+        rows["policies"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|r| r["name"] != "t");
+        h.sync.load_for_test(&rows);
+        assert_eq!(
+            as_alice(&h, reqwest::Method::GET, "/api/x").await,
+            403,
+            "{:?}: a route whose policy was withheld",
+            bias
+        );
+    }
+}
+
+/// #1760: the action models — the action-id the ENGINE saw, read through
+/// policies that permit exactly one value.
+#[tokio::test]
+async fn each_action_model_sends_its_action_id() {
+    use reqwest::Method as M;
+    let h = harness().await;
+    // crud, `permit-update`: PUT and PATCH are update; nothing else is.
+    assert_eq!(as_alice(&h, M::PUT, "/crud/x").await, 200);
+    assert_eq!(as_alice(&h, M::PATCH, "/crud/x").await, 200);
+    for m in [M::GET, M::HEAD, M::POST, M::DELETE, M::OPTIONS] {
+        assert_eq!(as_alice(&h, m.clone(), "/crud/x").await, 403, "{}", m);
+    }
+    // read-write, `permit-write`: every method that changes is write.
+    for m in [M::POST, M::PUT, M::PATCH, M::DELETE] {
+        assert_eq!(as_alice(&h, m.clone(), "/rw/x").await, 200, "{}", m);
+    }
+    for m in [M::GET, M::HEAD, M::OPTIONS] {
+        assert_eq!(as_alice(&h, m.clone(), "/rw/x").await, 403, "{}", m);
+    }
+    // method, `permit-put`: the method itself.
+    assert_eq!(as_alice(&h, M::PUT, "/bymethod/x").await, 200);
+    assert_eq!(as_alice(&h, M::PATCH, "/bymethod/x").await, 403);
+    assert_eq!(as_alice(&h, M::GET, "/bymethod/x").await, 403);
+}
+
+/// #1760: `authorization.resource` is the resource-id when set, and the
+/// normalised path when empty — read through policies that permit exactly
+/// one anyURI.
+#[tokio::test]
+async fn the_resource_id_is_the_routes_or_the_path() {
+    let h = harness().await;
+    // `/full` names FULL_URI and `permit-uri` permits only it, whatever
+    // path under the route was asked for.
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/full").await, 200);
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/full/a/b").await, 200);
+    // `/bypath` names none: the path is sent, and `permit-path` permits
+    // `/bypath/x` alone.
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/bypath/x").await, 200);
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/bypath/y").await, 403);
+    assert_eq!(as_alice(&h, reqwest::Method::GET, "/bypath").await, 403);
+}
+
+/// #1760: a public route is decided in XACML for the ANONYMOUS subject —
+/// no subject-id at all — and refused when its policy denies or is gone.
+#[tokio::test]
+async fn a_public_route_is_decided_in_xacml() {
+    let h = harness().await;
+    // `anon-only` permits a request with NO subject-id and denies one
+    // carrying any: forwarded, so none was sent.
+    let said = echoed(h.get("/anon/page").send().await.unwrap()).await;
+    assert_eq!(said["path"], "/pep-app/anon/page");
+    let decided = h.sync.counters_json();
+    assert!(
+        decided["allowed"].as_u64() >= Some(1),
+        "the public route's decision is counted: {}",
+        decided
+    );
+    // The same document swapped for one that denies: refused, unreached.
+    let mut rows = policy_rows("t");
+    for row in rows["policies"].as_array_mut().unwrap() {
+        if row["name"] == "anon-only" {
+            row["document"] = json!(one_effect("pid-anon-only", "Deny"));
+        }
+    }
+    h.sync.load_for_test(&rows);
+    let before = hits(&h);
+    assert_eq!(h.get("/anon/page").send().await.unwrap().status(), 403);
+    // Removed: refused too (STS-XPEP-0117), never "public, so admitted".
+    rows["policies"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|r| r["name"] != "anon-only");
+    h.sync.load_for_test(&rows);
+    let r = h.get("/anon/page").send().await.unwrap();
+    assert_eq!(r.status(), 403);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error_description"], "This route cannot be decided now.");
+    assert_eq!(hits(&h), before, "neither reached the application");
+}
+
+/// #1760: an EMPTY `methods` list is deny-all — every method, through the
+/// engine, refused after a decision that PERMITTED, the application never
+/// reached; a missing policy is still 0117 first.
+#[tokio::test]
+async fn an_empty_methods_list_denies_every_method() {
+    use reqwest::Method as M;
+    let h = harness().await;
+    let before = hits(&h);
+    for m in [M::GET, M::HEAD, M::POST, M::PUT, M::PATCH, M::DELETE,
+              M::OPTIONS] {
+        let permitted = h.sync.counters_json()["allowed"].as_u64();
+        let r = h
+            .http
+            .request(m.clone(), format!("{}/closed/x", h.proxy))
+            .basic_auth("alice", Some("right"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403, "{}", m);
+        assert!(r.headers().get("allow").is_none(), "not a 405: {}", m);
+        if m != M::HEAD {
+            let body: Value = r.json().await.unwrap();
+            assert!(
+                body["error_description"]
+                    .as_str()
+                    .unwrap()
+                    .contains("deny-all"),
+                "{}: {}",
+                m,
+                body
+            );
+        }
+        assert_eq!(
+            h.sync.counters_json()["allowed"].as_u64(),
+            permitted.map(|n| n + 1),
+            "{}: the policy WAS asked, and permitted",
+            m
+        );
+        // The public twin: no identity, the same refusal.
+        let r = h
+            .http
+            .request(m.clone(), format!("{}/closedpub/x", h.proxy))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 403, "public {}", m);
+    }
+    assert_eq!(hits(&h), before, "the upstream was never hit");
+    // A route that allows nothing AND names a policy not held: 0117 wins.
+    let r = h
+        .get("/closedgone/x")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error_description"], "This route cannot be decided now.");
+}
+
+/// #1760: the route members the change made required refuse the document
+/// whole — the one held kept.
+#[tokio::test]
+async fn a_route_without_methods_or_authorization_refuses_the_document() {
+    let h = harness().await;
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    type Edit = fn(&mut serde_json::Map<String, Value>);
+    let edits: [Edit; 4] = [
+        |r: &mut serde_json::Map<String, Value>| {
+            r.remove("methods");
+        },
+        |r: &mut serde_json::Map<String, Value>| {
+            r.remove("authorization");
+        },
+        |r: &mut serde_json::Map<String, Value>| {
+            r["authorization"]["kind"] = json!("anyone");
+        },
+        |r: &mut serde_json::Map<String, Value>| {
+            r["authorization"]["actionModel"] = json!("http");
+        },
+    ];
+    for edit in edits {
+        let mut doc =
+            configuration(&h.upstream_base, &h.service_base, &cert);
+        doc["syncToken"] = json!("p-broken");
+        edit(doc["proxy"]["routes"][1].as_object_mut().unwrap());
+        h.sync.receive_proxy(&doc, None);
+        let overview = h.sync.proxy_json();
+        assert_eq!(overview["lastPullOk"], false, "{}", overview);
+        assert!(overview["lastPullWhy"]
+            .as_str()
+            .unwrap()
+            .contains("refused whole"));
+        assert_eq!(overview["syncToken"], "p1", "the held one is kept");
+        assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
+    }
 }

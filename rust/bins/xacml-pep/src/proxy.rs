@@ -19,11 +19,13 @@
 //! path that matches no route: 404, and the application is never reached.
 //! A request is answered in this order, and each step's refusal is the
 //! first one it meets: the path normalised (400), the route found (404),
-//! the method (405 with `Allow`), the declared body size (413), then —
-//! unless the route is public — the mechanism (401, with a challenge per
-//! mechanism the route allows, or a 302 to sign in for a browser on a
-//! `session` route), then the decision (403), then the application (502,
-//! 504, or a streamed body over the bound: 413).
+//! the method (405 with `Allow`, when the route's list is not empty), the
+//! declared body size (413), then — unless the route is public — the
+//! mechanism (401, with a challenge per mechanism the route allows, or a
+//! 302 to sign in for a browser on a `session` route), then the decision,
+//! public routes included (403; `STS-XPEP-0117` when the route's policy is
+//! not held), then deny-all for an empty method list (403), then the
+//! application (502, 504, or a streamed body over the bound: 413).
 //!
 //! **THE DESTINATION IS NEVER THE REQUEST'S.** The upstream URL is the
 //! configured upstream base, the NORMALISED path and the original query;
@@ -32,9 +34,11 @@
 //! — it is the client's to follow, through this proxy again.
 //!
 //! **THE DECISION IS THE ONE `/protected` MAKES** (D8): `service.rs`'s
-//! `decide_proxy()` — the subject (the username when known, else `sub`),
-//! the route's resource or the path, the route's action or the method,
-//! through the one builder, the PIP, `enforce.rs`, and the same counters.
+//! `decide_proxy()` — the subject (the username when known, else `sub`;
+//! none on a public route), `authorization.resource` or the path, the
+//! action its `actionModel` names, through the one builder, the PIP,
+//! `enforce.rs`, and the same counters — **evaluated against the policy
+//! the route NAMES, never the root** (#1760).
 //!
 //! `proxy_request.rs` holds the path and header rules, `proxy_auth.rs` the
 //! mechanisms, `rp_session.rs` the session stores, `proxy_config.rs` the
@@ -459,7 +463,9 @@ impl Proxy {
             .map(|r| format!(" (route {})", r.id))
             .unwrap_or_default();
         let shown: String = asked.path.chars().take(200).collect();
-        if refusal.status >= 500 {
+        // A 5xx, and a route whose policy is not held, are the operator's
+        // to see; a refusal of the request itself is information.
+        if refusal.status >= 500 || refusal.code == "STS-XPEP-0117" {
             tracing::warn!(
                 "{}xacml-pep: proxy answered {} to {} {:?}{}: {}.",
                 tag(refusal.code),
@@ -619,7 +625,11 @@ impl Proxy {
             return (self.refuse(&refusal, &asked, &pulled), false);
         };
         asked.route = Some(route);
-        if !route.takes(&method) {
+        // A non-empty list without the method is route MATCHING, not
+        // authorization: 405 with the list as `Allow`. An EMPTY list is
+        // not a 405 — there is nothing to put in `Allow` — so the request
+        // goes on to be decided and is refused after it (0116, below).
+        if !route.methods.is_empty() && !route.takes(&method) {
             let refusal = Refusal::new(
                 405,
                 "STS-XPEP-0066",
@@ -630,7 +640,7 @@ impl Proxy {
         // D10: the route's application as the service resolved it at the
         // pull. Not usable (deleted, or no longer qualifying) is refused,
         // never admitted on what an earlier pull said.
-        if !route.public && !route.resolved.usable {
+        if !route.is_public() && !route.resolved.usable {
             let refusal = Refusal::new(
                 403,
                 "STS-XPEP-0093",
@@ -673,7 +683,7 @@ impl Proxy {
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
-        let identity = if route.public {
+        let identity = if route.is_public() {
             None
         } else {
             let established = self
@@ -696,34 +706,68 @@ impl Proxy {
                 Established::Answer(response) => return (response, false),
             }
         };
-        if let Some(identity) = &identity {
-            let resource = if route.resource.is_empty() {
-                path.as_str()
-            } else {
-                route.resource.as_str()
-            };
-            let action = if route.action.is_empty() {
-                method.as_str()
-            } else {
-                route.action.as_str()
-            };
-            let (decision, outcome) = self
-                .pep
-                .decide_proxy(identity.subject(), resource, action)
-                .await;
-            if !outcome.allowed {
-                let refusal = Refusal::new(
-                    403,
-                    "STS-XPEP-0086",
-                    &format!(
-                        "the policy this PEP holds said {} for this \
-                         subject, resource and action ({} bias)",
-                        decision.as_str(),
-                        outcome.bias.as_str()
-                    ),
-                );
-                return (self.refuse(&refusal, &asked, &pulled), false);
-            }
+        // EVERY ROUTE IS DECIDED IN XACML, BY ITS OWN POLICY (#1760), a
+        // public one too: for the anonymous subject (no subject-id), with
+        // the resource-id and action-id the route's authorization says.
+        let authorization = &route.authorization;
+        let subject = identity.as_ref().map_or("", |i| i.subject());
+        let resource = if authorization.resource.is_empty() {
+            path.as_str()
+        } else {
+            authorization.resource.as_str()
+        };
+        let action = authorization.action_model.action_for(&method);
+        let decided = self
+            .pep
+            .decide_proxy(subject, resource, action, &authorization.policy)
+            .await;
+        let Some((decision, outcome)) = decided else {
+            // Whatever the bias: a route whose policy is missing is not a
+            // NotApplicable, and a permit-biased PEP admitting it would
+            // open the route the moment its policy was withheld.
+            let refusal = Refusal::new(
+                403,
+                "STS-XPEP-0117",
+                &format!(
+                    "the route's policy {:?} is not held by this PEP (never \
+                     pulled, withheld, disabled, renamed, failed to load, or \
+                     a name two pulled entries carry), so nothing decided it",
+                    authorization.policy
+                ),
+            );
+            let mut refused = self.refuse(&refusal, &asked, &pulled);
+            *refused.body_mut() = Body::from(
+                json!({ "error": "access_denied",
+                        "error_description":
+                            "This route cannot be decided now." })
+                .to_string(),
+            );
+            return (refused, false);
+        };
+        if !outcome.allowed {
+            let refusal = Refusal::new(
+                403,
+                "STS-XPEP-0086",
+                &format!(
+                    "the policy this PEP holds said {} for this \
+                     subject, resource and action ({} bias)",
+                    decision.as_str(),
+                    outcome.bias.as_str()
+                ),
+            );
+            return (self.refuse(&refusal, &asked, &pulled), false);
+        }
+        // DENY-ALL: a route that states no method was decided and counted
+        // above — every decision is XACML's — and is refused now whatever
+        // the policy said, so a policy that permits too much cannot open a
+        // route the administrator closed.
+        if route.methods.is_empty() {
+            let refusal = Refusal::new(
+                403,
+                "STS-XPEP-0116",
+                "the route allows no method: deny-all",
+            );
+            return (self.refuse(&refusal, &asked, &pulled), false);
         }
         // D11: the identity the route sends, established BEFORE anything is
         // forwarded — a request is never sent without it.
@@ -1598,7 +1642,7 @@ impl Proxy {
                     .filter(|r| {
                         r.multiple_accounts
                             && r.mechanisms.contains(&Mechanism::Session)
-                            && !r.public
+                            && !r.is_public()
                     })
                 else {
                     return refuse(404, "STS-XPEP-0110",
