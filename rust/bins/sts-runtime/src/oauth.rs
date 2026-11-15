@@ -82,6 +82,8 @@ pub struct OAuthParts {
     pub directory_ports: Arc<sts_authn_api::wiring::DirectoryPorts>,
     /// `authn.clientDisplay(clientId)` (#1300), for the consent view.
     pub client_display: Arc<dyn Fn(&str) -> Json + Send + Sync>,
+    /// The credential store, for the password grant.
+    pub credentials: Arc<sts_credentials::credentials::Credentials>,
 }
 
 /// The authorization server, built.
@@ -290,6 +292,120 @@ impl sts_oauth::token_endpoint::GrantSessions for GrantSessionsOf {
     }
 }
 
+/// `cluster_counters.js`' windows in the store every process shares
+/// (`sts_cluster_windows`, realm `''`), where the driver shares them.
+struct StoreWindows(Arc<Persistence>);
+
+impl sts_oauth::secret_limit::SharedWindows for StoreWindows {
+    fn shares(&self) -> bool {
+        self.0.driver().is_some_and(|d| d.shares_windows())
+    }
+
+    fn count<'a>(
+        &'a self,
+        key: &'a str,
+        window_ms: i64,
+    ) -> sts_oauth::secret_limit::WindowFuture<
+        'a,
+        Result<sts_oauth::secret_limit::Window, String>,
+    > {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            let w = driver
+                .count_window(
+                    sts_oauth::secret_limit::SHARED_SCOPE,
+                    "",
+                    key,
+                    window_ms,
+                )
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("unshared")?;
+            Ok(sts_oauth::secret_limit::Window {
+                count: w.count,
+                remaining_ms: w.remaining_ms,
+            })
+        })
+    }
+
+    fn peek<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> sts_oauth::secret_limit::WindowFuture<
+        'a,
+        Result<sts_oauth::secret_limit::Window, String>,
+    > {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            let w = driver
+                .peek_window(sts_oauth::secret_limit::SHARED_SCOPE, "", key)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("unshared")?;
+            Ok(sts_oauth::secret_limit::Window {
+                count: w.count,
+                remaining_ms: w.remaining_ms,
+            })
+        })
+    }
+
+    fn clear<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> sts_oauth::secret_limit::WindowFuture<'a, Result<bool, String>> {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            driver
+                .clear_window(sts_oauth::secret_limit::SHARED_SCOPE, "", key)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+}
+
+/// The password grant's checks over the credential store (`door: 'ropc'`).
+struct RopcChecks(Arc<sts_credentials::credentials::Credentials>);
+
+impl sts_oauth::token_endpoint::PasswordChecks for RopcChecks {
+    fn verify(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<String, (String, String)> {
+        let opts = sts_credentials::credentials::VerifyOptions::from_json(
+            &json!({ "via": "the OAuth 2.0 password grant", "door": "ropc" }),
+        );
+        let verdict = self.0.verify(username, password, &opts);
+        let reason = verdict.reason().to_string();
+        if verdict.ok() {
+            Ok(reason)
+        } else {
+            let detail = verdict
+                .value
+                .get("detail")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string();
+            Err((reason, detail))
+        }
+    }
+
+    // `mechanismsFor(username)`: `webauthn` for a key that counts as a
+    // second factor, else `totp` for an enrolment (`secondFactorDemand()`
+    // reads the same two). The emailed factor (#64, off by default) is
+    // not in this runtime yet.
+    fn second_factor(&self, username: &str) -> String {
+        let held = self.0.second_factor_demand(username);
+        if held.get("key") == Some(&Json::Bool(true)) {
+            "webauthn".into()
+        } else if held.get("totp") == Some(&Json::Bool(true)) {
+            "totp".into()
+        } else {
+            String::new()
+        }
+    }
+}
+
 /// The cluster's claims of one process: held here until they lapse.
 #[derive(Default)]
 struct ProcessClaims(Mutex<std::collections::HashMap<String, f64>>);
@@ -467,6 +583,12 @@ impl OAuthStack {
             gated: Arc::new(NoGatedScopes),
             people: Arc::new(Directories(parts.people.clone())),
             sessions: Arc::new(GrantSessionsOf(parts.sessions.clone())),
+            limits: Some(Arc::new(sts_oauth::secret_limit::SharedLimits::new(
+                settings.clone(),
+                Arc::new(StoreWindows(parts.persistence.clone())),
+                Arc::new(|| chrono::Utc::now().timestamp_millis()),
+            ))),
+            passwords: Some(Arc::new(RopcChecks(parts.credentials.clone()))),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,
@@ -1140,9 +1262,10 @@ impl OAuthStack {
     ) -> Response {
         self.reload_directory();
         self.ensure_keys().await;
-        let (base, headers, _address, body) = self.arrived(&http, &request);
+        let (base, headers, address, body) = self.arrived(&http, &request);
         let ask = TokenAsk {
             base: base.clone(),
+            address,
             body,
             authorization: header_of(&headers, "authorization"),
             dpop: headers

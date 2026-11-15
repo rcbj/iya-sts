@@ -63,6 +63,9 @@ pub struct TokenAsk {
     pub dpop: Option<String>,
     /// `dpop.htuOf(req)`: the token endpoint's URL as the proof names it.
     pub htu: String,
+    /// `websecurity.addressOf(req)`: the client address the rate windows
+    /// count by.
+    pub address: String,
 }
 
 /// An access token's status-list entry (draft-ietf-oauth-status-list,
@@ -223,6 +226,29 @@ pub struct TokenEndpoint {
     pub people: Arc<dyn People>,
     /// The sign-on sessions a grant lasts as long as.
     pub sessions: Arc<dyn GrantSessions>,
+    /// The shared rate windows: the failed-client-secret limit and the
+    /// password grant's budget (`websecurity`'s shared half); `None`
+    /// counts nothing.
+    pub limits: Option<Arc<crate::secret_limit::SharedLimits>>,
+    /// The password grant's credential checks (RFC 6749 section 4.3);
+    /// `None` refuses the grant as unsupported.
+    pub passwords: Option<Arc<dyn PasswordChecks>>,
+}
+
+/// `credentials.verifyAsync()` and `mechanismsFor()` for the password
+/// grant (`door: 'ropc'`).
+pub trait PasswordChecks: Send + Sync {
+    /// `{ ok, reason, detail }`: `Ok(reason)` where the password is
+    /// accepted (`verified`, or development's `unchecked`), `Err((reason,
+    /// detail))` otherwise.
+    fn verify(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<String, (String, String)>;
+    /// `mechanismsFor(username).secondFactor` where `mfaRequired`, else
+    /// ''.
+    fn second_factor(&self, username: &str) -> String;
 }
 
 /// The person a token is issued for (`userFor()`, `nameForSubject()`).
@@ -370,6 +396,22 @@ impl TokenEndpoint {
         out
     }
 
+    /// `secretLockout(res, clientId, lockedOut)`: 429 with `Retry-After`.
+    fn secret_lockout(
+        &self,
+        client_id: &str,
+        locked: &crate::secret_limit::LimitRefusal,
+    ) -> Answer {
+        let mut a = self.refusal(
+            codes::STS_OAUTH_0284,
+            429,
+            "invalid_client",
+            &crate::secret_limit::lockout_description(client_id, &locked.detail),
+        );
+        a.set("Retry-After", &locked.retry_after_s.to_string());
+        a
+    }
+
     fn refusal(
         &self,
         code: sts_core::errors::ErrorCode,
@@ -493,6 +535,29 @@ impl TokenEndpoint {
                 );
             }
         }
+        // THE SECRET RATE LIMIT'S FIRST HALF (`secretLimitKey()`): a client
+        // and address past the limit is answered before its secret is
+        // looked at.
+        let secret_presented = crate::secret_limit::secret_presented(
+            client.basic,
+            !s(body.get("client_secret")).is_empty(),
+            !client.assertion.is_empty(),
+            &registered,
+        );
+        let secret_key = self.limits.as_ref().and_then(|l| {
+            (!client.client_id.is_empty() && secret_presented).then(|| {
+                l.secret_key(
+                    &sts_core::realm::current_id(),
+                    &client.client_id,
+                    &ask.address,
+                )
+            })
+        });
+        if let (Some(l), Some((what, id))) = (&self.limits, &secret_key) {
+            if let Some(locked) = l.blocked(what, &ask.address, id).await {
+                return self.secret_lockout(&client.client_id, &locked);
+            }
+        }
         // THE DPoP PROOF (RFC 9449 section 4.3), verified here against the
         // nonce store and the replay history, the jti reserved across the
         // cluster first.
@@ -609,6 +674,14 @@ impl TokenEndpoint {
             &q,
             &memo,
         ) {
+            // `countSecretFailure()`: a failure whose increment took the
+            // bucket PAST the limit is answered with the lockout.
+            if let (Some(l), Some((what, id))) = (&self.limits, &secret_key) {
+                if let Some(over) = l.failed(what, &ask.address, id).await {
+                    let a = self.secret_lockout(&client.client_id, &over);
+                    return self.with_basic_challenge(a, client.basic);
+                }
+            }
             let a = self.refusal(r.code, r.status, &r.error, &r.description);
             return self.with_basic_challenge(a, client.basic);
         }
@@ -725,6 +798,19 @@ impl TokenEndpoint {
         }
         let observed =
             bcp::observe_client_authentication(&self.auth, &q, &memo);
+        // THE SECRET RATE LIMIT'S LAST HALF (`settleSecretSuccess()`): a
+        // success clears this client's bucket at this address, the address
+        // bucket left alone — and a verified secret past the limit is
+        // refused like the failures that spent it.
+        if observed.authenticated {
+            if let (Some(l), Some((what, id))) = (&self.limits, &secret_key) {
+                if let Some(raced) =
+                    l.succeeded(what, &ask.address, id, true, true).await
+                {
+                    return self.secret_lockout(&client.client_id, &raced);
+                }
+            }
+        }
         if let Some((code, description)) =
             crate::oauth21::token_client_authentication_refusal(
                 oauth21,
@@ -805,6 +891,9 @@ impl TokenEndpoint {
                 self.authorization_code(&issuing, spent).await
             }
             "refresh_token" => self.refresh_grant(&issuing).await,
+            "password" if self.passwords.is_some() => {
+                self.password_grant(&issuing, &scope, &resources).await
+            }
             _ => self.refusal(
                 codes::STS_OAUTH_0227,
                 400,
@@ -1057,6 +1146,120 @@ impl TokenEndpoint {
             grant: "client_credentials".into(),
             jkt: issuing.dpop_jkt.clone(),
             with_refresh: false,
+            ..Mint::default()
+        };
+        self.respond(self.issue(issuing, opts))
+    }
+
+    // -------------------------------------------------------------------
+    // RFC 6749 section 4.3, the resource owner password credentials grant
+    // (`tokenGrant()`'s `grant === 'password'` branch). RFC 9700 mode,
+    // and so product mode, does not advertise it, and the check above
+    // refused it before this is reached.
+    // -------------------------------------------------------------------
+
+    /// THE PASSWORD IS VERIFIED THROUGH THE CREDENTIAL STORE in every mode
+    /// (`credentials.verifyAsync(…, { door: 'ropc' })`), which in
+    /// development refuses the reserved password `invalid` and accepts the
+    /// rest. Where credentials are verified (`mode.verifiesCredentials()`)
+    /// three refusals sit around it, none reachable in development: the
+    /// sign-in screen's own shared budget, a person holding a second factor
+    /// (the grant has nowhere to carry one), and every refusal the ONE
+    /// answer, `invalid_grant`, "Authentication failed for user X.", the
+    /// reason left to the log.
+    async fn password_grant(
+        &self,
+        issuing: &Issuing<'_>,
+        scope: &str,
+        resources: &[String],
+    ) -> Answer {
+        let Some(checks) = self.passwords.as_ref() else {
+            return self.refusal(codes::STS_OAUTH_0227, 400, "unsupported_grant_type", "grant_type \"password\" is not supported.");
+        };
+        let username = s(issuing.body.get("username"));
+        let password = s(issuing.body.get("password"));
+        if username.is_empty() || password.is_empty() {
+            return self.refusal(
+                codes::STS_OAUTH_0218,
+                400,
+                "invalid_request",
+                "username and password are required.",
+            );
+        }
+        let verifies = self.mode.verifies_credentials();
+        let address = issuing.ask.address.as_str();
+        if verifies {
+            if let Some(limits) = &self.limits {
+                if let Some(r) =
+                    limits.attempt("sign-in", address, &username).await
+                {
+                    tracing::warn!(
+                        "oauth2: too many password-grant attempts for \"{}\" ({} bucket). Refusing for {}s.",
+                        username, r.kind, r.retry_after_s);
+                    let mut a = self.refusal(
+                        codes::STS_OAUTH_0219,
+                        400,
+                        "invalid_grant",
+                        &r.detail,
+                    );
+                    a.set("Retry-After", &r.retry_after_s.to_string());
+                    return a;
+                }
+            }
+        }
+        if let Err((reason, detail)) = checks.verify(&username, &password) {
+            tracing::info!(
+                "oauth2: the password grant for \"{}\" was refused ({}): {}",
+                username,
+                reason,
+                detail
+            );
+            return self.refusal(
+                codes::STS_OAUTH_0220,
+                400,
+                "invalid_grant",
+                &format!("Authentication failed for user {}.", username),
+            );
+        }
+        if verifies {
+            let second = checks.second_factor(&username);
+            if !second.is_empty() {
+                tracing::warn!(
+                    "oauth2: the password grant for \"{}\" was refused: that person holds a second factor ({}) and the password grant cannot carry one.",
+                    username, second);
+                return self.refusal(codes::STS_OAUTH_0221, 400, "invalid_grant", &format!(
+                    "Authentication failed for user {}. This account requires a second factor, which the password grant cannot carry; use the authorization code flow, whose sign-in screen asks for it.",
+                    username));
+            }
+            if let Some(limits) = &self.limits {
+                limits
+                    .succeeded("sign-in", address, &username, false, false)
+                    .await;
+            }
+        }
+        // `provisionedPerson(username)`: no entry, no subject.
+        let user = self.people.user_for(&username);
+        if s(user.get("sub")).is_empty() && self.people.has_subject_resolver()
+        {
+            return self.refusal(codes::STS_OAUTH_0510, 400, "invalid_grant", &format!(
+                "There is no directory entry for {}, so there is no subject to issue a token about; the person has to be provisioned first.",
+                username));
+        }
+        let opts = Mint {
+            sub: s(user.get("sub")),
+            username: s(user.get("username")),
+            user: user.clone(),
+            client_id: issuing.client.client_id.clone(),
+            scope: if scope.is_empty() {
+                "openid".to_string()
+            } else {
+                scope.to_string()
+            },
+            audience: resources.to_vec(),
+            resources: resources.to_vec(),
+            grant: "password".into(),
+            jkt: issuing.dpop_jkt.clone(),
+            with_refresh: true,
             ..Mint::default()
         };
         self.respond(self.issue(issuing, opts))

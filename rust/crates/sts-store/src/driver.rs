@@ -269,6 +269,46 @@ pub trait Driver: Send + Sync {
     fn shares_secrets(&self) -> bool {
         false
     }
+    /// `countWindow(scope, realm, key, windowMs)` (#46,
+    /// `cluster/cluster_counters.js`): one attempt counted in a fixed
+    /// window every process shares (`sts_cluster_windows`), a window that
+    /// has passed reset to a fresh one at 1. Answers the count including
+    /// this attempt and what is left of the window; `None` where this
+    /// store shares no windows ([`Driver::shares_windows`]).
+    fn count_window<'a>(
+        &'a self,
+        _scope: &'a str,
+        _realm: &'a str,
+        _key: &'a str,
+        _window_ms: i64,
+    ) -> StoreFuture<'a, Option<WindowCount>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `peekWindow(scope, realm, key)`: the count of a window still
+    /// running, counting nothing; a passed one is a count of zero.
+    fn peek_window<'a>(
+        &'a self,
+        _scope: &'a str,
+        _realm: &'a str,
+        _key: &'a str,
+    ) -> StoreFuture<'a, Option<WindowCount>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `clearWindow(scope, realm, key)`: a window forgotten — what a
+    /// success does to its bucket. Whether there was one.
+    fn clear_window<'a>(
+        &'a self,
+        _scope: &'a str,
+        _realm: &'a str,
+        _key: &'a str,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async { Ok(false) })
+    }
+    /// Whether this store shares the rate windows (`windowStore()` found
+    /// `countWindow`, `peekWindow` and `clearWindow`).
+    fn shares_windows(&self) -> bool {
+        false
+    }
     /// Whether [`Driver::merge_keys`] decides under the row's lock.
     fn merges_keys(&self) -> bool {
         false
@@ -289,6 +329,14 @@ pub trait Driver: Send + Sync {
             )))
         })
     }
+}
+
+/// A shared window's count, as `countWindow()` and `peekWindow()` answer
+/// it: `{ count, remainingMs }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WindowCount {
+    pub count: i64,
+    pub remaining_ms: i64,
 }
 
 /// One `sts_cluster_secrets` row, as `ensureSharedSecret()` answers it.

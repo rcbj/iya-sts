@@ -333,6 +333,17 @@ const CLAIM_WRITE: &str = crate::written!(
     expires_at
 );
 const LOCK_WRITE: &str = crate::written!(MARIADB, "sts_cluster_locks", name);
+/// What a statement writes to `sts_cluster_windows`.
+const WINDOW_WRITE: &str = crate::written!(
+    MARIADB,
+    "sts_cluster_windows",
+    scope,
+    realm,
+    key,
+    count,
+    window_ends_at,
+    origin
+);
 
 /// The bounded columns a minted flush writes (`minted_portable.js`
 /// LIMITS), in characters.
@@ -2073,6 +2084,126 @@ impl Driver for MariadbDriver {
             self.record_changes(&mut tx, &[("keys", realm, "")]).await?;
             tx.commit().await.map_err(err)?;
             Ok(Some(next))
+        })
+    }
+
+    fn shares_windows(&self) -> bool {
+        true
+    }
+
+    // `countWindow()`, the portable form (`cluster_portable.js`): THE ROW
+    // FIRST, outside the transaction, as an ENDED window (count 0, ending
+    // now) — concurrent first counts of one key deadlocked InnoDB when each
+    // inserted inside its own transaction — then a bump that only updates
+    // a row that exists. `count` is assigned first: it reads the window's
+    // OLD end, which the next assignment replaces.
+    fn count_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+        window_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::WindowCount>> {
+        Box::pin(async move {
+            let span = window_ms.max(1);
+            let origin = self.origin.id();
+            let mut conn = self.conn().await?;
+            conn.exec_drop(
+                format!(
+                    "INSERT IGNORE INTO sts_cluster_windows ({}) VALUES (?, ?, \
+                     ?, 0, {}, ?)",
+                    WINDOW_WRITE, NOW
+                ),
+                (scope, realm, key, origin.as_str()),
+            )
+            .await
+            .map_err(err)?;
+            drop(conn);
+            let mut tx = self
+                .pool
+                .start_transaction(TxOpts::default())
+                .await
+                .map_err(err)?;
+            tx.exec_drop(
+                format!(
+                    "UPDATE sts_cluster_windows SET `count` = CASE WHEN \
+                     window_ends_at <= {now} THEN 1 ELSE `count` + 1 END, \
+                     window_ends_at = CASE WHEN window_ends_at <= {now} THEN \
+                     ({now} + ?) ELSE window_ends_at END, origin = ? WHERE \
+                     scope = ? AND realm = ? AND `key` = ?",
+                    now = NOW
+                ),
+                (span, origin.as_str(), scope, realm, key),
+            )
+            .await
+            .map_err(err)?;
+            let row: Option<(i64, i64)> = tx
+                .exec_first(
+                    format!(
+                        "SELECT `count`, window_ends_at - {} AS remaining \
+                         FROM sts_cluster_windows WHERE scope = ? AND \
+                         realm = ? AND `key` = ?",
+                        NOW
+                    ),
+                    (scope, realm, key),
+                )
+                .await
+                .map_err(err)?;
+            tx.commit().await.map_err(err)?;
+            let (count, remaining) = row.unwrap_or((0, 0));
+            Ok(Some(crate::driver::WindowCount {
+                count,
+                remaining_ms: remaining.max(0),
+            }))
+        })
+    }
+
+    fn peek_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, Option<crate::driver::WindowCount>> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            let row: Option<(i64, i64)> = conn
+                .exec_first(
+                    format!(
+                        "SELECT `count`, window_ends_at - {now} AS remaining \
+                         FROM sts_cluster_windows WHERE scope = ? AND \
+                         realm = ? AND `key` = ? AND window_ends_at > {now}",
+                        now = NOW
+                    ),
+                    (scope, realm, key),
+                )
+                .await
+                .map_err(err)?;
+            Ok(Some(match row {
+                Some((count, remaining)) => crate::driver::WindowCount {
+                    count,
+                    remaining_ms: remaining.max(0),
+                },
+                None => crate::driver::WindowCount::default(),
+            }))
+        })
+    }
+
+    fn clear_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let mut conn = self.conn().await?;
+            conn.exec_drop(
+                "DELETE FROM sts_cluster_windows WHERE scope = ? AND \
+                 realm = ? AND `key` = ?",
+                (scope, realm, key),
+            )
+            .await
+            .map_err(err)?;
+            Ok(conn.affected_rows() > 0)
         })
     }
 

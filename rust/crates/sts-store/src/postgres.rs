@@ -174,6 +174,17 @@ const LEASE_WRITE: &str = crate::written!(
     acquired_at,
     expires_at
 );
+/// What a statement writes to `sts_cluster_windows`.
+const WINDOW_WRITE: &str = crate::written!(
+    POSTGRES,
+    "sts_cluster_windows",
+    scope,
+    realm,
+    key,
+    count,
+    window_ends_at,
+    origin
+);
 /// What a statement writes to `sts_cluster_claims`.
 const CLAIM_WRITE: &str = crate::written!(
     POSTGRES,
@@ -864,6 +875,110 @@ impl Driver for PostgresDriver {
                 created_at: r.get(2),
                 offered: inserted > 0,
             }))
+        })
+    }
+
+    fn shares_windows(&self) -> bool {
+        true
+    }
+
+    // `countWindow()`: ONE conditional upsert — a passed window is reset
+    // to a fresh one at 1, a live one incremented — under the primary
+    // key's row lock, so two nodes counting one bucket at once both land.
+    // "Now" is taken once, from the inserted row's own window end less the
+    // span: two readings of `clock_timestamp()` in one statement are two
+    // instants, which at the boundary would reset the count and keep the
+    // old window.
+    fn count_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+        window_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::WindowCount>> {
+        Box::pin(async move {
+            let span = window_ms.max(1);
+            let origin = self.origin.id();
+            let row = self
+                .client()
+                .await?
+                .query_one(
+                    &format!(
+                        "INSERT INTO sts_cluster_windows ({w}) VALUES ($1, $2, \
+                         $3, 1, {now} + $4::bigint, $5) ON CONFLICT (scope, \
+                         realm, key) DO UPDATE SET count = CASE WHEN \
+                         sts_cluster_windows.window_ends_at <= \
+                         EXCLUDED.window_ends_at - $4::bigint THEN 1 ELSE \
+                         sts_cluster_windows.count + 1 END, window_ends_at = \
+                         CASE WHEN sts_cluster_windows.window_ends_at <= \
+                         EXCLUDED.window_ends_at - $4::bigint THEN \
+                         EXCLUDED.window_ends_at ELSE \
+                         sts_cluster_windows.window_ends_at END, origin = \
+                         EXCLUDED.origin RETURNING count, window_ends_at - \
+                         {now} AS remaining",
+                        w = WINDOW_WRITE,
+                        now = DB_NOW
+                    ),
+                    &[&scope, &realm, &key, &span, &origin],
+                )
+                .await
+                .map_err(err)?;
+            Ok(Some(crate::driver::WindowCount {
+                count: row.get::<_, i64>("count"),
+                remaining_ms: row.get::<_, i64>("remaining").max(0),
+            }))
+        })
+    }
+
+    fn peek_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, Option<crate::driver::WindowCount>> {
+        Box::pin(async move {
+            let row = self
+                .client()
+                .await?
+                .query_opt(
+                    &format!(
+                        "SELECT count, window_ends_at - {now} AS remaining \
+                         FROM sts_cluster_windows WHERE scope = $1 AND \
+                         realm = $2 AND key = $3 AND window_ends_at > {now}",
+                        now = DB_NOW
+                    ),
+                    &[&scope, &realm, &key],
+                )
+                .await
+                .map_err(err)?;
+            Ok(Some(match row {
+                Some(r) => crate::driver::WindowCount {
+                    count: r.get::<_, i64>("count"),
+                    remaining_ms: r.get::<_, i64>("remaining").max(0),
+                },
+                None => crate::driver::WindowCount::default(),
+            }))
+        })
+    }
+
+    fn clear_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let n = self
+                .client()
+                .await?
+                .execute(
+                    "DELETE FROM sts_cluster_windows WHERE scope = $1 AND \
+                     realm = $2 AND key = $3",
+                    &[&scope, &realm, &key],
+                )
+                .await
+                .map_err(err)?;
+            Ok(n > 0)
         })
     }
 

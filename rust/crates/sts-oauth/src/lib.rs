@@ -81,6 +81,7 @@ pub mod reports;
 pub mod request_object;
 pub mod revocation;
 pub mod scopes;
+pub mod secret_limit;
 pub mod sender_constraints;
 pub mod signin;
 pub mod token_endpoint;
