@@ -11,3 +11,5 @@
 pub mod attestation;
 pub mod cbor;
 pub mod ceremony;
+pub mod metadata;
+pub mod trust;

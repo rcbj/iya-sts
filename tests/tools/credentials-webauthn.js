@@ -46,6 +46,12 @@ async function build(ROOT) {
       return insecure;
     }
   });
+  // The verifier's clock, recorded on each row: SafetyNet's timestampMs is
+  // held to it.
+  let nowMs = Date.now();
+  deps.now = function () {
+    return nowMs;
+  };
   const attestation = new Attestation(deps);
   const sha256 = function (data) {
     return nodeCrypto.createHash('sha256').update(data).digest();
@@ -88,9 +94,11 @@ async function build(ROOT) {
         credentialJwk: r.publicKeyJwk,
         aaguid: Buffer.from(String(r.aaguid || ''), 'hex'),
         credentialId: Buffer.from(r.credentialIdRaw || []),
-        rpIdHash: Buffer.from(r.rpIdHash || []), settings: {}
+        rpIdHash: Buffer.from(r.rpIdHash || []),
+        settings: (opts && opts.settings) || {}
       };
       insecure = !!(opts && opts.insecure);
+      nowMs = Date.now();
       if ((opts || {}).statement !== false) {
         statement = statementOf(await attestation.verifyStatement(
           r.fmt, r.attStmt, ctx, 0));
@@ -101,7 +109,9 @@ async function build(ROOT) {
     }
     registrations.push({ name: name, input: input, answer: answer,
                          threw: threw, statement: statement,
-                         insecure: !!(opts && opts.insecure) });
+                         insecure: !!(opts && opts.insecure),
+                         settings: (opts && opts.settings) || {},
+                         now: nowMs });
     return answer;
   };
   const assert = function (name, input) {
@@ -147,7 +157,10 @@ async function build(ROOT) {
   const ALGS = [-7, -35, -36, -47, -9, -8, -19, -257, -37, -48, -49, -50];
   const anchors = { vendor: await kit.root('Synthetic Vendor'),
                     tpm: await kit.root('Synthetic TPM Manufacturer', 'rsa'),
-                    u2f: await kit.root('Synthetic U2F') };
+                    u2f: await kit.root('Synthetic U2F'),
+                    android: await kit.root('Synthetic Android'),
+                    google: await kit.root('Synthetic Google'),
+                    apple: await kit.root('Synthetic Apple') };
   for (const alg of ALGS) {
     const c = await kit.ceremony({ alg: alg });
     const input = Object.assign(c.input(kit.none()),
@@ -267,10 +280,92 @@ async function build(ROOT) {
     made.attStmt.ver = '1.2';
     return made;
   }]);
+  // The four formats the credentials slice left (#444 phase 5, webauthn):
+  // android-key, android-safetynet, apple and compound, each spoiled in
+  // each way the kit offers.
+  [undefined, 'challenge', 'all-applications', 'software-origin', 'purpose',
+   'key'].forEach(function (spoil) {
+    formats.push(['android-key ' + (spoil || 'basic'), function (c) {
+      return kit.androidKey(c, anchors.android, spoil);
+    }]);
+  });
+  formats.push(['android-key software-origin, software keys allowed',
+    function (c) {
+      return kit.androidKey(c, anchors.android, 'software-origin');
+    }, { settings: { androidSoftwareKeys: true } }]);
+  formats.push(['android-key, a bare certificate', async function (c) {
+    const made = await kit.androidKey(c, anchors.android);
+    made.attStmt.x5c = [anchors.android.der];
+    return made;
+  }]);
+  formats.push(['android-key, no KeyDescription', async function (c) {
+    const leaf = await kit.certificate({
+      subject: [['2.5.4.3', 'Android Keystore Key']],
+      publicKey: c.credential.pair.crypto.publicKey, issuer: anchors.android,
+      ca: false });
+    const made = await kit.androidKey(c, anchors.android);
+    made.attStmt.x5c = [leaf.der];
+    return made;
+  }]);
+  [undefined, 'nonce', 'cts', 'stale', 'signature', 'host']
+    .forEach(function (spoil) {
+      formats.push(['android-safetynet ' + (spoil || 'basic'), function (c) {
+        return kit.safetynet(c, anchors.google, spoil);
+      }]);
+    });
+  formats.push(['android-safetynet, not a JWS', function () {
+    return { fmt: 'android-safetynet',
+             attStmt: { ver: '1', response: Buffer.from('nope') } };
+  }]);
+  [undefined, 'nonce', 'key'].forEach(function (spoil) {
+    formats.push(['apple ' + (spoil || 'anonca'), function (c) {
+      return kit.apple(c, anchors.apple, spoil);
+    }]);
+  });
+  formats.push(['apple, no nonce extension', async function (c) {
+    const made = await kit.apple(c, anchors.apple);
+    made.attStmt.x5c = [anchors.apple.der];
+    return made;
+  }]);
+  const pairOf = function (made) {
+    return { fmt: made.fmt, attStmt: made.attStmt };
+  };
+  formats.push(['compound packed and apple', async function (c) {
+    return { fmt: 'compound', attStmt: [
+      pairOf(await kit.packed(c, anchors.vendor)),
+      pairOf(await kit.apple(c, anchors.apple))] };
+  }]);
+  formats.push(['compound none and packed self', async function (c) {
+    return { fmt: 'compound', attStmt: [pairOf(kit.none()),
+                                        pairOf(kit.packedSelf(c))] };
+  }]);
+  formats.push(['compound, a member spoiled', async function (c) {
+    return { fmt: 'compound', attStmt: [
+      pairOf(await kit.packed(c, anchors.vendor)),
+      pairOf(await kit.apple(c, anchors.apple, 'nonce'))] };
+  }]);
+  formats.push(['compound, one member', async function (c) {
+    return { fmt: 'compound', attStmt: [pairOf(kit.packedSelf(c))] };
+  }]);
+  formats.push(['compound, a compound member', async function (c) {
+    return { fmt: 'compound', attStmt: [pairOf(kit.packedSelf(c)),
+      { fmt: 'compound', attStmt: [] }] };
+  }]);
+  formats.push(['compound, a member with three keys', async function (c) {
+    return { fmt: 'compound', attStmt: [pairOf(kit.packedSelf(c)),
+      { fmt: 'none', attStmt: {}, x: 1 }] };
+  }]);
+  formats.push(['compound, a map', async function () {
+    return { fmt: 'compound', attStmt: {} };
+  }]);
+  formats.push(['compound, an unknown member format', async function (c) {
+    return { fmt: 'compound', attStmt: [pairOf(kit.packedSelf(c)),
+      { fmt: 'bogus', attStmt: {} }] };
+  }]);
   for (const row of formats) {
     const c = await kit.ceremony({ alg: -7 });
     const made = await row[1](c);
-    await register(row[0], c.input(made));
+    await register(row[0], c.input(made), row[2]);
   }
   for (const alg of [-257, -8, -48]) {
     const c = await kit.ceremony({ alg: alg });

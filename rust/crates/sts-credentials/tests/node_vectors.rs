@@ -1338,6 +1338,9 @@ mod webauthn {
                 credential_id: r.credential_id.clone(),
                 rp_id_hash: r.rp_id_hash.clone(),
                 allow_insecure: row["insecure"] == json!(true),
+                android_software_keys: row["settings"]["androidSoftwareKeys"]
+                    == json!(true),
+                now_ms: row["now"].as_f64().unwrap_or(0.0),
             };
             let fmt = r.answer["fmt"].as_str().unwrap_or("").to_string();
             let st = r
