@@ -651,7 +651,8 @@ impl Stack {
             mode.clone(),
         );
         let root = sts_http::files::WebRoot::from_env();
-        let version = sts_core::version::load(&root.0).version;
+        let version_info = sts_core::version::load(&root.0);
+        let version = version_info.version.clone();
         let surfaces = sts_http::surfaces::SurfaceHost::build(
             settings.clone(),
             mode.clone(),
@@ -725,6 +726,7 @@ impl Stack {
                 persistence: persistence.clone(),
                 live: directory.clone(),
                 sessions: signin.sessions.clone(),
+                footer: sts_http::footer::facts(&version_info),
                 pending: signin.signin.stores.pending.clone(),
                 people: Arc::new(sts_authn_api::wiring::DirectoryPorts {
                     directory: directory.clone(),
@@ -869,14 +871,26 @@ impl Stack {
     pub fn router(&self) -> axum::Router {
         let persistence = Arc::downgrade(&self.persistence);
         let (settings, mode) = (self.settings.clone(), self.mode.clone());
-        let mut routes = self.authn_routes.clone().route(
-            "/oauth2/jwks",
-            axum::routing::get(move || {
-                let persistence = persistence.clone();
-                let (settings, mode) = (settings.clone(), mode.clone());
-                async move { jwks(persistence, settings, mode).await }
-            }),
-        );
+        let jwks_get = move || {
+            let persistence = persistence.clone();
+            let (settings, mode) = (settings.clone(), mode.clone());
+            async move { jwks(persistence, settings, mode).await }
+        };
+        // A named authorization server's `jwks_uri` (`/{as}/oauth2/jwks`):
+        // the keys are the realm's, whichever server is named.
+        let named_jwks = jwks_get.clone();
+        let mut routes = self
+            .authn_routes
+            .clone()
+            .route("/oauth2/jwks", axum::routing::get(jwks_get))
+            .route(
+                "/{as}/oauth2/jwks",
+                axum::routing::get(
+                    move |axum::extract::Path(_as): axum::extract::Path<
+                        String,
+                    >| named_jwks(),
+                ),
+            );
         // `pki/pki_service.ts` (17b): the public revocation surface.
         if let Some(authority) = self.pki.get() {
             routes = routes.merge(crate::pki::routes(

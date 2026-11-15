@@ -24,13 +24,14 @@
 //! * **`signed_metadata`** (RFC 8414 section 2.1): the document and `sub`,
 //!   signed for an hour under the realm's key (`signPublishedDocument()`).
 //!
-//! WHAT IS NOT HERE: named authorization servers (`/<as>/…`,
-//! `authorization_servers.ts`) and their FAPI profiles, OAuth 2.1's and
-//! FAPI's own narrowing, client attestation's methods, the device
-//! authorization and CIBA grants and their endpoints, UMA's grant — each
-//! answered as Node answers with it switched off, which is its default —
-//! and the OpenID Connect members of `openid-configuration` (UserInfo,
-//! claims, subject types, logout), which the OIDC slice adds.
+//! [`oidc_metadata`] is `/.well-known/openid-configuration`'s document; a
+//! named authorization server's profile is applied by the caller
+//! ([`crate::authorization_servers`]).
+//!
+//! WHAT IS NOT HERE: a named server's FAPI profile, FAPI's own
+//! narrowing, client attestation's methods, the device authorization and
+//! CIBA grants and their endpoints, UMA's grant — each answered as Node
+//! answers with it switched off, which is its default.
 
 use serde_json::{json, Map, Value as Json};
 use sts_core::mode::Mode;
@@ -331,6 +332,11 @@ pub struct MetadataInputs<'a> {
     pub grant_types: Vec<String>,
     /// : the main port asks for a client certificate.
     pub mtls_available: bool,
+    /// `baseUrlOf(req)`: the REALM's base, where `base` is the
+    /// authorization server's (`asBaseOf()`, `/<id>` after it for a named
+    /// one). The crypto metadata, the documents and the status-list
+    /// aggregation are the realm's, not a named server's.
+    pub realm_base: &'a str,
 }
 
 fn not_false(settings: &Settings, key: &str) -> bool {
@@ -468,7 +474,7 @@ pub fn as_metadata(inputs: &MetadataInputs<'_>) -> Json {
     put("jwks_uri", json!(format!("{}/oauth2/jwks", at)));
     put(
         "crypto_metadata_uri",
-        json!(format!("{}/crypto/metadata.json", at)),
+        json!(format!("{}/crypto/metadata.json", inputs.realm_base)),
     );
     if not_false(settings, "oauth2.dynamicRegistration") {
         put(
@@ -530,15 +536,36 @@ pub fn as_metadata(inputs: &MetadataInputs<'_>) -> Json {
         "authorization_details_types_supported",
         json!(list(AUTHORIZATION_DETAILS_TYPES_SUPPORTED)),
     );
-    put("token_endpoint_auth_methods_supported", json!(methods));
+    // OAuth 2.1 mode (`oauth21.applyToMetadata()`): no `saml2_bearer`
+    // client authentication, at the token endpoint alone.
+    let token_methods: Vec<String> =
+        if settings.value_of("oauth2.oauth21").as_bool() {
+            methods
+                .iter()
+                .filter(|m| *m != "saml2_bearer")
+                .cloned()
+                .collect()
+        } else {
+            methods.clone()
+        };
+    put(
+        "token_endpoint_auth_methods_supported",
+        json!(token_methods),
+    );
     put(
         "token_endpoint_auth_signing_alg_values_supported",
         json!(accepted(TOKEN_ENDPOINT_AUTH_SIGNING_ALG_VALUES_SUPPORTED)),
     );
-    put("service_documentation", json!(format!("{}/docs", at)));
+    put(
+        "service_documentation",
+        json!(format!("{}/docs", inputs.realm_base)),
+    );
     put("ui_locales_supported", json!(inputs.ui_locales));
-    put("op_policy_uri", json!(format!("{}/policy", at)));
-    put("op_tos_uri", json!(format!("{}/tos", at)));
+    put(
+        "op_policy_uri",
+        json!(format!("{}/policy", inputs.realm_base)),
+    );
+    put("op_tos_uri", json!(format!("{}/tos", inputs.realm_base)));
     put(
         "revocation_endpoint",
         json!(format!("{}/oauth2/revoke", at)),
@@ -554,7 +581,7 @@ pub fn as_metadata(inputs: &MetadataInputs<'_>) -> Json {
     );
     put(
         "status_list_aggregation_endpoint",
-        json!(format!("{}/status-lists", at)),
+        json!(format!("{}/status-lists", inputs.realm_base)),
     );
     put(
         "introspection_endpoint_auth_methods_supported",
@@ -667,6 +694,305 @@ pub fn as_metadata(inputs: &MetadataInputs<'_>) -> Json {
         );
     }
     Json::Object(m)
+}
+
+/// `USERINFO_SIGNING_ALGS`: the RSA, curve, post-quantum and HMAC tables,
+/// then `none`.
+const USERINFO_SIGNING_ALG_VALUES_SUPPORTED: &[&str] = &[
+    "RS256",
+    "RS384",
+    "RS512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "ES256K",
+    "ML-DSA-44",
+    "ML-DSA-65",
+    "ML-DSA-87",
+    "SLH-DSA-SHA2-128s",
+    "SLH-DSA-SHAKE-128s",
+    "ML-DSA-44-ES256",
+    "ML-DSA-65-ES256",
+    "ML-DSA-87-ES384",
+    "ML-DSA-44-Ed25519",
+    "ML-DSA-65-Ed25519",
+    "ML-DSA-87-Ed448",
+    "HS256",
+    "HS384",
+    "HS512",
+    "none",
+];
+
+/// `claims_supported`: the protocol's own claims, in `idToken()`'s order,
+/// then OIDC Core section 5.4's four scopes' (`scope_claims.ts`), the
+/// Identity Assurance registered claims and `verified_claims`.
+const CLAIMS_SUPPORTED: &[&str] = &[
+    "iss",
+    "sub",
+    "aud",
+    "exp",
+    "iat",
+    "nbf",
+    "auth_time",
+    "nonce",
+    "azp",
+    "jti",
+    "at_hash",
+    "c_hash",
+    "s_hash",
+    "amr",
+    "acr",
+    "sid",
+    "session_expiry",
+    "tenant",
+    "aud_sub",
+    "device_id",
+    "name",
+    "family_name",
+    "given_name",
+    "middle_name",
+    "nickname",
+    "preferred_username",
+    "profile",
+    "picture",
+    "website",
+    "gender",
+    "birthdate",
+    "zoneinfo",
+    "locale",
+    "updated_at",
+    "email",
+    "email_verified",
+    "address",
+    "phone_number",
+    "phone_number_verified",
+    "place_of_birth",
+    "nationalities",
+    "birth_family_name",
+    "birth_given_name",
+    "birth_middle_name",
+    "salutation",
+    "title",
+    "msisdn",
+    "also_known_as",
+    "verified_claims",
+];
+
+/// `identity_assurance.ts`'s tables (section 7).
+const EVIDENCE_TYPES: &[&str] = &[
+    "document",
+    "electronic_record",
+    "vouch",
+    "electronic_signature",
+];
+const DOCUMENT_TYPES: &[&str] = &[
+    "idcard",
+    "passport",
+    "driving_permit",
+    "residence_permit",
+    "visa",
+    "birth_certificate",
+    "bank_statement",
+    "utility_statement",
+];
+const CHECK_METHODS: &[&str] = &[
+    "vpip", "vpiruv", "vri", "vdig", "vcrypt", "data", "auth", "token", "kbv",
+    "pvp", "pvr", "bvp", "bvr",
+];
+const ELECTRONIC_RECORD_TYPES: &[&str] = &[
+    "bank_account",
+    "utility_account",
+    "mortgage_account",
+    "loan_account",
+    "tax",
+    "social_security",
+    "prison_record",
+    "urn:sts:verifiable-credential",
+];
+const VERIFIABLE_CLAIMS: &[&str] = &[
+    "name",
+    "given_name",
+    "family_name",
+    "middle_name",
+    "birthdate",
+    "gender",
+    "address",
+    "email",
+    "phone_number",
+    "place_of_birth",
+    "nationalities",
+    "birth_family_name",
+    "birth_given_name",
+    "birth_middle_name",
+    "salutation",
+    "title",
+    "msisdn",
+    "also_known_as",
+];
+
+/// `DEMO_FRAMEWORK`: the framework development invents its values under.
+const DEMO_FRAMEWORK: &str = "urn:sts:demo";
+
+/// `identityAssurance.trustFrameworks()`: `oauth2.idaTrustFrameworks`,
+/// trimmed, once each, the demonstration framework left out.
+fn trust_frameworks(settings: &Settings) -> Vec<String> {
+    let raw: Vec<String> = match settings.value_of("oauth2.idaTrustFrameworks")
+    {
+        SettingValue::List(l) => l,
+        other => other.as_str().split(',').map(str::to_string).collect(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for one in raw {
+        let t = one.trim().to_string();
+        if !t.is_empty() && t != DEMO_FRAMEWORK && !out.contains(&t) {
+            out.push(t);
+        }
+    }
+    out
+}
+
+/// OpenID Connect Discovery 1.0 (`oauth2.ts`'s `oidcMetadata()`): the RFC
+/// 8414 document with the OpenID Connect members merged in — a member
+/// already there keeps its place — and the issuer of the path-appended
+/// form where one is given and `oauth2.issuer` is not pinned.
+///
+/// WHAT IS NOT HERE: CIBA's members (`oauth2.ciba`, off by default), the
+/// FAPI profile's narrowing (FAPI's slice), and the OP iframe's member
+/// (`oauth2.sessionManagement`, off by default) — each absent, as Node's
+/// document is with its feature off.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn oidc_metadata(
+    inputs: &MetadataInputs<'_>,
+    issuer: Option<&str>,
+) -> Json {
+    let settings = inputs.settings;
+    let product = inputs.mode.current() == "product";
+    let at = inputs.base;
+    let mut doc = as_metadata(inputs);
+    let pq = not_false(settings, "keys.postQuantumSigning");
+    let signing = |items: &[&str]| -> Vec<String> {
+        items
+            .iter()
+            .filter(|a| !(product && **a == "ES256K"))
+            .filter(|a| pq || !is_post_quantum(a))
+            .map(|s| s.to_string())
+            .collect()
+    };
+    let encryption: Vec<String> = AUTHORIZATION_ENCRYPTION_ALG_VALUES_SUPPORTED
+        .iter()
+        .filter(|a| !(product && **a == "RSA-OAEP"))
+        .map(|s| s.to_string())
+        .collect();
+    let encs: Vec<String> = AUTHORIZATION_ENCRYPTION_ENC_VALUES_SUPPORTED
+        .iter()
+        .filter(|e| !(product && e.contains("CBC")))
+        .map(|s| s.to_string())
+        .collect();
+    let front = settings.value_of("oauth2.frontchannelLogout").as_bool();
+    let back = settings.value_of("oauth2.backchannelLogout").as_bool();
+    let mut claims = list(CLAIMS_SUPPORTED);
+    if settings.value_of("oauth2.didClaim").as_bool() {
+        claims.push("did".into());
+    }
+    let Some(m) = doc.as_object_mut() else {
+        return doc;
+    };
+    let mut put = |k: &str, v: Json| {
+        m.insert(k.to_string(), v);
+    };
+    put(
+        "userinfo_endpoint",
+        json!(format!("{}/oauth2/userinfo", at)),
+    );
+    put(
+        "userinfo_signing_alg_values_supported",
+        json!(signing(USERINFO_SIGNING_ALG_VALUES_SUPPORTED)),
+    );
+    put(
+        "userinfo_encryption_alg_values_supported",
+        json!(encryption),
+    );
+    put("userinfo_encryption_enc_values_supported", json!(encs));
+    put(
+        "subject_types_supported",
+        json!(["public", "pairwise", "ephemeral"]),
+    );
+    put(
+        "id_token_encryption_alg_values_supported",
+        json!(encryption),
+    );
+    put("id_token_encryption_enc_values_supported", json!(encs));
+    put(
+        "id_token_signing_alg_values_supported",
+        json!(signing(AUTHORIZATION_SIGNING_ALG_VALUES_SUPPORTED)),
+    );
+    put("claims_supported", json!(claims));
+    put(
+        "claim_types_supported",
+        json!(["normal", "aggregated", "distributed"]),
+    );
+    put(
+        "prompt_values_supported",
+        json!(["none", "login", "consent", "select_account"]),
+    );
+    put(
+        "display_values_supported",
+        json!(["page", "popup", "touch"]),
+    );
+    put("claims_locales_supported", json!(["en-US"]));
+    put("claims_parameter_supported", json!(true));
+    put(
+        "end_session_endpoint",
+        json!(format!("{}/oauth2/logout", at)),
+    );
+    if settings.value_of("oauth2.sessionManagement").as_bool() {
+        put(
+            "check_session_iframe",
+            json!(format!("{}/oauth2/check_session", inputs.realm_base)),
+        );
+    }
+    put("frontchannel_logout_supported", json!(front));
+    put("frontchannel_logout_session_supported", json!(front));
+    put("backchannel_logout_supported", json!(back));
+    put("backchannel_logout_session_supported", json!(back));
+    if let Some(i) = issuer {
+        if settings.value_of("oauth2.issuer").as_str().is_empty() {
+            put("issuer", json!(i));
+        }
+    }
+    let userinfo = format!("{}/oauth2/userinfo", at);
+    if let Some(aliases) = m
+        .get_mut("mtls_endpoint_aliases")
+        .and_then(Json::as_object_mut)
+    {
+        aliases.insert("userinfo_endpoint".into(), json!(userinfo));
+    }
+    let mut frameworks = trust_frameworks(settings);
+    if inputs.mode.invents_claim_values() {
+        frameworks.push(DEMO_FRAMEWORK.into());
+    }
+    m.insert("verified_claims_supported".into(), json!(true));
+    m.insert("trust_frameworks_supported".into(), json!(frameworks));
+    m.insert("evidence_supported".into(), json!(list(EVIDENCE_TYPES)));
+    m.insert("documents_supported".into(), json!(list(DOCUMENT_TYPES)));
+    m.insert(
+        "documents_check_methods_supported".into(),
+        json!(list(CHECK_METHODS)),
+    );
+    m.insert(
+        "electronic_records_supported".into(),
+        json!(list(ELECTRONIC_RECORD_TYPES)),
+    );
+    m.insert(
+        "claims_in_verified_claims_supported".into(),
+        json!(list(VERIFIABLE_CLAIMS)),
+    );
+    m.insert("attachments_supported".into(), json!([]));
+    m.insert("native_sso_supported".into(), json!(true));
+    doc
 }
 
 /// 's claims: the document,  its issuer, and

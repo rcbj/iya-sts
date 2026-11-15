@@ -246,103 +246,16 @@ pub fn tabbed_panels(cls: &str, panels: &[(&str, &str, String)]) -> String {
     )
 }
 
-/// `WebLocale.safeReturn(value)`: a local path, or `/`.
-fn safe_return(value: &str) -> String {
-    let n = value.encode_utf16().count();
-    let ok = n > 0
-        && n <= 2048
-        && value.starts_with('/')
-        && !value[1..].starts_with('/')
-        && !value
-            .chars()
-            .any(|c| c == '\\' || (c as u32) < 0x20 || c == '\u{7f}')
-        && !{
-            let head: String = value[1..]
-                .chars()
-                .take_while(|c| !matches!(c, '/' | '?' | '#'))
-                .collect();
-            head.contains(':')
-        };
-    if ok {
-        value.to_string()
-    } else {
-        "/".to_string()
-    }
-}
-
-/// `PageLocale.chooser(t, base, returnTo)` (`WebLocale.chooserHtml()` in
-/// its collapsed row, #1289): a form posting to `/authn/language`, the
-/// offered locales by their own names, the current one selected.
+/// `PageLocale.chooser(t, base, returnTo)`: the one copy is the shared
+/// error page's (`sts_http::error_page::chooser`), which every server-drawn
+/// page with a language row draws.
 #[tracing::instrument(level = "trace", skip_all)]
 pub fn chooser(
     t: &sts_http::i18n::Translator<'_>,
     catalogs: &sts_http::i18n::Catalogs,
     return_to: &str,
 ) -> String {
-    let here = safe_return(return_to);
-    let current = t.negotiated.locale.to_lowercase();
-    let offered = catalogs.offered();
-    let tag_of = |o: &serde_json::Value| -> String {
-        o.get("tag")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_string()
-    };
-    let name_of = |o: &serde_json::Value| -> String {
-        o.get("name")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("")
-            .to_string()
-    };
-    let exact = offered.iter().find(|o| tag_of(o).to_lowercase() == current);
-    let same = offered.iter().find(|o| {
-        catalogs.negotiate(&[tag_of(o)], "").catalog == t.negotiated.catalog
-    });
-    let selected = exact
-        .or(same)
-        .or(offered.first())
-        .map(tag_of)
-        .unwrap_or_default();
-    let drawn: String = offered
-        .iter()
-        .map(|o| {
-            let tag = tag_of(o);
-            format!(
-                "<option value=\"{}\" lang=\"{}\"{}>{}</option>",
-                kit_esc(&tag),
-                kit_esc(&tag),
-                if tag == selected { " selected" } else { "" },
-                kit_esc(&name_of(o))
-            )
-        })
-        .collect();
-    let chosen = offered.iter().find(|o| tag_of(o) == selected);
-    let label = t.text("chooser.label", &[]);
-    let form = format!(
-        "<form class=\"language-chooser\" method=\"post\" \
-         action=\"/authn/language\"><input type=\"hidden\" name=\"return\" \
-         value=\"{}\"><label for=\"sts-language\">{}</label> <select \
-         id=\"sts-language\" name=\"lang\">{}</select> <button \
-         type=\"submit\">{}</button></form>",
-        kit_esc(&here),
-        label,
-        drawn,
-        t.text("chooser.change", &[])
-    );
-    format!(
-        "<details class=\"language-row\"><summary><span \
-         class=\"lr-label\">{}</span>{}</summary>{}</details>",
-        label,
-        match chosen {
-            Some(c) => format!(
-                " <span class=\"lr-current\" lang=\"{}\">{}</span>",
-                kit_esc(&tag_of(c)),
-                kit_esc(&name_of(c))
-            ),
-            None => String::new(),
-        },
-        form
-    )
+    sts_http::error_page::chooser(t, catalogs, return_to)
 }
 
 #[cfg(test)]

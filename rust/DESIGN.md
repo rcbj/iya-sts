@@ -300,7 +300,10 @@ rust/
                                  client authentication, /oauth2/authorize with
                                  the hand-off to sign-in, the code, refresh and
                                  client credentials grants, refresh families,
-                                 RFC 8414 discovery, the JWKS, the core ID Token.
+                                 RFC 8414 discovery, the JWKS, the core ID Token;
+                                 OpenID discovery, named authorization servers
+                                 and the issuer-with-path forms, the shared
+                                 error page and RFC 9700's interstitial, JARM.
                                  Held to Node by tests/tools/oauth-vectors.js
                                  both ways (the code flow: 78 requests alike)
                                  and over the wire by rust-console-e2e.sh (the

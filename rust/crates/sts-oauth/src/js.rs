@@ -177,6 +177,20 @@ pub fn string_of(value: Option<&Json>) -> String {
     }
 }
 
+/// `!!value`: JavaScript's truthiness of a JSON value.
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn truthy(value: Option<&Json>) -> bool {
+    match value {
+        None | Some(Json::Null) => false,
+        Some(Json::Bool(b)) => *b,
+        Some(Json::Number(n)) => {
+            n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan())
+        }
+        Some(Json::String(t)) => !t.is_empty(),
+        Some(_) => true,
+    }
+}
+
 /// `URLSearchParams#toString()`: application/x-www-form-urlencoded, space
 /// as `+`, and only `*-._` and alphanumerics left as they are.
 pub fn form_encode(pairs: &[(String, String)]) -> String {
@@ -185,6 +199,31 @@ pub fn form_encode(pairs: &[(String, String)]) -> String {
         .map(|(k, v)| format!("{}={}", form_component(k), form_component(v)))
         .collect::<Vec<_>>()
         .join("&")
+}
+
+/// `encodeURIComponent()`: everything but `A-Za-z0-9-_.!~*'()` escaped
+/// as UTF-8 octets.
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn encode_uri_component(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.as_bytes() {
+        match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => out.push(*byte as char),
+            other => out.push_str(&format!("%{:02X}", other)),
+        }
+    }
+    out
 }
 
 fn form_component(text: &str) -> String {

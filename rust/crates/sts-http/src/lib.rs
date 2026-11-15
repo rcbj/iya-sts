@@ -49,6 +49,7 @@ pub mod client_address;
 pub mod cookie_wire;
 pub mod cors;
 pub mod csp;
+pub mod error_page;
 pub mod express;
 pub mod fault;
 pub mod files;

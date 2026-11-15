@@ -54,6 +54,7 @@
 #![forbid(unsafe_code)]
 
 pub mod answer;
+pub mod authorization_servers;
 pub mod authorize;
 pub mod bcp;
 pub mod client_auth;
@@ -63,6 +64,7 @@ pub mod dpop_reservation;
 pub mod dpop_stores;
 pub mod grants;
 pub mod id_token;
+pub mod jarm;
 pub mod js;
 pub mod jwks;
 pub mod jwt_access_token;

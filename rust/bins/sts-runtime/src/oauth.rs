@@ -46,6 +46,7 @@ use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::{RealmMap, StoreHandles};
 use sts_core::settings::Settings;
 use sts_directory::Directory;
+use sts_oauth::authorization_servers::{self as named, AuthorizationServers};
 use sts_oauth::authorize::{
     AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoConsents,
     NoGatedScopes,
@@ -71,6 +72,8 @@ pub struct OAuthParts {
     pub persistence: Arc<Persistence>,
     pub live: Arc<MemoryDirectory>,
     pub sessions: Arc<sts_authn::Sessions>,
+    /// The page footer's facts, for the error page (#1326).
+    pub footer: sts_http::footer::Facts,
     pub pending: RealmMap<Json>,
     pub people: Arc<dyn sts_authn::ports::People>,
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
@@ -90,6 +93,8 @@ pub struct OAuthStack {
     pub authorize: Arc<AuthorizationEndpoint>,
     pub tokens: Arc<TokenEndpoint>,
     pub sessions: Arc<sts_authn::Sessions>,
+    /// The named authorization servers (rule 3j).
+    pub servers: Arc<AuthorizationServers>,
 }
 
 /// The ambient realm's key set, as the JWKS reads it.
@@ -380,7 +385,18 @@ impl OAuthStack {
             people: Arc::new(Directories(parts.people.clone())),
             sessions: Arc::new(GrantSessionsOf(parts.sessions.clone())),
         });
-        let for_caps = (settings.clone(), mode.clone(), parts.catalogs.clone());
+        let servers = AuthorizationServers::declare(
+            &parts.lifecycle,
+            &parts.handles,
+            settings.clone(),
+            Arc::new(sts_core::time::now_ms_f64),
+        );
+        let for_caps = (
+            settings.clone(),
+            mode.clone(),
+            parts.catalogs.clone(),
+            servers.clone(),
+        );
         let grant_list = tokens.grant_types_supported();
         let authorize = Arc::new(AuthorizationEndpoint {
             settings: settings.clone(),
@@ -401,20 +417,36 @@ impl OAuthStack {
             consents: Arc::new(NoConsents),
             pages: Arc::new(CatalogPages {
                 catalogs: parts.catalogs.clone(),
+                footer: parts.footer.clone(),
+                // The runtime writes its audit rows to the log (`LogAudit`):
+                // no ring, so no incident ID to reserve.
+                incident: Arc::new(|| 0),
             }),
+            signer: Some(signer.clone()),
+            // `capabilityFor(req, member)`: the document this request's
+            // authorization server publishes, its profile applied.
             capabilities: Arc::new(move |base: &str| {
-                let (settings, mode, catalogs) = &for_caps;
-                sts_oauth::metadata::as_metadata(
-                    &sts_oauth::metadata::MetadataInputs {
-                        settings,
-                        mode,
-                        base,
-                        ui_locales: offered(catalogs),
-                        grant_types: grant_list.clone(),
-                        mtls_available: settings
-                            .value_of("global.https")
-                            .as_bool(),
-                    },
+                let (settings, mode, catalogs, servers) = &for_caps;
+                let id = named::current();
+                let own = named::path_of(&id);
+                let realm_base =
+                    base.strip_suffix(own.as_str()).unwrap_or(base);
+                servers.capabilities_of(
+                    &id,
+                    sts_oauth::metadata::as_metadata(
+                        &sts_oauth::metadata::MetadataInputs {
+                            settings,
+                            mode,
+                            base,
+                            ui_locales: offered(catalogs),
+                            grant_types: grant_list.clone(),
+                            mtls_available: settings
+                                .value_of("global.https")
+                                .as_bool(),
+                            realm_base,
+                        },
+                    ),
+                    "oauth",
                 )
             }),
             now_ms: Arc::new(sts_core::time::now_ms_f64),
@@ -431,6 +463,7 @@ impl OAuthStack {
             authorize,
             tokens,
             sessions: parts.sessions,
+            servers,
         })
     }
 
@@ -526,7 +559,7 @@ impl OAuthStack {
                 let (me, h) = (me.clone(), h.clone());
                 move |r: AxumRequest| {
                     let (me, h) = (me.clone(), h.clone());
-                    async move { me.metadata(h, r).await }
+                    async move { me.metadata(h, r, false, None).await }
                 }
             }),
         );
@@ -536,11 +569,11 @@ impl OAuthStack {
                 let (me, h) = (me.clone(), h.clone());
                 move |r: AxumRequest| {
                     let (me, h) = (me.clone(), h.clone());
-                    async move { me.metadata(h, r).await }
+                    async move { me.metadata(h, r, true, None).await }
                 }
             }),
         );
-        routes.route(
+        let routes = routes.route(
             "/oauth2/autopost.js",
             axum::routing::get(|| async {
                 let mut response = (
@@ -565,6 +598,115 @@ impl OAuthStack {
                 }
                 response
             }),
+        );
+        self.discovery_routes(routes, http)
+    }
+
+    /// The issuer-with-path forms (RFC 8414 section 3.1's inserted one and
+    /// OpenID Connect Discovery section 4's appended one), the endpoints
+    /// under every named authorization server's own name, and the
+    /// documents the metadata links to.
+    fn discovery_routes(
+        self: &Arc<Self>,
+        routes: axum::Router,
+        http: Arc<sts_http::HttpLayer>,
+    ) -> axum::Router {
+        use axum::extract::Path;
+        let me = self.clone();
+        let h = http;
+        let routes = routes.route(
+            "/.well-known/oauth-authorization-server/{*rest}",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |Path(rest): Path<String>, r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.discovery_for_path(h, r, rest, false).await }
+                }
+            }),
+        );
+        let routes = routes.route(
+            "/.well-known/openid-configuration/{*rest}",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |Path(rest): Path<String>, r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.discovery_for_path(h, r, rest, true).await }
+                }
+            }),
+        );
+        let routes = routes.route(
+            "/{as}/.well-known/openid-configuration",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |Path(server): Path<String>, r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.appended_discovery(h, r, server).await }
+                }
+            }),
+        );
+        let authorize = {
+            let (me, h) = (me.clone(), h.clone());
+            move |Path(server): Path<String>, r: AxumRequest| {
+                let (me, h) = (me.clone(), h.clone());
+                async move {
+                    let inner = me.clone();
+                    me.for_profile(server, move || inner.authorize(h, r)).await
+                }
+            }
+        };
+        let routes = routes.route(
+            "/{as}/oauth2/authorize",
+            axum::routing::get(authorize.clone())
+                .post(authorize)
+                .fallback(unrouted),
+        );
+        let routes = routes.route(
+            "/{as}/oauth2/token",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |Path(server): Path<String>, r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move {
+                        let inner = me.clone();
+                        me.for_profile(server, move || inner.token(h, r)).await
+                    }
+                }
+            })
+            .fallback(unrouted),
+        );
+        // `/docs`, `/policy`, `/tos`: the documents the metadata links to.
+        let routes = routes.route(
+            "/docs",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move {
+                        let (base, _, _, _) = me.arrived(&h, &r);
+                        text_document(&format!(
+                            "Authorization server (service_documentation).\n\n\
+                             Every endpoint in {}/.well-known/oauth-authorization-server \
+                             answers.\nTokens are RS256 JWTs signed with the key at \
+                             {}/oauth2/jwks.\nNo credential is ever verified: this \
+                             server exists to exercise a client.\n",
+                            base, base
+                        ))
+                    }
+                }
+            }),
+        );
+        let routes = routes.route(
+            "/policy",
+            axum::routing::get(|| async {
+                text_document(
+                    "Authorization server policy (op_policy_uri). Test data \
+                     only.\n",
+                )
+            }),
+        );
+        routes.route(
+            "/tos",
+            axum::routing::get(|| async { text_document(&tos_text()) }),
         )
     }
 
@@ -583,11 +725,16 @@ impl OAuthStack {
             .copied();
         let headers = request.headers().clone();
         let prefix = http.registry().current_prefix();
-        let base = sts_authn_api::router::base_of(
-            &self.settings,
-            &headers,
-            over_tls,
-            &prefix,
+        // `asBaseOf(req)`: a named authorization server is its own issuer.
+        let base = format!(
+            "{}{}",
+            sts_authn_api::router::base_of(
+                &self.settings,
+                &headers,
+                over_tls,
+                &prefix,
+            ),
+            named::path_of(&named::current())
         );
         let address = http.client_address_of(&headers, peer.as_ref());
         let body = request
@@ -632,6 +779,7 @@ impl OAuthStack {
             accept: header_of(&headers, "accept"),
             accept_language: header_of(&headers, "accept-language"),
             base,
+            prefix: http.registry().current_prefix(),
             request: session_request.clone(),
         };
         // `/oauth2/authorize` IS AN ARRIVAL PATH (`ARRIVAL_PATHS`): a
@@ -703,26 +851,43 @@ impl OAuthStack {
         sendable(self.tokens.answer(&ask)).await.into_response()
     }
 
+    /// `sendAsMetadata()` and `sendOidcMetadata()`: the document of the
+    /// request's authorization server, its profile applied (twice for the
+    /// OpenID one, as Node applies it: the OpenID members are merged after
+    /// `asMetadata()` ran), signed.
     async fn metadata(
         self: Arc<Self>,
         http: Arc<sts_http::HttpLayer>,
         request: AxumRequest,
+        oidc: bool,
+        issuer: Option<String>,
     ) -> Response {
         self.ensure_keys().await;
         let (base, _, _, _) = self.arrived(&http, &request);
-        let mut doc = sts_oauth::metadata::as_metadata(
-            &sts_oauth::metadata::MetadataInputs {
-                settings: &self.settings,
-                mode: &self.mode,
-                base: &base,
-                ui_locales: offered(&self.catalogs),
-                grant_types: self.tokens.grant_types_supported(),
-                mtls_available: self
-                    .settings
-                    .value_of("global.https")
-                    .as_bool(),
-            },
-        );
+        let id = named::current();
+        let own = named::path_of(&id);
+        let realm_base =
+            base.strip_suffix(own.as_str()).unwrap_or(&base).to_string();
+        let inputs = sts_oauth::metadata::MetadataInputs {
+            settings: &self.settings,
+            mode: &self.mode,
+            base: &base,
+            ui_locales: offered(&self.catalogs),
+            grant_types: self.tokens.grant_types_supported(),
+            mtls_available: self.settings.value_of("global.https").as_bool(),
+            realm_base: &realm_base,
+        };
+        let mut doc = if oidc {
+            let applied =
+                sts_oauth::metadata::oidc_metadata(&inputs, issuer.as_deref());
+            self.servers.capabilities_of(&id, applied, "oauth")
+        } else {
+            self.servers.capabilities_of(
+                &id,
+                sts_oauth::metadata::as_metadata(&inputs),
+                "oauth",
+            )
+        };
         let claims = sts_oauth::metadata::signed_metadata_claims(
             &doc,
             chrono::Utc::now().timestamp(),
@@ -753,6 +918,153 @@ impl OAuthStack {
         )
             .into_response()
     }
+
+    /// `issuerPathTarget(raw)`: `[realm/<id>][/<server>]` — a realm that
+    /// exists, named only where no realm is entered yet, and at most one
+    /// server segment of the profile id's shape; `None` names nothing.
+    fn issuer_path_target(
+        &self,
+        raw: &str,
+    ) -> Option<(Arc<sts_core::realm::Realm>, String)> {
+        let mut segments: Vec<&str> =
+            raw.split('/').filter(|s| !s.is_empty()).collect();
+        let mut realm = sts_core::realm::current();
+        if segments.first() == Some(&"realm") {
+            let named_realm = if segments.len() >= 2 && realm.is_default() {
+                self.registry.get(segments[1])
+            } else {
+                None
+            };
+            match named_realm {
+                Some(r) if segments[1] != sts_core::realm::DEFAULT_ID => {
+                    realm = r;
+                }
+                _ => return None,
+            }
+            segments.drain(..2);
+        }
+        if segments.len() > 1
+            || (segments.len() == 1 && !named::id_shape(segments[0]))
+        {
+            return None;
+        }
+        Some((realm, segments.first().unwrap_or(&"").to_string()))
+    }
+
+    /// `profileFromPath(raw)`: fetching the metadata is accessing the
+    /// server, so a name that arrives here is created as at an endpoint.
+    fn profile_from_path(&self, server: &str) -> String {
+        if server.is_empty() || server == named::DEFAULT_ID {
+            return named::DEFAULT_ID.to_string();
+        }
+        self.servers.ensure(server, true, true);
+        server.to_string()
+    }
+
+    /// `discoveryForPath()`: the RFC 8414 inserted form, answered inside
+    /// the realm and for the server the path names, or Express's 404
+    /// (`STS-OAUTH-0594`).
+    async fn discovery_for_path(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+        rest: String,
+        oidc: bool,
+    ) -> Response {
+        let Some((realm, server)) = self.issuer_path_target(&rest) else {
+            tracing::debug!(
+                "{}oauth2: the discovery path names nothing.",
+                sts_core::log::tag(sts_core::errors::codes::STS_OAUTH_0594)
+            );
+            return unrouted(request).await;
+        };
+        let me = self.clone();
+        sts_core::realm::run(realm, async move {
+            let id = me.profile_from_path(&server);
+            named::run(id, me.metadata(http, request, oidc, None)).await
+        })
+        .await
+    }
+
+    /// The path-appended form, `/<server>/.well-known/openid-configuration`:
+    /// the issuer built back up from the path the request arrived on.
+    async fn appended_discovery(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+        server: String,
+    ) -> Response {
+        let target = self.issuer_path_target(&server);
+        if target.is_none() || server == "realm" {
+            tracing::debug!(
+                "{}oauth2: the discovery path names nothing.",
+                sts_core::log::tag(sts_core::errors::codes::STS_OAUTH_0594)
+            );
+            return unrouted(request).await;
+        }
+        let id = self.profile_from_path(&server);
+        let me = self.clone();
+        named::run(id, async move {
+            let (base, _, _, _) = me.arrived(&http, &request);
+            me.clone().metadata(http, request, true, Some(base)).await
+        })
+        .await
+    }
+
+    /// `forProfile(handler)`: a route under `/<as>/…` answered for that
+    /// authorization server, created on first sight; a malformed name is
+    /// refused `invalid_request` (`STS-OAUTH-0186`).
+    async fn for_profile<F, Fut>(
+        self: Arc<Self>,
+        server: String,
+        handler: F,
+    ) -> Response
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Response>,
+    {
+        // `validation.checkParsed({ as }, 'params', AS_PROFILE_PARAMS)`:
+        // the model bounds the segment; an unknown name is not refused.
+        let mut params = Map::new();
+        params.insert("as".into(), Json::from(server.clone()));
+        let id = match sts_oauth::model::check(
+            "authorization-server",
+            &params,
+            "params",
+        ) {
+            Ok(v) => sts_oauth::js::string_of(v.get("as")).trim().to_string(),
+            Err(e) => {
+                return sts_oauth::answer::Answer::refusal(
+                    sts_core::errors::codes::STS_OAUTH_0186,
+                    400,
+                    "invalid_request",
+                    &e.detail,
+                )
+                .into_response();
+            }
+        };
+        self.servers.ensure(&id, true, true);
+        named::run(id, handler()).await
+    }
+}
+
+/// `res.type('text/plain').send(text)`.
+fn text_document(text: &str) -> Response {
+    (
+        axum::http::StatusCode::OK,
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; charset=utf-8",
+        )],
+        text.to_string(),
+    )
+        .into_response()
+}
+
+/// `/tos`'s text.
+fn tos_text() -> String {
+    "Authorization server terms of service (op_tos_uri). Test data only.\n"
+        .to_string()
 }
 
 /// `i18n.offered()`'s tags.

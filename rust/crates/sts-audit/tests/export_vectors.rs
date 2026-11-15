@@ -10,12 +10,10 @@
 //! `view()`. Then the static half (`canonical()`, `syslogLine()`, the
 //! classifiers and readers) over Node's own inputs.
 //!
-//! ONE PINNED DISAGREEMENT, a Node defect: Node's UDP syslog never
-//! transmits — `sendUdp()` calls `setTimeout()` on a `dgram.Socket`, which
-//! has none, so every send fails `STS-AUDIT-0006` ("sock.setTimeout is not
-//! a function") and the cursor never moves. Rust transmits. The `udp`
-//! destination of the syslog scenario is checked for that and left out of
-//! the comparison.
+//! UDP syslog is compared like every other destination. It was pinned as a
+//! disagreement until Node's `sendUdp()` was fixed (#1787): it called
+//! `setTimeout()` on a `dgram.Socket`, which has none, so every send failed
+//! and the cursor never moved. Node transmits now, as Rust always did.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)] // a test file
 
@@ -277,25 +275,6 @@ fn files_of(dir: &str) -> Json {
     )
 }
 
-/// Leaves the `udp` destination out of a syslog-scenario answer.
-fn without_udp(v: &Json) -> Json {
-    let mut v = v.clone();
-    if let Some(c) = v.get_mut("cursors").and_then(Json::as_object_mut) {
-        c.shift_remove("udp");
-    }
-    if let Some(r) = v.get_mut("recorded").and_then(Json::as_array_mut) {
-        r.retain(|row| row["target"] != json!("udp"));
-    }
-    if let Some(s) = v.get_mut("sent").and_then(Json::as_array_mut) {
-        s.retain(|one| one["kind"] != json!("udp"));
-    }
-    if let Some(d) = v.get_mut("destinations").and_then(Json::as_array_mut) {
-        d.retain(|one| one["id"] != json!("udp"));
-        v.as_object_mut().unwrap().shift_remove("stats");
-    }
-    v
-}
-
 #[tokio::test]
 async fn export_vectors() {
     let Some(v) = vectors() else {
@@ -419,28 +398,21 @@ async fn export_vectors() {
                         "recorded": take(&book.recorded),
                         "cursors": cursors_of(&exporter, &want),
                     });
-                    let (g, w) = if name == "syslog" {
-                        let udp: Vec<&Json> = got["sent"]
-                            .as_array()
-                            .unwrap()
-                            .iter()
-                            .filter(|s| s["kind"] == json!("udp"))
-                            .collect();
-                        assert_eq!(udp.len(), 4, "Rust transmits UDP");
-                        assert!(
-                            want["recorded"]
-                                .to_string()
-                                .contains("setTimeout is not a function")
-                                || want["cursors"]["udp"]["lastFailure"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .contains("setTimeout"),
-                            "Node's UDP defect is as pinned"
-                        );
-                        (without_udp(&got), without_udp(&want))
-                    } else {
-                        (got, want.clone())
-                    };
+                    if name == "syslog" {
+                        let udp = |v: &Json| -> usize {
+                            v["sent"]
+                                .as_array()
+                                .map(|l| {
+                                    l.iter()
+                                        .filter(|s| s["kind"] == json!("udp"))
+                                        .count()
+                                })
+                                .unwrap_or(0)
+                        };
+                        assert_eq!(udp(&got), 4, "Rust transmits UDP");
+                        assert_eq!(udp(&want), 4, "Node transmits UDP");
+                    }
+                    let (g, w) = (got, want.clone());
                     same(&format!("{} ran", what), &g["ran"], &w["ran"]);
                     assert_eq!(
                         sorted(&g["sent"]),
@@ -462,11 +434,7 @@ async fn export_vectors() {
                 }
                 "view" => {
                     let got = exporter.view();
-                    let (g, w) = if name == "syslog" {
-                        (without_udp(&got), without_udp(&want))
-                    } else {
-                        (got, want.clone())
-                    };
+                    let (g, w) = (got, want.clone());
                     same(&what, &g, &w);
                 }
                 // A rotated name carries the instant of the rotation:
