@@ -34,6 +34,149 @@ use sts_saml::assertion::{
 use sts_saml::binding::{self, PostNote, QuerySigner};
 use sts_saml::request;
 use sts_saml::response::{self, ResponseOptions};
+use sts_saml::signature::{self, AssessSpec, Assessment, NoDoor, Requirement};
+
+fn list_of(v: &Json) -> Vec<String> {
+    match v {
+        Json::Array(a) => a
+            .iter()
+            .map(|x| x.as_str().unwrap_or("").to_string())
+            .collect(),
+        Json::Null => Vec::new(),
+        other => vec![other.as_str().unwrap_or("").to_string()],
+    }
+}
+
+fn assessment_json(a: &Assessment) -> Json {
+    json!({
+        "signed": a.signed, "outcome": a.outcome, "binding": a.binding,
+        "sigAlg": a.sig_alg, "weak": a.weak, "why": a.why,
+        "errorCode": a.error_code.map(|c| c.as_str()).unwrap_or(""),
+        "keyInfoCertificate": a.key_info_certificate,
+        "registered": a.registered,
+    })
+}
+
+/// The signature vectors: assess(), refusal(), requiresSignedRequests(),
+/// authenticateSoapCaller() and redirectOctets(), each as Node answered.
+fn signature_checks(v: &Json, policy: &XmlPolicy) -> (usize, Vec<String>) {
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    let setting = s(&v["setting"]).to_string();
+    let accepts = v["acceptsUnsigned"].as_bool().unwrap();
+    for c in v["cases"].as_array().unwrap() {
+        checked += 1;
+        let spec = &c["spec"];
+        let params: Vec<(String, Vec<String>)> = spec["params"]
+            .as_object()
+            .map(|m| m.iter().map(|(k, x)| (k.clone(), list_of(x))).collect())
+            .unwrap_or_default();
+        let registered = list_of(&spec["fields"]["samlSigningCertificate"]);
+        let ours = signature::assess(
+            &AssessSpec {
+                binding: s(&spec["binding"]),
+                raw_query: s(&spec["rawQuery"]),
+                params: &params,
+                xml: s(&spec["xml"]),
+                root_local_name: s(&spec["rootLocalName"]),
+                message_field: s(&spec["messageField"]),
+                registered: &registered,
+                purpose: "",
+            },
+            policy,
+            &NoDoor,
+        );
+        if assessment_json(&ours) != c["assessment"] {
+            failures.push(format!(
+                "assess {}:\n  node {}\n  rust {}",
+                c["name"],
+                c["assessment"],
+                assessment_json(&ours)
+            ));
+        }
+    }
+    for r in v["refusals"].as_array().unwrap() {
+        checked += 2;
+        let need = Requirement {
+            declared: s(&r["declared"]).to_string(),
+            setting: setting.clone(),
+            accepts_unsigned: accepts,
+        };
+        let (required, why) = need.required();
+        if json!({ "required": required, "why": why }) != r["required"] {
+            failures.push(format!("required {}: {}", r["name"], r["required"]));
+        }
+        let case = v["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == r["name"])
+            .unwrap();
+        let a = &case["assessment"];
+        let assessment = Assessment {
+            signed: a["signed"].as_bool().unwrap(),
+            outcome: match s(&a["outcome"]) {
+                "verified" => "verified",
+                "failed" => "failed",
+                "no-certificate" => "no-certificate",
+                _ => "unsigned",
+            },
+            why: s(&a["why"]).to_string(),
+            error_code: sts_core::errors::known(s(&a["errorCode"])),
+            ..Assessment::default()
+        };
+        let (refuse, code, why) = signature::refusal(&assessment, &need);
+        let got = json!({ "refuse": refuse,
+            "errorCode": code.map(|c| c.as_str()).unwrap_or(""),
+            "why": why });
+        if got != r["answer"] {
+            failures.push(format!(
+                "refusal {} {}:\n  node {}\n  rust {}",
+                r["name"], r["declared"], r["answer"], got
+            ));
+        }
+    }
+    for c in v["soap"].as_array().unwrap() {
+        checked += 1;
+        let need = Requirement {
+            declared: s(&c["declared"]).to_string(),
+            setting: setting.clone(),
+            accepts_unsigned: accepts,
+        };
+        let reg = vec![v["cases"][2]["spec"]["fields"]
+            ["samlSigningCertificate"][1]
+            .as_str()
+            .unwrap()
+            .to_string()];
+        let ours = signature::authenticate_soap_caller(
+            s(&c["xml"]),
+            "AuthnRequest",
+            &reg,
+            s(&c["tls"]),
+            &need,
+            policy,
+            &NoDoor,
+        );
+        let got = json!({ "refuse": ours.refuse,
+            "errorCode": ours.error_code.map(|c| c.as_str()).unwrap_or(""),
+            "why": ours.why, "via": ours.via,
+            "assessment": assessment_json(&ours.assessment) });
+        if got != c["answer"] {
+            failures.push(format!(
+                "soap {} {}:\n  node {}\n  rust {}",
+                c["name"], c["declared"], c["answer"], got
+            ));
+        }
+    }
+    for o in v["octets"].as_array().unwrap() {
+        checked += 1;
+        let ours = signature::redirect_octets(s(&o["rawQuery"]), "SAMLRequest");
+        if ours != s(&o["octets"]) {
+            failures.push(format!("octets {}: {}", o["rawQuery"], ours));
+        }
+    }
+    (checked, failures)
+}
 
 fn s(v: &Json) -> &str {
     v.as_str().unwrap_or("")
@@ -190,6 +333,13 @@ fn node_saml_vectors_both_ways() {
     let mut fail = |what: String| failures.push(what);
     let mut signed_out = Vec::new();
     let mut checked = 0;
+
+    // The service provider's signature.
+    let (n, more) = signature_checks(&v["signatures"], &signer.policy);
+    checked += n;
+    for m in more {
+        fail(m);
+    }
 
     // The assertions.
     for a in v["assertions"].as_array().unwrap() {

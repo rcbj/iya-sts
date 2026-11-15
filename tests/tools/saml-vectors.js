@@ -284,9 +284,159 @@ function build(ROOT) {
   });
   artifacts.location = String(res.location || '');
 
-  return { signer: signer, assertions: assertions, responses: responses,
+  // THE SERVICE PROVIDER'S SIGNATURE (request_signature.ts).
+  const signatures = signatureVectors(ROOT, request);
+
+  return { signer: signer, signatures: signatures,
+           assertions: assertions, responses: responses,
            bindings: bindings, requests: requests, artifacts: artifacts,
            idpEntityId: direct.idpEntityId() };
+}
+
+// request_signature.ts's assess(), refusal() and authenticateSoapCaller()
+// over a service provider's key: every outcome and refusal, each binding.
+function signatureVectors(ROOT, request) {
+  const stsCrypto = require(path.join(ROOT, 'common', 'crypto.js'));
+  const engine = require(path.join(ROOT, 'common', 'crypto_impl',
+                                   'xmldsig.js'));
+  const rs = require(path.join(ROOT, 'saml', 'request_signature'));
+  const sp = engine.generateKeyPair(2048, 'SP Signer');
+  const other = engine.generateKeyPair(2048, 'Another SP');
+  const der = sp.certPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  const otherDer = other.certPem.replace(/-----[^-]+-----/g, '')
+    .replace(/\s+/g, '');
+  const RSA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+  const RSA1 = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1';
+  const signedPost = stsCrypto.signXml(request, {
+    privateKeyPem: sp.privateKeyPem, certPem: sp.certPem });
+  const deflated = encodeURIComponent(zlib.deflateRawSync(
+    Buffer.from(request)).toString('base64'));
+  const redirect = function (sigAlg, relay, key) {
+    let qs = 'SAMLRequest=' + deflated +
+      (relay !== undefined ? '&RelayState=' + encodeURIComponent(relay) : '') +
+      '&SigAlg=' + encodeURIComponent(sigAlg);
+    let signature;
+    try {
+      signature = stsCrypto.signQueryString(qs, (key || sp).privateKeyPem,
+                                            sigAlg);
+    } catch (e) {
+      signature = 'AAAA';
+    }
+    return { rawQuery: qs + '&Signature=' + encodeURIComponent(signature),
+             signature: signature };
+  };
+  const cases = [];
+  const add = function (name, spec) {
+    const a = rs.assess(spec);
+    cases.push({ name: name, spec: spec,
+                 assessment: JSON.parse(JSON.stringify(a)) });
+  };
+  const decodedOf = function (rawQuery) {
+    const out = {};
+    rawQuery.split('&').forEach(function (pair) {
+      const at = pair.indexOf('=');
+      const k = decodeURIComponent(pair.slice(0, at));
+      const v = decodeURIComponent(pair.slice(at + 1).replace(/\+/g, ' '));
+      out[k] = out[k] === undefined ? v : [].concat(out[k], v);
+    });
+    return out;
+  };
+  const both = { samlSigningCertificate: [otherDer, sp.certPem] };
+  add('unsigned', { binding: 'redirect', rawQuery: 'SAMLRequest=' + deflated,
+                    params: decodedOf('SAMLRequest=' + deflated),
+                    xml: request, rootLocalName: 'AuthnRequest',
+                    messageField: 'SAMLRequest', fields: both });
+  add('signed POST, no certificate', { binding: 'post', params: {},
+    xml: signedPost, rootLocalName: 'AuthnRequest',
+    messageField: 'SAMLRequest', fields: {} });
+  add('signed POST, verified by the second', { binding: 'post', params: {},
+    xml: signedPost, rootLocalName: 'AuthnRequest',
+    messageField: 'SAMLRequest', fields: both });
+  add('signed POST, altered', { binding: 'post', params: {},
+    xml: signedPost.replace('ID="_q1"', 'ID="_q2"'),
+    rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+    fields: both });
+  add('signed POST, another key only', { binding: 'post', params: {},
+    xml: signedPost, rootLocalName: 'AuthnRequest',
+    messageField: 'SAMLRequest',
+    fields: { samlSigningCertificate: otherDer } });
+  add('signed POST, SHA-1', { binding: 'post', params: {},
+    xml: stsCrypto.signXml(request, { privateKeyPem: sp.privateKeyPem,
+                                      certPem: sp.certPem, sigAlg: RSA1 }),
+    rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+    fields: both });
+  [['redirect, verified', redirect(RSA256, 'rs 1')],
+   ['redirect, no RelayState', redirect(RSA256)],
+   ['redirect, another key', redirect(RSA256, '', other)],
+   ['redirect, SHA-1', redirect(RSA1, 'r')]].forEach(function (row) {
+    add(row[0], { binding: 'redirect', rawQuery: row[1].rawQuery,
+                  params: decodedOf(row[1].rawQuery), xml: request,
+                  rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+                  fields: both });
+  });
+  const good = redirect(RSA256, 'rs');
+  add('redirect, RelayState repeated', { binding: 'redirect',
+    rawQuery: good.rawQuery + '&RelayState=evil',
+    params: decodedOf(good.rawQuery + '&RelayState=evil'), xml: request,
+    rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+    fields: both });
+  add('redirect, no SigAlg', { binding: 'redirect',
+    rawQuery: 'SAMLRequest=' + deflated + '&Signature=AAAA',
+    params: { SAMLRequest: request, Signature: 'AAAA' }, xml: request,
+    rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+    fields: both });
+  // SimpleSign: the raw XML's octets.
+  const ssOctets = 'SAMLRequest=' + request + '&RelayState=r&SigAlg=' + RSA256;
+  const ssSig = stsCrypto.signQueryString(ssOctets, sp.privateKeyPem, RSA256);
+  add('simplesign, verified', { binding: 'post', params: {
+    SAMLRequest: Buffer.from(request).toString('base64'), RelayState: 'r',
+    SigAlg: RSA256, Signature: ssSig }, xml: request,
+    rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+    fields: both });
+  add('simplesign, the base64 signed', { binding: 'post', params: {
+    SAMLRequest: Buffer.from(request).toString('base64'),
+    SigAlg: RSA256, Signature: stsCrypto.signQueryString('SAMLRequest=' +
+      Buffer.from(request).toString('base64') + '&SigAlg=' + RSA256,
+      sp.privateKeyPem, RSA256) }, xml: request,
+    rootLocalName: 'AuthnRequest', messageField: 'SAMLRequest',
+    fields: both });
+  const refusals = [];
+  cases.forEach(function (one) {
+    [{}, { samlSpAuthnRequestsSigned: 'TRUE' }].forEach(function (extra) {
+      const fields = Object.assign({}, one.spec.fields, extra);
+      refusals.push({ name: one.name, declared: extra.samlSpAuthnRequestsSigned
+                        || '',
+                      answer: rs.refusal(one.assessment, fields),
+                      required: rs.requiresSignedRequests(fields) });
+    });
+  });
+  const soap = [];
+  [['signed', signedPost, ''], ['tls', request, der],
+   ['tls, unknown', request, otherDer + 'x'], ['anonymous', request, '']]
+    .forEach(function (row) {
+      [{}, { samlSpAuthnRequestsSigned: 'TRUE' }].forEach(function (extra) {
+        const fields = Object.assign({ samlSigningCertificate: der }, extra);
+        soap.push({ name: row[0], xml: row[1], tls: row[2],
+                    declared: extra.samlSpAuthnRequestsSigned || '',
+                    answer: JSON.parse(JSON.stringify(
+                      rs.authenticateSoapCaller({
+                        xml: row[1], rootLocalName: 'AuthnRequest',
+                        fields: fields, tlsCertificate: row[2] }))) });
+      });
+    });
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const mode = require(path.join(ROOT, 'common', 'mode.js'));
+  return { cases: cases, refusals: refusals, soap: soap,
+           setting: String(config.value('saml2.requireSignedAuthnRequests') ||
+                           'auto'),
+           acceptsUnsigned: mode.acceptsUnsignedSamlRequests(),
+           octets: [good.rawQuery, good.rawQuery + '&RelayState=x',
+                    'SAMLRequest=a&SigAlg=b', 'SigAlg=b',
+                    'a%20b=1&SAMLRequest=x+y&SigAlg=s&RelayState=%41']
+             .map(function (q) {
+               return { rawQuery: q,
+                        octets: rs.redirectOctets(q, 'SAMLRequest') };
+             }) };
 }
 
 // What Rust made, checked by Node: each assertion and Response Rust signed

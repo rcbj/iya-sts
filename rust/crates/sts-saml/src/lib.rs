@@ -13,6 +13,7 @@
 //! | [`binding`] | the bindings: decoding, Redirect, SimpleSign, the POST page |
 //! | [`request`] | `readAuthnRequest()` and `validation.parseXml()` |
 //! | [`artifact`] | `mintArtifact()`, `isForeignArtifact()`, the stored row |
+//! | [`signature`] | `saml/request_signature.ts` |
 //!
 //! Each is a library: no route, no store of its own. The runtime declares
 //! the stores under Node's handles and wires the endpoints
@@ -28,3 +29,4 @@ pub mod binding;
 pub mod model;
 pub mod request;
 pub mod response;
+pub mod signature;
