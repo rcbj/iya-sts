@@ -35,6 +35,12 @@ use sts_oauth::client_auth::{
 };
 use sts_oauth::signin::{AccountChoices, EveryMechanism, PendingSignIns};
 
+/// How long ago a code was redeemed, by each runtime's own clock.
+static REDEEMED_AGO: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"redeemed \d+ second").unwrap()
+    });
+
 fn vectors() -> Option<Json> {
     let dir = std::env::var("STS_CRYPTO_VECTORS").ok()?;
     let text = std::fs::read_to_string(
@@ -756,8 +762,7 @@ async fn the_code_flow() {
                 if let Some(d) =
                     b.get("error_description").and_then(Json::as_str)
                 {
-                    let d = regex::Regex::new(r"redeemed \d+ second")
-                        .unwrap()
+                    let d = REDEEMED_AGO
                         .replace_all(d, "redeemed N second")
                         .to_string();
                     b["error_description"] = json!(d);

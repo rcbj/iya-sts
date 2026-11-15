@@ -53,6 +53,7 @@ use sts_oauth::authorize::{
 use sts_oauth::client_auth::{ClientAuth, MemoryAssertionHistory, SystemClock};
 use sts_oauth::clients::RegisterClients;
 use sts_oauth::token_endpoint::{Signer, TokenAsk, TokenEndpoint};
+use sts_registers::applications::AppEnv;
 use sts_registers::applications::ApplicationRegistry;
 use sts_store::key_sets::KeySets;
 use sts_store::persistence::{LiveDirectory, MemoryDirectory, Persistence};
@@ -127,6 +128,70 @@ impl Signer for RealmSigner {
             set: Arc::new(self.set()?),
         }
         .verify_own(token, now_s)
+    }
+}
+
+/// THE REGISTER'S ENVIRONMENT WITH THE STORE'S DATA KEYS. `CoreEnv` opens
+/// nothing, and in product mode with persisted keys Node seals every client
+/// secret it writes (`sealCredentialText()`): a client a Node beside this
+/// one registered then had "nothing on its entry to verify" here, and its
+/// secret was refused. The register only READS through this one — this
+/// runtime writes no application yet — so `seal()` is the keystore's as well
+/// for when it does.
+struct SealingEnv {
+    core: sts_registers::applications::env::CoreEnv,
+    persistence: Arc<Persistence>,
+}
+
+impl AppEnv for SealingEnv {
+    fn now_ms(&self) -> i64 {
+        self.core.now_ms()
+    }
+    fn setting(&self, key: &str) -> Json {
+        self.core.setting(key)
+    }
+    fn mode(&self, predicate: &str) -> bool {
+        self.core.mode(predicate)
+    }
+    fn parse_as(&self, key: &str, raw: &str) -> Result<Json, String> {
+        self.core.parse_as(key, raw)
+    }
+    fn allows_value(&self, key: &str, value: &Json) -> bool {
+        self.core.allows_value(key, value)
+    }
+    fn write_refusal_reason(&self, key: &str) -> String {
+        self.core.write_refusal_reason(key)
+    }
+    fn random_bytes(&self, n: usize) -> Vec<u8> {
+        self.core.random_bytes(n)
+    }
+    fn sha256_hex(&self, text: &str) -> String {
+        self.core.sha256_hex(text)
+    }
+    fn is_sealed(&self, value: &str) -> bool {
+        self.core.is_sealed(value)
+    }
+    fn keystore_persists(&self) -> bool {
+        sts_store::keystore::DataKeys::persists(
+            &self.core.settings,
+            &self.core.mode,
+        )
+    }
+    fn seals_client_secrets(&self) -> bool {
+        self.keystore_persists() && self.persistence.data_keys().sealed()
+    }
+    fn seal(&self, text: &str, label: &str) -> Option<String> {
+        self.persistence.data_keys().seal(
+            text,
+            label,
+            &sts_core::realm::current_id(),
+        )
+    }
+    fn open(&self, text: &str, label: &str) -> Option<String> {
+        self.persistence.data_keys().open(text, label)
+    }
+    fn in_force(&self, key: &str, value: &Json) -> Json {
+        self.core.in_force(key, value)
     }
 }
 
@@ -232,9 +297,12 @@ impl OAuthStack {
         let directory = Arc::new(Mutex::new(Directory::new(&root)));
         let apps = Arc::new(ApplicationRegistry::new(
             Some(directory.clone()),
-            Arc::new(sts_registers::applications::env::CoreEnv {
-                settings: settings.clone(),
-                mode: mode.clone(),
+            Arc::new(SealingEnv {
+                core: sts_registers::applications::env::CoreEnv {
+                    settings: settings.clone(),
+                    mode: mode.clone(),
+                },
+                persistence: parts.persistence.clone(),
             }),
             Arc::new(sts_registers::applications::env::NoEffects),
         ));

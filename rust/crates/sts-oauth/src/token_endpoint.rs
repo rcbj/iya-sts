@@ -1301,11 +1301,18 @@ impl TokenEndpoint {
             // redemption on another node arrives through the change log
             // within the same deadline, and is read once it has passed.
             let woken = self.grants.redeemed_recorded.notified();
-            let _ = tokio::time::timeout(
+            if tokio::time::timeout(
                 std::time::Duration::from_millis(5000),
                 woken,
             )
-            .await;
+            .await
+            .is_err()
+            {
+                tracing::debug!(
+                    "oauth2: no redemption was recorded here within the \
+                     wait; the record is read once more."
+                );
+            }
         }
         if !recorded(self) {
             return self.refusal(codes::STS_OAUTH_0512, 400, "invalid_grant", "This authorization code is being redeemed by another Token Request at the same moment, and that redemption had not completed within 5 second(s). An authorization code is single use (RFC 6749 section 4.1.2).");
