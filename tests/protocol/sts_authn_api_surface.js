@@ -8,8 +8,8 @@
 // ---------------------------------------------------------------------------
 // THE SIGN-IN SURFACE OVER `/authn-api`, AS A BROWSER MEETS IT, OVER THE WIRE.
 //
-// D12 (#444): carries over `tests/authn_api.js` (#571), `tests/authn_mfa_api.js`
-// (#572, #573) and `tests/authn_consent_api.js` (#576), which drove the
+// D12 (#444): carries over `tests/authn_api.js` (#571),
+// `tests/authn_mfa_api.js` (#572, #573) and `tests/authn_consent_api.js` (#576), which drove the
 // stack in a child process and minted their pending sign-ins with
 // `authn.beginAuthentication()`. Here every pending sign-in comes from a
 // real authorization request of a public client of a throwaway realm, so a
