@@ -33,3 +33,4 @@ pub mod locale;
 mod sanitize;
 pub mod templates;
 pub mod transports;
+pub mod uses;

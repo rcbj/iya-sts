@@ -796,6 +796,32 @@ async function usesPart(C, mail, handed, audits) {
     'maria', 'tok2', '', 'api'));
   await record('admin link no mail', uses.mailAdministratorLink('reset', 'nomail',
     'tok3', 'root', 'console'));
+  await record('access requested', uses.accessRequested('bea',
+    { client: 'app-1', expiresMinutes: 30 }));
+  await record('access requested rights', uses.accessRequested('pilar',
+    { client: 'app-2', rights: 'read mail', dedupKey: 'k' }));
+  await record('pki pin status', uses.pkiPinStatus({ changes: 'two pins',
+    dedupKey: 'pins:1' }));
+  await record('post-login reminder', uses.postLoginReminder('mateo',
+    { started: 'act-1', mails: 2, actor: 'admin' }));
+  await record('uma approval', uses.umaApprovalRequested('maria',
+    { requester: 'bob', client: 'app', resource: 'photos', scopes: 'view',
+      expiresMinutes: 10 }));
+  await record('authzen request', uses.authzenAccessRequested('hans',
+    { requester: 'bob', subject: 's', action: 'read', resource: 'r',
+      application: 'a', expiresMinutes: 5 }));
+  await record('authzen emergency', uses.authzenAccessRequested('sven',
+    { requester: 'bob', emergency: true, justification: 'fire',
+      dedupKey: 'e1' }));
+  await record('account disabled', uses.accountDisabled('elena', 'policy',
+    false));
+  await record('sessions ended', uses.sessionsEnded('claire', 3, ''));
+  await record('sessions ended by', uses.sessionsEnded('bea', 1, 'root'));
+  await record('address changed', uses.addressChanged('wei',
+    'old-wei@example.com', 'new-wei@example.com'));
+  await record('address changed to none', uses.addressChanged('li',
+    'old-li@example.com', ''));
+  await record('address changed nothing', uses.addressChanged('li', '', 'x'));
   log.debug("Leaving usesPart().");
   return out;
 }

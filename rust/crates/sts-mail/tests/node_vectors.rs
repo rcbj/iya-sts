@@ -492,6 +492,7 @@ async fn the_channel_is_nodes() {
             other => panic!("unknown op {}", other),
         }
     }
+    checked += uses(&w, &v, &mut failures).await;
     let opened = w.relays.1.lock().unwrap().clone();
     let node_opened = v["transportOptions"].as_array().unwrap();
     for (r, n) in opened.iter().zip(node_opened) {
@@ -699,4 +700,113 @@ fn every_raw_message_is_nodes() {
                        serde_json::to_string(&serde_json::json!({
                            "signed": written })).unwrap()).unwrap();
     }
+}
+
+/// The uses, after the script, as Node ran them.
+async fn uses(w: &World, v: &Json, failures: &mut Vec<String>) -> usize {
+    use sts_mail::uses::{Made, MailUses};
+    let c = w.clock.clone();
+    let u = MailUses::new(w.mail.clone(), w.settings.clone(),
+                          Arc::new(move || c.load(Ordering::SeqCst)));
+    let mut checked = 0;
+    for one in v["uses"].as_array().unwrap() {
+        let label = s(&one["label"]);
+        for h in one["handed"].as_array().unwrap() {
+            let id = s(&h["messageId"]).trim_start_matches('<')
+                .split('@').next().unwrap().to_string();
+            w.ids.lock().unwrap().push_back(id);
+        }
+        w.resolver.0.lock().unwrap().extend(
+            one["resolutions"].as_array().unwrap().iter().cloned());
+        let a0 = w.audits.0.lock().unwrap().len();
+        let h0 = w.handed.lock().unwrap().len();
+        let mut made = Made::default();
+        let result: Json = match label {
+            "notice password-changed" => u.notice("password-changed", "fred",
+                &serde_json::json!({ "values": { "how": "by you" }, "via": "portal" }),
+                &mut made).to_json(),
+            "notice bySystem" => u.notice("account-disabled", "sven",
+                &serde_json::json!({ "values": { "why": "policy" }, "bySystem": true,
+                      "act": "disabled" }), &mut made).to_json(),
+            "notice no user" => u.notice("password-changed", "", &serde_json::json!({}),
+                                         &mut made).to_json(),
+            "signal credentialChanged" => u.from_account_signal(
+                "credentialChanged", &serde_json::json!({ "username": "li",
+                "initiatingEntity": "admin" }), &mut made).to_json(),
+            "signal app password" => u.from_account_signal(
+                "credentialChanged", &serde_json::json!({ "username": "li",
+                "friendlyName": "x" }), &mut made).to_json(),
+            "signal compromised" => u.from_account_signal(
+                "credentialCompromised", &serde_json::json!({ "username": "wei",
+                "initiatingEntity": "system", "reasonUser": "leaked" }),
+                &mut made).to_json(),
+            "signal recovery" => u.from_account_signal("recoveryActivated",
+                &serde_json::json!({ "username": "kit", "initiatingEntity": "user" }),
+                &mut made).to_json(),
+            "signal recovery mailed" => u.from_account_signal(
+                "recoveryActivated", &serde_json::json!({ "username": "kit",
+                "mailed": true }), &mut made).to_json(),
+            "admin reset link" => u.mail_administrator_link("reset", "maria",
+                "tok/1", "root", "console", &mut made).0,
+            "admin activation link" => u.mail_administrator_link("activation",
+                "maria", "tok2", "", "api", &mut made).0,
+            "admin link no mail" => u.mail_administrator_link("reset",
+                "nomail", "tok3", "root", "console", &mut made).0,
+            "access requested" => u.access_requested("bea",
+                &serde_json::json!({ "client": "app-1", "expiresMinutes": 30 }), &mut made)
+                .to_json(),
+            "access requested rights" => u.access_requested("pilar",
+                &serde_json::json!({ "client": "app-2", "rights": "read mail",
+                      "dedupKey": "k" }), &mut made).to_json(),
+            "pki pin status" => u.pki_pin_status(&serde_json::json!({ "changes": "two pins",
+                "dedupKey": "pins:1" }), &mut made).to_json(),
+            "post-login reminder" => u.post_login_reminder("mateo",
+                &serde_json::json!({ "started": "act-1", "mails": 2, "actor": "admin" }),
+                &mut made).to_json(),
+            "uma approval" => u.uma_approval_requested("maria",
+                &serde_json::json!({ "requester": "bob", "client": "app",
+                      "resource": "photos", "scopes": "view",
+                      "expiresMinutes": 10 }), &mut made).to_json(),
+            "authzen request" => u.authzen_access_requested("hans",
+                &serde_json::json!({ "requester": "bob", "subject": "s", "action": "read",
+                      "resource": "r", "application": "a",
+                      "expiresMinutes": 5 }), &mut made).to_json(),
+            "authzen emergency" => u.authzen_access_requested("sven",
+                &serde_json::json!({ "requester": "bob", "emergency": true,
+                      "justification": "fire", "dedupKey": "e1" }),
+                &mut made).to_json(),
+            "account disabled" => u.account_disabled("elena", "policy", false,
+                                                     &mut made).to_json(),
+            "sessions ended" => u.sessions_ended("claire", 3, &serde_json::json!(""),
+                                                 &mut made).to_json(),
+            "sessions ended by" => u.sessions_ended("bea", 1, &serde_json::json!("root"),
+                                                    &mut made).to_json(),
+            "address changed" => u.address_changed("wei",
+                "old-wei@example.com", "new-wei@example.com", &mut made)
+                .to_json(),
+            "address changed to none" => u.address_changed("li",
+                "old-li@example.com", "", &mut made).to_json(),
+            "address changed nothing" => u.address_changed("li", "", "x",
+                &mut made).to_json(),
+            other => panic!("unknown use {}", other),
+        };
+        w.mail.dispatch(&made.queued).await;
+        let mut result = result;
+        if let Some(o) = result.as_object_mut() {
+            o.remove("code");
+        }
+        same(&format!("use {} result", label), &result, &one["result"],
+             failures);
+        same(&format!("use {} requests", label), &Json::Array(made.requests),
+             &one["requests"], failures);
+        let handed: Vec<Json> = w.handed.lock().unwrap()[h0..].iter()
+            .map(handed_json).collect();
+        same(&format!("use {} handed", label), &Json::Array(handed),
+             &one["handed"], failures);
+        let audits = Json::Array(w.audits.0.lock().unwrap()[a0..].to_vec());
+        same(&format!("use {} audits", label), &audits, &one["audits"],
+             failures);
+        checked += 4;
+    }
+    checked
 }
