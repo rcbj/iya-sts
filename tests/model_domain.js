@@ -229,6 +229,14 @@ function declarations(t) {
     'rust/crates/sts-mgmt-api/src/generated/' + pair[1] + ' is what the ' +
       'model generates (tests/tools/regenerate-model-docs.sh)');
   });
+  // sts-oauth's copy of the OAuth model (#444, phase 5): the file
+  // oauth_model.ts builds its validators from, read whole by the crate.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-oauth',
+    'src', 'generated', 'oauth.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'oauth.json'),
+      'utf8'),
+  'rust/crates/sts-oauth/src/generated/oauth.json is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

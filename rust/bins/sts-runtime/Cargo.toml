@@ -19,6 +19,7 @@ sts-http.workspace = true
 sts-ldap.workspace = true
 sts-pki.workspace = true
 sts-store.workspace = true
+sts-oauth.workspace = true
 sts-tls.workspace = true
 chrono.workspace = true
 axum.workspace = true

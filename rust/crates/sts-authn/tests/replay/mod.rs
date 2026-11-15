@@ -394,6 +394,13 @@ impl Records for Replay {
             .as_u64()
             .unwrap_or(0) as usize
     }
+    fn record_account_choice(&self, kind: &str, n: Option<u64>) {
+        let args = match n {
+            Some(n) => json!([kind, n]),
+            None => json!([kind]),
+        };
+        self.answer("stats", "recordAccountChoice", args);
+    }
 }
 
 impl AuditLog for Replay {
@@ -455,6 +462,18 @@ impl SessionManagement for Replay {
             "writeCookie",
             json!(["[response]", s(value)]),
         );
+    }
+    fn browser_states_value(&self, sessions: &[Value]) -> String {
+        let states: Vec<Value> = sessions
+            .iter()
+            .map(|one| {
+                json!(one["browserState"].as_str().unwrap_or("").to_string())
+            })
+            .collect();
+        self.answer("sessionManagement", "browserStatesValue", json!([states]))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     }
 }
 

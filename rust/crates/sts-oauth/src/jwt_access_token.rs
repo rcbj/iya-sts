@@ -271,3 +271,254 @@ fn text_of(value: &Json) -> String {
         other => other.to_string(),
     }
 }
+
+/// `OIDC_SCOPES`: the OpenID Connect scopes, which have meaning only at
+/// this service's own resource server.
+pub const OIDC_SCOPES: [&str; 7] = [
+    "openid",
+    "profile",
+    "email",
+    "address",
+    "phone",
+    "offline_access",
+    "bound_key",
+];
+
+/// One requested scope as the plan sees it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlannedScope {
+    /// Names an application (an audience).
+    Audience(String),
+    /// A delegated permission: its value, its name and its audience.
+    Permission {
+        value: String,
+        name: String,
+        audience: String,
+    },
+    Oidc(String),
+    Ordinary(String),
+}
+
+/// What RFC 9396 details address (`richAuthorization.audienceFor()`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DetailAudience {
+    pub resources: Vec<String>,
+    pub identifiers: Vec<String>,
+    pub audiences: Vec<String>,
+}
+
+/// `audiencePlan()`'s answer.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct AudiencePlan {
+    pub audiences: Vec<String>,
+    pub scope: String,
+    pub stripped: Vec<String>,
+    pub refusal: Option<Refusal>,
+}
+
+fn unique(list: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for one in list {
+        if !one.is_empty() && !out.contains(one) {
+            out.push(one.clone());
+        }
+    }
+    out
+}
+
+fn quoted_list(list: &[String]) -> String {
+    list.iter()
+        .map(|one| format!("\"{}\"", one))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn plan_refusal(
+    error: &'static str,
+    code: ErrorCode,
+    description: String,
+) -> AudiencePlan {
+    AudiencePlan {
+        refusal: Some(Refusal {
+            error,
+            description,
+            code,
+        }),
+        ..AudiencePlan::default()
+    }
+}
+
+/// `audiencePlan(input)`: the audience and scope claim of a JWT access
+/// token, or RFC 9068 section 3's refusal.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn audience_plan(
+    own_resource: &str,
+    explicit: &[String],
+    scopes: &[PlannedScope],
+    details: &DetailAudience,
+) -> AudiencePlan {
+    let explicit = unique(explicit);
+    let derived = unique(
+        &scopes
+            .iter()
+            .filter_map(|one| match one {
+                PlannedScope::Audience(v) => Some(v.clone()),
+                PlannedScope::Permission { audience, .. } => {
+                    Some(audience.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+    );
+    if derived.len() > 1 {
+        return plan_refusal(
+            "invalid_scope",
+            codes::STS_OAUTH_0244,
+            format!(
+                "RFC 9068 section 3: the scope parameter names more than \
+                 one resource — {} — and a JWT access token with scopes for \
+                 several resources is one whose authorization is ambiguous \
+                 to each of them. Ask for one token per resource.",
+                quoted_list(&derived)
+            ),
+        );
+    }
+    if details.resources.len() > 1 {
+        return plan_refusal(
+            "invalid_authorization_details",
+            codes::STS_OAUTH_0459,
+            format!(
+                "RFC 9068 section 3: this request's authorization_details \
+                 are of types declared by more than one resource server — \
+                 {} — and a JWT access token authorizing several of them is \
+                 ambiguous to each. Ask for one token per resource server.",
+                quoted_list(&details.resources)
+            ),
+        );
+    }
+    let from_details = details.resources.len() == 1;
+    if from_details {
+        let foreign: Vec<&String> = derived
+            .iter()
+            .filter(|one| !details.identifiers.contains(one))
+            .collect();
+        if let Some(first) = foreign.first() {
+            return plan_refusal(
+                "invalid_scope",
+                codes::STS_OAUTH_0460,
+                format!(
+                    "RFC 9068 section 2.2.3: this request's \
+                     authorization_details are for \"{}\", and its scope \
+                     names \"{}\", another resource server. One access \
+                     token is for one API; ask for the other in a request \
+                     of its own.",
+                    details.resources[0], first
+                ),
+            );
+        }
+        let foreign: Vec<&String> = explicit
+            .iter()
+            .filter(|one| !details.identifiers.contains(one))
+            .collect();
+        if let Some(first) = foreign.first() {
+            return plan_refusal(
+                "invalid_target",
+                codes::STS_OAUTH_0460,
+                format!(
+                    "RFC 9396 section 3.1: this request's \
+                     authorization_details are for \"{}\", which answers to \
+                     {}, and its resource parameter names \"{}\". Name one \
+                     of those, or leave the resource parameter out and the \
+                     details decide the audience.",
+                    details.resources[0],
+                    quoted_list(&details.identifiers),
+                    first
+                ),
+            );
+        }
+    }
+    if !from_details
+        && !explicit.is_empty()
+        && derived.len() == 1
+        && !explicit.contains(&derived[0])
+    {
+        return plan_refusal(
+            "invalid_scope",
+            codes::STS_OAUTH_0245,
+            format!(
+                "RFC 9068 section 2.2.3: every scope on a JWT access token \
+                 MUST have meaning for the resources in its aud, and this \
+                 request addresses {} while its scope names \"{}\". Either \
+                 name \"{}\" as the resource, or leave the scope that \
+                 belongs to it out of this request.",
+                quoted_list(&explicit),
+                derived[0],
+                derived[0]
+            ),
+        );
+    }
+    let audiences = if !explicit.is_empty() {
+        explicit
+    } else if from_details {
+        let mut all = details.audiences.clone();
+        all.extend(derived.iter().cloned());
+        unique(&all)
+    } else if !derived.is_empty() {
+        derived
+    } else {
+        vec![own_resource.to_string()]
+    };
+    let several = audiences.len() > 1 && !from_details;
+    let for_own = audiences.iter().any(|a| a == own_resource);
+    let (mut kept, mut stripped, mut ambiguous) =
+        (Vec::new(), Vec::new(), Vec::new());
+    for one in scopes {
+        match one {
+            PlannedScope::Audience(_) => {}
+            PlannedScope::Permission { value, name, .. } => {
+                kept.push(if several { value.clone() } else { name.clone() })
+            }
+            PlannedScope::Oidc(v) => {
+                if for_own {
+                    kept.push(v.clone());
+                } else {
+                    stripped.push(v.clone());
+                }
+            }
+            PlannedScope::Ordinary(v) => {
+                if several {
+                    ambiguous.push(v.clone());
+                } else {
+                    kept.push(v.clone());
+                }
+            }
+        }
+    }
+    if !ambiguous.is_empty() {
+        return plan_refusal(
+            "invalid_target",
+            codes::STS_OAUTH_0246,
+            format!(
+                "RFC 9068 section 3: a JWT access token MUST NOT be issued \
+                 when the authorization it grants would be ambiguous, and \
+                 this request addresses {} resources — {} — with the \
+                 scope{}{}, which could mean something at any of them. A \
+                 token for several resources may carry only scopes that \
+                 name one: a delegated permission by its whole identifier, \
+                 or an OpenID Connect scope where this service's own \
+                 resource server is one of them. Otherwise ask for one \
+                 token per resource.",
+                audiences.len(),
+                quoted_list(&audiences),
+                if ambiguous.len() == 1 { " " } else { "s " },
+                quoted_list(&ambiguous)
+            ),
+        );
+    }
+    AudiencePlan {
+        audiences,
+        scope: unique(&kept).join(" "),
+        stripped,
+        refusal: None,
+    }
+}

@@ -18,7 +18,13 @@
 //!   and the sweep, the caps, the arrival sessions, presented and held;
 //! * [`requirement`] — whether a second factor is required at sign-in
 //!   (`mfaRequirementFor()`), product mode's "everybody" (#1490) included;
-//! * [`job`] — `authn.session-expiry` on the one scheduler;
+//! * [`account_sets`] and [`sessions::accounts`] — a browser's account set
+//!   (#561, `authn.multipleAccounts`): the `sts_accounts` cookie, the
+//!   selection tickets, which session a request acts as, a sign-in that
+//!   joins the set rather than replacing the session, signing one account
+//!   out, the picker's data and acts;
+//! * [`job`] — `authn.session-expiry` and `authn.account-set-expiry` on
+//!   the one scheduler;
 //! * [`ports`] — what it reaches beyond itself, and the observer slot.
 //!
 //! COMPATIBILITY (D11). The store is `authn.sessions`, tombstoned and
@@ -27,9 +33,11 @@
 //! as Node files it — so a 1.x install's sessions are live here and Node
 //! reads this runtime's (`tests/store_interop.rs`).
 //!
-//! NOT HERE YET, each argued in the slice's report: browsers' account sets
-//! (`authn.multipleAccounts`, #561 — with the setting on, a sign-in in a
-//! signed-in browser replaces the session, as with it off), the session
+//! The account sets' stores are Node's too (`authn.accountSets`,
+//! `authn.accountTickets`), and so is the cookie
+//! (`tests/store_interop.rs`).
+//!
+//! NOT HERE YET, each argued in the slice's report: the session
 //! window (#350's `auto`, which a one-process runtime with the full map in
 //! memory does not need), the hosted surfaces' relying-party sessions, and
 //! the risk engine's drift re-assessment (#62), which only a session the
@@ -42,6 +50,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod account_sets;
 pub mod cookie;
 pub mod job;
 pub mod js;
@@ -51,4 +60,7 @@ pub mod record;
 pub mod requirement;
 pub mod sessions;
 
+pub use sessions::accounts::{
+    ActOutcome, BeginChoice, PickerAnswer, RecordChange, Resolved,
+};
 pub use sessions::{Sessions, SessionsDeps};

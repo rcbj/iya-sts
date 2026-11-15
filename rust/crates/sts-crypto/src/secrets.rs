@@ -1289,7 +1289,12 @@ pub fn decrypt_with_dek(
 }
 
 /// HKDF-SHA256 with no salt (RFC 5869), as node's `hkdfSync`.
-fn hkdf_sha256(ikm: &[u8], info: &[u8], len: usize) -> CryptoResult<Vec<u8>> {
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn hkdf_sha256(
+    ikm: &[u8],
+    info: &[u8],
+    len: usize,
+) -> CryptoResult<Vec<u8>> {
     let mut ctx = PkeyCtx::new_id(openssl::pkey::Id::HKDF)?;
     ctx.derive_init()?;
     ctx.set_hkdf_md(Md::sha256())?;

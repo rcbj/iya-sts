@@ -101,6 +101,15 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // Browsers' account sets (#561; #444, phase 5): the sets, cookies and
+  // sessions sts-authn wrote, read back by tests/tools/account-set-vectors.js.
+  if (fs.existsSync(path.join(VECTORS, 'account-sets-rust.json'))) {
+    require('./tools/account-set-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('account-sets-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The registers' role entries (#444, phase 4), which need no other set.
   if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
     registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,
@@ -139,6 +148,14 @@ function runKerberos(t) {
   if (fs.existsSync(path.join(VECTORS, 'applications-rust.json'))) {
     require('./tools/applications-vectors.js').checkRust(t,
       read('applications-rust.json'));
+  }
+  // The authorization server's core (sts-oauth, #444 phase 5): a refresh
+  // token Rust sealed and an access token Rust signed, read by Node.
+  if (fs.existsSync(path.join(VECTORS, 'oauth-rust.json'))) {
+    require('./tools/oauth-vectors.js').checkRust(path.join(__dirname, '..'),
+      read('oauth-rust.json'), function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
   }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
     log.debug("Leaving runKerberos(). No Kerberos vectors.");

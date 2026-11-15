@@ -4678,12 +4678,20 @@ dependencies = [
 name = "sts-oauth"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64 0.23.1",
+ "chrono",
  "openssl",
+ "regex",
+ "serde",
  "serde_json",
+ "sts-authn",
  "sts-cluster",
  "sts-core",
  "sts-crypto",
+ "sts-http",
+ "sts-registers",
+ "sts-store",
  "tokio",
  "tracing",
  "url",
@@ -4754,6 +4762,7 @@ dependencies = [
  "sts-crypto",
  "sts-http",
  "sts-ldap",
+ "sts-oauth",
  "sts-pki",
  "sts-store",
  "sts-tls",

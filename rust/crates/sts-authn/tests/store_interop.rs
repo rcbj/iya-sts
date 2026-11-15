@@ -23,6 +23,11 @@
 //! 4. `session-interop.js read` — Node restores them and holds its own
 //!    doors to them.
 //!
+//! Each side also signs two people in in ONE browser with
+//! `authn.multipleAccounts` on (#561): the other side's set must open from
+//! the `sts_accounts` cookie as written, list both accounts, choose nobody
+//! unhinted, and choose each by a hint naming them.
+//!
 //! The ports are what a composition root would pass for a realm with no
 //! policy: the directory's subjects, every mechanism allowed, the gate
 //! permitting. With either variable unset it says so and passes.
@@ -31,6 +36,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
@@ -49,6 +55,7 @@ const PEOPLE: &[(&str, &str)] = &[
     ("dora", "0b6f6c1e-8c55-4b8a-9b2e-3d1f0d5c2a11"),
     ("fay", "3c9e7b55-2d8a-4e1f-9b3c-6a5d4e2f1b33"),
     ("gil", "5e4d3c2b-1a09-4f8e-9d7c-6b5a4e3d2c55"),
+    ("emil", "7d0f2a44-1b9c-4f3e-8a6d-5c2b1e9f4d22"),
 ];
 
 fn setting() -> Option<(String, PathBuf)> {
@@ -60,6 +67,8 @@ fn setting() -> Option<(String, PathBuf)> {
 /// The ports of a realm with no policy.
 struct Plain {
     now: Mutex<f64>,
+    /// `authn.multipleAccounts`: on for the browser with two accounts.
+    multiple: AtomicBool,
 }
 
 impl Settings for Plain {
@@ -71,7 +80,11 @@ impl Settings for Plain {
             "authn.maxSessionsPerSubject" => json!(32),
             "authn.sessionShedPerSweep" => json!(100),
             "global.https" => json!(true),
-            "authn.multipleAccounts" => json!(false),
+            "authn.multipleAccounts" => {
+                json!(self.multiple.load(Ordering::SeqCst))
+            }
+            "authn.maxBrowserAccounts" => json!(10),
+            "authn.rememberedAccountDays" => json!(30),
             _ => Value::Null,
         }
     }
@@ -197,6 +210,7 @@ impl Records for Plain {
     ) -> usize {
         0
     }
+    fn record_account_choice(&self, _k: &str, _n: Option<u64>) {}
 }
 
 impl AuditLog for Plain {
@@ -258,6 +272,7 @@ fn proc(url: &str, dir: &std::path::Path, now: f64) -> Proc {
     let handles = StoreHandles::new();
     let plain = Arc::new(Plain {
         now: Mutex::new(now),
+        multiple: AtomicBool::new(false),
     });
     let p = plain.clone();
     let sessions = Arc::new(Sessions::new(
@@ -354,12 +369,129 @@ async fn rust_honours_what_node_wrote() {
     if p.sessions.session_by_id(ended).is_some() {
         failures.push("the session Node ended came back here".into());
     }
+    match v.get("browser") {
+        Some(b) => hold_browser(&p, b, &mut failures),
+        None => failures.push("Node wrote no browser with two accounts".into()),
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     eprintln!(
         "Rust honours all {} session(s) Node flushed, and the one it ended \
          stays ended",
         v["sessions"].as_array().unwrap().len()
     );
+}
+
+/// What the other side's browser holding two accounts says to this side's
+/// doors (#561).
+fn hold_browser(p: &Proc, b: &Value, failures: &mut Vec<String>) {
+    p.plain.multiple.store(true, Ordering::SeqCst);
+    let cookie = b["cookie"].as_str().unwrap_or("");
+    let req = || Request {
+        cookie: cookie.to_string(),
+        user_agent: "Interop/1.0".into(),
+        url: "/".into(),
+        ..Request::default()
+    };
+    let cookies = sts_authn::cookie::cookies_of(cookie).unwrap();
+    match p.sessions.account_sets().set_of(&cookies) {
+        None => failures.push("the sts_accounts cookie opens no set".into()),
+        Some(set) => {
+            if serde_json::to_string(&set).unwrap()
+                != serde_json::to_string(&b["set"]).unwrap()
+            {
+                failures.push(format!(
+                    "the account set:\n    read {}\n    written {}",
+                    Value::Object(set),
+                    b["set"]
+                ));
+            }
+        }
+    }
+    let sids = b["sids"].as_array().cloned().unwrap_or_default();
+    let listed = p.sessions.browser_accounts(&req());
+    let live = listed["accounts"]
+        .as_array()
+        .map(|a| a.iter().filter(|x| x["state"] == "signed-in").count())
+        .unwrap_or(0);
+    if live != sids.len() {
+        failures.push(format!(
+            "browser_accounts() lists {live} signed in, not {}",
+            sids.len()
+        ));
+    }
+    if p.sessions.session_of(&req(), false).is_some() {
+        failures.push("session_of() chose an account unhinted".into());
+    }
+    for sid in &sids {
+        let sid = sid.as_str().unwrap_or("");
+        let name = p
+            .sessions
+            .session_by_id(sid)
+            .map(|s| s["user"]["username"].as_str().unwrap_or("").to_string())
+            .unwrap_or_default();
+        let r = req();
+        p.sessions.hint_account(&r, &json!({"loginHint": name}));
+        let chosen = p.sessions.session_of(&r, false).map(|s| s["id"].clone());
+        if chosen != Some(json!(sid)) {
+            failures
+                .push(format!("a hint naming {name} does not choose {sid}"));
+        }
+    }
+    p.plain.multiple.store(false, Ordering::SeqCst);
+}
+
+/// One browser, two accounts (#561): dora and then emil, with
+/// `authn.multipleAccounts` on, so the second joins the first's set.
+fn two_accounts(p: &Proc) -> Value {
+    p.plain.multiple.store(true, Ordering::SeqCst);
+    let mut held: Vec<(String, String)> = Vec::new();
+    let mut sids = Vec::new();
+    for username in ["dora", "emil"] {
+        let r = Request {
+            cookie: held
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join("; "),
+            user_agent: "Interop/1.0".into(),
+            url: "/".into(),
+            ..Request::default()
+        };
+        let mut response = Response::default();
+        let mut d: Object = json!({"application": "app-one",
+            "credential": {"kind": "password"}})
+        .as_object()
+        .cloned()
+        .unwrap();
+        let s = p
+            .sessions
+            .start_session(
+                &mut response,
+                username,
+                &["pwd".to_string()],
+                "1",
+                "OAuth 2.0 / OIDC",
+                &mut d,
+                Some(&r),
+            )
+            .unwrap_or_else(|| panic!("{username} was refused: {d:?}"));
+        sids.push(s["id"].clone());
+        for line in &response.cookies {
+            let first = line.split(';').next().unwrap_or("");
+            let (name, value) = first.split_once('=').unwrap_or((first, ""));
+            held.retain(|(n, _)| n != name);
+            if !value.is_empty() && !line.contains("Max-Age=0") {
+                held.push((name.to_string(), value.to_string()));
+            }
+        }
+    }
+    p.plain.multiple.store(false, Ordering::SeqCst);
+    let cookie = held
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    json!({"cookie": cookie, "sids": sids})
 }
 
 async fn clear(url: &str) {
@@ -509,7 +641,18 @@ async fn rust_signs_in_for_node() {
     p.sessions
         .end_session_by_id(&ended, "the interop proof", "admin")
         .unwrap();
+    let mut browser = two_accounts(&p);
     p.persistence.flush().await.unwrap();
+    let set_id = p
+        .sessions
+        .session_by_id(browser["sids"][0].as_str().unwrap())
+        .unwrap()["accountSetId"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    browser["set"] = Value::Object(
+        p.sessions.account_sets().by_id(&set_id).unwrap_or_default(),
+    );
     for one in out.iter_mut() {
         let row = p.sessions.session_by_id(one["sid"].as_str().unwrap());
         one["row"] = row.unwrap();
@@ -517,7 +660,7 @@ async fn rust_signs_in_for_node() {
     std::fs::write(
         dir.join("session-interop-rust.json"),
         serde_json::to_string_pretty(&json!({"now": now + 30_000.0,
-            "sessions": out, "ended": ended}))
+            "sessions": out, "ended": ended, "browser": browser}))
         .unwrap(),
     )
     .unwrap();

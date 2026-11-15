@@ -409,6 +409,21 @@ impl KeySets {
         Some((cert, chain))
     }
 
+    /// `keystore.pkiFor(scope)`: a certificate authority's row — a realm's
+    /// hierarchy, or the service's (`*service`) — opened, or `None`.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn pki_row(&self, scope: &str) -> Option<Json> {
+        let scope = dek_realm(scope);
+        let cipher = self.hierarchies().get(&scope).cloned()?;
+        match self.open_row(&format!("{}{}", PKI_ROW_PREFIX, scope), &cipher) {
+            Ok(row) => Some(row),
+            Err(e) => {
+                tracing::error!("keystore: {}", e);
+                None
+            }
+        }
+    }
+
     /// The realms holding a set (`default` for the default realm).
     pub fn realms(&self) -> Vec<String> {
         let mut all: Vec<String> = self.held().keys().cloned().collect();
