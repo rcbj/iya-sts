@@ -725,3 +725,37 @@ async fn scep_end_to_end() {
         );
     }
 }
+
+/// A certificate request's RSA key is held to 2048 bits in every mode
+/// (Node's #35, 2026-11-15): STS-ENROLL-0031, EST 400.
+#[tokio::test]
+async fn a_short_rsa_key_is_refused() {
+    let w = world();
+    let (private, public) = sts_crypto::pkcs7::generate_rsa(1024).unwrap();
+    let csr = sts_pki::x509::issue::certification_request(&json!({
+        "subject": [{ "name": "CN", "value": "alicew" }],
+        "publicKeyPem": public, "privateKeyPem": private,
+        "subjectAltName": [],
+    }))
+    .unwrap();
+    let auth = basic("alicew", "x");
+    let r = w
+        .est
+        .handle(&req(
+            "POST",
+            "/.well-known/est/simpleenroll",
+            &[
+                ("content-type", "application/pkcs10"),
+                ("authorization", &auth),
+            ],
+            STANDARD.encode(&csr.der).into_bytes(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(r.status, 400, "{}", String::from_utf8_lossy(&r.body));
+    assert_eq!(
+        String::from_utf8_lossy(&r.body),
+        "The request carries a 1024-bit RSA key, and this certificate \
+         authority certifies an RSA key of at least 2048 bits.\n"
+    );
+}

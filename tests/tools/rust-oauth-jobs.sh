@@ -113,6 +113,11 @@ env_for() {
     "STS_WORKERS_REQUEST_COUNT=0" "STS_DEBUGGER_ENABLED=off" \
     "STS_CSRF_SECRET=$CSRF" "ADMIN_API_CLIENT_SECRET=$SECRET" \
     > "$OUT/$2.env"
+  # E2E_EXTRA_ENV: more NAME=value lines for both runtimes, as in
+  # rust-apis-jobs.sh.
+  if [ -n "${E2E_EXTRA_ENV:-}" ]; then
+    printf '%s\n' "$E2E_EXTRA_ENV" >> "$OUT/$2.env"
+  fi
 }
 run_svc() {
   local name="$1" image="$2" port="$3" envf="$4" extra=()

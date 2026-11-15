@@ -33,7 +33,19 @@
 //   e. `sign-responses`: an unsigned request's answer is signed;
 //   f. the client flag: `oauthHttpSignedRequests=TRUE` through /admin-api
 //      makes an unsigned request from THAT client 401 with the setting off,
-//      and a value other than TRUE or FALSE is refused and does not land.
+//      and a value other than TRUE or FALSE is refused and does not land;
+//   g. D12 (#444), `tests/fapi_http_signatures.js`'s policy over the wire: a
+//      signed POST with a body and its Content-Digest answered (SCIM's
+//      .search); @target-uri, @method and content-digest each required
+//      (STS-KEYS-0150); a digest of other bytes, a created in the future,
+//      another tag under require-requests refused; 45 s old accepted; and
+//      every refusal's code off the audit log (STS-KEYS-0111, 0147, 0148,
+//      0151, 0153, STS-OAUTH-0939). Not carried (class (d)): the exact 60/61
+//      second edges (the service's clock decides them), a framed body with
+//      no bytes (STS-KEYS-0108: fetch always sends the bytes it frames), a
+//      token naming a client nobody registered (STS-OAUTH-0941: no door
+//      issues one), a DPoP request not covering dpop (this client's tokens
+//      are bearer), and the response signer's streamed and keyless cases.
 //
 // THE SIGNER AND VERIFIER HERE ARE THIS FILE'S OWN, for `sts_step_up.js`'s
 // TOTP reason: a signature base built by the service's own module at both
@@ -102,7 +114,7 @@ const KID = "fapihs-" + STAMP;
 // Eighteen is every check the file makes when sections a to f all run
 // (counted on the first run, 2026-10-05; it was written as 25, more than the
 // file holds, and so could never pass).
-const FLOOR = 18;
+const FLOOR = 28;
 var checks = 0;
 function check(what, fn) {
   log.debug("Entering check().");
@@ -469,6 +481,134 @@ async function theClientFlag(token) {
   log.debug("Leaving theClientFlag().");
 }
 
+// D12 (#444): a signed request of any method, with a body and its
+// Content-Digest (RFC 9530) when `o.body` is given, under any tag and at any
+// `created` (o.age seconds ago, negative for the future). `o.badDigest`
+// sends a digest of other bytes.
+function signAny(url, token, o) {
+  log.debug("Entering signAny().");
+  const method = o.method || "GET";
+  const components = o.components ||
+    ['"@method"', '"@target-uri"', '"authorization"'];
+  const created = Math.floor(Date.now() / 1000) - (o.age || 0);
+  const paramsText = ";created=" + created + ';keyid="' + KID +
+                     '";tag="' + (o.tag || "fapi-2-request") + '"';
+  const headers = { authorization: "Bearer " + token };
+  if (o.body !== undefined) {
+    headers["content-type"] = "application/scim+json";
+    const digested = o.badDigest ? o.body + " " : o.body;
+    headers["content-digest"] = "sha-256=:" + nodeCrypto.createHash("sha256")
+      .update(digested, "utf8").digest("base64") + ":";
+  }
+  const message = { method: method, targetUri: url, headers: headers };
+  const signature = nodeCrypto.sign("sha256",
+    Buffer.from(baseOf(components, paramsText, message), "ascii"),
+    { key: CLIENT_KEY.privateKey, dsaEncoding: "ieee-p1363" });
+  headers["signature-input"] = "sig1=(" + components.join(" ") + ")" +
+                               paramsText;
+  headers.signature = "sig1=:" + signature.toString("base64") + ":";
+  log.debug("Leaving signAny().");
+  return { method: method, targetUri: url, headers: headers, body: o.body };
+}
+
+async function callAny(request) {
+  log.debug("Entering callAny().");
+  const r = await send(request.targetUri, { method: request.method,
+    headers: request.headers, body: request.body });
+  log.debug("Leaving callAny().");
+  return r;
+}
+
+// How many rows of the realm's audit log carry `code`, waited for until
+// there are more than `above`.
+async function codeCount(code, above) {
+  log.debug("Entering codeCount(). " + code);
+  const floor = Number(above || 0);
+  let n = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const r = await send(realmApi + "/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    n = Number((r.body && r.body.matched) || 0);
+    if (n > floor) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
+// D12 (#444): what `tests/fapi_http_signatures.js` drove at atResource() in
+// process, asked of the realm over the wire.
+async function theUnitsRefusals(token) {
+  log.debug("Entering theUnitsRefusals().");
+  log.info("=== g. the policy's other refusals, as " +
+           "fapi_http_signatures.js held them ===");
+  const SEARCH = realmBase + "/scim/v2/Users/.search";
+  const body = JSON.stringify({ schemas:
+    ["urn:ietf:params:scim:api:messages:2.0:SearchRequest"], count: 1 });
+  const withDigest = ['"@method"', '"@target-uri"', '"authorization"',
+                      '"content-digest"'];
+  let r = await callAny(signAny(SEARCH, token, { method: "POST", body: body,
+                                                 components: withDigest }));
+  check("g. a signed POST with a body, covering its Content-Digest, is " +
+        "answered 200", function () {
+    assert.strictEqual(r.status, 200, r.status + " " + r.raw.slice(0, 300));
+  });
+  const c150 = await codeCount("STS-KEYS-0150");
+  refusedAs401(await call(signRequest(RESOURCE, token,
+    { components: ['"@method"', '"authorization"'] })),
+    "g. a signature that does not cover @target-uri");
+  refusedAs401(await call(signRequest(RESOURCE, token,
+    { components: ['"@target-uri"', '"authorization"'] })),
+    "g. a signature that does not cover @method");
+  refusedAs401(await callAny(signAny(SEARCH, token, { method: "POST",
+    body: body })), "g. a request with a body whose signature does not " +
+    "cover content-digest");
+  const c150after = await codeCount("STS-KEYS-0150", c150 + 2);
+  check("g. those three are recorded STS-KEYS-0150 (a required component " +
+        "not covered)", function () {
+    assert.ok(c150after >= c150 + 3, c150 + " -> " + c150after);
+  });
+  refusedAs401(await callAny(signAny(SEARCH, token, { method: "POST",
+    body: body, components: withDigest, badDigest: true })),
+    "g. a Content-Digest that does not match the body");
+  refusedAs401(await call(signRequest(RESOURCE, token, { age: -120 })),
+    "g. a signature created two minutes in the future");
+  r = await call(signRequest(RESOURCE, token, { age: 45 }));
+  check("g. a signature created 45 s ago is inside the draft's minute",
+        function () {
+    assert.strictEqual(r.status, 200, r.status + " " + r.raw.slice(0, 300));
+  });
+  try {
+    await ok(realmApi + "/config/set",
+             { key: "oauth2.httpSignatures", value: "require-requests" },
+             "required signed requests in the realm");
+    refusedAs401(await callAny(signAny(RESOURCE, token, { tag: "gnap" })),
+      "g. require-requests: a signature with another tag is no FAPI " +
+      "signature");
+  } finally {
+    await resetQuietly("oauth2.httpSignatures");
+  }
+  const codes = {};
+  for (const code of ["STS-KEYS-0111", "STS-KEYS-0147", "STS-KEYS-0148",
+                      "STS-KEYS-0151", "STS-KEYS-0153", "STS-OAUTH-0939"]) {
+    codes[code] = await codeCount(code);
+  }
+  check("g. every refusal of c, d and g is recorded under its code, and none " +
+        "is sent: STS-KEYS-0111 (the digest), 0147 (too old), 0148 (the " +
+        "future), 0151 (an unknown keyid), 0153 (the wrong key or target), " +
+        "STS-OAUTH-0939 (unsigned or another tag where one is required)",
+        function () {
+    Object.keys(codes).forEach(function (code) {
+      assert.ok(codes[code] >= 1, JSON.stringify(codes));
+    });
+  });
+  log.debug("Leaving theUnitsRefusals().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("FAPI 2.0 HTTP Signatures against " + base + " in the realm " +
@@ -479,6 +619,7 @@ async function test() {
   await theRefusals(token);
   await theSetting(token);
   await theClientFlag(token);
+  await theUnitsRefusals(token);
   assert.ok(checks >= FLOOR,
     "only " + checks + " checks ran, against a floor of " + FLOOR + ".");
   log.info(checks + " check(s) passed.");

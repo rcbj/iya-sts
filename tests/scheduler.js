@@ -72,6 +72,12 @@
 //   S. a run abandoned in place long ago is outside that report and is
 //      found by its id, by one by-id read per realm — what the crash
 //      takeover's step 4 asks (2026-11-14, run 43642810770).
+//   T. one run of a job in a realm at a time (#1757): a Run now while the
+//      scheduled run of the same job and realm is going waits
+//      (STS-SCHED-0024, on its row, said once) and runs once it ends, and
+//      the reverse — the next slot's run waits for a manual run and runs
+//      inside its slot — on one node and across two, where only the
+//      `exclusive|<job>|<realm>` claim knows of the other node's run.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1772,6 +1778,184 @@ async function run(t) {
             'S6. step 4 of the crash takeover asks GET /admin-api/scheduler' +
             '?run= for the run it left behind before the job\'s report');
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== T. one run of a job in a realm at a time (#1757) ===');
+  {
+    // A MANUAL RUN AND THE SCHEDULED RUN OF ONE REALM JOB OVERLAPPED: their
+    // ids differ, so each won its own claim. Now a run also holds
+    // `exclusive|<job>|<realm>` in the same claim table while it runs, and
+    // the one that cannot have it waits (STS-SCHED-0024). A body here
+    // counts how many runs of the job are going in its realm at once and
+    // stays running until the test lets it end.
+    const harness = function () {
+      const h = { active: {}, max: {}, started: [], open: [] };
+      h.job = baseJob({ id: 'test.exclusive', scope: 'realm',
+        everyMs: function () { return 60000; },
+        run: function (ctx) {
+          const r = ctx.realm;
+          h.active[r] = (h.active[r] || 0) + 1;
+          h.max[r] = Math.max(h.max[r] || 0, h.active[r]);
+          h.started.push({ realm: r, trigger: ctx.trigger,
+                           runId: ctx.runId });
+          return new Promise(function (resolve) {
+            h.open.push({ realm: r, trigger: ctx.trigger, runId: ctx.runId,
+                          end: function () {
+                            h.active[r] -= 1;
+                            resolve({ summary: 'done' });
+                          } });
+          });
+        } });
+      h.count = function (realm, trigger) {
+        return h.started.filter(function (one) {
+          return one.realm === realm && (!trigger || one.trigger === trigger);
+        }).length;
+      };
+      h.end = function (realm, trigger) {
+        const i = h.open.findIndex(function (one) {
+          return one.realm === realm && one.trigger === trigger;
+        });
+        if (i >= 0) {
+          h.open.splice(i, 1)[0].end();
+        }
+        return i >= 0;
+      };
+      return h;
+    };
+    const waitLines = function (w, runId) {
+      return w.logs.filter(function (one) {
+        return /STS-SCHED-0024/.test(String(one.m)) &&
+               String(one.m).indexOf(runId) >= 0;
+      }).length;
+    };
+
+    // ONE NODE.
+    const w = kit.world({ clustered: false });
+    const node = w.node('solo');
+    const h = harness();
+    let other = 0;
+    node.scheduler.register(h.job);
+    node.scheduler.register(baseJob({ id: 'test.exclusive-other',
+      scope: 'realm', manualOnly: true, everyMs: undefined,
+      run: function () { other += 1; } }));
+    node.scheduler.start('front');
+    await w.advance(1000);
+    t.check(h.count('acme', 'schedule') === 1 &&
+            h.count('default', 'schedule') === 1,
+            'T0. the scheduled run of the slot is going in both realms',
+            JSON.stringify(h.started));
+    const manual = node.scheduler.requestRun('test.exclusive',
+                                             { realm: 'acme' });
+    const otherRun = node.scheduler.requestRun('test.exclusive-other',
+                                               { realm: 'acme' });
+    await w.advance(15000);
+    t.check(manual.ok && h.count('acme', 'manual') === 0 &&
+            h.max.acme === 1,
+            'T1. one node: a Run now while the scheduled run of the same ' +
+            'job in the same realm is going does not start',
+            JSON.stringify({ started: h.started, max: h.max }));
+    const queued = w.stores.get('acme').get(manual.runId);
+    t.check(queued && queued.state === 'queued' &&
+            queued.errorCode === 'STS-SCHED-0024' &&
+            /still running/.test(queued.why) &&
+            waitLines(w, manual.runId) === 1,
+            'T2. it waits, queued, with STS-SCHED-0024 and the reason on its ' +
+            'row, and says so once in three ticks',
+            JSON.stringify({ row: queued, lines: waitLines(w, manual.runId) }));
+    t.check(otherRun.ok && other === 1,
+            'T3. another job in the same realm is not held by it',
+            JSON.stringify({ other: other }));
+    h.end('acme', 'schedule');
+    await w.advance(10000);
+    const ran = w.stores.get('acme').get(manual.runId);
+    t.check(h.count('acme', 'manual') === 1 && h.max.acme === 1 &&
+            ran && ran.state === 'running' && ran.errorCode === '',
+            'T4. once the scheduled run ends, the manual run starts, alone, ' +
+            'and its row no longer says it waits',
+            JSON.stringify({ started: h.started, row: ran }));
+    // THE REVERSE: a manual run going when the next slot falls due.
+    h.end('acme', 'manual');
+    h.end('default', 'schedule');
+    const inDefault = node.scheduler.requestRun('test.exclusive', {});
+    await w.advance(10000);
+    t.check(inDefault.ok && h.count('default', 'manual') === 1,
+            'T5. a manual run in the default realm is going',
+            JSON.stringify(h.started));
+    await w.advance(40000);
+    const slot = node.scheduler['runIdFor'](node.scheduler.job(
+      'test.exclusive'), 'default', node.scheduler['slotAt'](
+      node.scheduler.job('test.exclusive'), node.scheduler.nowMs()).slot);
+    t.check(h.count('default', 'schedule') === 1 && h.max.default === 1 &&
+            h.count('acme', 'schedule') === 2 &&
+            !w.stores.get('default').has(slot) && waitLines(w, slot) === 1,
+            'T6. one node, the reverse: the next slot\'s scheduled run in ' +
+            'that realm waits for it (said once, no row written), while the ' +
+            'other realm\'s runs',
+            JSON.stringify({ started: h.started, lines: waitLines(w, slot) }));
+    h.end('default', 'manual');
+    await w.advance(10000);
+    t.check(h.count('default', 'schedule') === 2 && h.max.default === 1,
+            'T7. and runs inside its slot once the manual run has ended',
+            JSON.stringify(h.started));
+    h.open.slice().forEach(function (one) {
+      h.end(one.realm, one.trigger);
+    });
+    await w.advance(1000);
+    node.scheduler.stop();
+
+    // TWO NODES: the run in flight is the other node's, so nothing here
+    // knows of it but the claim.
+    const w2 = kit.world({});
+    const a = w2.node('a');
+    const b = w2.node('b');
+    const h2 = harness();
+    a.scheduler.register(h2.job);
+    b.scheduler.register(Object.assign({}, h2.job));
+    a.scheduler.start('front');
+    b.scheduler.start('front');
+    await w2.advance(1000);
+    t.check(w2.leaderOf() === 'a' && h2.count('acme', 'schedule') === 1,
+            'T8. two nodes: a leads, and its scheduled run in acme is going',
+            JSON.stringify({ leader: w2.leaderOf(), started: h2.started }));
+    await a.cluster.stepDown('ops.scheduler');
+    await w2.advance(3000);
+    const viaB = b.scheduler.requestRun('test.exclusive', { realm: 'acme' });
+    await w2.advance(15000);
+    t.check(w2.leaderOf() === 'b' && viaB.ok &&
+            h2.count('acme', 'manual') === 0 && h2.max.acme === 1 &&
+            w2.stores.get('acme').get(viaB.runId).errorCode ===
+              'STS-SCHED-0024',
+            'T9. b leads, and a Run now there waits for a\'s run, which only ' +
+            'the claim tells it of',
+            JSON.stringify({ leader: w2.leaderOf(), started: h2.started }));
+    h2.end('acme', 'schedule');
+    await w2.advance(10000);
+    t.check(h2.count('acme', 'manual') === 1 && h2.max.acme === 1,
+            'T10. once a\'s run has ended and given its hold back, b runs ' +
+            'the manual run, alone',
+            JSON.stringify(h2.started));
+    // THE REVERSE, ACROSS THE NODES: b's manual run is going when b steps
+    // down and a, leading again, reaches the next slot.
+    h2.end('default', 'schedule');
+    await b.cluster.stepDown('ops.scheduler');
+    await w2.advance(40000);
+    t.check(w2.leaderOf() === 'a' && h2.count('acme', 'schedule') === 1 &&
+            h2.count('default', 'schedule') === 2 && h2.max.acme === 1,
+            'T11. a leads again; its next scheduled run in acme waits for ' +
+            'b\'s manual run, while default\'s runs',
+            JSON.stringify({ leader: w2.leaderOf(), started: h2.started }));
+    h2.end('acme', 'manual');
+    await w2.advance(10000);
+    t.check(h2.count('acme', 'schedule') === 2 && h2.max.acme === 1,
+            'T12. and runs inside its slot once b\'s run has ended',
+            JSON.stringify(h2.started));
+    h2.open.slice().forEach(function (one) {
+      h2.end(one.realm, one.trigger);
+    });
+    await w2.advance(1000);
+    a.scheduler.stop();
+    b.scheduler.stop();
+  }
   log.debug('Leaving run().');
 }
 
@@ -1783,6 +1967,7 @@ module.exports = {
             'bounded run history, removed realms, a tick that reads no ' +
             'history, a finished interval slot read once and not held (#883), ' +
             'the line ordered by the end of each run\'s slot, a job ' +
-            'filter reading the job\'s own slots, a run found by its id',
+            'filter reading the job\'s own slots, a run found by its id, ' +
+            'one run of a job in a realm at a time',
   run: run
 };

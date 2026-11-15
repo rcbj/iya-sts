@@ -38,6 +38,26 @@
 //      (STS-AUTHN-0354);
 //   G. switched off, a new post-quantum enrolment is refused and the
 //      post-quantum key still signs in.
+//
+// D12 (#444) ADDED what only `tests/passkey_dual_lane.js` held, which is
+// deleted at the cutover, with every code read off `/admin-api/audit`:
+//
+//   0. OFF (the default): the page offers the classical lane alone, a
+//      registration with no lane offers the configured list ML-DSA first,
+//      and a post-quantum enrolment is refused (STS-AUTHN-0351); the
+//      switch refused beside webauthn.pqcOnly the other way round too
+//      (STS-AUTHN-0353), and A's refusal recorded under the same code;
+//   H. a credential in the wrong lane is refused as an algorithm that was
+//      not offered (STS-AUTHN-0228), either way round;
+//   E's refusal recorded STS-AUTHN-0303 (section 7.2 step 6);
+//   I. webauthn.maxKeysPerPerson counts both lanes (STS-AUTHN-0067).
+//
+// NOT CARRIED (class (d)): `lanes()` and `userHandleHolder()` as module
+// calls (asserted by the ceremonies they decide), a key from before the
+// lanes or from before #474 (only an in-process `addKey()` writes either),
+// the confirmKeyEnrolment() bookkeeping of a pending self-enrolment beside
+// an administrator's, and the portal's Cryptography row (a drawn page).
+// The realm is removed at the end only where STS_TEST_REMOVE_REALMS=1.
 // ===========================================================================
 
 // The sign-in screen over `/authn-api` (#571).
@@ -356,6 +376,142 @@ async function enrol(client, authenticator, lane) {
   return { begun: begun, pending: pending, done: done };
 }
 
+// The code's count once it has passed `before` (the audit ring is written as
+// the answer leaves), or what it is after three seconds.
+async function codesAfter(code, before) {
+  log.debug("Entering codesAfter(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 20 && n <= before; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving codesAfter(). " + n);
+  return n;
+}
+
+// 0. OFF, the default (D12): one lane, the configured list, and the
+// post-quantum lane refused; the switch refused beside pqcOnly the other
+// way round.
+async function switchedOff() {
+  log.debug("Entering switchedOff().");
+  log.info("=== the switch off, as it starts ===");
+  const portal = await portalSignin.signInToThePortal(base, PERSON, null,
+                                                      { password: PASSWORD });
+  const page = await portal.api("GET", "/account-api/keys");
+  const begun = await portal.api("POST", "/account-api/keys",
+    { action: "begin", kind: "passkey" });
+  const pending = ((await portal.api("GET", "/account-api/keys")).json
+    .enrol || {}).pending || {};
+  const lanesBefore = await codeCount("STS-AUTHN-0351");
+  const refused = await portal.api("POST", "/account-api/keys",
+    { action: "begin", kind: "passkey", lane: "pqc" });
+  const lanesAfter = await codesAfter("STS-AUTHN-0351", lanesBefore);
+  check("OFF (THE DEFAULT): THE PAGE OFFERS THE CLASSICAL LANE ALONE, A " +
+        "REGISTRATION OFFERS THE CONFIGURED LIST ML-DSA FIRST, AND A " +
+        "POST-QUANTUM ENROLMENT IS REFUSED (STS-AUTHN-0351)", function () {
+    assert.strictEqual(page.status, 200, String(page.text).slice(0, 300));
+    assert.deepStrictEqual(page.json.enrol.lanes, ["classical"]);
+    assert.strictEqual(begun.status, 200, String(begun.text).slice(0, 300));
+    assert.deepStrictEqual(pending.options.algorithms.slice(0, 3),
+                           [-50, -49, -48],
+                           JSON.stringify(pending.options.algorithms));
+    assert.ok(pending.options.algorithms.indexOf(-7) > 2,
+              JSON.stringify(pending.options.algorithms));
+    assert.strictEqual(refused.status, 400, String(refused.text)
+      .slice(0, 300));
+    assert.ok(lanesAfter > lanesBefore, "no STS-AUTHN-0351 row");
+  });
+  const pqcOnly = await setting("webauthn.pqcOnly", true);
+  const before = await codeCount("STS-AUTHN-0353");
+  const turned = await setting(SWITCH, true);
+  const after = await codesAfter("STS-AUTHN-0353", before);
+  await call("POST", "/config/reset", { key: "webauthn.pqcOnly" });
+  await call("POST", "/config/reset", { key: SWITCH });
+  check("THE OTHER WAY ROUND: WITH webauthn.pqcOnly ON THE SWITCH IS " +
+        "REFUSED AT THE WRITE (STS-AUTHN-0353)", function () {
+    assert.ok(pqcOnly.status === 200 && pqcOnly.body.ok !== false,
+              String(pqcOnly.raw).slice(0, 300));
+    assert.ok(turned.status !== 200 ||
+              (turned.body && turned.body.ok === false),
+              String(turned.raw).slice(0, 300));
+    assert.ok(after > before, "no STS-AUTHN-0353 row");
+  });
+  log.debug("Leaving switchedOff().");
+}
+
+// H. A credential in the wrong lane (D12): not an algorithm that lane
+// offered.
+async function wrongLanes(client) {
+  log.debug("Entering wrongLanes().");
+  log.info("=== a credential in the wrong lane ===");
+  const before = await codeCount("STS-AUTHN-0228");
+  const intoClassical = await enrol(client, makeAuthenticator(-49),
+                                    "classical");
+  const mid = await codesAfter("STS-AUTHN-0228", before);
+  const intoPqc = await enrol(client, makeAuthenticator(-7), "pqc");
+  const after = await codesAfter("STS-AUTHN-0228", mid);
+  check("A CREDENTIAL IN THE WRONG LANE IS REFUSED AS AN ALGORITHM THAT WAS " +
+        "NOT OFFERED (STS-AUTHN-0228), EITHER WAY ROUND", function () {
+    assert.strictEqual(intoClassical.done.status, 400,
+                       String(intoClassical.done.text).slice(0, 300));
+    assert.ok(mid > before, "no STS-AUTHN-0228 row (classical lane)");
+    assert.strictEqual(intoPqc.done.status, 400,
+                       String(intoPqc.done.text).slice(0, 300));
+    assert.ok(after > mid, "no STS-AUTHN-0228 row (post-quantum lane)");
+  });
+  log.debug("Leaving wrongLanes().");
+}
+
+// I. webauthn.maxKeysPerPerson counts both lanes (D12).
+async function bothLanesCounted(client) {
+  log.debug("Entering bothLanesCounted().");
+  const page = await client.api("GET", "/account-api/keys");
+  const held = ((page.json && page.json.keys) || []);
+  const lanes = held.map(function (one) {
+    return one.lane;
+  });
+  await setting("webauthn.maxKeysPerPerson", held.length);
+  const before = await codeCount("STS-AUTHN-0067");
+  let classical;
+  let postQuantum;
+  try {
+    classical = await client.api("POST", "/account-api/keys",
+      { action: "begin", kind: "passkey", lane: "classical" });
+    postQuantum = await client.api("POST", "/account-api/keys",
+      { action: "begin", kind: "passkey", lane: "pqc" });
+  } finally {
+    await call("POST", "/config/reset", { key: "webauthn.maxKeysPerPerson" });
+  }
+  const after = await codesAfter("STS-AUTHN-0067", before);
+  check("webauthn.maxKeysPerPerson COUNTS BOTH LANES: at the cap, neither " +
+        "lane enrols another (STS-AUTHN-0067)", function () {
+    assert.ok(lanes.indexOf("classical") >= 0 && lanes.indexOf("pqc") >= 0,
+              JSON.stringify(lanes));
+    assert.strictEqual(classical.status, 400,
+                       String(classical.text).slice(0, 300));
+    assert.strictEqual(postQuantum.status, 400,
+                       String(postQuantum.text).slice(0, 300));
+    assert.ok(after > before, "no STS-AUTHN-0067 row");
+  });
+  log.debug("Leaving bothLanesCounted().");
+}
+
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe) this
+// run's realm is removed, pass or fail. A suite run leaves it standing
+// (tests/CLAUDE.md, *No job removes a realm*).
+async function removeRealm() {
+  log.debug("Entering removeRealm().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealm(). Not asked to.");
+    return;
+  }
+  const r = await call("POST", "/realms/remove", { id: REALM }, serviceApi);
+  log.info("removed the realm " + REALM + " (" + r.status + ")");
+  log.debug("Leaving removeRealm().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const made = await call("POST", "/realms/create",
@@ -372,10 +528,14 @@ async function test() {
     "creating " + PERSON + " answered " + created.status + " " +
     String(created.raw).slice(0, 300));
 
+  await switchedOff();
+
   // A. The switch, and pqcOnly beside it.
   log.info("=== the switch ===");
   const on = await setting(SWITCH, true);
+  const pqcOnlyCodes = await codeCount("STS-AUTHN-0353");
   const both = await setting("webauthn.pqcOnly", true);
+  const pqcOnlyAfter = await codesAfter("STS-AUTHN-0353", pqcOnlyCodes);
   check("THE SWITCH IS ON IN THE REALM, AND webauthn.pqcOnly BESIDE IT IS " +
         "REFUSED AT THE WRITE", function () {
     assert.ok(on.status === 200 && on.body && on.body.ok !== false,
@@ -384,6 +544,7 @@ async function test() {
     assert.ok(both.status !== 200 || (both.body && both.body.ok === false),
       "pqcOnly beside the switch was accepted: " + both.status + " " +
       String(both.raw).slice(0, 300));
+    assert.ok(pqcOnlyAfter > pqcOnlyCodes, "no STS-AUTHN-0353 row");
   });
 
   const client = await portalSignin.signInToThePortal(base, PERSON, null,
@@ -571,14 +732,20 @@ async function test() {
   });
 
   // E. The wrong handle.
+  const handleCodes = await codeCount("STS-AUTHN-0303");
   r = await withoutAUsername(function (challenge) {
     return postQuantum.assert(challenge, { handle: c.pending.userHandle });
   });
+  const handleAfter = await codesAfter("STS-AUTHN-0303", handleCodes);
   check("THE POST-QUANTUM KEY RETURNING THE CLASSICAL HANDLE SIGNS NOBODY IN " +
-        "(section 7.2 step 6)", function () {
+        "(section 7.2 step 6, STS-AUTHN-0303)", function () {
     assert.strictEqual(r.next, "refused", JSON.stringify(r.json)
       .slice(0, 300));
+    assert.ok(handleAfter > handleCodes, "no STS-AUTHN-0303 row");
   });
+
+  await wrongLanes(client);
+  await bothLanesCounted(client);
 
   // F. The lane's name typed.
   const before = await codeCount("STS-AUTHN-0354");
@@ -612,7 +779,7 @@ async function test() {
       .slice(0, 300));
   });
 
-  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 14, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -632,7 +799,9 @@ program
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+test().then(removeRealm, function (e) {
   log.error(e.stack || e.message);
-  process.exit(1);
+  return removeRealm().then(function () {
+    process.exit(1);
+  });
 });

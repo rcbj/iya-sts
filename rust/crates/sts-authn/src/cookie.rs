@@ -43,11 +43,20 @@ fn decode_uri_component(text: &str) -> Result<String, String> {
 }
 
 /// `cookiesOf(req)`: a request's Cookie header as a map of name to decoded
-/// value; a later cookie of one name wins. An `Err` is Node's `URIError`
-/// on a malformed percent escape (see [`crate::Sessions::session_of`]).
+/// value; a later cookie of one name wins.
+///
+/// ONE COOKIE THAT DOES NOT DECODE IS THAT COOKIE'S PROBLEM, NOT THE
+/// BROWSER'S (Node's fix of 2026-11-14, #444 D12). `decodeURIComponent()`
+/// throws `URIError` on a bad percent escape, and a site on a shared parent
+/// domain can set any cookie it likes (`x=%E0%A4%A`); until then one such
+/// value made every session door fail and the account set read as
+/// unreadable (STS-AUTHN-0344 on every request). A value this service wrote
+/// is always encoded, so one that does not decode is not ours: it is left
+/// out and the others are read.
 // A hot path: every session read parses the header; no span.
-pub fn cookies_of(header: &str) -> Result<Object, String> {
+pub fn cookies_of(header: &str) -> Object {
     let mut out = Object::new();
+    let mut skipped = 0;
     for part in header.split(';') {
         let Some(i) = part.find('=') else {
             continue;
@@ -56,24 +65,28 @@ pub fn cookies_of(header: &str) -> Result<Object, String> {
             continue;
         }
         let name = part[..i].trim().to_string();
-        let value = decode_uri_component(part[i + 1..].trim())?;
-        out.insert(name, json!(value));
+        match decode_uri_component(part[i + 1..].trim()) {
+            Ok(value) => {
+                out.insert(name, json!(value));
+            }
+            Err(e) => {
+                tracing::debug!("authn: cookie {} skipped: {}", name, e);
+                skipped += 1;
+            }
+        }
     }
-    Ok(out)
+    if skipped > 0 {
+        tracing::debug!("authn: {} cookie(s) skipped", skipped);
+    }
+    out
 }
 
-/// The value of one cookie, or '' (a malformed header reads as none).
+/// The value of one cookie, or ''.
 // A hot path, as cookies_of(); no span.
 pub fn cookie_value(header: &str, name: &str) -> String {
-    match cookies_of(header) {
-        Ok(all) => match all.get(name) {
-            Some(Value::String(v)) => v.clone(),
-            _ => String::new(),
-        },
-        Err(e) => {
-            tracing::debug!("authn: a Cookie header did not parse: {}", e);
-            String::new()
-        }
+    match cookies_of(header).get(name) {
+        Some(Value::String(v)) => v.clone(),
+        _ => String::new(),
     }
 }
 
@@ -176,11 +189,14 @@ mod tests {
 
     #[test]
     fn a_cookie_header_parses_as_node_parses_it() {
-        let c = cookies_of("sts_session=abc.def; other=2").unwrap();
+        let c = cookies_of("sts_session=abc.def; other=2");
         assert_eq!(c["sts_session"], "abc.def");
-        assert_eq!(cookies_of("a=%41%20b").unwrap()["a"], "A b");
-        assert!(cookies_of("x=%E0%A4%A").is_err());
-        assert!(cookies_of("=v; noequals").unwrap().is_empty());
+        assert_eq!(cookies_of("a=%41%20b")["a"], "A b");
+        assert!(cookies_of("x=%E0%A4%A").is_empty());
+        let mixed = cookies_of("x=%E0%A4%A; sts_session=a.b");
+        assert_eq!(mixed.len(), 1);
+        assert_eq!(mixed["sts_session"], "a.b");
+        assert!(cookies_of("=v; noequals").is_empty());
     }
 
     #[test]

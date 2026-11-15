@@ -9,6 +9,7 @@
 //! |---|---|
 //! | `GET`, `POST /oauth2/authorize` | [`AuthorizationEndpoint`] |
 //! | `POST /oauth2/token` | [`TokenEndpoint`] |
+//! | `POST /oauth2/introspect`, `/oauth2/revoke` | [`TokenEndpoint`] ([`sts_oauth::introspection`]) |
 //! | `GET /.well-known/oauth-authorization-server`, `/.well-known/openid-configuration` | [`sts_oauth::metadata`], with `signed_metadata` |
 //! | `GET /oauth2/autopost.js` | the `form_post` page's one script |
 //!
@@ -82,6 +83,9 @@ pub struct OAuthParts {
     pub client_display: Arc<dyn Fn(&str) -> Json + Send + Sync>,
     /// The credential store, for the password grant.
     pub credentials: Arc<sts_credentials::credentials::Credentials>,
+    /// The identity funnel the session core records through, which the
+    /// password grant records through too (`stats.recordAuthentication()`).
+    pub records: Arc<dyn sts_authn::ports::Records>,
 }
 
 /// The authorization server, built.
@@ -121,7 +125,47 @@ impl sts_oauth::userinfo::ClaimDirectory for ClaimEntries {
         username: &str,
         attribute: &str,
     ) -> Option<Vec<String>> {
-        self.0.person_attribute(username, attribute)
+        let values = self.0.person_attribute(username, attribute)?;
+        if !attribute
+            .eq_ignore_ascii_case(sts_oauth::identity_assurance::ATTRIBUTE)
+        {
+            return Some(values);
+        }
+        // `credentials.readIdaVerifications()`: SEALED since 2026-10-01
+        // under the key-encryption key (label `identity-verifications`); a
+        // value written before then, or without a durable key, is the JSON
+        // as it is.
+        Some(
+            values
+                .into_iter()
+                .map(|v| {
+                    if !sts_crypto::secrets::is_encrypted_with_kek(&v) {
+                        return v;
+                    }
+                    match self
+                        .0
+                        .persistence
+                        .data_keys()
+                        .open(&v, "identity-verifications")
+                    {
+                        Some(opened) => opened,
+                        None => {
+                            tracing::warn!(
+                                "{}credentials: the identity verifications \
+                                 of {} are sealed and will not open under \
+                                 this process's key-encryption key; read as \
+                                 none.",
+                                sts_core::log::tag(
+                                    sts_core::errors::codes::STS_OAUTH_0788
+                                ),
+                                username
+                            );
+                            String::new()
+                        }
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -711,6 +755,23 @@ impl OAuthStack {
             ))),
             passwords: Some(Arc::new(RopcChecks(parts.credentials.clone()))),
             used: Some(used.clone()),
+            records: Some(parts.records.clone()),
+            requested: Some(Arc::new(
+                sts_oauth::requested_claims::RequestedClaims {
+                    directory: Arc::new(ClaimEntries(
+                        parts.directory_ports.clone(),
+                    )),
+                    settings: settings.clone(),
+                    invents: {
+                        let mode = mode.clone();
+                        Arc::new(move || {
+                            mode.predicate("inventsClaimValues")
+                                .unwrap_or(false)
+                        })
+                    },
+                    now_ms: Arc::new(|| chrono::Utc::now().timestamp_millis()),
+                },
+            )),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,
@@ -952,6 +1013,30 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        // RFC 7662 introspection (with RFC 9701's JWT answer) and RFC 7009
+        // revocation.
+        let routes = routes.route(
+            "/oauth2/introspect",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.introspect_or_revoke(h, r, true).await }
+                }
+            })
+            .fallback(unrouted),
+        );
+        let routes = routes.route(
+            "/oauth2/revoke",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.introspect_or_revoke(h, r, false).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         // The two mode reports (`GET /oauth2/rfc9700`, `/oauth2/oauth21`).
         let routes = routes.route(
             "/oauth2/rfc9700",
@@ -1146,6 +1231,29 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        let mut routes = routes;
+        for (path, introspect) in [
+            ("/{as}/oauth2/introspect", true),
+            ("/{as}/oauth2/revoke", false),
+        ] {
+            let (me, h) = (me.clone(), h.clone());
+            routes = routes.route(
+                path,
+                axum::routing::post(
+                    move |Path(server): Path<String>, r: AxumRequest| {
+                        let (me, h) = (me.clone(), h.clone());
+                        async move {
+                            let inner = me.clone();
+                            me.for_profile(server, move || {
+                                inner.introspect_or_revoke(h, r, introspect)
+                            })
+                            .await
+                        }
+                    },
+                )
+                .fallback(unrouted),
+            );
+        }
         let logout = {
             let (me, h) = (me.clone(), h.clone());
             move |Path(server): Path<String>, r: AxumRequest| {
@@ -1522,6 +1630,36 @@ impl OAuthStack {
             t
         }
         sendable(self.userinfo.answer(&ask)).await.into_response()
+    }
+
+    /// `POST /oauth2/introspect` and `POST /oauth2/revoke`.
+    async fn introspect_or_revoke(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+        introspect: bool,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let ask = sts_oauth::introspection::EndpointAsk {
+            base,
+            address,
+            body,
+            authorization: header_of(&headers, "authorization"),
+            accept: header_of(&headers, "accept"),
+            peer: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        if introspect {
+            sendable(self.tokens.introspect(&ask)).await.into_response()
+        } else {
+            sendable(self.tokens.revoke_request(&ask))
+                .await
+                .into_response()
+        }
     }
 
     async fn token(

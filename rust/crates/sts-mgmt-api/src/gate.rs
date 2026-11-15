@@ -44,7 +44,7 @@ use sts_oauth::mtls::{
     bound_thumbprint_of, certificate_thumbprint, check_binding,
 };
 use sts_oauth::sender_constraints::{
-    access_token_dpop_required, access_token_refusal, Presented,
+    access_token_dpop_required, access_token_refusal_with, Presented,
 };
 use sts_store::key_sets::KeySet;
 use sts_xacml::access::{Answer, Question};
@@ -920,18 +920,31 @@ impl Gate<'_> {
                         &self.ports.client_method(&token_realm, &client),
                     ),
         };
-        if let Some(r) = access_token_refusal(self.settings, &presented) {
+        // `oauth2.accessTokenRequireDpop` IS THE ISSUING REALM'S (Node's
+        // #28, rcbj, 2026-11-15). A realm's switch is about the tokens that
+        // realm's own clients hold; asked in the ambient realm it also
+        // refused the service-wide API client's bearer token — the default
+        // realm's `sts-api-client`, which operators and automation use at
+        // every realm's `/admin-api`. The default realm's value is the
+        // process's (it has no realm layer); a realm's own token meets the
+        // realm's rule. The WWW-Authenticate scheme follows the same answer.
+        let dpop_required = if token_realm == DEFAULT_REALM {
+            self.settings
+                .process_value(keys::OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP)
+                .as_bool()
+        } else {
+            access_token_dpop_required(self.settings)
+        };
+        if let Some(r) =
+            access_token_refusal_with(self.settings, &presented, dpop_required)
+        {
             return Err(Box::new(Refused {
                 status: 401,
                 error: r.error,
                 code: r.code,
                 www_authenticate: Some(format!(
                     "{} error=\"{}\", scope=\"{}\"",
-                    if access_token_dpop_required(self.settings) {
-                        "DPoP"
-                    } else {
-                        "Bearer"
-                    },
+                    if dpop_required { "DPoP" } else { "Bearer" },
                     r.error,
                     scope
                 )),

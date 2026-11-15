@@ -8325,6 +8325,11 @@ pub struct WithOkMessageErrors97 {
     pub type_: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition: Option<sts_model_management_components_2::JsonOperatorWroteIntoAccess>,
+    /// On a refusal of an access type's XACML mapping (`STS-FGA-0023`,
+    /// `STS-FGA-0019`): the member of the request that was wrong — `path`,
+    /// `attributeId`, `category`, `dataType`, `multiplicity` or `notForPolicy`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -20,7 +20,8 @@
 //      `consent_screen.ts` declare no zod schema of their own, and each
 //      endpoint's validator refuses and accepts what its parameters say;
 //   C. what the issuers produced — every answer, decoded JWT and error code
-//      `tests/oauth_model_wire.snapshot.json` recorded, in four modes — is
+//      `tests/protocol/oauth_model_wire.snapshot.json` recorded, in four
+//      modes — is
 //      the model's, and every error code a funnel in `oauth-oidc/` sends is
 //      declared;
 //   D. both discovery documents, built with every `oauth2.*` switch on in
@@ -256,7 +257,7 @@ function restored(claims) {
 function issued(t) {
   log.debug("Entering issued().");
   const OAuthModel = require('../oauth-oidc/oauth_model');
-  const wire = JSON.parse(fs.readFileSync(path.join(__dirname,
+  const wire = JSON.parse(fs.readFileSync(path.join(__dirname, 'protocol',
     'oauth_model_wire.snapshot.json'), 'utf8')).wire;
   const SETS = {
     'openid-configuration': 'openid-provider-metadata',

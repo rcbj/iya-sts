@@ -20,8 +20,15 @@
 //      pins the browser to cell B with the `sts_cell` cookie.
 //   2. FOLLOWED WITH THE PIN, cell A relays every request to cell B: the
 //      authorization request starts again there, and the sign-in screen it
-//      sends the browser to is cell B's — the same URL at cell A without
-//      the pin is a sign-in cell A does not hold.
+//      sends the browser to is cell B's. SINCE #1454 THE STEP'S ID IS IN
+//      THE URL FRAGMENT (`/authn/login#authn=…`), which a browser never
+//      sends, so the shell itself names no sign-in and every cell answers
+//      it 200 with or without the pin: WHERE the sign-in lives is proved by
+//      the call the shell's script makes with the id — the view,
+//      `GET /authn-api/pending/{id}` — which cell A relays to cell B with
+//      the pin (its relay counter moves) and refuses without it, holding
+//      no such sign-in. (Until CI run #250 this step asserted the unpinned
+//      SHELL was refused, a premise #1454 had overtaken.)
 //   3. THE PASSWORD POST at cell A is relayed to cell B and signs the person
 //      in there, and the flow ends at the client with a code minted AT CELL
 //      B. Redeemed at cell A, it is relayed by its sealed locator (D10) —
@@ -43,6 +50,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const expectation = require("./expectation.js");
 const kit = require("./cells_kit.js");
+const authnSignin = require("./authn_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -213,19 +221,40 @@ async function theRestart(cells, realm) {
           assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(again.location),
             again.location);
         });
-  // SINCE #571 THE SCREEN IS A SHELL, answered only for a sign-in the
-  // answering cell holds (an unknown id is refused, 400): the shell is the
-  // proof of WHERE the sign-in is.
+  // THE SHELL IS NOT THE PROOF OF WHERE THE SIGN-IN IS (#1454): its id is
+  // in the fragment, so the shell is answered the same at any cell. The
+  // proof is the view the shell's script asks for with the id, which only
+  // the cell holding the sign-in answers (see the header).
   const homeScreen = await kit.browse(jar, again.location);
-  check("the pinned sign-in screen is a sign-in", function () {
+  check("the pinned sign-in screen is a sign-in's shell", function () {
     assert.ok(kit.isSignIn(homeScreen), homeScreen.status + " " +
       kit.said(homeScreen.text));
   });
-  const unpinned = await kit.browse(jar.without("sts_cell"), again.location);
-  check("and it is cell B's: the same URL at cell A without the pin is not " +
-        "a sign-in cell A holds", function () {
-          assert.ok(!kit.isSignIn(unpinned) && unpinned.status >= 400,
-            "cell A drew the pinned sign-in itself: " + unpinned.status);
+  const at = new URL(again.location);
+  const screenBase = at.origin + at.pathname.replace(/\/authn\/login$/, "");
+  const relayedBefore = await relayedAt(realm.a);
+  const pinnedView = await authnSignin.screen(screenBase, again.location,
+                                              { cookie: jar.header() });
+  const relayedAfter = await relayedAt(realm.a);
+  check("the shell's view of the sign-in, asked at cell A with the pin, is " +
+        "answered", function () {
+          assert.ok(pinnedView.status === 200 && pinnedView.view,
+            "the pinned view answered " + pinnedView.status + " " +
+            JSON.stringify(pinnedView.json).slice(0, 300));
+        });
+  check("by cell B: cell A relayed it (its relay counter moved)",
+        function () {
+          assert.ok(relayedAfter > relayedBefore,
+            "relayed " + relayedBefore + " -> " + relayedAfter);
+        });
+  const unpinnedView = await authnSignin.screen(screenBase, again.location,
+    { cookie: jar.without("sts_cell").header() });
+  check("and it is cell B's: the same view at cell A without the pin is " +
+        "refused, cell A holding no such sign-in", function () {
+          assert.ok(unpinnedView.status >= 400 && unpinnedView.status < 500,
+            "cell A answered the pinned sign-in's view itself: " +
+            unpinnedView.status + " " +
+            JSON.stringify(unpinnedView.json).slice(0, 300));
         });
 
   log.info("=== 3. the password at home, the code from home ===");

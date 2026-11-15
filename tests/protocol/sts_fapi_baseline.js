@@ -31,6 +31,18 @@
 //      sts-user-portal, PKCE, a DPoP-bound token — and its client
 //      authenticates by none and holds no secret. Until #568 it was a
 //      private_key_jwt relying party run by this process.
+//   i. D12 (#444), `tests/fapi_baseline_units.js` over the wire: every
+//      refusal of c, d, f and g read back by its code off the realm's audit
+//      log (plain PKCE is STS-OAUTH-0165 and client_secret_basic 0198 on
+//      the wire, where fapi.js alone names 0573 and 0580); https even at a
+//      loopback address; no nonce needed without openid; the consent screen
+//      shown with oauth2.consentRequired false; a DPoP-bound token living
+//      past 600 s; the console a public client with no secret; a named
+//      server following its realm, and one carrying a profile in a realm
+//      with none (that realm not in RFC 9700 mode); STS-ADMIN-0795. Not
+//      carried (class (d)): known(), keyBits(), the requirement table's
+//      ids as data, and J's relying-party key life (oidc_rp.ts over stand-in
+//      registries; no hosted surface signs a client assertion since #568).
 //
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
@@ -317,6 +329,224 @@ async function portalSignsIn(who, password) {
   return { problem: problem, me: me };
 }
 
+// How many rows of this realm's audit log carry `code`, waited for briefly
+// until there are more than `above` (default 0).
+async function codeCount(code, above, realm) {
+  log.debug("Entering codeCount(). " + code);
+  const floor = Number(above || 0);
+  const api = realm ? base + "/realm/" + realm + "/admin-api" : realmApi;
+  let n = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const r = await send(api + "/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    n = Number((r.body && r.body.matched) || 0);
+    if (n > floor) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
+// An RFC 9449 proof for one request, signed ES256 by `key`.
+function dpopProof(url, key) {
+  log.debug("Entering dpopProof().");
+  const header = { typ: "dpop+jwt", alg: "ES256",
+                   jwk: key.publicKey.export({ format: "jwk" }) };
+  const claims = { jti: nodeCrypto.randomBytes(12).toString("base64url"),
+                   htm: "POST", htu: url,
+                   iat: Math.floor(Date.now() / 1000) };
+  const input = Buffer.from(JSON.stringify(header)).toString("base64url") +
+                "." + Buffer.from(JSON.stringify(claims))
+                  .toString("base64url");
+  const sig = nodeCrypto.sign("sha256", Buffer.from(input),
+    { key: key.privateKey, dsaEncoding: "ieee-p1363" });
+  log.debug("Leaving dpopProof().");
+  return input + "." + sig.toString("base64url");
+}
+
+// D12 (#444): what `tests/fapi_baseline_units.js` asked of fapi.js in
+// process, asked of the realm over the wire. `f` carries test()'s client.
+async function unitsOverTheWire(f) {
+  log.debug("Entering unitsOverTheWire().");
+  log.info("=== i. the profile's rules, as fapi_baseline_units.js held " +
+           "them ===");
+  // THE CODES OF c, d, f AND g, as the wire records them. Two differ from
+  // the units file, which asked fapi.js alone: plain PKCE meets the
+  // advertised-methods check first (STS-OAUTH-0165, not 0573), and a
+  // client_secret_basic client the token endpoint's own method list
+  // (STS-OAUTH-0198, not 0580). The wire is asserted.
+  const codes = {};
+  for (const code of ["STS-REG-0174", "STS-REG-0175", "STS-REG-0176",
+                      "STS-OAUTH-0573", "STS-OAUTH-0165", "STS-OAUTH-0575",
+                      "STS-OAUTH-0576", "STS-OAUTH-0160", "STS-OAUTH-0143",
+                      "STS-OAUTH-0198", "STS-OAUTH-0581",
+                      "STS-ADMIN-0795"]) {
+    codes[code] = await codeCount(code);
+  }
+  check("i. every refusal above is recorded: registration STS-REG-0174 " +
+        "(a secret method), 0176 (http), 0175 (the key); the request " +
+        "STS-OAUTH-0573 (no PKCE), 0165 (plain), 0575 (nonce), 0576 " +
+        "(state), 0160 (no redirect_uri); the token endpoint 0143 (the " +
+        "code again), 0198 (client_secret_basic), 0581 (two clients); and " +
+        "the named server's value STS-ADMIN-0795", function () {
+    Object.keys(codes).forEach(function (code) {
+      assert.ok(codes[code] >= 1, JSON.stringify(codes));
+    });
+  });
+
+  // B. https EVEN AT A LOOPBACK ADDRESS (item 20).
+  let r = await postJson(base + R + "/oauth2/register", Object.assign({},
+    f.metadata, { redirect_uris: ["http://127.0.0.1:9000/cb"] }));
+  check("i/B. an http redirect URI is refused at a loopback address too " +
+        "(item 20)", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+
+  // B. Without openid a request needs state and no nonce: it reaches the
+  // sign-in screen rather than an error.
+  const bob = browser("bob");
+  const p = pkce();
+  // Fresh values: RFC 9700 mode refuses a challenge, nonce or state that
+  // was already used in this realm.
+  const plain = Object.assign({}, f.good, { scope: "profile",
+    code_challenge: p.challenge, state: "bob-" + STAMP });
+  delete plain.nonce;
+  r = await bob.go("GET", R + "/oauth2/authorize?" + form(plain));
+  check("i/B. a request without openid and without a nonce, with state, " +
+        "is taken to the sign-in screen (5.2.2.3)", function () {
+    assert.ok(r.status === 302 || r.status === 303, r.status + " " +
+              r.location);
+    assert.ok(!atClient(r) || !atClient(r).get("error"), r.location);
+    assert.ok(/\/authn\/login/.test(r.location), r.location);
+  });
+
+  // H. CONSENT IS REQUIRED UNDER THE PROFILE even when the realm says it is
+  // not (item 12).
+  await ok(realmApi + "/config/set", { key: "oauth2.consentRequired",
+                                       value: "false" },
+           "turned consent off in the realm");
+  const carol = names.usernameFor("fapi-carol");
+  await ok(realmApi + "/users/create", {
+    username: carol, invent: false, credential: "password",
+    password: PASSWORD,
+    attributes: { cn: "FAPI " + carol, givenName: "FAPI", sn: carol,
+                  mail: carol + "@fapi.test" } }, "created " + carol);
+  const cb = browser("carol");
+  const pc = pkce();
+  const shown = { shown: 0 };
+  r = await follow(cb, await cb.go("GET", R + "/oauth2/authorize?" +
+    form(Object.assign({}, f.good, { code_challenge: pc.challenge,
+                                     state: "carol-" + STAMP,
+                                     nonce: "carol-n-" + STAMP }))),
+    carol, shown);
+  check("i/H. with oauth2.consentRequired false the profile still shows " +
+        "the consent screen, and its Allow issues the code", function () {
+    assert.strictEqual(shown.shown, 1, "consent screens: " + shown.shown);
+    assert.ok(atClient(r) && atClient(r).get("code"), r.status + " " +
+              r.location);
+  });
+  await ok(realmApi + "/config/reset", { key: "oauth2.consentRequired" },
+           "put consent back");
+
+  // F. A SENDER-CONSTRAINED access token lives as long as configured; only
+  // an unbound one is capped at 600 s (item 21).
+  const tokenUrl = base + R + "/oauth2/token";
+  const dkey = nodeCrypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  r = await send(tokenUrl, { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded",
+               DPoP: dpopProof(tokenUrl, dkey) },
+    body: form(Object.assign(f.clientAuth(),
+                             { grant_type: "client_credentials" })) });
+  check("i/F. a DPoP-bound client_credentials token lives longer than 600 s",
+        function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+    assert.strictEqual(r.body.token_type, "DPoP", r.raw.slice(0, 300));
+    assert.ok(r.body.expires_in > 600, "expires_in " + r.body.expires_in);
+  });
+
+  // J. THE CONSOLE is the other public client the profile allows (#446):
+  // it authenticates by none and holds no secret.
+  const view = await send(realmApi + "/applications?application=" +
+                          "sts-admin-console");
+  const entry = (view.body && (view.body.application || view.body)) || {};
+  const fields = entry.fields || {};
+  const first = function (v) {
+    return String((Array.isArray(v) ? v[0] : v) || "");
+  };
+  check("i/J. the console's client authenticates by none and holds no " +
+        "secret", function () {
+    assert.strictEqual(first(fields.oauthTokenEndpointAuthMethod), "none",
+                       JSON.stringify(fields).slice(0, 400));
+    assert.strictEqual(first(fields.oauthClientSecret), "");
+  });
+
+  // A. A NAMED SERVER WITH NO VALUE follows its realm; one in a realm with
+  // no profile may carry a profile of its own; the process outside both
+  // has none.
+  await ok(realmApi + "/authorization-servers/create",
+           { id: "follows", label: "Follows its realm" },
+           "created a named server with no fapi of its own");
+  r = await send(base + R + "/follows/oauth2/fapi");
+  check("i/A. a named server with no value of its own follows its realm's " +
+        "profile", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
+    assert.strictEqual(r.body.enabled, true, r.raw.slice(0, 300));
+    assert.strictEqual(r.body.profile, "1-baseline", r.raw.slice(0, 300));
+  });
+  const plainRealm = (REALM.slice(0, 26) + "-open").slice(0, 31);
+  await ok(base + "/admin-api/realms/create", { id: plainRealm,
+    domain: plainRealm + ".example.net", name: "No FAPI " + STAMP },
+    "created a realm with no profile");
+  const plainApi = base + "/realm/" + plainRealm + "/admin-api";
+  await ok(plainApi + "/authorization-servers/create",
+           { id: "fapi", label: "FAPI of its own" }, "created a named server");
+  await ok(plainApi + "/authorization-servers/set",
+           { id: "fapi", member: "fapi", value: "1-baseline" },
+           "gave it FAPI 1.0 Baseline");
+  const own = await send(base + "/realm/" + plainRealm + "/fapi/oauth2/fapi");
+  const realmOwn = await send(base + "/realm/" + plainRealm + "/oauth2/fapi");
+  const realm9700 = await send(base + "/realm/" + plainRealm +
+                               "/oauth2/rfc9700");
+  check("i/A. a named server carries a profile its realm does not, and the " +
+        "realm itself has none and is not in RFC 9700 mode", function () {
+    assert.strictEqual(own.body.enabled, true, own.raw.slice(0, 300));
+    assert.strictEqual(own.body.profile, "1-baseline", own.raw.slice(0, 300));
+    assert.strictEqual(realmOwn.body.enabled, false,
+                       realmOwn.raw.slice(0, 300));
+    assert.strictEqual(realm9700.body.enabled, false,
+                       realm9700.raw.slice(0, 300));
+  });
+  r = await postJson(plainApi + "/authorization-servers/set",
+                     { id: "fapi", member: "fapi", value: "3-imaginary" });
+  const c795 = await codeCount("STS-ADMIN-0795", 0, plainRealm);
+  check("i/I. a value that is not a profile is refused STS-ADMIN-0795",
+        function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+    assert.ok(c795 >= 1, String(c795));
+  });
+  log.debug("Leaving unitsOverTheWire().");
+}
+
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe) the
+// realms this run made are removed at the end, pass or fail. A suite run
+// leaves them standing (tests/CLAUDE.md, *No job removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  for (const id of [REALM, (REALM.slice(0, 26) + "-open").slice(0, 31)]) {
+    const r = await postJson(base + "/admin-api/realms/remove", { id: id });
+    log.info("removed the realm " + id + " (" + r.status + ")");
+  }
+  log.debug("Leaving removeRealms().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving FAPI 1.0 Baseline at " + base + R);
@@ -595,7 +825,11 @@ async function test() {
     assert.strictEqual(first(fields.oauthClientSecret), "");
   });
 
-  assert.ok(checks >= 23, "only " + checks + " checks ran; a section has " +
+  await unitsOverTheWire({ issuer: issuer, metadata: metadata,
+                           client: client, clientAuth: clientAuth,
+                           good: good });
+
+  assert.ok(checks >= 32, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -612,7 +846,29 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
-  log.error(e.stack || e.message);
-  process.exit(1);
-});
+async function main() {
+  log.debug("Entering main().");
+  let failure = null;
+  try {
+    await test();
+  } catch (e) {
+    log.debug("Caught in main(): " + ((e && e.message) || e));
+    // Reported below, after the realms are removed.
+    failure = e;
+  }
+  try {
+    await removeRealms();
+  } catch (e) {
+    log.debug("Caught in main(): " + ((e && e.message) || e));
+    // A failed removal is not the job's verdict; the probe is told.
+    log.info("could not remove the realms: " + ((e && e.message) || e));
+  }
+  if (failure) {
+    log.error(failure.stack || failure.message);
+    log.debug("Leaving main(). Failed.");
+    process.exit(1);
+  }
+  log.debug("Leaving main().");
+}
+
+main();

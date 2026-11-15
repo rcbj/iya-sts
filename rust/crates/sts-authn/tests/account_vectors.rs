@@ -443,7 +443,7 @@ fn rust_writes_account_sets_node_reads() {
         let r = jar.request();
         let set = s
             .account_sets()
-            .set_of(&sts_authn::cookie::cookies_of(&r.cookie).unwrap())
+            .set_of(&sts_authn::cookie::cookies_of(&r.cookie))
             .unwrap();
         let mut held = Object::new();
         for sid in set["sessions"].as_object().unwrap().keys() {

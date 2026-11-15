@@ -68,6 +68,14 @@ pub trait RoleDirectory: Send + Sync {
     fn groups_of_user(&self, name: &str) -> Vec<String>;
     /// Creates a group when its DN is missing, leaving an existing one alone.
     fn ensure_group(&self, name: &str, options: &Value) -> Value;
+    /// `helpers.nameForSubject(subject)`: the username a person's
+    /// `urn:uuid:<entryUUID>` is filed under, or "" (one indexed lookup;
+    /// the subject resolver `ldap/ldap_server.js` fills). "" by default: a
+    /// directory that cannot say leaves the name as given.
+    fn name_for_subject(&self, subject: &str) -> String {
+        let _ = subject;
+        String::new()
+    }
 }
 
 /// What the console roster asks of the directory (`ldap_server.js`'s

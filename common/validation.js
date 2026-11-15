@@ -459,7 +459,18 @@ function fromZod(error, where) {
   }
   const first = issues[0];
   const path = Array.isArray(first.path) ? first.path : [];
-  const field = path.length ? String(path[path.length - 1]) : '(request)';
+  // A LIST MEMBER IS NAMED BY ITS PARAMETER, not by its index (2026-11-14,
+  // found by #444's D12): a repeated `resource` is a list, so a member that
+  // was not an absolute URI had the path ['resource', 0] and was refused as
+  // "the query parameter '0'". The last segment that is a name is the field.
+  let named = -1;
+  for (let i = path.length - 1; i >= 0 && named < 0; i--) {
+    if (typeof path[i] !== 'number') {
+      named = i;
+    }
+  }
+  const field = named >= 0 ? String(path[named])
+    : (path.length ? String(path[path.length - 1]) : '(request)');
   // zod reports a missing required field as an invalid type whose received
   // value is undefined. A caller can act on "you left it out" and cannot act on
   // "expected string, received undefined", so the two are told apart here.

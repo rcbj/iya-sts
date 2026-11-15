@@ -33,6 +33,9 @@ tokio = { workspace = true, features = ["time", "sync"] }
 # The tests make certificates of their own to fingerprint.
 openssl.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+# The identity funnel's fold and persona, checked against Node beside this
+# crate's own vectors (tests/oauth7_vectors.rs).
+sts-directory.workspace = true
 
 [lints]
 workspace = true

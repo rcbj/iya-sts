@@ -22,6 +22,15 @@
 //   e. INTROSPECTION as RFC 9701: a signed JWT response, verified here.
 //   f. THE PORTAL signs its person in under the profile (signed push, JARM).
 //
+// D12 (#444) carries `tests/fapi2_message_signing_units.js` here: c also
+// refuses an exp over 60 minutes after nbf, an aud other than the issuer, a
+// plain response mode and code id_token, takes form_post.jwt, and reads the
+// codes off the realm's audit log (on the wire the aud, a plain mode and
+// code id_token meet the general gates first: 0366, 0164, 0163). Not
+// carried: the module predicates and the metadata filter as functions
+// (class (d)); E, the Security Profile asking none of it, is sts_fapi2.js's
+// plain push.
+//
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
@@ -368,6 +377,26 @@ async function portalSignsIn(who, password) {
   return { problem: problem, me: me };
 }
 
+// How many rows of this realm's audit log carry `code`, waited for briefly:
+// the row is written as the refusal is sent.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  let n = 0;
+  for (let i = 0; i < 20; i += 1) {
+    const r = await send(realmApi + "/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    n = Number((r.body && r.body.matched) || 0);
+    if (n > 0) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+  }
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving FAPI 2.0 Message Signing at " + base + R);
@@ -490,6 +519,62 @@ async function test() {
     assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
   });
 
+  // D12 (#444): fapi2_message_signing_units.js B and C, the rest of the
+  // request object's and the response mode's refusals, each read back by its
+  // code off this realm's audit log (a code is recorded, never sent).
+  const nowC = Math.floor(Date.now() / 1000);
+  r = await push({ request: requestObject(params, { nbf: nowC,
+                                                     exp: nowC + 3700 }) });
+  check("c. a signed object whose exp is over 60 minutes after its nbf is " +
+        "refused (5.3.2 item 4)", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  r = await push({ request: requestObject(params,
+                                          { aud: "https://else.example" }) });
+  check("c. a signed object whose aud is not the issuer is refused (5.3.2 " +
+        "item 2)", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  r = await push({ request: requestObject(params,
+                                          { response_mode: "query" }) });
+  check("c. a plain response mode is refused like none (5.4.2 item 1)",
+        function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  r = await push({ request: requestObject(params,
+                                          { response_type: "code id_token" })
+                 });
+  check("c. the Security Profile's code-only rule still holds (5.3.2.2 " +
+        "item 1)", function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
+  });
+  r = await push({ request: requestObject(params,
+                                          { response_mode: "form_post.jwt" })
+                 });
+  check("c. any JARM mode is taken: form_post.jwt is pushed", function () {
+    assert.strictEqual(r.status, 201, r.raw.slice(0, 300));
+  });
+  // ON THE WIRE THE GENERAL GATES ANSWER FIRST: the units file asks
+  // fapi.js alone, which names 0585 and 0582 and a second 0591, but a
+  // request reaches the request-object and profile checks before it, so the
+  // aud is STS-OAUTH-0366, the plain response mode STS-OAUTH-0164 (not
+  // advertised) and code id_token STS-OAUTH-0163. The wire is asserted.
+  const msCodes = {};
+  for (const code of ["STS-OAUTH-0415", "STS-OAUTH-0584", "STS-OAUTH-0591",
+                      "STS-OAUTH-0366", "STS-OAUTH-0164", "STS-OAUTH-0163"]) {
+    msCodes[code] = await codeCount(code);
+  }
+  check("c. the refusals are recorded STS-OAUTH-0415 (plain parameters), " +
+        "0591 (no JARM mode), 0584 (nbf, exp), 0366 (aud), 0164 (a plain " +
+        "mode) and 0163 (code id_token), and no code was sent", function () {
+    assert.ok(msCodes["STS-OAUTH-0584"] >= 2, JSON.stringify(msCodes));
+    ["STS-OAUTH-0415", "STS-OAUTH-0591", "STS-OAUTH-0366", "STS-OAUTH-0164",
+     "STS-OAUTH-0163"].forEach(function (code) {
+      assert.ok(msCodes[code] >= 1, JSON.stringify(msCodes));
+    });
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.raw));
+  });
+
   log.info("=== d. the flow ===");
   r = await push({ request: requestObject(params) });
   check("a signed request object is pushed", function () {
@@ -557,7 +642,7 @@ async function test() {
               signedIn.me ? signedIn.me.text.slice(0, 300) : "no answer");
   });
 
-  assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 16, "only " + checks + " checks ran; a section has " +
                                              "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

@@ -320,8 +320,18 @@ function sections(t) {
     }
     t.equal(refused, 8, 'further arrivals are refused');
     t.equal(authn.sessions.size, 3, 'and the store does not grow');
+    // What `/authn-api` asks to tell a browser so (2026-11-14, #444's D12):
+    // a sign-in act with no session at a full realm is refused for the cap,
+    // STS-AUTHN-0337, never "Load the sign-in page again".
+    t.equal(authn.realmAtSessionCap(), true,
+            'realmAtSessionCap() says the realm is full');
     t.check(!!authn.sessions.get(alice.id) && !!authn.sessions.get(two.id),
             'Alice and the second arrival both remain');
+    t.equal(authn.sessions.size, 3, 'and it asked without ending a row');
+  });
+  withSetting('authn.maxSessions', 0, function () {
+    t.equal(authn.realmAtSessionCap(), false,
+            'realmAtSessionCap() is false with no cap');
   });
 
   // -------------------------------------------------------------------------

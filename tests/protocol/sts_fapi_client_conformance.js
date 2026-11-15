@@ -341,6 +341,8 @@ async function relationship(plan, made, issuer, id, clientId, extra) {
   }
   log.debug("Leaving relationship().");
   return { id: id, client: client,
+           x5tS256: plan.mtls ? String((view.clientCertificate || {})
+             .x5tS256 || "") : "",
            login: made.base + "/federation/login/" + encodeURIComponent(id) };
 }
 
@@ -369,6 +371,8 @@ async function prepare(plan) {
   };
   const logins = { client: first.login };
   const ids = { client: first.id };
+  // What this job registered for each client, for certificateEvidence().
+  const registered = { client: first.x5tS256 };
   if (plan.fapi === "1-advanced") {
     configuration.server = { jwks: serverJwks(plan) };
     // THE SECOND CLIENT (#931's first run): FAPI 1.0 Advanced's two
@@ -391,11 +395,12 @@ async function prepare(plan) {
     configuration.client2 = second.client;
     logins.client2 = second.login;
     ids.client2 = second.id;
+    registered.client2 = second.x5tS256;
   }
   log.debug("Leaving prepare().");
   return {
     realm: made, id: first.id, issuer: issuer, alias: alias,
-    login: first.login, logins: logins, ids: ids,
+    login: first.login, logins: logins, ids: ids, registered: registered,
     configuration: configuration
   };
 }
@@ -464,6 +469,101 @@ async function signInsOf(prepared, relationship) {
   return { count: Number(view.authentications) || 0,
            lastError: String(view.lastError || ""),
            lastErrorAt: String(view.lastErrorAt || "") };
+}
+
+// WHICH CERTIFICATE THE SUITE SAW, WHEN IT SAYS IT WAS NOT THE ONE
+// REGISTERED (GitHub Actions run 43672106260). The classical twin of
+// FAPI 1.0 Advanced `tls_client_auth` failed EnsureClientCertificateMatches
+// on its four positive modules of the main client while its `-enc` client
+// and the non-twin plan passed. The service issued that relationship ONE
+// certificate, the registration was read off the relationship's own view,
+// the token request presents the same stored row (`materialFor()`), and
+// node pools connections by client certificate. The one witness to what
+// arrived at the suite is the suite's own log, and the run's artifact does
+// not carry it. So on that failure, and only then, this records the
+// SHA-256 thumbprint (`x5t#S256`, base64url) of the certificate this job
+// registered, of the relationship's certificate now, and of every
+// certificate in the module's log (PEM, URL-escaped PEM or bare DER
+// base64), each with the log entry it came from. It decides nothing; a
+// FAILED module stays FAILED.
+function thumbprintsIn(value, out, src) {
+  if (typeof value === "string") {
+    let text = value;
+    if (/BEGIN%20CERTIFICATE/.test(text)) {
+      try {
+        text = decodeURIComponent(text);
+      } catch (e) {
+        // Not URI-encoded after all: the text is read as it is.
+        text = value;
+      }
+    }
+    const pems = text.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    const bodies = pems.map(function (one) {
+      return one.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+    });
+    if (!pems.length && /^MII[A-Za-z0-9+/=]{200,}$/.test(text.trim())) {
+      bodies.push(text.trim());
+    }
+    bodies.forEach(function (b64) {
+      const der = Buffer.from(b64, "base64");
+      out.push({ src: src, x5tS256: nodeCrypto.createHash("sha256")
+        .update(der).digest("base64url") });
+    });
+    return;
+  }
+  if (value && typeof value === "object") {
+    Object.keys(value).forEach(function (k) {
+      thumbprintsIn(value[k], out, src);
+    });
+  }
+}
+
+async function certificateEvidence(plan, prepared, got) {
+  log.debug("Entering certificateEvidence(). " + got.module);
+  const mismatch = (got.failures || []).some(function (one) {
+    return one && one.src === "EnsureClientCertificateMatches";
+  });
+  if (!mismatch || !got.id) {
+    log.debug("Leaving certificateEvidence(). Nothing to record.");
+    return;
+  }
+  const second = /encrypted-idtoken/.test(String(got.module || ""));
+  const which = second && prepared.ids.client2 ? "client2" : "client";
+  const relationship = prepared.ids[which];
+  const registered = (prepared.registered || {})[which] || "";
+  let current = "";
+  try {
+    const view = await relationshipView(prepared.realm.api, relationship);
+    current = String((view.clientCertificate || {}).x5tS256 || "");
+  } catch (e) {
+    log.debug("Caught in certificateEvidence(): " + ((e && e.message) || e));
+    // Recorded as unread; the evidence below is still worth having.
+    current = "(could not be read: " + ((e && e.message) || e) + ")";
+  }
+  const seen = [];
+  try {
+    const logs = (await oidf.suite("GET", "api/log/" + got.id)).body || [];
+    (Array.isArray(logs) ? logs : []).forEach(function (entry, n) {
+      thumbprintsIn(entry, seen, "entry " + n + " " +
+        String((entry && (entry.src || entry.http)) || "?") +
+        (entry && entry.incoming_path ? " " + entry.incoming_path : ""));
+    });
+  } catch (e) {
+    log.debug("Caught in certificateEvidence(): " + ((e && e.message) || e));
+    // The suite's log could not be read; said in the line below.
+    seen.push({ src: "the suite's log could not be read: " +
+                     ((e && e.message) || e), x5tS256: "" });
+  }
+  log.info("  " + plan.key + " " + got.module + ": certificate evidence — " +
+           which + " " + relationship + " registered x5t#S256 " +
+           (registered || "(none)") + ", the relationship holds " +
+           (current || "(none)") + "; in the suite's log: " +
+           (seen.length ? seen.map(function (one) {
+             return one.x5tS256 + (one.x5tS256 === registered
+               ? " (registered)" : (one.x5tS256 === current
+                 ? " (the relationship's)" : "")) + " at " + one.src;
+           }).join("; ") : "no certificate"));
+  log.debug("Leaving certificateEvidence().");
 }
 
 async function userinfoAnswered(id) {
@@ -625,6 +725,7 @@ async function runOnePlan(plan) {
                (got.failures.length ? " — " + got.failures[0].src + ": " +
                                       got.failures[0].msg : "") +
                (argued ? " (argued: " + argued + ")" : ""));
+      await certificateEvidence(plan, prepared, got);
       results.push(got);
       // Each module signs in with a jar of its own; signing it out here
       // keeps a refresh-token module's held token from being presented

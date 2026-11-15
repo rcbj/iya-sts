@@ -8228,6 +8228,7 @@
    "env": "STS_SAML2_ASSERTION_LIFETIME_MIN",
    "type": "int",
    "dflt": 60,
+   "min": 1,
    "runtime": true,
    "description": "How long an issued assertion is valid for: it becomes Conditions/NotOnOrAfter and the bearer SubjectConfirmationData/NotOnOrAfter alike. Set it to 1 to watch a service provider refuse a stale assertion, which is the check most of them get wrong."
   },
@@ -8521,6 +8522,7 @@
    "env": "STS_SAML11_ASSERTION_LIFETIME_MIN",
    "type": "int",
    "dflt": 60,
+   "min": 1,
    "runtime": true,
    "description": "How long the browser profiles' assertions are valid for, in the NotBefore and NotOnOrAfter of <saml:Conditions>. It is separate from the WS-Federation lifetime for the same reason the SAML 2.0 one is: a browser profile assertion is consumed within seconds of being issued and a short lifetime here is a realistic test, where the same value would make a WS-Federation session expire while somebody was reading it."
   },

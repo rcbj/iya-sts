@@ -134,3 +134,35 @@ run "the_workload_agent_is_a_sidecar_from_the_service_image" {
     error_message = "the task (and so the sidecar) is admitted to the SPIRE Server API port"
   }
 }
+
+# THE REMOTE PEP IS THE RUST BINARY (#444, 2026-11-14): its image has no node,
+# so a task definition that still ran `node pep.js` or a node health check
+# started a container that could do neither.
+run "the_remote_pep_runs_the_rust_binary" {
+  command = plan
+
+  assert {
+    condition = (
+      strcontains(one([for c in jsondecode(aws_ecs_task_definition.callbacks.container_definitions) : c if c.name == "xacml-pep"]).command[0], "exec xacml-pep") &&
+      !strcontains(one([for c in jsondecode(aws_ecs_task_definition.callbacks.container_definitions) : c if c.name == "xacml-pep"]).command[0], "node")
+    )
+    error_message = "the PEP container execs the xacml-pep binary and asks nothing of node"
+  }
+  assert {
+    condition = one([
+      for c in jsondecode(aws_ecs_task_definition.callbacks.container_definitions) :
+      c if c.name == "xacml-pep"
+    ]).healthCheck.command == ["CMD", "xacml-pep", "--healthcheck"]
+    error_message = "the PEP's health check is the binary's own probe"
+  }
+  assert {
+    condition = alltrue([
+      for name in ["PEP_HTTP", "PEP_PROXY_HTTP"] :
+      contains([
+        for e in one([for c in jsondecode(aws_ecs_task_definition.callbacks.container_definitions) : c if c.name == "xacml-pep"]).environment :
+        e.name if e.value == "true"
+      ], name)
+    ])
+    error_message = "plain HTTP is switched on for the PEP and its proxy"
+  }
+}

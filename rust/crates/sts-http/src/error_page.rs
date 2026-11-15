@@ -334,7 +334,7 @@ pub fn footer(
     diagnostics: &[DiagnosticRow],
     incident: i64,
     now: &str,
-    prefix: &str,
+    _prefix: &str,
 ) -> String {
     let mut rows = vec![
         DiagnosticRow {
@@ -351,7 +351,12 @@ pub fn footer(
         },
     ];
     rows.extend(diagnostics.iter().cloned());
-    let portal = format!("{}/portal", prefix);
+    // ROOT-RELATIVE, LIKE EVERY LINK A SERVER-DRAWN PAGE CARRIES: the
+    // realm's prefix is put on it as the page is sent (`put_prefix_back`,
+    // `withRealmLinks()`). Drawn with the prefix it was
+    // `/realm/<id>/realm/<id>/portal`, a 404 (Node's fix of 2026-11-14,
+    // #444 D12); `_prefix` stays in the signature for the callers.
+    let portal = "/portal";
     let drawn: String = rows
         .iter()
         .filter(|r| !r.value.is_empty())
@@ -369,7 +374,7 @@ pub fn footer(
          aria-labelledby=\"diagnostics-heading\"><h2 \
          id=\"diagnostics-heading\">{}</h2><dl>{}</dl></section>",
         html(t, "errorPages.startOver", &[]),
-        esc(&portal),
+        esc(portal),
         html(t, "errorPages.portal", &[]),
         html(t, "errorPages.diagnostics", &[]),
         drawn

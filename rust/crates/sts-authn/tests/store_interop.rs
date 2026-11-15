@@ -392,7 +392,7 @@ fn hold_browser(p: &Proc, b: &Value, failures: &mut Vec<String>) {
         url: "/".into(),
         ..Request::default()
     };
-    let cookies = sts_authn::cookie::cookies_of(cookie).unwrap();
+    let cookies = sts_authn::cookie::cookies_of(cookie);
     match p.sessions.account_sets().set_of(&cookies) {
         None => failures.push("the sts_accounts cookie opens no set".into()),
         Some(set) => {

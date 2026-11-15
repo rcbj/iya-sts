@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5485** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5486** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 112
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 23
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 263
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -622,6 +622,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 | `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
 | `STS-SCHED-0023` | The store could not say whether some runs of the current slot had already run (#883's review): those runs were held back for this tick, neither run nor taken as finished, and are asked about again at the next; every other run in the tick went on. | — |
+| `STS-SCHED-0024` | A run of a cluster job waited because another run of the same job in the same realm was still running, on this node or another (#1757): a manual run waits until that run ends, and a scheduled run until it ends or its slot does, after which the next slot is due. | — |
 
 ## STS-KEYS
 
@@ -996,8 +997,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0180` | An application already holds pki.applicationTlsClientCertificateMax valid TLS client certificates, so another was not issued. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0181` | A TLS client certificate revocation named a serial the application holds no certificate under. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0182` | A certificate authority tier was built on this node and on another at the same moment; the other committed first and was kept. | the caller's refusal (errors on a console or /admin-api reply) for a deliberate build; none for a startup build, which adopts it |
-| `STS-PKI-0183` | A certificate authority was not built because the store could not be asked whether another node is building it. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-PKI-0184` | Another node held the build of a certificate authority for longer than this node waits, and nothing appeared in the store. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-PKI-0183` | A certificate authority was not built because the store could not be asked whether another node is building it. | HTTP 503 with Retry-After from /admin-api/pki; the caller's refusal (errors on a console reply) elsewhere |
+| `STS-PKI-0184` | A build of a certificate authority was waited for longer than a caller waits — held by another node or process under its claim, or queued behind builds of the same scope in this process — so the caller was refused rather than left waiting. | HTTP 503 with Retry-After from /admin-api/pki; the caller's refusal (errors on a console reply) elsewhere |
 | `STS-PKI-0185` | A CRL was not signed because its CRL number could not be advanced in the store shared by this service's nodes. | HTTP 500 from the CRL distribution point |
 | `STS-PKI-0186` | A certificate was not recorded because the Issuing CA that signed it was replaced, repeatedly, while it was being signed. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0187` | The public crypto metadata document (/crypto/metadata) could not be built. | HTTP 500 server_error from /crypto/metadata |
@@ -3448,8 +3449,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0073` | In product mode, a bind was refused without checking its password because the bind DN or the address has had too many failed binds within the rate-limit window. | LDAP result code 53, unwillingToPerform |
 | `STS-LDAP-0074` | In product mode, a search or compare arrived on a connection that has not bound as anybody; the root DSE is the only read allowed before a bind. | LDAP result code 50, insufficientAccessRights |
 | `STS-LDAP-0075` | In product mode, a compare named a credential attribute (userPassword, a client secret, a private key, a TOTP or recovery code, an activation token or a Kerberos key), which no reader of the socket may test. | LDAP result code 50, insufficientAccessRights |
-| `STS-LDAP-0076` | In product mode, an add or modify named createTimestamp, modifyTimestamp or entryDN, which the directory maintains itself. | LDAP result code 19, constraintViolation |
-| `STS-LDAP-0077` | A delete or rename of the default realm's bootstrap administrator (admin.bootstrapUsername) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
+| `STS-LDAP-0076` | An add or modify named an attribute the directory maintains itself: entryUUID or stsProvisionedBy in every mode, and in product mode createTimestamp, modifyTimestamp and entryDN as well. | LDAP result code 19, constraintViolation |
+| `STS-LDAP-0077` | A delete or rename of a realm's bootstrap administrator (admin.bootstrapUsername, or the name product mode generates) was refused — over LDAP or SCIM — because that account cannot be removed. | LDAP result code 53, unwillingToPerform; SCIM 403 |
 | `STS-LDAP-0078` | A flag of the bootstrap administrator (pwdReset, stsBootstrapAdministrator or stsConsoleClaimedAt) could not be written because the account has no entry in this realm. | none — logged |
 | `STS-LDAP-0090` | A person was refused creation under a username that is a subject identifier (urn:uuid: or a bare UUID). | action result ok:false (console, /admin-api HTTP 400, SCIM 400) |
 | `STS-LDAP-0091` | No entry was created for an authentication whose identity is a urn:uuid: subject naming nobody in this realm's directory. | none — logged |

@@ -247,6 +247,14 @@ pub struct TokenEndpoint {
     /// The shared used-assertion history (`common/used_assertions.js`);
     /// `None` leaves the client-assertion verifier to its own.
     pub used: Option<Arc<crate::used_assertions::UsedAssertions>>,
+    /// `stats.recordAuthentication()`: the identity funnel the sign-on
+    /// session records through, told of a password grant before its
+    /// subject is asked for, so the directory creates the person where
+    /// this service creates people; `None` records nothing.
+    pub records: Option<Arc<dyn sts_authn::ports::Records>>,
+    /// OIDC Core 5.5's claims request (`requestedClaimsOf()`), answered
+    /// into the ID Token; `None` answers no claims request.
+    pub requested: Option<Arc<crate::requested_claims::RequestedClaims>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -411,7 +419,8 @@ impl TokenEndpoint {
     }
 
     /// `secretLockout(res, clientId, lockedOut)`: 429 with `Retry-After`.
-    fn secret_lockout(
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub(crate) fn secret_lockout(
         &self,
         client_id: &str,
         locked: &crate::secret_limit::LimitRefusal,
@@ -429,7 +438,8 @@ impl TokenEndpoint {
         a
     }
 
-    fn refusal(
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub(crate) fn refusal(
         &self,
         code: sts_core::errors::ErrorCode,
         status: u16,
@@ -439,7 +449,12 @@ impl TokenEndpoint {
         Answer::refusal(code, status, error, description)
     }
 
-    fn with_basic_challenge(&self, mut answer: Answer, basic: bool) -> Answer {
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub(crate) fn with_basic_challenge(
+        &self,
+        mut answer: Answer,
+        basic: bool,
+    ) -> Answer {
         if basic {
             let realm = self
                 .settings
@@ -1249,20 +1264,23 @@ impl TokenEndpoint {
                 }
             }
         }
-        if let Err((reason, detail)) = checks.verify(&username, &password) {
-            tracing::info!(
-                "oauth2: the password grant for \"{}\" was refused ({}): {}",
-                username,
-                reason,
-                detail
-            );
-            return self.refusal(
-                codes::STS_OAUTH_0220,
-                400,
-                "invalid_grant",
-                &format!("Authentication failed for user {}.", username),
-            );
-        }
+        let verified = match checks.verify(&username, &password) {
+            Ok(reason) => reason,
+            Err((reason, detail)) => {
+                tracing::info!(
+                    "oauth2: the password grant for \"{}\" was refused ({}): {}",
+                    username,
+                    reason,
+                    detail
+                );
+                return self.refusal(
+                    codes::STS_OAUTH_0220,
+                    400,
+                    "invalid_grant",
+                    &format!("Authentication failed for user {}.", username),
+                );
+            }
+        };
         if verifies {
             let second = checks.second_factor(&username);
             if !second.is_empty() {
@@ -1278,6 +1296,25 @@ impl TokenEndpoint {
                     .succeeded("sign-in", address, &username, false, false)
                     .await;
             }
+        }
+        // A password grant is an authentication: recorded, and the
+        // directory told first, before the subject is asked for. No
+        // session is created — the tokens belong to a person and to no
+        // session.
+        if let Some(records) = &self.records {
+            records.record_authentication(
+                &json!({
+                    "presented": username, "protocol": "OAuth 2.0",
+                    "method": "password grant (RFC 6749 section 4.3)",
+                    "client_id": issuing.client.client_id,
+                    "note": if verified == "verified" {
+                        "The password was verified against the stored userPassword. A password grant creates no browser session."
+                    } else {
+                        "No password is checked here either, except the reserved string \"invalid\". A password grant creates no browser session."
+                    },
+                }),
+                None,
+            );
         }
         // `provisionedPerson(username)`: no entry, no subject.
         let user = self.people.user_for(&username);
@@ -1499,6 +1536,30 @@ impl TokenEndpoint {
 
     /// `bcp.revokeFamily(familyId, clientId)`: the family claimed as revoked
     /// across the cluster, for as long as a member of it could live.
+    /// `stats.revoke(jti, via, how, exp)`: true where the jti was newly
+    /// revoked.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub(crate) fn revoke_jti(&self, jti: &str, via: &str, exp: i64) -> bool {
+        let _ = exp;
+        self.register.revoke(
+            &sts_core::realm::current_id(),
+            jti,
+            via,
+            false,
+            self.clock.now_ms(),
+        )
+    }
+
+    /// `bcp.revokeFamily(familyId, clientId)`.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub(crate) async fn revoke_family_by_id(
+        &self,
+        family: &str,
+        client_id: &str,
+    ) -> bool {
+        self.revoke_family(family, client_id).await
+    }
+
     async fn revoke_family(&self, family: &str, client_id: &str) -> bool {
         if family.is_empty() {
             return false;
@@ -1733,6 +1794,11 @@ impl TokenEndpoint {
                 record.get("granted_at").unwrap_or(&Json::Null),
             ),
             with_refresh: true,
+            claims: record
+                .get("claims")
+                .filter(|c| c.is_object())
+                .cloned()
+                .unwrap_or(Json::Null),
             ..Mint::default()
         };
         let issued = self.issue(issuing, opts);
@@ -2193,6 +2259,11 @@ impl TokenEndpoint {
             ),
             origin_grant: s(claims.get("grant_type")),
             with_refresh: true,
+            claims: claims
+                .get("claims")
+                .filter(|c| c.is_object())
+                .cloned()
+                .unwrap_or(Json::Null),
             ..Mint::default()
         };
         let refreshed = self.issue(issuing, opts);
@@ -2429,6 +2500,7 @@ impl TokenEndpoint {
                     "session_id": opts.session_id, "grant": opts.grant,
                     "set_id": set_id, "access_token": access, "scope": scope,
                     "sub": own_sub,
+                    "requested_claims": self.id_token_requested(opts),
                 });
                 if let Some(id) = ids.id_token(base, &issuing_facts) {
                     body.insert("id_token".into(), json!(id));
@@ -2436,6 +2508,20 @@ impl TokenEndpoint {
             }
         }
         Ok(Json::Object(body))
+    }
+
+    /// The claims the `id_token` member of the claims request names, for
+    /// the ID Token (`idToken()`'s last layer).
+    fn id_token_requested(&self, opts: &Mint) -> Json {
+        match (&self.requested, opts.claims.is_object()) {
+            (Some(r), true) => Json::Object(r.answer(
+                Some(&opts.claims),
+                "id_token",
+                &opts.username,
+                &opts.user,
+            )),
+            _ => Json::Null,
+        }
     }
 
     /// `refreshTokenPlan()` + `refreshTokenNoted()`: the signed refresh
@@ -2485,6 +2571,10 @@ impl TokenEndpoint {
             .unwrap_or_else(|| opts.resources.clone());
         if !resources.is_empty() {
             p.insert("resources".into(), json!(resources));
+        }
+        // The claims request, so a refreshed access token still carries it.
+        if opts.claims.is_object() {
+            p.insert("claims".into(), opts.claims.clone());
         }
         p.insert("iat".into(), json!(iat));
         p.insert("nbf".into(), json!(iat));
@@ -2680,6 +2770,11 @@ impl TokenEndpoint {
             if !opts.acr.is_null() && !s(Some(&opts.acr)).is_empty() {
                 payload.insert("acr".into(), opts.acr.clone());
             }
+        }
+        // OIDC Core 5.5's claims request rides in the access token: UserInfo
+        // sees this token and nothing else.
+        if opts.claims.is_object() {
+            payload.insert("claims".into(), opts.claims.clone());
         }
         if !opts.jkt.is_empty() {
             payload.insert("cnf".into(), json!({ "jkt": opts.jkt }));
@@ -2880,6 +2975,9 @@ struct Mint {
     parent_refresh_family: String,
     with_refresh: bool,
     client_authenticated: bool,
+    /// OIDC Core 5.5's parsed claims request, carried in the access and
+    /// refresh tokens; `Null` for none.
+    claims: Json,
 }
 
 /// A [`Signer`] over a realm's key set: Node's header order, `alg`, `typ`,

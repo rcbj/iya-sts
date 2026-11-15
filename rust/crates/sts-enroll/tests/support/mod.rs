@@ -162,6 +162,7 @@ impl Passwords for AnyPassword {
         PasswordVerdict {
             ok: password != "invalid",
             app_password: None,
+            reason: String::new(),
         }
     }
 }

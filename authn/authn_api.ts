@@ -629,6 +629,19 @@ class AuthnApi {
     }
     const expected = this.csrfOf(req);
     const presented = String((req.headers && req.headers[CSRF_HEADER]) || '');
+    // NO SESSION BECAUSE THE REALM IS FULL (2026-11-14, found by #444's D12):
+    // a browser arriving at `authn.maxSessions` was given no session, so
+    // "Load the sign-in page again" was untrue — a reload is refused the
+    // same way until a session ends. Said as it is, under the cap's code,
+    // with the status every operation already declares for this refusal.
+    if (!expected && authn.realmAtSessionCap()) {
+      errorCodes.mark(res, 'STS-AUTHN-0337');
+      this.refuse(res, 403, 'This realm is holding as many sign-in ' +
+        'sessions as it allows, so no new one can start in this browser ' +
+        'now. Try again later.');
+      log.debug("Leaving AuthnApi.bound(). The realm is at its session cap.");
+      return false;
+    }
     if (!expected || !presented ||
         !stsCrypto.constantTimeEquals(presented, expected)) {
       errorCodes.mark(res, 'STS-AUTHN-0327');

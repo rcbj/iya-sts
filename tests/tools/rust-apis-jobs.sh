@@ -115,6 +115,12 @@ env_for() {
     "STS_WORKERS_REQUEST_COUNT=0" "STS_DEBUGGER_ENABLED=off" \
     "STS_CSRF_SECRET=$CSRF" "ADMIN_API_CLIENT_SECRET=$SECRET" \
     > "$OUT/$2.env"
+  # E2E_EXTRA_ENV (the `nodefixes` slice): more NAME=value lines, one per
+  # line, for both runtimes — STS_REALMS_MAX_COUNT for a run of several
+  # jobs that each make realms of their own.
+  if [ -n "${E2E_EXTRA_ENV:-}" ]; then
+    printf '%s\n' "$E2E_EXTRA_ENV" >> "$OUT/$2.env"
+  fi
 }
 run_svc() {
   local name="$1" image="$2" port="$3" envf="$4" extra=()
@@ -304,6 +310,16 @@ env_for "https://localhost:$PN" node-alone
 run_svc "$SVCN" "$NODE_IMAGE" "$PN" node-alone
 for j in "${JOBS[@]}"; do job node "https://localhost:$PN" "$j"; done
 if [ -n "${SEED:-}" ]; then read_seed node "https://localhost:$PN"; fi
+# E2E_PROBE (the `nodefixes` slice): a command run after each runtime's
+# jobs as `$E2E_PROBE <label> <base> <api secret>`, its output in the
+# summary — a hand probe of a behaviour no whole job reaches on Rust yet.
+probe() {
+  if [ -n "${E2E_PROBE:-}" ]; then
+    "$E2E_PROBE" "$1" "$2" "$SECRET" 2>&1 | sed "s/^/  [$1] /" \
+      | tee -a "$SUMMARY"
+  fi
+}
+probe node "https://localhost:$PN"
 if [ -n "${VIEWS:-}" ]; then
   read_views node "https://localhost:$PN"
   docker stop -t 30 "$SVCN" >/dev/null; docker rm "$SVCN" >/dev/null
@@ -336,6 +352,7 @@ if [ -n "${SEED:-}" ]; then
   read_seed rust "https://localhost:$PR"
   compare_seed
 fi
+probe rust "https://localhost:$PR"
 
 say "== $( [ "$FAILED" = 0 ] && echo PASSED || echo FAILED ) =="
 exit "$FAILED"

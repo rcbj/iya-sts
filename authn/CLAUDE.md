@@ -3580,8 +3580,13 @@ map; with none held it sets nothing (said at debug). The cost: a parent held
 nowhere, read while the store fails, does not record `backsConsole`, a flag
 no decision reads. `tests/session_window.js`, `noteChangedCase()`.
 `notePresented()` spends
-`firstPresentationIsTheSignIn` through it too. An in-place edit of a session
-anywhere else owes the same call; `tests/cluster_node_state_sharing.js` holds
+`firstPresentationIsTheSignIn` through it too. **So does a REMOVAL**: the
+sign-out's `oidc-rp` row always called it after forgetting a client, and the
+`wsfed-rp` and `saml2-sp` rows (`logout/logout.ts`) did not until 2026-11-15
+(found by #444's D12), so a realm or service provider forgotten on one node
+stayed on the stored row — on every other node, and after a restart.
+`tests/logout_api.js` 6j. An in-place edit of a session anywhere else owes
+the same call; `tests/cluster_node_state_sharing.js` holds
 the four call sites to it.
 
 ## SEVERAL NODES: A SESSION'S END IS REPORTED ONCE (2026-09-14, #46 section 6)

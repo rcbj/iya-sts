@@ -1346,6 +1346,32 @@ async function httpDelivery(AuditExport, base, codes, t) {
             code: redirected.code, calls: redirect.calls.length,
             body: call.body
           }));
+  // THE PINNED LOOKUP ANSWERS IN THE SHAPE IT IS ASKED FOR (2026-11-14,
+  // #444's D12): `net.connect()` asks with `{ all: true }` and wants a list;
+  // the single-address answer to it made every delivery to a host NAME fail
+  // with "Invalid IP address: undefined".
+  const asked = { all: null, one: null };
+  if (typeof call.options.lookup === 'function') {
+    call.options.lookup('hooks.example', { all: true },
+      function (err, list) {
+        asked.all = { err: err, list: list };
+      });
+    call.options.lookup('hooks.example', {}, function (err, address, family) {
+      asked.one = { err: err, address: address, family: family };
+    });
+    call.options.lookup('hooks.example', function (err, address) {
+      asked.bare = { err: err, address: address };
+    });
+  }
+  t.check(!!asked.all && !asked.all.err && Array.isArray(asked.all.list) &&
+          asked.all.list.length === 1 &&
+          asked.all.list[0].address === '8.8.8.8' &&
+          asked.all.list[0].family === 4 &&
+          !!asked.one && asked.one.address === '8.8.8.8' &&
+          asked.one.family === 4 && !!asked.bare &&
+          asked.bare.address === '8.8.8.8',
+          'H1b. the pinned lookup answers a list to { all: true } and the ' +
+          'address otherwise, always the checked one', JSON.stringify(asked));
   const rejected = fakeTransport(function () {
     return { status: 400, body: 'no' };
   });

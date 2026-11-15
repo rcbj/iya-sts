@@ -177,7 +177,6 @@ impl AuthnPort for Replay {
     fn note_session_changed(&self, s: &Value) {
         self.call("authn", "noteSessionChanged", json!([s]));
     }
-    fn rewrite_session(&self, _s: &Value) {}
     fn multiple_accounts(&self) -> bool {
         truthy(&self.call("authn", "multipleAccounts", json!([])))
     }
@@ -795,7 +794,6 @@ via_inner!(AuthnPort {
     fn session_started_at(&self, s: &Value) -> f64 { self.inner.session_started_at(s) }
     fn end_session_by_id(&self, id: &str, v: &str, e: &str) -> bool { self.inner.end_session_by_id(id, v, e) }
     fn note_session_changed(&self, s: &Value) { self.inner.note_session_changed(s) }
-    fn rewrite_session(&self, s: &Value) { self.inner.rewrite_session(s) }
     fn multiple_accounts(&self) -> bool { self.inner.multiple_accounts() }
     fn hint_account_key(&self, a: &Asked, k: &str) { self.inner.hint_account_key(a, k) }
     fn hint_account(&self, a: &Asked, h: &Value) { self.inner.hint_account(a, h) }
