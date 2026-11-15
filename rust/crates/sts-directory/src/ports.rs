@@ -42,6 +42,8 @@ pub trait DirectoryMode: Send + Sync {
     fn protects_operational_attributes(&self) -> bool;
     /// `verifiesCredentials()`: a password is checked.
     fn verifies_credentials(&self) -> bool;
+    /// `createsIncompletePeople()`: the attribute policy is not enforced.
+    fn creates_incomplete_people(&self) -> bool;
 }
 
 impl DirectoryMode for sts_core::mode::Mode {
@@ -62,6 +64,9 @@ impl DirectoryMode for sts_core::mode::Mode {
     }
     fn verifies_credentials(&self) -> bool {
         sts_core::mode::Mode::verifies_credentials(self)
+    }
+    fn creates_incomplete_people(&self) -> bool {
+        sts_core::mode::Mode::creates_incomplete_people(self)
     }
 }
 
@@ -90,6 +95,9 @@ impl DirectoryMode for FixedMode {
     }
     fn verifies_credentials(&self) -> bool {
         self.product
+    }
+    fn creates_incomplete_people(&self) -> bool {
+        !self.product
     }
 }
 
@@ -373,21 +381,25 @@ pub trait PersonRules: Send + Sync {
     ) -> Option<PolicyRefusal>;
     /// `requiresOwner(profileForReference(reference, uid))`.
     fn service_account_requires_owner(&self, reference: &str, uid: &str) -> bool;
-    /// `attributePolicy.createRefusal()`: what a new person lacks.
-    fn attribute_create_refusal(&self, attributes: &Attributes)
+    /// `attributePolicy.createRefusal()`: what a new person lacks, where
+    /// the policy is `enforced` (`!mode.createsIncompletePeople()`).
+    fn attribute_create_refusal(&self, attributes: &Attributes, enforced: bool)
         -> Option<PolicyRefusal>;
     /// `attributePolicy.editRefusal()`: a required value taken away.
     fn attribute_edit_refusal(
         &self,
         before: &Attributes,
         after: &Attributes,
+        enforced: bool,
     ) -> Option<PolicyRefusal>;
 }
 
 /// The policies as a realm with no named policy of any kind answers them:
 /// each policy's defaults, read from its generated `fields.json`. The
-/// attribute policy is enforced in product mode only and requires nothing
-/// by default, so it refuses nothing here. A clear password is refused:
+/// attribute policy is its `default` profile: `uid`, `cn` and `sn`, then
+/// `requiredAttributes`' default, each spelt as published (the named
+/// profiles and their selection are `policy_selection.ts`'s, another
+/// slice's). A clear password is refused:
 /// the hash is the password policy's, and a directory without one must not
 /// store a password nobody hashed.
 #[derive(Debug, Clone, Copy, Default)]
@@ -430,17 +442,83 @@ impl PersonRules for DefaultPersonRules {
         DirectoryModel::get().field_default("policy.serviceAccount", "requireOwner")
             == Json::Bool(true)
     }
-    fn attribute_create_refusal(&self, _attributes: &Attributes)
+    fn attribute_create_refusal(&self, attributes: &Attributes, enforced: bool)
         -> Option<PolicyRefusal> {
-        None
+        if !enforced {
+            return None;
+        }
+        let required = default_required_attributes();
+        let missing: Vec<String> = required
+            .iter()
+            .filter(|n| !holds(attributes, n))
+            .cloned()
+            .collect();
+        if missing.is_empty() {
+            return None;
+        }
+        Some(PolicyRefusal {
+            code: None,
+            message: format!(
+                "This realm's attribute policy requires every person to hold {}, and this one would have no \
+value of {}. Directory > Policies > Attribute policy sets the list.",
+                required.join(", "),
+                missing.join(", ")
+            ),
+            names: missing,
+        })
     }
     fn attribute_edit_refusal(
         &self,
-        _before: &Attributes,
-        _after: &Attributes,
+        before: &Attributes,
+        after: &Attributes,
+        enforced: bool,
     ) -> Option<PolicyRefusal> {
-        None
+        if !enforced {
+            return None;
+        }
+        let removed: Vec<String> = default_required_attributes()
+            .into_iter()
+            .filter(|n| holds(before, n) && !holds(after, n))
+            .collect();
+        if removed.is_empty() {
+            return None;
+        }
+        Some(PolicyRefusal {
+            code: None,
+            message: format!(
+                "This realm's attribute policy requires every person to hold {}, so the edit may not leave {} \
+without a value. Set another value instead.",
+                removed.join(", "),
+                if removed.len() == 1 { "it" } else { "them" }
+            ),
+            names: removed,
+        })
     }
+}
+
+// `ALWAYS_REQUIRED` and the default profile's `requiredAttributes`.
+fn default_required_attributes() -> Vec<String> {
+    let model = DirectoryModel::get();
+    let listed = match model.field_default("policy.attributes", "requiredAttributes") {
+        Json::String(s) => s,
+        _ => String::new(),
+    };
+    let mut out: Vec<String> = vec!["uid".into(), "cn".into(), "sn".into()];
+    for one in listed.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let spelt = model.canonical_name(&one.to_lowercase());
+        if !out.iter().any(|r| r.to_lowercase() == spelt.to_lowercase()) {
+            out.push(spelt);
+        }
+    }
+    out
+}
+
+// `holds()`: a non-empty value of the name, in any case.
+fn holds(attributes: &Attributes, name: &str) -> bool {
+    let wanted = name.to_lowercase();
+    attributes
+        .iter()
+        .any(|(k, v)| k.to_lowercase() == wanted && v.iter().any(|s| !s.trim().is_empty()))
 }
 
 /// The registers that name people and groups by name or DN outside the

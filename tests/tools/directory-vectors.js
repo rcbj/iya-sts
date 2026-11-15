@@ -319,6 +319,25 @@ async function child(ROOT, outFile) {
   if (!made || made.ok === false) {
     throw new Error('acme was not created: ' + JSON.stringify(made));
   }
+  // A REALM IN PRODUCT MODE (`global.mode` is a setting a realm may
+  // carry), where the directory authorizes reads and writes: two people
+  // made through the library door, neither holding a console role.
+  const mode = req('common/mode');
+  const prod = realms.create({ id: 'prod', name: 'Prod', domain: 'prod.test',
+                               overrides: { 'global.mode': 'product' } });
+  if (!prod || prod.ok === false) {
+    throw new Error('prod was not created: ' + JSON.stringify(prod));
+  }
+  realms.run(realms.get('prod'), function () {
+    ['pat', 'quinn'].forEach(function (name) {
+      const one = ldap.createUser(name, { invent: false,
+        attributes: { mail: name + '@prod.test', title: 'Tester',
+                      cn: name, sn: name, givenName: name } });
+      if (!one || one.ok === false) {
+        throw new Error(name + ' was not created: ' + JSON.stringify(one));
+      }
+    });
+  });
   const bases = { base: ldap.baseDn(),
                   acme: realms.run(realms.get('acme'), function () {
                     return ldap.baseDn();
@@ -641,6 +660,51 @@ async function child(ROOT, outFile) {
   del('uid=gail,ou=users,' + A);
   search(groups, 1, '(objectClass=*)', ['member', 'memberUid',
                                         'uniqueMember']);
+  // ---- product mode: who may read and write -----------------------------
+  const P = realms.run(realms.get('prod'), function () {
+    return ldap.baseDn();
+  });
+  const pat = 'uid=pat,ou=users,' + P;
+  const quinn = 'uid=quinn,ou=users,' + P;
+  // Who the operation just listed is bound as.
+  const by = function (bound) {
+    ops[ops.length - 1].shape.boundDn = bound;
+  };
+  add('uid=x,ou=users,' + P, person('x'));
+  add('uid=x,ou=users,' + P, person('x'));
+  by(pat);
+  modify(quinn, [['replace', 'title', 'Boss']]);
+  by(pat);
+  modify(pat, [['replace', 'title', 'Boss']]);
+  by(pat);
+  modify(pat, [['replace', 'createTimestamp', '20000101000000Z']]);
+  by(pat);
+  modify(pat, [['replace', 'userPassword', '$scrypt$x']]);
+  by(pat);
+  del(quinn);
+  by(pat);
+  rename(quinn, 'uid=quentin', '', true);
+  by(pat);
+  search(P, 2, '(objectClass=*)', []);
+  search(P, 2, '(objectClass=*)', ['*', 'entryUUID']);
+  by(pat);
+  search(P, 2, '(|(mail=*)(ou=*))', ['mail', 'ou']);
+  by('uid=ghost,ou=users,' + P);
+  search(quinn, 0, '(objectClass=*)', []);
+  by(pat);
+  search(pat, 0, '(objectClass=*)', []);
+  by(pat);
+  compare(pat, 'title', 'tester');
+  compare(pat, 'title', 'tester');
+  by(pat);
+  compare(pat, 'userPassword', 'x');
+  by(pat);
+  compare(quinn, 'mail', 'quinn@prod.test');
+  by(pat);
+  compare('ou=users,' + P, 'objectClass', 'organizationalUnit');
+  by(pat);
+  compare('ou=users,' + P, 'description', 'x');
+  by(pat);
   // ---- run them ----------------------------------------------------------
   const initial = snapshot();
   const operations = [];
@@ -739,9 +803,15 @@ async function child(ROOT, outFile) {
   fs.writeFileSync(outFile, JSON.stringify({
     bases: bases,
     realms: realms.list().map(function (one) {
-      return { id: one.id, base: realms.run(one, function () {
-        return ldap.baseDn();
-      }) };
+      return realms.run(one, function () {
+        return { id: one.id, base: ldap.baseDn(),
+                 product: mode.isProduct(),
+                 selfWritable: config.value('ldap.selfWritableAttributes'),
+                 readableOfOthers: config.value(
+                   'ldap.directoryReadableAttributes'),
+                 groupMembersReadable: !!config.value(
+                   'ldap.groupMembersReadable') };
+      });
     }),
     settings: { maxEntries: Number(config.value('ldap.maxEntries')),
                 sizeLimit: Number(config.value('ldap.sizeLimit')),

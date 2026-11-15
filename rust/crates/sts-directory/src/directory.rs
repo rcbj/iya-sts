@@ -273,6 +273,7 @@ pub struct Directory {
     model: &'static DirectoryModel,
     realms: Vec<RealmTree>,
     mode: Arc<dyn DirectoryMode>,
+    realm_modes: Vec<(String, Arc<dyn DirectoryMode>)>,
     settings: Arc<dyn DirectorySettings>,
     clock: Arc<dyn Clock>,
     uuids: Arc<dyn UuidSource>,
@@ -440,6 +441,7 @@ impl Directory {
                 entries: IndexMap::new(),
             }],
             mode: Arc::new(FixedMode::default()),
+            realm_modes: Vec::new(),
             settings: Arc::new(FixedSettings::default()),
             clock: Arc::new(SystemClock),
             uuids: Arc::new(CryptoUuids),
@@ -457,6 +459,27 @@ impl Directory {
     pub fn with_mode(mut self, mode: Arc<dyn DirectoryMode>) -> Self {
         self.mode = mode;
         self
+    }
+
+    /// A realm whose mode is not the process's: `global.mode` is a setting
+    /// a realm may carry, so a realm can be in product mode while the
+    /// process is not, and every predicate is asked in the realm the
+    /// operation's DN selects.
+    #[tracing::instrument(level = "debug", skip(self, mode))]
+    pub fn with_realm_mode(mut self, realm: &str, mode: Arc<dyn DirectoryMode>) -> Self {
+        self.realm_modes.retain(|(id, _)| id != realm);
+        self.realm_modes.push((realm.to_string(), mode));
+        self
+    }
+
+    // The mode in a realm: its own where it carries one.
+    fn mode_at(&self, r: usize) -> &dyn DirectoryMode {
+        let id = self.realms.get(r).map(|t| t.id.as_str()).unwrap_or("");
+        self.realm_modes
+            .iter()
+            .find(|(realm, _)| realm == id)
+            .map(|(_, m)| m.as_ref())
+            .unwrap_or(self.mode.as_ref())
     }
 
     /// The settings read per call.
@@ -1098,7 +1121,7 @@ impl Directory {
         types: &[String],
         values: &[(String, Vec<String>)],
     ) -> Option<LdapError> {
-        if !self.mode.authorizes_directory_writes() {
+        if !self.mode_at(r).authorizes_directory_writes() {
             return None;
         }
         let dn = &request.dn;
@@ -1175,8 +1198,8 @@ impl Directory {
         None
     }
 
-    fn operational_refusal(&self, operation: &str, dn: &str, types: &[String]) -> Option<LdapError> {
-        let protected: &[&str] = if self.mode.protects_operational_attributes() {
+    fn operational_refusal(&self, r: usize, operation: &str, dn: &str, types: &[String]) -> Option<LdapError> {
+        let protected: &[&str] = if self.mode_at(r).protects_operational_attributes() {
             CLIENT_WRITTEN_OPERATIONAL
         } else {
             ALWAYS_PROTECTED_OPERATIONAL
@@ -1297,12 +1320,13 @@ their own doors"
     // into `attributes` through the policy.
     fn password_refusal(
         &self,
+        r: usize,
         dn: &str,
         attributes: &mut Vec<(String, Vec<String>)>,
         previous: &Attributes,
         touched: &[String],
     ) -> Option<LdapError> {
-        if self.mode.verifies_credentials()
+        if self.mode_at(r).verifies_credentials()
             && touched.iter().any(|t| t == "pwdhistory" || t == "pwdchangedtime")
         {
             return Some(LdapError::new(
@@ -1332,7 +1356,7 @@ their own doors"
             return None;
         }
         if sts_crypto::secrets::is_hashed_secret(&value) {
-            if self.mode.verifies_credentials() {
+            if self.mode_at(r).verifies_credentials() {
                 return Some(LdapError::new(
                     "ConstraintViolationError",
                     "a pre-hashed userPassword cannot be checked against the password policy; send the password \
@@ -1411,7 +1435,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             .filter(|t| SERVICE_ACCOUNT_MAINTAINED.contains(&t.as_str()))
             .map(|t| t.to_string())
             .collect();
-        if !maintained.is_empty() && self.mode.verifies_credentials() {
+        if !maintained.is_empty() && self.mode_at(r).verifies_credentials() {
             return Some(LdapError::new(
                 "ConstraintViolationError",
                 format!(
@@ -1497,7 +1521,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
 
     // `readerOf()`.
     fn reader_of(&self, r: usize, request: &Request) -> Reader {
-        if !self.mode.authorizes_directory_reads() {
+        if !self.mode_at(r).authorizes_directory_reads() {
             return Reader {
                 kind: ReaderKind::Unrestricted,
                 dn: String::new(),
@@ -1595,12 +1619,14 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         (true, Some(read_policy::attribute_rule(reader, &facts)))
     }
 
-    fn withheld(&self, name: &str) -> bool {
-        self.mode.withholds_directory_secrets() && self.model.is_secret(name)
+    fn withheld(&self, r: usize, name: &str) -> bool {
+        self.mode_at(r).withholds_directory_secrets() && self.model.is_secret(name)
     }
 
     // `matchable()` as a reader may see it (`matchableForReader()`).
-    fn matchable(&self, stored: &Entry, rule: Option<&AttributeRule>) -> Attributes {
+    fn matchable(
+        &self,
+        r: usize, stored: &Entry, rule: Option<&AttributeRule>) -> Attributes {
         let mut out = Attributes::new();
         for (name, values) in &stored.attributes {
             out.insert(name.clone(), values.clone());
@@ -1610,7 +1636,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             }
         }
         out.insert("entrydn".to_string(), vec![stored.dn.clone()]);
-        let secrets = self.mode.withholds_directory_secrets();
+        let secrets = self.mode_at(r).withholds_directory_secrets();
         if !secrets && rule.is_none_or(|r| r.all) {
             return out;
         }
@@ -1621,7 +1647,9 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
     }
 
     // `toSearchEntry()`.
-    fn search_entry(&self, stored: &Entry, requested: &[String], rule: Option<&AttributeRule>) -> SearchEntry {
+    fn search_entry(
+        &self,
+        r: usize, stored: &Entry, requested: &[String], rule: Option<&AttributeRule>) -> SearchEntry {
         let wanted: Vec<String> = requested.iter().map(|a| a.to_lowercase()).collect();
         let all = wanted.is_empty() || wanted.iter().any(|w| w == "*");
         let mut attributes: Vec<(String, Vec<String>)> = Vec::new();
@@ -1630,7 +1658,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             let ty = without_binary(name);
             let asked = wanted.contains(name)
                 || (ty != *name && (wanted.contains(&ty) || wanted.contains(&format!("{ty};binary"))));
-            if self.withheld(name) {
+            if self.withheld(r, name) {
                 continue;
             }
             if rule.is_some_and(|r| !read_policy::readable(r, name)) {
@@ -1676,7 +1704,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
 
     // `directoryReadRefusal()`.
     fn read_refusal(&self, r: usize, request: &Request, operation: &str, scope: Option<i64>) -> Option<LdapError> {
-        if !self.mode.requires_directory_bind() || !Self::bound_dn(request).is_empty() {
+        if !self.mode_at(r).requires_directory_bind() || !Self::bound_dn(request).is_empty() {
             return None;
         }
         if let Some(s) = scope {
@@ -1731,7 +1759,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         if let Some(e) = self.write_refusal(r, request, "add", &types, given) {
             return Err(e);
         }
-        if let Some(e) = self.operational_refusal("add", &dn, &types) {
+        if let Some(e) = self.operational_refusal(r, "add", &dn, &types) {
             return Err(e);
         }
         if let Some(e) = self.credential_refusal("add", &dn, &types) {
@@ -1833,7 +1861,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             if let Some(e) = self.service_account_refusal(r, &lowered, &keys) {
                 return Err(self.refuse(None, format!("an add of {dn} was refused by the service-account rules"), e, &dn));
             }
-            if let Some(e) = self.password_refusal(&dn, &mut attributes, &Attributes::new(), &keys) {
+            if let Some(e) = self.password_refusal(r, &dn, &mut attributes, &Attributes::new(), &keys) {
                 return Err(self.refuse(
                     None,
                     format!("an add of {dn} carried a userPassword the password policy refused"),
@@ -1850,7 +1878,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                         prospective.insert(t, vec![v]);
                     }
                 }
-                if let Some(refusal) = self.rules.attribute_create_refusal(&prospective) {
+                if let Some(refusal) = self.rules.attribute_create_refusal(&prospective, !self.mode_at(r).creates_incomplete_people()) {
                     return Err(self.refuse(
                         Some(codes::STS_LDAP_0162),
                         format!(
@@ -1915,7 +1943,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         if let Some(e) = self.write_refusal(r, request, "modify", &types, &written) {
             return Err(e);
         }
-        if let Some(e) = self.operational_refusal("modify", &dn, &types) {
+        if let Some(e) = self.operational_refusal(r, "modify", &dn, &types) {
             return Err(e);
         }
         if let Some(e) = self.credential_refusal("modify", &dn, &types) {
@@ -2006,7 +2034,7 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
         }
         if self.is_person_dn(r, &stored.dn) {
             let mut pairs: Vec<(String, Vec<String>)> = working.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            if let Some(e) = self.password_refusal(&stored.dn, &mut pairs, &stored.attributes, &types) {
+            if let Some(e) = self.password_refusal(r, &stored.dn, &mut pairs, &stored.attributes, &types) {
                 return Err(self.refuse(None, format!("a modify of {dn} was refused by the password rules"), e, &dn));
             }
             working = pairs.into_iter().collect();
@@ -2014,7 +2042,11 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
                 return Err(self.refuse(None, format!("a modify of {dn} was refused by the service-account rules"), e, &dn));
             }
             if !Self::is_service_account(&working) {
-                if let Some(taken) = self.rules.attribute_edit_refusal(&stored.attributes, &working) {
+                if let Some(taken) = self.rules.attribute_edit_refusal(
+                    &stored.attributes,
+                    &working,
+                    !self.mode_at(r).creates_incomplete_people(),
+                ) {
                     return Err(self.refuse(
                         Some(codes::STS_LDAP_0164),
                         format!(
@@ -2281,7 +2313,7 @@ would delete that account under another name"
         if let Some(e) = self.read_refusal(r, request, "compare", None) {
             return Err(e);
         }
-        if self.withheld(&ty) {
+        if self.withheld(r, &ty) {
             return Err(self.refuse(
                 Some(codes::STS_LDAP_0075),
                 format!("a compare on {dn} named {ty}, a credential attribute no reader of this socket may test"),
@@ -2325,6 +2357,7 @@ would delete that account under another name"
     }
 
     fn root_dse(&self) -> Entry {
+        let r = 0;
         let mut attributes = Attributes::new();
         attributes.insert("objectclass".to_string(), vec!["top".to_string(), "LDAProotDSE".to_string()]);
         attributes.insert("namingcontexts".to_string(), self.naming_contexts());
@@ -2339,7 +2372,7 @@ would delete that account under another name"
                 SASL_MECHANISMS.iter().map(|s| s.to_string()).collect(),
             );
         }
-        let binds = if self.mode.verifies_credentials() {
+        let binds = if self.mode_at(r).verifies_credentials() {
             "Binds are verified, and a read requires one. "
         } else {
             "Every bind succeeds except the password \"invalid\". "
@@ -2378,7 +2411,7 @@ would delete that account under another name"
         let mut out = Outcome::default();
         if normalize_dn(Some(&base)).is_empty() {
             if *scope == 0 {
-                out.entries.push(self.search_entry(&self.root_dse(), attributes, None));
+                out.entries.push(self.search_entry(0, &self.root_dse(), attributes, None));
             } else {
                 let name = scope_name(*scope);
                 out.error = Some(self.refuse(
@@ -2434,7 +2467,7 @@ would delete that account under another name"
                 continue;
             }
             let matched = match &parsed {
-                Some(f) => matching::matches(f, &self.matchable(stored, rule.as_ref())).unwrap_or(false),
+                Some(f) => matching::matches(f, &self.matchable(r, stored, rule.as_ref())).unwrap_or(false),
                 None => false,
             };
             if !matched {
@@ -2451,7 +2484,7 @@ for less with a filter, or raise ldap.sizeLimit"
                 ));
                 return out;
             }
-            out.entries.push(self.search_entry(stored, attributes, rule.as_ref()));
+            out.entries.push(self.search_entry(r, stored, attributes, rule.as_ref()));
         }
         out
     }

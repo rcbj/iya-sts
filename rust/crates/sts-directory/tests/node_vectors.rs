@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value as Json};
 use sts_directory::directory::{Change, Operation, Request};
-use sts_directory::ports::{Clock, DirectorySettings, FixedSettings, UuidSource};
+use sts_directory::ports::{Clock, DirectorySettings, FixedMode, FixedSettings, UuidSource};
 use sts_directory::{Attributes, Directory, DirectoryModel, DomainMap, Entry, EntryExt, FromOptions};
 
 struct TestClock;
@@ -60,13 +60,13 @@ impl DirectorySettings for Settings {
         self.0.lock().unwrap().bootstrap_username.clone()
     }
     fn self_writable_attributes(&self) -> Vec<String> {
-        Vec::new()
+        self.0.lock().unwrap().self_writable_attributes.clone()
     }
     fn directory_readable_attributes(&self) -> Vec<String> {
-        Vec::new()
+        self.0.lock().unwrap().directory_readable_attributes.clone()
     }
     fn group_members_readable(&self) -> bool {
-        false
+        self.0.lock().unwrap().group_members_readable
     }
     fn security_group(&self) -> String {
         String::new()
@@ -77,6 +77,10 @@ fn strings(v: &Json) -> Vec<String> {
     v.as_array()
         .map(|a| a.iter().map(|x| x.as_str().unwrap_or("").to_string()).collect())
         .unwrap_or_default()
+}
+
+fn lowered(v: &Json) -> Vec<String> {
+    strings(v).iter().map(|s| s.to_lowercase()).collect()
 }
 
 fn entry_of(v: &Json) -> Entry {
@@ -294,6 +298,9 @@ fn the_directory_is_nodes() {
         max_entries: v["settings"]["maxEntries"].as_i64().unwrap(),
         size_limit: v["settings"]["sizeLimit"].as_i64().unwrap(),
         bootstrap_username: v["settings"]["bootstrapUsername"].as_str().unwrap().to_string(),
+        self_writable_attributes: lowered(&v["realms"][0]["selfWritable"]),
+        directory_readable_attributes: lowered(&v["realms"][0]["readableOfOthers"]),
+        group_members_readable: v["realms"][0]["groupMembersReadable"].as_bool().unwrap_or(false),
         ..FixedSettings::default()
     })));
     let defaults = (settings.max_entries(), settings.size_limit());
@@ -303,6 +310,10 @@ fn the_directory_is_nodes() {
     let realm_ids: Vec<String> = v["realms"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap().to_string()).collect();
     for r in v["realms"].as_array().unwrap() {
         d.add_realm(r["id"].as_str().unwrap(), r["base"].as_str().unwrap());
+        // A realm carrying `global.mode`, as the builder's `prod` does.
+        if r["product"].as_bool() == Some(true) {
+            d = d.with_realm_mode(r["id"].as_str().unwrap(), Arc::new(FixedMode { product: true }));
+        }
     }
     for id in &realm_ids {
         let rows: Vec<Entry> = v["initial"][id].as_array().unwrap().iter().map(|row| entry_of(&row["entry"])).collect();
