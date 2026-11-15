@@ -23,6 +23,11 @@ pub enum Handler {
     Realms,
     RealmsAction,
     Status,
+    /// `GET /admin-api/applications` (the list; the drill-down is not yet
+    /// ported).
+    Applications,
+    /// `POST /admin-api/applications/{action}`, the register's own acts.
+    ApplicationsAction,
 }
 
 include!("not_yet_ported.rs");
@@ -48,6 +53,21 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::UnsetRealmSetting
         | Operation::RemoveRealm => Some(Handler::RealmsAction),
         Operation::GetStatus => Some(Handler::Status),
+        Operation::GetApplications => Some(Handler::Applications),
+        Operation::CreateApplication
+        | Operation::SetApplicationAttribute
+        | Operation::AddApplicationValue
+        | Operation::RemoveApplicationValue
+        | Operation::UpdateApplicationFields
+        | Operation::ConfirmApplicationReturnAddress
+        | Operation::DiscardApplicationReturnAddress
+        | Operation::AddApplicationOwner
+        | Operation::RemoveApplicationOwner
+        | Operation::RegenerateApplicationClientSecret
+        | Operation::RotateApplicationClientSecret
+        | Operation::AddApplicationClientSecret
+        | Operation::RemoveApplicationClientSecret
+        | Operation::DeleteApplication => Some(Handler::ApplicationsAction),
         not_yet_ported!() => None,
     }
 }
@@ -59,6 +79,7 @@ pub fn handler_of_route(route: &str) -> Option<Handler> {
     match route {
         "/admin-api/config/:action" => Some(Handler::ConfigAction),
         "/admin-api/realms/:action" => Some(Handler::RealmsAction),
+        "/admin-api/applications/:action" => Some(Handler::ApplicationsAction),
         _ => None,
     }
 }

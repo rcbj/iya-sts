@@ -176,6 +176,13 @@ function declarations(t) {
       'utf8'),
   'rust/crates/sts-registers/src/generated/schemas.rs is what the model ' +
     'generates (tests/tools/regenerate-model-docs.sh)');
+  // The application register's whole SCHEMA (#444, phase 4), beside it.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-registers',
+    'src', 'generated', 'application.schema.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      'application.schema.rust.json'), 'utf8'),
+  'rust/crates/sts-registers/src/generated/application.schema.json is ' +
+    'what the model generates (tests/tools/regenerate-model-docs.sh)');
   t.check(differ.length === 0, 'every generated Rust file under ' +
     'rust/crates/ is what the model generates ' +
     '(tests/tools/regenerate-model-docs.sh): ' +

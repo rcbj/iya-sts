@@ -25,7 +25,8 @@ import { checkDomains, readDomains, renderClasses, renderTypes }
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
 import { renderRustApi, renderRustDirectory, renderRustDomain,
   renderRustPersistence, renderRustPolicyTables,
-  renderRustManagementOperations, renderRustSchemas }
+  renderRustManagementOperations, renderRustSchemas,
+  renderRustApplicationSchema }
   from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
@@ -298,6 +299,11 @@ async function generate() {
         JSON.stringify(declared));
     }
   });
+  // The application register's whole SCHEMA for sts-registers' port of
+  // common/applications.js (#444 phase 4), beside schemas.rs, which the
+  // regenerate script copies into the same directory.
+  fs.writeFileSync(path.join(out, 'application.schema.rust.json'),
+    renderRustApplicationSchema(objects, schemaOf));
   // The policy kinds' tables for the Rust runtime's sts-policy (#444
   // phase 4), in the Rust tree the regenerate script copies.
   writeRust('sts-policy/src/generated/policy_tables.json',

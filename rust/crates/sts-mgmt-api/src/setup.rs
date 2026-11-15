@@ -80,6 +80,23 @@ pub trait SetupPorts: Send + Sync {
     fn totals(&self, realm: &str) -> Json;
     /// A realm's removal: retire it, then remove it (`realms.retire()`).
     fn retire(&self, realm: &str) -> Result<Json, (ErrorCode, Vec<String>)>;
+    /// The application register (`common/applications.js`), over the
+    /// directory; None until the composition root hands it over, when the
+    /// applications operations answer as operations not yet ported.
+    fn applications(
+        &self,
+    ) -> Option<std::sync::Arc<sts_registers::applications::ApplicationRegistry>>
+    {
+        None
+    }
+    /// What an applications act reads outside the register: the SAML
+    /// metadata consumer and the scope policy's warnings.
+    fn application_ports(
+        &self,
+    ) -> std::sync::Arc<dyn sts_registers::applications::actions::ActionPorts>
+    {
+        std::sync::Arc::new(sts_registers::applications::actions::NoActionPorts)
+    }
 }
 
 /// What the setup operations read.
@@ -157,6 +174,12 @@ fn text_field(described: &Json) -> String {
 }
 
 impl Setup<'_> {
+    /// `configSettingsJson(page)`: a console page's settings block.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn page_settings(&self, page: &str) -> Json {
+        self.view().settings_block(page)
+    }
+
     fn view(&self) -> ConfigView<'_> {
         ConfigView {
             settings: self.settings,

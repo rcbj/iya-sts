@@ -288,6 +288,70 @@ const CHANNEL: &str = "sts_ldap_change";
 /// Change-log rows per INSERT statement.
 const CHANGE_ROWS_PER_STATEMENT: usize = 500;
 
+/// `dialOptions(url, verifyTls, ca)` for PostgreSQL (#273, #951): every
+/// connection is TLS, so a string whose `sslmode` is `disable` or `allow`
+/// is REFUSED (`STS-STORE-0078`), and so is one that is not a
+/// `postgres://` URL, since whether it would be dialled in the clear
+/// cannot be told. `sslmode`, `ssl` and `ssl-mode` are STRIPPED before the
+/// string reaches the client — tokio-postgres knows no `verify-ca` or
+/// `verify-full` and refuses the whole string over them — and decide what
+/// is verified: `verify-ca` and `verify-full` VERIFY whatever the setting
+/// says (rcbj), `verify-ca` the chain without the host name; anything else
+/// leaves it to `verify_tls`. Answers the stripped string, whether the
+/// chain is verified, and whether the host name is.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn postgres_dial_options(
+    url: &str,
+    verify_tls: bool,
+) -> StoreResult<(String, bool, bool)> {
+    let refuse = |why: &str| {
+        StoreError::new(format!(
+            "{}persistence: the database connection string is not dialled: {} (#273).",
+            tag(codes::STS_STORE_0078),
+            why
+        ))
+    };
+    let (head, query) = match url.find('?') {
+        Some(at) => (&url[..at], &url[at + 1..]),
+        None => (url, ""),
+    };
+    let mut sslmode = String::new();
+    let mut kept: Vec<&str> = Vec::new();
+    for pair in query.split('&').filter(|p| !p.is_empty()) {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        let (k, v) =
+            (k.trim().to_ascii_lowercase(), v.trim().to_ascii_lowercase());
+        if k == "sslmode" && (v == "disable" || v == "allow") {
+            return Err(refuse(
+                "its sslmode asks for a connection in the clear, which this service never opens; use \
+                 sslmode=require, or leave sslmode out",
+            ));
+        }
+        match k.as_str() {
+            "sslmode" => sslmode = v,
+            "ssl" | "ssl-mode" => {}
+            _ => kept.push(pair),
+        }
+    }
+    let lower = head.to_ascii_lowercase();
+    if !(lower.starts_with("postgres://") || lower.starts_with("postgresql://"))
+    {
+        return Err(refuse(
+            "it is not a postgres:// URL, so whether it would be dialled in the clear cannot be told; write \
+             it as a URL",
+        ));
+    }
+    let verify_chain =
+        sslmode == "verify-ca" || sslmode == "verify-full" || verify_tls;
+    let verify_hostname = sslmode != "verify-ca" && verify_chain;
+    let stripped = if kept.is_empty() {
+        head.to_string()
+    } else {
+        format!("{}?{}", head, kept.join("&"))
+    };
+    Ok((stripped, verify_chain, verify_hostname))
+}
+
 impl PostgresDriver {
     /// A pool of at most `pool_max` connections to `url`, over TLS.
     pub fn new(
@@ -295,14 +359,37 @@ impl PostgresDriver {
         verify_tls: bool,
         pool_max: usize,
     ) -> StoreResult<PostgresDriver> {
+        PostgresDriver::with_ca_files(url, verify_tls, &[], pool_max)
+    }
+
+    /// The same, verifying the server against the database's own trust
+    /// anchors as well (`persistence.databaseTlsCaFile`: the file, or each
+    /// `.crt` and `.pem` file of the directory it names, which the
+    /// composition root lists). Node trusts them IN PLACE of the default
+    /// store; OpenSSL here adds them to it, since replacing the store means
+    /// building one, which is the crypto module's (`sts-guards`' third
+    /// guard) — a difference only where the platform's store would also
+    /// vouch for the database's certificate.
+    #[tracing::instrument(level = "debug", skip(url))]
+    pub fn with_ca_files(
+        url: &str,
+        verify_tls: bool,
+        ca_files: &[std::path::PathBuf],
+        pool_max: usize,
+    ) -> StoreResult<PostgresDriver> {
+        let (url, verify_chain, verify_hostname) =
+            postgres_dial_options(url, verify_tls)?;
         let mut config: tokio_postgres::Config = url.parse().map_err(err)?;
         config.ssl_mode(tokio_postgres::config::SslMode::Require);
         let mut tls = SslConnector::builder(SslMethod::tls()).map_err(err)?;
-        if !verify_tls {
+        for file in ca_files {
+            tls.set_ca_file(file).map_err(err)?;
+        }
+        if !verify_chain {
             tls.set_verify(SslVerifyMode::NONE);
         }
         let mut connector = MakeTlsConnector::new(tls.build());
-        if !verify_tls {
+        if !verify_hostname {
             connector.set_callback(|c, _| {
                 c.set_verify_hostname(false);
                 Ok(())
@@ -2406,5 +2493,47 @@ impl OriginEngine for PostgresDriver {
                 .map_err(err)?;
             Ok(row.get("now"))
         })
+    }
+}
+
+#[cfg(test)]
+mod dial_tests {
+    #![allow(clippy::unwrap_used)] // tests
+
+    use super::postgres_dial_options;
+
+    #[test]
+    fn the_verify_modes_verify_and_are_stripped() {
+        let (url, chain, host) = postgres_dial_options(
+            "postgres://u:p@db:5432/sts?sslmode=verify-full&application_name=x",
+            false,
+        )
+        .unwrap();
+        assert_eq!(url, "postgres://u:p@db:5432/sts?application_name=x");
+        assert!(chain && host);
+        let (_, chain, host) =
+            postgres_dial_options("postgres://db/sts?sslmode=verify-ca", false)
+                .unwrap();
+        assert!(chain && !host);
+        let (url, chain, host) =
+            postgres_dial_options("postgresql://db/sts?sslmode=require", false)
+                .unwrap();
+        assert_eq!(url, "postgresql://db/sts");
+        assert!(!chain && !host);
+        let (_, chain, host) =
+            postgres_dial_options("postgres://db/sts", true).unwrap();
+        assert!(chain && host);
+    }
+
+    #[test]
+    fn the_clear_and_a_non_url_are_refused() {
+        for url in [
+            "postgres://db/sts?sslmode=disable",
+            "postgres://db/sts?SSLMODE=Allow",
+            "host=db dbname=sts",
+        ] {
+            let e = postgres_dial_options(url, true).unwrap_err();
+            assert!(e.message.contains("STS-STORE-0078"), "{}", url);
+        }
     }
 }

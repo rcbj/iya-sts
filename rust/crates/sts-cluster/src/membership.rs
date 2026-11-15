@@ -566,7 +566,13 @@ struct NodeState {
     /// Leases whose takeover waits on the previous holder's writes, so
     /// STS-CLUSTER-0165 is said once per wait.
     pending_takeovers: std::collections::HashSet<String>,
+    /// What else renews on the heartbeat ([`ClusterNode::on_beat`]).
+    beat_hooks: Vec<BeatHook>,
 }
+
+/// A renewal that rides on the heartbeat: run beside each beat, never
+/// awaited by it.
+pub type BeatHook = Arc<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;
 
 /// One node of a clustered service.
 pub struct ClusterNode {
@@ -674,6 +680,10 @@ impl ClusterNode {
                     me.note_unsettled_renewal();
                     continue;
                 }
+                let hooks = me.state().beat_hooks.clone();
+                for hook in hooks {
+                    tokio::spawn(hook());
+                }
                 let one = me.clone();
                 tokio::spawn(async move {
                     let member = one.renew().await;
@@ -686,6 +696,17 @@ impl ClusterNode {
         });
         self.state().heartbeat = Some(handle);
         Ok(())
+    }
+
+    /// Adds a renewal that rides on the heartbeat (`persistence.js`'s origin
+    /// claim, renewed in Node by a timer of its own — one of
+    /// `tests/no_periodic_timers.js`' permanent exceptions beside the
+    /// heartbeat, which in Rust is one timer, this one): started beside
+    /// every beat once this node has joined, and never awaited by it, so a
+    /// slow renewal cannot make a beat late. The hook owns its own bounds.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn on_beat(&self, hook: BeatHook) {
+        self.state().beat_hooks.push(hook);
     }
 
     /// Sets the mode this node runs in (`resolve_mode()`'s answer): in

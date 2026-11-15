@@ -14,10 +14,19 @@ publish.workspace = true
 sts-core.workspace = true
 sts-model.workspace = true
 sts-xacml.workspace = true
+sts-crypto.workspace = true
+sts-directory.workspace = true
+sts-ldap.workspace = true
+sts-policy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
+url.workspace = true
+jsonschema.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+indexmap.workspace = true
 
 [build-dependencies]
 serde_json.workspace = true
