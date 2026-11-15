@@ -435,6 +435,20 @@ impl cred_ports::Keystore for DataKeysPort {
     }
 }
 
+/// `replication.remoteRows(handle, undefined, key)` over the store's fan-in:
+/// the `merge: own` rows every other process — and a previous run of this
+/// one — wrote, which the monitor adds to its own.
+struct StoreFanIn(Arc<Persistence>);
+
+impl crate::monitor::RemoteRows for StoreFanIn {
+    fn remote_rows(&self, handle: &str, key: &str) -> Vec<Json> {
+        self.0
+            .minted()
+            .map(|m| m.fan_in().remote_rows(handle, None, key))
+            .unwrap_or_default()
+    }
+}
+
 /// What the runtime hands the stack.
 pub struct RuntimeParts {
     pub settings: Arc<Settings>,
@@ -503,7 +517,11 @@ impl EnrollStack {
             mode: parts.mode.clone(),
         });
         let quiet = Arc::new(Quiet);
-        let monitor = Arc::new(self.monitor.clone());
+        let monitor = Arc::new(
+            self.monitor
+                .clone()
+                .with_remote(Arc::new(StoreFanIn(parts.persistence.clone()))),
+        );
         let core = Core::new(CoreDeps {
             settings: parts.settings.clone(),
             mode: parts.mode.clone(),

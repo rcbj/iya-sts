@@ -120,8 +120,7 @@ fn table_of(counts: &Json) -> Json {
     rows.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
-            .then_with(|| a.0.cmp(&b.0))
+            .then_with(|| sts_registers::js::locale_compare(&a.0, &b.0))
     });
     Json::Array(
         rows.into_iter()
@@ -829,7 +828,8 @@ pub fn scep_monitor_view(f: &Families, asked: &Asked<'_>) -> Json {
 // `common/pki_authoring.ts`), `pinnedSigners` and `personsStorable`. A
 // post-quantum tier's `pqc` is null here (`pqcSupport.of()` is not ported;
 // a classical one is null in Node too). `revocationNote` is the sentence
-// Node writes under the default revocation policy
+// Node writes under the mode's DEFAULT revocation policy; a policy changed
+// by `pki.revocation*` settings is not described
 // (`revocation_status.describePolicy()` is not ported).
 // ---------------------------------------------------------------------
 
@@ -1139,12 +1139,8 @@ fn listener_default_key_alg(a: &Authority, f: &Families) -> String {
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
     let p = &t()["pki"];
-    let current = realm::current();
-    let label = if current.name.is_empty() {
-        realm::current_id()
-    } else {
-        current.name.clone()
-    };
+    // `realmLabel()`: the realm's id.
+    let label = realm::current_id();
     let mut chain = super::describe_chain(a, &realm::current_id());
     classify(&mut chain);
     let setting = |key: &str| match f.settings.value_of(key) {
@@ -1159,7 +1155,13 @@ pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
         "signatureAlgorithms": p["signatureAlgorithms"],
         "tiers": p["tiers"],
         "revocation": revocation_model(a, f, asked),
-        "revocationNote": p["revocationNote"],
+        // The sentence of the mode's default revocation policy: soft-fail
+        // in development, hard-fail in product.
+        "revocationNote": if f.core.mode().current() == "product" {
+            p["revocationNoteProduct"].clone()
+        } else {
+            p["revocationNote"].clone()
+        },
         "residency": residency(a),
         "encoder": p["encoder"],
         "actions": p["actions"],
@@ -1180,4 +1182,31 @@ pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
         "tierLabels": p["tierLabels"],
         "serviceScope": p["serviceScope"],
     })
+}
+
+/// `protocolEndpoints` (`forPage()`), appended to a successful GET that
+/// mirrors a Protocols page as `sendJson()` appends it: Node's HTTP rows
+/// for the page, each `url` the request's realm base and the route. The
+/// SPIFFE socket rows Node adds report its live listeners, which are not
+/// in this runtime, and are left out.
+pub fn with_protocol_endpoints(mut body: Json, asked: &Asked<'_>) -> Json {
+    let Some(rows) = t()["protocolEndpoints"]
+        .get(asked.operation_id)
+        .and_then(Json::as_array)
+    else {
+        return body;
+    };
+    let rows: Vec<Json> = rows
+        .iter()
+        .map(|one| {
+            let mut row = one.clone();
+            let path = one["url"].as_str().unwrap_or("");
+            row["url"] = Json::from(format!("{}{}", asked.base, path));
+            row
+        })
+        .collect();
+    if let Some(o) = body.as_object_mut() {
+        o.insert("protocolEndpoints".into(), Json::Array(rows));
+    }
+    body
 }

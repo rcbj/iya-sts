@@ -497,15 +497,40 @@ impl RealmLifecycle {
             .map(|r| (r.code, r.problem))
     }
 
+    /// Every key of an overrides object checked AS ONE WRITE, in the realm
+    /// it lands in (cfa8ca851, D12): `create()` and `update()` replace a
+    /// realm's overrides with the object, so a rule between settings sees
+    /// the object's companion, and a companion the object does not carry is
+    /// judged at the value the realm inherits — not at the caller's realm's.
     fn check_overrides(&self, overrides: &Overrides) -> Refused {
-        let mut out = Refusals::default();
-        for (key, raw) in overrides {
-            if let Some((code, problem)) = self.check_realm_override(key, raw) {
-                out.code.get_or_insert(code);
-                out.sentences.push(problem);
+        self.as_one_write(overrides, || {
+            let mut out = Refusals::default();
+            for (key, raw) in overrides {
+                if let Some((code, problem)) =
+                    self.check_realm_override(key, raw)
+                {
+                    out.code.get_or_insert(code);
+                    out.sentences.push(problem);
+                }
             }
-        }
-        out
+            out
+        })
+    }
+
+    /// `config.withWriteBatch()` in the candidate realm whose overrides are
+    /// `overrides`: what a check of a realm's write reads its companions in.
+    fn as_one_write<R>(
+        &self,
+        overrides: &Overrides,
+        f: impl FnOnce() -> R,
+    ) -> R {
+        let batch: Map<String, Json> = overrides
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        self.in_candidate(overrides, || {
+            self.settings.with_write_batch(&batch, f)
+        })
     }
 
     /// Runs `f` with a candidate realm whose overrides are `overrides` as
@@ -905,7 +930,14 @@ impl RealmLifecycle {
         let Some(before) = self.overrides(id) else {
             return Err(RealmLifecycle::not_defined(id));
         };
-        if let Some((code, problem)) = self.check_realm_override(key, &raw) {
+        // `setOverride()` with the realm's overrides plus the new value, as
+        // one write (cfa8ca851): a rule reading a companion (`beside()`)
+        // reads the realm's own, or the value the realm inherits.
+        let mut candidate = before.clone();
+        candidate.insert(key.to_string(), raw.clone());
+        if let Some((code, problem)) = self
+            .as_one_write(&candidate, || self.check_realm_override(key, &raw))
+        {
             return Err(refused(code, vec![problem]));
         }
         let mut write = Overrides::new();

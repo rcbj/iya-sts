@@ -118,6 +118,34 @@ fn encode_uri(text: &str) -> String {
     out
 }
 
+/// `a.localeCompare(b)` (`issuedList()` sorts by it): punctuation before
+/// digits before letters, letters by case-folded value, then lower case
+/// first — the collation `sts-registers`' `js::locale_compare()` holds, kept
+/// here because this crate does not depend on that one.
+fn locale_compare(a: &str, b: &str) -> std::cmp::Ordering {
+    const PUNCTUATION: &str =
+        "\t\n\u{b}\u{c}\r _-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$";
+    let primary = |c: char| -> (u32, u32) {
+        if let Some(at) = PUNCTUATION.find(c) {
+            return (0, at as u32);
+        }
+        if c.is_ascii_digit() {
+            return (1, c as u32);
+        }
+        if c.is_ascii_alphabetic() {
+            return (2, c.to_ascii_lowercase() as u32);
+        }
+        (3, c.to_lowercase().next().unwrap_or(c) as u32)
+    };
+    let pa: Vec<(u32, u32)> = a.chars().map(primary).collect();
+    let pb: Vec<(u32, u32)> = b.chars().map(primary).collect();
+    pa.cmp(&pb).then_with(|| {
+        let ta: Vec<bool> = a.chars().map(char::is_uppercase).collect();
+        let tb: Vec<bool> = b.chars().map(char::is_uppercase).collect();
+        ta.cmp(&tb)
+    })
+}
+
 fn str_of<'a>(v: &'a Json, key: &str) -> &'a str {
     v.get(key).and_then(Json::as_str).unwrap_or("")
 }
@@ -536,7 +564,9 @@ impl Authority {
                 label,
             );
         }
-        out.sort_by(|a, b| str_of(a, "subject").cmp(str_of(b, "subject")));
+        out.sort_by(|a, b| {
+            locale_compare(str_of(a, "subject"), str_of(b, "subject"))
+        });
         out
     }
 

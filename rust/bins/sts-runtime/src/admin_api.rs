@@ -1090,6 +1090,8 @@ struct Gate {
     clients: Arc<dyn Clients>,
     scopes: Arc<sts_oauth::scopes::ScopePolicy>,
     roles: Arc<sts_registers::role_permissions::RolePermissions>,
+    /// The console roster, for `holdsSecurity()`.
+    roster: Arc<RosterRoles>,
 }
 
 impl Gate {
@@ -1218,13 +1220,54 @@ impl GatePorts for Gate {
             }
         })
     }
+    /// `SecurityOperations.classify()`'s HOLDER rule (#645): an act on the
+    /// account of a person who holds the Security Administrator's role —
+    /// a disable, an enable, a second factor cleared, a person's key pair —
+    /// is a Security Administrator's (`holderChange()`, over
+    /// `holdsSecurity()`: the roster's `security`, not merely `open`).
+    /// NOT PORTED: the reference rules — a write naming a policy in a
+    /// policy-reference attribute (`changedReferences()`) — which rest on
+    /// the policy kinds' registry.
     fn security_change(
         &self,
-        _realm: &str,
-        _operation: &ConsoleOperation,
-        _body: &Json,
+        realm: &str,
+        operation: &ConsoleOperation,
+        body: &Json,
     ) -> Option<String> {
-        None
+        let text = |k: &str| {
+            body.get(k)
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        };
+        let who = match operation.path.trim_end_matches('/') {
+            "/admin/users" if operation.action != "create" => {
+                match text("user") {
+                    u if u.is_empty() => text("username"),
+                    u => u,
+                }
+            }
+            "/admin/mfa" => match text("user") {
+                u if u.is_empty() => text("username"),
+                u => u,
+            },
+            "/admin/pki" if text("target") == "person" => text("identifier"),
+            _ => return None,
+        };
+        if who.is_empty() {
+            return None;
+        }
+        let held = rp::RosterRoles::roles_of(self.roster.as_ref(), &who, realm);
+        let holds = held.get("security") == Some(&Json::Bool(true))
+            && held.get("open") != Some(&Json::Bool(true));
+        holds.then(|| {
+            format!(
+                "{} holds the Security Administrator's role, so their \
+                 account is a Security Administrator's to act on",
+                who
+            )
+        })
     }
     fn realm_refusal(
         &self,
@@ -1705,6 +1748,7 @@ impl AdminStack {
                 clients,
                 scopes,
                 roles: permissions,
+                roster: roster.clone(),
             }),
             access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
             dpop,
@@ -1729,8 +1773,16 @@ impl AdminStack {
             }),
             families: families.clone(),
             facts: ProcessFacts {
-                config_file: std::env::var("CONFIG_FILE").ok(),
-                defaults_file: "./env/defaults.js".to_string(),
+                // `resolveConfigFile()` and `DEFAULTS_FILE`: absolute, as
+                // Node reports them (`path.join(ROOT, ...)`).
+                config_file: std::env::var("CONFIG_FILE").ok().map(|f| {
+                    std::path::absolute(&f)
+                        .map_or(f, |p| p.to_string_lossy().replace("/./", "/"))
+                }),
+                defaults_file: std::path::absolute("./env/defaults.js")
+                    .map_or("./env/defaults.js".to_string(), |p| {
+                        p.to_string_lossy().replace("/./", "/")
+                    }),
                 persists_appconfig: parts.persistence.mode().is_database(),
                 persists_realms: parts.persistence.mode().is_database(),
                 persistence_mode: store["mode"]

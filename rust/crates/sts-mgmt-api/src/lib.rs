@@ -11,7 +11,8 @@
 //! * [`request`], [`schema`] — what a request may name and hold, with
 //!   Node's refusals and ajv's words.
 //! * [`answer`] — every answer held to its closed model (#1353).
-//! * [`gate`] — the access-token gate, whole.
+//! * [`gate`] — the access-token gate, whole; [`admin_scope`] — what a
+//!   realm administrator may not do.
 //! * [`config_view`], [`setup`] — the configuration, mode, realm and status
 //!   operations over `sts-core`.
 //! * [`applications`] — the application registry's list and its own
@@ -28,6 +29,7 @@
 #![forbid(unsafe_code)]
 
 pub mod account;
+pub mod admin_scope;
 pub mod answer;
 pub mod applications;
 pub mod config_view;

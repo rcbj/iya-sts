@@ -100,6 +100,12 @@ pub struct Tables {
     /// may not reach.
     #[serde(default)]
     pub service_pages: Vec<String>,
+    /// `admin_scope.ts`'s `SERVICE_SETTING_KEYS` and
+    /// `SERVICE_SETTING_PREFIXES`: what a realm administrator may not write.
+    #[serde(default)]
+    pub service_setting_keys: Vec<String>,
+    #[serde(default)]
+    pub service_setting_prefixes: Vec<String>,
     /// `common/inetorgperson.ts`'s `CLASSES`: the schema's fixed list the
     /// Account API's Overview draws an entry against.
     #[serde(default)]
@@ -145,6 +151,8 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
             console_sections: Json::Array(Vec::new()),
             nav_labels: Json::Object(Default::default()),
             service_pages: Vec::new(),
+            service_setting_keys: Vec::new(),
+            service_setting_prefixes: Vec::new(),
             inet_org_person_classes: Json::Array(Vec::new()),
             family_views: Json::Object(Default::default()),
         }

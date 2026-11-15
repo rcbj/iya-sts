@@ -620,10 +620,19 @@ each request, whose touched entries are written back after it. The
 console's first screen (`me`, the frame, the dashboard, the announcements),
 `users/create` and the families' acts (`families.rs`, answered by `sts-pki`
 and `sts-enroll`) are ported, and `/account-api` (`account.rs`) with its
-gate and `me`, `overview` and `announcements`. Not yet: the server prose
-translation of an answer (#543, an answer is English whatever
-`Accept-Language` says), the owner roles, the security-change and realm
-confinement classifiers outside `/admin/config`, and the families' views.
+gate and `me`, `overview` and `announcements`. **The `apis2` slice** adds
+the families' views — `GET /admin-api/acme`, `/est`, `/scep` and their
+monitors over `sts-enroll`'s core and its persisted enrollment monitor, and
+`GET /admin-api/pki` without `issued`, `persons`, `tree`, `workbench` and
+`pinnedSigners` — ACME's `deactivate-account`, EST's `issue-server-key` and
+SCEP's `reissue-ra`, `users/disable` and `users/enable` over the account
+lock, the dashboard's token and session totals, the realm-confinement
+classifier (`admin_scope.rs`, `refusalFor()`), the security classifier's
+holder rule, and a realm's override writes checked as one write in that
+realm. Not yet: the server prose translation of an answer (#543, an answer
+is English whatever `Accept-Language` says), the owner roles, the security
+classifier's policy-reference rules, `users/create`'s development persona
+and its typed-attribute check, and a new realm's bootstrap administrator.
 
 ### 5.2 The decisions
 

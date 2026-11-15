@@ -18607,6 +18607,44 @@
   "/admin/ldap/service",
   "/admin/api-explorer"
  ],
+ "serviceSettingKeys": [
+  "global.logLevel",
+  "global.mode",
+  "global.trustProxy",
+  "global.publicBaseUrl",
+  "pki.revocationCrlIssuersFile",
+  "pki.revocationLdapCaFile",
+  "pki.revocationHttpsCaFile",
+  "gnap.pushCaFile",
+  "ssf.pushCaFile",
+  "federation.outboundCaFile",
+  "xacml.pepNotifyCaFile",
+  "pki.revocationLdapDirectory",
+  "pki.distributionPort",
+  "pki.distributionBaseUrl",
+  "pki.distributionLdapHost",
+  "pki.distributionLdapPort",
+  "pki.httpPort",
+  "spiffe.workloadSocket",
+  "spiffe.serverSocket",
+  "spiffe.grpcHost",
+  "spiffe.workloadPort",
+  "spiffe.serverPort",
+  "krb5.kdcPort"
+ ],
+ "serviceSettingPrefixes": [
+  "admin.",
+  "adminApi.",
+  "realms.",
+  "workers.",
+  "persistence.",
+  "debugger.",
+  "tls.",
+  "keys.",
+  "security.passwordHash",
+  "risk.",
+  "attributeSources.hostPatterns"
+ ],
  "inetOrgPersonClasses": [
   {
    "id": "person",
@@ -19657,6 +19695,7 @@
     }
    ],
    "revocationNote": "PUBLISHED AND CONSULTED. Every certificate authority here signs a CRL (RFC 5280 section 5) and answers OCSP (RFC 6960), at /pki/crl/{scope}/{ca} and /pki/ocsp/{scope}/{ca}, and every certificate this service issues names its own over http and ldap. Anything replaced or rotated is put on the issuer's list as `superseded` automatically. WHAT A PRESENTED CERTIFICATE IS HELD TO: CONSULTED, SOFT-FAIL (pki.revocationCheck is auto, so the mode decides: development mode soft-fails). A presented certificate this service issued is looked up in its own register — the whole chain, including the tiers it did not send — and one from another authority, for a chain that verified, by the OCSP responder it names, falling back to the CRL it names, over http, https or ldaps, with delta CRLs merged, indirect CRLs read per issuer, a list's signer fetched from its caIssuers address where nothing here holds it, and a delegated responder's own status asked of its CRL. A REGISTERED certificate is checked the same way when it verifies a signature. A revoked certificate is refused; one whose status could not be established is accepted and reported. LDAPS 636 requests no client certificate. Removing the key pair from an application's entry is a THIRD thing again — it stops this service trusting an assertion signed with that key, and puts nothing on any list.",
+   "revocationNoteProduct": "PUBLISHED AND CONSULTED. Every certificate authority here signs a CRL (RFC 5280 section 5) and answers OCSP (RFC 6960), at /pki/crl/{scope}/{ca} and /pki/ocsp/{scope}/{ca}, and every certificate this service issues names its own over http and ldap. Anything replaced or rotated is put on the issuer's list as `superseded` automatically. WHAT A PRESENTED CERTIFICATE IS HELD TO: CONSULTED, HARD-FAIL (pki.revocationCheck is auto, so the mode decides: product mode hard-fails). A presented certificate this service issued is looked up in its own register — the whole chain, including the tiers it did not send — and one from another authority, for a chain that verified, by the OCSP responder it names, falling back to the CRL it names, over http, https or ldaps, with delta CRLs merged, indirect CRLs read per issuer, a list's signer fetched from its caIssuers address where nothing here holds it, and a delegated responder's own status asked of its CRL. A REGISTERED certificate is checked the same way when it verifies a signature. A revoked certificate is refused; so is one whose status could not be fetched, verified or trusted as fresh, or that the responder does not know, and one whose only list or responder is at an address this service is configured not to dial (STS-PKI-0188 — the issuer published a list, and this service's own policy is what stopped it being read); and one — issued by a CA, without RFC 9608 noRevAvail — whose issuer names no list and no responder at all, which nobody could ever revoke (STS-PKI-0190, pki.revocationRequireDistributionPoint is auto). LDAPS 636 requests no client certificate. Removing the key pair from an application's entry is a THIRD thing again — it stops this service trusting an assertion signed with that key, and puts nothing on any list.",
    "residency": "The CA private keys are held in memory only. This service is in development mode, where key material is generated per start — a hierarchy built now is gone when this process exits.",
    "encoder": "common/crypto_impl/x509.js — the parent project's own PKI code, byte-identical, over pkijs and asn1js. One encoder for this service and for that project's PKI / X.509 page.",
    "actions": [
@@ -19803,6 +19842,918 @@
     }
    ],
    "crlLifetimeMinutes": 60
+  },
+  "protocolEndpoints": {
+   "getPki": [
+    {
+     "name": "Every CRL and OCSP responder this service publishes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/revocation",
+     "route": "/pki/revocation"
+    },
+    {
+     "name": "One certificate authority's own certificate",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/ca/{scope}/{ca}",
+     "route": "/pki/ca/:scope/:ca"
+    },
+    {
+     "name": "The certificate revocation list of one authority",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/crl/{scope}/{ca}",
+     "route": "/pki/crl/:scope/:ca"
+    },
+    {
+     "name": "The OCSP responder of one authority (POST)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/pki/ocsp/{scope}/{ca}",
+     "route": "/pki/ocsp/:scope/:ca"
+    },
+    {
+     "name": "The certificate chain a signed token's x5u names",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/chain/{scope}/{certificate}",
+     "route": "/pki/chain/:scope/:certificate"
+    }
+   ],
+   "getAcme": [
+    {
+     "name": "The ACME directory",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/directory",
+     "route": "/enroll/acme/directory"
+    },
+    {
+     "name": "A fresh Replay-Nonce",
+     "methods": [
+      "GET",
+      "HEAD"
+     ],
+     "url": "/enroll/acme/new-nonce",
+     "route": "/enroll/acme/new-nonce"
+    },
+    {
+     "name": "Create or find an account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-account",
+     "route": "/enroll/acme/new-account"
+    },
+    {
+     "name": "Create an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-order",
+     "route": "/enroll/acme/new-order"
+    },
+    {
+     "name": "An account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}",
+     "route": "/enroll/acme/account/:id"
+    },
+    {
+     "name": "An account's orders",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}/orders",
+     "route": "/enroll/acme/account/:id/orders"
+    },
+    {
+     "name": "An order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}",
+     "route": "/enroll/acme/order/:id"
+    },
+    {
+     "name": "Finalize an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}/finalize",
+     "route": "/enroll/acme/order/:id/finalize"
+    },
+    {
+     "name": "An authorization",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/authz/{id}",
+     "route": "/enroll/acme/authz/:id"
+    },
+    {
+     "name": "A challenge",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/challenge/{id}",
+     "route": "/enroll/acme/challenge/:id"
+    },
+    {
+     "name": "Download a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/cert/{id}",
+     "route": "/enroll/acme/cert/:id"
+    },
+    {
+     "name": "Revoke a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/revoke-cert",
+     "route": "/enroll/acme/revoke-cert"
+    },
+    {
+     "name": "Roll an account over to a new key",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/key-change",
+     "route": "/enroll/acme/key-change"
+    },
+    {
+     "name": "Renewal information",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/renewal-info/{id}",
+     "route": "/enroll/acme/renewal-info/:id"
+    },
+    {
+     "name": "CA certificates",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/cacerts",
+     "route": "/.well-known/est/cacerts"
+    },
+    {
+     "name": "Simple enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simpleenroll",
+     "route": "/.well-known/est/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simplereenroll",
+     "route": "/.well-known/est/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/serverkeygen",
+     "route": "/.well-known/est/serverkeygen"
+    },
+    {
+     "name": "CSR attributes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/csrattrs",
+     "route": "/.well-known/est/csrattrs"
+    },
+    {
+     "name": "Full CMC",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/fullcmc",
+     "route": "/.well-known/est/fullcmc"
+    },
+    {
+     "name": "CA certificates (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/cacerts",
+     "route": "/.well-known/est/:label/cacerts"
+    },
+    {
+     "name": "Simple enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simpleenroll",
+     "route": "/.well-known/est/:label/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simplereenroll",
+     "route": "/.well-known/est/:label/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/serverkeygen",
+     "route": "/.well-known/est/:label/serverkeygen"
+    },
+    {
+     "name": "CSR attributes (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/csrattrs",
+     "route": "/.well-known/est/:label/csrattrs"
+    },
+    {
+     "name": "Full CMC (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/fullcmc",
+     "route": "/.well-known/est/:label/fullcmc"
+    },
+    {
+     "name": "Attestation freshness nonce",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/nonce",
+     "route": "/.well-known/est/nonce"
+    },
+    {
+     "name": "Attestation freshness nonce (labelled)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/nonce",
+     "route": "/.well-known/est/:label/nonce"
+    },
+    {
+     "name": "The SCEP server",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep",
+     "route": "/enroll/scep"
+    },
+    {
+     "name": "The SCEP server (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/pkiclient.exe",
+     "route": "/enroll/scep/pkiclient.exe"
+    },
+    {
+     "name": "The SCEP server for one profile",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}",
+     "route": "/enroll/scep/:profile"
+    },
+    {
+     "name": "The SCEP server for one profile (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}/pkiclient.exe",
+     "route": "/enroll/scep/:profile/pkiclient.exe"
+    },
+    {
+     "name": "What the SPIFFE surfaces are",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe",
+     "route": "/spiffe"
+    },
+    {
+     "name": "The trust bundle",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/bundle",
+     "route": "/spiffe/bundle"
+    },
+    {
+     "name": "A federated trust domain's bundle, as held",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/federated/{trustDomain}",
+     "route": "/spiffe/federated/:trustDomain"
+    }
+   ],
+   "getEst": [
+    {
+     "name": "The ACME directory",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/directory",
+     "route": "/enroll/acme/directory"
+    },
+    {
+     "name": "A fresh Replay-Nonce",
+     "methods": [
+      "GET",
+      "HEAD"
+     ],
+     "url": "/enroll/acme/new-nonce",
+     "route": "/enroll/acme/new-nonce"
+    },
+    {
+     "name": "Create or find an account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-account",
+     "route": "/enroll/acme/new-account"
+    },
+    {
+     "name": "Create an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-order",
+     "route": "/enroll/acme/new-order"
+    },
+    {
+     "name": "An account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}",
+     "route": "/enroll/acme/account/:id"
+    },
+    {
+     "name": "An account's orders",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}/orders",
+     "route": "/enroll/acme/account/:id/orders"
+    },
+    {
+     "name": "An order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}",
+     "route": "/enroll/acme/order/:id"
+    },
+    {
+     "name": "Finalize an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}/finalize",
+     "route": "/enroll/acme/order/:id/finalize"
+    },
+    {
+     "name": "An authorization",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/authz/{id}",
+     "route": "/enroll/acme/authz/:id"
+    },
+    {
+     "name": "A challenge",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/challenge/{id}",
+     "route": "/enroll/acme/challenge/:id"
+    },
+    {
+     "name": "Download a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/cert/{id}",
+     "route": "/enroll/acme/cert/:id"
+    },
+    {
+     "name": "Revoke a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/revoke-cert",
+     "route": "/enroll/acme/revoke-cert"
+    },
+    {
+     "name": "Roll an account over to a new key",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/key-change",
+     "route": "/enroll/acme/key-change"
+    },
+    {
+     "name": "Renewal information",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/renewal-info/{id}",
+     "route": "/enroll/acme/renewal-info/:id"
+    },
+    {
+     "name": "CA certificates",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/cacerts",
+     "route": "/.well-known/est/cacerts"
+    },
+    {
+     "name": "Simple enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simpleenroll",
+     "route": "/.well-known/est/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simplereenroll",
+     "route": "/.well-known/est/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/serverkeygen",
+     "route": "/.well-known/est/serverkeygen"
+    },
+    {
+     "name": "CSR attributes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/csrattrs",
+     "route": "/.well-known/est/csrattrs"
+    },
+    {
+     "name": "Full CMC",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/fullcmc",
+     "route": "/.well-known/est/fullcmc"
+    },
+    {
+     "name": "CA certificates (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/cacerts",
+     "route": "/.well-known/est/:label/cacerts"
+    },
+    {
+     "name": "Simple enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simpleenroll",
+     "route": "/.well-known/est/:label/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simplereenroll",
+     "route": "/.well-known/est/:label/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/serverkeygen",
+     "route": "/.well-known/est/:label/serverkeygen"
+    },
+    {
+     "name": "CSR attributes (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/csrattrs",
+     "route": "/.well-known/est/:label/csrattrs"
+    },
+    {
+     "name": "Full CMC (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/fullcmc",
+     "route": "/.well-known/est/:label/fullcmc"
+    },
+    {
+     "name": "Attestation freshness nonce",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/nonce",
+     "route": "/.well-known/est/nonce"
+    },
+    {
+     "name": "Attestation freshness nonce (labelled)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/nonce",
+     "route": "/.well-known/est/:label/nonce"
+    },
+    {
+     "name": "The SCEP server",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep",
+     "route": "/enroll/scep"
+    },
+    {
+     "name": "The SCEP server (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/pkiclient.exe",
+     "route": "/enroll/scep/pkiclient.exe"
+    },
+    {
+     "name": "The SCEP server for one profile",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}",
+     "route": "/enroll/scep/:profile"
+    },
+    {
+     "name": "The SCEP server for one profile (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}/pkiclient.exe",
+     "route": "/enroll/scep/:profile/pkiclient.exe"
+    },
+    {
+     "name": "What the SPIFFE surfaces are",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe",
+     "route": "/spiffe"
+    },
+    {
+     "name": "The trust bundle",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/bundle",
+     "route": "/spiffe/bundle"
+    },
+    {
+     "name": "A federated trust domain's bundle, as held",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/federated/{trustDomain}",
+     "route": "/spiffe/federated/:trustDomain"
+    }
+   ],
+   "getScep": [
+    {
+     "name": "The ACME directory",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/directory",
+     "route": "/enroll/acme/directory"
+    },
+    {
+     "name": "A fresh Replay-Nonce",
+     "methods": [
+      "GET",
+      "HEAD"
+     ],
+     "url": "/enroll/acme/new-nonce",
+     "route": "/enroll/acme/new-nonce"
+    },
+    {
+     "name": "Create or find an account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-account",
+     "route": "/enroll/acme/new-account"
+    },
+    {
+     "name": "Create an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-order",
+     "route": "/enroll/acme/new-order"
+    },
+    {
+     "name": "An account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}",
+     "route": "/enroll/acme/account/:id"
+    },
+    {
+     "name": "An account's orders",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}/orders",
+     "route": "/enroll/acme/account/:id/orders"
+    },
+    {
+     "name": "An order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}",
+     "route": "/enroll/acme/order/:id"
+    },
+    {
+     "name": "Finalize an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}/finalize",
+     "route": "/enroll/acme/order/:id/finalize"
+    },
+    {
+     "name": "An authorization",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/authz/{id}",
+     "route": "/enroll/acme/authz/:id"
+    },
+    {
+     "name": "A challenge",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/challenge/{id}",
+     "route": "/enroll/acme/challenge/:id"
+    },
+    {
+     "name": "Download a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/cert/{id}",
+     "route": "/enroll/acme/cert/:id"
+    },
+    {
+     "name": "Revoke a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/revoke-cert",
+     "route": "/enroll/acme/revoke-cert"
+    },
+    {
+     "name": "Roll an account over to a new key",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/key-change",
+     "route": "/enroll/acme/key-change"
+    },
+    {
+     "name": "Renewal information",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/renewal-info/{id}",
+     "route": "/enroll/acme/renewal-info/:id"
+    },
+    {
+     "name": "CA certificates",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/cacerts",
+     "route": "/.well-known/est/cacerts"
+    },
+    {
+     "name": "Simple enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simpleenroll",
+     "route": "/.well-known/est/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simplereenroll",
+     "route": "/.well-known/est/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/serverkeygen",
+     "route": "/.well-known/est/serverkeygen"
+    },
+    {
+     "name": "CSR attributes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/csrattrs",
+     "route": "/.well-known/est/csrattrs"
+    },
+    {
+     "name": "Full CMC",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/fullcmc",
+     "route": "/.well-known/est/fullcmc"
+    },
+    {
+     "name": "CA certificates (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/cacerts",
+     "route": "/.well-known/est/:label/cacerts"
+    },
+    {
+     "name": "Simple enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simpleenroll",
+     "route": "/.well-known/est/:label/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simplereenroll",
+     "route": "/.well-known/est/:label/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/serverkeygen",
+     "route": "/.well-known/est/:label/serverkeygen"
+    },
+    {
+     "name": "CSR attributes (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/csrattrs",
+     "route": "/.well-known/est/:label/csrattrs"
+    },
+    {
+     "name": "Full CMC (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/fullcmc",
+     "route": "/.well-known/est/:label/fullcmc"
+    },
+    {
+     "name": "Attestation freshness nonce",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/nonce",
+     "route": "/.well-known/est/nonce"
+    },
+    {
+     "name": "Attestation freshness nonce (labelled)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/nonce",
+     "route": "/.well-known/est/:label/nonce"
+    },
+    {
+     "name": "The SCEP server",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep",
+     "route": "/enroll/scep"
+    },
+    {
+     "name": "The SCEP server (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/pkiclient.exe",
+     "route": "/enroll/scep/pkiclient.exe"
+    },
+    {
+     "name": "The SCEP server for one profile",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}",
+     "route": "/enroll/scep/:profile"
+    },
+    {
+     "name": "The SCEP server for one profile (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}/pkiclient.exe",
+     "route": "/enroll/scep/:profile/pkiclient.exe"
+    },
+    {
+     "name": "What the SPIFFE surfaces are",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe",
+     "route": "/spiffe"
+    },
+    {
+     "name": "The trust bundle",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/bundle",
+     "route": "/spiffe/bundle"
+    },
+    {
+     "name": "A federated trust domain's bundle, as held",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/federated/{trustDomain}",
+     "route": "/spiffe/federated/:trustDomain"
+    }
+   ]
   }
  }
 }

@@ -898,10 +898,36 @@ impl Gate<'_> {
             }
         }
         if token_realm != DEFAULT_REALM {
-            if let Some(detail) =
-                self.ports
-                    .realm_refusal(arrived.realm, operation, arrived.body)
-            {
+            // `adminScope.refusalFor()`: the port's answer where it has one,
+            // else this crate's port of the classifier ([`admin_scope`]),
+            // over the body with its action and the request's query.
+            let query = arrived.original_url.split_once('?').map(|(_, q)| {
+                Json::Object(
+                    crate::request::parse_query(q).into_iter().collect(),
+                )
+            });
+            let mut asked = arrived.body.cloned();
+            if let Some(Json::Object(o)) = asked.as_mut() {
+                if !operation.action.is_empty() && !o.contains_key("action") {
+                    o.insert(
+                        "action".into(),
+                        Json::from(operation.action.as_str()),
+                    );
+                }
+            }
+            let refusal = self
+                .ports
+                .realm_refusal(arrived.realm, operation, arrived.body)
+                .or_else(|| {
+                    crate::admin_scope::refusal_for(
+                        arrived.realm,
+                        &operation.path,
+                        asked.as_ref(),
+                        query.as_ref(),
+                    )
+                    .map(|r| r.detail)
+                });
+            if let Some(detail) = refusal {
                 return Err(forbidden(
                     codes::STS_API_0112,
                     format!(

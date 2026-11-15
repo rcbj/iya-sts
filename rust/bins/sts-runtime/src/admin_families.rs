@@ -88,14 +88,12 @@ fn entry_of(body: &Json) -> Entry {
     Entry::new(&text(body, "kind"), &text(body, "identifier"))
 }
 
-/// `actorOf()` / `consoleActorOf()`: the caller the gate let in, or
-/// `admin-api` where no token was asked for.
+/// `actorOf()` / the actor `acmeAction()` takes: over the management API
+/// (`via: 'api'`) it is `admin-api` whoever the caller is — that is who an
+/// EAB key or a challenge is `createdBy`, and who a revocation is by.
 fn actor_of(asked: &Asked<'_>) -> String {
-    asked
-        .caller
-        .map(|c| c.name.clone())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "admin-api".to_string())
+    let _ = asked;
+    "admin-api".to_string()
 }
 
 impl AdminFamilies {
@@ -804,7 +802,7 @@ impl AdminFamilies {
             "getScepMonitor" => views::scep_monitor_view(f, asked),
             _ => return None,
         };
-        Some(ok(body))
+        Some(ok(views::with_protocol_endpoints(body, asked)))
     }
 }
 
