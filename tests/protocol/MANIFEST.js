@@ -2342,6 +2342,21 @@ const JOBS = [
   // D12 (#444): the directory copy of a realm's CRL over the LDAP socket,
   // unbound, in development and product (crl_directory_publication).
   { file: 'sts_crl_directory_publication.js', browser: false, local: true },
+  // D12 (#444): paranoid mode against certificates the service's own CA
+  // issued and revoked, at the main port's handshake and at an outbound
+  // dial (listener_path_rules, outbound_gate). Exclusive: writes
+  // pki.paranoid and pki.revocationCheck on the default realm and resets
+  // them in a finally; needs OUTBOUND_TEST_HOST.
+  { file: 'sts_paranoid_pki_own_ca.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): another ACME account's revocation, and an X25519 key the CA
+  // cannot certify (cert_enrollment).
+  { file: 'sts_enrollment_accounts.js', browser: false, local: true },
+  // D12 (#444): the service Root and the process branch refuse a composite
+  // key and change nothing (pki_hybrid, pki_rebuild_recertifies).
+  // Exclusive: they are every job's.
+  { file: 'sts_pki_process_scope.js', browser: false, local: true,
+    exclusive: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
