@@ -10,8 +10,8 @@
 // RECORDED WIRE, OVER THE WIRE (#1579 item 6; D12, #444).
 //
 // `tests/oauth_model_wire.js` holds every endpoint's answers, byte for byte,
-// to `tests/oauth_model_wire.snapshot.json`, from a child process on a
-// plain-HTTP loopback port. This job has the same scripted conversation with
+// to `tests/protocol/oauth_model_wire.snapshot.json`, from a child process
+// on a plain-HTTP loopback port. This job has the same scripted conversation with
 // a RUNNING service — its four modes, each in a throwaway realm of this
 // run's own (development, RFC 9700, OAuth 2.1, FAPI 2.0 Security Profile) —
 // and holds every answer to the same snapshot after putting back what only
@@ -28,8 +28,8 @@
 // instants, ports, UUIDs, key material and random credentials). Each step is
 // a check: it answers as recorded, or the first difference is named.
 //
-// THE SNAPSHOT MUST MOVE BESIDE THIS JOB when the in-process file is
-// deleted (`OAUTH_WIRE_SNAPSHOT` names another).
+// THE SNAPSHOT LIVES BESIDE THIS JOB, so it survives the in-process file
+// (`OAUTH_WIRE_SNAPSHOT` names another).
 //
 // NOT CARRIED: the in-process file's `flows` mode — the paths that need a
 // signed-in browser, a key pair, a client certificate on a second listener
@@ -52,7 +52,7 @@ const K = require("./oauth_wire_kit.js").kit("sts_oauth_model_wire");
 const log = K.log;
 
 const SNAPSHOT = process.env.OAUTH_WIRE_SNAPSHOT ||
-  path.join(__dirname, "..", "oauth_model_wire.snapshot.json");
+  path.join(__dirname, "oauth_model_wire.snapshot.json");
 const SKIPPED_HEADERS = ["date", "connection", "keep-alive",
                          "content-length", "etag", "transfer-encoding",
                          "strict-transport-security"];

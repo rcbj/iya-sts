@@ -16,7 +16,8 @@
 // `oauth-oidc/oauth2.ts`, and the switch was to change NOTHING a client sees:
 // the model describes and validates the wire, it does not reshape it. So this
 // records what the hand-written version answered, in
-// `tests/oauth_model_wire.snapshot.json`, and holds every later build to it:
+// `tests/protocol/oauth_model_wire.snapshot.json`, and holds every later
+// build to it:
 // a scripted conversation with every endpoint — its success where one can be
 // had without a browser, and its refusals — in the four modes that change a
 // refusal: development (the default realm), RFC 9700 mode, OAuth 2.1 mode and
@@ -52,7 +53,10 @@ const log = require('bunyan').createLogger({ name: 'oauth_model_wire',
   level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
-const SNAPSHOT = path.join(__dirname, 'oauth_model_wire.snapshot.json');
+// Beside the protocol job that holds the same wire over HTTP
+// (`protocol/sts_oauth_model_wire.js`), which outlives this file (#444).
+const SNAPSHOT = path.join(__dirname, 'protocol',
+                           'oauth_model_wire.snapshot.json');
 
 // The child's whole program, serialised with toString() and run by `node -e`
 // — so it may use nothing from this file's scope, and (root CLAUDE.md, Code
@@ -1181,8 +1185,10 @@ function firstDifference(a, b, where) {
     }
   }
   log.debug("Leaving firstDifference().");
-  return where + ': ' + JSON.stringify(b).slice(0, 300) + ' where ' +
-    JSON.stringify(a).slice(0, 300) + ' was recorded';
+  // String(): a member missing on one side stringifies to undefined, which
+  // has no slice() — the report must name the difference, not throw on it.
+  return where + ': ' + String(JSON.stringify(b)).slice(0, 300) + ' where ' +
+    String(JSON.stringify(a)).slice(0, 300) + ' was recorded';
 }
 
 function run(t) {
