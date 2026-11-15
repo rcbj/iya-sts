@@ -4003,6 +4003,10 @@
     "en": "dbd48be2ca7bfe7b",
     "text": "Det som xacml-pep-containern tillämpar när den står framför ett program (#1760): uppströmsadressen den vidarebefordrar till, de ordnade vägarna med de mekanismer var och en godtar och den XACML-resurs och åtgärd var och en motsvarar, varje vägs program upplöst från registret, de realmuppgifter den validerar lokalt med (utfärdare, JWKS, inloggningsslutpunkterna, SAML-signeringscertifikaten, lyssnarens kedja, sessionsvägarnas klienter) och de fyra valideringsadresserna nedan, under en egen synkroniseringstoken; ?since=<token> svarar 304. En okonfigurerad PEP är configured: false och dess proxy nekar allt. Kräver REMOTE_PEPS, som policyhämtningen; ingen knuff."
   },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "De inställningar en administratör har satt för denna PEP på dess konsolsida (#1760) — dess beskrivning och resurs, notifierings-URL:en, biasen, PIP-brytaren, intervallen för hämtning, hjärtslag och backoff, tidsgränsen och gränsen för kroppen, loggnivån, AuthZEN-kant-PDP:ns brytare, identifierare och tidsgräns för vidarebefordran, samt den omvända proxyns gränser — under en egen synkroniseringstoken; ?since=<token> svarar 304. Endast det som är satt skickas: PEP:en använder sin miljö för resten, och det minsta den behöver för att ansluta finns aldrig här. Kräver REMOTE_PEPS, som policyhämtningen; ingen puff."
+  },
   "stsmetadata.endpoints./xacml/pep/introspect.what": {
     "en": "b3f9e293393b2e8a",
     "text": "Auktoriseringsserverns egen RFC 7662-läsning av en OAuth 2.0-åtkomsttoken som proxyn inte kunde verifiera själv (en opak token, eller en nyckel som inte finns i JWKS), över PEP:ens ömsesidiga TLS i stället för en egen klientregistrering. Kräver REMOTE_PEPS."

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5574** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5584** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,8 +86,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 157
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 99
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 164
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 102
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5083,6 +5083,13 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0233` | POST /xacml/pep/identity cannot answer: the route is not usable, its application has no SAML entity ID for an assertion, or the directory holds no entry for the person. | HTTP 422 invalid_request |
 | `STS-XACML-0234` | POST /xacml/pep/identity: the issuance policy refused the access token or SAML assertion a route forwards. | HTTP 403 access_denied |
 | `STS-XACML-0235` | POST /xacml/pep/identity: the access token or SAML Response could not be issued (for example an assertion that must be encrypted and cannot be). | HTTP 422 invalid_request |
+| `STS-XACML-0236` | set-pep-settings: the settings are not an object, or name a member that is not a setting this service manages for a remote PEP (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0237` | set-pep-settings: a remote PEP setting has the wrong type (not an integer, not true or false, not a string) or is not one of its closed set (bias, logLevel). | HTTP 400 on /admin-api |
+| `STS-XACML-0238` | set-pep-settings: a remote PEP integer setting is outside its bounds. | HTTP 400 on /admin-api |
+| `STS-XACML-0239` | set-pep-settings: a remote PEP text setting is too long or carries a control character, notifyUrl is not an absolute http(s) URL without user name or fragment, or authzenPdpIdentifier is not an https origin. | HTTP 400 on /admin-api |
+| `STS-XACML-0240` | set-pep-settings: product mode refuses proxyUpstreamInsecure or proxyRpAllowInsecure true, which turn a certificate or scheme check off at the remote PEP. | HTTP 400 on /admin-api |
+| `STS-XACML-0241` | set-pep-settings or clear-pep-settings: the directory refused writing the remote PEP's entry. | HTTP 400 on /admin-api |
+| `STS-XACML-0242` | The settings stored for a remote PEP (xacmlPepSettings) do not validate — an ldapmodify wrote them — so GET /xacml/pep/settings sends configured: false and the PEP uses its environment; the console names why. | none; logged at the pull |
 
 ## STS-XPEP
 
@@ -5191,6 +5198,9 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0097` | The reverse proxy could not establish the application's session for a saml-mode route: the ACS the service named is not an absolute http(s) URL, could not be reached, answered 400 or more, or set no cookie (#1760, D11). | HTTP 502, bad_gateway |
 | `STS-XPEP-0098` | The reverse proxy had no evidence to ask the identity endpoint with: a Basic answer that carried no ticket, or a proxy session whose relying party or access token could not be had (#1760, D11). | HTTP 502, bad_gateway |
 | `STS-XPEP-0099` | The CAEP/RISC stream of a session route's relying party has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the library's receiver health: no successful poll, the failures and the last error in the log line), so its signals no longer decide whether a proxy session is live: the service's session endpoint (POST /xacml/pep/session) is asked instead until the stream answers again. Logged once when it goes stale; the recovery is logged without a code (#1760). | none; the fallback decides liveness |
+| `STS-XPEP-0100` | The remote PEP could not pull its settings from GET /xacml/pep/settings (unreachable, or an answer other than 200, 304 or 404); it keeps the settings it holds, or the environment's when it holds none (#1760). | none; the held settings stay in force |
+| `STS-XPEP-0101` | The service answered 404 to GET /xacml/pep/settings: it is older than the managed settings, so every setting is the remote PEP's environment variable or its default. Logged once (#1760). | none; the environment is in force |
+| `STS-XPEP-0102` | A setting the service sent fails the remote PEP's own reading of its bounds or type; that setting is the environment's or the default, and the others are applied (#1760). | none; that one setting falls back |
 
 ## STS-AUTHZEN
 

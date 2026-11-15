@@ -4003,6 +4003,10 @@
     "en": "dbd48be2ca7bfe7b",
     "text": "Ce que le conteneur xacml-pep applique quand il se place devant une application (#1760) : la destination vers laquelle il transmet, les routes ordonnées avec les mécanismes que chacune accepte et la ressource et l’action XACML auxquelles chacune correspond, l’application de chaque route résolue depuis le registre, les éléments du royaume avec lesquels il valide localement (émetteur, JWKS, les points de terminaison de connexion, les certificats de signature SAML, la chaîne de l’écouteur, les clients des routes de session) et les quatre URL de validation ci-dessous, sous un jeton de synchronisation propre ; ?since=<token> répond 304. Un PEP non configuré est configured: false et son proxy refuse tout. Exige REMOTE_PEPS, comme la récupération des politiques ; aucune notification."
   },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "Les paramètres qu’un administrateur a définis pour ce PEP sur sa page de la console (#1760) — sa description et sa ressource, l’URL de relance, le biais, l’interrupteur du PIP, les intervalles d’interrogation, de signal de vie et d’attente, le délai et la limite du corps, le niveau de journalisation, l’interrupteur, l’identifiant et le délai de transfert du PDP de périphérie AuthZEN, et les limites du proxy inverse — sous un jeton de synchronisation propre ; ?since=<token> répond 304. Seul ce qui est défini est envoyé : le PEP utilise son environnement pour le reste, et le minimum dont il a besoin pour se connecter n’y figure jamais. Exige REMOTE_PEPS, comme la récupération des politiques ; pas de relance."
+  },
   "stsmetadata.endpoints./xacml/pep/introspect.what": {
     "en": "b3f9e293393b2e8a",
     "text": "La lecture RFC 7662 du serveur d’autorisation lui-même d’un jeton d’accès OAuth 2.0 que le proxy n’a pas pu vérifier (un jeton opaque, ou une clé absente du JWKS), par le TLS mutuel du PEP plutôt que par un enregistrement de client propre. Exige REMOTE_PEPS."

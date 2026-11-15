@@ -2034,5 +2034,13 @@
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
     "en": "8e6cc7739c2c3ce3",
     "text": "Den omvända proxyns hälsa för CAEP/RISC-signalströmmarna som den fjärranslutna PEP:en senast rapporterade den i ett hjärtslag (#1760): ett JSON-dokument med enbart antal och åldrar — mottagarna, hur många som är friska och inaktuella, gränsen för inaktualitet och avfrågningsintervallet, åldern på den äldsta senaste lyckade avfrågningen, flest misslyckanden i rad, godtagna och avvisade SET, avslutade sessioner, och för bibliotekets sessionslager hållna, max, livslängd, utkastade och utgångna — med när det kom. Varje annan medlem tas bort och varje värde som inte är ett icke-negativt heltal blir 0, så inget klient-id, ingen URL och ingen feltext hålls någonsin. Ett hjärtslag utan det behåller det, ett med null rensar det, och en registrering tar bort det, eftersom en registrering är en ny process. Saknas på en PEP som aldrig rapporterat det, vilket konsolen visar som inte rapporterat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "De inställningar som en administratör har angett för den här fjärr-PEP:en på dess konsolsida eller med åtgärden set-pep-settings i hanterings-API:t (#1760): ett JSON-dokument som bara innehåller de inställningar som angetts, var och en med sitt medlemsnamn (description, resource, notifyUrl, bias, pip, intervallen för hämtning, hjärtslag och väntan före nytt försök, tidsgränsen och kroppsgränsen, intervallet för HTTPS-omläsning, loggnivån, AuthZEN-brytaren, -identifieraren och -tidsgränsen för vidarebefordran, samt den omvända proxyns gränser för session, JWKS, uppströms, förlitande part och signalström), validerat i sin helhet vid skrivning och igen när PEP:en hämtar dem från GET /xacml/pep/settings. En inställning som inte finns i det är PEP:ens miljövariabel, eller dess standardvärde. Det minsta PEP:en behöver för att ansluta första gången finns aldrig här. Behålls vid registrering och hjärtslag; tas bort med raden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, att den har i kraft för varje hanterad inställning (#1760): ett JSON-dokument av formen { token, values: { setting: { value, source } } }, där source är service, environment eller default, med när det kom fram. Varje inställning som tabellen inte namnger, varje värde som inte är av inställningens typ och varje annan källa släpps. Ett hjärtslag utan det behåller det, ett med null rensar det, och en registrering släpper det. Saknas för en PEP som är äldre än inställningarna, vilket konsolen visar som inte rapporterad."
   }
 }

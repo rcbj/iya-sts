@@ -747,6 +747,8 @@
   "xacmlPepRefused": 733,
   "xacmlPepRegisteredAt": 734,
   "xacmlPepResource": 735,
+  "xacmlPepSettings": 754,
+  "xacmlPepSettingsInUse": 755,
   "xacmlPepSignals": 753,
   "xacmlPepSyncToken": 736,
   "xacmlPepThumbprint": 737,

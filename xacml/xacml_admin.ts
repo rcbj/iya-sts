@@ -123,6 +123,8 @@ import pepTls = require('./xacml_pep_tls');
 // The remote PEP's reverse proxy (#1760): the grammar `set-pep-proxy` is
 // held to and the session mechanism's client. A LIBRARY, registering nothing.
 import pepProxy = require('./xacml_pep_proxy');
+// A remote PEP's managed settings (#1760): `set-pep-settings`'s grammar.
+import pepSettings = require('./xacml_pep_settings');
 import pki = require('../common/pki');
 import monitor = require('./xacml_monitor');
 
@@ -183,6 +185,7 @@ interface XacmlAdminDeps {
   pepHttp: any;
   pepTls: any;
   pepProxy: any;
+  pepSettings: any;
   pki: any;
   monitor: any;
   // Required at the moment they are needed, never at load.
@@ -213,9 +216,12 @@ interface XacmlAdminDeps {
 // call `combinedAction()` without awaiting.
 // `set-pep-proxy` and `clear-pep-proxy` (#1760) are the reverse proxy's:
 // the configuration the PEP pulls from `GET /xacml/pep/proxy`.
+// `set-pep-settings` and `clear-pep-settings` (#1760) are the PEP's managed
+// settings, pulled from `GET /xacml/pep/settings`.
 const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
                      'issue-pep-certificate', 'set-pep-proxy',
-                     'clear-pep-proxy', 'set-pep-route-identity'];
+                     'clear-pep-proxy', 'set-pep-route-identity',
+                     'set-pep-settings', 'clear-pep-settings'];
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.
@@ -317,6 +323,7 @@ class XacmlAdmin {
       pepHttp: pepHttp,
       pepTls: pepTls,
       pepProxy: pepProxy,
+      pepSettings: pepSettings,
       pki: pki,
       monitor: monitor,
       loadXacml: function (): XacmlRoutes {
@@ -523,12 +530,29 @@ class XacmlAdmin {
    *
    * @returns the remote PEP view as JSON
    */
-  pepsJson(): Record<string, any> {
+  pepsJson(pep?: string): Record<string, any> {
     const { log, config, peps, pepHttp, pepTls, pki,
-            pepProxy } = this.deps;
+            pepProxy, pepSettings } = this.deps;
     log.debug('Entering XacmlAdmin.pepsJson().');
-    const rows = peps.all().map(function (row) {
+    // ONE PEP's PAGE (#1760), `/admin/xacml/pep?pep=<name>`: the same
+    // answer narrowed to that row, as `/admin-api/applications`'
+    // `?application=` is, with `found` saying whether it is registered.
+    const one = typeof pep === 'string' && pep !== '' ? pep : null;
+    const rows = peps.all().filter(function (row) {
+      return one === null || row.name === one;
+    }).map(function (row) {
       const view = Object.assign({}, row);
+      // THE MANAGED SETTINGS (#1760), read through the validator the pull
+      // uses, so the page shows what the PEP would be sent; the stored
+      // text itself is not answered. `settingsInUse` is the PEP's own
+      // report of what it has in force, and `settingsCurrent` whether it
+      // was applied from what would be sent now.
+      const stored = pepSettings.stored(row.settings || '');
+      view.settings = stored.settings;
+      view.settingsProblem = stored.problem;
+      view.settingsCurrent = !!row.settingsInUse &&
+        row.settingsInUse.token ===
+          pepSettings.pull(row, row.name).token;
       // THE REVERSE PROXY (#1760), read through the validator the pull
       // uses, so the page shows what the PEP would be sent: the document,
       // or null with the reason a stored value is refused. The stored text
@@ -556,7 +580,9 @@ class XacmlAdmin {
       // changing `xacml.pepNotifyAllowedHosts` changes what this page says
       // about a PEP registered an hour ago. A stored verdict would have been
       // right when it was written and wrong from then on.
-      view.notifyProblem = pepHttp.urlProblem(row.notifyUrl);
+      // The URL the nudge dials: the one set here, else the registered one.
+      view.effectiveNotifyUrl = pepSettings.notifyUrlOf(row);
+      view.notifyProblem = pepHttp.urlProblem(view.effectiveNotifyUrl);
       // THE LISTENER CERTIFICATE THIS REALM ISSUED IT, read from the
       // certificate register rather than stored on the row — the register is
       // where `pki.js` keeps what an Issuing CA certified, and a copy on
@@ -570,7 +596,7 @@ class XacmlAdmin {
       view.listenerCertificate = certificate;
       return view;
     });
-    const json = {
+    const json: Record<string, any> = {
       enabled: config.value('xacml.remotePeps') !== false,
       syncToken: peps.syncToken(),
       staleAfterS: peps.staleAfterS(),
@@ -603,8 +629,14 @@ class XacmlAdmin {
       }).length,
       stale: rows.filter(function (row) {
         return row.stale;
-      }).length
+      }).length,
+      // What may be set on a PEP's page, and what stays its environment.
+      settingsCatalogue: pepSettings.catalogue()
     };
+    if (one !== null) {
+      json.pep = one;
+      json.found = rows.length > 0;
+    }
     log.debug('Leaving XacmlAdmin.pepsJson(). ' + rows.length +
               ' registered PEP(s).');
     return json;
@@ -750,6 +782,10 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.pepAction(). The reverse proxy.');
       return this.proxyAction(action, name, body);
     }
+    if (action === 'set-pep-settings' || action === 'clear-pep-settings') {
+      log.debug('Leaving XacmlAdmin.pepAction(). The settings.');
+      return this.settingsAction(action, name, body);
+    }
     if (action === 'forget-pep') {
       const gone = peps.remove(name);
       audit.audit({ action: 'xacml.pep.forget', actor: '', protocol: 'XACML',
@@ -854,6 +890,63 @@ class XacmlAdmin {
       : { mode: mode };
     log.debug('Leaving XacmlAdmin.withRouteIdentity().');
     return { ok: true, proxy: proxy };
+  }
+
+  // ===========================================================================
+  // THE MANAGED SETTINGS' TWO ACTIONS (#1760).
+  //
+  // `set-pep-settings` REPLACES the whole document with what it is sent:
+  // `settings` (an object; a member it does not name is refused), or the
+  // members on the body itself (the console's form, where an empty box is
+  // "not set"). Validated whole by `xacml_pep_settings.ts`, each refusal
+  // coded. Nothing set is the same as clear: no attribute is written.
+  // `clear-pep-settings` removes them, so every setting is the PEP's
+  // environment again from its next pull.
+  // ===========================================================================
+  private settingsAction(action: string, name: string, body: any): any {
+    const { log, audit, errorCodes, peps, pepSettings } = this.deps;
+    log.debug('Entering XacmlAdmin.settingsAction(). ' + action);
+    let settings: Record<string, unknown> = {};
+    if (action === 'set-pep-settings') {
+      const given = Object.assign({}, body || {});
+      delete given.action;
+      delete given.name;
+      const checked = pepSettings.validate(given);
+      if (!checked.ok) {
+        log.debug('Leaving XacmlAdmin.settingsAction(). Refused: ' +
+                  checked.code);
+        return errorCodes.mark({ ok: false, why: checked.why },
+                               checked.code);
+      }
+      settings = checked.settings;
+    }
+    const keys = Object.keys(settings);
+    const written = peps.setSettings(name,
+                                     keys.length ? JSON.stringify(settings)
+                                                 : null);
+    if (!written) {
+      log.debug('Leaving XacmlAdmin.settingsAction(). Not written.');
+      return errorCodes.mark({ ok: false,
+                               why: 'The directory refused the change.' },
+                             'STS-XACML-0241');
+    }
+    audit.audit({ action: 'xacml.pep.settings.' +
+                          (keys.length ? 'set' : 'clear'),
+                  actor: '', protocol: 'XACML',
+                  detail: (keys.length
+                    ? 'Set ' + keys.length + ' setting(s) of remote PEP "' +
+                      name + '": ' + keys.join(', ') + '.'
+                    : 'Cleared the managed settings of remote PEP "' + name +
+                      '".') });
+    log.debug('Leaving XacmlAdmin.settingsAction(). ' + keys.length +
+              ' set.');
+    return { ok: true, settings: keys.length ? settings : null,
+             what: keys.length
+               ? '"' + name + '"\'s settings are saved (' + keys.length +
+                 ' set); the PEP applies them on its next pull, and uses its ' +
+                 'environment for every other setting.'
+               : '"' + name + '" has no managed settings; from its next pull ' +
+                 'every setting is its environment\'s or the default.' };
   }
 
   private proxyAction(action: string, name: string, body: any): any {
@@ -1608,10 +1701,11 @@ class XacmlAdmin {
           log.debug("Leaving editor().");
           return self.editorJson(name);
         },
-        peps: function () {
+        peps: function (req?: any) {
           log.debug("Entering peps().");
+          const one = req && req.query ? req.query.pep : undefined;
           log.debug("Leaving peps().");
-          return self.pepsJson();
+          return self.pepsJson(typeof one === 'string' ? one : undefined);
         },
         // THE SIXTH VIEW, AND IT WAS MISSING UNTIL PHASE FIVE. Rule 7 says
         // every console page gets an operation on /admin-api in the same

@@ -1157,6 +1157,8 @@ declare namespace IyaDomain {
     lastNotify?: string;
     proxy?: string;
     signals?: string;
+    settings?: string;
+    settingsInUse?: string;
     description?: string[];
   }
 

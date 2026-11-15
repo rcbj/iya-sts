@@ -23276,6 +23276,41 @@ const CODES = [
       'could not be issued (for example an assertion that must be encrypted ' +
       'and cannot be).',
     spec: 'HTTP 422 invalid_request' },
+  { code: 'STS-XACML-0236',
+    summary: 'set-pep-settings: the settings are not an object, or name a ' +
+      'member that is not a setting this service manages for a remote PEP ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0237',
+    summary: 'set-pep-settings: a remote PEP setting has the wrong type ' +
+      '(not an integer, not true or false, not a string) or is not one of ' +
+      'its closed set (bias, logLevel).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0238',
+    summary: 'set-pep-settings: a remote PEP integer setting is outside ' +
+      'its bounds.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0239',
+    summary: 'set-pep-settings: a remote PEP text setting is too long or ' +
+      'carries a control character, notifyUrl is not an absolute http(s) ' +
+      'URL without user name or fragment, or authzenPdpIdentifier is not ' +
+      'an https origin.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0240',
+    summary: 'set-pep-settings: product mode refuses proxyUpstreamInsecure ' +
+      'or proxyRpAllowInsecure true, which turn a certificate or scheme ' +
+      'check off at the remote PEP.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0241',
+    summary: 'set-pep-settings or clear-pep-settings: the directory refused ' +
+      'writing the remote PEP\'s entry.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0242',
+    summary: 'The settings stored for a remote PEP (xacmlPepSettings) do ' +
+      'not validate — an ldapmodify wrote them — so GET ' +
+      '/xacml/pep/settings sends configured: false and the PEP uses its ' +
+      'environment; the console names why.',
+    spec: 'none; logged at the pull' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -23823,6 +23858,22 @@ const CODES = [
       'again. Logged once when it goes stale; the recovery is logged ' +
       'without a code (#1760).',
     spec: 'none; the fallback decides liveness' },
+  { code: 'STS-XPEP-0100',
+    summary: 'The remote PEP could not pull its settings from GET ' +
+      '/xacml/pep/settings (unreachable, or an answer other than 200, 304 ' +
+      'or 404); it keeps the settings it holds, or the environment\'s ' +
+      'when it holds none (#1760).',
+    spec: 'none; the held settings stay in force' },
+  { code: 'STS-XPEP-0101',
+    summary: 'The service answered 404 to GET /xacml/pep/settings: it is ' +
+      'older than the managed settings, so every setting is the remote ' +
+      'PEP\'s environment variable or its default. Logged once (#1760).',
+    spec: 'none; the environment is in force' },
+  { code: 'STS-XPEP-0102',
+    summary: 'A setting the service sent fails the remote PEP\'s own ' +
+      'reading of its bounds or type; that setting is the environment\'s ' +
+      'or the default, and the others are applied (#1760).',
+    spec: 'none; that one setting falls back' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

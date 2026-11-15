@@ -1535,6 +1535,9 @@ namespace IyaSts.Api.Console {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `pep`?: string;
+    `found`?: boolean;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 

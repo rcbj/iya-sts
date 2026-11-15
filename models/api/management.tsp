@@ -3307,6 +3307,9 @@ namespace IyaSts.Api.Management {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `pep`?: string;
+    `found`?: boolean;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
@@ -7495,6 +7498,16 @@ namespace IyaSts.Api.Management {
     `why`?: string;
     `what`?: string;
     `problems`?: NullableArray
+  }
+
+@component model `XacmlPepSettingsAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `settings`?: NullableXacmlPepSettings
   }
 
 @component model `XacmlPepProxyAnswer` {
@@ -28398,7 +28411,7 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
   #{
     `operationId`:"getXacmlPeps",
     `summary`:"The REMOTE Policy Enforcement Points that pull this repository, and whether they are deciding with the same policy this service holds",
-    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\n**Mirrors** `GET /admin/xacml` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml and GET /admin/xacml/pep` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -28410,9 +28423,19 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
+    `parameters`:#[
+      #{
+        `name`:"pep",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One registered PEP, by its name exactly. The answer then lists that row alone and says `found`; a name with no row answers 200 with `found: false`."
+      }
+    ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getXacmlPeps`(`responses/200/content/application~1json/schema`: {
+op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `enabled`?: boolean;
@@ -28425,6 +28448,9 @@ op `getXacmlPeps`(`responses/200/content/application~1json/schema`: {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `pep`?: string;
+    `found`?: boolean;
     `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -30392,6 +30418,94 @@ op `setXacmlPepRouteIdentity`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"api",
   `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
+
+@endpoint("/admin-api/xacml/set-pep-settings",
+  "post",
+  #{
+    `operationId`:"setXacmlPepSettings",
+    `summary`:"Set a remote PEP's managed settings, over its environment",
+    `description`:"Sets the settings a registered remote PEP pulls from GET /xacml/pep/settings and applies while it runs (#1760), REPLACING what was set: the settings are sent as `settings`, an object of them, or as members of the body itself (the console's form), and a setting absent, null or empty is NOT SET, so the PEP uses its environment variable for it, or its default — THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE DEFAULT. GET /admin-api/xacml/peps' `settingsCatalogue` lists every setting with its variable, type, bounds, default and when a change takes effect. Validated whole: a member of `settings` that is not a setting is refused by name (STS-XACML-0236), a wrong type or a value outside a closed set (bias, logLevel) STS-XACML-0237, an integer out of bounds STS-XACML-0238, text too long or with a control character, a notifyUrl that is not an absolute http(s) URL and an authzenPdpIdentifier that is not an https origin STS-XACML-0239, and in product mode proxyUpstreamInsecure or proxyRpAllowInsecure true STS-XACML-0240. THE MINIMUM THE PEP NEEDS TO CONNECT THE FIRST TIME IS NOT HERE AND CANNOT BE: the service's URL, the PEP's name, its client certificate, key and anchors, the ports it binds and the files its TLS stacks read stay in its environment (`settingsCatalogue.bootstrap`). The PEP must be registered in this realm; it applies a change on its next pull — there is no nudge — and an older PEP, which never asks, goes on using its environment.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1",`bias`:"deny-biased",`pollIntervalMs`:10000,`logLevel`:"info",`proxySessionRecheckMs`:2000},#{`name`:"pep-1",`settings`:#{`description`:"In front of the orders API",`timeoutMs`:4000}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`: string;
+    @js(#{
+      `description`:"The settings as one object, in place of the members below. Validated whole by the handler, which refuses a member that is not a setting by name."
+    }) `settings`?: Record<unknown>;
+    @js(#{`maxLength`:1024,`description`:"Sets `description` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `description`?: string;
+    @js(#{`maxLength`:2048,`description`:"Sets `resource` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `resource`?: string;
+    @js(#{`maxLength`:2048,`description`:"Sets `notifyUrl` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `notifyUrl`?: string;
+    @js(#{`enum`:#["deny-biased","permit-biased"],`minLength`:1,`description`:"Sets `bias` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `bias`?: string;
+    @js(#{`description`:"Sets `pip` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `pip`?: boolean;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `pollIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `pollIntervalMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `heartbeatIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `heartbeatIntervalMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `backoffMaxMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `backoffMaxMs`?: integer;
+    @js(#{`minimum`:100,`maximum`:120000,`description`:"Sets `timeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `timeoutMs`?: integer;
+    @js(#{`minimum`:1024,`maximum`:104857600,`description`:"Sets `maxBodyBytes` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `maxBodyBytes`?: integer;
+    @js(#{`minimum`:1000,`maximum`:3600000,`description`:"Sets `httpsReloadIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `httpsReloadIntervalMs`?: integer;
+    @js(#{`enum`:#["trace","debug","info","warn","error","fatal"],`minLength`:1,`description`:"Sets `logLevel` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `logLevel`?: string;
+    @js(#{`description`:"Sets `authzen` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzen`?: boolean;
+    @js(#{`maxLength`:2048,`description`:"Sets `authzenPdpIdentifier` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzenPdpIdentifier`?: string;
+    @js(#{`minimum`:1,`maximum`:120000,`description`:"Sets `authzenForwardTimeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzenForwardTimeoutMs`?: integer;
+    @js(#{`minimum`:0,`maximum`:3600000,`description`:"Sets `proxySessionRecheckMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySessionRecheckMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:2592000000,`description`:"Sets `proxySessionTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySessionTtlMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:1000000,`description`:"Sets `proxyMaxSessions` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyMaxSessions`?: integer;
+    @js(#{`minimum`:0,`maximum`:86400000,`description`:"Sets `proxyJwksTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyJwksTtlMs`?: integer;
+    @js(#{`description`:"Sets `proxyUpstreamInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyUpstreamInsecure`?: boolean;
+    @js(#{`description`:"Sets `proxyRpAllowInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyRpAllowInsecure`?: boolean;
+    @js(#{`minimum`:100,`maximum`:3600000,`description`:"Sets `proxySignalsPollMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsPollMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:86400000,`description`:"Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsStaleMs`?: integer
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/clear-pep-settings",
+  "post",
+  #{
+    `operationId`:"clearXacmlPepSettings",
+    `summary`:"Remove a remote PEP's managed settings",
+    `description`:"Removes every setting set for a registered remote PEP (#1760). From its next pull of GET /xacml/pep/settings every setting is the PEP's environment variable or its default.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/ssf",
   "get",

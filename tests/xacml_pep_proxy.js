@@ -36,6 +36,13 @@
 //      foreign evidence, a route and a ticket of another PEP, an expired
 //      ticket, the issuance policy's refusal, and the console's per-route
 //      action;
+//   S. a remote PEP's managed settings: every refusal by its code,
+//      product's refusal of a verification turned off, the form's empty
+//      boxes, `GET /xacml/pep/settings` (the gate, the ETag and 304, a
+//      token that moves), the register keeping them, the PEP's report of
+//      what it has in force held to its members, the page's `?pep=` view,
+//      the managed notify URL the nudge dials, and a stored value that
+//      does not validate;
 //   G. Basic in product.
 //
 // The over-HTTP half against the Rust container is
@@ -959,6 +966,45 @@ async function childBody() {
           fronting[0].route === 'app' && fronting[0].path === '/app',
           'E5. the application\'s page lists the PEP route that fronts it',
           JSON.stringify(fronting));
+  // E5b. AND THE ANSWER CARRYING IT MEETS ITS CLOSED MODEL (8081, 2026-11-15:
+  // `pepRoutes` on the application page was declared on the list's model
+  // and not the page's, so every application page answered 500,
+  // STS-API-0139). Held through the service's own check, over the
+  // document the management API serves.
+  const answerProblem = function (method, apiPath, status, body) {
+    log.debug("Entering answerProblem().");
+    const { ResponseModels } = require(ROOT + '/common/response_models');
+    const models = new ResponseModels({
+      log: { debug: function () {}, error: function () {} },
+      mark: function () {},
+      tag: function (code) {
+        return '[' + code + '] ';
+      }
+    });
+    const spec = require(ROOT + '/mgmt-api/admin_api_spec');
+    const adminApiE = require(ROOT + '/mgmt-api/admin_api');
+    const doc = spec.buildSpec(adminApiE.ROUTES, { authRequired: true });
+    const installed = models.installed(function () {
+      return doc;
+    });
+    log.debug("Leaving answerProblem().");
+    return models.problemOf(installed,
+      { method: method, baseUrl: '', path: apiPath },
+      { statusCode: status, get: function () {
+        return 'application/json';
+      } }, JSON.stringify(body));
+  };
+  const appPage = inRealm(function () {
+    return adminViews.applicationsJson({ query: { application: 'ppx-web' },
+                                         headers: {}, method: 'GET' });
+  });
+  const appProblem = answerProblem('GET', '/admin-api/applications', 200,
+                                   appPage);
+  t.check(appPage && appPage.page && appPage.page.pepRoutes &&
+          appPage.page.pepRoutes.length === 1 && appProblem === null,
+          'E5b. an application fronted by a PEP route: its page answer, ' +
+          'pepRoutes and all, meets the getApplications model',
+          JSON.stringify(appProblem));
   const refusing = [
     ['an unknown application', { mechanisms: ['session'],
       application: 'nope-app' }, 'STS-XACML-0217'],
@@ -1392,6 +1438,313 @@ async function childBody() {
     adminActions.xacmlAction({ action: 'set-pep-proxy', name: NAME,
                                proxy: example() });
   });
+
+  // -------------------------------------------------------------------------
+  // S. THE MANAGED SETTINGS (#1760): what an administrator sets on the PEP's
+  // page, validated whole, kept across a registration, pulled from GET
+  // /xacml/pep/settings under a token of its own, the PEP's report of what
+  // it has in force held to its members, and the nudge dialling the managed
+  // notify URL.
+  // -------------------------------------------------------------------------
+  const pepSettings = require(ROOT + '/xacml/xacml_pep_settings');
+  const SETTINGS_PULL = PREFIX + '/xacml/pep/settings';
+  let sp = await request(port, 'GET', SETTINGS_PULL, pepCred);
+  t.check(sp.status === 200 && sp.json && sp.json.configured === false &&
+          sp.json.settings === undefined && sp.json.pep === NAME &&
+          sp.headers['cache-control'] === 'no-store' &&
+          sp.headers.etag === '"' + sp.json.syncToken + '"',
+          'S1. a PEP with no managed settings pulls configured: false, ' +
+          'no-store, with an ETag', brief(sp));
+  r = await request(port, 'GET', SETTINGS_PULL, null);
+  t.check(r.status === 401 || r.status === 403,
+          'S2. the settings pull is behind the PEP gate', brief(r));
+  const setS = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-settings', name: NAME,
+      settings: { bias: 'permit-biased', pollIntervalMs: 4000,
+                  logLevel: 'debug', pip: false,
+                  notifyUrl: 'https://pep.example/notify',
+                  authzenPdpIdentifier: 'https://pdp.example/' } });
+  });
+  t.check(setS && setS.ok && setS.settings &&
+          setS.settings.pollIntervalMs === 4000 &&
+          setS.settings.authzenPdpIdentifier === 'https://pdp.example' &&
+          setS.settings.timeoutMs === undefined,
+          'S3. set-pep-settings saves what is set, normalised, and nothing ' +
+          'else', JSON.stringify(setS));
+  const firstToken = sp.json && sp.json.syncToken;
+  sp = await request(port, 'GET', SETTINGS_PULL, pepCred);
+  t.check(sp.status === 200 && sp.json && sp.json.configured === true &&
+          sp.json.settings && sp.json.settings.bias === 'permit-biased' &&
+          sp.json.settings.pip === false &&
+          Object.keys(sp.json.settings).length === 6 &&
+          sp.json.syncToken !== firstToken,
+          'S4. the pull carries exactly the settings set, under a new token',
+          brief(sp));
+  r = await request(port, 'GET', SETTINGS_PULL + '?since=' +
+                    encodeURIComponent(sp.json.syncToken), pepCred);
+  t.check(r.status === 304,
+          'S5. ?since= the token it holds answers 304', brief(r));
+  // Every refusal, by its code; nothing is written by any of them.
+  const settingRefusals = [
+    [{ settings: { pollIntervalMs: 999 } }, 'STS-XACML-0238'],
+    [{ settings: { timeoutMs: 'soon' } }, 'STS-XACML-0237'],
+    [{ settings: { bias: 'lenient' } }, 'STS-XACML-0237'],
+    [{ settings: { logLevel: 'loud' } }, 'STS-XACML-0237'],
+    [{ settings: { pip: 'maybe' } }, 'STS-XACML-0237'],
+    [{ settings: { pdpUrl: 'https://elsewhere' } }, 'STS-XACML-0236'],
+    [{ settings: [] }, 'STS-XACML-0236'],
+    [{ settings: { description: 'a\nb' } }, 'STS-XACML-0239'],
+    [{ settings: { notifyUrl: 'https://u:p@pep.example/' } },
+     'STS-XACML-0239'],
+    [{ settings: { authzenPdpIdentifier: 'https://pdp.example/x' } },
+     'STS-XACML-0239'],
+    [{ settings: { proxyMaxSessions: 0 } }, 'STS-XACML-0238']
+  ];
+  settingRefusals.forEach(function (one, i) {
+    const got = inRealm(function () {
+      return adminActions.xacmlAction(Object.assign(
+        { action: 'set-pep-settings', name: NAME }, one[0]));
+    });
+    t.check(got && !got.ok && errorCodes.codeOf(got) === one[1] &&
+            (got.errors || []).length === 1,
+            'S6.' + i + '. set-pep-settings refuses ' +
+            JSON.stringify(one[0].settings) + ' with ' + one[1],
+            JSON.stringify(got) + ' ' + errorCodes.codeOf(got));
+  });
+  const still = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(still && JSON.parse(still.settings).pollIntervalMs === 4000,
+          'S7. a refused save changes nothing', still && still.settings);
+  // The console's form: flat members, an empty box is "not set".
+  const settingsForm = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-settings', name: NAME,
+      bias: '', pollIntervalMs: '8000', pip: 'true', logLevel: '',
+      description: '', proxySessionRecheckMs: '0' });
+  });
+  t.check(settingsForm && settingsForm.ok && settingsForm.settings &&
+          settingsForm.settings.pollIntervalMs === 8000 &&
+          settingsForm.settings.pip === true &&
+          settingsForm.settings.proxySessionRecheckMs === 0 &&
+          settingsForm.settings.bias === undefined &&
+          Object.keys(settingsForm.settings).length === 3,
+          'S8. the form\'s members replace the document; an empty box is not ' +
+          'set and 0 is a value', JSON.stringify(settingsForm));
+  // Product refuses a verification turned off, and allows it off.
+  inRealm(function () {
+    config.setOverride('global.mode', 'product');
+  });
+  const insecure = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-settings', name: NAME,
+      settings: { proxyUpstreamInsecure: true } });
+  });
+  const rpInsecure = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-settings', name: NAME,
+      settings: { proxyRpAllowInsecure: true } });
+  });
+  const secure = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-settings', name: NAME,
+      settings: { proxyUpstreamInsecure: false, pollIntervalMs: 8000,
+                  pip: true, proxySessionRecheckMs: 0 } });
+  });
+  const productCatalogue = inRealm(function () {
+    return pepSettings.catalogue();
+  });
+  inRealm(function () {
+    config.clearOverride('global.mode');
+  });
+  t.check(insecure && !insecure.ok &&
+          errorCodes.codeOf(insecure) === 'STS-XACML-0240' &&
+          rpInsecure && !rpInsecure.ok &&
+          errorCodes.codeOf(rpInsecure) === 'STS-XACML-0240' &&
+          secure && secure.ok,
+          'S9. product refuses proxyUpstreamInsecure and ' +
+          'proxyRpAllowInsecure true (STS-XACML-0240), and takes false',
+          JSON.stringify([insecure, rpInsecure, secure]));
+  const devCatalogue = inRealm(function () {
+    return pepSettings.catalogue();
+  });
+  const refusedIn = function (cat) {
+    return cat.settings.filter(function (one) {
+      return one.refusedInProduct;
+    }).map(function (one) {
+      return one.key;
+    }).join(',');
+  };
+  t.check(refusedIn(productCatalogue) ===
+            'proxyUpstreamInsecure,proxyRpAllowInsecure' &&
+          refusedIn(devCatalogue) === '' &&
+          devCatalogue.settings.length === 23 &&
+          devCatalogue.bootstrap.map(function (one) {
+            return one.env;
+          }).indexOf('PEP_PDP_URL') >= 0 &&
+          devCatalogue.precedence.join(',') === 'service,environment,default',
+          'S10. the catalogue names the 23 settings, the bootstrap ' +
+          'environment and the precedence; refusedInProduct follows the mode',
+          refusedIn(productCatalogue) + ' / ' + refusedIn(devCatalogue));
+  // Kept across a registration and a heartbeat; the report held to its
+  // members, kept by a heartbeat without it, cleared by null, dropped by a
+  // registration.
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pepCred,
+                    { version: 'settings' });
+  const tokenNow = (await request(port, 'GET', SETTINGS_PULL, pepCred))
+    .json.syncToken;
+  const report = { token: tokenNow, at: '1999-01-01T00:00:00Z',
+    values: {
+      bias: { value: 'deny-biased', source: 'environment' },
+      pollIntervalMs: { value: 8000, source: 'service' },
+      timeoutMs: { value: -5, source: 'default' },
+      logLevel: { value: 'loud', source: 'default' },
+      pip: { value: true, source: 'invented' },
+      description: { value: 'two\nlines', source: 'environment' },
+      aNewerSetting: { value: 1, source: 'service' }
+    }, secret: 'nope' };
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { decisions: 1, settings: report });
+  let row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  const inUse = row2 && row2.settingsInUse;
+  t.check(r.status === 200 && row2 && row2.settings &&
+          JSON.parse(row2.settings).pollIntervalMs === 8000 && inUse &&
+          Object.keys(inUse.values).sort().join(',') ===
+            'bias,pollIntervalMs' &&
+          inUse.token === tokenNow && !('secret' in inUse) &&
+          Math.abs(Date.parse(inUse.at) - Date.now()) < 60000,
+          'S11. a registration keeps the settings; the report keeps only ' +
+          'known settings of their type and closed source, stamped on ' +
+          'arrival', JSON.stringify(row2 && row2.settingsInUse));
+  const viewed = inRealm(function () {
+    return require(ROOT + '/xacml/xacml_admin').pepsJson(NAME);
+  });
+  const vrow = viewed.peps && viewed.peps[0];
+  t.check(viewed.found === true && viewed.pep === NAME &&
+          viewed.peps.length === 1 && vrow.settings &&
+          vrow.settings.pollIntervalMs === 8000 &&
+          vrow.settingsProblem === null && vrow.settingsCurrent === true &&
+          vrow.settingsInUse && viewed.settingsCatalogue &&
+          vrow.effectiveNotifyUrl === (vrow.notifyUrl || ''),
+          'S12. GET /admin-api/xacml/peps?pep= is that row alone, found, ' +
+          'its settings, current, and the catalogue',
+          JSON.stringify(vrow).slice(0, 400));
+  const pepPageProblem = answerProblem('GET', '/admin-api/xacml/peps', 200,
+                                       viewed);
+  const pepListProblem = answerProblem('GET', '/admin-api/xacml/peps', 200,
+    inRealm(function () {
+      return require(ROOT + '/xacml/xacml_admin').pepsJson();
+    }));
+  t.check(pepPageProblem === null && pepListProblem === null,
+          'S12b. the PEP page\'s answer (settings, report, catalogue) and ' +
+          'the list\'s meet the getXacmlPeps model',
+          JSON.stringify([pepPageProblem, pepListProblem]));
+  const missing = inRealm(function () {
+    return require(ROOT + '/xacml/xacml_admin').pepsJson('nobody-here');
+  });
+  t.check(missing.found === false && missing.peps.length === 0,
+          'S13. a name with no row is found: false', JSON.stringify(missing)
+            .slice(0, 200));
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { decisions: 2 });
+  row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(row2 && row2.settingsInUse &&
+          row2.settingsInUse.values.pollIntervalMs.value === 8000,
+          'S14. a heartbeat without settings (an older PEP) keeps the report',
+          JSON.stringify(row2 && row2.settingsInUse));
+  // A settings change moves the pull's token, so the report goes stale.
+  inRealm(function () {
+    adminActions.xacmlAction({ action: 'set-pep-settings', name: NAME,
+      settings: { pollIntervalMs: 9000,
+                  notifyUrl: 'https://managed.example/notify' } });
+  });
+  const stale = inRealm(function () {
+    return require(ROOT + '/xacml/xacml_admin').pepsJson(NAME);
+  }).peps[0];
+  const nudged = inRealm(function () {
+    return peps.notifiable().filter(function (one) {
+      return one.name === NAME;
+    })[0];
+  });
+  t.check(stale && stale.settingsCurrent === false &&
+          stale.effectiveNotifyUrl === 'https://managed.example/notify' &&
+          nudged && nudged.notifyUrl === 'https://managed.example/notify',
+          'S15. a change leaves the PEP not current, and the nudge dials the ' +
+          'managed notify URL', JSON.stringify([stale && stale.settingsCurrent,
+                                                nudged && nudged.notifyUrl]));
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { settings: null });
+  row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(row2 && row2.settingsInUse === null && row2.settings,
+          'S16. settings: null clears the report and keeps the settings',
+          JSON.stringify(row2 && row2.settingsInUse));
+  await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                { settings: report });
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pepCred,
+                    { version: 'restarted' });
+  row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(row2 && row2.settingsInUse === null && row2.settings,
+          'S17. a re-registration drops the report and keeps the settings',
+          JSON.stringify(row2 && row2.settingsInUse));
+  // A stored value an ldapmodify wrote that does not validate.
+  inRealm(function () {
+    peps.setSettings(NAME, '{"pollIntervalMs":1}');
+  });
+  sp = await request(port, 'GET', SETTINGS_PULL, pepCred);
+  const badView = inRealm(function () {
+    return require(ROOT + '/xacml/xacml_admin').pepsJson(NAME);
+  }).peps[0];
+  t.check(sp.json && sp.json.configured === false && !sp.json.settings &&
+          badView && badView.settings === null &&
+          /pollIntervalMs/.test(String(badView.settingsProblem)),
+          'S18. a stored document that does not validate is pulled as ' +
+          'configured: false and named on the page', brief(sp));
+  const clearedS = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'clear-pep-settings',
+                                      name: NAME });
+  });
+  sp = await request(port, 'GET', SETTINGS_PULL, pepCred);
+  row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  const actProblems = [
+    answerProblem('POST', '/admin-api/xacml/set-pep-settings', 200, setS),
+    answerProblem('POST', '/admin-api/xacml/set-pep-settings', 400,
+      inRealm(function () {
+        return adminActions.xacmlAction({ action: 'set-pep-settings',
+          name: NAME, settings: { pollIntervalMs: 1 } });
+      })),
+    answerProblem('POST', '/admin-api/xacml/clear-pep-settings', 200,
+                  clearedS)
+  ];
+  t.check(actProblems.every(function (one) {
+    return one === null;
+  }), 'S19b. set-pep-settings\' and clear-pep-settings\' answers, saved ' +
+      'and refused, meet their models', JSON.stringify(actProblems));
+  t.check(clearedS && clearedS.ok && clearedS.settings === null &&
+          sp.json && sp.json.configured === false && row2 &&
+          row2.settings === '',
+          'S19. clear-pep-settings removes them; the pull is configured: ' +
+          'false', JSON.stringify(clearedS));
+  const nobodyS = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-settings',
+                                      name: 'not-registered',
+                                      settings: { pip: true } });
+  });
+  t.check(nobodyS && !nobodyS.ok && errorCodes.codeOf(nobodyS),
+          'S20. set-pep-settings for a PEP not registered is refused',
+          JSON.stringify(nobodyS));
+  const unknownS = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'nope' });
+  });
+  t.check(/set-pep-settings/.test(JSON.stringify(unknownS)) &&
+          /clear-pep-settings/.test(JSON.stringify(unknownS)),
+          'S21. the unknown-action sentence names the two settings actions',
+          JSON.stringify(unknownS).slice(0, 300));
 
   // -------------------------------------------------------------------------
   // G. BASIC IN PRODUCT: a password is verified, a second factor is owed by

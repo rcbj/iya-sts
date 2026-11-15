@@ -2034,5 +2034,13 @@
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
     "en": "8e6cc7739c2c3ce3",
     "text": "遠端 PEP 在心跳中最後回報的反向代理 CAEP/RISC 訊號串流健康狀況（#1760）：一個只含計數和時長的 JSON 文件——接收器數量、健康和過時的數量、過時門檻和輪詢間隔、最早的最近成功時長、最多連續失敗次數、接受和拒絕的 SET、結束的工作階段，以及程式庫工作階段儲存區的持有數、最大值、存留期、逐出數和過期數——以及它到達的時間。其他成員一律捨棄，任何不是非負整數的值都記為 0，因此從不保存用戶端 ID、URL 或錯誤文字。不帶它的心跳保留它，帶 null 的心跳清除它，註冊會捨棄它，因為註冊意味著新程序。從未回報過的 PEP 上沒有此屬性，主控台顯示為未回報。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "管理員在此遠端 PEP 的主控台頁面上或透過管理 API 的 set-pep-settings 動作為其指定的設定（#1760）：一個只包含已指定設定的 JSON 文件，每項以其成員名稱表示（description、resource、notifyUrl、bias、pip，輪詢、活動訊號和退避間隔，逾時和本文上限，HTTPS 重新載入間隔，記錄層級，AuthZEN 開關、識別碼和轉送逾時，以及反向代理的工作階段、JWKS、上游、信賴方和訊號串流上限），在寫入時整體驗證，並在 PEP 從 GET /xacml/pep/settings 拉取時再次驗證。不在其中的設定取 PEP 的環境變數或其預設值。PEP 首次連線所需的最低設定從不在這裡。在註冊和活動訊號之後保留；隨該列一起刪除。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "遠端 PEP 最近一次在活動訊號中回報的、對每項受管設定實際生效的內容（#1760）：一個形如 { token, values: { setting: { value, source } } } 的 JSON 文件，source 為 service、environment 或 default，並附有到達時間。表中未列出的設定、類型與其設定不符的值以及其他任何來源都會被捨棄。不帶它的活動訊號會保留它，帶 null 的活動訊號會清除它，註冊會捨棄它。比這些設定更舊的 PEP 上沒有它，主控台將其顯示為未回報。"
   }
 }

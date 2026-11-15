@@ -7711,7 +7711,18 @@ class AdminApi {
 
       { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
         operationId: 'getXacmlPeps',
-        mirrors: 'GET /admin/xacml',
+        mirrors: 'GET /admin/xacml and GET /admin/xacml/pep',
+        // ONE PEP's PAGE (#1760): `/admin/xacml/pep?pep=<name>` is this
+        // answer narrowed to that row, `/admin-api/applications`'
+        // `?application=` arrangement.
+        parameters: [
+          { name: 'pep', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 128 },
+            description: 'One registered PEP, by its name exactly. The ' +
+                         'answer then lists that row alone and says ' +
+                         '`found`; a name with no row answers 200 with ' +
+                         '`found: false`.' }
+        ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML remote PEPs endpoint.");
           self.sendJson(res, 200, adminViews.xacmlPepsView(req));
@@ -7851,7 +7862,11 @@ class AdminApi {
           { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
           { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },
           { action: 'set-pep-route-identity',
-            operationId: 'setXacmlPepRouteIdentity' }
+            operationId: 'setXacmlPepRouteIdentity' },
+          // The remote PEP's managed settings (#1760).
+          { action: 'set-pep-settings', operationId: 'setXacmlPepSettings' },
+          { action: 'clear-pep-settings',
+            operationId: 'clearXacmlPepSettings' }
         ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',

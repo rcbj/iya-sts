@@ -8,6 +8,7 @@
   "endpoints.route./xacml/pep/authzen-catalogue.name": "The AuthZEN catalogue, for a remote PEP to LOAD",
   "endpoints.route./xacml/pep/authzen-callers.name": "The AuthZEN callers, for a remote PEP to ADMIT",
   "endpoints.route./xacml/pep/proxy.name": "The reverse-proxy configuration, for a remote PEP to ENFORCE",
+  "endpoints.route./xacml/pep/settings.name": "A remote PEP's managed settings, for it to APPLY",
   "endpoints.route./xacml/pep/introspect.name": "Token introspection, for a remote PEP's proxy",
   "endpoints.route./xacml/pep/basic.name": "HTTP Basic, validated for a remote PEP's proxy",
   "endpoints.route./xacml/pep/saml.name": "A SAML 2.0 assertion, validated for a remote PEP's proxy",

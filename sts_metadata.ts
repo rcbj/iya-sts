@@ -3782,6 +3782,19 @@ const ENDPOINTS: EndpointEntry[] = [
           '?since=<token> answers 304. An unconfigured PEP is configured: ' +
           'false and its proxy denies everything. Requires REMOTE_PEPS, as ' +
           'the policy pull does; no nudge.' },
+  { path: '/xacml/pep/settings', group: 'XACML',
+    name: 'A remote PEP\'s managed settings, for it to APPLY',
+    specs: ['xacml30'],
+    what: 'The settings an administrator set for this PEP on its console ' +
+          'page (#1760) — its description and resource, the notify URL, ' +
+          'the bias, the PIP switch, the poll, heartbeat and back-off ' +
+          'intervals, the timeout and body bound, the log level, the ' +
+          'AuthZEN edge\'s switch, identifier and forward timeout, and the ' +
+          'reverse proxy\'s bounds — under a sync token of its own; ' +
+          '?since=<token> answers 304. Only what was set is sent: the PEP ' +
+          'uses its environment for the rest, and the minimum it needs to ' +
+          'connect is never here. Requires REMOTE_PEPS, as the policy pull ' +
+          'does; no nudge.' },
   { path: '/xacml/pep/introspect', group: 'XACML',
     name: 'Token introspection, for a remote PEP\'s proxy',
     specs: ['xacml30', 'rfc7662'],

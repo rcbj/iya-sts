@@ -175,6 +175,8 @@ import pepHttp = require('./xacml_pep_http');
 // route, and what it asks of `oauth2`, `authn` and the registry it requires
 // lazily, so its position here is not a position.
 import pepProxy = require('./xacml_pep_proxy');
+// A remote PEP's managed settings (#1760): the pull's body.
+import pepSettings = require('./xacml_pep_settings');
 // The decision counters behind /admin/xacml/monitor. A LEAF (rule 3): it
 // registers no route, so its position here is not a position, and it requires
 // nothing that requires it back.
@@ -324,6 +326,7 @@ interface XacmlSurfaceDeps {
   peps: typeof peps;
   pepHttp: typeof pepHttp;
   pepProxy: typeof pepProxy;
+  pepSettings: typeof pepSettings;
   monitor: typeof monitor;
   roles: typeof roles;
   accessGate: typeof accessGate;
@@ -466,6 +469,7 @@ class XacmlSurface {
       peps: peps,
       pepHttp: pepHttp,
       pepProxy: pepProxy,
+      pepSettings: pepSettings,
       monitor: monitor,
       roles: roles,
       accessGate: accessGate,
@@ -2879,6 +2883,49 @@ class XacmlSurface {
     });
 
     // -------------------------------------------------------------------------
+    // GET /xacml/pep/settings — A REMOTE PEP'S MANAGED SETTINGS (#1760).
+    //
+    // What an administrator set on the PEP's console page, for the PEP to
+    // apply over its environment: the proxy pull's shape exactly — the same
+    // gate, its own sync token with an ETag and `?since=` 304, `no-store`,
+    // no nudge (the PEP converges on its poll), the PEP named by its
+    // certificate. ADDITIVE: an older PEP never asks, and a newer PEP's 404
+    // from an older service is its environment in force.
+    // -------------------------------------------------------------------------
+    app.get('/xacml/pep/settings', function (req, res) {
+      log.debug('Entering GET /xacml/pep/settings.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving GET /xacml/pep/settings. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.READ,
+                                    'a remote PEP settings pull');
+      if (!access.allowed) {
+        log.debug('Leaving GET /xacml/pep/settings. The access policy ' +
+                  'refused.');
+        return;
+      }
+      const name = self.pepNameOf(access.identity,
+                                  String(req.query.name || ''));
+      const row = name ? peps.read(name) : null;
+      const pulled = self.deps.pepSettings.pull(row, name);
+      const since = String(req.query.since || '');
+      if (since && since === pulled.token) {
+        res.status(304)
+           .set('Cache-Control', 'no-store')
+           .set('ETag', '"' + pulled.token + '"')
+           .end();
+        log.debug('Leaving GET /xacml/pep/settings. Unchanged.');
+        return;
+      }
+      res.status(200).type('application/json').set('Cache-Control', 'no-store')
+         .set('ETag', '"' + pulled.token + '"')
+         .send(JSON.stringify(pulled.body, null, 2));
+      log.debug('Leaving GET /xacml/pep/settings. configured=' +
+                pulled.body.configured);
+    });
+
+    // -------------------------------------------------------------------------
     // THE FOUR VALIDATION DOORS (#1760, D4): what the proxy cannot establish
     // itself, asked back over the PEP's mutual TLS. Each is `pepAccess()`'s
     // READ, rate limited per PEP BEFORE the access check (`/xacml/pip`'s
@@ -2996,7 +3043,10 @@ class XacmlSurface {
         // The reverse proxy's CAEP/RISC stream health (#1760). Absent from
         // an older PEP, which keeps the row's "not reported"; the registry
         // keeps only its counts and ages, whatever arrives.
-        signals: body.signals
+        signals: body.signals,
+        // Every managed setting in force at the PEP and where it came from
+        // (#1760). Absent from an older PEP; held to its members.
+        settings: body.settings
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');

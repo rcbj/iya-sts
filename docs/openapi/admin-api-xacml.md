@@ -1983,6 +1983,105 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/clear-pep-settings
+
+`clearXacmlPepSettings`
+
+**Remove a remote PEP's managed settings**
+
+Removes every setting set for a registered remote PEP (#1760). From its next pull of GET /xacml/pep/settings every setting is the PEP's environment variable or its default.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string | yes | The registered PEP's name. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
 ## POST /admin-api/xacml/create-from-template
 
 `createXacmlPolicy`
@@ -3593,7 +3692,9 @@ REGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactl
 
 `current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.
 
-**Mirrors** `GET /admin/xacml` on the admin console.
+With `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.
+
+**Mirrors** `GET /admin/xacml and GET /admin/xacml/pep` on the admin console.
 
 The reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).
 
@@ -3603,6 +3704,7 @@ Scope: `admin:read`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
+| `pep` | query | string |  | One registered PEP, by its name exactly. The answer then lists that row alone and says `found`; a name with no row answers 200 with `found: false`. |
 | `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
 | `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
@@ -3616,6 +3718,7 @@ Scope: `admin:read`.
 | `elsewhere[].id` | string |  |  |
 | `elsewhere[].name` | string, or null |  |  |
 | `enabled` | boolean |  |  |
+| `found` | boolean |  |  |
 | `listenerCertificates` | object |  |  |
 | `listenerCertificates.defaultKeyAlg` | string |  |  |
 | `listenerCertificates.keyAlgorithms` | list |  |  |
@@ -3632,6 +3735,7 @@ Scope: `admin:read`.
 | `notify.transport.caFile` | string |  |  |
 | `notify.transport.skipTlsVerification` | boolean |  |  |
 | `notify.transport.skipTlsVerificationSet` | boolean |  |  |
+| `pep` | string |  |  |
 | `peps` | list |  |  |
 | `peps[].allowed` | number, or null |  |  |
 | `peps[].authenticated` | boolean |  |  |
@@ -3641,6 +3745,7 @@ Scope: `admin:read`.
 | `peps[].decisions` | number, or null |  |  |
 | `peps[].description` | string |  |  |
 | `peps[].dn` | string |  |  |
+| `peps[].effectiveNotifyUrl` | string |  |  |
 | `peps[].enabled` | boolean |  |  |
 | `peps[].identity` | string |  |  |
 | `peps[].lastNotify` | string |  |  |
@@ -3699,6 +3804,105 @@ Scope: `admin:read`.
 | `peps[].refused` | number, or null |  |  |
 | `peps[].registeredAt` | string |  |  |
 | `peps[].resource` | string |  |  |
+| `peps[].settings` | object |  |  |
+| `peps[].settings.authzen` | boolean |  |  |
+| `peps[].settings.authzenForwardTimeoutMs` | integer |  |  |
+| `peps[].settings.authzenPdpIdentifier` | string |  |  |
+| `peps[].settings.backoffMaxMs` | integer |  |  |
+| `peps[].settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `peps[].settings.description` | string |  |  |
+| `peps[].settings.heartbeatIntervalMs` | integer |  |  |
+| `peps[].settings.httpsReloadIntervalMs` | integer |  |  |
+| `peps[].settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `peps[].settings.maxBodyBytes` | integer |  |  |
+| `peps[].settings.notifyUrl` | string |  |  |
+| `peps[].settings.pip` | boolean |  |  |
+| `peps[].settings.pollIntervalMs` | integer |  |  |
+| `peps[].settings.proxyJwksTtlMs` | integer |  |  |
+| `peps[].settings.proxyMaxSessions` | integer |  |  |
+| `peps[].settings.proxyRpAllowInsecure` | boolean |  |  |
+| `peps[].settings.proxySessionRecheckMs` | integer |  |  |
+| `peps[].settings.proxySessionTtlMs` | integer |  |  |
+| `peps[].settings.proxySignalsPollMs` | integer |  |  |
+| `peps[].settings.proxySignalsStaleMs` | integer |  |  |
+| `peps[].settings.proxyUpstreamInsecure` | boolean |  |  |
+| `peps[].settings.resource` | string |  |  |
+| `peps[].settings.timeoutMs` | integer |  |  |
+| `peps[].settingsCurrent` | boolean |  |  |
+| `peps[].settingsInUse` | object |  |  |
+| `peps[].settingsInUse.at` | string |  |  |
+| `peps[].settingsInUse.token` | string |  |  |
+| `peps[].settingsInUse.values` | object |  |  |
+| `peps[].settingsInUse.values.authzen` | object |  |  |
+| `peps[].settingsInUse.values.authzen.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.authzen.value` | boolean |  |  |
+| `peps[].settingsInUse.values.authzenForwardTimeoutMs` | object |  |  |
+| `peps[].settingsInUse.values.authzenForwardTimeoutMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.authzenForwardTimeoutMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.authzenPdpIdentifier` | object |  |  |
+| `peps[].settingsInUse.values.authzenPdpIdentifier.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.authzenPdpIdentifier.value` | string |  |  |
+| `peps[].settingsInUse.values.backoffMaxMs` | object |  |  |
+| `peps[].settingsInUse.values.backoffMaxMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.backoffMaxMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.bias` | object |  |  |
+| `peps[].settingsInUse.values.bias.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.bias.value` | one of `deny-biased`, `permit-biased` |  |  |
+| `peps[].settingsInUse.values.description` | object |  |  |
+| `peps[].settingsInUse.values.description.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.description.value` | string |  |  |
+| `peps[].settingsInUse.values.heartbeatIntervalMs` | object |  |  |
+| `peps[].settingsInUse.values.heartbeatIntervalMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.heartbeatIntervalMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.httpsReloadIntervalMs` | object |  |  |
+| `peps[].settingsInUse.values.httpsReloadIntervalMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.httpsReloadIntervalMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.logLevel` | object |  |  |
+| `peps[].settingsInUse.values.logLevel.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.logLevel.value` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `peps[].settingsInUse.values.maxBodyBytes` | object |  |  |
+| `peps[].settingsInUse.values.maxBodyBytes.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.maxBodyBytes.value` | integer |  |  |
+| `peps[].settingsInUse.values.notifyUrl` | object |  |  |
+| `peps[].settingsInUse.values.notifyUrl.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.notifyUrl.value` | string |  |  |
+| `peps[].settingsInUse.values.pip` | object |  |  |
+| `peps[].settingsInUse.values.pip.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.pip.value` | boolean |  |  |
+| `peps[].settingsInUse.values.pollIntervalMs` | object |  |  |
+| `peps[].settingsInUse.values.pollIntervalMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.pollIntervalMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxyJwksTtlMs` | object |  |  |
+| `peps[].settingsInUse.values.proxyJwksTtlMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxyJwksTtlMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxyMaxSessions` | object |  |  |
+| `peps[].settingsInUse.values.proxyMaxSessions.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxyMaxSessions.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxyRpAllowInsecure` | object |  |  |
+| `peps[].settingsInUse.values.proxyRpAllowInsecure.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxyRpAllowInsecure.value` | boolean |  |  |
+| `peps[].settingsInUse.values.proxySessionRecheckMs` | object |  |  |
+| `peps[].settingsInUse.values.proxySessionRecheckMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxySessionRecheckMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxySessionTtlMs` | object |  |  |
+| `peps[].settingsInUse.values.proxySessionTtlMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxySessionTtlMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxySignalsPollMs` | object |  |  |
+| `peps[].settingsInUse.values.proxySignalsPollMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxySignalsPollMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxySignalsStaleMs` | object |  |  |
+| `peps[].settingsInUse.values.proxySignalsStaleMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxySignalsStaleMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxyUpstreamInsecure` | object |  |  |
+| `peps[].settingsInUse.values.proxyUpstreamInsecure.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxyUpstreamInsecure.value` | boolean |  |  |
+| `peps[].settingsInUse.values.resource` | object |  |  |
+| `peps[].settingsInUse.values.resource.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.resource.value` | string |  |  |
+| `peps[].settingsInUse.values.timeoutMs` | object |  |  |
+| `peps[].settingsInUse.values.timeoutMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.timeoutMs.value` | integer |  |  |
+| `peps[].settingsProblem` | string, or null |  |  |
 | `peps[].signals` | object |  |  |
 | `peps[].signals.at` | string |  |  |
 | `peps[].signals.healthy` | integer |  |  |
@@ -3732,6 +3936,26 @@ Scope: `admin:read`.
 | `protocolEndpoints[].transport` | string |  |  |
 | `protocolEndpoints[].url` | string |  |  |
 | `requiresCertificate` | boolean |  |  |
+| `settingsCatalogue` | object |  |  |
+| `settingsCatalogue.bootstrap` | list |  |  |
+| `settingsCatalogue.bootstrap[].default` | string |  |  |
+| `settingsCatalogue.bootstrap[].env` | string |  |  |
+| `settingsCatalogue.bootstrap[].reason` | one of `connect`, `bind`, `file`, `listeners`, `narrowing` |  |  |
+| `settingsCatalogue.precedence` | list |  |  |
+| `settingsCatalogue.precedence[]` | one of `service`, `environment`, `default` |  |  |
+| `settingsCatalogue.settings` | list |  |  |
+| `settingsCatalogue.settings[].applies` | one of `now`, `nextRound`, `nextReload`, `nextReconcile` |  |  |
+| `settingsCatalogue.settings[].default` | string or integer or boolean |  |  |
+| `settingsCatalogue.settings[].env` | string |  |  |
+| `settingsCatalogue.settings[].group` | one of `registration`, `enforcement`, `sync`, `listener`, `logging`, `authzen`, `proxy` |  |  |
+| `settingsCatalogue.settings[].key` | string |  |  |
+| `settingsCatalogue.settings[].max` | integer |  |  |
+| `settingsCatalogue.settings[].maxLength` | integer |  |  |
+| `settingsCatalogue.settings[].min` | integer |  |  |
+| `settingsCatalogue.settings[].refusedInProduct` | boolean |  |  |
+| `settingsCatalogue.settings[].type` | one of `integer`, `boolean`, `enum`, `text`, `url`, `origin` |  |  |
+| `settingsCatalogue.settings[].values` | list |  |  |
+| `settingsCatalogue.settings[].values[]` | string |  |  |
 | `stale` | integer |  |  |
 | `staleAfterS` | number |  |  |
 | `syncToken` | string, or null |  |  |
@@ -4430,6 +4654,130 @@ Scope: `admin:write`.
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-settings
+
+`setXacmlPepSettings`
+
+**Set a remote PEP's managed settings, over its environment**
+
+Sets the settings a registered remote PEP pulls from GET /xacml/pep/settings and applies while it runs (#1760), REPLACING what was set: the settings are sent as `settings`, an object of them, or as members of the body itself (the console's form), and a setting absent, null or empty is NOT SET, so the PEP uses its environment variable for it, or its default — THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE DEFAULT. GET /admin-api/xacml/peps' `settingsCatalogue` lists every setting with its variable, type, bounds, default and when a change takes effect. Validated whole: a member of `settings` that is not a setting is refused by name (STS-XACML-0236), a wrong type or a value outside a closed set (bias, logLevel) STS-XACML-0237, an integer out of bounds STS-XACML-0238, text too long or with a control character, a notifyUrl that is not an absolute http(s) URL and an authzenPdpIdentifier that is not an https origin STS-XACML-0239, and in product mode proxyUpstreamInsecure or proxyRpAllowInsecure true STS-XACML-0240. THE MINIMUM THE PEP NEEDS TO CONNECT THE FIRST TIME IS NOT HERE AND CANNOT BE: the service's URL, the PEP's name, its client certificate, key and anchors, the ports it binds and the files its TLS stacks read stay in its environment (`settingsCatalogue.bootstrap`). The PEP must be registered in this realm; it applies a change on its next pull — there is no nudge — and an older PEP, which never asks, goes on using its environment.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `authzen` | boolean |  | Sets `authzen` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `authzenForwardTimeoutMs` | integer |  | Sets `authzenForwardTimeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `authzenPdpIdentifier` | string |  | Sets `authzenPdpIdentifier` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `backoffMaxMs` | integer |  | Sets `backoffMaxMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `bias` | one of `deny-biased`, `permit-biased` |  | Sets `bias` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `description` | string |  | Sets `description` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `heartbeatIntervalMs` | integer |  | Sets `heartbeatIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `httpsReloadIntervalMs` | integer |  | Sets `httpsReloadIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  | Sets `logLevel` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `maxBodyBytes` | integer |  | Sets `maxBodyBytes` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `notifyUrl` | string |  | Sets `notifyUrl` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `pip` | boolean |  | Sets `pip` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `pollIntervalMs` | integer |  | Sets `pollIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxyJwksTtlMs` | integer |  | Sets `proxyJwksTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxyMaxSessions` | integer |  | Sets `proxyMaxSessions` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxyRpAllowInsecure` | boolean |  | Sets `proxyRpAllowInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxySessionRecheckMs` | integer |  | Sets `proxySessionRecheckMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxySessionTtlMs` | integer |  | Sets `proxySessionTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxySignalsPollMs` | integer |  | Sets `proxySignalsPollMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxySignalsStaleMs` | integer |  | Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxyUpstreamInsecure` | boolean |  | Sets `proxyUpstreamInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `resource` | string |  | Sets `resource` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `settings` | map |  | The settings as one object, in place of the members below. Validated whole by the handler, which refuses a member that is not a setting by name. |
+| `settings.{key}` | any JSON |  |  |
+| `timeoutMs` | integer |  | Sets `timeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `settings` | object |  |  |
+| `settings.authzen` | boolean |  |  |
+| `settings.authzenForwardTimeoutMs` | integer |  |  |
+| `settings.authzenPdpIdentifier` | string |  |  |
+| `settings.backoffMaxMs` | integer |  |  |
+| `settings.bias` | one of `deny-biased`, `permit-biased` |  |  |
+| `settings.description` | string |  |  |
+| `settings.heartbeatIntervalMs` | integer |  |  |
+| `settings.httpsReloadIntervalMs` | integer |  |  |
+| `settings.logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  |  |
+| `settings.maxBodyBytes` | integer |  |  |
+| `settings.notifyUrl` | string |  |  |
+| `settings.pip` | boolean |  |  |
+| `settings.pollIntervalMs` | integer |  |  |
+| `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxSessions` | integer |  |  |
+| `settings.proxyRpAllowInsecure` | boolean |  |  |
+| `settings.proxySessionRecheckMs` | integer |  |  |
+| `settings.proxySessionTtlMs` | integer |  |  |
+| `settings.proxySignalsPollMs` | integer |  |  |
+| `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyUpstreamInsecure` | boolean |  |  |
+| `settings.resource` | string |  |  |
+| `settings.timeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
 

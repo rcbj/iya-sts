@@ -4003,6 +4003,10 @@
     "en": "dbd48be2ca7bfe7b",
     "text": "xacml-pep 容器位于应用程序之前时执行的内容（#1760）：它转发到的上游、有序的路由及每条路由接受的机制和对应的 XACML 资源与操作、从注册表解析的每条路由的应用程序、它在本地验证所用的领域信息（颁发者、JWKS、登录端点、SAML 签名证书、监听器的证书链、会话路由的客户端）以及下面四个验证 URL，带有自己的同步令牌；?since=<token> 回答 304。未配置的 PEP 为 configured: false，其代理拒绝一切。与策略拉取一样需要 REMOTE_PEPS；不发送提示。"
   },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "管理员在此 PEP 的控制台页面上为其设置的设置（#1760）——其描述和资源、推送通知 URL、偏向、PIP 开关、轮询、心跳和退避间隔、超时和请求体上限、日志级别、AuthZEN 边缘 PDP 的开关、标识符和转发超时，以及反向代理的上限——带有自己的同步令牌；?since=<token> 返回 304。只发送已设置的内容：其余由 PEP 使用其环境，而其首次连接所需的最低配置从不在此。与策略拉取一样需要 REMOTE_PEPS；没有推送通知。"
+  },
   "stsmetadata.endpoints./xacml/pep/introspect.what": {
     "en": "b3f9e293393b2e8a",
     "text": "授权服务器自身按 RFC 7662 对代理无法自行验证的 OAuth 2.0 访问令牌（不透明令牌，或密钥不在 JWKS 中）的读取，通过 PEP 的双向 TLS，而不是其自己的客户端注册。需要 REMOTE_PEPS。"

@@ -130,6 +130,18 @@ model XacmlPep {
   })
   xacmlPepSignals?: string;
   @attr(#{
+    kind: "single",
+    jsonBlob: true,
+    what: "The settings an administrator set for this remote PEP on its console page or with the set-pep-settings action of the management API (#1760): one JSON document holding only the settings that were set, each by its member name (description, resource, notifyUrl, bias, pip, the poll, heartbeat and back-off intervals, the timeout and body bound, the HTTPS reload interval, the log level, the AuthZEN switch, identifier and forward timeout, and the reverse proxy's session, JWKS, upstream, relying-party and signal-stream bounds), validated whole on write and again when the PEP pulls them from GET /xacml/pep/settings. A setting not in it is the PEP's environment variable, or its default. The minimum the PEP needs to connect the first time is never here. Kept across a registration and a heartbeat; removed with the row."
+  })
+  xacmlPepSettings?: string;
+  @attr(#{
+    kind: "single",
+    jsonBlob: true,
+    what: "What the remote PEP last reported, on a heartbeat, having in force for each managed setting (#1760): one JSON document of { token, values: { setting: { value, source } } }, the source service, environment or default, with when it arrived. Every setting the table does not name, every value not of its setting's type and every other source is dropped. A heartbeat without it keeps it, one with null clears it, and a registration drops it. Absent on a PEP older than the settings, which the console draws as not reported."
+  })
+  xacmlPepSettingsInUse?: string;
+  @attr(#{
     what: "Whatever the PEP said about itself when it registered."
   })
   description?: (string)[];

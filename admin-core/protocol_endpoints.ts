@@ -409,7 +409,8 @@ class ProtocolEndpoints {
         '/xacml', '/xacml/pdp', '/xacml/policies',
         '/xacml/pep/register', '/xacml/pep/policies',
         '/xacml/pep/authzen-catalogue', '/xacml/pep/authzen-callers',
-        '/xacml/pep/proxy', '/xacml/pep/introspect', '/xacml/pep/basic',
+        '/xacml/pep/proxy', '/xacml/pep/settings',
+        '/xacml/pep/introspect', '/xacml/pep/basic',
         '/xacml/pep/saml', '/xacml/pep/session', '/xacml/pep/identity',
         '/xacml/pep/heartbeat', '/xacml/pip'
       ].map(route),

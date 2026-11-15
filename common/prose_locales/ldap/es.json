@@ -2034,5 +2034,13 @@
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
     "en": "8e6cc7739c2c3ce3",
     "text": "El estado de los flujos de señales CAEP/RISC del proxy inverso tal como el PEP remoto lo informó por última vez en un latido (#1760): un documento JSON solo de recuentos y edades — los receptores, cuántos están sanos y obsoletos, el umbral de obsolescencia y el intervalo de sondeo, la edad del último éxito más antiguo, el mayor número de fallos seguidos, los SET aceptados y rechazados, las sesiones terminadas, y de los almacenes de sesiones de la biblioteca las retenidas, el máximo, la vida, las desalojadas y las caducadas — con cuándo llegó. Cualquier otro miembro se descarta y todo valor que no sea un entero no negativo es 0, así que nunca se guarda un identificador de cliente, una URL ni un texto de error. Un latido sin él lo conserva, uno con null lo borra, y un registro lo descarta, porque un registro es un proceso nuevo. Ausente en un PEP que nunca lo informó, que la consola muestra como no informado."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "Los ajustes que un administrador fijó para este PEP remoto en su página de la consola o con la acción set-pep-settings de la API de gestión (#1760): un documento JSON que contiene solo los ajustes que se fijaron, cada uno por su nombre de miembro (description, resource, notifyUrl, bias, pip, los intervalos de sondeo, de latido y de espera de reintento, el tiempo de espera y el límite del cuerpo, el intervalo de recarga HTTPS, el nivel de registro, el interruptor, el identificador y el tiempo de espera del reenvío de AuthZEN, y los límites de sesión, JWKS, destino, usuario de confianza y flujo de señales del proxy inverso), validado entero al escribirse y de nuevo cuando el PEP los obtiene de GET /xacml/pep/settings. Un ajuste que no está en él es la variable de entorno del PEP, o su valor predeterminado. Lo mínimo que el PEP necesita para conectarse la primera vez nunca está aquí. Se conserva tras un registro y un latido; se elimina con la fila."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Lo que el PEP remoto informó por última vez, en un latido, tener en vigor para cada ajuste gestionado (#1760): un documento JSON de { token, values: { setting: { value, source } } }, con source service, environment o default, junto con cuándo llegó. Se descarta todo ajuste que la tabla no nombre, todo valor que no sea del tipo de su ajuste y cualquier otro origen. Un latido sin él lo conserva, uno con null lo borra, y un registro lo descarta. Ausente en un PEP anterior a los ajustes, que la consola muestra como no informado."
   }
 }

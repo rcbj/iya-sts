@@ -122,6 +122,10 @@ import errorCodes = require('../common/error_codes');
 // depends on, so it can neither move a route nor close a cycle.
 import realms = require('../common/realms');
 import store = require('./xacml_store');
+// The managed settings' table and the reading of a PEP's report (#1760): a
+// library requiring only leaves, so it can neither move a route nor close
+// a cycle.
+import pepSettings = require('./xacml_pep_settings');
 
 // The directory functions `ldap/ldap_server.js` installs.
 interface PepDirectory {
@@ -165,6 +169,13 @@ interface PepRow {
   // reported it on a heartbeat (#1760), normalised by `signalsOf()`; null
   // when it never reported any (an older PEP, or one with no proxy).
   signals: PepSignals | null;
+  // The settings an administrator set for this PEP (#1760), as stored:
+  // the JSON text, or '' when none. Read and validated by
+  // `xacml_pep_settings.ts`.
+  settings: string;
+  // What the PEP last reported having in force, normalised by
+  // `xacml_pep_settings.ts`'s `inUseOf()`; null when it never reported.
+  settingsInUse: any;
   current: boolean;
   stale: boolean;
 }
@@ -687,6 +698,8 @@ class PepRegistry {
         lastNotify: pep.lastNotify || '',
         proxy: pep.proxy || '',
         signals: PepRegistry.signalsOf(pep.signals || ''),
+        settings: pep.settings || '',
+        settingsInUse: pepSettings.inUseOf(pep.settingsInUse || ''),
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
@@ -824,6 +837,12 @@ class PepRegistry {
     if (existing && existing.proxy) {
       attributes.xacmlPepProxy = existing.proxy;
     }
+    // THE MANAGED SETTINGS ARE KEPT TOO (#1760), for the same reason; what
+    // the PEP reported having in force is NOT, as the signal health is not:
+    // a registration is a new process, and its first heartbeat reports.
+    if (existing && existing.settings) {
+      attributes.xacmlPepSettings = existing.settings;
+    }
     // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
     // when its process starts, so the last snapshot describes receivers that
     // no longer exist. The next heartbeat reports the new ones.
@@ -900,8 +919,13 @@ class PepRegistry {
     const now = new Date().toISOString();
     const signals = said.signals === undefined ? existing.signals
       : PepRegistry.signalsOf(said.signals, now);
+    // THE SETTINGS IN FORCE AT THE PEP (#1760), the signal health's rule:
+    // absent keeps, null clears, an object replaces, held to its members.
+    const inUse = said.settings === undefined ? existing.settingsInUse
+      : pepSettings.inUseOf(said.settings, now);
     const attributes = this.attributesOf(
-      Object.assign({}, existing, { signals: signals }), {
+      Object.assign({}, existing, { signals: signals,
+                                    settingsInUse: inUse }), {
       xacmlPepLastSeen: now,
       xacmlPepNotifyUrl: said.notifyUrl === undefined
         ? existing.notifyUrl : String(said.notifyUrl || ''),
@@ -1027,6 +1051,36 @@ class PepRegistry {
     return written;
   }
 
+  /**
+   * Sets or clears a registered PEP's managed settings (#1760).
+   * @param name - the PEP's entry name
+   * @param text - the validated JSON document, or null to remove it
+   * @returns true when written
+   */
+  setSettings(name: string, text: string | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.setSettings(). name=' + name);
+    if (!this.haveDirectory()) {
+      log.debug('Leaving PepRegistry.setSettings(). No directory.');
+      return false;
+    }
+    const existing = this.read(name);
+    if (!existing) {
+      log.debug('Leaving PepRegistry.setSettings(). Not registered.');
+      return false;
+    }
+    const attributes: Record<string, unknown> =
+      this.attributesOf(Object.assign({}, existing, { settings: '' })) as
+        Record<string, unknown>;
+    if (text) {
+      attributes.xacmlPepSettings = text;
+    }
+    const written = directory.writePep(name, attributes);
+    log.debug('Leaving PepRegistry.setSettings(). ' +
+              (written ? 'Written.' : 'Refused.'));
+    return written;
+  }
+
   // -------------------------------------------------------------------------
   // THE WHOLE ENTRY AS ATTRIBUTES, with an override or two applied.
   //
@@ -1073,6 +1127,13 @@ class PepRegistry {
     if (row.signals) {
       attributes.xacmlPepSignals = JSON.stringify(row.signals);
     }
+    // Only when set, and only when reported (#1760).
+    if (row.settings) {
+      attributes.xacmlPepSettings = row.settings;
+    }
+    if (row.settingsInUse) {
+      attributes.xacmlPepSettingsInUse = JSON.stringify(row.settingsInUse);
+    }
     log.debug("Leaving PepRegistry.attributesOf().");
     return Object.assign(attributes, overrides || {});
   }
@@ -1107,7 +1168,13 @@ class PepRegistry {
   notifiable(): PepRow[] {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.notifiable().');
-    const rows = this.all().filter(function (row) {
+    // THE URL AN ADMINISTRATOR SET WINS (#1760): the row is answered with
+    // it, so the nudge dials the managed address and the PEP's registered
+    // one only where none is set.
+    const rows = this.all().map(function (row) {
+      return Object.assign({}, row,
+                           { notifyUrl: pepSettings.notifyUrlOf(row) });
+    }).filter(function (row) {
       return row.enabled && row.notifyUrl;
     });
     log.debug('Leaving PepRegistry.notifiable(). ' + rows.length +
@@ -1167,6 +1234,7 @@ export = {
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
   setProxy: slot.forward('setProxy'),
+  setSettings: slot.forward('setSettings'),
   remove: slot.forward('remove'),
   notifiable: slot.forward('notifiable')
 };

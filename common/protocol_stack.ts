@@ -1989,6 +1989,10 @@ class ProtocolStack {
                'PepTls');
     this.build('xacml/xacml_pep_proxy', require('../xacml/xacml_pep_proxy'),
                'PepProxy');
+    // A remote PEP's managed settings (#1760): a library, its table and the
+    // pull's body.
+    this.build('xacml/xacml_pep_settings',
+               require('../xacml/xacml_pep_settings'), 'PepSettings');
     this.build('xacml/xacml_admin', require('../xacml/xacml_admin'),
                'XacmlAdmin');
     this.build('xacml/xacml_role_pep', require('../xacml/xacml_role_pep'),

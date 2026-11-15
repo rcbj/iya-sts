@@ -4003,6 +4003,10 @@
     "en": "dbd48be2ca7bfe7b",
     "text": "Ang ipinapatupad ng xacml-pep container kapag nakatayo ito sa harap ng isang application (#1760): ang upstream na pinagpapasahan nito, ang nakaayos na mga route kasama ang mga mekanismong tinatanggap ng bawat isa at ang XACML resource at action na tinutumbasan ng bawat isa, ang application ng bawat route na nalutas mula sa registry, ang mga realm fact na ginagamit nito sa lokal na validation (issuer, JWKS, ang mga sign-in endpoint, ang mga SAML signing certificate, ang chain ng listener, ang mga client ng mga session route) at ang apat na validation URL sa ibaba, sa ilalim ng sarili nitong sync token; sumasagot ng 304 ang ?since=<token>. Ang PEP na walang configuration ay configured: false at tinatanggihan ng proxy nito ang lahat. Nangangailangan ng REMOTE_PEPS, tulad ng policy pull; walang nudge."
   },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "Ang mga setting na itinakda ng isang administrator para sa PEP na ito sa pahina nito sa console (#1760) — ang paglalarawan at resource nito, ang notify URL, ang bias, ang switch ng PIP, ang mga interval ng poll, heartbeat at back-off, ang timeout at hangganan ng body, ang log level, ang switch, identifier at forward timeout ng AuthZEN edge, at ang mga hangganan ng reverse proxy — sa ilalim ng sarili nitong sync token; ?since=<token> ay sumasagot ng 304. Ang itinakda lamang ang ipinapadala: ginagamit ng PEP ang environment nito para sa iba, at ang pinakamababang kailangan nito para kumonekta ay hindi kailanman narito. Nangangailangan ng REMOTE_PEPS, gaya ng pag-pull ng policy; walang siko."
+  },
   "stsmetadata.endpoints./xacml/pep/introspect.what": {
     "en": "b3f9e293393b2e8a",
     "text": "Ang sariling RFC 7662 na pagbasa ng authorization server sa isang OAuth 2.0 access token na hindi ma-verify ng proxy (isang opaque token, o key na wala sa JWKS), sa pamamagitan ng mutual TLS ng PEP sa halip na sariling client registration. Nangangailangan ng REMOTE_PEPS."

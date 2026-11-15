@@ -75,6 +75,12 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepSignals"})
   `signals`?: string;
 
+  @fromAttr(#{attr: "xacmlPepSettings"})
+  `settings`?: string;
+
+  @fromAttr(#{attr: "xacmlPepSettingsInUse"})
+  `settingsInUse`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }
