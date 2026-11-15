@@ -23,7 +23,9 @@ use super::common::{self, Inherit, DEFAULT_PROFILE};
 use super::locale::which;
 use crate::js::{self, Object};
 use crate::ports::{Container, GroupReference, Ports};
-use crate::selection::{self, Holders, Reference, SelectionSpec, DEFAULT_PRECEDENCE};
+use crate::selection::{
+    self, Holders, Reference, SelectionSpec, DEFAULT_PRECEDENCE,
+};
 use crate::tables::{self, Field};
 use crate::Answer;
 
@@ -56,14 +58,14 @@ pub struct PostLoginPolicy<'a> {
 
 impl<'a> PostLoginPolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> PostLoginPolicy<'a> {
-        // A hot path: built per sign-in.
         PostLoginPolicy { ports }
     }
 
     /// The rows.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per row of every profile.
         &FIELDS
     }
 
@@ -88,7 +90,8 @@ impl<'a> PostLoginPolicy<'a> {
             }
             _ => match js::digits(&text, 6) {
                 Some(n)
-                    if field.min.is_none_or(|m| n >= m) && field.max.is_none_or(|m| n <= m) =>
+                    if field.min.is_none_or(|m| n >= m)
+                        && field.max.is_none_or(|m| n <= m) =>
                 {
                     Ok(Value::from(n))
                 }
@@ -114,8 +117,12 @@ impl<'a> PostLoginPolicy<'a> {
     /// `read(name)`: a named profile the realm does not hold is `default`.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: Option<&str>) -> Value {
-        let asked = name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE).to_lowercase();
-        let profile = if asked != DEFAULT_PROFILE && !self.holds(realm, &asked) {
+        let asked = name
+            .filter(|n| !n.is_empty())
+            .unwrap_or(DEFAULT_PROFILE)
+            .to_lowercase();
+        let profile = if asked != DEFAULT_PROFILE && !self.holds(realm, &asked)
+        {
             DEFAULT_PROFILE.to_string()
         } else {
             asked
@@ -135,7 +142,11 @@ impl<'a> PostLoginPolicy<'a> {
             |f| common::shown(&f.dflt),
         );
         let empty = Object::new();
-        let at = found.entry.as_ref().map(|e| &e.attributes).unwrap_or(&empty);
+        let at = found
+            .entry
+            .as_ref()
+            .map(|e| &e.attributes)
+            .unwrap_or(&empty);
         let precedence = if profile == DEFAULT_PROFILE {
             Value::from(DEFAULT_PRECEDENCE)
         } else {
@@ -154,11 +165,20 @@ impl<'a> PostLoginPolicy<'a> {
                 ("name", Value::String(profile)),
                 ("precedence", precedence),
                 ("stored", Value::Bool(found.from == common::From::Realm)),
-                ("inherited", Value::Bool(found.from == common::From::DefaultRealm)),
+                (
+                    "inherited",
+                    Value::Bool(found.from == common::From::DefaultRealm),
+                ),
                 ("from", Value::String(found.from.as_str().into())),
                 (
                     "dn",
-                    Value::String(found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default()),
+                    Value::String(
+                        found
+                            .entry
+                            .as_ref()
+                            .map(|e| e.dn.clone())
+                            .unwrap_or_default(),
+                    ),
                 ),
                 ("description", Value::String(description)),
                 ("sources", Value::Object(sources)),
@@ -186,8 +206,13 @@ impl<'a> PostLoginPolicy<'a> {
     /// `personGroups(username)`: the person's groups with the policy each
     /// names.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn person_groups(&self, realm: &str, username: &str) -> Vec<GroupReference> {
-        if username.is_empty() || !self.ports.directory.installed(Container::PostLogin)
+    pub fn person_groups(
+        &self,
+        realm: &str,
+        username: &str,
+    ) -> Vec<GroupReference> {
+        if username.is_empty()
+            || !self.ports.directory.installed(Container::PostLogin)
         {
             return Vec::new();
         }
@@ -201,11 +226,18 @@ impl<'a> PostLoginPolicy<'a> {
     /// application names and those the person's groups name, the lowest
     /// precedence, else `default`. Nobody named: `default`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn profile_name_for(&self, realm: &str, username: &str, application: &str) -> String {
+    pub fn profile_name_for(
+        &self,
+        realm: &str,
+        username: &str,
+        application: &str,
+    ) -> String {
         if username.is_empty() {
             return DEFAULT_PROFILE.to_string();
         }
-        let Some(entries) = self.ports.directory.entries(realm, Container::PostLogin) else {
+        let Some(entries) =
+            self.ports.directory.entries(realm, Container::PostLogin)
+        else {
             return DEFAULT_PROFILE.to_string();
         };
         if selection::named(Some(&entries), &spec()).is_empty() {
@@ -213,7 +245,12 @@ impl<'a> PostLoginPolicy<'a> {
         }
         let held = self.person_groups(realm, username);
         let mut references = Vec::new();
-        let app = common::application_reference(&self.ports, realm, application, APP_REFERENCE);
+        let app = common::application_reference(
+            &self.ports,
+            realm,
+            application,
+            APP_REFERENCE,
+        );
         if !app.is_empty() {
             references.push(Reference::new("application", application, &app));
         }
@@ -235,7 +272,12 @@ impl<'a> PostLoginPolicy<'a> {
 
     /// `forPerson(username, groupsOf, application)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn for_person(&self, realm: &str, username: &str, application: &str) -> Value {
+    pub fn for_person(
+        &self,
+        realm: &str,
+        username: &str,
+        application: &str,
+    ) -> Value {
         let name = self.profile_name_for(realm, username, application);
         self.read(realm, Some(&name))
     }
@@ -244,7 +286,11 @@ impl<'a> PostLoginPolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn named_by(&self, realm: &str, name: &str) -> Holders {
         Holders {
-            applications: self.ports.applications.naming_policy(realm, APP_REFERENCE, name),
+            applications: self.ports.applications.naming_policy(
+                realm,
+                APP_REFERENCE,
+                name,
+            ),
             groups: self
                 .ports
                 .directory
@@ -256,7 +302,11 @@ impl<'a> PostLoginPolicy<'a> {
 
     fn check_name(name: &Value) -> Option<String> {
         let given = js::or_empty(Some(name));
-        let text = if given.is_empty() { DEFAULT_PROFILE.to_string() } else { given };
+        let text = if given.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            given
+        };
         let text = js::trim(&text);
         if text != DEFAULT_PROFILE && !selection::is_policy_name(text) {
             return Some(format!(
@@ -291,7 +341,12 @@ impl<'a> PostLoginPolicy<'a> {
 
     /// `save(name, given)`.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_AUTHN_0470, vec![refused]);
         }
@@ -314,13 +369,27 @@ impl<'a> PostLoginPolicy<'a> {
                 "ou=postLoginPolicies",
             );
         }
-        let mut attributes =
-            common::row_attributes(&["top", "stsPostLoginPolicy"], &FIELDS, &values, given);
+        let mut attributes = common::row_attributes(
+            &["top", "stsPostLoginPolicy"],
+            &FIELDS,
+            &values,
+            given,
+        );
         if named {
-            attributes.insert(PRECEDENCE.into(), Value::String(precedence.to_string()));
+            attributes.insert(
+                PRECEDENCE.into(),
+                Value::String(precedence.to_string()),
+            );
         }
-        let outcome = self.ports.directory.write(realm, Container::PostLogin, &which, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_AUTHN_0472, "profile") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::PostLogin,
+            &which,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_AUTHN_0472, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, Some(&which)))
@@ -338,13 +407,18 @@ impl<'a> PostLoginPolicy<'a> {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {
-            if let Some(held) =
-                selection::delete_problem("post-login policy", &which, &self.named_by(realm, &which))
-            {
+            if let Some(held) = selection::delete_problem(
+                "post-login policy",
+                &which,
+                &self.named_by(realm, &which),
+            ) {
                 return Answer::refused(codes::STS_AUTHN_0543, vec![held]);
             }
         }
-        let removed = self.ports.directory.delete(realm, Container::PostLogin, &which);
+        let removed =
+            self.ports
+                .directory
+                .delete(realm, Container::PostLogin, &which);
         common::removed(removed, self.read(realm, Some(&which)))
     }
 

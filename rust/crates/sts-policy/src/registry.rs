@@ -15,8 +15,8 @@ use sts_core::errors::{codes, ErrorCode};
 use crate::js::{self, Object};
 use crate::kinds::{
     attributes::AttributePolicy, authn::AuthnPolicy, locale::LocalePolicy,
-    passkey::PasskeyPolicy, password::PasswordPolicy, post_login::PostLoginPolicy,
-    service_account::ServiceAccountPolicy,
+    passkey::PasskeyPolicy, password::PasswordPolicy,
+    post_login::PostLoginPolicy, service_account::ServiceAccountPolicy,
 };
 use crate::ports::Ports;
 use crate::Answer;
@@ -220,10 +220,13 @@ impl Verb {
 #[tracing::instrument(level = "debug")]
 pub fn number_word(count: usize) -> String {
     const WORDS: [&str; 16] = [
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
-        "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
     ];
-    WORDS.get(count).map(|w| w.to_string()).unwrap_or_else(|| count.to_string())
+    WORDS
+        .get(count)
+        .map(|w| w.to_string())
+        .unwrap_or_else(|| count.to_string())
 }
 
 impl PolicyKind {
@@ -302,7 +305,12 @@ pub fn unknown_action(action: &str) -> Answer {
 /// the module's code; one the module did not mark is STS-ADMIN-0549 (a save
 /// or an act) or STS-ADMIN-0550 (a reset), as `policiesAction()` falls back.
 #[tracing::instrument(level = "debug", skip(ports, body))]
-pub fn answer(ports: Ports, realm: &str, action: &str, body: &Object) -> Answer {
+pub fn answer(
+    ports: Ports,
+    realm: &str,
+    action: &str,
+    body: &Object,
+) -> Answer {
     let Some((kind, verb)) = for_action(action) else {
         return unknown_action(action);
     };
@@ -314,25 +322,47 @@ pub fn answer(ports: Ports, realm: &str, action: &str, body: &Object) -> Answer 
     );
     let given = body.clone();
     let out = match (kind.id, verb) {
-        ("password", Verb::Save) => PasswordPolicy::new(ports).save(realm, &profile, Some(&given)),
+        ("password", Verb::Save) => {
+            PasswordPolicy::new(ports).save(realm, &profile, Some(&given))
+        }
         ("password", _) => PasswordPolicy::new(ports).reset(realm, &profile),
-        ("authn", Verb::Save) => AuthnPolicy::new(ports).save(realm, &profile, Some(&given)),
-        ("authn", Verb::Reset) => AuthnPolicy::new(ports).reset(realm, &profile),
-        ("authn", Verb::Act) => AuthnPolicy::new(ports).act(realm, action, Some(body)),
+        ("authn", Verb::Save) => {
+            AuthnPolicy::new(ports).save(realm, &profile, Some(&given))
+        }
+        ("authn", Verb::Reset) => {
+            AuthnPolicy::new(ports).reset(realm, &profile)
+        }
+        ("authn", Verb::Act) => {
+            AuthnPolicy::new(ports).act(realm, action, Some(body))
+        }
         ("serviceAccount", Verb::Save) => {
             ServiceAccountPolicy::new(ports).save(realm, &profile, Some(&given))
         }
-        ("serviceAccount", _) => ServiceAccountPolicy::new(ports).reset(realm, &profile),
-        ("passkey", Verb::Save) => PasskeyPolicy::new(ports).save(realm, &profile, Some(&given)),
-        ("passkey", Verb::Reset) => PasskeyPolicy::new(ports).reset(realm, &profile),
-        ("passkey", Verb::Act) => PasskeyPolicy::new(ports).act(realm, action, Some(body)),
-        ("locale", Verb::Save) => LocalePolicy::new(ports).save(realm, &profile, Some(&given)),
+        ("serviceAccount", _) => {
+            ServiceAccountPolicy::new(ports).reset(realm, &profile)
+        }
+        ("passkey", Verb::Save) => {
+            PasskeyPolicy::new(ports).save(realm, &profile, Some(&given))
+        }
+        ("passkey", Verb::Reset) => {
+            PasskeyPolicy::new(ports).reset(realm, &profile)
+        }
+        ("passkey", Verb::Act) => {
+            PasskeyPolicy::new(ports).act(realm, action, Some(body))
+        }
+        ("locale", Verb::Save) => {
+            LocalePolicy::new(ports).save(realm, &profile, Some(&given))
+        }
         ("locale", _) => LocalePolicy::new(ports).reset(realm, &profile),
         ("attributes", Verb::Save) => {
             AttributePolicy::new(ports).save(realm, &profile, Some(&given))
         }
-        ("attributes", Verb::Reset) => AttributePolicy::new(ports).reset(realm, &profile),
-        ("attributes", Verb::Act) => AttributePolicy::new(ports).act(realm, action, Some(body)),
+        ("attributes", Verb::Reset) => {
+            AttributePolicy::new(ports).reset(realm, &profile)
+        }
+        ("attributes", Verb::Act) => {
+            AttributePolicy::new(ports).act(realm, action, Some(body))
+        }
         ("postLogin", Verb::Save) => {
             PostLoginPolicy::new(ports).save(realm, &profile, Some(&given))
         }
@@ -344,7 +374,10 @@ pub fn answer(ports: Ports, realm: &str, action: &str, body: &Object) -> Answer 
         } else {
             codes::STS_ADMIN_0549
         };
-        return Answer { value: out.value, code: Some(fallback) };
+        return Answer {
+            value: out.value,
+            code: Some(fallback),
+        };
     }
     out
 }

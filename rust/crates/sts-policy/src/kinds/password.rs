@@ -22,7 +22,8 @@ use regex::Regex;
 use serde_json::Value;
 use sts_core::errors::codes;
 use sts_crypto::secrets::{
-    scrypt_owasp_min_p, ARGON2_LIMITS, PASSWORD_HASH_ALGORITHMS, SCRYPT_PASSWORD_LIMITS,
+    scrypt_owasp_min_p, ARGON2_LIMITS, PASSWORD_HASH_ALGORITHMS,
+    SCRYPT_PASSWORD_LIMITS,
 };
 use unicode_normalization::UnicodeNormalization;
 
@@ -69,7 +70,10 @@ static FIELDS: LazyLock<Vec<Field>> = LazyLock::new(|| {
                 f.max = Some(l.max as i64);
             }
             if f.key == "hashAlgorithm" {
-                f.values = PASSWORD_HASH_ALGORITHMS.iter().map(|s| s.to_string()).collect();
+                f.values = PASSWORD_HASH_ALGORITHMS
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
             }
         },
         None,
@@ -110,14 +114,14 @@ fn min_p(values: &Object) -> f64 {
 
 impl<'a> PasswordPolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> PasswordPolicy<'a> {
-        // A hot path: built per question the API layer asks.
         PasswordPolicy { ports }
     }
 
     /// The rows (`FIELDS`).
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per row of every profile.
         &FIELDS
     }
 
@@ -203,15 +207,22 @@ impl<'a> PasswordPolicy<'a> {
     }
 
     fn entry(&self, realm: &str, name: &str) -> Found {
-        common::entry_for(&self.ports, realm, Container::Password, name, Inherit::Never)
+        common::entry_for(
+            &self.ports,
+            realm,
+            Container::Password,
+            name,
+            Inherit::Never,
+        )
     }
 
     /// `read(name)`: the profile in force — the stored entry field by
     /// field, the built-in default for anything absent or unreadable.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: Option<&str>) -> Value {
-        let profile = js::trim(name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE))
-            .to_lowercase();
+        let profile =
+            js::trim(name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE))
+                .to_lowercase();
         let found = self.entry(realm, &profile);
         let (mut values, sources, mut problems) = common::read_rows(
             &FIELDS,
@@ -229,17 +240,28 @@ impl<'a> PasswordPolicy<'a> {
             ("stored", Value::Bool(found.entry.is_some())),
             (
                 "dn",
-                Value::String(found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default()),
+                Value::String(
+                    found
+                        .entry
+                        .as_ref()
+                        .map(|e| e.dn.clone())
+                        .unwrap_or_default(),
+                ),
             ),
             ("description", Value::String(common::description_in(&found))),
             ("sources", Value::Object(sources)),
             ("problems", js::strings(&problems)),
-            ("enforced", Value::Bool(self.ports.env.verifies_credentials(realm))),
+            (
+                "enforced",
+                Value::Bool(self.ports.env.verifies_credentials(realm)),
+            ),
         ];
         let mut out = common::profile(std::mem::take(&mut header), values);
         if profile != DEFAULT_PROFILE {
             let p = match &found.entry {
-                Some(e) => selection::precedence_of(&e.attributes, &spec()).json(),
+                Some(e) => {
+                    selection::precedence_of(&e.attributes, &spec()).json()
+                }
                 None => Value::from(selection::DEFAULT_PRECEDENCE),
             };
             if let Value::Object(o) = &mut out {
@@ -254,8 +276,15 @@ impl<'a> PasswordPolicy<'a> {
     /// precedence, else `default`. A dangling reference is dropped
     /// (STS-AUTHN-0539).
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn selection_for(&self, realm: &str, username: &str, application: &str) -> String {
-        let Some(entries) = self.ports.directory.entries(realm, Container::Password) else {
+    pub fn selection_for(
+        &self,
+        realm: &str,
+        username: &str,
+        application: &str,
+    ) -> String {
+        let Some(entries) =
+            self.ports.directory.entries(realm, Container::Password)
+        else {
             return DEFAULT_PROFILE.to_string();
         };
         if selection::named(Some(&entries), &spec()).is_empty() {
@@ -273,7 +302,12 @@ impl<'a> PasswordPolicy<'a> {
         let mut references = vec![Reference::new(
             "application",
             application,
-            &common::application_reference(&self.ports, realm, application, APP_REFERENCE),
+            &common::application_reference(
+                &self.ports,
+                realm,
+                application,
+                APP_REFERENCE,
+            ),
         )];
         references.extend(selection::group_references(&groups));
         let ranked = selection::rank(Some(&entries), &spec(), &references);
@@ -294,7 +328,12 @@ impl<'a> PasswordPolicy<'a> {
 
     /// `profileFor(username, application)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn profile_for(&self, realm: &str, username: &str, application: &str) -> Value {
+    pub fn profile_for(
+        &self,
+        realm: &str,
+        username: &str,
+        application: &str,
+    ) -> Value {
         let name = self.selection_for(realm, username, application);
         self.read(realm, Some(&name))
     }
@@ -304,7 +343,11 @@ impl<'a> PasswordPolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn named_by(&self, realm: &str, name: &str) -> Holders {
         Holders {
-            applications: self.ports.applications.naming_policy(realm, APP_REFERENCE, name),
+            applications: self.ports.applications.naming_policy(
+                realm,
+                APP_REFERENCE,
+                name,
+            ),
             groups: self
                 .ports
                 .directory
@@ -319,7 +362,9 @@ impl<'a> PasswordPolicy<'a> {
     pub fn list(&self, realm: &str) -> Vec<Value> {
         let entries = self.ports.directory.entries(realm, Container::Password);
         let mut named = selection::named(entries.as_deref(), &spec());
-        named.sort_by(|a, b| selection::compare((&a.name, a.precedence), (&b.name, b.precedence)));
+        named.sort_by(|a, b| {
+            selection::compare((&a.name, a.precedence), (&b.name, b.precedence))
+        });
         let mut rows = vec![self.read(realm, Some(DEFAULT_PROFILE))];
         rows.extend(named.iter().map(|n| self.read(realm, Some(&n.name))));
         rows
@@ -328,7 +373,9 @@ impl<'a> PasswordPolicy<'a> {
     fn check_name(name: &Value) -> Option<String> {
         let given = match name {
             Value::Null => Value::String(DEFAULT_PROFILE.into()),
-            Value::String(s) if s.is_empty() => Value::String(DEFAULT_PROFILE.into()),
+            Value::String(s) if s.is_empty() => {
+                Value::String(DEFAULT_PROFILE.into())
+            }
             other => other.clone(),
         };
         selection::name_problem(&given, NOUN, true)
@@ -336,7 +383,11 @@ impl<'a> PasswordPolicy<'a> {
 
     fn which(name: &Value) -> String {
         let text = js::or_empty(Some(name));
-        let text = if text.is_empty() { DEFAULT_PROFILE.to_string() } else { text };
+        let text = if text.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            text
+        };
         js::trim(&text).to_lowercase()
     }
 
@@ -344,7 +395,12 @@ impl<'a> PasswordPolicy<'a> {
     /// console checkbox and an optional row, which keeps the value in force
     /// for the profile being saved (#847).
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn validate(&self, realm: &str, given: Option<&Object>, which: &str) -> (Object, Vec<String>) {
+    pub fn validate(
+        &self,
+        realm: &str,
+        given: Option<&Object>,
+        which: &str,
+    ) -> (Object, Vec<String>) {
         let empty = Object::new();
         let body = given.unwrap_or(&empty);
         let mut values = Object::new();
@@ -353,7 +409,8 @@ impl<'a> PasswordPolicy<'a> {
         for f in FIELDS.iter() {
             let Some(raw) = common::sent(body, f) else {
                 if f.optional {
-                    let profile = in_force.get_or_insert_with(|| self.read(realm, Some(which)));
+                    let profile = in_force
+                        .get_or_insert_with(|| self.read(realm, Some(which)));
                     if let Some(v) = profile.get(&f.key) {
                         values.insert(f.key.clone(), v.clone());
                     }
@@ -378,13 +435,19 @@ impl<'a> PasswordPolicy<'a> {
     /// `save(name, given)`: replaces a profile's entry with every row,
     /// `description` and, for a named policy, `precedence`.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_AUTHN_0107, vec![refused]);
         }
         let which = Self::which(name);
         let (values, mut problems) = self.validate(realm, given, &which);
-        let ranked = (which != DEFAULT_PROFILE).then(|| selection::check_precedence(given, &spec()));
+        let ranked = (which != DEFAULT_PROFILE)
+            .then(|| selection::check_precedence(given, &spec()));
         if let Some((_, p)) = &ranked {
             problems.extend(p.iter().cloned());
         }
@@ -401,11 +464,19 @@ impl<'a> PasswordPolicy<'a> {
         let mut attributes = Object::new();
         attributes.insert(
             "objectClass".into(),
-            Value::Array(vec!["top".into(), "pwdPolicy".into(), "stsPasswordPolicy".into()]),
+            Value::Array(vec![
+                "top".into(),
+                "pwdPolicy".into(),
+                "stsPasswordPolicy".into(),
+            ]),
         );
-        attributes.insert("pwdAttribute".into(), Value::String("userPassword".into()));
+        attributes.insert(
+            "pwdAttribute".into(),
+            Value::String("userPassword".into()),
+        );
         let description = common::description_of(given);
-        attributes.insert("description".into(), Value::String(description.clone()));
+        attributes
+            .insert("description".into(), Value::String(description.clone()));
         for f in FIELDS.iter() {
             let v = values.get(&f.key).cloned().unwrap_or(Value::Null);
             attributes.insert(f.attribute.clone(), common::written(f, &v));
@@ -416,8 +487,15 @@ impl<'a> PasswordPolicy<'a> {
         if let Some((p, _)) = ranked {
             attributes.insert(PRECEDENCE.into(), Value::String(p.to_string()));
         }
-        let outcome = self.ports.directory.write(realm, Container::Password, &which, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_AUTHN_0110, "profile") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::Password,
+            &which,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_AUTHN_0110, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, Some(&which)))
@@ -436,13 +514,18 @@ impl<'a> PasswordPolicy<'a> {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {
-            if let Some(held) =
-                selection::delete_problem(NOUN, &which, &self.named_by(realm, &which))
-            {
+            if let Some(held) = selection::delete_problem(
+                NOUN,
+                &which,
+                &self.named_by(realm, &which),
+            ) {
                 return Answer::refused(codes::STS_AUTHN_0540, vec![held]);
             }
         }
-        let removed = self.ports.directory.delete(realm, Container::Password, &which);
+        let removed =
+            self.ports
+                .directory
+                .delete(realm, Container::Password, &which);
         let _ = From::Realm;
         common::removed(removed, self.read(realm, Some(DEFAULT_PROFILE)))
     }
@@ -451,18 +534,27 @@ impl<'a> PasswordPolicy<'a> {
     // domain labels, and `security.passwordContextWords` (#1505).
     fn context_words(&self, realm: &str) -> Vec<String> {
         let facts = self.ports.env.realm(realm);
-        let listed = self.ports.env.setting(realm, "security.passwordContextWords");
-        let mut out: Vec<String> = SERVICE_WORDS.iter().map(|s| s.to_string()).collect();
+        let listed = self
+            .ports
+            .env
+            .setting(realm, "security.passwordContextWords");
+        let mut out: Vec<String> =
+            SERVICE_WORDS.iter().map(|s| s.to_string()).collect();
         match &listed {
             Value::Array(items) => out.extend(items.iter().map(js::text)),
-            other => out.extend(js::or_empty(Some(other)).split(',').map(String::from)),
+            other => out
+                .extend(js::or_empty(Some(other)).split(',').map(String::from)),
         }
         if !facts.id.is_empty() && facts.id != "default" {
             out.push(facts.id.clone());
             out.push(facts.name.clone());
         }
         let labels: Vec<&str> = facts.domain.split('.').collect();
-        out.extend(labels[..labels.len().saturating_sub(1)].iter().map(|s| s.to_string()));
+        out.extend(
+            labels[..labels.len().saturating_sub(1)]
+                .iter()
+                .map(|s| s.to_string()),
+        );
         out.into_iter()
             .map(|s| js::trim(&s).to_string())
             .filter(|s| !s.is_empty())
@@ -496,7 +588,8 @@ impl<'a> PasswordPolicy<'a> {
             .into_iter()
             .find(|w| {
                 let key = Self::squash(w, 'i');
-                js::length(&key) >= MIN_CONTEXT_WORD && forms.iter().any(|f| f.contains(&key))
+                js::length(&key) >= MIN_CONTEXT_WORD
+                    && forms.iter().any(|f| f.contains(&key))
             })
             .unwrap_or_default()
     }
@@ -504,7 +597,12 @@ impl<'a> PasswordPolicy<'a> {
     /// `problemsWith(password, profile)`: every rule the password breaks,
     /// whatever the mode; the history rule is the caller's.
     #[tracing::instrument(level = "debug", skip(self, password, profile))]
-    pub fn problems_with(&self, realm: &str, password: &str, profile: Option<&Value>) -> Vec<String> {
+    pub fn problems_with(
+        &self,
+        realm: &str,
+        password: &str,
+        profile: Option<&Value>,
+    ) -> Vec<String> {
         let read;
         let rules = match profile {
             Some(p) => p,
@@ -543,7 +641,11 @@ impl<'a> PasswordPolicy<'a> {
     /// left out — and refuses (STS-AUTHN-0111) after 1000 draws, which only
     /// a hand-edited profile can cause.
     #[tracing::instrument(level = "debug", skip(self, profile))]
-    pub fn generate(&self, realm: &str, profile: Option<&Value>) -> Result<String, Answer> {
+    pub fn generate(
+        &self,
+        realm: &str,
+        profile: Option<&Value>,
+    ) -> Result<String, Answer> {
         let read;
         let rules = match profile {
             Some(p) => p,
@@ -556,15 +658,27 @@ impl<'a> PasswordPolicy<'a> {
         let length = n("generatedLength").max(n("minLength")).max(0.0) as usize;
         let pools: Vec<String> = GENERATOR_POOLS
             .iter()
-            .map(|p| p.chars().filter(|c| !GENERATOR_EXCLUDES.contains(*c)).collect())
+            .map(|p| {
+                p.chars()
+                    .filter(|c| !GENERATOR_EXCLUDES.contains(*c))
+                    .collect()
+            })
             .collect();
         let alphabet: String = pools.concat();
         for _ in 0..MAX_DRAWS {
-            let Ok(candidate) = sts_crypto::random::random_string(&alphabet, length) else {
+            let Ok(candidate) =
+                sts_crypto::random::random_string(&alphabet, length)
+            else {
                 break;
             };
-            let strict = pools.iter().all(|p| candidate.chars().any(|c| p.contains(c)));
-            if strict && self.problems_with(realm, &candidate, Some(rules)).is_empty() {
+            let strict = pools
+                .iter()
+                .all(|p| candidate.chars().any(|c| p.contains(c)));
+            if strict
+                && self
+                    .problems_with(realm, &candidate, Some(rules))
+                    .is_empty()
+            {
                 return Ok(candidate);
             }
         }

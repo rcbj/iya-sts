@@ -48,14 +48,14 @@ pub struct Answer {
 
 impl Answer {
     /// An unmarked answer.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn of(value: Value) -> Answer {
-        // A hot path: every answer is made here.
         Answer { value, code: None }
     }
 
     /// `errorCodes.mark({ ok: false, errors }, code)`.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn refused(code: ErrorCode, errors: Vec<String>) -> Answer {
-        // A hot path: every refusal is made here.
         Answer {
             value: js::object(vec![
                 ("ok", Value::Bool(false)),
@@ -66,8 +66,8 @@ impl Answer {
     }
 
     /// Whether the answer's `ok` is false.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn is_refusal(&self) -> bool {
-        // A hot path: asked of every answer a caller passes on.
         self.value.get("ok") == Some(&Value::Bool(false))
     }
 }

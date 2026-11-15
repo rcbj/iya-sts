@@ -44,8 +44,8 @@ static NAME_PATTERN: LazyLock<Option<Regex>> =
 
 /// Whether a (folded) name is one a named policy's cn may be:
 /// `NAME_PATTERN`.
+/// A hot path, so it carries no span (the logging rule's exemption).
 pub fn is_policy_name(text: &str) -> bool {
-    // A hot path: asked of every name a save or a reset is given.
     NAME_PATTERN.as_ref().is_some_and(|r| r.is_match(text))
 }
 
@@ -61,8 +61,8 @@ pub struct SelectionSpec {
 
 impl SelectionSpec {
     /// A kind's spec at the shared default precedence.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(attribute: &str) -> SelectionSpec {
-        // A hot path: built once per question a kind asks.
         SelectionSpec {
             precedence_attribute: attribute.to_string(),
             default_precedence: Some(DEFAULT_PRECEDENCE),
@@ -84,8 +84,8 @@ pub struct Precedence(pub f64);
 
 impl Precedence {
     /// The JSON number Node writes for it.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn json(self) -> Value {
-        // A hot path: one per ranked policy.
         if self.0.fract() == 0.0 && self.0.abs() < 9.0e15 {
             Value::from(self.0 as i64)
         } else {
@@ -108,8 +108,8 @@ pub struct Reference {
 
 impl Reference {
     /// A reference whose value is text.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(by: &str, holder: &str, value: &str) -> Reference {
-        // A hot path: one per reference of every sign-in.
         Reference {
             by: by.to_string(),
             holder: holder.to_string(),
@@ -148,6 +148,7 @@ pub struct Ranked {
 impl Ranked {
     /// The answer as Node's object.
     #[tracing::instrument(level = "debug", skip(self))]
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn json(&self) -> Value {
         js::object(vec![
             ("name", Value::String(self.name.clone())),
@@ -175,14 +176,16 @@ impl Ranked {
 
 /// `Number(text)`: JavaScript's reading of a string as a number — trimmed,
 /// '' as 0, decimal, `0x`/`0o`/`0b` integers and `Infinity`; NaN otherwise.
+/// A hot path, so it carries no span (the logging rule's exemption).
 pub fn js_number(text: &str) -> f64 {
-    // A hot path: one per stored precedence read.
     let t = js::trim(text);
     if t.is_empty() {
         return 0.0;
     }
     let radix = |p: &str, r: u32| -> f64 {
-        u64::from_str_radix(p, r).map(|n| n as f64).unwrap_or(f64::NAN)
+        u64::from_str_radix(p, r)
+            .map(|n| n as f64)
+            .unwrap_or(f64::NAN)
     };
     let lower = t.to_ascii_lowercase();
     if let Some(p) = lower.strip_prefix("0x") {
@@ -199,7 +202,9 @@ pub fn js_number(text: &str) -> f64 {
         "-Infinity" => return f64::NEG_INFINITY,
         _ => {}
     }
-    let ok = t.bytes().all(|b| b.is_ascii_digit() || b"+-.eE".contains(&b))
+    let ok = t
+        .bytes()
+        .all(|b| b.is_ascii_digit() || b"+-.eE".contains(&b))
         && t.bytes().any(|b| b.is_ascii_digit());
     if !ok {
         return f64::NAN;
@@ -209,6 +214,7 @@ pub fn js_number(text: &str) -> f64 {
 
 /// `PolicySelection.precedenceOf()`: a stored precedence, or the kind's
 /// default where it is not a number from 1 to 1000.
+/// A hot path, so it carries no span (the logging rule's exemption).
 pub fn precedence_of(attributes: &Object, spec: &SelectionSpec) -> Precedence {
     // A hot path: Node's own carries no Entering/Leaving pair (`rank()`
     // asks it per named policy on every sign-in).
@@ -226,7 +232,10 @@ pub fn precedence_of(attributes: &Object, spec: &SelectionSpec) -> Precedence {
 /// `PolicySelection.named()`: a realm's named policies — every entry but
 /// `default` — with their precedence, unordered.
 #[tracing::instrument(level = "debug", skip(entries))]
-pub fn named(entries: Option<&[PolicyEntry]>, spec: &SelectionSpec) -> Vec<NamedPolicy> {
+pub fn named(
+    entries: Option<&[PolicyEntry]>,
+    spec: &SelectionSpec,
+) -> Vec<NamedPolicy> {
     entries
         .unwrap_or(&[])
         .iter()
@@ -243,11 +252,11 @@ pub fn named(entries: Option<&[PolicyEntry]>, spec: &SelectionSpec) -> Vec<Named
 }
 
 /// `PolicySelection.compare()`: the lowest precedence first, ties by name.
+/// A hot path, so it carries no span (the logging rule's exemption).
 pub fn compare(
     a: (&str, Precedence),
     b: (&str, Precedence),
 ) -> std::cmp::Ordering {
-    // A hot path: the sort's comparator.
     a.1 .0
         .partial_cmp(&b.1 .0)
         .unwrap_or(std::cmp::Ordering::Equal)
@@ -273,7 +282,9 @@ pub fn rank(
         // `byName[wanted]`: the LAST entry of a name wins, as an object
         // assigned in order keeps the last.
         match held.iter().rev().find(|p| p.name == wanted) {
-            Some(p) => candidates.push((p.clone(), r.by.clone(), r.holder.clone())),
+            Some(p) => {
+                candidates.push((p.clone(), r.by.clone(), r.holder.clone()))
+            }
             None => missing.push(Missing {
                 by: r.by.clone(),
                 holder: r.holder.clone(),
@@ -281,7 +292,9 @@ pub fn rank(
             }),
         }
     }
-    candidates.sort_by(|a, b| compare((&a.0.name, a.0.precedence), (&b.0.name, b.0.precedence)));
+    candidates.sort_by(|a, b| {
+        compare((&a.0.name, a.0.precedence), (&b.0.name, b.0.precedence))
+    });
     match candidates.into_iter().next() {
         Some((p, by, holder)) => Ranked {
             name: p.name,
@@ -309,7 +322,11 @@ pub fn group_references(groups: &[GroupReference]) -> Vec<Reference> {
         .filter(|g| !js::fold_str(&g.value).is_empty())
         .map(|g| Reference {
             by: "group".to_string(),
-            holder: if g.cn.is_empty() { g.dn.clone() } else { g.cn.clone() },
+            holder: if g.cn.is_empty() {
+                g.dn.clone()
+            } else {
+                g.cn.clone()
+            },
             value: Value::String(g.value.clone()),
         })
         .collect()
@@ -343,7 +360,11 @@ pub fn for_reference(
     );
     let named = js::fold(value);
     ForReference {
-        named: if named.is_empty() { DEFAULT_NAME.to_string() } else { named },
+        named: if named.is_empty() {
+            DEFAULT_NAME.to_string()
+        } else {
+            named
+        },
         missing: !ranked.missing.is_empty(),
         applies: ranked.name,
         precedence: ranked.precedence,
@@ -353,7 +374,11 @@ pub fn for_reference(
 /// `PolicySelection.nameProblem()`: `default` is the realm's own, and a cn
 /// is lower-case letters, digits and hyphens, at most 64.
 #[tracing::instrument(level = "debug")]
-pub fn name_problem(name: &Value, noun: &str, allow_default: bool) -> Option<String> {
+pub fn name_problem(
+    name: &Value,
+    noun: &str,
+    allow_default: bool,
+) -> Option<String> {
     let text = js::fold(name);
     if text == DEFAULT_NAME {
         return if allow_default {
@@ -377,7 +402,10 @@ pub fn name_problem(name: &Value, noun: &str, allow_default: bool) -> Option<Str
 /// `PolicySelection.checkPrecedence()`: a whole number from 1 to 1000, the
 /// kind's default when omitted.
 #[tracing::instrument(level = "debug", skip(given))]
-pub fn check_precedence(given: Option<&Object>, spec: &SelectionSpec) -> (i64, Vec<String>) {
+pub fn check_precedence(
+    given: Option<&Object>,
+    spec: &SelectionSpec,
+) -> (i64, Vec<String>) {
     let fallback = spec.fallback();
     let raw = given.and_then(|b| b.get("precedence"));
     let shown = match raw {
@@ -402,7 +430,11 @@ pub fn check_precedence(given: Option<&Object>, spec: &SelectionSpec) -> (i64, V
 /// `PolicySelection.referenceProblem()`: the write-time check every
 /// holder's door makes; '' clears and is always allowed.
 #[tracing::instrument(level = "debug")]
-pub fn reference_problem(value: &Value, choices: Option<&[String]>, attribute: &str) -> Option<String> {
+pub fn reference_problem(
+    value: &Value,
+    choices: Option<&[String]>,
+    attribute: &str,
+) -> Option<String> {
     let text = js::fold(value);
     let list = choices.unwrap_or(&[]);
     if text.is_empty() || list.iter().any(|c| js::fold_str(c) == text) {
@@ -427,6 +459,7 @@ pub struct Holders {
 impl Holders {
     /// As Node's object.
     #[tracing::instrument(level = "debug", skip(self))]
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn json(&self) -> Value {
         js::object(vec![
             ("applications", js::strings(&self.applications)),
@@ -439,9 +472,14 @@ impl Holders {
 /// `PolicySelection.deleteProblem()`: the refusal of a named policy's
 /// delete while something still names it.
 #[tracing::instrument(level = "debug")]
-pub fn delete_problem(noun: &str, name: &str, holders: &Holders) -> Option<String> {
+pub fn delete_problem(
+    noun: &str,
+    name: &str,
+    holders: &Holders,
+) -> Option<String> {
     let shown = |list: &[String]| -> String {
-        let mut s = list.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
+        let mut s =
+            list.iter().take(10).cloned().collect::<Vec<_>>().join(", ");
         if list.len() > 10 {
             s.push_str(&format!(" and {} more", list.len() - 10));
         }
@@ -468,7 +506,8 @@ pub fn delete_problem(noun: &str, name: &str, holders: &Holders) -> Option<Strin
 
 /// Who may hold a declared reference (#1240): handed the holder's
 /// attributes and the value written; a coded refusal or `None`.
-pub type HolderRefusal = Box<dyn Fn(&Object, &str) -> Option<(ErrorCode, String)> + Send + Sync>;
+pub type HolderRefusal =
+    Box<dyn Fn(&Object, &str) -> Option<(ErrorCode, String)> + Send + Sync>;
 
 /// Answers a declared reference's choices when asked.
 pub type Choices = Box<dyn Fn() -> Vec<String> + Send + Sync>;
@@ -481,7 +520,8 @@ struct Declared {
     holder_refusal: Option<HolderRefusal>,
 }
 
-static DECLARED: LazyLock<Mutex<Vec<Declared>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+static DECLARED: LazyLock<Mutex<Vec<Declared>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// A reference a kind declared, with its choices now.
 #[derive(Debug, Clone, PartialEq)]
@@ -530,23 +570,32 @@ pub fn declare_reference(
 pub fn withdraw_reference(holder: &str, attribute: &str) {
     let key = attribute.to_lowercase();
     if let Ok(mut all) = DECLARED.lock() {
-        all.retain(|d| !(d.holder == holder && d.attribute.to_lowercase() == key));
+        all.retain(|d| {
+            !(d.holder == holder && d.attribute.to_lowercase() == key)
+        });
     }
 }
 
 /// `PolicySelection.referenceOf()`: `default` first, then the realm's
 /// named policies, each once.
 #[tracing::instrument(level = "debug")]
-pub fn reference_of(holder: &str, attribute: &str) -> Option<DeclaredReference> {
+pub fn reference_of(
+    holder: &str,
+    attribute: &str,
+) -> Option<DeclaredReference> {
     let key = attribute.to_lowercase();
     let all = DECLARED.lock().ok()?;
     let found = all
         .iter()
         .find(|d| d.holder == holder && d.attribute.to_lowercase() == key)?;
-    let names: Vec<String> = (found.choices)().iter().map(|c| js::fold_str(c)).collect();
+    let names: Vec<String> =
+        (found.choices)().iter().map(|c| js::fold_str(c)).collect();
     let mut choices = vec![DEFAULT_NAME.to_string()];
     for (n, one) in names.iter().enumerate() {
-        if !one.is_empty() && one != DEFAULT_NAME && names.iter().position(|x| x == one) == Some(n) {
+        if !one.is_empty()
+            && one != DEFAULT_NAME
+            && names.iter().position(|x| x == one) == Some(n)
+        {
             choices.push(one.clone());
         }
     }
@@ -571,7 +620,10 @@ pub fn holder_refusal(
     let found = all
         .iter()
         .find(|d| d.holder == holder && d.attribute.to_lowercase() == key)?;
-    found.holder_refusal.as_ref().and_then(|f| f(attributes, value))
+    found
+        .holder_refusal
+        .as_ref()
+        .and_then(|f| f(attributes, value))
 }
 
 /// `PolicySelection.referencesOn()`: every reference declared on a holder,

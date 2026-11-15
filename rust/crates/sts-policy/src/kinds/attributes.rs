@@ -37,7 +37,8 @@ const PRECEDENCE: &str = "stsAttributePolicyPrecedence";
 /// Required of every person whatever the profile says.
 pub const ALWAYS_REQUIRED: [&str; 3] = ["uid", "cn", "sn"];
 /// The syntaxes a custom attribute's values are checked against.
-pub const SYNTAXES: [&str; 7] = ["string", "integer", "boolean", "date", "email", "uri", "dn"];
+pub const SYNTAXES: [&str; 7] =
+    ["string", "integer", "boolean", "date", "email", "uri", "dn"];
 /// The most custom attributes one realm defines.
 pub const MAX_DEFINITIONS: usize = 100;
 
@@ -51,7 +52,8 @@ fn descr(name: &str) -> bool {
 }
 
 fn control(text: &str) -> bool {
-    text.chars().any(|c| matches!(c, '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}'))
+    text.chars()
+        .any(|c| matches!(c, '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}'))
 }
 
 fn spec() -> SelectionSpec {
@@ -102,9 +104,16 @@ fn list_of(raw: &Value) -> Vec<String> {
     let items: Vec<String> = match raw {
         Value::Array(a) => a.iter().map(js::text).collect(),
         Value::Null => Vec::new(),
-        other => js::text(other).split([',', '\n']).map(String::from).collect(),
+        other => js::text(other)
+            .split([',', '\n'])
+            .map(String::from)
+            .collect(),
     };
-    items.into_iter().map(|s| js::trim(&s).to_string()).filter(|s| !s.is_empty()).collect()
+    items
+        .into_iter()
+        .map(|s| js::trim(&s).to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 // `parseFlag()`: absent is None, a value refused is Some(None).
@@ -144,14 +153,14 @@ pub struct AttributePolicy<'a> {
 
 impl<'a> AttributePolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> AttributePolicy<'a> {
-        // A hot path: built per person written.
         AttributePolicy { ports }
     }
 
     /// The row.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per profile.
         &FIELDS
     }
 
@@ -166,8 +175,10 @@ impl<'a> AttributePolicy<'a> {
     // `offeredNames()`: lower-cased name to its spelling; None where the
     // person editor could not be asked.
     fn offered_names(&self, realm: &str) -> Option<Vec<(String, String)>> {
-        let mut out: Vec<(String, String)> =
-            ALWAYS_REQUIRED.iter().map(|n| (n.to_string(), n.to_string())).collect();
+        let mut out: Vec<(String, String)> = ALWAYS_REQUIRED
+            .iter()
+            .map(|n| (n.to_string(), n.to_string()))
+            .collect();
         let rows = self.ports.env.offered_attributes(realm).ok()?;
         for r in rows {
             let key = r.name.to_lowercase();
@@ -181,7 +192,10 @@ impl<'a> AttributePolicy<'a> {
 
     fn lookup(names: &[(String, String)], one: &str) -> Option<String> {
         let key = one.to_lowercase();
-        names.iter().find(|(k, _)| *k == key).map(|(_, v)| v.clone())
+        names
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
     }
 
     /// `enforced()`: in product mode only.
@@ -195,15 +209,27 @@ impl<'a> AttributePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: &Value) -> Value {
         let folded = js::fold(name);
-        let asked = if folded.is_empty() { DEFAULT_PROFILE.to_string() } else { folded };
+        let asked = if folded.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            folded
+        };
         let own = if asked != DEFAULT_PROFILE {
-            self.entries(realm).and_then(|list| common::entry_in(&list, &asked))
+            self.entries(realm)
+                .and_then(|list| common::entry_in(&list, &asked))
         } else {
             None
         };
-        let profile_name = if own.is_some() { asked } else { DEFAULT_PROFILE.to_string() };
+        let profile_name = if own.is_some() {
+            asked
+        } else {
+            DEFAULT_PROFILE.to_string()
+        };
         let found = match own {
-            Some(e) => Found { entry: Some(e), from: From::Realm },
+            Some(e) => Found {
+                entry: Some(e),
+                from: From::Realm,
+            },
             None => common::entry_for(
                 &self.ports,
                 realm,
@@ -213,7 +239,11 @@ impl<'a> AttributePolicy<'a> {
             ),
         };
         let empty = Object::new();
-        let at = found.entry.as_ref().map(|e| &e.attributes).unwrap_or(&empty);
+        let at = found
+            .entry
+            .as_ref()
+            .map(|e| &e.attributes)
+            .unwrap_or(&empty);
         let offered = self.offered_names(realm);
         let mut problems = Vec::new();
         let listed: Vec<String> = if found.entry.is_some() {
@@ -224,7 +254,11 @@ impl<'a> AttributePolicy<'a> {
         } else {
             list_of(FIELDS.first().map(|f| &f.dflt).unwrap_or(&Value::Null))
         };
-        let dn = found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default();
+        let dn = found
+            .entry
+            .as_ref()
+            .map(|e| e.dn.clone())
+            .unwrap_or_default();
         let mut kept: Vec<String> = Vec::new();
         for one in &listed {
             let canonical = match &offered {
@@ -245,9 +279,13 @@ impl<'a> AttributePolicy<'a> {
                 }
             }
         }
-        let mut required: Vec<String> = ALWAYS_REQUIRED.iter().map(|s| s.to_string()).collect();
+        let mut required: Vec<String> =
+            ALWAYS_REQUIRED.iter().map(|s| s.to_string()).collect();
         for one in &kept {
-            if !required.iter().any(|r| r.to_lowercase() == one.to_lowercase()) {
+            if !required
+                .iter()
+                .any(|r| r.to_lowercase() == one.to_lowercase())
+            {
                 required.push(one.clone());
             }
         }
@@ -287,8 +325,11 @@ impl<'a> AttributePolicy<'a> {
     }
 
     fn sorted_named(&self, realm: &str) -> Vec<selection::NamedPolicy> {
-        let mut named = selection::named(self.entries(realm).as_deref(), &spec());
-        named.sort_by(|a, b| selection::compare((&a.name, a.precedence), (&b.name, b.precedence)));
+        let mut named =
+            selection::named(self.entries(realm).as_deref(), &spec());
+        named.sort_by(|a, b| {
+            selection::compare((&a.name, a.precedence), (&b.name, b.precedence))
+        });
         named
     }
 
@@ -296,16 +337,26 @@ impl<'a> AttributePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn list(&self, realm: &str) -> Vec<Value> {
         let named = selection::named(self.entries(realm).as_deref(), &spec());
-        let mut rows: Vec<Value> =
-            named.iter().map(|n| self.read(realm, &Value::String(n.name.clone()))).collect();
+        let mut rows: Vec<Value> = named
+            .iter()
+            .map(|n| self.read(realm, &Value::String(n.name.clone())))
+            .collect();
         rows.sort_by(|a, b| {
-            let p = |v: &Value| selection::Precedence(
-                v.get("precedence").and_then(Value::as_f64).unwrap_or(0.0),
-            );
-            let n = |v: &Value| v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            let p = |v: &Value| {
+                selection::Precedence(
+                    v.get("precedence").and_then(Value::as_f64).unwrap_or(0.0),
+                )
+            };
+            let n = |v: &Value| {
+                v.get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string()
+            };
             selection::compare((&n(a), p(a)), (&n(b), p(b)))
         });
-        let mut out = vec![self.read(realm, &Value::String(DEFAULT_PROFILE.into()))];
+        let mut out =
+            vec![self.read(realm, &Value::String(DEFAULT_PROFILE.into()))];
         out.extend(rows);
         out
     }
@@ -320,7 +371,10 @@ impl<'a> AttributePolicy<'a> {
     }
 
     // `subjectOf()`: the entry as written, its own uid.
-    fn subject_of(attributes: Option<&Object>, subject: Option<&Subject>) -> Subject {
+    fn subject_of(
+        attributes: Option<&Object>,
+        subject: Option<&Subject>,
+    ) -> Subject {
         let mut out = subject.cloned().unwrap_or_default();
         if out.attributes.is_none() {
             out.attributes = Some(attributes.cloned().unwrap_or_default());
@@ -340,7 +394,11 @@ impl<'a> AttributePolicy<'a> {
     /// `selectionFor(subject)`: the person's own reference and each of
     /// their groups' — those they are in and those the same write adds.
     #[tracing::instrument(level = "debug", skip(self, subject))]
-    pub fn selection_for(&self, realm: &str, subject: Option<&Subject>) -> Ranked {
+    pub fn selection_for(
+        &self,
+        realm: &str,
+        subject: Option<&Subject>,
+    ) -> Ranked {
         let none = Ranked {
             name: DEFAULT_PROFILE.into(),
             by: DEFAULT_PROFILE.into(),
@@ -355,11 +413,16 @@ impl<'a> AttributePolicy<'a> {
         let s = subject.unwrap_or(&empty);
         let uid = js::trim(s.uid.as_deref().unwrap_or("")).to_string();
         let no_attributes = Object::new();
-        let own = js::values_of(s.attributes.as_ref().unwrap_or(&no_attributes), REFERENCE)
-            .into_iter()
-            .next()
-            .unwrap_or_default();
-        if selection::named(Some(&entries), &spec()).is_empty() && js::fold_str(&own).is_empty() {
+        let own = js::values_of(
+            s.attributes.as_ref().unwrap_or(&no_attributes),
+            REFERENCE,
+        )
+        .into_iter()
+        .next()
+        .unwrap_or_default();
+        if selection::named(Some(&entries), &spec()).is_empty()
+            && js::fold_str(&own).is_empty()
+        {
             return none;
         }
         let mut groups = if uid.is_empty() {
@@ -411,14 +474,21 @@ impl<'a> AttributePolicy<'a> {
 
     /// `required(subject)`: the whole list in force for the subject.
     #[tracing::instrument(level = "debug", skip(self, subject))]
-    pub fn required(&self, realm: &str, subject: Option<&Subject>) -> Vec<String> {
-        let resolved = subject.map(|s| Self::subject_of(s.attributes.as_ref(), Some(s)));
+    pub fn required(
+        &self,
+        realm: &str,
+        subject: Option<&Subject>,
+    ) -> Vec<String> {
+        let resolved =
+            subject.map(|s| Self::subject_of(s.attributes.as_ref(), Some(s)));
         let profile = self.profile_for(realm, resolved.as_ref());
         profile
             .get("required")
             .and_then(Value::as_array)
             .map(|a| a.iter().map(js::text).collect())
-            .unwrap_or_else(|| ALWAYS_REQUIRED.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_else(|| {
+                ALWAYS_REQUIRED.iter().map(|s| s.to_string()).collect()
+            })
     }
 
     // `holds()`: a non-empty value of the name, in any case of key.
@@ -432,9 +502,9 @@ impl<'a> AttributePolicy<'a> {
                 Value::Array(a) => a.iter().collect(),
                 one => vec![one],
             };
-            items
-                .iter()
-                .any(|one| !one.is_null() && !js::trim(&js::text(one)).is_empty())
+            items.iter().any(|one| {
+                !one.is_null() && !js::trim(&js::text(one)).is_empty()
+            })
         })
     }
 
@@ -458,15 +528,23 @@ impl<'a> AttributePolicy<'a> {
     /// `createRefusal(attributes, subject)`: a create that would leave a
     /// required attribute empty, in product mode.
     #[tracing::instrument(level = "debug", skip(self, attributes, subject))]
-    pub fn create_refusal(&self, realm: &str, attributes: &Object, subject: Option<&Subject>) -> Value {
+    pub fn create_refusal(
+        &self,
+        realm: &str,
+        attributes: &Object,
+        subject: Option<&Subject>,
+    ) -> Value {
         if !self.enforced(realm) {
             return Value::Null;
         }
         let s = Self::subject_of(Some(attributes), subject);
         let profile = self.profile_for(realm, Some(&s));
         let required = Self::required_of(&profile);
-        let missing: Vec<String> =
-            required.iter().filter(|n| !Self::holds(attributes, n)).cloned().collect();
+        let missing: Vec<String> = required
+            .iter()
+            .filter(|n| !Self::holds(attributes, n))
+            .cloned()
+            .collect();
         if missing.is_empty() {
             return Value::Null;
         }
@@ -529,7 +607,10 @@ impl<'a> AttributePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(attributes))]
     pub fn derive_common_name(attributes: &mut Object) -> bool {
         let value_of = |at: &Object, name: &str| -> String {
-            let held = at.iter().find(|(k, _)| k.to_lowercase() == name).map(|(_, v)| v);
+            let held = at
+                .iter()
+                .find(|(k, _)| k.to_lowercase() == name)
+                .map(|(_, v)| v);
             let items: Vec<&Value> = match held {
                 None => Vec::new(),
                 Some(Value::Array(a)) => a.iter().collect(),
@@ -544,23 +625,29 @@ impl<'a> AttributePolicy<'a> {
         if !value_of(attributes, "cn").is_empty() {
             return false;
         }
-        let derived = [value_of(attributes, "givenname"), value_of(attributes, "sn")]
-            .into_iter()
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ");
+        let derived = [
+            value_of(attributes, "givenname"),
+            value_of(attributes, "sn"),
+        ]
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
         if derived.is_empty() {
             return false;
         }
         attributes.retain(|k, _| k.to_lowercase() != "cn");
-        attributes.insert("cn".into(), Value::Array(vec![Value::String(derived)]));
+        attributes
+            .insert("cn".into(), Value::Array(vec![Value::String(derived)]));
         true
     }
 
     fn check_name(name: &Value) -> Option<String> {
         let given = match name {
             Value::Null => Value::String(DEFAULT_PROFILE.into()),
-            Value::String(s) if s.is_empty() => Value::String(DEFAULT_PROFILE.into()),
+            Value::String(s) if s.is_empty() => {
+                Value::String(DEFAULT_PROFILE.into())
+            }
             other => other.clone(),
         };
         selection::name_problem(&given, NOUN, true)
@@ -569,13 +656,19 @@ impl<'a> AttributePolicy<'a> {
     /// `validate(given)`: the list, each name one a person here may be given
     /// a value for.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn validate(&self, realm: &str, given: Option<&Object>) -> (Vec<String>, Vec<String>) {
+    pub fn validate(
+        &self,
+        realm: &str,
+        given: Option<&Object>,
+    ) -> (Vec<String>, Vec<String>) {
         let empty = Object::new();
         let body = given.unwrap_or(&empty);
         let mut problems = Vec::new();
         let raw = match body.get("requiredAttributes") {
             Some(v) => v.clone(),
-            None if body.get("form") == Some(&Value::String("console".into())) => {
+            None if body.get("form")
+                == Some(&Value::String("console".into())) =>
+            {
                 Value::String(String::new())
             }
             None => {
@@ -619,14 +712,24 @@ impl<'a> AttributePolicy<'a> {
 
     /// `save(name, given)`.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_LDAP_0165, vec![refused]);
         }
         let folded = js::fold(name);
-        let which = if folded.is_empty() { DEFAULT_PROFILE.to_string() } else { folded };
+        let which = if folded.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            folded
+        };
         let (values, mut problems) = self.validate(realm, given);
-        let ranked = (which != DEFAULT_PROFILE).then(|| selection::check_precedence(given, &spec()));
+        let ranked = (which != DEFAULT_PROFILE)
+            .then(|| selection::check_precedence(given, &spec()));
         if let Some((_, p)) = &ranked {
             problems.extend(p.iter().cloned());
         }
@@ -650,13 +753,21 @@ impl<'a> AttributePolicy<'a> {
             attributes.insert("description".into(), Value::String(description));
         }
         if !values.is_empty() {
-            attributes.insert("stsAttributeRequired".into(), js::strings(&values));
+            attributes
+                .insert("stsAttributeRequired".into(), js::strings(&values));
         }
         if let Some((p, _)) = ranked {
             attributes.insert(PRECEDENCE.into(), Value::String(p.to_string()));
         }
-        let outcome = self.ports.directory.write(realm, Container::Attributes, &which, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_LDAP_0168, "profile") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::Attributes,
+            &which,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_LDAP_0168, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, &Value::String(which)))
@@ -679,9 +790,17 @@ impl<'a> AttributePolicy<'a> {
     /// `namedByAsync(name)`: the groups and the people, and whether the
     /// people's answer is complete.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn named_by_people(&self, realm: &str, name: &Value) -> (Holders, bool) {
+    pub fn named_by_people(
+        &self,
+        realm: &str,
+        name: &Value,
+    ) -> (Holders, bool) {
         let mut out = self.named_by(realm, name);
-        let found = self.ports.directory.people_naming_policy(realm, REFERENCE, &js::fold(name));
+        let found = self.ports.directory.people_naming_policy(
+            realm,
+            REFERENCE,
+            &js::fold(name),
+        );
         let complete = found.as_ref().is_none_or(|f| f.complete);
         if let Some(f) = found {
             out.people = f.people;
@@ -697,27 +816,41 @@ impl<'a> AttributePolicy<'a> {
             return Answer::refused(codes::STS_LDAP_0165, vec![refused]);
         }
         let folded = js::fold(name);
-        let which = if folded.is_empty() { DEFAULT_PROFILE.to_string() } else { folded };
+        let which = if folded.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            folded
+        };
         let target = Value::String(which.clone());
         if !self.ports.directory.installed(Container::Attributes) {
             return common::removed(false, self.read(realm, &target));
         }
         if which == DEFAULT_PROFILE {
-            let removed = self.ports.directory.delete(realm, Container::Attributes, DEFAULT_PROFILE);
+            let removed = self.ports.directory.delete(
+                realm,
+                Container::Attributes,
+                DEFAULT_PROFILE,
+            );
             return common::removed(removed, self.read(realm, &target));
         }
         let (holders, _) = self.named_by_people(realm, &target);
         if let Some(held) = selection::delete_problem(NOUN, &which, &holders) {
             return Answer::refused(codes::STS_LDAP_0197, vec![held]);
         }
-        let removed = self.ports.directory.delete(realm, Container::Attributes, &which);
+        let removed =
+            self.ports
+                .directory
+                .delete(realm, Container::Attributes, &which);
         common::removed(removed, self.read(realm, &target))
     }
 
     /// `definitions()`: the realm's custom attributes, by name.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn definitions(&self, realm: &str) -> Vec<Definition> {
-        let Some(entries) = self.ports.directory.entries(realm, Container::AttributeDefinitions)
+        let Some(entries) = self
+            .ports
+            .directory
+            .entries(realm, Container::AttributeDefinitions)
         else {
             return Vec::new();
         };
@@ -726,35 +859,63 @@ impl<'a> AttributePolicy<'a> {
             .map(|e| {
                 let at = &e.attributes;
                 let first = |n: &str| {
-                    common::concept_values(Concept::FIELDS, n, at).into_iter().next()
+                    common::concept_values(Concept::FIELDS, n, at)
+                        .into_iter()
+                        .next()
                 };
                 let syntax = first("syntax")
                     .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| "string".into())
                     .to_lowercase();
-                let single = match at.get("stsAttributeSingleValued")
+                let single = match at
+                    .get("stsAttributeSingleValued")
                     .or_else(|| at.get("stsattributesinglevalued"))
                 {
                     None | Some(Value::Null) => Vec::new(),
                     Some(Value::Array(a)) => a
                         .iter()
-                        .map(|v| if v.is_null() { "null".into() } else { js::text(v) })
+                        .map(|v| {
+                            if v.is_null() {
+                                "null".into()
+                            } else {
+                                js::text(v)
+                            }
+                        })
                         .filter(|s: &String| !s.is_empty())
                         .collect(),
-                    Some(v) => vec![js::text(v)].into_iter().filter(|s| !s.is_empty()).collect(),
+                    Some(v) => vec![js::text(v)]
+                        .into_iter()
+                        .filter(|s| !s.is_empty())
+                        .collect(),
                 };
                 let editable = concept_bool("portalEditable", at) == Some(true);
                 Definition {
                     name: e.name.clone(),
-                    label: first("label").filter(|s| !s.is_empty()).unwrap_or_else(|| e.name.clone()),
-                    syntax: if SYNTAXES.contains(&syntax.as_str()) { syntax } else { "string".into() },
-                    multi: single.first().cloned().unwrap_or_else(|| "TRUE".into()).to_uppercase()
+                    label: first("label")
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| e.name.clone()),
+                    syntax: if SYNTAXES.contains(&syntax.as_str()) {
+                        syntax
+                    } else {
+                        "string".into()
+                    },
+                    multi: single
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "TRUE".into())
+                        .to_uppercase()
                         != "TRUE",
-                    description: common::concept_values(Concept::FIELDS, "description", at)
-                        .into_iter()
-                        .find(|s| !s.is_empty())
-                        .unwrap_or_default(),
-                    portal_visible: concept_bool("portalVisible", at) == Some(true) || editable,
+                    description: common::concept_values(
+                        Concept::FIELDS,
+                        "description",
+                        at,
+                    )
+                    .into_iter()
+                    .find(|s| !s.is_empty())
+                    .unwrap_or_default(),
+                    portal_visible: concept_bool("portalVisible", at)
+                        == Some(true)
+                        || editable,
                     portal_editable: editable,
                     dn: e.dn.clone(),
                 }
@@ -775,7 +936,9 @@ impl<'a> AttributePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn definition(&self, realm: &str, name: &str) -> Option<Definition> {
         let wanted = js::trim(name).to_lowercase();
-        self.definitions(realm).into_iter().find(|d| d.name.to_lowercase() == wanted)
+        self.definitions(realm)
+            .into_iter()
+            .find(|d| d.name.to_lowercase() == wanted)
     }
 
     fn label_problem() -> String {
@@ -785,7 +948,8 @@ impl<'a> AttributePolicy<'a> {
     }
 
     fn description_problem() -> String {
-        "A description is at most 1024 characters with no control character.".into()
+        "A description is at most 1024 characters with no control character."
+            .into()
     }
 
     fn flags_problem() -> String {
@@ -816,7 +980,11 @@ impl<'a> AttributePolicy<'a> {
         };
         let syntax = {
             let s = js::trim(&syntax_raw).to_lowercase();
-            if s.is_empty() { "string".to_string() } else { s }
+            if s.is_empty() {
+                "string".to_string()
+            } else {
+                s
+            }
         };
         if !SYNTAXES.contains(&syntax.as_str()) {
             problems.push(format!(
@@ -825,19 +993,24 @@ impl<'a> AttributePolicy<'a> {
                 SYNTAXES.join(", ")
             ));
         }
-        let multi_raw = given.get("multiValued").or_else(|| given.get("values"));
+        let multi_raw =
+            given.get("multiValued").or_else(|| given.get("values"));
         let multi_text = js::trim(&js::string_of(multi_raw)).to_lowercase();
         let mut multi = false;
-        if ["true", "on", "1", "yes", "multiple"].contains(&multi_text.as_str()) {
+        if ["true", "on", "1", "yes", "multiple"].contains(&multi_text.as_str())
+        {
             multi = true;
-        } else if !["false", "off", "0", "no", "single", ""].contains(&multi_text.as_str()) {
+        } else if !["false", "off", "0", "no", "single", ""]
+            .contains(&multi_text.as_str())
+        {
             problems.push(format!(
                 "Whether a custom attribute holds several values is yes or no (single or \
                  multiple); \"{}\" is neither.",
                 js::slice(&multi_text, 32)
             ));
         }
-        let description = js::trim(&js::string_of(given.get("description"))).to_string();
+        let description =
+            js::trim(&js::string_of(given.get("description"))).to_string();
         if js::length(&description) > 1024 || control(&description) {
             problems.push(Self::description_problem());
         }
@@ -851,7 +1024,11 @@ impl<'a> AttributePolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_LDAP_0169, problems);
         }
-        if !self.ports.directory.installed(Container::AttributeDefinitions) {
+        if !self
+            .ports
+            .directory
+            .installed(Container::AttributeDefinitions)
+        {
             return common::no_directory(
                 codes::STS_LDAP_0167,
                 "a custom attribute",
@@ -861,7 +1038,11 @@ impl<'a> AttributePolicy<'a> {
         let lower = name.to_lowercase();
         let known = self.ports.directory.known_name(realm, &name);
         let existing = self.definition(realm, &name);
-        if lower.starts_with("sts") || lower == "memberof" || !known.is_empty() || existing.is_some() {
+        if lower.starts_with("sts")
+            || lower == "memberof"
+            || !known.is_empty()
+            || existing.is_some()
+        {
             let why = if let Some(e) = &existing {
                 format!(
                     "This realm already defines {} ({}). Remove it first to define it again.",
@@ -898,16 +1079,25 @@ impl<'a> AttributePolicy<'a> {
         );
         attributes.insert("stsAttributeLabel".into(), Value::String(label));
         attributes.insert("stsAttributeSyntax".into(), Value::String(syntax));
-        let flag = |b: bool| Value::String(if b { "TRUE" } else { "FALSE" }.into());
+        let flag =
+            |b: bool| Value::String(if b { "TRUE" } else { "FALSE" }.into());
         attributes.insert("stsAttributeSingleValued".into(), flag(!multi));
-        attributes.insert("stsAttributePortalVisible".into(), flag(portal_visible));
-        attributes.insert("stsAttributePortalEditable".into(), flag(portal_editable));
+        attributes
+            .insert("stsAttributePortalVisible".into(), flag(portal_visible));
+        attributes
+            .insert("stsAttributePortalEditable".into(), flag(portal_editable));
         if !description.is_empty() {
             attributes.insert("description".into(), Value::String(description));
         }
-        let outcome =
-            self.ports.directory.write(realm, Container::AttributeDefinitions, &name, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_LDAP_0168, "definition") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::AttributeDefinitions,
+            &name,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_LDAP_0168, "definition")
+        {
             return refused;
         }
         let made = self.definition(realm, &name);
@@ -932,8 +1122,13 @@ impl<'a> AttributePolicy<'a> {
     pub fn redefine(&self, realm: &str, body: Option<&Object>) -> Answer {
         let empty = Object::new();
         let given = body.unwrap_or(&empty);
-        let wanted = js::trim(&js::string_or_empty(given.get("name"))).to_string();
-        if !self.ports.directory.installed(Container::AttributeDefinitions) {
+        let wanted =
+            js::trim(&js::string_or_empty(given.get("name"))).to_string();
+        if !self
+            .ports
+            .directory
+            .installed(Container::AttributeDefinitions)
+        {
             return Answer::refused(
                 codes::STS_LDAP_0167,
                 vec!["There is no embedded directory in this process, so there is no custom \
@@ -953,15 +1148,20 @@ impl<'a> AttributePolicy<'a> {
         };
         let mut fixed = Vec::new();
         let syntax = js::string_or_empty(given.get("syntax"));
-        if !js::trim(&syntax).is_empty() && js::trim(&syntax).to_lowercase() != found.syntax {
+        if !js::trim(&syntax).is_empty()
+            && js::trim(&syntax).to_lowercase() != found.syntax
+        {
             fixed.push("syntax");
         }
-        let multi_raw = given.get("multiValued").or_else(|| given.get("values"));
+        let multi_raw =
+            given.get("multiValued").or_else(|| given.get("values"));
         let multi_text = js::string_or_empty(multi_raw);
         if !js::trim(&multi_text).is_empty() {
             let text = js::trim(&multi_text).to_lowercase();
-            let several = ["true", "on", "1", "yes", "multiple"].contains(&text.as_str());
-            let one = ["false", "off", "0", "no", "single"].contains(&text.as_str());
+            let several =
+                ["true", "on", "1", "yes", "multiple"].contains(&text.as_str());
+            let one =
+                ["false", "off", "0", "no", "single"].contains(&text.as_str());
             if (!several && !one) || several != found.multi {
                 fixed.push("multiValued");
             }
@@ -1021,12 +1221,19 @@ impl<'a> AttributePolicy<'a> {
             "objectClass".into(),
             Value::Array(vec!["top".into(), "stsAttributeDefinition".into()]),
         );
-        let flag = |b: bool| Value::String(if b { "TRUE" } else { "FALSE" }.into());
+        let flag =
+            |b: bool| Value::String(if b { "TRUE" } else { "FALSE" }.into());
         attributes.insert("stsAttributeLabel".into(), Value::String(label));
-        attributes.insert("stsAttributeSyntax".into(), Value::String(found.syntax.clone()));
-        attributes.insert("stsAttributeSingleValued".into(), flag(!found.multi));
-        attributes.insert("stsAttributePortalVisible".into(), flag(portal_visible));
-        attributes.insert("stsAttributePortalEditable".into(), flag(portal_editable));
+        attributes.insert(
+            "stsAttributeSyntax".into(),
+            Value::String(found.syntax.clone()),
+        );
+        attributes
+            .insert("stsAttributeSingleValued".into(), flag(!found.multi));
+        attributes
+            .insert("stsAttributePortalVisible".into(), flag(portal_visible));
+        attributes
+            .insert("stsAttributePortalEditable".into(), flag(portal_editable));
         if !description.is_empty() {
             attributes.insert("description".into(), Value::String(description));
         }
@@ -1039,19 +1246,29 @@ impl<'a> AttributePolicy<'a> {
         match outcome {
             crate::ports::WriteOutcome::Written => {}
             crate::ports::WriteOutcome::Refused { .. } => {
-                if let Some(r) = common::write_refusal(&outcome, codes::STS_LDAP_0209, "change") {
+                if let Some(r) = common::write_refusal(
+                    &outcome,
+                    codes::STS_LDAP_0209,
+                    "change",
+                ) {
                     return r;
                 }
             }
             crate::ports::WriteOutcome::Full => {
                 return Answer::refused(
                     codes::STS_LDAP_0209,
-                    vec![format!("The directory would not store the change to {}.", found.name)],
+                    vec![format!(
+                        "The directory would not store the change to {}.",
+                        found.name
+                    )],
                 )
             }
         }
         let made = self.definition(realm, &found.name);
-        let dn = made.as_ref().map(|d| d.dn.clone()).unwrap_or_else(|| found.dn.clone());
+        let dn = made
+            .as_ref()
+            .map(|d| d.dn.clone())
+            .unwrap_or_else(|| found.dn.clone());
         Answer::of(js::object(vec![
             ("ok", Value::Bool(true)),
             ("definition", made.map(|d| d.json()).unwrap_or(Value::Null)),
@@ -1074,7 +1291,11 @@ impl<'a> AttributePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn undefine(&self, realm: &str, name: Option<&Value>) -> Answer {
         let wanted = js::trim(&js::string_or_empty(name)).to_string();
-        if !self.ports.directory.installed(Container::AttributeDefinitions) {
+        if !self
+            .ports
+            .directory
+            .installed(Container::AttributeDefinitions)
+        {
             return Answer::refused(
                 codes::STS_LDAP_0167,
                 vec!["There is no embedded directory in this process, so there is no custom \
@@ -1132,8 +1353,11 @@ impl<'a> AttributePolicy<'a> {
             }
             return refused;
         }
-        let removed =
-            self.ports.directory.delete(realm, Container::AttributeDefinitions, &found.name);
+        let removed = self.ports.directory.delete(
+            realm,
+            Container::AttributeDefinitions,
+            &found.name,
+        );
         Answer::of(js::object(vec![
             ("ok", Value::Bool(true)),
             ("removed", Value::Bool(removed)),
@@ -1151,7 +1375,12 @@ impl<'a> AttributePolicy<'a> {
 
     /// `act(action, body)`: the register's three acts.
     #[tracing::instrument(level = "debug", skip(self, body))]
-    pub fn act(&self, realm: &str, action: &str, body: Option<&Object>) -> Answer {
+    pub fn act(
+        &self,
+        realm: &str,
+        action: &str,
+        body: Option<&Object>,
+    ) -> Answer {
         match action {
             "define-person-attribute" => self.define(realm, body),
             "update-person-attribute" => self.redefine(realm, body),

@@ -12,7 +12,9 @@ use serde_json::Value;
 use sts_core::errors::{codes, ErrorCode};
 
 use crate::js::{self, Object};
-use crate::ports::{Container, PolicyEntry, Ports, WriteOutcome, DEFAULT_REALM};
+use crate::ports::{
+    Container, PolicyEntry, Ports, WriteOutcome, DEFAULT_REALM,
+};
 use crate::tables::Field;
 use crate::Answer;
 
@@ -69,7 +71,9 @@ pub struct Found {
 #[tracing::instrument(level = "debug", skip(list))]
 pub fn entry_in(list: &[PolicyEntry], name: &str) -> Option<PolicyEntry> {
     let wanted = name.to_lowercase();
-    list.iter().find(|e| e.name.to_lowercase() == wanted).cloned()
+    list.iter()
+        .find(|e| e.name.to_lowercase() == wanted)
+        .cloned()
 }
 
 /// A kind's `entryFor()`: this realm's own entry, then — as the kind
@@ -83,10 +87,16 @@ pub fn entry_for(
     inherit: Inherit,
 ) -> Found {
     let Some(own) = ports.directory.entries(realm, container) else {
-        return Found { entry: None, from: From::BuiltIn };
+        return Found {
+            entry: None,
+            from: From::BuiltIn,
+        };
     };
     if let Some(e) = entry_in(&own, name) {
-        return Found { entry: Some(e), from: From::Realm };
+        return Found {
+            entry: Some(e),
+            from: From::Realm,
+        };
     }
     let may = match inherit {
         Inherit::Never => false,
@@ -94,15 +104,24 @@ pub fn entry_for(
         Inherit::Any => true,
     };
     if !may || realm == DEFAULT_REALM {
-        return Found { entry: None, from: From::BuiltIn };
+        return Found {
+            entry: None,
+            from: From::BuiltIn,
+        };
     }
     let inherited = ports
         .directory
         .entries(DEFAULT_REALM, container)
         .and_then(|list| entry_in(&list, name));
     match inherited {
-        Some(e) => Found { entry: Some(e), from: From::DefaultRealm },
-        None => Found { entry: None, from: From::BuiltIn },
+        Some(e) => Found {
+            entry: Some(e),
+            from: From::DefaultRealm,
+        },
+        None => Found {
+            entry: None,
+            from: From::BuiltIn,
+        },
     }
 }
 
@@ -130,7 +149,8 @@ pub fn bool_problem(field: &Field, text: &str) -> String {
 /// `String(field.min)`: `undefined` where the row has none.
 #[tracing::instrument(level = "debug")]
 pub fn bound(b: Option<i64>) -> String {
-    b.map(|n| n.to_string()).unwrap_or_else(|| "undefined".to_string())
+    b.map(|n| n.to_string())
+        .unwrap_or_else(|| "undefined".to_string())
 }
 
 /// The whole-number parse the password, authentication and service-account
@@ -167,7 +187,11 @@ pub fn number_text(n: f64) -> String {
     match serde_json::Number::from_f64(n) {
         Some(num) => js::number_text(&num),
         None if n.is_infinite() => {
-            if n > 0.0 { "Infinity".into() } else { "-Infinity".into() }
+            if n > 0.0 {
+                "Infinity".into()
+            } else {
+                "-Infinity".into()
+            }
         }
         None => "NaN".into(),
     }
@@ -179,7 +203,9 @@ pub fn number(n: f64) -> Value {
     if n.fract() == 0.0 && n.abs() < 9.0e15 {
         Value::from(n as i64)
     } else {
-        serde_json::Number::from_f64(n).map(Value::Number).unwrap_or(Value::Null)
+        serde_json::Number::from_f64(n)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
     }
 }
 
@@ -200,7 +226,12 @@ pub fn required_problem(field: &Field) -> String {
 
 /// What an entry's unreadable value is reported as in `problems`.
 #[tracing::instrument(level = "debug")]
-pub fn unreadable(field: &Field, dn: &str, problem: &str, default_shown: &str) -> String {
+pub fn unreadable(
+    field: &Field,
+    dn: &str,
+    problem: &str,
+    default_shown: &str,
+) -> String {
     format!(
         "{} on {} is unreadable ({}) and the built-in default of {} is in force instead.",
         field.attribute, dn, problem, default_shown
@@ -216,7 +247,7 @@ pub fn shown(value: &Value) -> String {
 /// The value a save body sends for a row, the console's unticked checkbox
 /// read as `false` (`body.form === 'console'`).
 #[tracing::instrument(level = "debug", skip(body))]
-pub fn sent<'a>(body: &'a Object, field: &Field) -> Option<Value> {
+pub fn sent(body: &Object, field: &Field) -> Option<Value> {
     match body.get(&field.key) {
         Some(v) => Some(v.clone()),
         None if field.kind == "bool"
@@ -243,14 +274,21 @@ pub fn written(field: &Field, value: &Value) -> Value {
 /// `String((given && given.description) || '').slice(0, 1024)`.
 #[tracing::instrument(level = "debug", skip(given))]
 pub fn description_of(given: Option<&Object>) -> String {
-    js::slice(&js::or_empty(given.and_then(|g| g.get("description"))), 1024)
+    js::slice(
+        &js::or_empty(given.and_then(|g| g.get("description"))),
+        1024,
+    )
 }
 
 /// The answer of a write that did not store: the directory's own refusal
 /// of a description (STS-LDAP-0008 for a NUL, STS-LDAP-0211 for an
 /// operator code, #1416), or the kind's "at its maximum".
 #[tracing::instrument(level = "debug")]
-pub fn write_refusal(outcome: &WriteOutcome, full: ErrorCode, what: &str) -> Option<Answer> {
+pub fn write_refusal(
+    outcome: &WriteOutcome,
+    full: ErrorCode,
+    what: &str,
+) -> Option<Answer> {
     match outcome {
         WriteOutcome::Written => None,
         WriteOutcome::Refused { nul, errors } => Some(Answer::refused(
@@ -286,7 +324,9 @@ pub fn application_reference(
         .by_client_id(realm, name)
         .or_else(|| ports.applications.by_identifier(realm, name));
     match fields.as_ref().and_then(|f| f.get(attribute)) {
-        Some(Value::Array(items)) => items.first().map(js::text).unwrap_or_default(),
+        Some(Value::Array(items)) => {
+            items.first().map(js::text).unwrap_or_default()
+        }
         Some(Value::Null) | None => String::new(),
         Some(one) => js::text(one),
     }
@@ -304,7 +344,10 @@ pub fn description_in(found: &Found) -> String {
 /// A kind's read of its rows from an entry: each row's value, its source,
 /// and a problem per unreadable value. `default_shown` words a row's
 /// default in the problem sentence.
-#[tracing::instrument(level = "debug", skip(fields, parse, default_shown, defaults))]
+#[tracing::instrument(
+    level = "debug",
+    skip(fields, parse, default_shown, defaults)
+)]
 pub fn read_rows(
     fields: &[Field],
     found: &Found,
@@ -325,10 +368,18 @@ pub fn read_rows(
                 continue;
             }
             match parse(f, &raw) {
-                Err(p) => problems.push(unreadable(f, &entry.dn, &p, &default_shown(f))),
+                Err(p) => problems.push(unreadable(
+                    f,
+                    &entry.dn,
+                    &p,
+                    &default_shown(f),
+                )),
                 Ok(v) => {
                     values.insert(f.key.clone(), v);
-                    sources.insert(f.key.clone(), Value::String(found.from.source().into()));
+                    sources.insert(
+                        f.key.clone(),
+                        Value::String(found.from.source().into()),
+                    );
                 }
             }
         }
@@ -387,7 +438,10 @@ pub fn removed(removed: bool, profile: Value) -> Answer {
 /// `{ ok: true, profile }`.
 #[tracing::instrument(level = "debug", skip(profile))]
 pub fn saved(profile: Value) -> Answer {
-    Answer::of(js::object(vec![("ok", Value::Bool(true)), ("profile", profile)]))
+    Answer::of(js::object(vec![
+        ("ok", Value::Bool(true)),
+        ("profile", profile),
+    ]))
 }
 
 /// The "no embedded directory" refusal every kind words alike.
@@ -427,7 +481,9 @@ pub fn row_attributes(
     let mut out = Object::new();
     out.insert(
         "objectClass".into(),
-        Value::Array(classes.iter().map(|c| Value::String((*c).into())).collect()),
+        Value::Array(
+            classes.iter().map(|c| Value::String((*c).into())).collect(),
+        ),
     );
     let description = description_of(given);
     out.insert("description".into(), Value::String(description.clone()));
@@ -447,7 +503,10 @@ pub fn row_attributes(
 /// from sts-model (D15), so a kind that reads a concept names its field,
 /// not an attribute.
 #[tracing::instrument(level = "debug", skip(fields))]
-pub fn concept_attribute(fields: &[sts_model::FieldSource], name: &str) -> &'static str {
+pub fn concept_attribute(
+    fields: &[sts_model::FieldSource],
+    name: &str,
+) -> &'static str {
     fields
         .iter()
         .find(|f| f.name == name)
@@ -458,6 +517,10 @@ pub fn concept_attribute(fields: &[sts_model::FieldSource], name: &str) -> &'sta
 /// A concept's string field from an entry, every value (`DomainMap`'s
 /// `fromEntry()` of a string field: null values dropped).
 #[tracing::instrument(level = "debug", skip(fields, attributes))]
-pub fn concept_values(fields: &[sts_model::FieldSource], name: &str, attributes: &Object) -> Vec<String> {
+pub fn concept_values(
+    fields: &[sts_model::FieldSource],
+    name: &str,
+    attributes: &Object,
+) -> Vec<String> {
     js::domain_values(attributes, concept_attribute(fields, name))
 }

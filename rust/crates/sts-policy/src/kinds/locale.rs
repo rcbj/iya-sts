@@ -45,14 +45,14 @@ pub struct LocalePolicy<'a> {
 
 impl<'a> LocalePolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> LocalePolicy<'a> {
-        // A hot path: built per page drawn.
         LocalePolicy { ports }
     }
 
     /// The rows.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per row of every profile.
         &FIELDS
     }
 
@@ -86,14 +86,23 @@ impl<'a> LocalePolicy<'a> {
     /// `read(name)`: a named profile the realm does not hold is `default`.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: Option<&str>) -> Value {
-        let asked = name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE).to_lowercase();
-        let profile = if asked != DEFAULT_PROFILE && !self.holds(realm, &asked) {
+        let asked = name
+            .filter(|n| !n.is_empty())
+            .unwrap_or(DEFAULT_PROFILE)
+            .to_lowercase();
+        let profile = if asked != DEFAULT_PROFILE && !self.holds(realm, &asked)
+        {
             DEFAULT_PROFILE.to_string()
         } else {
             asked
         };
-        let found =
-            common::entry_for(&self.ports, realm, Container::Locale, &profile, Inherit::DefaultOnly);
+        let found = common::entry_for(
+            &self.ports,
+            realm,
+            Container::Locale,
+            &profile,
+            Inherit::DefaultOnly,
+        );
         let (values, sources, problems) = common::read_rows(
             &FIELDS,
             &found,
@@ -102,7 +111,11 @@ impl<'a> LocalePolicy<'a> {
             |f| common::shown(&f.dflt),
         );
         let empty = Object::new();
-        let at = found.entry.as_ref().map(|e| &e.attributes).unwrap_or(&empty);
+        let at = found
+            .entry
+            .as_ref()
+            .map(|e| &e.attributes)
+            .unwrap_or(&empty);
         let precedence = if profile == DEFAULT_PROFILE {
             Value::from(0)
         } else {
@@ -121,11 +134,20 @@ impl<'a> LocalePolicy<'a> {
                 ("name", Value::String(profile)),
                 ("precedence", precedence),
                 ("stored", Value::Bool(found.from == common::From::Realm)),
-                ("inherited", Value::Bool(found.from == common::From::DefaultRealm)),
+                (
+                    "inherited",
+                    Value::Bool(found.from == common::From::DefaultRealm),
+                ),
                 ("from", Value::String(found.from.as_str().into())),
                 (
                     "dn",
-                    Value::String(found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default()),
+                    Value::String(
+                        found
+                            .entry
+                            .as_ref()
+                            .map(|e| e.dn.clone())
+                            .unwrap_or_default(),
+                    ),
                 ),
                 ("description", Value::String(description)),
                 ("sources", Value::Object(sources)),
@@ -145,10 +167,17 @@ impl<'a> LocalePolicy<'a> {
             .map(|n| self.read(realm, Some(n)))
             .collect();
         named.sort_by(|a, b| {
-            let p = |v: &Value| selection::Precedence(
-                v.get("precedence").and_then(Value::as_f64).unwrap_or(0.0),
-            );
-            let n = |v: &Value| v.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            let p = |v: &Value| {
+                selection::Precedence(
+                    v.get("precedence").and_then(Value::as_f64).unwrap_or(0.0),
+                )
+            };
+            let n = |v: &Value| {
+                v.get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string()
+            };
             selection::compare((&n(a), p(a)), (&n(b), p(b)))
         });
         let mut rows = vec![self.read(realm, Some(DEFAULT_PROFILE))];
@@ -160,8 +189,15 @@ impl<'a> LocalePolicy<'a> {
     /// application names and those the person's groups name, the lowest
     /// precedence, else `default`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn profile_name_for(&self, realm: &str, application: &str, person: &str) -> String {
-        let Some(entries) = self.ports.directory.entries(realm, Container::Locale) else {
+    pub fn profile_name_for(
+        &self,
+        realm: &str,
+        application: &str,
+        person: &str,
+    ) -> String {
+        let Some(entries) =
+            self.ports.directory.entries(realm, Container::Locale)
+        else {
             return DEFAULT_PROFILE.to_string();
         };
         if selection::named(Some(&entries), &spec()).is_empty() {
@@ -179,7 +215,12 @@ impl<'a> LocalePolicy<'a> {
         let mut references = vec![Reference::new(
             "application",
             application,
-            &common::application_reference(&self.ports, realm, application, APP_REFERENCE),
+            &common::application_reference(
+                &self.ports,
+                realm,
+                application,
+                APP_REFERENCE,
+            ),
         )];
         references.extend(selection::group_references(&groups));
         let ranked = selection::rank(Some(&entries), &spec(), &references);
@@ -199,7 +240,12 @@ impl<'a> LocalePolicy<'a> {
 
     /// `forApplication(application, person)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn for_application(&self, realm: &str, application: &str, person: &str) -> Value {
+    pub fn for_application(
+        &self,
+        realm: &str,
+        application: &str,
+        person: &str,
+    ) -> Value {
         let name = self.profile_name_for(realm, application, person);
         self.read(realm, Some(&name))
     }
@@ -208,7 +254,11 @@ impl<'a> LocalePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn named_by(&self, realm: &str, name: &str) -> Holders {
         Holders {
-            applications: self.ports.applications.naming_policy(realm, APP_REFERENCE, name),
+            applications: self.ports.applications.naming_policy(
+                realm,
+                APP_REFERENCE,
+                name,
+            ),
             groups: self
                 .ports
                 .directory
@@ -220,8 +270,16 @@ impl<'a> LocalePolicy<'a> {
 
     fn check_name(name: &Value) -> Option<String> {
         let given = js::or_empty(Some(name));
-        let text = if given.is_empty() { DEFAULT_PROFILE.to_string() } else { given };
-        selection::name_problem(&Value::String(text), "locale policy profile", true)
+        let text = if given.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            given
+        };
+        selection::name_problem(
+            &Value::String(text),
+            "locale policy profile",
+            true,
+        )
     }
 
     /// `validate(given)`.
@@ -247,13 +305,19 @@ impl<'a> LocalePolicy<'a> {
 
     /// `save(name, given)`.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_I18N_0003, vec![refused]);
         }
         let which = which(name);
         let (values, mut problems) = self.validate(given);
-        let ranked = (which != DEFAULT_PROFILE).then(|| selection::check_precedence(given, &spec()));
+        let ranked = (which != DEFAULT_PROFILE)
+            .then(|| selection::check_precedence(given, &spec()));
         if let Some((_, p)) = &ranked {
             problems.extend(p.iter().cloned());
         }
@@ -261,15 +325,30 @@ impl<'a> LocalePolicy<'a> {
             return Answer::refused(codes::STS_I18N_0004, problems);
         }
         if !self.ports.directory.installed(Container::Locale) {
-            return common::no_directory(codes::STS_I18N_0005, "a locale policy", "ou=localePolicies");
+            return common::no_directory(
+                codes::STS_I18N_0005,
+                "a locale policy",
+                "ou=localePolicies",
+            );
         }
-        let mut attributes =
-            common::row_attributes(&["top", "stsLocalePolicy"], &FIELDS, &values, given);
+        let mut attributes = common::row_attributes(
+            &["top", "stsLocalePolicy"],
+            &FIELDS,
+            &values,
+            given,
+        );
         if let Some((p, _)) = ranked {
             attributes.insert(PRECEDENCE.into(), Value::String(p.to_string()));
         }
-        let outcome = self.ports.directory.write(realm, Container::Locale, &which, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_I18N_0006, "profile") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::Locale,
+            &which,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_I18N_0006, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, Some(&which)))
@@ -287,13 +366,18 @@ impl<'a> LocalePolicy<'a> {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {
-            if let Some(held) =
-                selection::delete_problem("locale policy", &which, &self.named_by(realm, &which))
-            {
+            if let Some(held) = selection::delete_problem(
+                "locale policy",
+                &which,
+                &self.named_by(realm, &which),
+            ) {
                 return Answer::refused(codes::STS_I18N_0014, vec![held]);
             }
         }
-        let removed = self.ports.directory.delete(realm, Container::Locale, &which);
+        let removed =
+            self.ports
+                .directory
+                .delete(realm, Container::Locale, &which);
         common::removed(removed, self.read(realm, Some(&which)))
     }
 
@@ -303,8 +387,13 @@ impl<'a> LocalePolicy<'a> {
 }
 
 /// `String(name || DEFAULT_PROFILE).trim().toLowerCase()`.
+/// A hot path, so it carries no span (the logging rule's exemption).
 pub(crate) fn which(name: &Value) -> String {
     let text = js::or_empty(Some(name));
-    let text = if text.is_empty() { DEFAULT_PROFILE.to_string() } else { text };
+    let text = if text.is_empty() {
+        DEFAULT_PROFILE.to_string()
+    } else {
+        text
+    };
     js::trim(&text).to_lowercase()
 }

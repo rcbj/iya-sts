@@ -43,9 +43,12 @@ const MAX_CLIENT_RULES: usize = 20;
 const NO_HINTS: &str = "none";
 const REALM_LIST: &str = "realm";
 const HINTS: [&str; 3] = ["security-key", "client-device", "hybrid"];
-const POST_QUANTUM_ALGORITHMS: [&str; 3] = ["ML-DSA-87", "ML-DSA-65", "ML-DSA-44"];
-const POST_QUANTUM_REQUIRED_VALUES: [&str; 3] = ["off", "sign-in", "registration-and-sign-in"];
-const REGISTRATION_MODES: [&str; 4] = ["realm", "pq-only", "pq-first", "classical-only"];
+const POST_QUANTUM_ALGORITHMS: [&str; 3] =
+    ["ML-DSA-87", "ML-DSA-65", "ML-DSA-44"];
+const POST_QUANTUM_REQUIRED_VALUES: [&str; 3] =
+    ["off", "sign-in", "registration-and-sign-in"];
+const REGISTRATION_MODES: [&str; 4] =
+    ["realm", "pq-only", "pq-first", "classical-only"];
 const LANES_VALUES: [&str; 3] = ["realm", "both", "one"];
 
 fn hint_attachment(hint: &str) -> Option<&'static str> {
@@ -62,26 +65,42 @@ fn strings(list: &[&str]) -> Vec<String> {
 
 /// `REGISTRATION_ALGORITHM_VALUES` (#940): `webauthn.algorithms`' own
 /// values, less RS1, from the settings row so the two cannot drift.
-static REGISTRATION_ALGORITHM_VALUES: LazyLock<Vec<String>> = LazyLock::new(|| {
-    let from_row = sts_core::settings::row("webauthn.algorithms").and_then(|r| r.csv_values);
-    match from_row {
-        Some(values) => values.iter().filter(|v| **v != "RS1").map(|v| v.to_string()).collect(),
-        None => strings(&["ML-DSA-44", "ML-DSA-65", "ML-DSA-87", "ES256", "RS256"]),
-    }
-});
+static REGISTRATION_ALGORITHM_VALUES: LazyLock<Vec<String>> =
+    LazyLock::new(|| {
+        let from_row = sts_core::settings::row("webauthn.algorithms")
+            .and_then(|r| r.csv_values);
+        match from_row {
+            Some(values) => values
+                .iter()
+                .filter(|v| **v != "RS1")
+                .map(|v| v.to_string())
+                .collect(),
+            None => strings(&[
+                "ML-DSA-44",
+                "ML-DSA-65",
+                "ML-DSA-87",
+                "ES256",
+                "RS256",
+            ]),
+        }
+    });
 
 static FIELDS: LazyLock<Vec<Field>> = LazyLock::new(|| {
     tables::fields(
         "policy.passkey",
         |f| match f.key.as_str() {
-            "securityKeyResidentKey" => f.values = strings(&["discouraged", "preferred", "required"]),
+            "securityKeyResidentKey" => {
+                f.values = strings(&["discouraged", "preferred", "required"])
+            }
             "backupEligibility" => f.values = strings(&["allow", "disallow"]),
             "minPinLength" => {
                 f.dflt = Value::from(4);
                 f.min = Some(4);
                 f.max = Some(63);
             }
-            "postQuantumRequired" => f.values = strings(&POST_QUANTUM_REQUIRED_VALUES),
+            "postQuantumRequired" => {
+                f.values = strings(&POST_QUANTUM_REQUIRED_VALUES)
+            }
             "postQuantumAllowCredentials" => {
                 f.values = strings(&["realm", "narrow", "list-and-refuse"])
             }
@@ -99,9 +118,16 @@ static FIELDS: LazyLock<Vec<Field>> = LazyLock::new(|| {
                 f.dflt = Value::String(NO_HINTS.into());
             }
             "rpNameExtras" => {
-                f.values = strings(&["none", "realm", "organisation", "realm-and-organisation"])
+                f.values = strings(&[
+                    "none",
+                    "realm",
+                    "organisation",
+                    "realm-and-organisation",
+                ])
             }
-            "recoveryAssurance" => f.values = strings(&["any", "not-weaker", "operator-only"]),
+            "recoveryAssurance" => {
+                f.values = strings(&["any", "not-weaker", "operator-only"])
+            }
             "attestationAlgorithms" => {
                 f.values = strings(&[
                     "post-quantum",
@@ -124,11 +150,14 @@ fn re(pattern: &str) -> Option<Regex> {
     Regex::new(pattern).ok()
 }
 
-static DESCR: LazyLock<Option<Regex>> = LazyLock::new(|| re(r"^[A-Za-z][A-Za-z0-9-]{0,63}$"));
-static RULE_SIDES: LazyLock<Option<Regex>> = LazyLock::new(|| re(r"(?i)^(.+?) on (.+)$"));
+static DESCR: LazyLock<Option<Regex>> =
+    LazyLock::new(|| re(r"^[A-Za-z][A-Za-z0-9-]{0,63}$"));
+static RULE_SIDES: LazyLock<Option<Regex>> =
+    LazyLock::new(|| re(r"(?i)^(.+?) on (.+)$"));
 static SIDE: LazyLock<Option<Regex>> =
     LazyLock::new(|| re(r"^(.*?) ([0-9]{1,4})?(?:(-)([0-9]{1,4})?)?$"));
-static FAMILY: LazyLock<Option<Regex>> = LazyLock::new(|| re(r"^[A-Za-z][A-Za-z0-9 .-]{0,31}$"));
+static FAMILY: LazyLock<Option<Regex>> =
+    LazyLock::new(|| re(r"^[A-Za-z][A-Za-z0-9 .-]{0,31}$"));
 static CONTROLS: LazyLock<Option<Regex>> = LazyLock::new(|| {
     re("[\u{0}-\u{1f}\u{7f}-\u{9f}\u{61c}\u{200e}\u{200f}\u{202a}-\u{202e}\u{2066}-\u{2069}]")
 });
@@ -156,7 +185,10 @@ fn collapse(text: &str) -> String {
 }
 
 fn split_space(text: &str) -> Vec<String> {
-    text.split(js::is_js_space).filter(|s| !s.is_empty()).map(String::from).collect()
+    text.split(js::is_js_space)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
 }
 
 /// `PasskeyPolicy.displaySafe()` (#533): no control or bidirectional-
@@ -187,9 +219,17 @@ pub struct ClientRuleSide {
 fn client_side(raw: &str) -> Option<ClientRuleSide> {
     let text = js::trim(raw).to_string();
     let caps = SIDE.as_ref().and_then(|r| r.captures(&text));
-    let g = |n: usize| caps.as_ref().and_then(|c| c.get(n)).map(|m| m.as_str().to_string());
+    let g = |n: usize| {
+        caps.as_ref()
+            .and_then(|c| c.get(n))
+            .map(|m| m.as_str().to_string())
+    };
     let has_range = caps.is_some() && (g(2).is_some() || g(4).is_some());
-    let family = if has_range { js::trim(&g(1).unwrap_or_default()).to_string() } else { text.clone() };
+    let family = if has_range {
+        js::trim(&g(1).unwrap_or_default()).to_string()
+    } else {
+        text.clone()
+    };
     if !(family == "*" || matches(&FAMILY, &family)) {
         return None;
     }
@@ -197,7 +237,11 @@ fn client_side(raw: &str) -> Option<ClientRuleSide> {
     let low = if has_range { num(g(2)) } else { None };
     let dash = g(3).is_some();
     let high = if has_range {
-        if dash { num(g(4)) } else { low }
+        if dash {
+            num(g(4))
+        } else {
+            low
+        }
     } else {
         None
     };
@@ -215,7 +259,11 @@ fn client_side(raw: &str) -> Option<ClientRuleSide> {
         format!("{}-{}", show(low), show(high))
     };
     Some(ClientRuleSide {
-        text: if range.is_empty() { family.clone() } else { format!("{family} {range}") },
+        text: if range.is_empty() {
+            family.clone()
+        } else {
+            format!("{family} {range}")
+        },
         family,
         low,
         high,
@@ -226,7 +274,9 @@ fn client_side(raw: &str) -> Option<ClientRuleSide> {
 /// `PasskeyPolicy.parseClientRules()` (#1112): the rules and their
 /// canonical text, or the problem with the first bad rule.
 #[tracing::instrument(level = "debug")]
-pub fn parse_client_rules(raw: &str) -> Result<(Vec<(ClientRuleSide, ClientRuleSide)>, String), String> {
+pub fn parse_client_rules(
+    raw: &str,
+) -> Result<(Vec<(ClientRuleSide, ClientRuleSide)>, String), String> {
     let items: Vec<String> = raw
         .split(';')
         .map(|one| collapse(js::trim(one)))
@@ -272,7 +322,10 @@ pub fn hint_list(value: &Value) -> Vec<String> {
     if text == NO_HINTS {
         return Vec::new();
     }
-    text.split(',').filter(|h| HINTS.contains(h)).map(String::from).collect()
+    text.split(',')
+        .filter(|h| HINTS.contains(h))
+        .map(String::from)
+        .collect()
 }
 
 /// `PasskeyPolicy.isPostQuantum()`.
@@ -292,14 +345,14 @@ pub struct PasskeyPolicy<'a> {
 
 impl<'a> PasskeyPolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> PasskeyPolicy<'a> {
-        // A hot path: built per ceremony.
         PasskeyPolicy { ports }
     }
 
     /// The rows.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per row of every profile.
         &FIELDS
     }
 
@@ -319,7 +372,11 @@ impl<'a> PasskeyPolicy<'a> {
     }
 
     fn field(key: &str) -> Field {
-        FIELDS.iter().find(|f| f.key == key).cloned().unwrap_or_default()
+        FIELDS
+            .iter()
+            .find(|f| f.key == key)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn parse(field: &Field, raw: &Value) -> Result<Value, String> {
@@ -439,24 +496,38 @@ impl<'a> PasskeyPolicy<'a> {
     /// selection; a named profile the realm does not hold is `default`.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: Option<&str>) -> Value {
-        let asked = name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE).to_lowercase();
-        let profile = if asked != DEFAULT_PROFILE && !self.holds(realm, &asked) {
+        let asked = name
+            .filter(|n| !n.is_empty())
+            .unwrap_or(DEFAULT_PROFILE)
+            .to_lowercase();
+        let profile = if asked != DEFAULT_PROFILE && !self.holds(realm, &asked)
+        {
             DEFAULT_PROFILE.to_string()
         } else {
             asked
         };
-        let found = common::entry_for(&self.ports, realm, Container::Passkey, &profile, Inherit::Any);
+        let found = common::entry_for(
+            &self.ports,
+            realm,
+            Container::Passkey,
+            &profile,
+            Inherit::Any,
+        );
         let defaults = self.defaults(realm);
         let shown_defaults = defaults.clone();
-        let (values, sources, problems) = common::read_rows(
-            &FIELDS,
-            &found,
-            &defaults,
-            Self::parse,
-            |f| shown_defaults.get(&f.key).map(js::text).unwrap_or_else(|| "undefined".into()),
-        );
+        let (values, sources, problems) =
+            common::read_rows(&FIELDS, &found, &defaults, Self::parse, |f| {
+                shown_defaults
+                    .get(&f.key)
+                    .map(js::text)
+                    .unwrap_or_else(|| "undefined".into())
+            });
         let empty = Object::new();
-        let at = found.entry.as_ref().map(|e| &e.attributes).unwrap_or(&empty);
+        let at = found
+            .entry
+            .as_ref()
+            .map(|e| &e.attributes)
+            .unwrap_or(&empty);
         let precedence = if profile == DEFAULT_PROFILE {
             Value::from(0)
         } else {
@@ -467,11 +538,20 @@ impl<'a> PasskeyPolicy<'a> {
                 ("name", Value::String(profile)),
                 ("precedence", precedence),
                 ("stored", Value::Bool(found.from == common::From::Realm)),
-                ("inherited", Value::Bool(found.from == common::From::DefaultRealm)),
+                (
+                    "inherited",
+                    Value::Bool(found.from == common::From::DefaultRealm),
+                ),
                 ("from", Value::String(found.from.as_str().into())),
                 (
                     "dn",
-                    Value::String(found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default()),
+                    Value::String(
+                        found
+                            .entry
+                            .as_ref()
+                            .map(|e| e.dn.clone())
+                            .unwrap_or_default(),
+                    ),
                 ),
                 ("description", Value::String(common::description_in(&found))),
                 ("sources", Value::Object(sources)),
@@ -499,8 +579,15 @@ impl<'a> PasskeyPolicy<'a> {
     /// `selectionFor(username, application)`: a dangling reference selects
     /// nothing (STS-AUTHN-0537).
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn selection_for(&self, realm: &str, username: &str, application: &str) -> String {
-        let Some(entries) = self.ports.directory.entries(realm, Container::Passkey) else {
+    pub fn selection_for(
+        &self,
+        realm: &str,
+        username: &str,
+        application: &str,
+    ) -> String {
+        let Some(entries) =
+            self.ports.directory.entries(realm, Container::Passkey)
+        else {
             return DEFAULT_PROFILE.to_string();
         };
         if selection::named(Some(&entries), &spec()).is_empty() {
@@ -517,7 +604,12 @@ impl<'a> PasskeyPolicy<'a> {
         let mut references = vec![Reference::new(
             "application",
             application,
-            &common::application_reference(&self.ports, realm, application, APP_REFERENCE),
+            &common::application_reference(
+                &self.ports,
+                realm,
+                application,
+                APP_REFERENCE,
+            ),
         )];
         references.extend(selection::group_references(&groups));
         let ranked = selection::rank(Some(&entries), &spec(), &references);
@@ -539,7 +631,11 @@ impl<'a> PasskeyPolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn named_by(&self, realm: &str, name: &str) -> Holders {
         Holders {
-            applications: self.ports.applications.naming_policy(realm, APP_REFERENCE, name),
+            applications: self.ports.applications.naming_policy(
+                realm,
+                APP_REFERENCE,
+                name,
+            ),
             groups: self
                 .ports
                 .directory
@@ -553,7 +649,11 @@ impl<'a> PasskeyPolicy<'a> {
     /// many named profiles a group names.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn for_application(&self, realm: &str, reference: &Value) -> Value {
-        let entries = self.ports.directory.entries(realm, Container::Passkey).unwrap_or_default();
+        let entries = self
+            .ports
+            .directory
+            .entries(realm, Container::Passkey)
+            .unwrap_or_default();
         let out = selection::for_reference(Some(&entries), &spec(), reference);
         let group_policies = selection::named(Some(&entries), &spec())
             .iter()
@@ -579,14 +679,20 @@ impl<'a> PasskeyPolicy<'a> {
             Vec::new()
         } else {
             text.split(',')
-                .filter(|a| REGISTRATION_ALGORITHM_VALUES.iter().any(|v| v == a))
+                .filter(|a| {
+                    REGISTRATION_ALGORITHM_VALUES.iter().any(|v| v == a)
+                })
                 .map(String::from)
                 .collect()
         };
         let mode = js::or_empty(values.get("registrationMode"));
         let pick = |v: Option<&Value>, list: &[&str], fallback: &str| {
             let t = v.map(js::text).unwrap_or_else(|| "undefined".into());
-            if list.contains(&t.as_str()) { t } else { fallback.to_string() }
+            if list.contains(&t.as_str()) {
+                t
+            } else {
+                fallback.to_string()
+            }
         };
         RegistrationRows {
             registration_algorithms: algorithms,
@@ -605,8 +711,17 @@ impl<'a> PasskeyPolicy<'a> {
     }
 
     fn attachment_for(&self, realm: &str, kind: &str) -> String {
-        let setting = js::or_empty(Some(&self.ports.env.setting(realm, "webauthn.authenticatorAttachment")));
-        let setting = if setting.is_empty() { "any".to_string() } else { setting };
+        let setting = js::or_empty(Some(
+            &self
+                .ports
+                .env
+                .setting(realm, "webauthn.authenticatorAttachment"),
+        ));
+        let setting = if setting.is_empty() {
+            "any".to_string()
+        } else {
+            setting
+        };
         if setting != "any" {
             setting
         } else if kind == "security-key" {
@@ -618,7 +733,10 @@ impl<'a> PasskeyPolicy<'a> {
 
     fn hint_problems(&self, realm: &str, values: &Object) -> Vec<String> {
         let mut out = Vec::new();
-        for (key, kind) in [("passkeyHints", "passkey"), ("securityKeyHints", "security-key")] {
+        for (key, kind) in [
+            ("passkeyHints", "passkey"),
+            ("securityKeyHints", "security-key"),
+        ] {
             let list = hint_list(values.get(key).unwrap_or(&Value::Null));
             let attachment = self.attachment_for(realm, kind);
             if attachment.is_empty() {
@@ -647,7 +765,11 @@ impl<'a> PasskeyPolicy<'a> {
     /// `validate(given)`: an optional row left out keeps the default here
     /// (and the stored value at the write, #907).
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn validate(&self, realm: &str, given: Option<&Object>) -> (Object, Vec<String>) {
+    pub fn validate(
+        &self,
+        realm: &str,
+        given: Option<&Object>,
+    ) -> (Object, Vec<String>) {
         let empty = Object::new();
         let body = given.unwrap_or(&empty);
         let mut values = Object::new();
@@ -684,7 +806,9 @@ impl<'a> PasskeyPolicy<'a> {
             .ports
             .directory
             .entries(realm, Container::Passkey)
-            .and_then(|list| list.into_iter().find(|e| e.name.to_lowercase() == which));
+            .and_then(|list| {
+                list.into_iter().find(|e| e.name.to_lowercase() == which)
+            });
         for f in FIELDS.iter() {
             if let Some(v) = values.get(&f.key) {
                 out.insert(f.key.clone(), v.clone());
@@ -705,11 +829,19 @@ impl<'a> PasskeyPolicy<'a> {
     }
 
     // `registrationContradiction()` (#940).
-    fn contradiction(&self, realm: &str, values: &Object) -> Option<(ErrorCode, String)> {
+    fn contradiction(
+        &self,
+        realm: &str,
+        values: &Object,
+    ) -> Option<(ErrorCode, String)> {
         let rows = Self::registration_rows(values);
         let mode = rows.registration_mode.clone();
         let label = |k: &str| Self::field(k).label;
-        let mode_label = format!("`registrationMode` ({}) is {}", label("registrationMode"), mode);
+        let mode_label = format!(
+            "`registrationMode` ({}) is {}",
+            label("registrationMode"),
+            mode
+        );
         if mode == "classical-only" && rows.post_quantum_required != "off" {
             return Some((
                 codes::STS_AUTHN_0430,
@@ -735,7 +867,11 @@ impl<'a> PasskeyPolicy<'a> {
         }
         let attested = {
             let t = js::or_empty(values.get("attestationAlgorithms"));
-            if t.is_empty() { NO_HINTS.to_string() } else { t }
+            if t.is_empty() {
+                NO_HINTS.to_string()
+            } else {
+                t
+            }
         };
         if mode == "classical-only" && attested != NO_HINTS {
             return Some((
@@ -750,13 +886,15 @@ impl<'a> PasskeyPolicy<'a> {
             ));
         }
         if mode == "pq-only" || mode == "pq-first" {
-            let list: Vec<String> = if !rows.registration_algorithms.is_empty() {
+            let list: Vec<String> = if !rows.registration_algorithms.is_empty()
+            {
                 rows.registration_algorithms.clone()
             } else {
                 match self.ports.env.setting(realm, "webauthn.algorithms") {
-                    Value::Array(items) => {
-                        items.iter().map(|v| js::trim(&js::text(v)).to_string()).collect()
-                    }
+                    Value::Array(items) => items
+                        .iter()
+                        .map(|v| js::trim(&js::text(v)).to_string())
+                        .collect(),
                     other => js::or_empty(Some(&other))
                         .split(',')
                         .map(|s| js::trim(s).to_string())
@@ -764,7 +902,8 @@ impl<'a> PasskeyPolicy<'a> {
                 }
             };
             if !list.iter().any(|a| is_post_quantum(a)) {
-                let shown: Vec<&String> = list.iter().filter(|s| !s.is_empty()).collect();
+                let shown: Vec<&String> =
+                    list.iter().filter(|s| !s.is_empty()).collect();
                 return Some((
                     codes::STS_AUTHN_0431,
                     format!(
@@ -790,7 +929,11 @@ impl<'a> PasskeyPolicy<'a> {
 
     fn check_name(name: &Value) -> Option<String> {
         let given = js::or_empty(Some(name));
-        let text = if given.is_empty() { DEFAULT_PROFILE.to_string() } else { given };
+        let text = if given.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            given
+        };
         let text = js::trim(&text);
         if text != DEFAULT_PROFILE && !selection::is_policy_name(text) {
             return Some(format!(
@@ -804,13 +947,19 @@ impl<'a> PasskeyPolicy<'a> {
 
     /// `save(name, given)`.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_AUTHN_0308, vec![refused]);
         }
         let which = super::locale::which(name);
         let (values, mut problems) = self.validate(realm, given);
-        let ranked = (which != DEFAULT_PROFILE).then(|| selection::check_precedence(given, &spec()));
+        let ranked = (which != DEFAULT_PROFILE)
+            .then(|| selection::check_precedence(given, &spec()));
         if let Some((_, p)) = &ranked {
             problems.extend(p.iter().cloned());
         }
@@ -821,9 +970,15 @@ impl<'a> PasskeyPolicy<'a> {
         if let Some((code, problem)) = self.contradiction(realm, &standing) {
             return Answer::refused(code, vec![problem]);
         }
-        let required = standing.get("postQuantumRequired").map(js::text).unwrap_or_default();
+        let required = standing
+            .get("postQuantumRequired")
+            .map(js::text)
+            .unwrap_or_default();
         if required != "off"
-            && !self.ports.env.offers_post_quantum(realm, &Self::registration_rows(&standing))
+            && !self
+                .ports
+                .env
+                .offers_post_quantum(realm, &Self::registration_rows(&standing))
         {
             return Answer::refused(
                 codes::STS_AUTHN_0357,
@@ -838,7 +993,8 @@ impl<'a> PasskeyPolicy<'a> {
             );
         }
         if standing.get("deviceBoundRequired") == Some(&Value::Bool(true))
-            && self.ports.env.setting(realm, "authn.deviceBoundSessions") != Value::Bool(true)
+            && self.ports.env.setting(realm, "authn.deviceBoundSessions")
+                != Value::Bool(true)
         {
             return Answer::refused(
                 codes::STS_AUTHN_0461,
@@ -849,8 +1005,14 @@ impl<'a> PasskeyPolicy<'a> {
                 )],
             );
         }
-        let Some(entries) = self.ports.directory.entries(realm, Container::Passkey) else {
-            return common::no_directory(codes::STS_AUTHN_0310, "a passkey policy", "ou=passkeyPolicies");
+        let Some(entries) =
+            self.ports.directory.entries(realm, Container::Passkey)
+        else {
+            return common::no_directory(
+                codes::STS_AUTHN_0310,
+                "a passkey policy",
+                "ou=passkeyPolicies",
+            );
         };
         let own = entries.into_iter().find(|e| e.name.to_lowercase() == which);
         let mut attributes = Object::new();
@@ -859,11 +1021,14 @@ impl<'a> PasskeyPolicy<'a> {
             Value::Array(vec!["top".into(), "stsPasskeyPolicy".into()]),
         );
         let description = common::description_of(given);
-        attributes.insert("description".into(), Value::String(description.clone()));
+        attributes
+            .insert("description".into(), Value::String(description.clone()));
         for f in FIELDS.iter() {
             match values.get(&f.key) {
                 None if f.optional => {
-                    let kept = own.as_ref().and_then(|e| js::member(&e.attributes, &f.attribute));
+                    let kept = own
+                        .as_ref()
+                        .and_then(|e| js::member(&e.attributes, &f.attribute));
                     if let Some(kept) = kept {
                         attributes.insert(f.attribute.clone(), kept.clone());
                     }
@@ -882,8 +1047,15 @@ impl<'a> PasskeyPolicy<'a> {
         if let Some((p, _)) = ranked {
             attributes.insert(PRECEDENCE.into(), Value::String(p.to_string()));
         }
-        let outcome = self.ports.directory.write(realm, Container::Passkey, &which, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_AUTHN_0311, "profile") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::Passkey,
+            &which,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_AUTHN_0311, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, Some(&which)))
@@ -901,21 +1073,35 @@ impl<'a> PasskeyPolicy<'a> {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {
-            if let Some(held) =
-                selection::delete_problem("passkey policy", &which, &self.named_by(realm, &which))
-            {
+            if let Some(held) = selection::delete_problem(
+                "passkey policy",
+                &which,
+                &self.named_by(realm, &which),
+            ) {
                 return Answer::refused(codes::STS_AUTHN_0538, vec![held]);
             }
         }
-        let removed = self.ports.directory.delete(realm, Container::Passkey, &which);
+        let removed =
+            self.ports
+                .directory
+                .delete(realm, Container::Passkey, &which);
         common::removed(removed, self.read(realm, Some(&which)))
     }
 
     /// `act(action, body)`: the learned clients' clears (#1112).
     #[tracing::instrument(level = "debug", skip(self, body))]
-    pub fn act(&self, realm: &str, action: &str, body: Option<&Object>) -> Answer {
+    pub fn act(
+        &self,
+        realm: &str,
+        action: &str,
+        body: Option<&Object>,
+    ) -> Answer {
         let empty = Object::new();
-        self.ports.env.passkey_clients_act(realm, action, body.unwrap_or(&empty))
+        self.ports.env.passkey_clients_act(
+            realm,
+            action,
+            body.unwrap_or(&empty),
+        )
     }
 
     /// The reference attributes: on an application and on a group.

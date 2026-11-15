@@ -49,7 +49,9 @@ impl Container {
                 "writePasswordPolicy",
                 "deletePasswordPolicy",
             ],
-            Container::Authn => ["allAuthnPolicies", "writeAuthnPolicy", "deleteAuthnPolicy"],
+            Container::Authn => {
+                ["allAuthnPolicies", "writeAuthnPolicy", "deleteAuthnPolicy"]
+            }
             Container::ServiceAccount => [
                 "allServiceAccountPolicies",
                 "writeServiceAccountPolicy",
@@ -133,10 +135,19 @@ pub trait PolicyDirectory {
     /// Every entry of a container in a realm, or `None` where no directory
     /// is installed (Node's `haveDirectory()` false: the built-in profile
     /// is in force and nothing can be saved).
-    fn entries(&self, realm: &str, container: Container) -> Option<Vec<PolicyEntry>>;
+    fn entries(
+        &self,
+        realm: &str,
+        container: Container,
+    ) -> Option<Vec<PolicyEntry>>;
     /// Replaces an entry whole (`write…Policy(name, attributes)`).
-    fn write(&self, realm: &str, container: Container, name: &str, attributes: &Object)
-        -> WriteOutcome;
+    fn write(
+        &self,
+        realm: &str,
+        container: Container,
+        name: &str,
+        attributes: &Object,
+    ) -> WriteOutcome;
     /// Deletes an entry; whether one was there.
     fn delete(&self, realm: &str, container: Container, name: &str) -> bool;
     /// The person's groups, each with the value of `attribute` on it
@@ -150,8 +161,12 @@ pub trait PolicyDirectory {
     ) -> Option<Vec<GroupReference>>;
     /// The cns of the groups whose `attribute` names `name`, in DN order
     /// (`groupsNamingPolicy(attribute, name)`, matched in any case).
-    fn groups_naming_policy(&self, realm: &str, attribute: &str, name: &str)
-        -> Option<Vec<String>>;
+    fn groups_naming_policy(
+        &self,
+        realm: &str,
+        attribute: &str,
+        name: &str,
+    ) -> Option<Vec<String>>;
     /// The given groups with the value of `attribute` on each
     /// (`groupReferences(groups, attribute)`, the attribute policy's).
     fn group_references(
@@ -161,8 +176,12 @@ pub trait PolicyDirectory {
         attribute: &str,
     ) -> Option<Vec<GroupReference>>;
     /// The people whose own `attribute` names `name`.
-    fn people_naming_policy(&self, realm: &str, attribute: &str, name: &str)
-        -> Option<PeopleNaming>;
+    fn people_naming_policy(
+        &self,
+        realm: &str,
+        attribute: &str,
+        name: &str,
+    ) -> Option<PeopleNaming>;
     /// The spelling the directory knows an attribute name by, '' for one it
     /// does not (`knownName()`).
     fn known_name(&self, realm: &str, name: &str) -> String;
@@ -180,7 +199,12 @@ pub trait ApplicationRegister {
     fn by_identifier(&self, realm: &str, identifier: &str) -> Option<Object>;
     /// The identifiers of the applications whose `attribute` names the
     /// policy (`applicationsNamingPolicy(attribute, name)`).
-    fn naming_policy(&self, realm: &str, attribute: &str, name: &str) -> Vec<String>;
+    fn naming_policy(
+        &self,
+        realm: &str,
+        attribute: &str,
+        name: &str,
+    ) -> Vec<String>;
 }
 
 /// A realm's own facts the password check reads (`realms.current()` and
@@ -246,15 +270,23 @@ pub trait PolicyEnvironment {
     /// Whether an entry's attributes are a service account's.
     fn is_service_account(&self, realm: &str, attributes: &Object) -> bool;
     /// `webauthn_policy.offersPostQuantum(rows)`.
-    fn offers_post_quantum(&self, realm: &str, rows: &RegistrationRows) -> bool;
+    fn offers_post_quantum(&self, realm: &str, rows: &RegistrationRows)
+        -> bool;
     /// `i18n.canonical(tag)`: the canonical BCP 47 tag, '' for none.
     fn canonical_locale(&self, tag: &str) -> String;
     /// The person editor's universe, or the reason it could not be asked.
-    fn offered_attributes(&self, realm: &str) -> Result<Vec<OfferedRow>, String>;
+    fn offered_attributes(
+        &self,
+        realm: &str,
+    ) -> Result<Vec<OfferedRow>, String>;
     /// `passkey_clients.act(action, body)`: the learned clients' acts,
     /// answered with their own code where refused.
-    fn passkey_clients_act(&self, realm: &str, action: &str, body: &Object)
-        -> crate::Answer;
+    fn passkey_clients_act(
+        &self,
+        realm: &str,
+        action: &str,
+        body: &Object,
+    ) -> crate::Answer;
 }
 
 /// The three ports, as one set a kind is built over.

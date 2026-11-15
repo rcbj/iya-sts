@@ -54,11 +54,24 @@ static MECHANISMS: LazyLock<Vec<Mechanism>> = LazyLock::new(|| {
         .map(|rows| {
             rows.iter()
                 .map(|m| Mechanism {
-                    id: m.get("id").and_then(Value::as_str).unwrap_or("").into(),
-                    label: m.get("label").and_then(Value::as_str).unwrap_or("").into(),
+                    id: m
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .into(),
+                    label: m
+                        .get("label")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .into(),
                     primary: m.get("primary").and_then(Value::as_bool),
-                    second_factor: m.get("secondFactor").and_then(Value::as_bool),
-                    email: m.get("email").and_then(Value::as_bool).unwrap_or(false),
+                    second_factor: m
+                        .get("secondFactor")
+                        .and_then(Value::as_bool),
+                    email: m
+                        .get("email")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                 })
                 .collect()
         })
@@ -66,13 +79,18 @@ static MECHANISMS: LazyLock<Vec<Mechanism>> = LazyLock::new(|| {
 });
 
 fn key_of(mechanism: &str, primary: bool) -> String {
-    format!("{mechanism}{}", if primary { "Primary" } else { "SecondFactor" })
+    format!(
+        "{mechanism}{}",
+        if primary { "Primary" } else { "SecondFactor" }
+    )
 }
 
 fn attribute_of(key: &str) -> String {
     let mut c = key.chars();
     match c.next() {
-        Some(first) => format!("stsAuthn{}{}", first.to_uppercase(), c.as_str()),
+        Some(first) => {
+            format!("stsAuthn{}{}", first.to_uppercase(), c.as_str())
+        }
         None => "stsAuthn".into(),
     }
 }
@@ -93,12 +111,18 @@ static FIELDS: LazyLock<Vec<Field>> = LazyLock::new(|| {
                 kind: "bool".into(),
                 dflt: Value::Bool(dflt),
                 mechanism: Some(m.id.clone()),
-                role: Some(if primary { "primary" } else { "second-factor" }.into()),
+                role: Some(
+                    if primary { "primary" } else { "second-factor" }.into(),
+                ),
                 email: m.email,
                 label: format!(
                     "{} — as a {}",
                     m.label,
-                    if primary { "first factor" } else { "second factor" }
+                    if primary {
+                        "first factor"
+                    } else {
+                        "second factor"
+                    }
                 ),
                 ..Field::default()
             });
@@ -178,20 +202,20 @@ fn list_sent(value: Option<&Value>) -> Vec<String> {
 
 impl<'a> AuthnPolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> AuthnPolicy<'a> {
-        // A hot path: built per question the API layer asks.
         AuthnPolicy { ports }
     }
 
     /// The rows, with the computed mechanism rows before `emailCodeTtlS`.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per row of every profile.
         &FIELDS
     }
 
     /// The mechanisms, from the model's facts.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn mechanisms() -> &'static [Mechanism] {
-        // A hot path: read by every `allows()`.
         &MECHANISMS
     }
 
@@ -231,8 +255,11 @@ impl<'a> AuthnPolicy<'a> {
                     .into(),
             );
         }
-        let always = |k: &str| values.get(k) == Some(&Value::String("always".into()));
-        if always("requireSecondFactor") || always("requireSecondFactorForAdministrators") {
+        let always =
+            |k: &str| values.get(k) == Some(&Value::String("always".into()));
+        if always("requireSecondFactor")
+            || always("requireSecondFactorForAdministrators")
+        {
             let any_second = MECHANISMS
                 .iter()
                 .any(|m| m.second_factor.is_some() && on(key_of(&m.id, false)));
@@ -252,8 +279,17 @@ impl<'a> AuthnPolicy<'a> {
     /// built-in defaults; always answers.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: Option<&str>) -> Value {
-        let profile = name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE).to_string();
-        let found = common::entry_for(&self.ports, realm, Container::Authn, &profile, Inherit::Any);
+        let profile = name
+            .filter(|n| !n.is_empty())
+            .unwrap_or(DEFAULT_PROFILE)
+            .to_string();
+        let found = common::entry_for(
+            &self.ports,
+            realm,
+            Container::Authn,
+            &profile,
+            Inherit::Any,
+        );
         let (values, sources, mut problems) = common::read_rows(
             &FIELDS,
             &found,
@@ -268,7 +304,10 @@ impl<'a> AuthnPolicy<'a> {
             vec![
                 ("name", Value::String(profile)),
                 ("stored", Value::Bool(found.from == common::From::Realm)),
-                ("inherited", Value::Bool(found.from == common::From::DefaultRealm)),
+                (
+                    "inherited",
+                    Value::Bool(found.from == common::From::DefaultRealm),
+                ),
                 ("from", Value::String(found.from.as_str().into())),
                 ("dn", Value::String(Self::dn_of(&found))),
                 ("description", Value::String(common::description_in(&found))),
@@ -281,7 +320,11 @@ impl<'a> AuthnPolicy<'a> {
     }
 
     fn dn_of(found: &Found) -> String {
-        found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default()
+        found
+            .entry
+            .as_ref()
+            .map(|e| e.dn.clone())
+            .unwrap_or_default()
     }
 
     /// `list()`: the one profile in force.
@@ -293,7 +336,13 @@ impl<'a> AuthnPolicy<'a> {
     /// `allows(mechanism, role, profile)`: false for an unknown mechanism or
     /// a role it cannot take.
     #[tracing::instrument(level = "debug", skip(self, profile))]
-    pub fn allows(&self, realm: &str, mechanism: &str, primary: bool, profile: Option<&Value>) -> bool {
+    pub fn allows(
+        &self,
+        realm: &str,
+        mechanism: &str,
+        primary: bool,
+        profile: Option<&Value>,
+    ) -> bool {
         let Some(m) = MECHANISMS.iter().find(|m| m.id == mechanism) else {
             return false;
         };
@@ -308,13 +357,17 @@ impl<'a> AuthnPolicy<'a> {
                 &read
             }
         };
-        rules.get(key_of(mechanism, primary)).is_some_and(js::truthy)
+        rules
+            .get(key_of(mechanism, primary))
+            .is_some_and(js::truthy)
     }
 
     /// `named()`: the realm's named authentication policies, by name.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn named(&self, realm: &str) -> Vec<NamedAuthnPolicy> {
-        let Some(entries) = self.ports.directory.entries(realm, Container::Authn) else {
+        let Some(entries) =
+            self.ports.directory.entries(realm, Container::Authn)
+        else {
             return Vec::new();
         };
         let mut out: Vec<NamedAuthnPolicy> = entries
@@ -325,12 +378,20 @@ impl<'a> AuthnPolicy<'a> {
                 NamedAuthnPolicy {
                     name: e.name.to_lowercase(),
                     dn: e.dn.clone(),
-                    description: list_of(common::concept_values(Concept::FIELDS, "description", at))
-                        .into_iter()
-                        .next()
-                        .unwrap_or_default(),
+                    description: list_of(common::concept_values(
+                        Concept::FIELDS,
+                        "description",
+                        at,
+                    ))
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default(),
                     precedence: selection::precedence_of(at, &spec()),
-                    mechanisms: list_of(common::concept_values(Concept::FIELDS, "policyMechanism", at)),
+                    mechanisms: list_of(common::concept_values(
+                        Concept::FIELDS,
+                        "policyMechanism",
+                        at,
+                    )),
                     second_factors: list_of(common::concept_values(
                         Concept::FIELDS,
                         "policySecondFactor",
@@ -345,7 +406,11 @@ impl<'a> AuthnPolicy<'a> {
 
     /// `namedPolicy(name)`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn named_policy(&self, realm: &str, name: &Value) -> Option<NamedAuthnPolicy> {
+    pub fn named_policy(
+        &self,
+        realm: &str,
+        name: &Value,
+    ) -> Option<NamedAuthnPolicy> {
         let wanted = js::trim(&js::text(name)).to_lowercase();
         if wanted.is_empty() || wanted == DEFAULT_PROFILE {
             return None;
@@ -358,12 +423,19 @@ impl<'a> AuthnPolicy<'a> {
     /// a name the realm does not hold: `missing`, and lists that match
     /// nothing (fail closed, STS-AUTHN-0536).
     #[tracing::instrument(level = "debug", skip(self, fields))]
-    pub fn mechanisms_for(&self, realm: &str, fields: Option<&Object>, person: &str) -> Value {
+    pub fn mechanisms_for(
+        &self,
+        realm: &str,
+        fields: Option<&Object>,
+        person: &str,
+    ) -> Value {
         let first = |f: &Object, k: &str| -> Option<Value> {
             match f.get(k) {
                 None | Some(Value::Null) => None,
                 Some(v) if !js::truthy(v) && !v.is_array() => None,
-                Some(Value::Array(a)) => Some(a.first().cloned().unwrap_or(Value::Null)),
+                Some(Value::Array(a)) => {
+                    Some(a.first().cloned().unwrap_or(Value::Null))
+                }
                 Some(v) => Some(v.clone()),
             }
         };
@@ -378,7 +450,9 @@ impl<'a> AuthnPolicy<'a> {
                     _ => f.get("cn").filter(|v| js::truthy(v)),
                 };
                 match pick {
-                    Some(Value::Array(a)) => a.first().map(js::text).unwrap_or_default(),
+                    Some(Value::Array(a)) => {
+                        a.first().map(js::text).unwrap_or_default()
+                    }
                     Some(v) => js::text(v),
                     None => String::new(),
                 }
@@ -391,9 +465,11 @@ impl<'a> AuthnPolicy<'a> {
         }];
         let key = js::trim(person);
         if !key.is_empty() {
-            if let Some(groups) =
-                self.ports.directory.person_group_references(realm, key, GROUP_REFERENCE)
-            {
+            if let Some(groups) = self.ports.directory.person_group_references(
+                realm,
+                key,
+                GROUP_REFERENCE,
+            ) {
                 references.extend(selection::group_references(&groups));
             }
         }
@@ -415,7 +491,11 @@ impl<'a> AuthnPolicy<'a> {
         if !named {
             return default();
         }
-        let entries = self.ports.directory.entries(realm, Container::Authn).unwrap_or_default();
+        let entries = self
+            .ports
+            .directory
+            .entries(realm, Container::Authn)
+            .unwrap_or_default();
         let ranked = selection::rank(Some(&entries), &spec(), &references);
         if let Some(first) = ranked.missing.first() {
             for m in &ranked.missing {
@@ -465,7 +545,11 @@ impl<'a> AuthnPolicy<'a> {
     pub fn named_by(&self, realm: &str, name: &Value) -> Holders {
         let wanted = js::trim(&js::text(name)).to_lowercase();
         Holders {
-            applications: self.ports.applications.naming_policy(realm, APP_REFERENCE, &wanted),
+            applications: self.ports.applications.naming_policy(
+                realm,
+                APP_REFERENCE,
+                &wanted,
+            ),
             groups: self
                 .ports
                 .directory
@@ -477,7 +561,12 @@ impl<'a> AuthnPolicy<'a> {
 
     /// `saveNamed(name, given)`: a named policy created or replaced.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save_named(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save_named(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         let text = js::trim(&js::text(name)).to_lowercase();
         let ok_name = text.len() <= 63
             && selection::is_policy_name(&text)
@@ -534,15 +623,25 @@ impl<'a> AuthnPolicy<'a> {
             "objectClass".into(),
             Value::Array(vec!["top".into(), "stsAuthnPolicy".into()]),
         );
-        attributes.insert("stsAuthnPolicyMechanism".into(), js::strings(&mechanisms));
-        attributes.insert("stsAuthnPolicySecondFactor".into(), js::strings(&second));
-        attributes.insert(PRECEDENCE.into(), Value::String(precedence.to_string()));
+        attributes
+            .insert("stsAuthnPolicyMechanism".into(), js::strings(&mechanisms));
+        attributes
+            .insert("stsAuthnPolicySecondFactor".into(), js::strings(&second));
+        attributes
+            .insert(PRECEDENCE.into(), Value::String(precedence.to_string()));
         let description = common::description_of(given);
         if !description.is_empty() {
             attributes.insert("description".into(), Value::String(description));
         }
-        let outcome = self.ports.directory.write(realm, Container::Authn, &text, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_AUTHN_0246, "policy") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::Authn,
+            &text,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_AUTHN_0246, "policy")
+        {
             return refused;
         }
         let policy = self.named_policy(realm, &Value::String(text.clone()));
@@ -587,8 +686,11 @@ impl<'a> AuthnPolicy<'a> {
             );
         };
         let holders = self.named_by(realm, &Value::String(found.name.clone()));
-        if let Some(held) = selection::delete_problem("authentication policy", &found.name, &holders)
-        {
+        if let Some(held) = selection::delete_problem(
+            "authentication policy",
+            &found.name,
+            &holders,
+        ) {
             return Answer::refused(
                 codes::STS_AUTHN_0534,
                 vec![format!(
@@ -597,7 +699,10 @@ impl<'a> AuthnPolicy<'a> {
                 )],
             );
         }
-        let removed = self.ports.directory.delete(realm, Container::Authn, &found.name);
+        let removed =
+            self.ports
+                .directory
+                .delete(realm, Container::Authn, &found.name);
         Answer::of(js::object(vec![
             ("ok", Value::Bool(true)),
             ("removed", Value::Bool(removed)),
@@ -605,14 +710,22 @@ impl<'a> AuthnPolicy<'a> {
             ("dn", Value::String(found.dn.clone())),
             (
                 "message",
-                Value::String(format!("The authentication policy \"{}\" is deleted.", found.name)),
+                Value::String(format!(
+                    "The authentication policy \"{}\" is deleted.",
+                    found.name
+                )),
             ),
         ]))
     }
 
     /// `act(action, body)`: the two acts beside save and reset.
     #[tracing::instrument(level = "debug", skip(self, body))]
-    pub fn act(&self, realm: &str, action: &str, body: Option<&Object>) -> Answer {
+    pub fn act(
+        &self,
+        realm: &str,
+        action: &str,
+        body: Option<&Object>,
+    ) -> Answer {
         let null = Value::Null;
         let name = body.and_then(|b| b.get("name")).unwrap_or(&null);
         match action {
@@ -631,7 +744,11 @@ impl<'a> AuthnPolicy<'a> {
 
     fn check_name(name: &Value) -> Option<String> {
         let given = js::or_empty(Some(name));
-        let text = if given.is_empty() { DEFAULT_PROFILE.to_string() } else { given };
+        let text = if given.is_empty() {
+            DEFAULT_PROFILE.to_string()
+        } else {
+            given
+        };
         let text = js::trim(&text);
         if text.to_lowercase() != DEFAULT_PROFILE {
             return Some(format!(
@@ -672,7 +789,12 @@ impl<'a> AuthnPolicy<'a> {
 
     /// `save(name, given)`: the realm's profile, replaced whole.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_AUTHN_0242, vec![refused]);
         }
@@ -682,7 +804,11 @@ impl<'a> AuthnPolicy<'a> {
         }
         let email_on: Vec<&Field> = FIELDS
             .iter()
-            .filter(|f| f.kind == "bool" && f.email && values.get(&f.key).is_some_and(js::truthy))
+            .filter(|f| {
+                f.kind == "bool"
+                    && f.email
+                    && values.get(&f.key).is_some_and(js::truthy)
+            })
             .collect();
         if !email_on.is_empty() && !self.ports.env.mail_available(realm) {
             return Answer::refused(
@@ -701,9 +827,21 @@ impl<'a> AuthnPolicy<'a> {
                 "ou=authnPolicies",
             );
         }
-        let attributes = common::row_attributes(&["top", "stsAuthnPolicy"], &FIELDS, &values, given);
-        let outcome = self.ports.directory.write(realm, Container::Authn, DEFAULT_PROFILE, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_AUTHN_0246, "profile") {
+        let attributes = common::row_attributes(
+            &["top", "stsAuthnPolicy"],
+            &FIELDS,
+            &values,
+            given,
+        );
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::Authn,
+            DEFAULT_PROFILE,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_AUTHN_0246, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, Some(DEFAULT_PROFILE)))
@@ -716,9 +854,16 @@ impl<'a> AuthnPolicy<'a> {
             return Answer::refused(codes::STS_AUTHN_0242, vec![refused]);
         }
         if !self.ports.directory.installed(Container::Authn) {
-            return common::removed(false, self.read(realm, Some(DEFAULT_PROFILE)));
+            return common::removed(
+                false,
+                self.read(realm, Some(DEFAULT_PROFILE)),
+            );
         }
-        let removed = self.ports.directory.delete(realm, Container::Authn, DEFAULT_PROFILE);
+        let removed = self.ports.directory.delete(
+            realm,
+            Container::Authn,
+            DEFAULT_PROFILE,
+        );
         common::removed(removed, self.read(realm, Some(DEFAULT_PROFILE)))
     }
 

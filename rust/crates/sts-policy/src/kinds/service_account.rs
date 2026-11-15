@@ -46,9 +46,21 @@ static DOORS: LazyLock<Vec<Door>> = LazyLock::new(|| {
         .map(|rows| {
             rows.iter()
                 .map(|d| Door {
-                    id: d.get("id").and_then(Value::as_str).unwrap_or("").into(),
-                    key: d.get("key").and_then(Value::as_str).unwrap_or("").into(),
-                    label: d.get("label").and_then(Value::as_str).unwrap_or("").into(),
+                    id: d
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .into(),
+                    key: d
+                        .get("key")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .into(),
+                    label: d
+                        .get("label")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .into(),
                 })
                 .collect()
         })
@@ -62,7 +74,9 @@ static FIELDS: LazyLock<Vec<Field>> = LazyLock::new(|| {
         .map(|d| {
             let mut c = d.key.chars();
             let attribute = match c.next() {
-                Some(f) => format!("stsSvcAcct{}{}", f.to_uppercase(), c.as_str()),
+                Some(f) => {
+                    format!("stsSvcAcct{}{}", f.to_uppercase(), c.as_str())
+                }
                 None => "stsSvcAcct".into(),
             };
             Field {
@@ -77,7 +91,11 @@ static FIELDS: LazyLock<Vec<Field>> = LazyLock::new(|| {
             }
         })
         .collect();
-    tables::fields("policy.serviceAccount", |_| {}, Some(("rotationEnabled", computed)))
+    tables::fields(
+        "policy.serviceAccount",
+        |_| {},
+        Some(("rotationEnabled", computed)),
+    )
 });
 
 fn spec() -> SelectionSpec {
@@ -91,20 +109,20 @@ pub struct ServiceAccountPolicy<'a> {
 
 impl<'a> ServiceAccountPolicy<'a> {
     /// The kind over its ports.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn new(ports: Ports<'a>) -> ServiceAccountPolicy<'a> {
-        // A hot path: built per question the API layer asks.
         ServiceAccountPolicy { ports }
     }
 
     /// The rows, the doors' before `rotationEnabled`.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn fields() -> &'static [Field] {
-        // A hot path: read per row of every profile.
         &FIELDS
     }
 
     /// The password doors.
+    /// A hot path, so it carries no span (the logging rule's exemption).
     pub fn doors() -> &'static [Door] {
-        // A hot path: read by every `allowsDoor()`.
         &DOORS
     }
 
@@ -127,7 +145,10 @@ impl<'a> ServiceAccountPolicy<'a> {
             .get("minLength")
             .and_then(Value::as_f64)
             .unwrap_or(0.0);
-        let generated = values.get("generatedLength").and_then(Value::as_f64).unwrap_or(f64::NAN);
+        let generated = values
+            .get("generatedLength")
+            .and_then(Value::as_f64)
+            .unwrap_or(f64::NAN);
         if generated < minimum {
             out.push(format!(
                 "A rotated password of {} characters is shorter than this realm's password \
@@ -154,8 +175,9 @@ impl<'a> ServiceAccountPolicy<'a> {
     /// default realm's, else the built-in defaults.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn read(&self, realm: &str, name: Option<&str>) -> Value {
-        let profile = js::trim(name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE))
-            .to_lowercase();
+        let profile =
+            js::trim(name.filter(|n| !n.is_empty()).unwrap_or(DEFAULT_PROFILE))
+                .to_lowercase();
         let found = common::entry_for(
             &self.ports,
             realm,
@@ -175,7 +197,11 @@ impl<'a> ServiceAccountPolicy<'a> {
             Value::from(0)
         } else {
             selection::precedence_of(
-                found.entry.as_ref().map(|e| &e.attributes).unwrap_or(&empty),
+                found
+                    .entry
+                    .as_ref()
+                    .map(|e| &e.attributes)
+                    .unwrap_or(&empty),
                 &spec(),
             )
             .json()
@@ -185,11 +211,20 @@ impl<'a> ServiceAccountPolicy<'a> {
                 ("name", Value::String(profile)),
                 ("precedence", precedence),
                 ("stored", Value::Bool(found.from == common::From::Realm)),
-                ("inherited", Value::Bool(found.from == common::From::DefaultRealm)),
+                (
+                    "inherited",
+                    Value::Bool(found.from == common::From::DefaultRealm),
+                ),
                 ("from", Value::String(found.from.as_str().into())),
                 (
                     "dn",
-                    Value::String(found.entry.as_ref().map(|e| e.dn.clone()).unwrap_or_default()),
+                    Value::String(
+                        found
+                            .entry
+                            .as_ref()
+                            .map(|e| e.dn.clone())
+                            .unwrap_or_default(),
+                    ),
                 ),
                 ("description", Value::String(common::description_in(&found))),
                 ("sources", Value::Object(sources)),
@@ -216,15 +251,28 @@ impl<'a> ServiceAccountPolicy<'a> {
     /// `profileForReference(reference, holder)`: a name the realm does not
     /// hold is logged (STS-SVCACCT-0047) and gets `default`.
     #[tracing::instrument(level = "debug", skip(self))]
-    pub fn profile_for_reference(&self, realm: &str, reference: &Value, holder: &str) -> Value {
-        let entries = self.ports.directory.entries(realm, Container::ServiceAccount);
-        let Some(entries) = entries.filter(|_| !js::fold(reference).is_empty()) else {
+    pub fn profile_for_reference(
+        &self,
+        realm: &str,
+        reference: &Value,
+        holder: &str,
+    ) -> Value {
+        let entries = self
+            .ports
+            .directory
+            .entries(realm, Container::ServiceAccount);
+        let Some(entries) = entries.filter(|_| !js::fold(reference).is_empty())
+        else {
             return self.read(realm, Some(DEFAULT_PROFILE));
         };
         let ranked = selection::rank(
             Some(&entries),
             &spec(),
-            &[Reference { by: "person".into(), holder: holder.into(), value: reference.clone() }],
+            &[Reference {
+                by: "person".into(),
+                holder: holder.into(),
+                value: reference.clone(),
+            }],
         );
         for m in &ranked.missing {
             tracing::warn!(
@@ -242,11 +290,15 @@ impl<'a> ServiceAccountPolicy<'a> {
     /// `list()`: `default`, then the named by precedence, ties by name.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn list(&self, realm: &str) -> Vec<Value> {
-        let entries = self.ports.directory.entries(realm, Container::ServiceAccount);
-        let mut named: Vec<Value> = selection::named(entries.as_deref(), &spec())
-            .iter()
-            .map(|n| self.read(realm, Some(&n.name)))
-            .collect();
+        let entries = self
+            .ports
+            .directory
+            .entries(realm, Container::ServiceAccount);
+        let mut named: Vec<Value> =
+            selection::named(entries.as_deref(), &spec())
+                .iter()
+                .map(|n| self.read(realm, Some(&n.name)))
+                .collect();
         common::sort_by_precedence(&mut named);
         let mut rows = vec![self.read(realm, Some(DEFAULT_PROFILE))];
         rows.extend(named);
@@ -262,13 +314,21 @@ impl<'a> ServiceAccountPolicy<'a> {
         } else {
             self.ports.env.service_accounts_naming(realm, &wanted)
         };
-        Holders { applications: Vec::new(), groups: Vec::new(), people }
+        Holders {
+            applications: Vec::new(),
+            groups: Vec::new(),
+            people,
+        }
     }
 
     /// `holderRefusal(attributes)`: the reference on an entry that is not a
     /// service account (STS-SVCACCT-0048).
     #[tracing::instrument(level = "debug", skip(self, attributes))]
-    pub fn holder_refusal(&self, realm: &str, attributes: &Object) -> Option<(ErrorCode, String)> {
+    pub fn holder_refusal(
+        &self,
+        realm: &str,
+        attributes: &Object,
+    ) -> Option<(ErrorCode, String)> {
         if self.ports.env.is_service_account(realm, attributes) {
             return None;
         }
@@ -285,8 +345,15 @@ impl<'a> ServiceAccountPolicy<'a> {
     /// `writeRefusal(attributes)`: a reference on an entry that may not hold
     /// it, or naming a profile the realm does not hold (STS-SVCACCT-0050).
     #[tracing::instrument(level = "debug", skip(self, attributes))]
-    pub fn write_refusal(&self, realm: &str, attributes: &Object) -> Option<(ErrorCode, String)> {
-        let value = js::values_of(attributes, PERSON_REFERENCE).into_iter().next().unwrap_or_default();
+    pub fn write_refusal(
+        &self,
+        realm: &str,
+        attributes: &Object,
+    ) -> Option<(ErrorCode, String)> {
+        let value = js::values_of(attributes, PERSON_REFERENCE)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
         let text = js::fold_str(&value);
         if text.is_empty() {
             return None;
@@ -299,14 +366,20 @@ impl<'a> ServiceAccountPolicy<'a> {
             .iter()
             .map(|p| p.get("name").map(js::text).unwrap_or_default())
             .collect();
-        selection::reference_problem(&Value::String(text), Some(&choices), PERSON_REFERENCE)
-            .map(|p| (codes::STS_SVCACCT_0050, p))
+        selection::reference_problem(
+            &Value::String(text),
+            Some(&choices),
+            PERSON_REFERENCE,
+        )
+        .map(|p| (codes::STS_SVCACCT_0050, p))
     }
 
     fn check_name(name: &Value) -> Option<String> {
         let given = match name {
             Value::Null => Value::String(DEFAULT_PROFILE.into()),
-            Value::String(s) if s.is_empty() => Value::String(DEFAULT_PROFILE.into()),
+            Value::String(s) if s.is_empty() => {
+                Value::String(DEFAULT_PROFILE.into())
+            }
             other => other.clone(),
         };
         selection::name_problem(&given, NOUN, true)
@@ -314,7 +387,11 @@ impl<'a> ServiceAccountPolicy<'a> {
 
     /// `validate(given)`: every row required (save's cross checks too).
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn validate(&self, realm: &str, given: Option<&Object>) -> (Object, Vec<String>) {
+    pub fn validate(
+        &self,
+        realm: &str,
+        given: Option<&Object>,
+    ) -> (Object, Vec<String>) {
         let empty = Object::new();
         let body = given.unwrap_or(&empty);
         let mut values = Object::new();
@@ -338,13 +415,19 @@ impl<'a> ServiceAccountPolicy<'a> {
 
     /// `save(name, given)`.
     #[tracing::instrument(level = "debug", skip(self, given))]
-    pub fn save(&self, realm: &str, name: &Value, given: Option<&Object>) -> Answer {
+    pub fn save(
+        &self,
+        realm: &str,
+        name: &Value,
+        given: Option<&Object>,
+    ) -> Answer {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_SVCACCT_0001, vec![refused]);
         }
         let which = which(name);
         let (values, mut problems) = self.validate(realm, given);
-        let ranked = (which != DEFAULT_PROFILE).then(|| selection::check_precedence(given, &spec()));
+        let ranked = (which != DEFAULT_PROFILE)
+            .then(|| selection::check_precedence(given, &spec()));
         if let Some((_, p)) = &ranked {
             problems.extend(p.iter().cloned());
         }
@@ -358,14 +441,24 @@ impl<'a> ServiceAccountPolicy<'a> {
                 "ou=serviceAccountPolicies",
             );
         }
-        let mut attributes =
-            common::row_attributes(&["top", "stsServiceAccountPolicy"], &FIELDS, &values, given);
+        let mut attributes = common::row_attributes(
+            &["top", "stsServiceAccountPolicy"],
+            &FIELDS,
+            &values,
+            given,
+        );
         if let Some((p, _)) = ranked {
             attributes.insert(PRECEDENCE.into(), Value::String(p.to_string()));
         }
-        let outcome =
-            self.ports.directory.write(realm, Container::ServiceAccount, &which, &attributes);
-        if let Some(refused) = common::write_refusal(&outcome, codes::STS_SVCACCT_0004, "profile") {
+        let outcome = self.ports.directory.write(
+            realm,
+            Container::ServiceAccount,
+            &which,
+            &attributes,
+        );
+        if let Some(refused) =
+            common::write_refusal(&outcome, codes::STS_SVCACCT_0004, "profile")
+        {
             return refused;
         }
         common::saved(self.read(realm, Some(&which)))
@@ -384,21 +477,32 @@ impl<'a> ServiceAccountPolicy<'a> {
         }
         if which != DEFAULT_PROFILE {
             let holders = self.named_by(realm, &Value::String(which.clone()));
-            if let Some(held) = selection::delete_problem(NOUN, &which, &holders) {
+            if let Some(held) =
+                selection::delete_problem(NOUN, &which, &holders)
+            {
                 return Answer::refused(codes::STS_SVCACCT_0049, vec![held]);
             }
         }
-        let removed = self.ports.directory.delete(realm, Container::ServiceAccount, &which);
+        let removed = self.ports.directory.delete(
+            realm,
+            Container::ServiceAccount,
+            &which,
+        );
         common::removed(removed, self.read(realm, Some(&which)))
     }
 
     /// The reference attribute: on the service account's own entry.
-    pub const REFERENCES: [(&'static str, &'static str); 1] = [("person", PERSON_REFERENCE)];
+    pub const REFERENCES: [(&'static str, &'static str); 1] =
+        [("person", PERSON_REFERENCE)];
 }
 
 /// `String(name || DEFAULT_PROFILE).trim().toLowerCase()`.
 fn which(name: &Value) -> String {
     let text = js::or_empty(Some(name));
-    let text = if text.is_empty() { DEFAULT_PROFILE.to_string() } else { text };
+    let text = if text.is_empty() {
+        DEFAULT_PROFILE.to_string()
+    } else {
+        text
+    };
     js::trim(&text).to_lowercase()
 }

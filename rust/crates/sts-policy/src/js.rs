@@ -25,7 +25,9 @@ pub fn text(value: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Number(n) => number_text(n),
         Value::String(s) => s.clone(),
-        Value::Array(items) => items.iter().map(text).collect::<Vec<_>>().join(","),
+        Value::Array(items) => {
+            items.iter().map(text).collect::<Vec<_>>().join(",")
+        }
         Value::Object(_) => "[object Object]".to_string(),
     }
 }
@@ -60,13 +62,14 @@ pub fn is_js_space(c: char) -> bool {
             | ' '
             | '\u{a0}'
             | '\u{1680}'
-            | '\u{2000}'..='\u{200a}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202f}'
-            | '\u{205f}'
-            | '\u{3000}'
-            | '\u{feff}'
+            | '\u{2000}'
+            ..='\u{200a}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{202f}'
+                | '\u{205f}'
+                | '\u{3000}'
+                | '\u{feff}'
     )
 }
 
@@ -153,11 +156,9 @@ pub fn domain_values(attributes: &Object, name: &str) -> Vec<String> {
         .map(|(_, v)| v);
     match held {
         None | Some(Value::Null) => Vec::new(),
-        Some(Value::Array(items)) => items
-            .iter()
-            .filter(|v| !v.is_null())
-            .map(text)
-            .collect(),
+        Some(Value::Array(items)) => {
+            items.iter().filter(|v| !v.is_null()).map(text).collect()
+        }
         Some(one) => vec![text(one)],
     }
 }
@@ -206,7 +207,10 @@ pub fn or_empty(value: Option<&Value>) -> String {
 
 /// `Number(text)` where the text is digits only: the value, or `None`.
 pub fn digits(text: &str, max_len: usize) -> Option<i64> {
-    if text.is_empty() || text.len() > max_len || !text.bytes().all(|b| b.is_ascii_digit()) {
+    if text.is_empty()
+        || text.len() > max_len
+        || !text.bytes().all(|b| b.is_ascii_digit())
+    {
         return None;
     }
     text.parse::<i64>().ok()

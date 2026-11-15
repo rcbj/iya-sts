@@ -71,8 +71,9 @@ impl Table {
             .get("attributes")
             .and_then(Value::as_array)
             .and_then(|rows| {
-                rows.iter()
-                    .find(|r| r.get("name").and_then(Value::as_str) == Some(name))
+                rows.iter().find(|r| {
+                    r.get("name").and_then(Value::as_str) == Some(name)
+                })
             })
             .and_then(|r| r.get("what"))
             .and_then(Value::as_str)
@@ -98,14 +99,25 @@ fn field_of(row: &Value) -> Field {
         values: row
             .get("values")
             .and_then(Value::as_array)
-            .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(String::from)
+                    .collect()
+            })
             .unwrap_or_default(),
-        optional: row.get("optional").and_then(Value::as_bool).unwrap_or(false),
+        optional: row
+            .get("optional")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         label: string(row, "label"),
         unit: row.get("unit").and_then(Value::as_str).map(String::from),
         what: string(row, "what"),
         empty: row.get("empty").and_then(Value::as_str).map(String::from),
-        max_items: row.get("maxItems").and_then(Value::as_u64).map(|n| n as usize),
+        max_items: row
+            .get("maxItems")
+            .and_then(Value::as_u64)
+            .map(|n| n as usize),
         mechanism: None,
         role: None,
         email: false,
