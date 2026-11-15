@@ -52,6 +52,13 @@ use sts_credentials::ports::{
 };
 use sts_credentials::session_checks::SessionChecks;
 use sts_credentials::totp::Totp;
+use sts_credentials::webauthn::enrolment::{
+    cloned_key_verdict, declare_pending_keys, KeyDoors, KeyDoorsDeps, KeyPorts,
+    PasskeyProfile, WebauthnRules,
+};
+use sts_credentials::webauthn::trust::{
+    AndroidStatus, AttestationPorts, Metadata, Revocation,
+};
 use sts_credentials::{evidence, js, Verdict};
 use sts_crypto::secrets::{
     hash_secret, is_hashed_secret, verify_secret, ScryptCost,
@@ -66,6 +73,8 @@ const NOW: f64 = 1_767_225_600_000.0;
 #[derive(Default)]
 struct State {
     gen: i64,
+    /// The key doors' claims and counters, in the order asked.
+    seq: i64,
     random: usize,
     mutations: Vec<Json>,
     observed: Vec<Json>,
@@ -516,6 +525,12 @@ impl MailFactorPorts for Tape {
 }
 
 impl Tape {
+    fn next_seq(&self) -> i64 {
+        let mut st = self.state.lock().unwrap();
+        st.seq += 1;
+        st.seq - 1
+    }
+
     fn observe(&self, row: Json) {
         self.state.lock().unwrap().observed.push(row);
     }
@@ -863,6 +878,329 @@ fn step(
     }
 }
 
+// ---------------------------------------------------------------------------
+// THE KEY DOORS' PORTS (#444 phase 5, webauthn), answered from the tape
+// under the keys `credentials-vectors.js`'s key scenarios record.
+// ---------------------------------------------------------------------------
+
+fn marked_verdict(v: Json) -> Verdict {
+    let code = js::string_or_empty(v.get("code"));
+    Verdict {
+        value: v.get("value").cloned().unwrap_or(Json::Null),
+        code: sts_core::errors::known(&code),
+    }
+}
+
+impl WebauthnRules for Tape {
+    fn enrolment_allowed(&self) -> Verdict {
+        marked_verdict(self.ask(vec![s("webauthn.enrolmentAllowed")]))
+    }
+    fn enrolment_lane(&self, asked: &str) -> String {
+        js::string_or_empty(Some(
+            &self.ask(vec![s("webauthn.enrolmentLane"), s(asked)]),
+        ))
+    }
+    fn classical_retry_refusal(&self, at: &str) -> Verdict {
+        marked_verdict(
+            self.ask(vec![s("webauthn.classicalRetryRefusal"), s(at)]),
+        )
+    }
+    fn classical_retry_lane(&self, lane: &str) -> String {
+        js::string_or_empty(Some(
+            &self.ask(vec![s("webauthn.classicalRetryLane"), s(lane)]),
+        ))
+    }
+    fn lane_refusal(&self, lane: &str) -> Verdict {
+        marked_verdict(self.ask(vec![s("webauthn.laneRefusal"), s(lane)]))
+    }
+    fn max_keys_per_person(&self) -> f64 {
+        js::number(&self.ask(vec![s("webauthn.maxKeys")]))
+    }
+    fn authenticator_kinds(&self) -> Vec<String> {
+        self.ask(vec![s("webauthn.kinds")])
+            .as_array()
+            .map(|l| l.iter().map(js::string).collect())
+            .unwrap_or_default()
+    }
+    fn algorithm_ids(&self, lane: &str, classical_only: bool) -> Vec<f64> {
+        self.ask(vec![
+            s("webauthn.algorithmIds"),
+            s(lane),
+            json!(classical_only),
+        ])
+        .as_array()
+        .map(|l| l.iter().map(js::number).collect())
+        .unwrap_or_default()
+    }
+    fn require_user_verification(&self) -> bool {
+        self.ask(vec![s("webauthn.requireUv")]) == json!(true)
+    }
+    fn use_allowed(&self, key_use: &str) -> bool {
+        Policies::key_use_allowed(self, key_use)
+    }
+    fn asks_post_quantum(&self, lane: &str) -> bool {
+        self.ask(vec![s("webauthn.asksPostQuantum"), s(lane)]) == json!(true)
+    }
+    fn alongside_classical(&self) -> bool {
+        self.ask(vec![s("webauthn.alongsideClassical")]) == json!(true)
+    }
+}
+
+impl PasskeyProfile for Tape {
+    fn has_selection(&self) -> bool {
+        self.ask(vec![s("passkey.hasSelection")]) == json!(true)
+    }
+    fn select(&self, name: &str) {
+        self.observe(json!({ "kind": "select", "name": name }));
+    }
+    fn admin_enrolment_allowed(&self) -> bool {
+        self.ask(vec![s("passkey.adminEnrolment")]) == json!(true)
+    }
+    fn credential_label_for(&self, provider: &str, kind: &str) -> String {
+        js::string_or_empty(Some(&self.ask(vec![
+            s("passkey.label"),
+            s(provider),
+            s(kind),
+        ])))
+    }
+    fn client_rule_for(&self, client: &str) -> String {
+        js::string_or_empty(Some(
+            &self.ask(vec![s("passkey.clientRule"), s(client)]),
+        ))
+    }
+    fn refusal_for(&self, at: &str, facts: &Json) -> Option<Json> {
+        PasskeyRules::refusal_for(self, at, facts)
+    }
+}
+
+impl KeyPorts for Tape {
+    fn client_name(&self) -> String {
+        js::string_or_empty(Some(&self.ask(vec![s("client.name")])))
+    }
+    fn learned_entry(&self, client: &str) -> Json {
+        self.ask(vec![s("client.entry"), s(client)])
+    }
+    fn mds_usable(&self) -> bool {
+        let v = self.ask(vec![s("mds.state")]);
+        v["active"] == json!(true) && v["stale"] != json!(true)
+    }
+    fn lookup_authenticator(
+        &self,
+        aaguid: &str,
+    ) -> Result<Option<Json>, String> {
+        let v = self.ask(vec![s("mds.lookup"), s(aaguid)]);
+        Ok(Some(v).filter(|v| !v.is_null()))
+    }
+    fn claim(
+        &self,
+        scope: &str,
+        value: &str,
+        ttl_ms: f64,
+        realm: &str,
+    ) -> Json {
+        let seq = self.next_seq();
+        self.ask(vec![
+            s("claims.claim"),
+            s(scope),
+            s(value),
+            js::num(ttl_ms),
+            s(realm),
+            json!(seq),
+        ])
+    }
+    fn release(&self, handle: &Json) {
+        self.observe(json!({ "kind": "release", "handle": handle }));
+    }
+    fn advance(&self, scope: &str, key: &str, value: f64, realm: &str) -> Json {
+        let seq = self.next_seq();
+        self.ask(vec![
+            s("counters.advance"),
+            s(scope),
+            s(key),
+            js::num(value),
+            s(realm),
+            json!(seq),
+        ])
+    }
+    fn ceremony(&self, row: &Json) {
+        self.observe(json!({ "kind": "ceremony", "row": row }));
+    }
+    fn possibly_replaced(&self, facts: &Json) {
+        self.observe(json!({ "kind": "replaced", "facts": facts }));
+    }
+    fn credential_compromised(&self, facts: &Json) -> bool {
+        self.observe(json!({ "kind": "compromised", "facts": facts }));
+        true
+    }
+    fn authenticator_compromised(&self, facts: &Json) {
+        self.observe(json!({ "kind": "risk", "facts": facts }));
+    }
+    fn android_registration(&self, what: &str) {
+        self.observe(json!({ "kind": "android", "what": what }));
+    }
+    fn writes_keys(&self) -> bool {
+        true
+    }
+    fn reads_user_handles(&self) -> bool {
+        true
+    }
+    fn writes_user_handles(&self) -> bool {
+        true
+    }
+    fn write_webauthn(&self, name: &str, value: &str) -> Hook<bool> {
+        self.write("writeWebauthn", name, s(value))
+    }
+    fn read_user_handle(&self, name: &str, lane: &str) -> Hook<String> {
+        let gen = self.state.lock().unwrap().gen;
+        let v = self.ask(vec![
+            s("dir.readWebauthnUserHandle"),
+            json!(gen),
+            s(name),
+            s(lane),
+        ]);
+        Ok(js::string_or_empty(v.get("value")))
+    }
+    fn write_user_handle(
+        &self,
+        name: &str,
+        handle: &str,
+        lane: &str,
+    ) -> Hook<bool> {
+        self.write("writeWebauthnUserHandle", name, json!([handle, lane]))
+    }
+}
+
+impl Metadata for Tape {
+    fn lookup_authenticator_by(
+        &self,
+        kind: &str,
+        key: &str,
+    ) -> Result<Option<Json>, String> {
+        let v = self.ask(vec![
+            s("attestation.metadata"),
+            s(kind),
+            s(&key.to_lowercase()),
+        ]);
+        Ok(Some(v).filter(|v| !v.is_null()))
+    }
+}
+
+impl Revocation for Tape {
+    fn verdict_for(
+        &self,
+        _leaf: &str,
+        _chain: &[String],
+    ) -> Result<Json, String> {
+        Ok(self.ask(vec![s("attestation.revocation")]))
+    }
+}
+
+impl AndroidStatus for Tape {
+    fn lookup_attestation_serials(
+        &self,
+        serials: &[String],
+    ) -> Result<Json, String> {
+        self.state
+            .lock()
+            .unwrap()
+            .misses
+            .push(format!("android status {serials:?}"));
+        Err("not asked in Node".to_string())
+    }
+}
+
+impl AttestationPorts for Tape {
+    fn settings(&self) -> Json {
+        self.ask(vec![s("attestation.settings")])
+    }
+    // Node asks it at a statement's signature, Rust as it builds the
+    // context: the value, false in every case, is answered unasked.
+    fn insecure_allowed(&self) -> bool {
+        false
+    }
+    fn now_ms(&self) -> f64 {
+        self.now
+    }
+    fn metadata(&self) -> &dyn Metadata {
+        self
+    }
+    fn revocation(&self) -> &dyn Revocation {
+        self
+    }
+    fn android_status(&self) -> &dyn AndroidStatus {
+        self
+    }
+    fn refuses_unchecked_android_revocation(&self) -> bool {
+        false
+    }
+}
+
+fn key_doors_over(tape: &Arc<Tape>) -> KeyDoors {
+    let settings = Arc::new(Settings::new(Json::Null, HashMap::new()));
+    let registry = Arc::new(RealmRegistry::new(Arc::new(Env)));
+    let life = RealmLifecycle::new(
+        registry,
+        settings.clone(),
+        Arc::new(Mode::new(settings)),
+    );
+    KeyDoors::new(KeyDoorsDeps {
+        credentials: Arc::new(credentials_over(tape)),
+        env: tape.clone(),
+        rules: tape.clone(),
+        profile: tape.clone(),
+        ports: tape.clone(),
+        attestation: tape.clone(),
+        pending: declare_pending_keys(&life, &StoreHandles::new()),
+    })
+}
+
+/// One key door step.
+fn key_step(
+    k: &KeyDoors,
+    c: &Credentials,
+    method: &str,
+    args: &[Json],
+) -> (Json, String, Option<String>) {
+    let a = |i: usize| args.get(i).cloned().unwrap_or(Json::Null);
+    let t = |i: usize| js::string_or_empty(args.get(i));
+    let v = |v: Verdict| {
+        let (value, code) = verdict_json(&v);
+        (value, code, None)
+    };
+    let ok = |j: Json| (j, String::new(), None);
+    match method {
+        "beginKeyEnrolment" => v(k.begin_key_enrolment(&t(0), &a(1))),
+        "confirmKeyEnrolment" => {
+            v(k.confirm_key_enrolment(&t(0), &t(1), &a(2), &a(3)))
+        }
+        "addKey" => v(k.add_key(&t(0), &a(1))),
+        "addKeyClaimed" => v(k.add_key_claimed(&t(0), &a(1))),
+        "spendAssertion" => v(k.spend_assertion(&a(0))),
+        "noteKeyUsed" => {
+            ok(k.note_key_used(&t(0), &t(1), js::number(&a(2)), &a(3)))
+        }
+        "noteKeyCloned" => {
+            k.note_key_cloned(&t(0), &t(1), &t(2));
+            ok(Json::Null)
+        }
+        "pendingKeyEnrolmentFor" => {
+            ok(k.pending_key_enrolment_for(&t(0)).unwrap_or(Json::Null))
+        }
+        "userHandleOf" => ok(json!(k.user_handle_of(
+            &t(0),
+            a(1)["mint"] == json!(true),
+            &js::string_or_empty(a(1).get("lane")),
+        ))),
+        "keysOf" => ok(Json::Array(c.keys_of(&t(0)))),
+        "clonedKeyVerdict" => ok(json!(cloned_key_verdict(&a(0)))),
+        other => (
+            Json::Null,
+            String::new(),
+            Some(format!("no such key door {other}")),
+        ),
+    }
+}
+
 struct Report {
     wrong: Vec<String>,
     written: Vec<Json>,
@@ -1169,6 +1507,31 @@ fn credentials_answer_what_node_answers() {
         );
         counted += 1;
     }
+    // The key doors (#444 phase 5, webauthn).
+    for case in v["keys"].as_array().unwrap() {
+        let tape = Arc::new(Tape::new(case));
+        let doors = key_doors_over(&tape);
+        let creds = credentials_over(&tape);
+        let steps = case["steps"].as_array().unwrap();
+        let answers: Vec<_> = steps
+            .iter()
+            .map(|st| {
+                let args = st["args"].as_array().cloned().unwrap_or_default();
+                key_step(&doors, &creds, st["method"].as_str().unwrap(), &args)
+            })
+            .collect();
+        let expected: Vec<&Json> =
+            steps.iter().map(|st| &st["answer"]).collect();
+        check_case(
+            &format!("keys {}", case["name"].as_str().unwrap()),
+            case,
+            &tape,
+            answers,
+            expected,
+            &mut report,
+        );
+        counted += 1;
+    }
     // What a credential earns.
     let ev = &v["evidence"];
     for row in ev["phrases"].as_array().unwrap() {
@@ -1338,6 +1701,9 @@ mod webauthn {
                 credential_id: r.credential_id.clone(),
                 rp_id_hash: r.rp_id_hash.clone(),
                 allow_insecure: row["insecure"] == json!(true),
+                android_software_keys: row["settings"]["androidSoftwareKeys"]
+                    == json!(true),
+                now_ms: row["now"].as_f64().unwrap_or(0.0),
             };
             let fmt = r.answer["fmt"].as_str().unwrap_or("").to_string();
             let st = r

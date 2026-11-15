@@ -1381,12 +1381,643 @@ async function build(ROOT) {
     })
   };
 
+  // -------------------------------------------------------------------------
+  // THE KEY DOORS (#444 phase 5, webauthn): beginKeyEnrolment(),
+  // confirmKeyEnrolment(), addKey() and addKeyClaimed(), spendAssertion()
+  // and noteKeyUsed(), on a SECOND Credentials over the same recorded world,
+  // whose WebAuthn policy, passkey policy, claims, counters and attestation
+  // answer from the case — and over the module-level reaches the doors
+  // make (the ceremony log, the client rules, the metadata service's state,
+  // the signals a cloned key raises), each swapped for a recorder while
+  // these scenarios run and put back after. The credential each confirm
+  // posts is made by a software authenticator over the challenge its begin
+  // minted: the begin is deterministic (a seeded random source, a held
+  // clock), so each scenario is run once per confirm to learn it.
+  // -------------------------------------------------------------------------
+  const kit = req('tests/webauthn_attestation_kit');
+  const nodeCrypto = require('crypto');
+  const webauthnModule = req('authn/webauthn');
+  const WebauthnPolicyModule = req('authn/webauthn_policy');
+  const Attestation = req('authn/webauthn_attestation').WebauthnAttestation;
+  const passkeyClients = req('common/passkey_clients');
+  const ceremoniesModule = req('authn/webauthn_ceremonies');
+  const datasetsModule = req('risk/risk_datasets');
+  const signalsModule = req('ssf/account_signals');
+  const riskEngineModule = req('risk/risk_engine');
+  const androidModule = req('common/attestation_revocation');
+  // The claims and counters ANSWER BY STATE, so each question carries its
+  // place in the case's sequence of them: one key, one answer.
+  const KEYS = { claims: null, counters: null, seq: 0 };
+  const keyCase = function () {
+    return (CASE && CASE.keys) || {};
+  };
+  const marked = function (key, given) {
+    const answer = given || { value: { ok: true }, code: '' };
+    rec(key, answer);
+    const out = clone(answer.value);
+    return answer.code ? errorCodes.mark(out, answer.code) : out;
+  };
+  const ML_DSA = [-48, -49, -50];
+  const keyWebauthnPolicy = Object.assign(Object.create(fakeWebauthnPolicy), {
+    enrolmentAllowed: function () {
+      return marked(['webauthn.enrolmentAllowed'], keyCase().enrolment);
+    },
+    enrolmentLane: function (asked) {
+      return rec(['webauthn.enrolmentLane', String(asked)],
+                 keyCase().lane || String(asked || '') || 'classical');
+    },
+    classicalRetryRefusal: function (at) {
+      return marked(['webauthn.classicalRetryRefusal', String(at || '')],
+                    keyCase().retry);
+    },
+    classicalRetryLane: function (lane) {
+      return rec(['webauthn.classicalRetryLane', String(lane)], 'classical');
+    },
+    laneRefusal: function (lane) {
+      return marked(['webauthn.laneRefusal', String(lane)],
+                    (keyCase().lanes || {})[lane]);
+    },
+    settings: function () {
+      return { maxKeysPerPerson: rec(['webauthn.maxKeys'],
+                                     keyCase().max || 5) };
+    },
+    authenticatorKinds: function () {
+      return rec(['webauthn.kinds'], ['passkey', 'security-key']);
+    },
+    algorithmIds: function (lane, classicalOnly) {
+      const lists = keyCase().algorithms ||
+        { classical: [-49, -7, -8, -257], pqc: [-49] };
+      const out = (lists[lane] || lists.classical).filter(function (id) {
+        return !classicalOnly || ML_DSA.indexOf(id) < 0;
+      });
+      return rec(['webauthn.algorithmIds', String(lane), !!classicalOnly],
+                 out);
+    },
+    heldToOffer: WebauthnPolicyModule.heldToOffer,
+    failureCodeFor: WebauthnPolicyModule.failureCodeFor,
+    requireUserVerification: function () {
+      return rec(['webauthn.requireUv'], !!keyCase().uv);
+    },
+    asksPostQuantum: function (lane) {
+      return rec(['webauthn.asksPostQuantum', String(lane)],
+                 keyCase().asksPq !== false);
+    },
+    alongsideClassical: function () {
+      return rec(['webauthn.alongsideClassical'], !!keyCase().alongside);
+    }
+  });
+  const keyPasskeyPolicy = {
+    hasSelection: function () {
+      return rec(['passkey.hasSelection'], false);
+    },
+    select: function (name) {
+      if (OBSERVED) {
+        OBSERVED.push({ kind: 'select', name: String(name) });
+      }
+    },
+    adminEnrolmentAllowed: function () {
+      return rec(['passkey.adminEnrolment'], !!keyCase().adminEnrolment);
+    },
+    credentialLabelFor: function (provider, kind) {
+      return rec(['passkey.label', String(provider), String(kind)],
+                 keyCase().label || '');
+    },
+    clientRuleFor: function (client) {
+      return rec(['passkey.clientRule', String(client)],
+                 keyCase().clientRule || '');
+    },
+    refusalFor: function (at, facts) {
+      const given = keyCase().refuse || null;
+      return rec(['passkey.refusalFor', at, clone(facts)],
+                 given ? Object.assign({}, given) : null);
+    }
+  };
+  const ATT_SETTINGS = {
+    configured: 'off', policy: 'off', trustAnchorsPem: '', allowedAaguids: [],
+    minCertificationLevel: 'none', requireFips: false, allowSafetynet: false,
+    androidSoftwareKeys: false, enterpriseSerialAttribute: '',
+    attestationAlgorithms: [], conveyance: 'direct', enterpriseRpIds: [],
+    demandsTrust: false };
+  const attDeps = Object.assign(Attestation.defaultDeps(), {
+    now: function () {
+      return Date.now();
+    },
+    policy: Object.assign(Object.create(Attestation.defaultDeps().policy), {
+      attestationSettings: function () {
+        return rec(['attestation.settings'], Object.assign({}, ATT_SETTINGS,
+          keyCase().attestation || {}));
+      },
+      insecureAlgorithmsAllowed: function () {
+        return rec(['attestation.insecure'], false);
+      }
+    }),
+    metadata: function () {
+      return { lookupAuthenticatorBy: async function (kind, key) {
+        return rec(['attestation.metadata', kind,
+                    String(key || '').toLowerCase()], null);
+      } };
+    },
+    revocation: function () {
+      return { verdictFor: async function () {
+        return rec(['attestation.revocation'],
+                   { refused: false, status: 'good' });
+      } };
+    }
+  });
+  const keyCredentials = new Credentials(Object.assign(
+    Credentials.defaultDeps(),
+    { config: fakeConfig, crypto: Object.assign(Object.create(recordedCrypto),
+        { randomToken: function (bits) {
+          return randomBytes(Math.ceil(Number(bits) / 8))
+            .toString('base64url');
+        } }),
+      mode: fakeMode, realms: fakeRealms, keystore: fakeKeystore, totp: totp,
+      backupCodes: backup,
+      appPasswords: Object.assign(Object.create(apps), {
+        DOORS: appsModule.DOORS, DOOR_IDS: appsModule.DOOR_IDS,
+        MAX_NAME: appsModule.MAX_NAME }),
+      passwordPolicy: fakePasswordPolicy, authnPolicy: fakeAuthnPolicy,
+      serviceAccounts: fakeServiceAccounts,
+      serviceAccountPolicy: fakeServiceAccountPolicy,
+      webauthnPolicy: keyWebauthnPolicy, passkeyPolicy: keyPasskeyPolicy,
+      webauthnVerifier: webauthnModule,
+      webauthnAttestation: new Attestation(attDeps),
+      claims: {
+        claim: function (spec) {
+          const key = ['claims.claim', spec.scope, String(spec.value),
+                       spec.ttlMs, String(spec.realm), KEYS.seq++];
+          const forced = keyCase().claim;
+          const k = spec.scope + '\u0000' + spec.value;
+          let answer;
+          if (forced) {
+            answer = forced;
+          } else if (KEYS.claims[k]) {
+            answer = { ok: false, reason: 'used' };
+          } else {
+            KEYS.claims[k] = true;
+            answer = { ok: true, handle: { scope: spec.scope,
+                                           value: String(spec.value) } };
+          }
+          return Promise.resolve(clone(rec(key, answer)));
+        },
+        release: function (handle) {
+          if (OBSERVED) {
+            OBSERVED.push({ kind: 'release', handle: clone(handle) });
+          }
+          if (handle) {
+            delete KEYS.claims[handle.scope + '\u0000' + handle.value];
+          }
+          return Promise.resolve();
+        }
+      },
+      counters: {
+        advance: function (spec) {
+          const key = ['counters.advance', spec.scope, String(spec.key),
+                       spec.value, String(spec.realm), KEYS.seq++];
+          const k = spec.scope + '\u0000' + spec.key;
+          const highest = KEYS.counters[k];
+          let answer;
+          if (keyCase().counterFails) {
+            answer = { ok: false, reason: 'store', why: 'the store is down' };
+          } else if (highest !== undefined && !(spec.value > highest ||
+                     (spec.value === 0 && highest === 0))) {
+            answer = { ok: false, reason: 'behind', highest: highest };
+          } else {
+            KEYS.counters[k] = spec.value;
+            answer = { ok: true, advanced: highest === undefined ||
+                                           spec.value > highest };
+          }
+          return Promise.resolve(clone(rec(key, answer)));
+        }
+      } }));
+  const keyDirectory = Object.assign({}, directory, {
+    writeWebauthn: function (name, value) {
+      const entry = ((CASE && CASE.entries) || {})[name];
+      let outcome;
+      if (entry && (entry.refuses || []).indexOf('writeWebauthn') >= 0) {
+        outcome = { value: false };
+      } else if (entry && entry.throws &&
+                 entry.throws.indexOf('writeWebauthn') >= 0) {
+        outcome = { threw: 'the directory refused the write' };
+      } else if (!entry) {
+        outcome = { value: false };
+      } else {
+        entry.webauthn = (entry.webauthn || []).concat([value]);
+        outcome = { value: true };
+      }
+      if (MUTATIONS) {
+        MUTATIONS.push({ hook: 'writeWebauthn', name: String(name),
+                         value: value, options: null, outcome: outcome });
+      }
+      GEN += 1;
+      if (outcome.threw) {
+        throw new Error(outcome.threw);
+      }
+      return outcome.value;
+    },
+    readWebauthnUserHandle: function (name, lane) {
+      const entry = ((CASE && CASE.entries) || {})[name];
+      const out = entry ? String((lane === 'pqc' ? entry.pqcHandle
+                                                 : entry.handle) || '') : '';
+      rec(['dir.readWebauthnUserHandle', GEN, String(name), String(lane)],
+          { value: out });
+      return out;
+    },
+    writeWebauthnUserHandle: function (name, value, lane) {
+      const entry = ((CASE && CASE.entries) || {})[name];
+      const outcome = entry ? { value: true } : { value: false };
+      if (entry) {
+        entry[lane === 'pqc' ? 'pqcHandle' : 'handle'] = value;
+      }
+      if (MUTATIONS) {
+        MUTATIONS.push({ hook: 'writeWebauthnUserHandle', name: String(name),
+                         value: [value, String(lane)], options: null,
+                         outcome: outcome });
+      }
+      GEN += 1;
+      return outcome.value;
+    }
+  });
+  keyCredentials.setDirectory(keyDirectory);
+  const clientsInstance = new passkeyClients.PasskeyClients(Object.assign(
+    passkeyClients.PasskeyClients.defaultDeps(), {
+      config: fakeConfig, passkeyPolicy: keyPasskeyPolicy,
+      audit: { currentRequest: function () {
+        return null;
+      } },
+      clientOf: function () {
+        return rec(['client.name'], keyCase().client || '');
+      },
+      webauthnPolicy: function () {
+        return keyWebauthnPolicy;
+      },
+      store: { get: function (client) {
+        return rec(['client.entry', String(client)],
+                   (keyCase().learned || {})[client] || null);
+      } } }));
+  const observeAs = function (kind, field) {
+    return function (value) {
+      if (OBSERVED) {
+        const row = { kind: kind };
+        row[field] = clone(value);
+        OBSERVED.push(row);
+      }
+    };
+  };
+  const PATCHES = [
+    [passkeyClients, 'offerFor', function (input) {
+      return clientsInstance.offerFor(input);
+    }],
+    [ceremoniesModule, 'record', observeAs('ceremony', 'row')],
+    [ceremoniesModule, 'possiblyReplaced', observeAs('replaced', 'facts')],
+    [datasetsModule, 'mdsState', function () {
+      return Promise.resolve(rec(['mds.state'],
+        { active: !!keyCase().mds, stale: false }));
+    }],
+    [datasetsModule, 'lookupAuthenticator', function (id) {
+      return Promise.resolve(rec(['mds.lookup', String(id)],
+        (keyCase().mds || {})[id] || null));
+    }],
+    [signalsModule, 'credentialCompromised', observeAs('compromised',
+                                                       'facts')],
+    [riskEngineModule, 'noteAuthenticatorCompromise', function (facts) {
+      const shown = Object.assign({}, facts);
+      delete shown.subject;
+      observeAs('risk', 'facts')(shown);
+      return Promise.resolve();
+    }],
+    [androidModule, 'noteRegistration', observeAs('android', 'what')]
+  ];
+  const recordedAsync = async function (spec, fn) {
+    CASE = spec;
+    TAPE = {};
+    MUTATIONS = [];
+    RANDOM = [];
+    HASHES = {};
+    OBSERVED = [];
+    GEN = 0;
+    RNG = seeded(spec.seed || 7);
+    KEYS.claims = {};
+    KEYS.counters = {};
+    KEYS.seq = 0;
+    Object.keys(spec.entries || {}).concat(['ghost']).forEach(function (n) {
+      realms.run(spec.realm || 'default', function () {
+        keyCredentials.abandonKeyEnrolment(n);
+      });
+    });
+    Date.now = function () {
+      return spec.now || 1767225600000;
+    };
+    let out;
+    try {
+      out = await realms.run(spec.realm || 'default', fn);
+    } finally {
+      Date.now = realNow;
+    }
+    const taped = { tape: TAPE, mutations: MUTATIONS, random: RANDOM,
+                    hashes: HASHES, observed: OBSERVED };
+    CASE = null;
+    TAPE = null;
+    MUTATIONS = null;
+    RANDOM = null;
+    HASHES = null;
+    OBSERVED = null;
+    return { out: out, taped: taped };
+  };
+  const sha256 = function (data) {
+    return nodeCrypto.createHash('sha256').update(data).digest();
+  };
+  // A registration over a begun enrolment: the ceremony's credential, its
+  // statement made after the challenge is known.
+  const posted = async function (c, begun, made, extra) {
+    const clientDataJSON = Buffer.from(JSON.stringify({
+      type: 'webauthn.create', challenge: begun.challenge,
+      origin: 'https://localhost:8081', crossOrigin: false }));
+    c.clientDataJSON = clientDataJSON;
+    c.clientDataHash = sha256(clientDataJSON);
+    const statement = await made(c);
+    return Object.assign({ id: c.credential.id.toString('base64url'),
+      type: 'public-key', authenticatorAttachment: 'cross-platform',
+      response: {
+        attestationObject: kit.cbor(new Map([
+          ['fmt', statement.fmt], ['attStmt', statement.attStmt],
+          ['authData', c.authData]])).toString('base64url'),
+        clientDataJSON: clientDataJSON.toString('base64url'),
+        transports: ['usb', 'nfc', 'Bad Transport'] },
+      clientExtensionResults: { credProps: { rk: true } } }, extra || {});
+  };
+  // An assertion by the ceremony's credential, for the reverse direction.
+  const assertionOf = function (c) {
+    const count = Buffer.alloc(4);
+    count.writeUInt32BE(9, 0);
+    const authData = Buffer.concat([sha256(Buffer.from('localhost')),
+                                    Buffer.from([0x05]), count]);
+    const clientDataJSON = Buffer.from(JSON.stringify({ type: 'webauthn.get',
+      challenge: 'reverse', origin: 'https://localhost:8081' }));
+    return { authenticatorData: authData.toString('base64url'),
+             clientDataJSON: clientDataJSON.toString('base64url'),
+             signature: Buffer.from(c.credential.sign(Buffer.concat([
+               authData, sha256(clientDataJSON)]))).toString('base64url'),
+             expectedChallenge: 'reverse',
+             expectedOrigin: 'https://localhost:8081',
+             expectedRpId: 'localhost', requireUserVerification: false };
+  };
+  const OPTS = { origin: 'https://localhost:8081', rpId: 'localhost',
+                 door: 'portal', application: 'sts-user-portal' };
+  const keyScenarios = [];
+  const runKeySteps = async function (spec, steps, posts) {
+    const world = clone(spec);
+    const begun = [];
+    let stopAt = -1;
+    const run = await recordedAsync(Object.assign({ now: NOW }, world),
+      async function () {
+        const out = [];
+        for (let i = 0; i < steps.length; i++) {
+          const st = steps[i];
+          let args;
+          if (st.post !== undefined && posts[i] === undefined) {
+            stopAt = i;
+            break;
+          }
+          if (st.method === 'confirmKeyEnrolment') {
+            const last = begun[begun.length - 1] || {};
+            args = [st.user, st.id === undefined ? last.enrolmentId : st.id,
+                    posts[i] !== undefined ? posts[i] : st.credential,
+                    Object.assign({}, OPTS, st.opts || {})];
+          } else {
+            args = clone(st.args);
+          }
+          let value;
+          let threw = null;
+          try {
+            if (st.method === 'clonedKeyVerdict') {
+              value = Credentials.clonedKeyVerdict(args[0]);
+            } else {
+              value = await keyCredentials[st.method].apply(keyCredentials,
+                                                             args);
+            }
+          } catch (e) {
+            threw = String((e && e.message) || e);
+          }
+          if (st.method === 'beginKeyEnrolment' && value && value.ok) {
+            begun.push(value);
+          }
+          out.push({ method: st.method, args: clone(args),
+                     answer: { value: clone(value === undefined ? null
+                                                                : value),
+                               code: errorCodes.codeOf(value) || '',
+                               threw: threw } });
+        }
+        return out;
+      });
+    return { run: run, begun: begun, stopAt: stopAt };
+  };
+  const keyScenario = async function (name, spec, steps) {
+    const posts = {};
+    const reverse = [];
+    for (let guard = 0; guard < 10; guard++) {
+      const pass = await runKeySteps(spec, steps, posts);
+      if (pass.stopAt < 0) {
+        keyScenarios.push(Object.assign({ name: name, spec: clone(spec),
+          steps: pass.run.out, reverse: reverse }, pass.run.taped));
+        return;
+      }
+      const st = steps[pass.stopAt];
+      const begun = pass.begun[pass.begun.length - 1] || { challenge: 'x' };
+      const c = await kit.ceremony(Object.assign({ alg: -7 },
+                                                 st.ceremony || {}));
+      posts[pass.stopAt] = await posted(c, begun, st.post, st.extra);
+      reverse.push({ step: pass.stopAt, assertion: assertionOf(c) });
+    }
+    throw new Error('key scenario ' + name + ' did not settle');
+  };
+  const saved = PATCHES.map(function (p) {
+    return [p[0], p[1], p[0][p[1]]];
+  });
+  PATCHES.forEach(function (p) {
+    p[0][p[1]] = p[2];
+  });
+  const none = function () {
+    return kit.none();
+  };
+  const HANDLE = 'H'.repeat(86);
+  try {
+    const kim = function (extra) {
+      return { entries: Object.assign({ kim: { password: stored,
+        handle: HANDLE } }, extra || {}) };
+    };
+    const begin = function (opts) {
+      return { method: 'beginKeyEnrolment', args: ['kim', opts || {}] };
+    };
+    const confirm = function (made, more) {
+      return Object.assign({ method: 'confirmKeyEnrolment', user: 'kim',
+                             post: made || none }, more || {});
+    };
+    await keyScenario('enrol a passkey, and use it', kim(), [
+      begin({ kind: 'passkey' }), confirm(),
+      { method: 'keysOf', args: ['kim'] },
+      { method: 'pendingKeyEnrolmentFor', args: ['kim'] }]);
+    await keyScenario('enrol two, the second excluding the first', kim(), [
+      begin(), confirm(), begin({ kind: 'security-key' }), confirm(),
+      { method: 'keysOf', args: ['kim'] }]);
+    await keyScenario('no key may be enrolled',
+      Object.assign(kim(), { keys: { enrolment: { value: { ok: false,
+        why: 'Passkeys are turned off in this realm.' },
+        code: 'STS-AUTHN-0044' } } }), [begin()]);
+    await keyScenario('the lane refused',
+      Object.assign(kim(), { keys: { lane: 'pqc', lanes: { pqc: {
+        value: { ok: false, why: 'The post-quantum lane is not offered.' },
+        code: 'STS-AUTHN-0351' } } } }), [begin({ lane: 'pqc' })]);
+    await keyScenario('the classical retry refused',
+      Object.assign(kim(), { keys: { retry: { value: { ok: false,
+        reason: 'pq-only', why: 'This realm makes post-quantum passkeys ' +
+        'only.' }, code: 'STS-AUTHN-0420' } } }),
+      [begin({ classicalOnly: true })]);
+    await keyScenario('the classical retry', kim(),
+      [begin({ classicalOnly: true }), confirm()]);
+    await keyScenario('a configured client rule',
+      Object.assign(kim(), { keys: { client: 'Firefox 140 on Linux',
+        clientRule: 'Firefox * on Linux' } }), [begin(), confirm()]);
+    await keyScenario('a learned client, not applied',
+      Object.assign(kim(), { settings: { 'webauthn.clientLearning': true },
+        keys: { client: 'Safari 18 on iOS 18',
+          learned: { 'Safari 18 on iOS 18': { learnedAt: 5 } },
+          retry: { value: { ok: false, reason: 'pq-only', why: 'no' },
+                   code: 'STS-AUTHN-0420' } } }), [begin()]);
+    await keyScenario('product mode, nobody there', {
+      entries: {}, mode: { autoCreates: false } }, [
+      { method: 'beginKeyEnrolment', args: ['ghost', {}] }]);
+    await keyScenario('at the cap', Object.assign(kim(), { keys: { max: 1 } }),
+      [begin(), confirm(), begin()]);
+    await keyScenario('nothing pending', kim(), [
+      confirm(undefined, { post: undefined, id: 'nope',
+                           credential: { response: {} } })]);
+    await keyScenario('another enrolment id', kim(), [
+      begin(), confirm(undefined, { id: 'another' })]);
+    await keyScenario('the browser sent nothing', kim(), [
+      begin(), confirm(undefined, { post: undefined,
+        credential: { error: 'NotAllowedError', message: 'cancelled' } })]);
+    await keyScenario('the wrong origin', kim(), [
+      begin(), confirm(undefined, { opts: { origin: 'https://evil.example',
+                                            door: 'activation' } })]);
+    await keyScenario('an algorithm not offered',
+      Object.assign(kim(), { keys: { algorithms: { classical: [-257] } } }),
+      [begin(), confirm()]);
+    await keyScenario('UV required, not given',
+      Object.assign(kim(), { keys: { uv: true } }), [begin(), confirm()]);
+    await keyScenario('a packed statement, trusted',
+      Object.assign(kim(), { keys: { attestation: { configured:
+        'verify-if-present', policy: 'verify-if-present' } } }),
+      [begin(), confirm(function (c) {
+        return kit.packedSelf(c);
+      })]);
+    await keyScenario('refused on its attestation',
+      Object.assign(kim(), { keys: { attestation: { configured:
+        'require-trusted', policy: 'require-trusted', demandsTrust: true } } }),
+      [begin(), confirm()]);
+    await keyScenario('the passkey policy refuses it',
+      Object.assign(kim(), { keys: { refuse: { code: 'STS-AUTHN-0312',
+        reason: 'backup-eligible', why: 'Synced passkeys are not ' +
+        'accepted here.' } } }), [begin(), confirm()]);
+    await keyScenario('named by the metadata service',
+      Object.assign(kim(), { keys: { mds: {} } }),
+      [begin(), confirm(undefined, { ceremony: { aaguid:
+        Buffer.from('fbfc3007154e4ecc8c0b6e020557d7bd', 'hex') } })]);
+    await keyScenario('named by the table, and labelled by the policy',
+      Object.assign(kim(), { keys: { label: 'My {provider}' } }),
+      [begin(), confirm(undefined, { ceremony: { aaguid:
+        Buffer.from('fbfc3007154e4ecc8c0b6e020557d7bd', 'hex') } })]);
+    await keyScenario('the claim is taken',
+      Object.assign(kim(), { keys: { claim: { ok: false,
+                                               reason: 'used' } } }),
+      [begin(), confirm()]);
+    await keyScenario('the claim cannot be asked',
+      Object.assign(kim(), { keys: { claim: { ok: false, reason: 'store',
+                                               why: 'down' } } }),
+      [begin(), confirm()]);
+    await keyScenario('the write refused', kim({ kim: { password: stored,
+      handle: HANDLE, refuses: ['writeWebauthn'] } }), [begin(), confirm(),
+      { method: 'pendingKeyEnrolmentFor', args: ['kim'] }]);
+    await keyScenario('a first handle minted', { entries: { kim: {} } }, [
+      begin(), confirm(), { method: 'userHandleOf', args: ['kim', {}] }]);
+    await keyScenario('the post-quantum handle beside the classical',
+      Object.assign(kim(), { keys: { lane: 'pqc' } }), [
+        { method: 'userHandleOf', args: ['kim', { mint: true,
+                                                  lane: 'pqc' }] }]);
+    // addKey by value, every refusal.
+    const value = { credentialId: 'Q1', publicKeyJwk: { kty: 'EC',
+      crv: 'P-256', x: 'AAAA', y: 'BBBB' }, signCount: 3, label: '  Desk  ',
+      attachment: 'platform', aaguid: '0102030405060708090a0b0c0d0e0f10',
+      backupEligible: true, backupState: false, transports: ['internal'],
+      discoverable: false, userVerified: true, minPinLength: 6,
+      userHandle: HANDLE, lane: 'classical' };
+    await keyScenario('addKey by value', kim(), [
+      { method: 'addKey', args: ['kim', value] },
+      { method: 'addKey', args: ['kim', value] },
+      { method: 'addKeyClaimed', args: ['kim', Object.assign({}, value,
+        { credentialId: 'Q2', enrolledBy: { username: 'root', sub: 's',
+                                             at: 5.5 } })] },
+      { method: 'keysOf', args: ['kim'] }]);
+    await keyScenario('addKey, an administrator allowed',
+      Object.assign(kim(), { keys: { adminEnrolment: true } }), [
+        { method: 'addKey', args: ['kim', Object.assign({}, value,
+          { enrolledBy: { username: ' root\u0001 ', at: 7 } })] }]);
+    await keyScenario('addKey, the write throws', kim({ kim: {
+      throws: ['writeWebauthn'] } }), [
+      { method: 'addKey', args: ['kim', value] }]);
+    await keyScenario('addKey, a possibly replaced key', kim({ kim: {
+      webauthn: [JSON.stringify(Object.assign({}, value,
+        { credentialId: 'OLD', aaguid: '01020304-0506-0708-090a-0b0c0d0e0f10',
+          discoverable: true, publicKeyJwk: value.publicKeyJwk }))] } }), [
+      { method: 'addKey', args: ['kim', Object.assign({}, value,
+        { discoverable: true })] },
+      { method: 'keysOf', args: ['kim'] }]);
+    // The counter, across the cluster.
+    const keyRow = JSON.stringify(Object.assign({}, value,
+      { possiblyReplacedBy: 'X', possiblyReplacedAt: 4,
+        backupEligible: undefined }));
+    await keyScenario('assertions spent', kim({ kim: { webauthn: [keyRow] } }),
+      [{ method: 'spendAssertion', args: [{ username: 'kim',
+          credentialId: 'Q1', challenge: 'c1', signCount: 7,
+          flags: { be: true, bs: true } }] },
+       { method: 'spendAssertion', args: [{ username: 'kim',
+          credentialId: 'Q1', challenge: 'c1', signCount: 8 }] },
+       { method: 'spendAssertion', args: [{ username: 'kim',
+          credentialId: 'Q1', challenge: 'c2', signCount: 6.7 }] },
+       { method: 'spendAssertion', args: [{ username: 'kim',
+          credentialId: 'Q1', challenge: 'c2', signCount: 9 }] },
+       { method: 'spendAssertion', args: [{ username: 'kim',
+          credentialId: '', challenge: 'c3', signCount: 9 }] },
+       { method: 'keysOf', args: ['kim'] }]);
+    await keyScenario('the counter store is down', Object.assign(kim({ kim: {
+      webauthn: [keyRow] } }), { keys: { counterFails: true } }), [
+      { method: 'spendAssertion', args: [{ username: 'kim',
+        credentialId: 'Q1', challenge: 'c1', signCount: 1 }] }]);
+    await keyScenario('noteKeyUsed', kim({ kim: { webauthn: [keyRow] } }), [
+      { method: 'noteKeyUsed', args: ['kim', 'Q1', 12, { bs: false }] },
+      { method: 'noteKeyUsed', args: ['kim', 'nope', 12] },
+      { method: 'noteKeyCloned', args: ['kim', 'Q1', 'counter 1'] }]);
+    await keyScenario('noteKeyUsed, the write throws', kim({ kim: {
+      webauthn: [keyRow], throws: ['replaceWebauthn'] } }), [
+      { method: 'noteKeyUsed', args: ['kim', 'Q1', 12] }]);
+    await keyScenario('cloned-key verdicts', {}, [
+      { method: 'clonedKeyVerdict', args: [{ ok: false,
+        failed: ['signature counter advanced'] }] },
+      { method: 'clonedKeyVerdict', args: [{ ok: false,
+        failed: ['signature counter advanced', 'signature verifies'] }] },
+      { method: 'clonedKeyVerdict', args: [{ ok: true, failed: [] }] }]);
+  } finally {
+    saved.forEach(function (p) {
+      p[0][p[1]] = p[2];
+    });
+  }
+
   // The handles and secrets a later step uses are what an earlier step of
   // the same scenario answered: filled in as the steps run.
   return { totp: totpCases, backup: backupCases, apps: appCases,
            phishing: phishing, phishingKeys: phishingKeys,
            evidence: evidence, mail: mailCases, limits: limitCases,
-           scenarios: scenarios,
+           scenarios: scenarios, keys: keyScenarios,
            webauthn: await req('tests/tools/credentials-webauthn.js')
              .build(ROOT) };
 }
@@ -1407,7 +2038,8 @@ async function build(ROOT) {
 function checkRust(ROOT, rust, node, check) {
   const stsCrypto = require(path.join(ROOT, 'common', 'crypto'));
   const nodeCases = [].concat(node.totp, node.backup, node.apps,
-                              node.scenarios, node.limits, node.mail);
+                              node.scenarios, node.limits, node.mail,
+                              node.keys || []);
   const rustCases = rust.cases || [];
   let hashes = 0;
   const wrong = [];
@@ -1461,6 +2093,50 @@ function checkRust(ROOT, rust, node, check) {
         wrong.slice(0, 5).join('; '));
   require('./credentials-webauthn.js').checkRust(ROOT, rust.webauthn,
                                                  node.webauthn, check);
+  // THE KEYS RUST STORED (#444 phase 5, webauthn): every `writeWebauthn`
+  // value a key scenario's replay wrote is read by Node as `keysOf()` reads
+  // a row, and Node verifies an assertion the scenario's software
+  // authenticator made with the public key Rust stored.
+  const webauthn = require(path.join(ROOT, 'authn', 'webauthn'));
+  const Credentials = require(path.join(ROOT, 'common', 'credentials'))
+    .Credentials;
+  const offset = rustCases.length - (node.keys || []).length;
+  let verified = 0;
+  const bad = [];
+  (node.keys || []).forEach(function (mine, i) {
+    const theirs = rustCases[offset + i] || {};
+    const rows = (theirs.mutations || []).filter(function (m) {
+      return m.hook === 'writeWebauthn';
+    }).map(function (m) {
+      return JSON.parse(m.value);
+    });
+    (mine.reverse || []).forEach(function (r) {
+      const id = Buffer.from(r.assertion.authenticatorData, 'base64url') &&
+        rows.filter(function (row) {
+          return row && row.credentialId && row.publicKeyJwk &&
+                 webauthn.verifyAssertion(Object.assign({}, r.assertion,
+                   { publicKeyJwk: row.publicKeyJwk })).ok;
+        });
+      const wrote = (mine.mutations || []).some(function (m) {
+        return m.hook === 'writeWebauthn';
+      });
+      if (!wrote) {
+        return;
+      }
+      if (id.length) {
+        verified += 1;
+        if (!Credentials.keyAlgorithm(id[0]).name) {
+          bad.push(mine.name + ': Node names no algorithm for the row');
+        }
+      } else {
+        bad.push(mine.name + ': no key Rust stored verifies the assertion');
+      }
+    });
+  });
+  check(bad.length === 0 && verified > 0,
+        'credentials: Node verifies an assertion with every one of the ' +
+        verified + ' passkeys Rust enrolled and stored',
+        bad.slice(0, 5).join('; '));
 }
 
 module.exports = { build: build, checkRust: checkRust, PENDING: PENDING,

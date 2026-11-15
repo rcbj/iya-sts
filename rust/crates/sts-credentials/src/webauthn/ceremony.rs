@@ -359,6 +359,9 @@ pub struct Registration {
     pub rp_id_hash: Vec<u8>,
     pub cose_alg: Option<i64>,
     pub aaguid: Vec<u8>,
+    /// The attestation object as it arrived (`attestationObjectRaw`), for
+    /// the RFC 4998 evidence of #947.
+    pub attestation_object: Vec<u8>,
 }
 
 /// `verifyRegistration(input)`.
@@ -491,6 +494,7 @@ pub fn verify_registration(
         cose_alg: key.as_ref().and_then(|k| k.2.int()),
         aaguid: auth.aaguid.clone().unwrap_or_default(),
         auth_data: auth_buf,
+        attestation_object: object,
     })
 }
 
