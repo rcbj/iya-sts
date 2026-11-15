@@ -288,7 +288,9 @@ function tables() {
   });
   // The certificate enrollment tab's settings blocks (#444, phase 5, the
   // `apis2` slice): one page, each family's group alone.
-  ['/admin/cert-issuance', '/admin/pki'].forEach(function (page) {
+  // And the groups page's (#444, phase 5, the `apis3` slice).
+  const blockPages = ['/admin/cert-issuance', '/admin/pki', '/admin/groups'];
+  blockPages.forEach(function (page) {
     const block = admin.configSettingsJson(page);
     pageSettings[page] = {
       groups: block.groups.map(function (group) {

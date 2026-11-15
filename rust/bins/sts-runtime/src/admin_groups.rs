@@ -45,7 +45,7 @@ const MEMBER_ATTRIBUTES: [(&str, bool); 3] = [
 ];
 
 /// `MAX_GROUP_OWNERS`.
-pub const MAX_GROUP_OWNERS: usize = 20;
+pub const MAX_GROUP_OWNERS: usize = 25;
 
 /// `DN_SHAPED`: `/^[A-Za-z][A-Za-z0-9-]*=/`.
 fn dn_shaped(text: &str) -> bool {
@@ -412,8 +412,22 @@ impl<'a> Groups<'a> {
             "port".into(),
             json!(sockets.port.map_or(int("ldap.port"), i64::from)),
         );
-        out.insert("listening".into(), json!(sockets.listening));
-        out.insert("listenError".into(), json!(sockets.listen_error));
+        // `ldap.plainListener` off: Node starts no plain listener and says
+        // so in these two members (the runtime's binding of it is
+        // `main.rs`'s, which this view reports as Node does).
+        if settings.value_of("ldap.plainListener").as_bool() {
+            out.insert("listening".into(), json!(sockets.listening));
+            out.insert("listenError".into(), json!(sockets.listen_error));
+        } else {
+            out.insert("listening".into(), json!(false));
+            out.insert(
+                "listenError".into(),
+                json!(
+                    "not started: ldap.plainListener is off, so this \
+                       directory answers over LDAPS only"
+                ),
+            );
+        }
         out.insert("ldapsPort".into(), json!(sockets.ldaps_port));
         out.insert("ldapsListening".into(), json!(sockets.ldaps_listening));
         out.insert("entryCount".into(), json!(self.entries().count()));
