@@ -2444,6 +2444,10 @@ const JOBS = [
   // tests/ws_model_wire.snapshot.json's development pass, over the wire
   // (ws_model_wire; the product pass owed).
   { file: 'sts_ws_model_wire.js', browser: false, local: true },
+  // D12 (#444): what a WS-Trust delegation leaves in the delegation
+  // register and on /admin-api/users, and SAML 1.1 on behalf of somebody
+  // (wstrust_jwt_claims N, wstrust_fault_codes D, wstrust_saml11 T2).
+  { file: 'sts_wstrust_register.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
