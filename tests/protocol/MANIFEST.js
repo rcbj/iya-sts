@@ -2580,6 +2580,21 @@ const JOBS = [
   // uma-ticket grant and /admin-api/uma — each refusal by its code
   // (uma_protection, uma_grant, uma_admin).
   { file: 'sts_uma_codes.js', browser: false, local: true },
+  // D12 (#444): an issuance Deny names the rule kind that made it — the
+  // audit row's sentence for another rule's Deny, with and without an
+  // obligation, and the role sentence (issuance_refusal_reason).
+  { file: 'sts_issuance_refusal_reason.js', browser: false, local: true },
+  // D12 (#444): the XACML store, the PIP and the JSON Profile through
+  // /admin-api/xacml and POST /xacml/pdp (xacml_service). Posts an outside
+  // test Root to the client truststore and removes it.
+  { file: 'sts_xacml_service.js', browser: false, local: true },
+  // D12 (#444): the Policy Administration Point's templates, edits and
+  // refusals through the editor's API (xacml_pap).
+  { file: 'sts_xacml_pap.js', browser: false, local: true },
+  // D12 (#444): the AuthZEN binding for OAuth 2.0 token exchange over
+  // /access/v1/evaluation(s), in both modes (authzen_token_exchange).
+  // Posts an outside test Root to the client truststore and removes it.
+  { file: 'sts_authzen_token_exchange.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
