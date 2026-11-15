@@ -2518,6 +2518,22 @@ const JOBS = [
   // SAML 1.1: stepped up once, refused when still unmet (wsfed_initiation
   // g, saml_initiation D).
   { file: 'sts_risk_initiation.js', browser: false, local: true },
+  // ---------------------------------------------------------------------
+  // #444's D12, PHASE 8 (2026-11-15): GNAP, XACML, AuthZEN, fine-grained
+  // authorization and UMA. Same rules as phase 5's to 7's blocks:
+  // throwaway realms, codes off /admin-api/audit, realms removed only when
+  // STS_TEST_REMOVE_REALMS=1; none is exclusive. The GNAP jobs share
+  // gnap_wire_kit.js (LOCAL_HELPERS) over oauth_wire_kit.js and
+  // gnap_flow.js; none needs the test peer.
+  // ---------------------------------------------------------------------
+  // D12 (#444): an unregistered key as an instance of a registered GNAP
+  // client, in a product and a development realm, and the instance
+  // records it is handed (gnap_unregistered_instances, gnap_instances).
+  // Waits a minute for gnap.grantLifetimeS 60 to pass.
+  { file: 'sts_gnap_instances_wire.js', browser: false, local: true },
+  // D12 (#444): which layer refuses a GNAP document — the bound, the
+  // schema, the walker — each by its code (gnap_request).
+  { file: 'sts_gnap_request_layers.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
@@ -2787,6 +2803,10 @@ const LOCAL_HELPERS = [
   // D12 (#444, phase 7): a stand-in OpenID Provider on the runner (plain
   // http, TLS and mutual TLS) that the federation jobs' realms dial.
   'oidc_partner_kit.js',
+  // D12 (#444, phase 8): a GNAP realm per mode bound to gnap_flow.js's
+  // resource-owner harness, entries with gnap_client.js's keys, a
+  // resource server introspecting, a scheduler job run and waited for.
+  'gnap_wire_kit.js',
   // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
   // static surface over /authn-api since #571, through `authn_signin.js`;
   // it was a copy of the parent's (listed in HELPERS until then).
