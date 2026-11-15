@@ -3270,16 +3270,24 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
   return { ok: true, rows: rows.finish() };
 }
 
+// WHETHER A POOL IS THERE TO WAIT FOR is the POOL's answer, not the
+// setting's (2026-11-14, found by #444's D12). `workers.requestCount` is
+// what was asked for; the pool runs what `common/process_memory`'s
+// `requestWorkers()` allows, which is NONE on a memory store (dispatch needs
+// a coordinating store) whatever the setting says. Reading the setting, a
+// memory-store service with the default `1` waited for a worker that would
+// never start: every report job stayed queued and STS-REPORT-0024 was
+// logged every two seconds.
 function reportWorkersReady(): boolean {
   log.debug("Entering reportWorkersReady().");
-  const config = require('../common/config');
-  const configured = Number(config.value('workers.requestCount'));
+  const pool = require('../common/request_pool');
+  const state = pool.stats();
+  const configured = Number(state.configured) || 0;
   if (!(configured > 0)) {
     log.debug("Leaving reportWorkersReady(). No pool.");
     return true;
   }
-  const pool = require('../common/request_pool');
-  const ready = Number(pool.stats().ready) || 0;
+  const ready = Number(state.ready) || 0;
   log.debug("Leaving reportWorkersReady().");
   return ready > 0;
 }
