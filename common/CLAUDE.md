@@ -1970,6 +1970,47 @@ the 502 it always did. `STS-WORKER-0042`, logged through `warnSparingly()`;
 `stats().replayed` counts them. A request any byte of which was delivered is
 never repeated. `tests/request_proxy_replay.js` pins both halves.
 
+**AND THE `write EPIPE` AFTER A DELIVERED REQUEST WAS FOUND (2026-11-15): IT
+WAS A WRITE AFTER THE LAST BYTE.** `tests/request_ryw_session.js` failed in
+three of five unit-pool runs on GitHub Actions with
+`[STS-WORKER-0030] … could not answer POST /oauth2/token?issue=RT1: write
+EPIPE` for requests the worker had read whole and answered — no
+`STS-WORKER-0042`, rightly, since the bytes were delivered. `proxy()` wrote
+each body chunk and then called `ClientRequest.end()`. While the agent's
+socket is still CONNECTING (the request was opened a tick before the body was
+forwarded, the usual case for a body streamed from `req`), node's `end()`
+queues an EMPTY write behind the pending one, and issues it as a SEPARATE
+write after the write that carries the last byte. The worker answers on that
+byte; with `Connection: close` it then closes, and a unix socket whose peer
+has closed refuses even an empty write: EPIPE, the socket is destroyed with
+the answer unread, and the client gets a 502 for a request that ran. It needs
+this thread to be preempted between those two writes while the worker's
+thread reads, answers and closes — rare alone (none in 16 runs alone, none in
+12 beside four CPU hogs), a few times a run in the unit pool. **It is not
+the stub's**: a request worker does exactly what the stub did, so the
+production service could 502 a POST it had executed. Only the shape that
+failed fits: a POST with a body that is not read before the barrier (a
+keyed request, carrying a cookie). A body read first (`readCodeExchangeBody()`)
+is written and ended in the same turn as `open()`, before the agent hands a
+socket over, so node queues it all and flushes it as one write; a GET has
+only the end.
+
+**THE FIX IS THAT NOTHING IS WRITTEN AFTER THE LAST BYTE.** `forward()` holds
+the latest chunk back and writes the one before it, and `endBody()` sends the
+held chunk WITH the end (`upstream.end(chunk)`), which corks the socket and
+writes the chunk and node's trailing empty write as one writev: the worker
+cannot have the last byte without the rest. Back-pressure is unchanged (the
+write that returns false is still the one that pauses the client), the
+headers still go with the first write, and `delivered` is set by the end's
+callback for a one-chunk body, which fires only once the kernel took it. **A
+resend was not the answer and must not become one**: the worker has run the
+request, a POST is not idempotent, and `delivered` is true. `sendAgain()`
+writes and ends in the turn it opens, so it already makes one write.
+`tests/request_proxy_last_write.js` makes the preemption certain — the
+agent's sockets stop THIS THREAD (`Atomics.wait`, not a timer, so nothing is
+read meanwhile) before every write after their first, against a worker in a
+thread of its own — and reproduces the CI line exactly without the fix.
+
 **THE RULE THAT COMES OUT OF IT** is worth more than the mechanism: a store is
 shared by coordination, and anything that is NOT a row in a store — a socket, a
 timer, a listener — is held by one process and reachable from no other. There
