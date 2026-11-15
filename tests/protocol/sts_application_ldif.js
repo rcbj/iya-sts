@@ -25,13 +25,39 @@
 //      `POST /admin-api/users/export-ldif` with no credential unless asked,
 //      imported into the second through `/users/import-ldif` with their
 //      password's hash, and the same file again refused.
+//   f. D12 (#444), tests/application_ldif.js's codes: an application nobody
+//      recorded is STS-REG-0345, the same identifier again STS-REG-0349, a
+//      derived attribute STS-REG-0350, an attribute the registry has no row
+//      for STS-REG-0351, two records STS-REG-0347, a person's entry at the
+//      application door STS-REG-0348 — each 400 with nothing made — and each
+//      export and import audited without a value;
+//   g. D12 (#444), tests/user_ldif.js: the person's file with an app password
+//      and a stored certificate in it comes back with both, and the same
+//      password BINDS over LDAPS in the realm it was imported into (a product
+//      realm, so it is verified); a person nobody holds is STS-LDAP-0214, an
+//      existing username STS-LDAP-0218 (unchanged), a recorded attribute and
+//      an entryUUID STS-LDAP-0219, a clear password STS-LDAP-0220, two
+//      records STS-LDAP-0216, an application's file at the person door
+//      STS-LDAP-0217; each export and import audited without a value; and a
+//      token holding only admin:read is refused at both doors.
+//
+// Left in process (class d): the secret sealed again at rest after an import
+// (application_ldif.js D needs a persisting key-encryption key), the
+// authenticator app, the passkey and its user handle, and the recovery codes
+// carried in a person's file (there is no management-API door that enrols
+// them), the closed response models (user_ldif.js E, which
+// tests/openapi_response_models.js holds for every answer), and the console
+// tab's markup (user_ldif.js F1-F2).
 //
 // OWNED HERE (local: true): this repository's own console operations and
 // management API.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const crypto = require("crypto");
+const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
+const tokens = require("../tools/admin-api-token.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -118,6 +144,79 @@ function unfold(ldif) {
   log.debug("Entering unfold().");
   log.debug("Leaving unfold().");
   return String(ldif || "").replace(/\r?\n /g, "");
+}
+
+// A code is never sent; the realm's audit log is where it is read back.
+async function codeCount(api, code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await send(api + "/audit?per=500&code=" +
+                       encodeURIComponent(code));
+  assert.strictEqual(r.status, 200, "GET audit answered " + r.status);
+  log.debug("Leaving codeCount().");
+  return ((r.body && r.body.events) || []).length;
+}
+
+async function rowsOf(api, action) {
+  log.debug("Entering rowsOf(). " + action);
+  const r = await send(api + "/audit?per=500&action=" +
+                       encodeURIComponent(action));
+  assert.strictEqual(r.status, 200, "GET audit answered " + r.status);
+  log.debug("Leaving rowsOf().");
+  return (r.body && r.body.events) || [];
+}
+
+// POST `payload` to `url` and assert a 400 whose code `code` was recorded in
+// the realm whose management API is `api`.
+async function refusedCoded(api, url, payload, code, what) {
+  log.debug("Entering refusedCoded(). " + code);
+  const before = await codeCount(api, code);
+  const r = await postJson(url, payload);
+  let after = before;
+  for (let i = 0; i < 25 && after <= before; i += 1) {
+    after = await codeCount(api, code);
+    if (after <= before) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 150);
+      });
+    }
+  }
+  check(what + " — 400, recorded " + code, function () {
+    assert.strictEqual(r.status, 400, r.raw.slice(0, 400));
+    assert.ok(r.body && r.body.ok === false, r.raw.slice(0, 400));
+    assert.ok(after > before, "no new " + code + " row");
+  });
+  log.debug("Leaving refusedCoded().");
+  return r;
+}
+
+// A simple bind over LDAPS: 0 when it binds.
+function ldapsBind(dn, password) {
+  log.debug("Entering ldapsBind(). " + dn);
+  const host = new URL(base).hostname;
+  const url = process.env.STS_LDAPS_URL ||
+    ("ldaps://" + host + ":" + (process.env.STS_LDAPS_PORT || 636));
+  const client = ldapjs.createClient({ url: url, reconnect: false,
+    timeout: 20000, connectTimeout: 15000,
+    tlsOptions: { rejectUnauthorized: true, servername: host } });
+  client.on("error", function (e) {
+    // ldapjs emits on the client as well as calling back; the bind reports.
+    log.debug("The LDAP client emitted an error: " + e.message);
+  });
+  log.debug("Leaving ldapsBind().");
+  return new Promise(function (resolve) {
+    client.bind(dn, password, function (e) {
+      const code = e ? e.code : 0;
+      try {
+        client.unbind(function () {
+          resolve(code);
+        });
+      } catch (err) {
+        log.debug("Caught in ldapsBind(): " + ((err && err.message) || err));
+        // A connection already closed cannot be unbound; the code stands.
+        resolve(code);
+      }
+    });
+  });
 }
 
 async function test() {
@@ -247,6 +346,211 @@ async function test() {
   check("the same person again is refused, never overwritten", function () {
     assert.strictEqual(personAgain.status, 400, personAgain.raw.slice(0, 400));
   });
+
+  log.info("=== f. the application door's refusals, by code (D12) ===");
+  await refusedCoded(fromApi, fromApi + "/applications/export-ldif",
+    { application: APP + "-nobody" }, "STS-REG-0345",
+    "an application nobody recorded");
+  await refusedCoded(toApi, toApi + "/applications/import-ldif",
+    { ldif: full.ldif }, "STS-REG-0349",
+    "the same identifier again, never overwritten");
+  const renamed = full.ldif.split(APP).join(APP + "-f");
+  await refusedCoded(toApi, toApi + "/applications/import-ldif",
+    { ldif: renamed.replace(/\n*$/, "\nappFirstSeen: 20260101000000Z\n") },
+    "STS-REG-0350", "a derived attribute");
+  await refusedCoded(toApi, toApi + "/applications/import-ldif",
+    { ldif: renamed.replace(/\n*$/, "\nnoSuchAttribute: x\n") },
+    "STS-REG-0351", "an attribute this registry has no row for");
+  await refusedCoded(toApi, toApi + "/applications/import-ldif",
+    { ldif: renamed + "\n\n" + renamed.split(APP + "-f").join(APP + "-g") },
+    "STS-REG-0347", "a file of two records");
+  await refusedCoded(toApi, toApi + "/applications/import-ldif",
+    { ldif: person.ldif }, "STS-REG-0348",
+    "a person's file at the application door");
+  const madeAfter = await send(toApi + "/applications?application=" +
+                               encodeURIComponent(APP + "-f"));
+  check("and none of those refusals made the application", function () {
+    assert.ok(madeAfter.body && madeAfter.body.found === false,
+              madeAfter.raw.slice(0, 300));
+  });
+  const exports = (await rowsOf(fromApi, "application.export")).filter(
+    function (row) {
+      return row.target === APP;
+    });
+  const imports = (await rowsOf(toApi, "application.import")).filter(
+    function (row) {
+      return row.target === APP;
+    });
+  check("each export is audited in its realm, the import in the realm it " +
+        "made the application in, never with the secret", function () {
+    assert.strictEqual(exports.length, 2, JSON.stringify(exports));
+    assert.strictEqual(imports.length, 1, JSON.stringify(imports));
+    assert.ok(JSON.stringify(exports.concat(imports)).indexOf(SECRET) < 0);
+  });
+
+  log.info("=== g. the person door (D12) ===");
+  // A product realm to import into, so the password that comes with the
+  // file is CHECKED by the bind below rather than accepted as development
+  // accepts anything; and its second-factor rule relaxed, because a simple
+  // bind cannot ask for a second factor.
+  const PROD = realmId("ldifp-");
+  await ok(base + "/admin-api/realms/create", { id: PROD,
+    domain: PROD + ".example.net", name: "Person LDIF product " + STAMP,
+    overrides: { "global.mode": "product",
+                 "authn.allowOptionalSecondFactor": "true" } },
+    "created the product realm " + PROD);
+  const prodApi = base + "/realm/" + PROD + "/admin-api";
+  const WHO = (PERSON + "g").slice(0, 40);
+  await ok(fromApi + "/users/create", { username: WHO, invent: false,
+    attributes: { cn: "LDIF G", sn: "G", givenName: "LDIF",
+                  mail: WHO + "@example.net", title: "Engineer" },
+    credential: "password", password: PASSWORD }, "created " + WHO);
+  await ok(fromApi + "/users/create-app-password",
+    { user: WHO, name: "ldif mail " + STAMP, doors: ["ldap"] },
+    "made an app password for " + WHO);
+  const pem = await new Promise(function (resolve) {
+    // A certificate for the entry: any X.509 certificate will do for a
+    // stored one, and the service's own listener certificate is at hand.
+    const tls = require("tls");
+    const u = new URL(base);
+    const socket = tls.connect({ host: u.hostname, port: Number(u.port || 443),
+      servername: u.hostname, rejectUnauthorized: false }, function () {
+      const der = socket.getPeerCertificate().raw;
+      socket.end();
+      resolve("-----BEGIN CERTIFICATE-----\n" +
+              der.toString("base64").replace(/(.{64})/g, "$1\n")
+                .replace(/\n$/, "") + "\n-----END CERTIFICATE-----\n");
+    });
+    socket.on("error", function () {
+      resolve("");
+    });
+  });
+  const stored = await postJson(fromApi + "/users/add-certificate",
+                                { user: WHO, certificate: pem });
+  check("a certificate is stored on the entry", function () {
+    assert.ok(stored.status === 200 && stored.body && stored.body.ok,
+              stored.raw.slice(0, 400));
+  });
+  const whoFull = await ok(fromApi + "/users/export-ldif",
+    { user: WHO, credentials: true }, "exported " + WHO + " whole");
+  const whoNames = unfold(whoFull.ldif).split("\n").map(function (line) {
+    return line.split(":")[0].toLowerCase();
+  });
+  check("WITH the box the app password and the certificate are in it, no " +
+        "entryUUID, and the header says UNENCRYPTED", function () {
+    assert.ok(whoNames.indexOf("stsapppassword") >= 0 ||
+              whoNames.some(function (n) {
+                return /apppassword/.test(n);
+              }), whoNames.join(","));
+    assert.ok(whoNames.some(function (n) {
+      return /^usercertificate/.test(n);
+    }), whoNames.join(","));
+    assert.ok(whoNames.indexOf("entryuuid") < 0, whoNames.join(","));
+    assert.ok(/UNENCRYPTED|unencrypted/.test(whoFull.ldif),
+              whoFull.ldif.slice(0, 400));
+  });
+  const landed = await ok(prodApi + "/users/import-ldif",
+                          { ldif: whoFull.ldif }, "imported " + WHO);
+  check("imported into the product realm with no Kerberos key, its " +
+        "credentials named", function () {
+    assert.strictEqual(landed.kerberosKeys, false);
+    assert.ok((landed.credentials || []).indexOf("userPassword") >= 0,
+              JSON.stringify(landed));
+  });
+  const passwords = await send(prodApi + "/users/app-passwords?user=" +
+                               encodeURIComponent(WHO));
+  check("the app password came with them", function () {
+    assert.strictEqual(passwords.status, 200, passwords.raw.slice(0, 300));
+    assert.ok(passwords.raw.indexOf("ldif mail " + STAMP) >= 0,
+              passwords.raw.slice(0, 400));
+  });
+  const bound = await ldapsBind(String(landed.dn ||
+    ("uid=" + WHO + ",ou=users,dc=" + PROD + ",dc=example,dc=net")),
+    PASSWORD);
+  const wrong = await ldapsBind(String(landed.dn ||
+    ("uid=" + WHO + ",ou=users,dc=" + PROD + ",dc=example,dc=net")),
+    PASSWORD + "-not");
+  check("the same password verifies against the stored hash there: it " +
+        "binds over LDAPS, and a wrong one is 49", function () {
+    assert.strictEqual(bound, 0);
+    assert.strictEqual(wrong, 49);
+  });
+  await refusedCoded(fromApi, fromApi + "/users/export-ldif",
+    { user: WHO + "nobody" }, "STS-LDAP-0214", "a person nobody holds");
+  // The entry as a record, comments (which carry the export's time) left
+  // out: what the refusal below must not have changed.
+  const recordOf = async function () {
+    log.debug("Entering recordOf().");
+    const r = await ok(prodApi + "/users/export-ldif",
+                       { user: WHO, credentials: true }, "exported " + WHO);
+    log.debug("Leaving recordOf().");
+    return unfold(r.ldif).split("\n").filter(function (line) {
+      return line.charAt(0) !== "#";
+    }).join("\n");
+  };
+  const beforeAgain = await recordOf();
+  await refusedCoded(prodApi, prodApi + "/users/import-ldif",
+    { ldif: whoFull.ldif }, "STS-LDAP-0218", "an existing username");
+  const afterAgain = await recordOf();
+  check("and the existing person is unchanged", function () {
+    assert.strictEqual(afterAgain, beforeAgain);
+  });
+  const otherPerson = person.ldif.split(PERSON).join(PERSON + "c");
+  await refusedCoded(toApi, toApi + "/users/import-ldif",
+    { ldif: otherPerson.replace(/\n*$/, "\nauthnMethod: pwd\n") },
+    "STS-LDAP-0219", "a recorded attribute");
+  await refusedCoded(toApi, toApi + "/users/import-ldif",
+    { ldif: otherPerson.replace(/\n*$/, "\nentryUUID: " +
+                                crypto.randomUUID() + "\n") },
+    "STS-LDAP-0219", "an entryUUID");
+  await refusedCoded(toApi, toApi + "/users/import-ldif",
+    { ldif: otherPerson.replace(/\n*$/, "\nuserPassword: clear-text\n") },
+    "STS-LDAP-0220", "a clear password");
+  await refusedCoded(toApi, toApi + "/users/import-ldif",
+    { ldif: otherPerson + "\n\n" +
+            otherPerson.split(PERSON + "c").join(PERSON + "d") },
+    "STS-LDAP-0216", "a file of two records");
+  await refusedCoded(toApi, toApi + "/users/import-ldif",
+    { ldif: plain.ldif }, "STS-LDAP-0217",
+    "an application's file at the person door");
+  const nobodyMade = await send(toApi + "/users?user=" +
+                                encodeURIComponent(PERSON + "c"));
+  check("and none of those refusals created the person", function () {
+    assert.ok(nobodyMade.status === 200 && nobodyMade.body &&
+              nobodyMade.body.known === false,
+              nobodyMade.status + " " + nobodyMade.raw.slice(0, 300));
+  });
+  const userExports = (await rowsOf(fromApi, "user.export")).filter(
+    function (row) {
+      return row.target === WHO;
+    });
+  const userImports = (await rowsOf(prodApi, "user.import")).filter(
+    function (row) {
+      return row.target === WHO;
+    });
+  check("each person export and the import are audited, never with the " +
+        "password or its hash", function () {
+    assert.strictEqual(userExports.length, 1, JSON.stringify(userExports));
+    assert.strictEqual(userImports.length, 1, JSON.stringify(userImports));
+    const hash = (unfold(whoFull.ldif).match(/^userPassword:: ?(.*)$/mi) ||
+                  unfold(whoFull.ldif).match(/^userPassword: ?(.*)$/mi) ||
+                  [])[1] || "no-hash-found";
+    const rows = JSON.stringify(userExports.concat(userImports));
+    assert.ok(rows.indexOf(PASSWORD) < 0 && rows.indexOf(hash) < 0, rows);
+  });
+  const readOnly = await tokens.tokenFor(base, { scope: "admin:read" });
+  for (const door of ["/users/export-ldif", "/users/import-ldif"]) {
+    const r = await send(fromApi + door, { method: "POST",
+      headers: { "Content-Type": "application/json",
+                 authorization: "Bearer " + readOnly },
+      body: JSON.stringify(door === "/users/export-ldif" ? { user: WHO }
+                                                         : { ldif: "x" }) });
+    check("a token holding only admin:read is refused at " + door,
+          function () {
+      assert.strictEqual(r.status, 403, r.raw.slice(0, 300));
+      assert.ok(/admin:write/.test(r.raw), r.raw.slice(0, 600));
+    });
+  }
 
   log.info("Test completed successfully. " + checks + " check(s) passed.");
   log.debug("Leaving test().");
