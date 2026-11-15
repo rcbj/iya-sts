@@ -110,6 +110,7 @@ fn crl_time(t: &DateTime<Utc>) -> Vec<u8> {
 }
 
 /// An Extension as pkijs writes it: the BOOLEAN only when critical.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn extension(
     oid: &str,
     critical: bool,
@@ -125,6 +126,7 @@ pub(super) fn extension(
 
 /// The issuer's key identifier: its own subject key identifier, or SHA-1
 /// of its public key's bits.
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn key_identifier(issuer: &Certificate) -> Vec<u8> {
     if let Some(ski) = issuer.extension("2.5.29.14") {
         if let Some(e) = der::read(&ski.value) {
@@ -135,6 +137,7 @@ pub(super) fn key_identifier(issuer: &Certificate) -> Vec<u8> {
 }
 
 /// The subjectPublicKey BIT STRING's bits (asn1js's `valueHexView`).
+#[tracing::instrument(level = "debug", skip_all)]
 pub(super) fn spki_bits(cert: &Certificate) -> Vec<u8> {
     der::read(&cert.spki)
         .and_then(|e| der::children(e.content))
