@@ -52,6 +52,11 @@ pub trait Clients: Send + Sync {
     fn permission_defined_by(&self, _id: &str) -> Option<String> {
         None
     }
+    /// `applications.forPermission(id)`: the whole row, for the consent
+    /// screen.
+    fn permission_row(&self, _id: &str) -> Option<Json> {
+        None
+    }
     /// `forPermission(id)` in full: `(identifier, name, baseUri)` of the
     /// permission a whole identifier names.
     fn permission_of(&self, _id: &str) -> Option<(String, String, String)> {
@@ -446,6 +451,11 @@ impl Clients for RegisterClients {
         self.registry
             .for_permission(id)
             .map(|f| crate::js::string_of(f.get("identifier")))
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn permission_row(&self, id: &str) -> Option<Json> {
+        self.registry.for_permission(id)
     }
 
     #[tracing::instrument(level = "debug", skip(self))]

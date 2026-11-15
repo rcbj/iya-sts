@@ -244,7 +244,7 @@ impl DirectoryPorts {
 
     /// `personAttributeValues(username, attribute)`.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub(crate) fn person_attribute(
+    pub fn person_attribute(
         &self,
         name: &str,
         attribute: &str,
@@ -257,7 +257,7 @@ impl DirectoryPorts {
     /// One attribute of a person's entry written, a write marked for the
     /// next flush.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub(crate) fn write_attribute(
+    pub fn write_attribute(
         &self,
         name: &str,
         attribute: &str,
@@ -1084,6 +1084,7 @@ impl SignInStack {
             version: parts.version,
             https: parts.settings.value_of("global.https").as_bool(),
             sign_out: std::sync::OnceLock::new(),
+            consent: std::sync::OnceLock::new(),
         });
         SignInStack {
             sessions,

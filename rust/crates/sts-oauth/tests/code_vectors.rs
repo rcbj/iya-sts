@@ -26,8 +26,7 @@ use sts_authn::ports::Request;
 use sts_core::mode::Mode;
 use sts_core::settings::Settings;
 use sts_oauth::authorize::{
-    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoConsents,
-    NoGatedScopes, SignOn,
+    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoGatedScopes, SignOn,
 };
 use sts_oauth::client_auth::{
     AssertionHistory, ClientAuth, Clock, MemoryAssertionHistory,
@@ -416,7 +415,7 @@ async fn the_code_flow() {
                 now_ms: Arc::new(move || *n1.lock().unwrap() as f64),
             }),
             gated: Arc::new(NoGatedScopes),
-            consents: Arc::new(NoConsents),
+            consent: None,
             pages: Arc::new(CatalogPages {
                 catalogs: catalogs.clone(),
                 footer: sts_http::footer::Facts {
@@ -621,6 +620,7 @@ async fn the_code_flow() {
                 clients: clients.clone(),
                 signer: signer.clone(),
                 now_s: Arc::new(move || *n3.lock().unwrap() / 1000),
+                pairwise: None,
             })),
             scopes,
             grants: grants.clone(),

@@ -53,11 +53,10 @@
 //!   only they read (`authorization_details`, `acr_values`, `max_age`,
 //!   `claims`, `grant_management_action`) is answered as if it had not —
 //!   which is what Node does with the feature switched off;
-//! * the consent screen (the OIDC slice's): a scope still needing consent
-//!   is refused `consent_required` (`STS-OAUTH-0168`) with `prompt=none`, as
-//!   in Node, and `server_error` (`STS-OAUTH-0169`) otherwise; the hosted
-//!   surfaces hold global consent to what they ask for, so they never reach
-//!   it.
+//! * consent ([`crate::consent`]): a scope still needing an answer sends
+//!   the person to the consent screen, and comes back to this request
+//!   whole; `prompt=none` is refused `consent_required`
+//!   (`STS-OAUTH-0168`), as in Node.
 //!
 //! THE PAGES A BROWSER IS SHOWN (#1326's `ErrorPage`, `sts_http::error_page`):
 //! a refusal that is never redirected is the shared error page for a GET
@@ -227,20 +226,6 @@ impl GatedScopes for NoGatedScopes {
     }
     fn narrow(&self, scope: &str, _: &str, _: bool, _: &str, _: &str) -> Json {
         json!({ "scope": scope, "emptied": false, "why": "" })
-    }
-}
-
-/// The scopes a person has consented to for a client (`consentsOf()`).
-pub trait PersonConsents: Send + Sync {
-    fn consented(&self, username: &str, client_id: &str) -> Vec<String>;
-}
-
-/// Nobody has consented to anything.
-pub struct NoConsents;
-
-impl PersonConsents for NoConsents {
-    fn consented(&self, _username: &str, _client_id: &str) -> Vec<String> {
-        Vec::new()
     }
 }
 
@@ -440,7 +425,10 @@ pub struct AuthorizationEndpoint {
     pub sign_on: Arc<dyn SignOn>,
     pub hand_off: Arc<dyn SignInHandOff>,
     pub gated: Arc<dyn GatedScopes>,
-    pub consents: Arc<dyn PersonConsents>,
+    /// The consent register and screen (`common/consent.ts`,
+    /// `consent_screen.ts`); `None` asks nobody and records nothing, as
+    /// `oauth2.consentRequired` off does.
+    pub consent: Option<Arc<crate::consent::ConsentScreen>>,
     pub pages: Arc<dyn Pages>,
     /// The realm's key, for a JWT-secured response (JARM); `None` refuses
     /// one as a response that cannot be made (`STS-OAUTH-0588`).
@@ -1909,7 +1897,11 @@ impl AuthorizationEndpoint {
         }
     }
 
-    /// The consent decision for a signed-in person, then the response.
+    /// The consent decision for a signed-in person, then the response
+    /// (`authorizeRequest()`'s consent block): what `consent.outstanding()`
+    /// says needs an answer is asked on the screen, a public client's
+    /// one-time Allow spent on the pass after it, and the scopes a global
+    /// consent answered noted on the person's entry (#537).
     fn with_consent(
         &self,
         ask: &AuthorizeAsk,
@@ -1918,56 +1910,127 @@ impl AuthorizationEndpoint {
         client: &Json,
         session: &Json,
     ) -> Answer {
+        let _ = client;
         let client_id = s(q.get("client_id"));
         let user = session.get("user").cloned().unwrap_or(Json::Null);
         let username = s(user.get("username"));
-        let consent_required =
-            self.settings.value_of("oauth2.consentRequired").as_bool();
-        if consent_required {
-            // `consent.alwaysAsks()`: a public client that is not one of
-            // this service's own surfaces is asked every time where
-            // `oauth2.consentAlwaysForPublicClients` says so.
-            const HOSTED: [&str; 4] = [
-                "sts-admin-console",
-                "sts-user-portal",
-                "sts-report",
-                "sts-debugger-ui",
-            ];
-            let always = !HOSTED.contains(&client_id.as_str())
-                && self
-                    .settings
-                    .value_of("oauth2.consentAlwaysForPublicClients")
-                    .as_bool()
-                && s(client.get("token_endpoint_auth_method")) == "none";
-            let wants_consent = always
-                || words(&s(q.get("prompt"))).iter().any(|p| p == "consent");
-            let global = self.global_consents_of(&client_id);
-            let mine = self.consents.consented(&username, &client_id);
-            let outstanding: Vec<String> =
-                crate::scopes::split(&s(q.get("scope")))
-                    .into_iter()
-                    .filter(|one| {
-                        wants_consent
-                            || !(global.contains(one) || mine.contains(one))
-                    })
-                    .collect();
-            if !outstanding.is_empty() {
-                if words(&s(q.get("prompt"))).iter().any(|p| p == "none") {
-                    return self.fail(ask, q, true, codes::STS_OAUTH_0168, "consent_required", &format!(
-                        "\"{}\" has not consented {} for the client \"{}\", and prompt=none forbids showing the consent screen. Retry without prompt=none, or consent the scope for every user of this application at /admin/consent — which is what an application that must never interrupt anybody is configured with. oauth2.consentRequired turns the screen off entirely.",
-                        username,
-                        outstanding.iter().map(|o| format!("\"{}\"", o)).collect::<Vec<_>>().join(", "),
-                        client_id));
-                }
-                self.sign_on.hold_presentation(&s(session.get("id")));
-                tracing::error!(
-                    "{}oauth2: \"{}\" must consent {} for \"{}\", and this runtime does not serve the consent screen yet.",
-                    sts_core::log::tag(codes::STS_OAUTH_0169), username, outstanding.join(", "), client_id);
-                return self.fail(ask, q, true, codes::STS_OAUTH_0169, "server_error",
-                    "This authorization server does not serve the consent screen yet, and the request needs consent to a scope no global consent covers.");
+        let wants_consent =
+            words(&s(q.get("prompt"))).iter().any(|p| p == "consent");
+        let Some(screen) = self.consent.as_ref() else {
+            return self.issue(ask, q, types, session);
+        };
+        let register = &screen.register;
+        let required = register.required();
+        let digest = if required && register.always_asks(client_id.trim()) {
+            crate::consent::ConsentRegister::scope_answer_digest_of(&s(
+                q.get("scope")
+            ))
+        } else {
+            String::new()
+        };
+        let answered = !digest.is_empty()
+            && !wants_consent
+            && register.consume_consented(&username, &client_id, &digest);
+        let decision = if required {
+            register.outstanding(
+                &username,
+                &client_id,
+                &s(q.get("scope")),
+                wants_consent,
+                answered,
+            )
+        } else {
+            crate::consent::Outstanding::default()
+        };
+        if !decision.outstanding.is_empty() {
+            if words(&s(q.get("prompt"))).iter().any(|p| p == "none") {
+                return self.fail(ask, q, true, codes::STS_OAUTH_0168, "consent_required", &format!(
+                    "\"{}\" has not consented {} for the client \"{}\", and prompt=none forbids showing the consent screen. Retry without prompt=none, or consent the scope for every user of this application at /admin/consent — which is what an application that must never interrupt anybody is configured with. oauth2.consentRequired turns the screen off entirely.",
+                    username,
+                    decision.names().iter().map(|o| format!("\"{}\"", o)).collect::<Vec<_>>().join(", "),
+                    client_id));
             }
+            // THE SAME `returnTo` THE SIGN-IN HOP USES, `prompt` dropped.
+            let return_to = format!(
+                "{}/oauth2/authorize?{}",
+                crate::authorization_servers::path_of(
+                    &crate::authorization_servers::current()
+                ),
+                self.return_query(q)
+            );
+            self.sign_on.hold_presentation(&s(session.get("id")));
+            let already: Vec<Json> = decision
+                .rows
+                .iter()
+                .filter(|r| !decision.outstanding.contains(r))
+                .cloned()
+                .collect();
+            let shown_scope = match s(q.get("scope")) {
+                sc if sc.is_empty() => "(none requested)".to_string(),
+                sc => sc,
+            };
+            let info = json!({
+                "returnTo": return_to,
+                "username": username,
+                "clientId": client_id,
+                "clientName": self.clients.name_of(&client_id),
+                "scopes": decision.outstanding,
+                "resources": values(q.get("resource")),
+                "authorizationDetails": [],
+                "detailsDigest": "",
+                "scopeAnswerDigest": digest,
+                "rawAuthorizationDetails": [],
+                "already": already,
+                "protocol": "OAuth 2.0 / OIDC",
+                "uiLocales": s(q.get("ui_locales")),
+                "details": [
+                    { "label": "client_id", "value": client_id },
+                    { "label": "scope", "value": shown_scope },
+                    { "label": "redirect_uri",
+                      "value": s(q.get("redirect_uri")) },
+                ],
+            });
+            return match screen.begin(&info) {
+                Ok(location) => {
+                    Answer::redirect(&if self.mode.hides_step_ids() {
+                        hide_step(&location, &client_id)
+                    } else {
+                        location
+                    })
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "{}the authorization response could not be issued: {}",
+                        sts_core::log::tag(codes::STS_OAUTH_0169),
+                        e
+                    );
+                    self.fail(
+                        ask,
+                        q,
+                        true,
+                        codes::STS_OAUTH_0169,
+                        "server_error",
+                        &e,
+                    )
+                }
+            };
         }
+        let applied: Vec<String> = decision
+            .rows
+            .iter()
+            .filter(|r| {
+                r["global"] == json!(true) && r["consented"] != json!(true)
+            })
+            .map(|r| s(r.get("scope")))
+            .collect();
+        register.note_applied(&username, &client_id, &applied);
         self.issue(ask, q, types, session)
+    }
+
+    /// `authorizationReturnQuery(req, q)`: the request with `prompt`
+    /// dropped, for the sign-in and consent hops to return to.
+    fn return_query(&self, q: &Map<String, Json>) -> String {
+        query_string(q, &["prompt"])
     }
 
     /// `consent.globalConsentsOf(clientId)`: `oauthGlobalConsent` on the
@@ -2036,11 +2099,11 @@ impl AuthorizationEndpoint {
                     .global_consents_of(&client_id)
                     .iter()
                     .any(|g| g == "offline_access")
-                    || self
-                        .consents
-                        .consented(&username, &client_id)
-                        .iter()
-                        .any(|g| g == "offline_access"));
+                    || self.consent.as_ref().is_some_and(|c| {
+                        c.register.consents_of(&username).iter().any(|g| {
+                            g.client == client_id && g.scope == "offline_access"
+                        })
+                    }));
             if !types.iter().any(|t| t == "code") || (!prompted && !consented) {
                 tracing::info!(
                     "oauth2: offline_access was asked for by \"{}\" without prompt=consent and without a recorded consent to it, and is ignored (OIDC Core section 11); the refresh token issued is an online one.",

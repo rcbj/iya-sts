@@ -718,6 +718,13 @@ impl Stack {
         // THE AUTHORIZATION SERVER (`9`, #444 phase 5): its stores declared
         // before the store opens, over the sign-in stack's session core and
         // pending sign-ins, and the live directory.
+        let directory_ports = Arc::new(sts_authn_api::wiring::DirectoryPorts {
+            directory: directory.clone(),
+            persistence: persistence.clone(),
+            registry: registry.clone(),
+            settings: settings.clone(),
+            mode: mode.clone(),
+        });
         let oauth =
             crate::oauth::OAuthStack::declare(crate::oauth::OAuthParts {
                 settings: settings.clone(),
@@ -730,13 +737,12 @@ impl Stack {
                 sessions: signin.sessions.clone(),
                 footer: sts_http::footer::facts(&version_info),
                 pending: signin.signin.stores.pending.clone(),
-                people: Arc::new(sts_authn_api::wiring::DirectoryPorts {
-                    directory: directory.clone(),
-                    persistence: persistence.clone(),
-                    registry: registry.clone(),
-                    settings: settings.clone(),
-                    mode: mode.clone(),
-                }),
+                people: directory_ports.clone(),
+                directory_ports: directory_ports.clone(),
+                client_display: {
+                    let facts = signin.signin.facts.clone();
+                    Arc::new(move |client: &str| facts.client_display(client))
+                },
                 catalogs: Arc::new(sts_http::i18n::Catalogs::load(
                     &sts_http::i18n::Catalogs::dir_in(
                         &sts_http::files::WebRoot::from_env().0,
@@ -746,7 +752,12 @@ impl Stack {
             });
         let authn_routes = signin
             .mount(&http, surfaces.clone(), settings.clone())
-            .merge(oauth.router(http.clone()));
+            .merge(oauth.router(http.clone()))
+            .merge(oauth.consent_router(
+                http.clone(),
+                surfaces.clone(),
+                &signin.api,
+            ));
         // THE PROTOCOL-INDEPENDENT SIGN-OUT (`common/protocol_stack.ts`'s
         // 23a, second to last): `/logout`, `/logout/signed-out`, and the
         // page's operations behind `/authn-api/logout`.

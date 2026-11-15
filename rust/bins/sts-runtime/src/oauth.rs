@@ -48,8 +48,7 @@ use sts_core::settings::Settings;
 use sts_directory::Directory;
 use sts_oauth::authorization_servers::{self as named, AuthorizationServers};
 use sts_oauth::authorize::{
-    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoConsents,
-    NoGatedScopes,
+    AuthorizationEndpoint, AuthorizeAsk, CatalogPages, NoGatedScopes,
 };
 use sts_oauth::client_auth::{ClientAuth, MemoryAssertionHistory, SystemClock};
 use sts_oauth::clients::RegisterClients;
@@ -79,6 +78,10 @@ pub struct OAuthParts {
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
     /// The token register the stack declared, which sign-out revokes in.
     pub tokens: Arc<sts_oauth::minted::TokenRegister>,
+    /// The live directory's person doors, where a consent is filed.
+    pub directory_ports: Arc<sts_authn_api::wiring::DirectoryPorts>,
+    /// `authn.clientDisplay(clientId)` (#1300), for the consent view.
+    pub client_display: Arc<dyn Fn(&str) -> Json + Send + Sync>,
 }
 
 /// The authorization server, built.
@@ -95,6 +98,51 @@ pub struct OAuthStack {
     pub sessions: Arc<sts_authn::Sessions>,
     /// The named authorization servers (rule 3j).
     pub servers: Arc<AuthorizationServers>,
+    /// The consent register and screen (rule 4c).
+    pub consent: Arc<sts_oauth::consent::ConsentScreen>,
+}
+
+/// `ldap_server.js`'s consent hooks over the live directory: the person's
+/// entry by its `uid`, a value added only where it is not there already
+/// (`addValues()`).
+struct ConsentEntries(Arc<sts_authn_api::wiring::DirectoryPorts>);
+
+impl sts_oauth::consent::ConsentDirectory for ConsentEntries {
+    fn values_of(&self, key: &str, attribute: &str) -> Option<Vec<String>> {
+        // Every entry carries its objectClass; none is no entry.
+        self.0.person_attribute(key, "objectClass")?;
+        Some(self.0.person_attribute(key, attribute).unwrap_or_default())
+    }
+
+    fn add_values(
+        &self,
+        key: &str,
+        attribute: &str,
+        values: &[String],
+    ) -> Result<bool, String> {
+        let Some(mut held) = self.values_of(key, attribute) else {
+            return Err("noEntry".into());
+        };
+        let before = held.len();
+        for v in values {
+            if !held.contains(v) {
+                held.push(v.clone());
+            }
+        }
+        if held.len() == before {
+            return Ok(false);
+        }
+        match self.0.write_attribute(key, attribute, Some(held)) {
+            Ok(true) => Ok(true),
+            Ok(false) => Err("noEntry".into()),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn name_for_subject(&self, sub: &str) -> String {
+        use sts_authn::ports::People;
+        self.0.name_for_subject(sub)
+    }
 }
 
 /// The ambient realm's key set, as the JWKS reads it.
@@ -354,6 +402,17 @@ impl OAuthStack {
         });
         let signer: Arc<dyn Signer> =
             Arc::new(RealmSigner(parts.persistence.clone()));
+        // The client-facing subject (OIDC Core section 8, #149).
+        let pairwise = Arc::new(sts_oauth::pairwise::PairwiseSubjects {
+            settings: settings.clone(),
+            clients: clients.clone(),
+            secret: sts_oauth::pairwise::PairwiseSubjects::process_secret(),
+            ephemeral: sts_oauth::pairwise::PairwiseSubjects::declare_ephemeral(
+                &parts.lifecycle,
+                &parts.handles,
+            ),
+            now_ms: Arc::new(sts_core::time::now_ms_f64),
+        });
         let tokens = Arc::new(TokenEndpoint {
             settings: settings.clone(),
             mode: mode.clone(),
@@ -376,6 +435,7 @@ impl OAuthStack {
                 clients: clients.clone(),
                 signer: signer.clone(),
                 now_s: Arc::new(|| chrono::Utc::now().timestamp()),
+                pairwise: Some(pairwise.clone()),
             })),
             scopes: scopes.clone(),
             grants: grants.clone(),
@@ -398,6 +458,27 @@ impl OAuthStack {
             servers.clone(),
         );
         let grant_list = tokens.grant_types_supported();
+        let consent = Arc::new(sts_oauth::consent::ConsentScreen {
+            register: Arc::new(sts_oauth::consent::ConsentRegister {
+                settings: settings.clone(),
+                clients: clients.clone(),
+                directory: Arc::new(ConsentEntries(
+                    parts.directory_ports.clone(),
+                )),
+                answers: sts_oauth::consent::ConsentRegister::declare_answers(
+                    &parts.lifecycle,
+                    &parts.handles,
+                ),
+                now_ms: Arc::new(sts_core::time::now_ms_f64),
+            }),
+            pending: sts_oauth::consent::ConsentScreen::declare_pending(
+                &parts.lifecycle,
+                &parts.handles,
+            ),
+            sign_on: parts.sessions.clone(),
+            client_display: parts.client_display.clone(),
+            random_id: Arc::new(random_id),
+        });
         let authorize = Arc::new(AuthorizationEndpoint {
             settings: settings.clone(),
             mode: mode.clone(),
@@ -414,7 +495,7 @@ impl OAuthStack {
                 now_ms: Arc::new(sts_core::time::now_ms_f64),
             }),
             gated: Arc::new(NoGatedScopes),
-            consents: Arc::new(NoConsents),
+            consent: Some(consent.clone()),
             pages: Arc::new(CatalogPages {
                 catalogs: parts.catalogs.clone(),
                 footer: parts.footer.clone(),
@@ -464,6 +545,7 @@ impl OAuthStack {
             tokens,
             sessions: parts.sessions,
             servers,
+            consent,
         })
     }
 
@@ -1074,4 +1156,150 @@ fn offered(catalogs: &sts_http::i18n::Catalogs) -> Vec<String> {
         .iter()
         .map(|o| sts_oauth::js::string_of(o.get("tag")))
         .collect()
+}
+
+/// The consent screen's operations behind `/authn-api/consent`
+/// (`consent_screen.ts`'s, reached by the door's late binding).
+struct ConsentDoor(Arc<sts_oauth::consent::ConsentScreen>);
+
+impl sts_authn_api::ports::ConsentPages for ConsentDoor {
+    fn claim(
+        &self,
+        id: &str,
+        session_id: &str,
+        call: &sts_authn_api::flow::Call,
+    ) -> bool {
+        self.0.claim_for_browser(id, session_id, &call.request)
+    }
+
+    fn view(
+        &self,
+        call: &sts_authn_api::flow::Call,
+        id: &str,
+    ) -> Result<(Json, String, String), (sts_core::errors::ErrorCode, String)>
+    {
+        let record = self.0.asked_of(&call.request, id, false)?;
+        let text = |name: &str| sts_oauth::js::string_of(record.get(name));
+        Ok((
+            self.0.view(&call.base, &record),
+            text("uiLocales"),
+            text("username"),
+        ))
+    }
+
+    fn act(
+        &self,
+        call: &sts_authn_api::flow::Call,
+        id: &str,
+        action: &str,
+    ) -> sts_authn_api::ports::ConsentAnswer {
+        use sts_authn_api::ports::ConsentAnswer;
+        use sts_oauth::consent::ActOutcome;
+        match self.0.act(&call.request, id, action) {
+            ActOutcome::Refused { code, why } => {
+                ConsentAnswer::Refused { code, why }
+            }
+            ActOutcome::Back {
+                target,
+                username,
+                code,
+            } => ConsentAnswer::Back {
+                target,
+                username,
+                code,
+            },
+        }
+    }
+}
+
+impl OAuthStack {
+    /// `ConsentScreen.registerRoutes()`: `GET /oauth2/consent` — the
+    /// sign-in surface's shell once the three checks pass, refused as
+    /// `invalid_request` otherwise — and the screen's operations behind
+    /// `/authn-api/consent/{id}` (#576). The page's script,
+    /// `/oauth2/consent.js`, is the static surfaces' host's.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn consent_router(
+        self: &Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        surfaces: Arc<sts_http::surfaces::SurfaceHost>,
+        api: &sts_authn_api::door::AuthnApi,
+    ) -> axum::Router {
+        api.set_consent(Arc::new(ConsentDoor(self.consent.clone())));
+        let me = self.clone();
+        axum::Router::new().route(
+            sts_oauth::consent::CONSENT_PATH,
+            axum::routing::get(move |r: AxumRequest| {
+                let (me, h, surfaces) =
+                    (me.clone(), http.clone(), surfaces.clone());
+                async move { me.consent_shell(h, surfaces, r).await }
+            })
+            .fallback(unrouted),
+        )
+    }
+
+    async fn consent_shell(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        surfaces: Arc<sts_http::surfaces::SurfaceHost>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        let (_, headers, address, _) = self.arrived(&http, &request);
+        let query = request.uri().query().unwrap_or("").to_string();
+        let shell = |client: &str, person: &str| {
+            let shown = (self.consent.client_display)(client);
+            let logo = shown
+                .get("logoOrigin")
+                .and_then(Json::as_str)
+                .filter(|o| !o.is_empty())
+                .map(str::to_string);
+            let html = surfaces.shells().consent(&headers, "", client, person);
+            let options = sts_http::shell::ServeOptions {
+                csp: vec![("style-src".into(), Some("'self'".into()))],
+                images: logo.into_iter().collect(),
+                ..sts_http::shell::ServeOptions::default()
+            };
+            sts_http::shell::serve(&headers, html, &options)
+        };
+        let asked = sts_oauth::js::fold(&sts_oauth::js::form_decode(&query));
+        let named = sts_oauth::js::string_of(asked.get("consent"));
+        if self.mode.hides_step_ids() && named.is_empty() {
+            return shell("", "");
+        }
+        let checked = match sts_oauth::model::check("consent", &asked, "query")
+        {
+            Ok(v) => v,
+            Err(e) => {
+                return sts_oauth::answer::Answer::refusal(
+                    sts_core::errors::codes::STS_OAUTH_0148,
+                    400,
+                    "invalid_request",
+                    &e.detail,
+                )
+                .into_response();
+            }
+        };
+        let session_request = sts_authn::ports::Request {
+            cookie: header_of(&headers, "cookie"),
+            user_agent: header_of(&headers, "user-agent"),
+            address,
+            url: request.uri().to_string(),
+            ..sts_authn::ports::Request::default()
+        };
+        let id = sts_oauth::js::string_of(checked.get("consent"));
+        match self.consent.asked_of(&session_request, &id, false) {
+            Err((code, why)) => sts_oauth::answer::Answer::refusal(
+                code,
+                400,
+                "invalid_request",
+                &why,
+            )
+            .into_response(),
+            Ok(record) => shell(
+                &sts_oauth::js::string_of(record.get("clientId")),
+                &sts_oauth::js::string_of(record.get("username")),
+            ),
+        }
+    }
 }
