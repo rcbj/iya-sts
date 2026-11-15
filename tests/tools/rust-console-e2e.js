@@ -281,8 +281,45 @@ async function surface(base, path, user, password, secret) {
     await send('Network.enable');
     const seen = [];
     const bodies = {};
+    const navigations = [];
+    const urls = {};
     ws.on('message', function (m) {
       const msg = JSON.parse(m);
+      if (msg.method === 'Network.requestWillBeSent') {
+        urls[msg.params.requestId] = String(msg.params.request.url)
+          .replace(base, '').slice(0, 60);
+      }
+      if (process.env.E2E_COOKIE_TRACE &&
+          (msg.method === 'Network.requestWillBeSentExtraInfo' ||
+           msg.method === 'Network.responseReceivedExtraInfo')) {
+        const h = msg.params.headers || {};
+        const c = h.cookie || h.Cookie || h['set-cookie'] || h['Set-Cookie'];
+        if (c) {
+          console.error('TRACE ' + msg.method.slice(8, 20) + ' ' +
+            (urls[msg.params.requestId] || '?') + ' ' +
+            String(c).replace(/=([^;\n]{6})[^;\n]*/g, '=$1…'));
+        }
+        if (msg.params.blockedCookies && msg.params.blockedCookies.length) {
+          console.error('BLOCKED ' + JSON.stringify(msg.params.blockedCookies)
+            .slice(0, 600));
+        }
+      }
+      if (process.env.E2E_COOKIE_TRACE &&
+          msg.method === 'Network.loadingFinished' &&
+          /\/password$/.test(urls[msg.params.requestId] || '')) {
+        send('Network.getResponseBody', { requestId: msg.params.requestId })
+          .then(function (r) {
+            console.error('BODY ' + JSON.stringify(r.result).slice(0, 800));
+          });
+      }
+      if (msg.method === 'Network.requestWillBeSent' &&
+          msg.params.type === 'Document') {
+        navigations.push(String(msg.params.request.url).replace(base, '')
+          .replace(/(code|authn|state|nonce|code_challenge|sts_account)=[^&#]+/g,
+                   '$1=…').slice(0, 160) +
+          (msg.params.redirectResponse
+            ? ' (after ' + msg.params.redirectResponse.status + ')' : ''));
+      }
       if (msg.method === 'Network.responseReceived') {
         const u = msg.params.response.url;
         if (/\/(oauth2|admin-api|account-api|authn-api)\//.test(u) ||
@@ -341,7 +378,7 @@ async function surface(base, path, user, password, secret) {
         bodies[t.id] = { unreadable: String(e && e.message) };
       }
     }
-    console.log(JSON.stringify({ steps: steps,
+    console.log(JSON.stringify({ steps: steps, navigations: navigations,
       location: await evaluate('location.href'),
       calls: seen.map(function (s) {
         return { url: s.url.split('?')[0], status: s.status,

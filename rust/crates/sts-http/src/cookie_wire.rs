@@ -114,17 +114,27 @@ pub fn unwrap_header(header: &str, shared_domain: bool) -> String {
 /// The request's `Cookie` header, translated in place.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn on_request(headers: &mut HeaderMap, rules: WireRules) {
-    if !rules.over_tls || !rules.prefixes {
+    // OVER HTTP/2 A BROWSER SENDS EACH COOKIE AS A FIELD OF ITS OWN (RFC
+    // 9113 section 8.2.3), and node's http2 compatibility layer joins them
+    // with "; " before anything reads `req.headers.cookie`. Reading only the
+    // first field lost every cookie after it: Chrome orders them by
+    // creation, so a session re-set at sign-in moved behind the step cookie
+    // and the authorization request saw nobody signed in (#444, phase 5).
+    let fields: Vec<String> = headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .map(str::to_string)
+        .collect();
+    if fields.is_empty() {
         return;
     }
-    let Some(header) = headers
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string)
-    else {
-        return;
+    let header = fields.join("; ");
+    let inside = if rules.over_tls && rules.prefixes {
+        unwrap_header(&header, rules.shared_domain)
+    } else {
+        header
     };
-    let inside = unwrap_header(&header, rules.shared_domain);
     match HeaderValue::from_str(&inside) {
         Ok(v) if !inside.is_empty() => {
             headers.insert(header::COOKIE, v);
@@ -197,5 +207,41 @@ mod tests {
         );
         assert_eq!(unwrap_header("__Secure-sts_x=1", false), "");
         assert_eq!(unwrap_header("__Secure-sts_x=1", true), "sts_x=1");
+    }
+
+    #[test]
+    fn every_cookie_field_of_an_http2_request_is_read() {
+        let mut headers = HeaderMap::new();
+        for field in [
+            "__Host-sts_signin_step=s",
+            "__Host-sts_session=a",
+            "__Host-sts_accounts=b",
+        ] {
+            headers.append(header::COOKIE, HeaderValue::from_static(field));
+        }
+        let mut plain = headers.clone();
+        let rules = WireRules {
+            over_tls: true,
+            prefixes: true,
+            ..WireRules::default()
+        };
+        on_request(&mut headers, rules);
+        assert_eq!(headers.get_all(header::COOKIE).iter().count(), 1);
+        assert_eq!(
+            headers.get(header::COOKIE).unwrap(),
+            "sts_signin_step=s; sts_session=a; sts_accounts=b"
+        );
+        on_request(
+            &mut plain,
+            WireRules {
+                over_tls: false,
+                ..rules
+            },
+        );
+        assert_eq!(
+            plain.get(header::COOKIE).unwrap(),
+            "__Host-sts_signin_step=s; __Host-sts_session=a; \
+             __Host-sts_accounts=b"
+        );
     }
 }
