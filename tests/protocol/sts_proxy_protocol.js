@@ -56,9 +56,9 @@
 // (-0009) — the first needs a second source address, the second a start —
 // and the header split at every byte boundary; the plain `net` listener's
 // and ldapjs's socket (the KDC's and the bind limiter's readers); that
-// `X-Origin-Verify` is gone from the request, which no answer echoes; and
-// STS-CORE-0165, the edge refusal's code, which is marked before the call
-// log and so reaches neither the audit nor the log.
+// `X-Origin-Verify` is gone from the request, which no answer echoes.
+// STS-CORE-0165, the edge refusal's code, was marked before the call log and
+// reached neither the audit nor the log until 2026-11-14; its row is asserted.
 //
 // OWNED HERE (local: true): this repository's own listeners and management
 // API.
@@ -593,6 +593,13 @@ async function edgeClaims() {
                            JSON.stringify(notWidened));
       });
     }
+    // A NODE DEFECT, FIXED (2026-11-14, #444's D12): STS-CORE-0165 was
+    // marked above the call log and reached neither the audit nor the log.
+    // It writes its own row now, as its siblings do.
+    const audited = await sawRecent("STS-CORE-0165", since, 2000);
+    check("each refusal is on the audit log as STS-CORE-0165", function () {
+      assert.ok(audited, "no STS-CORE-0165 row since " + since);
+    });
     log.debug("Edge probes from " + since + " done.");
   } finally {
     await api("POST", "/admin-api/config/reset",

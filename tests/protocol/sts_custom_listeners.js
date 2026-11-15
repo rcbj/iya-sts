@@ -29,8 +29,9 @@
 //      mapping inherits the service's, an unnamed application is on main;
 //   C. THE SOCKETS: the service listener bound with an issued certificate
 //      and no key reported; the authorization server refused there with a
-//      404 naming where it is (STS-TLS-0047, which leaves no audit row: it
-//      is marked above the protocol-call recorder); the console's shell on it
+//      404 naming where it is, and its audit row (STS-TLS-0047, written by
+//      the refusal itself: it is above the protocol-call recorder); the
+//      console's shell on it
 //      telling its runtime where the authorization server is and letting it
 //      connect there; a realm mapping `*` to its own listener built on that
 //      base with its prefix;
@@ -405,10 +406,10 @@ async function theMappingAndSockets() {
                 !/PRIVATE KEY/.test(JSON.stringify(one)));
     });
   });
-  // OBSERVED: STS-TLS-0047 is marked on the response by app.js's
-  // enterListener(), which runs above the protocol-call recorder, so the
-  // refusal leaves no audit row and no log line a client could read; the
-  // 404 and its sentence are what is asserted.
+  // A NODE DEFECT, FIXED (2026-11-14, #444's D12): STS-TLS-0047 is marked
+  // by app.js's enterListener(), above the protocol-call recorder, and left
+  // no audit row; it writes its own now, as its siblings do.
+  const before0047 = await codeCount("", "STS-TLS-0047");
   const offHere = await send(ADM_BASE + "/.well-known/openid-configuration");
   check("C. the authorization server is refused on the console's listener " +
         "with a 404 that says where it is", function () {
@@ -417,6 +418,11 @@ async function theMappingAndSockets() {
               offHere.raw.slice(0, 200));
     assert.ok(offHere.raw.indexOf(":" + MAIN_PORT) > 0,
               offHere.raw.slice(0, 200));
+  });
+  const audited0047 = await sawCode("", "STS-TLS-0047", before0047);
+  check("C. and the refusal is on the audit log as STS-TLS-0047",
+        function () {
+    assert.ok(audited0047, "no new STS-TLS-0047 row");
   });
   const shell = await send(ADM_BASE + "/admin/listeners");
   check("C. the console's shell there tells its runtime where the " +

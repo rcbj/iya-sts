@@ -376,6 +376,19 @@ function enterListener(req, res, next) {
     } catch (e) {
       log.debug("Caught in enterListener(): " + ((e && e.message) || e));
     }
+    // ITS OWN AUDIT ROW (2026-11-14, found by #444's D12): this is above the
+    // call log's middleware, which is what writes a marked refusal's row, so
+    // the refusal reached neither the audit log nor the service's log. It is
+    // written here, as the body parsers' refusals below write theirs.
+    audit.failure('STS-TLS-0047', {
+      protocol: 'HTTP', channel: req.secure ? 'https' : 'http',
+      address: require('./client_address').clientAddressOf(req),
+      target: audit.redactedPath(path),
+      summary: 'A request for ' + hostedApplications.labelOf(application) +
+               ' was refused on the "' + at + '" listener, which does not ' +
+               'serve it.',
+      outcome: 'refused'
+    });
     require('./error_codes').mark(res, 'STS-TLS-0047');
     res.status(404).type('text/plain')
       .send('Not found: ' + hostedApplications.labelOf(application) +
@@ -451,6 +464,18 @@ app.use(function refuseForeignEdge(req, res, next) {
     log.debug("Leaving refuseForeignEdge().");
     return next();
   }
+  // ITS OWN AUDIT ROW, AND WITH IT THE LOG LINE (2026-11-14, found by #444's
+  // D12): above the call log, this refusal reached neither. The row names
+  // the path and not the header, whose value is a secret or a guess at one.
+  audit.failure('STS-CORE-0165', {
+    protocol: 'HTTP', channel: req.secure ? 'https' : 'http',
+    address: require('./client_address').clientAddressOf(req),
+    target: audit.redactedPath(String(req.originalUrl || req.url || '')
+      .split('?')[0]),
+    summary: 'A request from a CDN edge address (global.edgeProxies) ' +
+             'without this deployment\'s edge secret was refused 403.',
+    outcome: 'refused'
+  });
   require('./error_codes').mark(res, 'STS-CORE-0165');
   res.status(403).type('text/plain').set({
     'Cache-Control': 'no-store',

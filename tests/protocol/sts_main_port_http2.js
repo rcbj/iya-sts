@@ -31,10 +31,9 @@
 //  13. CONNECT answered 501, no-store and `frame-ancestors` kept, over
 //      HTTP/2 and HTTP/1.1.
 //
-// STS-HTTP-0024 AND STS-HTTP-0025 ARE NOT ASSERTED: both refusals are made
-// before the call log's middleware, so neither reaches the audit — the code
-// is in the service's log line only, which no job reads. The status and the
-// sentence are what a client sees;
+// STS-HTTP-0024 AND STS-HTTP-0025 ARE ON THE AUDIT LOG (2026-11-14, a Node
+// defect #444's D12 found and fixed): both refusals are made before the call
+// log's middleware, which until then left them no row; each writes its own;
 //  14. `OPTIONS *` over HTTP/2 answered 204;
 //  15. `GET /admin-api/listeners` carries `http2MaxConcurrentStreams`.
 //
@@ -249,6 +248,25 @@ async function api(method, path, payload) {
   return { status: r.status, body: body, raw: raw };
 }
 
+// The default realm's audit rows for `code` written since `since` (ms),
+// read again for a moment: the row is written as the refusal is answered.
+async function auditedSince(code, since) {
+  log.debug("Entering auditedSince(). " + code);
+  let count = 0;
+  for (let i = 0; i < 20 && !count; i += 1) {
+    const r = await api("GET", "/admin-api/audit?per=500&code=" +
+                        encodeURIComponent(code));
+    count = ((r.body && r.body.events) || []).filter(function (row) {
+      return Number(row.at) >= since - 2000;
+    }).length;
+    if (!count) {
+      await sleep(150);
+    }
+  }
+  log.debug("Leaving auditedSince(). " + count);
+  return count;
+}
+
 async function setSetting(key, value) {
   log.debug("Entering setSetting(). " + key);
   const r = await api("POST", "/admin-api/config/set",
@@ -414,6 +432,7 @@ async function test() {
   });
 
   log.info("=== 9. :authority and host ===");
+  const since9 = Date.now();
   const authority = TARGET.host;
   const differs = await h2(s, { ":path": "/.well-known/openid-configuration",
                                 ":authority": authority,
@@ -432,6 +451,10 @@ async function test() {
               /RFC 9113 section 8\.3\.1/.test(differs.raw), differs.raw);
     assert.strictEqual(differs.headers["cache-control"], "no-store");
   });
+  const rows24 = await auditedSince("STS-HTTP-0024", since9);
+  check("9. and it is on the audit log as STS-HTTP-0024", function () {
+    assert.ok(rows24 > 0, "no STS-HTTP-0024 row since " + since9);
+  });
   if (TARGET.port === "443" || TARGET.port === "") {
     log.info("The service is on the default port, so the default-port " +
              "spelling is the authority itself.");
@@ -446,6 +469,7 @@ async function test() {
   }
 
   log.info("=== 13. CONNECT ===");
+  const since13 = Date.now();
   const connect2 = await h2(s, { ":method": "CONNECT",
                                  ":authority": "example.com:443" });
   const connect1 = await connectOverH1();
@@ -462,6 +486,11 @@ async function test() {
     assert.ok(/^HTTP\/1\.1 501 /.test(connect1), connect1.slice(0, 300));
     assert.ok(/cache-control: no-store/i.test(connect1), connect1);
     assert.ok(/frame-ancestors 'none'/i.test(connect1), connect1);
+  });
+  const rows25 = await auditedSince("STS-HTTP-0025", since13);
+  check("13. and each is on the audit log as STS-HTTP-0025", function () {
+    assert.ok(rows25 >= 2, rows25 + " STS-HTTP-0025 row(s) since " +
+              since13);
   });
 
   log.info("=== 14. OPTIONS * ===");
