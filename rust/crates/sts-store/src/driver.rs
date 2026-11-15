@@ -221,6 +221,21 @@ pub trait Driver: Send + Sync {
     ) -> StoreFuture<'_, Vec<MintedRow>> {
         Box::pin(async { Ok(Vec::new()) })
     }
+    /// `minted.newest` (#820): the live rows of one store in one realm with
+    /// the highest sort value first, walked through the store's sort rows
+    /// in `sts_minted_index`, at most `limit` (`NEWEST_LIMIT` caps it) —
+    /// what a console list of the newest of a store shows. Only a store
+    /// that declares a sort value has sort rows; a tombstone or an expired
+    /// row is passed over.
+    fn read_minted_newest<'a>(
+        &'a self,
+        _handle: &'a str,
+        _realm: &'a str,
+        _now_ms: i64,
+        _limit: i64,
+    ) -> StoreFuture<'a, Vec<MintedRow>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
     /// Removes the tombstones written before `before_ms`.
     fn purge_tombstones(&self, _before_ms: i64) -> StoreFuture<'_, u64> {
         Box::pin(async { Ok(0) })
@@ -272,6 +287,17 @@ pub struct MintedRow {
     /// When it was written, in milliseconds.
     pub written_at: i64,
     pub expires_at: Option<i64>,
+}
+
+/// `minted_queries.NEWEST_LIMIT`: the most rows `minted.newest` answers,
+/// a console list and not a walk.
+pub const NEWEST_LIMIT: i64 = 1000;
+
+/// `buildPostgres('minted.newest')`'s limit: `Math.max(1,
+/// Math.min(NEWEST_LIMIT, Math.floor(Number(limit) || 1)))`.
+// Hot path (one comparison): no span.
+pub fn newest_limit(limit: i64) -> i64 {
+    limit.clamp(1, NEWEST_LIMIT)
 }
 
 /// What `loadMinted()` reads: only what is still worth having (#333).

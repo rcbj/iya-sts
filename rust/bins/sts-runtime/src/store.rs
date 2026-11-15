@@ -26,16 +26,27 @@
 //!   per-process job `persistence.origin-renew` instead — the one job here
 //!   Node's scheduler page does not list.
 //! * **`setOriginLost()`.** Node's driver tells `persistence.js` when a write
-//!   finds the origin taken, and the process exits (`STS-STORE-0061`). The
-//!   Rust drivers refuse that write (`STS-CLUSTER-0001`) and do not report
-//!   it; a renewal that answers "not held" exits here, as Node's does.
+//!   finds the origin taken, and the process exits: unclustered with
+//!   `STS-STORE-0061` naming the refused write (`STS-CLUSTER-0001`), and on
+//!   a clustered node through the cluster's fence handler, which stops it
+//!   with `STS-CLUSTER-0011` (`transactionOn()`'s two branches). The Rust
+//!   drivers report the refusal through [`Origin`]'s lost hook the same way
+//!   ([`OriginKeeper::adopt`] installs it); a renewal that answers "not
+//!   held" exits too, as Node's does.
+//! * **`checkRenewalTiming()`.** A renewal late to start or slow to answer
+//!   by more than half the claim's lifetime is `STS-STORE-0069`. Node names
+//!   its event loop's worst delay in the line; a tokio runtime has no one
+//!   loop to measure, so the line says what Node's says when it is not
+//!   measuring.
+//!
+//! [`Origin`]: sts_store::origin::Origin
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
 use serde_json::Value as Json;
-use sts_cluster::membership::{ClusterNode, ClusterStore};
+use sts_cluster::membership::{ClusterNode, ClusterStore, FenceReason};
 use sts_cluster::schedule::BoxFuture;
 use sts_cluster::scheduler::{RunHistory, Scheduler};
 use sts_core::errors::codes;
@@ -100,6 +111,14 @@ impl Database {
             Database::Mariadb(m) => m.renew_origin(ORIGIN_TTL_MS).await,
         }
         .map_err(|e| e.to_string())
+    }
+
+    /// `setOriginLost()` on whichever driver it is.
+    fn set_origin_lost(&self, f: Option<sts_store::origin::OriginLost>) {
+        match self {
+            Database::Postgres(p) => p.set_origin_lost(f),
+            Database::Mariadb(m) => m.set_origin_lost(f),
+        }
     }
 
     async fn release(&self) -> Result<bool, String> {
@@ -288,6 +307,61 @@ pub struct OriginKeeper {
     adopted: Mutex<Option<Adopted>>,
     /// When the last renewal STARTED.
     renewed_at: Mutex<Option<Instant>>,
+    /// The renewal before it had started (`originRenewStartedAt`), for
+    /// `checkRenewalTiming()`; `None` before the first.
+    previous_start: Mutex<Option<Instant>>,
+    /// The clustered node whose fence handler a lost origin is reported to.
+    node: OnceLock<Weak<ClusterNode>>,
+}
+
+/// `originLost()`: unclustered, the refused write is logged under
+/// STS-STORE-0061 and the process exits; on a clustered node the cluster's
+/// fence handler decides, and a fence that is not one lease's is fatal
+/// (STS-CLUSTER-0011).
+fn origin_lost(node: Option<Arc<ClusterNode>>, refusal: &str) {
+    if let Some(node) = node {
+        node.when_fenced(FenceReason::Node, &[], refusal);
+        return;
+    }
+    tracing::error!(
+        "{}persistence: this process lost its origin ({}). Another process now holds it and writes under it, so \
+         this one stops rather than go on refusing every write.",
+        tag(codes::STS_STORE_0061),
+        refusal
+    );
+    std::process::exit(1);
+}
+
+/// `checkRenewalTiming()`: a renewal that started late (after the one
+/// before it plus `ORIGIN_RENEW_MS`) or took long to answer, by more than
+/// half the claim's lifetime, is STS-STORE-0069. Answers whether it warned.
+// Hot path (every renewal): no span.
+pub fn check_renewal_timing(
+    previous: Option<Instant>,
+    started: Instant,
+    answered: Instant,
+) -> bool {
+    let half = ORIGIN_TTL_MS as f64 / 2.0;
+    let late = previous.map_or(0.0, |p| {
+        (started.duration_since(p).as_secs_f64() * 1000.0
+            - ORIGIN_RENEW_MS as f64)
+            .round()
+    });
+    let slow =
+        (answered.duration_since(started).as_secs_f64() * 1000.0).round();
+    if late <= half && slow <= half {
+        return false;
+    }
+    tracing::warn!(
+        "{}persistence: the renewal of this process's origin claim started {} ms late and took {} ms to answer, \
+         against a {} ms claim. The event loop's worst delay since the last report was not measured — the loop \
+         was not the cause; the renewal waited on its connection or the database.",
+        tag(codes::STS_STORE_0069),
+        late.max(0.0),
+        slow,
+        ORIGIN_TTL_MS
+    );
+    true
 }
 
 impl OriginKeeper {
@@ -300,6 +374,8 @@ impl OriginKeeper {
             node_id: node_id.to_string(),
             adopted: Mutex::new(None),
             renewed_at: Mutex::new(None),
+            previous_start: Mutex::new(None),
+            node: OnceLock::new(),
         })
     }
 
@@ -309,6 +385,11 @@ impl OriginKeeper {
     /// answer is fatal, as Node's chain rejects.
     #[tracing::instrument(level = "debug", skip(self))]
     pub async fn adopt(&self) -> Result<(), String> {
+        // Told before the adoption, as `adoptStableOrigin()` tells it.
+        let node = self.node.get().cloned();
+        self.db.set_origin_lost(Some(Arc::new(move |refusal: &str| {
+            origin_lost(node.as_ref().and_then(Weak::upgrade), refusal);
+        })));
         let a = self
             .db
             .adopt(&AdoptOptions {
@@ -378,6 +459,7 @@ impl OriginKeeper {
         if !self.holds() {
             return;
         }
+        let started = Instant::now();
         {
             let mut at = self
                 .renewed_at
@@ -388,8 +470,13 @@ impl OriginKeeper {
             }) {
                 return;
             }
-            *at = Some(Instant::now());
+            *at = Some(started);
         }
+        let previous = self
+            .previous_start
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace(started);
         let origin = self
             .adopted
             .lock()
@@ -397,7 +484,9 @@ impl OriginKeeper {
             .as_ref()
             .map(|a| a.origin.clone())
             .unwrap_or_default();
-        match self.db.renew().await {
+        let renewed = self.db.renew().await;
+        check_renewal_timing(previous, started, Instant::now());
+        match renewed {
             Ok(true) => {}
             Ok(false) => {
                 tracing::error!(
@@ -432,7 +521,9 @@ impl OriginKeeper {
 
     /// Renews beside every heartbeat of a clustered node.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn ride_on(self: &Arc<Self>, node: &ClusterNode) {
+    pub fn ride_on(self: &Arc<Self>, node: &Arc<ClusterNode>) {
+        // A lost origin on a clustered node is the cluster's to decide.
+        let _first = self.node.set(Arc::downgrade(node));
         let me = Arc::downgrade(self);
         node.on_beat(Arc::new(move || {
             let me = me.clone();
@@ -550,10 +641,9 @@ impl Reconcile<Json> for RunsReconcile {
     }
 }
 
-/// The durable run history (#883): the scheduler's `readRuns` over minted
-/// persistence, and the held copies dropped and admitted without being
-/// journalled. Node's `newestRuns` reads the sort index, which the store's
-/// driver does not offer yet, so the page's list is what the map holds.
+/// The durable run history (#883): the scheduler's `readRuns` and
+/// `newestRuns` over minted persistence, and the held copies dropped and
+/// admitted without being journalled.
 pub struct MintedRunHistory {
     pub persistence: Weak<Persistence>,
     pub handles: Arc<StoreHandles>,
@@ -607,6 +697,47 @@ impl RunHistory for MintedRunHistory {
         if let Some(h) = self.handles.handle_for(RUNS_HANDLE) {
             h.access.restore(realm, key, row);
         }
+    }
+
+    /// `Scheduler.defaultDeps()`'s `newestRuns`: each realm's newest
+    /// `limit` run rows by the store's sort index (`minted.newestAsync`),
+    /// so the page lists the runs the store holds and not only the ones
+    /// this process does. A realm whose read fails is that realm's loss
+    /// only; no minted store is `None`, the list being the map's.
+    fn newest_runs(
+        &self,
+        realms: Vec<String>,
+        limit: usize,
+    ) -> BoxFuture<'_, Result<Option<Vec<Json>>, String>> {
+        Box::pin(async move {
+            let Some(p) = self.persistence.upgrade() else {
+                return Ok(None);
+            };
+            let Some(minted) = p.minted() else {
+                return Ok(None);
+            };
+            let keys = p.data_keys();
+            let mut out = Vec::new();
+            for realm in realms {
+                let rows = match minted
+                    .newest(&keys, RUNS_HANDLE, &realm, limit as i64)
+                    .await
+                {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        tracing::debug!(
+                            "Caught in Scheduler.defaultDeps(): {}",
+                            e
+                        );
+                        continue;
+                    }
+                };
+                out.extend(rows.into_iter().map(|(_, v)| v).filter(|v| {
+                    v.get("kind").and_then(Json::as_str) == Some("run")
+                }));
+            }
+            Ok(Some(out))
+        })
     }
 }
 
