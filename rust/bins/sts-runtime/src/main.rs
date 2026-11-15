@@ -61,6 +61,7 @@ mod listener;
 mod listeners;
 mod oauth;
 mod pki;
+mod saml;
 mod solo;
 mod stack;
 mod store;
@@ -385,6 +386,9 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
         Err(p) => fatal(p.code, &p.message),
     };
     let listeners = Listeners::new(settings.clone(), material, truststore);
+    stack
+        .saml
+        .set_back_channel(crate::saml::back_channel_of(&listeners));
     check_every_policy(&settings, &listeners);
     // 5.
     let custom = match sts_tls::definitions::service_listeners(&settings) {

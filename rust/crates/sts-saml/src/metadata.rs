@@ -401,3 +401,63 @@ pub fn metadata_for(i: &MetadataInputs, signer: &XmlSigner) -> String {
         }
     }
 }
+
+/// SAML 1.1's `metadataParts(base, rp)` (`saml11_sso.ts`): its roles'
+/// fragments of the one document, scoped to the same slug — the
+/// responder as the ArtifactResolutionService at index 1 and as the
+/// AttributeService, the two browser profiles and Shibboleth's request
+/// profile as SingleSignOnServices, and no SingleLogoutService (SAML 1.1
+/// has none).
+#[tracing::instrument(level = "debug")]
+pub fn saml11_parts(base: &str, slug: &str) -> Saml11Parts {
+    let suffix = if slug.is_empty() {
+        String::new()
+    } else {
+        format!("/{}", crate::binding::encode_uri_component(slug))
+    };
+    let sso = format!("{}/saml11/sso{}", base, suffix);
+    let responder = format!("{}/saml11/responder{}", base, suffix);
+    let soap = model::term("saml11.binding", "soap");
+    Saml11Parts {
+        name_id_formats: model::terms(
+            "saml11.nameIdFormat",
+            Some("advertised"),
+        )
+        .into_iter()
+        .map(String::from)
+        .collect(),
+        sso_protocols: vec![
+            model::term("saml11.protocol", "saml11").to_string(),
+            model::term("saml11.protocol", "shibboleth1").to_string(),
+        ],
+        aa_protocols: vec![model::term("saml11.protocol", "saml11").to_string()],
+        artifact_resolution: service(
+            "ArtifactResolutionService",
+            soap,
+            &responder,
+            " index=\"1\"",
+        ),
+        single_sign_on: format!(
+            "{}{}{}",
+            service(
+                "SingleSignOnService",
+                model::term("saml11.profile", "post"),
+                &sso,
+                ""
+            ),
+            service(
+                "SingleSignOnService",
+                model::term("saml11.profile", "artifact"),
+                &sso,
+                ""
+            ),
+            service(
+                "SingleSignOnService",
+                model::term("saml11.profile", "shibAuthnRequest"),
+                &sso,
+                ""
+            )
+        ),
+        attribute_service: service("AttributeService", soap, &responder, ""),
+    }
+}

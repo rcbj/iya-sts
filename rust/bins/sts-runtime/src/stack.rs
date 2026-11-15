@@ -104,6 +104,8 @@ pub struct Stack {
     pub listener_keys: SharedMap<Json>,
     /// `cluster.nodeName`, else the host name.
     pub node_name: String,
+    /// SAML 2.0 (`10a`, #444 phase 7): its stores and the routes ported.
+    pub saml: Arc<crate::saml::SamlStack>,
 }
 
 /// The change-log pull the read barrier waits on: `syncNow()`, a pull that
@@ -845,6 +847,15 @@ impl Stack {
         );
         let authn_routes = authn_routes.merge(admin.router());
         let admin_stack = admin;
+        // SAML 2.0 (`10a`, #444 phase 7): its stores under Node's handles,
+        // declared before the store opens.
+        let saml = crate::saml::SamlStack::declare(
+            settings.clone(),
+            mode.clone(),
+            persistence.clone(),
+            &lifecycle,
+            &handles,
+        );
         let enroll =
             sts_enroll::wiring::EnrollStack::declare(&lifecycle, &handles);
         let barrier_settings = settings.clone();
@@ -890,6 +901,7 @@ impl Stack {
             admin: admin_stack,
             listener_keys,
             node_name,
+            saml,
         })
     }
 
@@ -984,6 +996,8 @@ impl Stack {
                     >| named_jwks(),
                 ),
             );
+        // SAML 2.0 (`10a`): the routes ported so far.
+        routes = routes.merge(self.saml.router(self.http.clone()));
         // `pki/pki_service.ts` (17b): the public revocation surface.
         if let Some(authority) = self.pki.get() {
             routes = routes.merge(crate::pki::routes(

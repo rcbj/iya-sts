@@ -26,6 +26,7 @@ sts-authn-api.workspace = true
 sts-directory.workspace = true
 sts-registers.workspace = true
 sts-logout.workspace = true
+sts-saml.workspace = true
 sts-enroll.workspace = true
 sts-mgmt-api.workspace = true
 sts-xacml.workspace = true

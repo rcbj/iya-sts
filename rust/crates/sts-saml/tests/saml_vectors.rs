@@ -35,7 +35,9 @@ use sts_saml::binding::{self, PostNote, QuerySigner};
 use sts_saml::metadata;
 use sts_saml::request;
 use sts_saml::response::{self, ResponseOptions};
-use sts_saml::signature::{self, AssessSpec, Assessment, NoDoor, Requirement};
+use sts_saml::sp_signature::{
+    self, AssessSpec, Assessment, NoDoor, Requirement,
+};
 
 fn list_of(v: &Json) -> Vec<String> {
     match v {
@@ -73,7 +75,7 @@ fn signature_checks(v: &Json, policy: &XmlPolicy) -> (usize, Vec<String>) {
             .map(|m| m.iter().map(|(k, x)| (k.clone(), list_of(x))).collect())
             .unwrap_or_default();
         let registered = list_of(&spec["fields"]["samlSigningCertificate"]);
-        let ours = signature::assess(
+        let ours = sp_signature::assess(
             &AssessSpec {
                 binding: s(&spec["binding"]),
                 raw_query: s(&spec["rawQuery"]),
@@ -126,7 +128,7 @@ fn signature_checks(v: &Json, policy: &XmlPolicy) -> (usize, Vec<String>) {
             error_code: sts_core::errors::known(s(&a["errorCode"])),
             ..Assessment::default()
         };
-        let (refuse, code, why) = signature::refusal(&assessment, &need);
+        let (refuse, code, why) = sp_signature::refusal(&assessment, &need);
         let got = json!({ "refuse": refuse,
             "errorCode": code.map(|c| c.as_str()).unwrap_or(""),
             "why": why });
@@ -149,7 +151,7 @@ fn signature_checks(v: &Json, policy: &XmlPolicy) -> (usize, Vec<String>) {
             .as_str()
             .unwrap()
             .to_string()];
-        let ours = signature::authenticate_soap_caller(
+        let ours = sp_signature::authenticate_soap_caller(
             s(&c["xml"]),
             "AuthnRequest",
             &reg,
@@ -171,7 +173,8 @@ fn signature_checks(v: &Json, policy: &XmlPolicy) -> (usize, Vec<String>) {
     }
     for o in v["octets"].as_array().unwrap() {
         checked += 1;
-        let ours = signature::redirect_octets(s(&o["rawQuery"]), "SAMLRequest");
+        let ours =
+            sp_signature::redirect_octets(s(&o["rawQuery"]), "SAMLRequest");
         if ours != s(&o["octets"]) {
             failures.push(format!("octets {}: {}", o["rawQuery"], ours));
         }
@@ -358,7 +361,29 @@ fn node_saml_vectors_both_ways() {
         {
             fail(format!("endpoints: {}", e));
         }
+        let (digests, signing) = xmldsig::xml_algorithm_support(&signer.policy);
+        if metadata::algorithm_support(&digests, &signing)
+            != s(&m["algorithmSupport"])
+        {
+            fail(format!(
+                "algorithm support:\n  node {}\n  rust {}",
+                m["algorithmSupport"],
+                metadata::algorithm_support(&digests, &signing)
+            ));
+        }
         let p11 = &m["saml11"];
+        let ours11 = metadata::saml11_parts(s(&m["base"]), s(&m["slug"]));
+        let got11 = json!({
+            "ssoProtocols": ours11.sso_protocols,
+            "aaProtocols": ours11.aa_protocols,
+            "artifactResolution": ours11.artifact_resolution,
+            "singleSignOn": ours11.single_sign_on,
+            "attributeService": ours11.attribute_service,
+            "nameIdFormats": ours11.name_id_formats,
+        });
+        if got11 != *p11 {
+            fail(format!("saml11 parts:\n  node {}\n  rust {}", p11, got11));
+        }
         let inputs = metadata::MetadataInputs {
             id: s(&m["id"]).into(),
             idp_entity_id: s(&m["idpEntityId"]).into(),

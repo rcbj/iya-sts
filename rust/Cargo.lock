@@ -4842,6 +4842,7 @@ dependencies = [
  "sts-oauth",
  "sts-pki",
  "sts-registers",
+ "sts-saml",
  "sts-store",
  "sts-tls",
  "sts-xacml",
