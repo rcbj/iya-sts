@@ -44,6 +44,8 @@ pub use bootstrap::ConsoleClaim;
 mod groups;
 #[path = "admin_identity.rs"]
 pub mod identity;
+#[path = "admin_owners.rs"]
+mod owners;
 #[path = "admin_realm_seed.rs"]
 mod realm_seed;
 #[path = "admin_views.rs"]
@@ -762,15 +764,6 @@ impl rp::Applications for RegApps {
     }
     fn owner_values(&self) -> Vec<Vec<String>> {
         self.0.owner_values()
-    }
-}
-
-/// `ownership.ownsAnything()`: not ported — nobody is an owner here.
-struct NoOwners;
-
-impl rp::OwnsAnything for NoOwners {
-    fn owns_anything(&self, _name: &str) -> bool {
-        false
     }
 }
 
@@ -1899,6 +1892,21 @@ impl AdminStack {
             Some(Arc::new(RoleDir(dir.clone(), settings.clone()))),
             Arc::new(RegSettings(settings.clone())),
         ));
+        // THE OWNERSHIP REGISTER (rule 3cn), which the owner roles are
+        // computed from and the access policy's owner PIP reads.
+        let ownership = Arc::new(sts_registers::ownership::Ownership::new(
+            sts_registers::ownership::OwnershipDeps {
+                settings: Arc::new(RegSettings(settings.clone())),
+                directory: Arc::new(owners::OwnerDir(dir.clone())),
+                roles: roles.clone(),
+                applications: Arc::new(RegApps(apps.clone())),
+                service_accounts: Arc::new(NoServiceAccounts),
+                scope_policy: Arc::new(owners::OwnerScopes {
+                    settings: settings.clone(),
+                    scopes: scopes.clone(),
+                }),
+            },
+        ));
         let builder = Arc::new(realm_seed::RealmBuilder {
             dir: dir.clone(),
             apps: apps.clone(),
@@ -1914,7 +1922,7 @@ impl AdminStack {
                     applications: Arc::new(RegApps(apps.clone())),
                     audit: Arc::new(LogAudit),
                     roster: roster.clone(),
-                    ownership: Arc::new(NoOwners),
+                    ownership: Arc::new(owners::Owns(ownership.clone())),
                     gate: Arc::new(RoleIssuance),
                     subjects: Arc::new(Subjects(dir.clone())),
                     mode: reg_mode,
@@ -2027,7 +2035,7 @@ impl AdminStack {
                 roles: permissions,
                 roster: roster.clone(),
             }),
-            access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
+            access: Arc::new(owners::OwnerAccess::new(ownership.clone())),
             dpop,
             setup_ports: Arc::new(Setup {
                 builder,

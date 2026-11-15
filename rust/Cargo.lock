@@ -4843,6 +4843,7 @@ dependencies = [
  "sts-registers",
  "sts-store",
  "sts-tls",
+ "sts-xacml",
  "tokio",
  "tokio-openssl",
  "tower",

@@ -292,3 +292,41 @@ impl RealmBuilder {
         made
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_table_holds_both_modes_and_the_specs() {
+        let dev = TABLE["seed"]["development"].as_array().unwrap();
+        let prod = TABLE["seed"]["product"].as_array().unwrap();
+        assert!(dev.len() > prod.len());
+        assert!(prod.iter().any(|r| r["dn"] == json!("ou=users,@@BASE@@")));
+        assert!(!prod
+            .iter()
+            .any(|r| r["dn"] == json!("uid=alice,ou=users,@@BASE@@")));
+        let specs = TABLE["applications"].as_array().unwrap();
+        assert!(specs.iter().any(|s| s["identifier"] == "sts-admin-console"));
+    }
+
+    #[test]
+    fn a_spec_is_filled_with_the_realms_values() {
+        let spec = json!({ "registration": {
+            "client_uri": "@@BASE@@/admin", "client_id_issued_at": "@@ISSUED@@",
+            "registration_access_token": "@@RANDOM@@" } });
+        let filled = spec_of(&spec, "https://x/realm/r", 7);
+        assert_eq!(
+            filled["registration"]["client_uri"],
+            "https://x/realm/r/admin"
+        );
+        assert_eq!(filled["registration"]["client_id_issued_at"], 7);
+        assert_eq!(
+            filled["registration"]["registration_access_token"]
+                .as_str()
+                .unwrap()
+                .len(),
+            32
+        );
+    }
+}

@@ -323,7 +323,7 @@ pub fn empty_list_boxes_sentence(names: &[String]) -> String {
 }
 
 // `fieldsCoveredBy(body)`.
-fn fields_covered_by(body: &Value) -> Vec<String> {
+pub fn fields_covered_by(body: &Value) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut note = |name: &str| {
         let clean = crate::js::trim(name).to_string();

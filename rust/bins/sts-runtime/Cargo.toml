@@ -28,6 +28,7 @@ sts-registers.workspace = true
 sts-logout.workspace = true
 sts-enroll.workspace = true
 sts-mgmt-api.workspace = true
+sts-xacml.workspace = true
 indexmap.workspace = true
 sts-credentials.workspace = true
 chrono.workspace = true

@@ -19,9 +19,19 @@
 #      the Rust runtime is started on that store, so every request the job
 #      makes — its set-up through /admin-api included — is Rust's.
 #
-# Product mode, as the jobs' product cells run. Writes <out>/summary.txt
+# Product mode, as the jobs' product cells run; E2E_MODE=development runs
+# both halves in development instead (the `apis4` slice), as
+# rust-oauth-jobs.sh does. Writes <out>/summary.txt
 # (tests/vectors/rust-apis-jobs, gitignored). Needs the jobs' packages on
 # NODE_PATH.
+#
+# SEED=1 (the `apis4` slice): in each half, after the jobs, a realm is
+# created through that half's own /admin-api (`seed-diff`), and its whole
+# directory (GET /admin-api/ldap/directory), its groups and its
+# applications' rows are read and held to each other, member by member,
+# less what is minted at the instant (the timestamps, a random entryUUID,
+# the registration's issue time and tokens, the sealed and masked
+# values).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -35,6 +45,7 @@ TAG="${E2E_TAG:-iya-sts-444-p5-apis-jobs}"
 PN="${E2E_NODE_PORT:-19781}"; PR="${E2E_RUST_PORT:-19782}"
 NET="$TAG-net"; DB="$TAG-db"; SVCN="$TAG-node"; SVCR="$TAG-rust"
 SUMMARY="$OUT/summary.txt"; : > "$SUMMARY"; FAILED=0
+MODE="${E2E_MODE:-product}"
 
 say() { printf '%s\n' "$*" | tee -a "$SUMMARY"; }
 pass() { say "  PASS  $*"; }
@@ -94,7 +105,7 @@ pass "postgres is up"
 
 
 env_for() {
-  printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=product" \
+  printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=$MODE" \
     "STS_HTTPS=true" "STS_PUBLIC_BASE_URL=$1" \
     "STS_PERSISTENCE_MODE=postgres" "STS_DATABASE_URL=$DB_URL" \
     "STS_DATABASE_TLS_CA_FILE=/run/secrets/db-ca.crt" \
@@ -141,7 +152,7 @@ job() {
          -w /usr/src/sts/tests/protocol \
          -e WSTRUST_STS_URL="$base/sts" -e OID4VCI_ISSUER_URL="$base" \
          -e NODE_TLS_REJECT_UNAUTHORIZED=0 -e CONFIG_FILE=./env/local.js \
-         -e STS_ADMIN_API_TOKEN="$token" -e STS_MODE=product \
+         -e STS_ADMIN_API_TOKEN="$token" -e STS_MODE="$MODE" \
          -e NODE_OPTIONS="--require /usr/src/sts/tests/tools/attach-admin-token.js" \
          "$JOB_IMAGE" timeout 900 node "$file" \
          > "$OUT/$label-${file%.js}.log" 2>&1; then
@@ -157,7 +168,7 @@ job() {
   if ( cd "$REPO/tests/protocol" && \
        WSTRUST_STS_URL="$base/sts" OID4VCI_ISSUER_URL="$base" \
        NODE_TLS_REJECT_UNAUTHORIZED=0 CONFIG_FILE=./env/local.js \
-       STS_ADMIN_API_TOKEN="$token" STS_MODE=product \
+       STS_ADMIN_API_TOKEN="$token" STS_MODE="$MODE" \
        NODE_OPTIONS="--require $REPO/tests/tools/attach-admin-token.js" \
        timeout 900 node "$file" ) > "$OUT/$label-${file%.js}.log" 2>&1; then
     pass "$label $file"
@@ -239,11 +250,59 @@ read_views() {
   set -o pipefail
 }
 
+# The realm a half creates for SEED=1, read back as that half answers it.
+SEED_DEL='del(.. | objects | .createTimestamp?, .modifyTimestamp?,
+  .createdAt?, .modifiedAt?,
+  .appFirstSeen?, .appLastSeen?, .appRegistrationJson?,
+  .appRegistrationAccessToken?, .oauthClientSecret?, .pwdChangedTime?,
+  .stsBootstrapAdministrator?, .pwdReset?, .userPassword?)'
+read_seed() {
+  set +o pipefail
+  local label="$1" base="$2" token dir="$OUT/seed-$1" id="seed-diff"
+  rm -rf "$dir"; mkdir -p "$dir"
+  token="$(docker run --rm --network host \
+    -e STS_ADMIN_API_CLIENT_SECRET="$SECRET" -e NODE_TLS_REJECT_UNAUTHORIZED=0 \
+    "$JOB_IMAGE" node tests/tools/admin-api-token.js "$base" 2>/dev/null)"
+  curl -sk -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+    -d "{\"id\":\"$id\"}" "$base/admin-api/realms/create" \
+    | sed "s#${base#https://}#localhost:PORT#g" \
+    | jq -S 'del(.password)' > "$dir/create.json"
+  curl -sk -H "Authorization: Bearer $token" \
+    "$base/realm/$id/admin-api/ldap/directory?per=300" \
+    | sed "s#${base#https://}#localhost:PORT#g" > "$dir/raw"
+  # An application's entryUUID is random; a seeded entry's is derived
+  # from the realm and the DN, and is kept.
+  jq -S "$SEED_DEL | .entries |= map(if (.origin == \"seed\" or
+           .origin == \"roles\") then . else
+           del(.attributes.entryUUID) end)" "$dir/raw" \
+    > "$dir/directory.json" 2>/dev/null || cp "$dir/raw" "$dir/directory.json"
+  curl -sk -H "Authorization: Bearer $token" \
+    "$base/realm/$id/admin-api/groups?per=100" \
+    | sed "s#${base#https://}#localhost:PORT#g" \
+    | jq -S "del(.since, .processes) | $SEED_DEL" > "$dir/groups.json"
+  rm -f "$dir/raw"
+  set -o pipefail
+}
+compare_seed() {
+  for f in "$OUT"/seed-node/*.json; do
+    one="$(basename "$f")"
+    if diff -q "$f" "$OUT/seed-rust/$one" >/dev/null 2>&1; then
+      pass "a realm Rust created is the realm Node created: $one"
+    else
+      fail "a realm Rust created differs from Node's: $one" \
+        "($(diff <(jq -c 'paths(scalars) as $p | [$p, getpath($p)]' "$f" \
+        2>/dev/null) <(jq -c 'paths(scalars) as $p | [$p, getpath($p)]' \
+        "$OUT/seed-rust/$one" 2>/dev/null) | grep -c '^[<>]') leaf diff(s))"
+    fi
+  done
+}
+
 say "== Node alone =="
 fresh_db
 env_for "https://localhost:$PN" node-alone
 run_svc "$SVCN" "$NODE_IMAGE" "$PN" node-alone
 for j in "${JOBS[@]}"; do job node "https://localhost:$PN" "$j"; done
+if [ -n "${SEED:-}" ]; then read_seed node "https://localhost:$PN"; fi
 if [ -n "${VIEWS:-}" ]; then
   read_views node "https://localhost:$PN"
   docker stop -t 30 "$SVCN" >/dev/null; docker rm "$SVCN" >/dev/null
@@ -272,6 +331,10 @@ run_svc "$SVCN" "$NODE_IMAGE" "$PR" shared
 docker stop -t 30 "$SVCN" >/dev/null; docker rm "$SVCN" >/dev/null
 run_svc "$SVCR" "$RUST_IMAGE" "$PR" shared
 for j in "${JOBS[@]}"; do job rust "https://localhost:$PR" "$j"; done
+if [ -n "${SEED:-}" ]; then
+  read_seed rust "https://localhost:$PR"
+  compare_seed
+fi
 
 say "== $( [ "$FAILED" = 0 ] && echo PASSED || echo FAILED ) =="
 exit "$FAILED"

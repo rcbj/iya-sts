@@ -541,3 +541,27 @@ impl sts_http::surfaces::SurfaceGates for RealmChooser {
         Default::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_select_chooses_its_branch_and_falls_back_to_other() {
+        let m = "Continue to {surface, select, portal {your account} report \
+                 {reports} other {the admin console}}";
+        assert_eq!(select(m, "surface", "portal"), "Continue to your account");
+        assert_eq!(select(m, "surface", "report"), "Continue to reports");
+        assert_eq!(
+            select(m, "surface", "admin"),
+            "Continue to the admin console"
+        );
+        assert_eq!(select("no argument", "surface", "admin"), "no argument");
+    }
+
+    #[test]
+    fn encode_uri_component_is_javascripts() {
+        assert_eq!(encode_uri_component("a b/c"), "a%20b%2Fc");
+        assert_eq!(encode_uri_component("x-y_z.!~*'()"), "x-y_z.!~*'()");
+    }
+}
