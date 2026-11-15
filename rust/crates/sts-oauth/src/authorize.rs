@@ -369,6 +369,34 @@ fn text_of(message: &str) -> String {
     out
 }
 
+/// `oauth21.DRAFT`: the revision every OAuth 2.1 refusal cites.
+const OAUTH21_DRAFT: &str = "draft-ietf-oauth-v2-1-16";
+
+/// `oauth21.registeredClientRefusal(client, clientId)`: OAuth 2.1 mode's
+/// refusal of a client with no redirect URI of its own (section 2.3.1).
+fn registered_client_refusal(
+    client: &Json,
+    client_id: &str,
+) -> (ErrorCode, String) {
+    let withheld = values(client.get("unconfirmed_redirect_uris"));
+    if !withheld.is_empty() {
+        return (codes::STS_OAUTH_0272, format!(
+            "OAuth 2.1 ({}) section 2.3.1: a client must have registered its complete redirect URI. Client \"{}\" has only redirect URIs this service observed and nobody has confirmed, and product mode does not believe an observed address. Confirm the one it should use on /admin/applications, or POST /admin-api/applications/confirm-address.",
+            OAUTH21_DRAFT, client_id));
+    }
+    let who = if client_id.is_empty() {
+        "This client".to_string()
+    } else {
+        format!("Client \"{}\"", client_id)
+    };
+    let known = client.get("known") == Some(&Json::Bool(true));
+    (codes::STS_OAUTH_0271, format!(
+        "OAuth 2.1 ({}) section 2.3.1: \"Authorization servers MUST require clients to register their complete redirect URI.\" {} has {}. Register it at POST /oauth2/register with its redirect_uris, or give its application entry an oauthRedirectUri on /admin/applications. The service-wide oauth2.redirectUris list is not consulted in this mode.",
+        OAUTH21_DRAFT,
+        who,
+        if known { "an entry here with no redirect URI on it" } else { "no entry here at all" }))
+}
+
 /// `oauthPages.authorizeError.auto`: its one plural (`{seconds, plural,
 /// one {# second} other {# seconds}}`) chosen by the page language's
 /// cardinal rule, which the server's translator does not format.
@@ -697,6 +725,7 @@ impl AuthorizationEndpoint {
     fn check_redirect_uri(
         &self,
         client: &Json,
+        client_id: &str,
         presented: &str,
     ) -> Result<(), (ErrorCode, String)> {
         let own = values(client.get("redirect_uris"));
@@ -730,6 +759,18 @@ impl AuthorizationEndpoint {
                 .as_list()
                 .to_vec()
         };
+        let oauth21 = self.settings.value_of("oauth2.oauth21").as_bool();
+        // Section 2.3.1: a client registers ITS OWN redirect URI, so OAuth
+        // 2.1 mode does not read the service-wide list.
+        let list = if oauth21 && values(client.get("redirect_uris")).is_empty()
+        {
+            Vec::new()
+        } else {
+            list
+        };
+        if list.is_empty() && oauth21 {
+            return Err(registered_client_refusal(client, client_id));
+        }
         if list.is_empty() {
             return Err((codes::STS_OAUTH_0121, "RFC 9700 section 2.1 requires redirect_uri to be compared by exact string match against the URIs registered for this client, and none are registered. Add this URI to the oauth2.redirectUris setting (/admin/oauth2, or POST /admin-api/config), or register the client with its redirect_uris at POST /oauth2/register.".to_string()));
         }
@@ -811,6 +852,28 @@ impl AuthorizationEndpoint {
             }
         }
         let client = self.clients.client_config_of(&client_id);
+        // OAUTH 2.1: THE CLIENT FIRST, AND A DEFAULT redirect_uri (section
+        // 4.1.1: OPTIONAL where exactly one is registered). Both refusals
+        // are answered here, as a 400: there is no validated address yet.
+        if self.settings.value_of("oauth2.oauth21").as_bool() {
+            if client_id.trim().is_empty() {
+                return Err(refuse(codes::STS_OAUTH_0144, "invalid_request", "RFC 9700 section 4.11.2, citing RFC 6749 section 4.1.2.1: an authorization server must not automatically redirect the user agent for an invalid combination of client_id and redirect_uri. This request names no client_id at all, so there is no client the redirect_uri could belong to — and reporting that BY redirecting to the URI is exactly what that paragraph forbids. It is answered here instead.".into()));
+            }
+            if s(q.get("redirect_uri")).is_empty() {
+                let own = values(client.get("redirect_uris"));
+                if own.len() == 1 {
+                    q.insert("redirect_uri".into(), Json::from(own[0].clone()));
+                } else if own.len() > 1 {
+                    return Err(refuse(codes::STS_OAUTH_0273, "invalid_request", format!(
+                        "OAuth 2.1 ({}) section 4.1.1: redirect_uri is REQUIRED when a client has registered more than one, and client \"{}\" has {}. Send the one this request should be answered at.",
+                        OAUTH21_DRAFT, client_id, own.len())));
+                } else {
+                    let (code, why) =
+                        registered_client_refusal(&client, &client_id);
+                    return Err(refuse(code, "invalid_request", why));
+                }
+            }
+        }
         let redirect_uri = s(q.get("redirect_uri"));
         if redirect_uri.is_empty() {
             let mut r = refuse(
@@ -829,7 +892,7 @@ impl AuthorizationEndpoint {
             return Err(r);
         }
         if let Err((code, description)) =
-            self.check_redirect_uri(&client, &redirect_uri)
+            self.check_redirect_uri(&client, &client_id, &redirect_uri)
         {
             return Err(refuse(code, "invalid_request", description));
         }

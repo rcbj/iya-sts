@@ -22,7 +22,9 @@
 #      global.publicBaseUrl, so an issuer is one address whichever runtime
 #      minted the token.
 #
-# Product mode, as the jobs' product cells run. Writes <out>/summary.txt
+# Product mode, as the jobs' product cells run; E2E_MODE=development runs
+# the development cells instead (a sign-in there checks no password, so a
+# job that signs a person in reaches the protocol). Writes <out>/summary.txt
 # (tests/vectors/rust-oauth-jobs, gitignored). Needs the jobs' packages on
 # NODE_PATH (bunyan, commander, node-forge, xml-crypto, @xmldom/xmldom).
 # ---------------------------------------------------------------------------
@@ -35,6 +37,7 @@ REPO="$PWD"
 OUT="${OUT:-tests/vectors/rust-oauth-jobs}"
 mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
 TAG="${E2E_TAG:-iya-sts-444-p5-oauth2-jobs}"
+MODE="${E2E_MODE:-product}"
 PN="${E2E_NODE_PORT:-19771}"; PR="${E2E_RUST_PORT:-19772}"
 PP="${E2E_PROXY_PORT:-19773}"
 NET="$TAG-net"; DB="$TAG-db"; SVCN="$TAG-node"; SVCR="$TAG-rust"
@@ -100,7 +103,7 @@ pass "postgres is up"
 
 
 env_for() {
-  printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=product" \
+  printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=$MODE" \
     "STS_HTTPS=true" "STS_PUBLIC_BASE_URL=$1" \
     "STS_PERSISTENCE_MODE=postgres" "STS_DATABASE_URL=$DB_URL" \
     "STS_DATABASE_TLS_CA_FILE=/run/secrets/db-ca.crt" \
@@ -138,7 +141,7 @@ job() {
   if ( cd "$REPO/tests/protocol" && \
        WSTRUST_STS_URL="$base/sts" OID4VCI_ISSUER_URL="$base" \
        NODE_TLS_REJECT_UNAUTHORIZED=0 CONFIG_FILE=./env/local.js \
-       STS_ADMIN_API_TOKEN="$token" STS_MODE=product \
+       STS_ADMIN_API_TOKEN="$token" STS_MODE="$MODE" \
        NODE_OPTIONS="--require $REPO/tests/tools/attach-admin-token.js" \
        timeout 900 node "$file" ) > "$OUT/$label-${file%.js}.log" 2>&1; then
     pass "$label $file"
