@@ -60,7 +60,9 @@ pub struct AcmeRefusal {
     pub status: u16,
     pub code: ErrorCode,
     pub detail: String,
-    pub extra: Json,
+    /// The problem document's own members (`algorithms`), boxed so a
+    /// `Result` carrying a refusal stays small.
+    pub extra: Box<Json>,
 }
 
 /// `refusal(type, status, code, detail, extra)`.
@@ -76,7 +78,7 @@ pub fn refusal(
         status,
         code,
         detail: detail.into(),
-        extra: json!({}),
+        extra: Box::new(json!({})),
     }
 }
 
@@ -244,8 +246,7 @@ pub struct Parts {
 fn body(id: &str) -> Body {
     Body::of("acme", id).unwrap_or_else(|| {
         tracing::error!("acme: the enrollment model has no body acme/{}", id);
-        Body::of("acme", "challenge-response")
-            .unwrap_or_else(|| unreachable_body())
+        Body::of("acme", "challenge-response").unwrap_or_else(unreachable_body)
     })
 }
 
@@ -412,7 +413,7 @@ pub fn check_algorithm(alg: &str) -> Result<(), AcmeRefusal> {
             algs.join(", ")
         ),
     );
-    r.extra = json!({ "algorithms": algs });
+    r.extra = Box::new(json!({ "algorithms": algs }));
     Ok(()).and(Err(r))
 }
 
@@ -791,7 +792,7 @@ pub fn parse_eab(
                 t("alg")
             ),
         );
-        r.extra = json!({ "algorithms": algs });
+        r.extra = Box::new(json!({ "algorithms": algs }));
         return Err(r);
     }
     if t("url") != expected_url {

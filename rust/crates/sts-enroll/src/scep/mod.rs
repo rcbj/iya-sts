@@ -27,7 +27,7 @@
 //! (realm, transactionID) runs at a time in this process; across nodes the
 //! guard is the `scep.transaction` claim.
 
-pub mod cms;
+pub mod pki_message;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -43,7 +43,7 @@ use sts_core::realm_store::{
 };
 use sts_pki::authority::hierarchy::CertifySpec;
 
-use self::cms::{CertRepSpec, Message};
+use self::pki_message::{CertRepSpec, Message};
 use crate::core::issue::IssueSpec;
 use crate::core::{normal_serial, now_ms, str_of, Core, Principal, Refusal};
 use crate::http::{Reply, Req};
@@ -114,7 +114,7 @@ fn failed(code: ErrorCode, why: impl Into<String>, fail: &str) -> Outcome {
         code: Some(code),
         why: why.into(),
         fail_info: if fail.is_empty() {
-            cms::fail_info("badRequest")
+            pki_message::fail_info("badRequest")
         } else {
             fail.to_string()
         },
@@ -139,7 +139,7 @@ pub fn fail_info_for_core(code: ErrorCode) -> String {
         }
         _ => "badRequest",
     };
-    cms::fail_info(name)
+    pki_message::fail_info(name)
 }
 
 fn from_core(r: &Refusal) -> Outcome {
@@ -255,7 +255,7 @@ impl Scep {
     ) -> Result<Json, Refusal> {
         let bits = self.wanted_bits();
         let generated = tokio::task::spawn_blocking(move || {
-            sts_crypto::cms::generate_rsa(bits)
+            sts_crypto::pkcs7::generate_rsa(bits)
         })
         .await;
         let Ok(Ok((private_pem, public_pem))) = generated else {
@@ -453,17 +453,17 @@ impl Scep {
         &self,
         message: &Message,
         ra: &RaKeys,
-    ) -> Result<(crate::core::csr::Csr, String, String), Outcome> {
-        let opened = cms::open_envelope(
+    ) -> Result<(crate::core::csr::Csr, String, String), Box<Outcome>> {
+        let opened = pki_message::open_envelope(
             message.content.as_deref().unwrap_or(&[]),
             &ra.certificate_pem,
             &ra.private_key_pem,
         )
-        .map_err(|r| failed(r.code, r.why, &r.fail_info))?;
+        .map_err(|r| Box::new(failed(r.code, r.why, &r.fail_info)))?;
         let csr = self.core.parse_csr(&opened.content, false).map_err(|r| {
             let mut o = from_core(&r);
             o.cipher = opened.cipher.clone();
-            o
+            Box::new(o)
         })?;
         if csr.key_kind != "rsa" {
             let mut o = failed(
@@ -472,10 +472,10 @@ impl Scep {
                     "The request carries a {} key. SCEP encrypts its reply to the requester with RSA key transport, so only an RSA key can be enrolled over SCEP; use ACME or EST for an ECDSA, EdDSA or post-quantum key.",
                     csr.key_alg
                 ),
-                &cms::fail_info("badAlg"),
+                &pki_message::fail_info("badAlg"),
             );
             o.cipher = opened.cipher;
-            return Err(o);
+            return Err(Box::new(o));
         }
         let hash = sts_pki::der::hex(
             &sts_crypto::jws_alg::Hash::Sha256.digest(&opened.content),
@@ -491,7 +491,7 @@ impl Scep {
             .map(|s| s.spki_sha256.clone())
             .unwrap_or_default();
         if str_of(&held, "signerKey") != signer {
-            return Some(failed(codes::STS_SCEP_0039, "That transactionID completed for a request signed with a different key.", &cms::fail_info("badCertId")));
+            return Some(failed(codes::STS_SCEP_0039, "That transactionID completed for a request signed with a different key.", &pki_message::fail_info("badCertId")));
         }
         if str_of(&held, "csrSha256") != csr_sha256 {
             tracing::info!(
@@ -521,10 +521,11 @@ impl Scep {
     ) -> Outcome {
         let (csr, cipher, csr_sha256) = match self.read_request(message, ra) {
             Ok(r) => r,
-            Err(o) => return o,
+            Err(o) => return *o,
         };
         let signer = message.signer.clone().unwrap_or_else(|| {
-            cms::describe_certificate(&[]).unwrap_or_else(empty_described)
+            pki_message::describe_certificate(&[])
+                .unwrap_or_else(empty_described)
         });
         let same_key =
             Scep::spki_sha256(&csr.public_key_pem) == signer.spki_sha256;
@@ -548,7 +549,7 @@ impl Scep {
             return failed(
                 codes::STS_SCEP_0034,
                 "The request is signed by a certificate whose key is not the key in the PKCS#10 request. RFC 8894 section 2.3 has a PKCSReq signed by a self-signed certificate for the requested key.",
-                &cms::fail_info("badMessageCheck"),
+                &pki_message::fail_info("badMessageCheck"),
             );
         }
         if let Some(mut retry) = self.replayed(message, &csr_sha256) {
@@ -670,16 +671,21 @@ impl Scep {
         }
     }
 
-    fn signer_entry(&self, message: &Message) -> Result<Principal, Outcome> {
+    // The refusal is boxed: an Outcome is a whole answer, and a `Result`
+    // carrying one inline would be three hundred bytes on every success.
+    fn signer_entry(
+        &self,
+        message: &Message,
+    ) -> Result<Principal, Box<Outcome>> {
         let signer = message.signer.clone().unwrap_or_else(empty_described);
         self.core.authenticate_presented_certificate(&signer.pem, "scep", false).map_err(|r| {
             let mut o = failed(
                 codes::STS_SCEP_0040,
                 format!("The message is not signed by a certificate this realm issued to an entry that still holds it: {}", r.sentence),
-                &cms::fail_info("badMessageCheck"),
+                &pki_message::fail_info("badMessageCheck"),
             );
             o.identity = normal_serial(&signer.serial_hex);
-            o
+            Box::new(o)
         })
     }
 
@@ -694,7 +700,7 @@ impl Scep {
         Box::pin(async move {
             let principal = match self.signer_entry(message) {
                 Ok(p) => p,
-                Err(o) => return o,
+                Err(o) => return *o,
             };
             let entry_uri = principal.entry().uri();
             let identity =
@@ -714,7 +720,7 @@ impl Scep {
                 Err(mut o) => {
                     o.identity = identity;
                     o.principal = entry_uri;
-                    return o;
+                    return *o;
                 }
             };
             if let Some(mut retry) = self.replayed(message, &csr_sha256) {
@@ -804,7 +810,7 @@ impl Scep {
     }
 
     fn cert_poll(&self, message: &Message, ra: &RaKeys) -> Outcome {
-        let opened = match cms::open_envelope(
+        let opened = match pki_message::open_envelope(
             message.content.as_deref().unwrap_or(&[]),
             &ra.certificate_pem,
             &ra.private_key_pem,
@@ -812,14 +818,14 @@ impl Scep {
             Ok(o) => o,
             Err(r) => return failed(r.code, r.why, &r.fail_info),
         };
-        if !cms::read_issuer_and_subject(&opened.content) {
+        if !pki_message::read_issuer_and_subject(&opened.content) {
             return failed(codes::STS_SCEP_0032, "A CertPoll envelope holds an IssuerAndSubject (RFC 8894 section 3.3.3).", "");
         }
         let Some(held) = self.transaction_of(&message.transaction_id) else {
             let mut o = failed(
                 codes::STS_SCEP_0038,
                 "This realm holds no result for that transactionID. Nothing here is PENDING: a request is issued or refused when it is made.",
-                &cms::fail_info("badCertId"),
+                &pki_message::fail_info("badCertId"),
             );
             o.identity = message.transaction_id.clone();
             return o;
@@ -830,7 +836,7 @@ impl Scep {
             .map(|s| s.spki_sha256.clone())
             .unwrap_or_default();
         if str_of(&held, "signerKey") != signer {
-            let mut o = failed(codes::STS_SCEP_0039, "That transaction was completed for a request signed with a different key.", &cms::fail_info("badCertId"));
+            let mut o = failed(codes::STS_SCEP_0039, "That transaction was completed for a request signed with a different key.", &pki_message::fail_info("badCertId"));
             o.identity = message.transaction_id.clone();
             return o;
         }
@@ -850,9 +856,9 @@ impl Scep {
     fn get_cert(&self, message: &Message, ra: &RaKeys) -> Outcome {
         let principal = match self.signer_entry(message) {
             Ok(p) => p,
-            Err(o) => return o,
+            Err(o) => return *o,
         };
-        let opened = match cms::open_envelope(
+        let opened = match pki_message::open_envelope(
             message.content.as_deref().unwrap_or(&[]),
             &ra.certificate_pem,
             &ra.private_key_pem,
@@ -860,7 +866,8 @@ impl Scep {
             Ok(o) => o,
             Err(r) => return failed(r.code, r.why, &r.fail_info),
         };
-        let Some((_, serial)) = cms::read_issuer_and_serial(&opened.content)
+        let Some((_, serial)) =
+            pki_message::read_issuer_and_serial(&opened.content)
         else {
             return failed(codes::STS_SCEP_0032, "A GetCert envelope holds an IssuerAndSerialNumber (RFC 8894 section 3.3.4).", "");
         };
@@ -881,7 +888,7 @@ impl Scep {
                     "The {} holds no certificate with that serial.",
                     entry_uri
                 ),
-                &cms::fail_info("badCertId"),
+                &pki_message::fail_info("badCertId"),
             );
             o.principal = entry_uri;
             o.identity = identity;
@@ -903,9 +910,9 @@ impl Scep {
     fn get_crl(&self, message: &Message, ra: &RaKeys) -> Outcome {
         let principal = match self.signer_entry(message) {
             Ok(p) => p,
-            Err(o) => return o,
+            Err(o) => return *o,
         };
-        let opened = match cms::open_envelope(
+        let opened = match pki_message::open_envelope(
             message.content.as_deref().unwrap_or(&[]),
             &ra.certificate_pem,
             &ra.private_key_pem,
@@ -913,14 +920,15 @@ impl Scep {
             Ok(o) => o,
             Err(r) => return failed(r.code, r.why, &r.fail_info),
         };
-        let Some((issuer, _)) = cms::read_issuer_and_serial(&opened.content)
+        let Some((issuer, _)) =
+            pki_message::read_issuer_and_serial(&opened.content)
         else {
             return failed(codes::STS_SCEP_0032, "A GetCRL envelope holds an IssuerAndSerialNumber (RFC 8894 section 3.3.4).", "");
         };
         let entry_uri = principal.entry().uri();
         let identity = principal.certificate_serial.clone().unwrap_or_default();
         let issuing = self.core.ca_chain_of("scep").and_then(|c| {
-            cms::describe_certificate(&crate::est::codec::pem_to_der(
+            pki_message::describe_certificate(&crate::est::codec::pem_to_der(
                 &c.issuing_pem,
             ))
         });
@@ -928,7 +936,7 @@ impl Scep {
             let mut o = failed(
                 codes::STS_SCEP_0042,
                 "GetCRL answers for this realm's SCEP Issuing CA, and the request names another issuer.",
-                &cms::fail_info("badCertId"),
+                &pki_message::fail_info("badCertId"),
             );
             o.principal = entry_uri;
             o.identity = identity;
@@ -971,7 +979,7 @@ impl Scep {
         ra: &RaKeys,
         url_profile: &str,
     ) -> Outcome {
-        if let Err(r) = cms::verify_signer(message) {
+        if let Err(r) = pki_message::verify_signer(message) {
             return failed(r.code, r.why, &r.fail_info);
         }
         let key_type = message
@@ -986,7 +994,7 @@ impl Scep {
                     "The message is signed with a {} key. A CertRep is encrypted to the signer's certificate with RSA key transport, so SCEP in this service takes an RSA requester key only.",
                     key_type
                 ),
-                &cms::fail_info("badAlg"),
+                &pki_message::fail_info("badAlg"),
             );
         }
         let Some(kind) = message
@@ -1092,7 +1100,7 @@ impl Scep {
         let mut reply = Reply::new(200);
         reply.set("Content-Type", "application/x-x509-ca-ra-cert");
         reply.set("Cache-Control", "no-store");
-        reply.body = cms::certs_only(&pems, &[]);
+        reply.body = pki_message::certs_only(&pems, &[]);
         self.record(json!({ "operation": operation, "outcome": "answered", "status": 200 }));
         reply
     }
@@ -1184,7 +1192,7 @@ impl Scep {
                 return r;
             }
         };
-        let message = match cms::parse_pki_message(&bytes) {
+        let message = match pki_message::parse_pki_message(&bytes) {
             Ok(m) => m,
             Err(r) => {
                 self.core.count_failure("scep", &req.address, "");
@@ -1221,7 +1229,7 @@ impl Scep {
                 &[("Retry-After", Core::retry_after_of(blocked).to_string())],
             );
         }
-        let digest = cms::digest_id(&message.digest_alg)
+        let digest = pki_message::digest_id(&message.digest_alg)
             .unwrap_or("sha256")
             .to_string();
         let signer_pem = message
@@ -1231,17 +1239,22 @@ impl Scep {
             .unwrap_or_default();
         let body = if result.ok {
             let inner = match &result.crl_der {
-                Some(crl) => cms::certs_only(&[], std::slice::from_ref(crl)),
-                None => cms::certs_only(&[result.certificate_pem.clone()], &[]),
+                Some(crl) => {
+                    pki_message::certs_only(&[], std::slice::from_ref(crl))
+                }
+                None => pki_message::certs_only(
+                    std::slice::from_ref(&result.certificate_pem),
+                    &[],
+                ),
             };
-            cms::envelope(&inner, &signer_pem, &result.cipher).and_then(
+            pki_message::envelope(&inner, &signer_pem, &result.cipher).and_then(
                 |content| {
-                    cms::cert_rep(&CertRepSpec {
+                    pki_message::cert_rep(&CertRepSpec {
                         ra_certificate_pem: keys.certificate_pem.clone(),
                         ra_private_key_pem: keys.private_key_pem.clone(),
                         transaction_id: message.transaction_id.clone(),
                         recipient_nonce: message.sender_nonce.clone(),
-                        pki_status: cms::pki_status("SUCCESS"),
+                        pki_status: pki_message::pki_status("SUCCESS"),
                         content: Some(content),
                         digest: digest.clone(),
                         ..Default::default()
@@ -1249,12 +1262,12 @@ impl Scep {
                 },
             )
         } else {
-            cms::cert_rep(&CertRepSpec {
+            pki_message::cert_rep(&CertRepSpec {
                 ra_certificate_pem: keys.certificate_pem.clone(),
                 ra_private_key_pem: keys.private_key_pem.clone(),
                 transaction_id: message.transaction_id.clone(),
                 recipient_nonce: message.sender_nonce.clone(),
-                pki_status: cms::pki_status("FAILURE"),
+                pki_status: pki_message::pki_status("FAILURE"),
                 fail_info: result.fail_info.clone(),
                 digest: digest.clone(),
                 ..Default::default()
@@ -1280,7 +1293,7 @@ impl Scep {
                 .count_failure("scep", &req.address, &result.identity);
             let code = result.code.unwrap_or(codes::STS_SCEP_0045);
             if !result.audited {
-                let name = cms::fail_name(&result.fail_info);
+                let name = pki_message::fail_name(&result.fail_info);
                 self.core.audit().failure(
                     code,
                     &json!({ "protocol": "SCEP", "actor": result.principal, "target": result.principal,
@@ -1322,7 +1335,7 @@ impl Scep {
             "profile": opt(&result.profile), "principal": principal, "target": opt(&result.target),
             "errorCode": if result.ok { Json::Null } else { Json::from(result.code.map(|c| c.as_str()).unwrap_or("")) },
             "serialHex": opt(&result.serial_hex),
-            "failInfo": if result.ok { Json::Null } else { opt(&cms::fail_name(&result.fail_info)) },
+            "failInfo": if result.ok { Json::Null } else { opt(&pki_message::fail_name(&result.fail_info)) },
         }));
         reply
     }
@@ -1476,8 +1489,8 @@ impl Scep {
     }
 }
 
-fn empty_described() -> cms::Described {
-    cms::Described {
+fn empty_described() -> pki_message::Described {
+    pki_message::Described {
         der: Vec::new(),
         pem: String::new(),
         serial_raw: Vec::new(),

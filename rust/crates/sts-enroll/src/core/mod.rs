@@ -481,14 +481,17 @@ impl Core {
         &self.d.entries
     }
 
+    // A hot path: every request reads several settings; no span.
     pub(crate) fn setting_text(&self, key: &str) -> String {
         self.d.settings.value_of(key).as_str().to_string()
     }
 
+    // A hot path: every request reads several settings; no span.
     pub(crate) fn setting_int(&self, key: &str) -> i64 {
         self.d.settings.value_of(key).as_int()
     }
 
+    // A hot path: every request reads several settings; no span.
     pub(crate) fn setting_on(&self, key: &str) -> bool {
         // `config.value(key) !== false`.
         !matches!(
@@ -497,6 +500,7 @@ impl Core {
         )
     }
 
+    // A hot path: every request reads several settings; no span.
     pub(crate) fn setting_list(&self, key: &str) -> Vec<String> {
         match self.d.settings.value_of(key) {
             sts_core::settings::SettingValue::List(l) => l,
@@ -515,6 +519,7 @@ impl Core {
         self.d.registry.get(id).is_some()
     }
 
+    // A hot path: every request reads several settings; no span.
     pub(crate) fn predicate(&self, name: &str) -> bool {
         self.d.mode.predicate(name).unwrap_or(false)
     }
@@ -566,6 +571,7 @@ impl Core {
         })
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn read_attribute(
         &self,
         entry: &Entry,
@@ -576,6 +582,9 @@ impl Core {
             .map(|r| r.held(key))
     }
 
+    // skip_all: the values are records, and an EAB key or a challenge in
+    // one is not for the log.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn write_attribute(
         &self,
         entry: &Entry,
@@ -1073,8 +1082,9 @@ impl Core {
         if !self.predicate("requiresEnrollmentTls") {
             tracing::info!(
                 "enrollment: a {} request arrived over plain HTTP; development mode answers it \
-                 (product mode would refuse it, STS-ENROLL-0060).",
-                family_label(family)
+                 (product mode would refuse it, {}).",
+                family_label(family),
+                codes::STS_ENROLL_0060.as_str()
             );
             return None;
         }

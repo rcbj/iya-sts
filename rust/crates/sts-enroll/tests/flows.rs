@@ -16,13 +16,12 @@
 mod support;
 use support::*;
 
-
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use serde_json::{json, Value as Json};
 use sts_crypto::keys::JwsKey;
 use sts_enroll::core::Entry;
-use sts_enroll::scep::cms;
+use sts_enroll::scep::pki_message;
 
 // ---------------------------------------------------------------------
 // An ACME client.
@@ -343,7 +342,7 @@ async fn acme_end_to_end() {
         .await;
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
     let r = alice
-        .post(&w, &account_url.trim_start_matches(BASE).to_string(), None)
+        .post(&w, account_url.trim_start_matches(BASE), None)
         .await;
     assert_eq!(
         json_of(&r)["detail"],
@@ -351,7 +350,7 @@ async fn acme_end_to_end() {
     );
     new_key.kid = Some(account_url.clone());
     let r = new_key
-        .post(&w, &account_url.trim_start_matches(BASE).to_string(), None)
+        .post(&w, account_url.trim_start_matches(BASE), None)
         .await;
     assert_eq!(r.status, 200);
 }
@@ -524,7 +523,7 @@ fn pkcs_req(
     transaction: &str,
 ) -> (Vec<u8>, String, String) {
     use sts_enroll::est::codec::{oid, tlv};
-    let (private, public) = sts_crypto::cms::generate_rsa(2048).unwrap();
+    let (private, public) = sts_crypto::pkcs7::generate_rsa(2048).unwrap();
     let spki = sts_pki::x509::keys::pem_to_der(&public).unwrap();
     let subject = tlv(
         0x30,
@@ -545,22 +544,22 @@ fn pkcs_req(
         0x30,
         &[tlv(0x02, &[0]), subject, spki, tlv(0xa0, &attrs)].concat(),
     );
-    let sig = sts_crypto::cms::sign_bytes("sha256", &info, &private).unwrap();
+    let sig = sts_crypto::pkcs7::sign_bytes("sha256", &info, &private).unwrap();
     let alg = tlv(0x30, &[oid("1.2.840.113549.1.1.11"), vec![5, 0]].concat());
     let mut bits = vec![0u8];
     bits.extend(sig);
     let csr = tlv(0x30, &[info, alg, tlv(0x03, &bits)].concat());
     let signer_pem = sts_pki::x509::issue::self_signed_cert_pem(&json!({ "publicPem": public, "privatePem": private, "subject": "CN=device" })).unwrap();
-    let signer = cms::describe_certificate(
+    let signer = pki_message::describe_certificate(
         &sts_pki::x509::keys::pem_to_der(&signer_pem).unwrap(),
     )
     .unwrap();
     let content =
-        cms::envelope(&csr, ra_pem, "2.16.840.1.101.3.4.1.2").unwrap();
+        pki_message::envelope(&csr, ra_pem, "2.16.840.1.101.3.4.1.2").unwrap();
     let digest = sts_crypto::jws_alg::Hash::Sha256.digest(&content);
     let attr =
         |o: &str, v: Vec<u8>| tlv(0x30, &[oid(o), tlv(0x31, &v)].concat());
-    let mut attrs = vec![
+    let mut attrs = [
         attr("1.2.840.113549.1.9.3", oid("1.2.840.113549.1.7.1")),
         attr("1.2.840.113549.1.9.4", tlv(0x04, &digest)),
         attr("2.16.840.1.113733.1.9.2", tlv(0x13, b"19")),
@@ -570,7 +569,7 @@ fn pkcs_req(
     attrs.sort();
     let set = tlv(0x31, &attrs.concat());
     let signature =
-        sts_crypto::cms::sign_bytes("sha256", &set, &private).unwrap();
+        sts_crypto::pkcs7::sign_bytes("sha256", &set, &private).unwrap();
     let mut implicit = set.clone();
     implicit[0] = 0xa0;
     let sha256 = tlv(0x30, &oid("2.16.840.1.101.3.4.2.1"));
@@ -676,11 +675,11 @@ async fn scep_end_to_end() {
         .unwrap();
     assert_eq!(r.status, 200);
     assert_eq!(r.code, None, "{:?}", r.code);
-    let rep = cms::parse_pki_message(&r.body).unwrap();
+    let rep = pki_message::parse_pki_message(&r.body).unwrap();
     assert_eq!(rep.pki_status, "0");
     assert_eq!(rep.recipient_nonce.as_deref(), Some(&[9u8; 16][..]));
-    assert!(cms::verify_signer(&rep).is_ok());
-    let opened = cms::open_envelope(
+    assert!(pki_message::verify_signer(&rep).is_ok());
+    let opened = pki_message::open_envelope(
         rep.content.as_deref().unwrap(),
         &signer_pem,
         &private,
@@ -698,7 +697,10 @@ async fn scep_end_to_end() {
         ))
         .await
         .unwrap();
-    assert_eq!(cms::parse_pki_message(&r.body).unwrap().pki_status, "0");
+    assert_eq!(
+        pki_message::parse_pki_message(&r.body).unwrap().pki_status,
+        "0"
+    );
     assert_eq!(w.core.enrolled_of(&Entry::new("person", "alicew")).len(), 1);
     // The completed transactionID under another key is badCertId
     // (`Scep.replayed()`, STS-SCEP-0039); a spent challenge in a new
@@ -716,7 +718,7 @@ async fn scep_end_to_end() {
             ))
             .await
             .unwrap();
-        let rep = cms::parse_pki_message(&r.body).unwrap();
+        let rep = pki_message::parse_pki_message(&r.body).unwrap();
         assert_eq!(
             (rep.pki_status.as_str(), rep.fail_info.as_str()),
             ("2", fail)

@@ -981,6 +981,7 @@ impl Core {
         Ok(issued)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn seal_text(
         &self,
         plain: &str,
@@ -993,6 +994,7 @@ impl Core {
         self.d.keystore.seal(plain, label, tier)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn open_text(&self, value: &str, label: &str) -> Option<String> {
         if !sts_crypto::secrets::is_encrypted_with_kek(value) {
             return Some(value.to_string());

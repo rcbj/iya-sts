@@ -6,7 +6,8 @@
 //! signed attributes say what the message is and whose content is an
 //! EnvelopedData encrypted to the realm's RA. This file turns bytes into
 //! those facts and facts back into bytes, and DECIDES NOTHING; every
-//! cryptographic operation inside it is `sts-crypto`'s ([`sts_crypto::cms`]).
+//! cryptographic operation inside it is `sts-crypto`'s ([`sts_crypto::pkcs7`]).
+//! (`pki_message`, not `cms`: see that module on the name.)
 //!
 //! Node's four codec decisions, each a refusal somebody meets: SHA-256/384/
 //! 512 only (`badAlg` for SHA-1 and MD5); AES-128/192/256-CBC only
@@ -647,7 +648,7 @@ pub fn verify_signer(message: &Message) -> Result<&'static str, CmsRefusal> {
         ));
     }
     let content = message.content.clone().unwrap_or_default();
-    if !sts_crypto::cms::cms_message_digest_matches(
+    if !sts_crypto::pkcs7::cms_message_digest_matches(
         digest,
         &content,
         message.message_digest_attr.as_deref(),
@@ -663,7 +664,7 @@ pub fn verify_signer(message: &Message) -> Result<&'static str, CmsRefusal> {
     if let Some(first) = signed.first_mut() {
         *first = 0x31;
     }
-    if !sts_crypto::cms::signature_valid(
+    if !sts_crypto::pkcs7::signature_valid(
         digest,
         &signed,
         &signer.spki,
@@ -798,7 +799,7 @@ pub fn open_envelope(
     let alg = &mine.children[2];
     let transport_oid = oid_of(alg.children.first());
     let (key, transport) = if transport_oid == oids::RSA_ENCRYPTION {
-        let key = sts_crypto::cms::cms_key_transport_decrypt(
+        let key = sts_crypto::pkcs7::cms_key_transport_decrypt(
             "rsaes-pkcs1-v1_5",
             ra_private_pem,
             &wrapped,
@@ -841,7 +842,7 @@ pub fn open_envelope(
                 }
             }
         }
-        let key = sts_crypto::cms::cms_key_transport_decrypt(
+        let key = sts_crypto::pkcs7::cms_key_transport_decrypt(
             "rsaes-oaep",
             ra_private_pem,
             &wrapped,
@@ -862,7 +863,7 @@ pub fn open_envelope(
             false,
         ));
     };
-    let plain = sts_crypto::cms::scep_content_decrypt(
+    let plain = sts_crypto::pkcs7::scep_content_decrypt(
         cipher_id,
         &key,
         &iv,
@@ -969,9 +970,9 @@ pub fn envelope(
     let key = random(*key_bytes);
     let iv = random(16);
     let ciphertext =
-        sts_crypto::cms::scep_content_encrypt(id, &key, &iv, content).ok()?;
+        sts_crypto::pkcs7::scep_content_encrypt(id, &key, &iv, content).ok()?;
     let wrapped =
-        sts_crypto::cms::cms_key_transport_encrypt(&recipient.spki, &key)
+        sts_crypto::pkcs7::cms_key_transport_encrypt(&recipient.spki, &key)
             .ok()?;
     let recipient_info = tlv(
         0x30,
@@ -1067,7 +1068,7 @@ pub fn cert_rep(spec: &CertRepSpec) -> Option<Vec<u8>> {
     attrs.sort();
     let set = tlv(0x31, &attrs.concat());
     let signature =
-        sts_crypto::cms::sign_bytes(digest, &set, &spec.ra_private_key_pem)
+        sts_crypto::pkcs7::sign_bytes(digest, &set, &spec.ra_private_key_pem)
             .ok()?;
     let mut implicit = set.clone();
     implicit[0] = 0xa0;

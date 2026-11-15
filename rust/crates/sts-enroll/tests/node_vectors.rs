@@ -34,7 +34,7 @@ use sts_enroll::core::issue::IssueSpec;
 use sts_enroll::core::{Entry, Principal};
 use sts_enroll::est::codec;
 use sts_enroll::model::Body;
-use sts_enroll::scep::cms;
+use sts_enroll::scep::pki_message;
 
 fn vectors() -> Option<(PathBuf, Json)> {
     let dir = PathBuf::from(std::env::var("STS_CRYPTO_VECTORS").ok()?);
@@ -109,18 +109,18 @@ async fn node_enrollment_vectors() {
             assert_eq!(csr.requested.dns, strings(&r["dns"]), "{}", what);
             assert_eq!(csr.requested.ips, strings(&r["ips"]), "{}", what);
             assert_eq!(csr.requested.uris, strings(&r["uris"]), "{}", what);
-            assert_eq!(
-                csr.requested.emails,
-                strings(&r["emails"]),
-                "{}",
-                what
-            );
+            assert_eq!(csr.requested.emails, strings(&r["emails"]), "{}", what);
             assert_eq!(csr.requested.upns, strings(&r["upns"]), "{}", what);
         } else {
             let refusal = parsed.err().unwrap_or_else(|| {
                 panic!("{}: Node refused and Rust read it", what)
             });
-            assert_eq!(refusal.code.as_str(), text(&reading["code"]), "{}", what);
+            assert_eq!(
+                refusal.code.as_str(),
+                text(&reading["code"]),
+                "{}",
+                what
+            );
             assert_eq!(
                 Json::from(refusal.status),
                 reading["status"],
@@ -168,9 +168,9 @@ async fn node_enrollment_vectors() {
                         .iter()
                         .map(|value| match value["oid"].as_str() {
                             Some(o) => codec::AttrValue::Oid(o.into()),
-                            None => {
-                                codec::AttrValue::Utf8(text(&value["utf8"]).into())
-                            }
+                            None => codec::AttrValue::Utf8(
+                                text(&value["utf8"]).into(),
+                            ),
                         })
                         .collect(),
                 }
@@ -182,9 +182,19 @@ async fn node_enrollment_vectors() {
     assert_eq!(hex(&codec::csr_attrs(&items)), text(&est["csrAttrs"]));
     for one in est["decoded"].as_array().unwrap() {
         let got = codec::decode_body(text(&one["text"]).as_bytes());
-        assert_eq!(got.is_ok(), one["ok"] == true, "decodeBody {}", one["text"]);
+        assert_eq!(
+            got.is_ok(),
+            one["ok"] == true,
+            "decodeBody {}",
+            one["text"]
+        );
         if let Ok(der) = got {
-            assert_eq!(hex(&der), text(&one["der"]), "decodeBody {}", one["text"]);
+            assert_eq!(
+                hex(&der),
+                text(&one["der"]),
+                "decodeBody {}",
+                one["text"]
+            );
         }
     }
 
@@ -196,23 +206,34 @@ async fn node_enrollment_vectors() {
     let device_key = text(&s["device"]["privateKeyPem"]);
     for one in s["messages"].as_array().unwrap() {
         let what = text(&one["cipher"]);
-        let message = cms::parse_pki_message(&unhex(&one["der"]))
+        let message = pki_message::parse_pki_message(&unhex(&one["der"]))
             .unwrap_or_else(|e| panic!("{}: {:?}", what, e));
         assert_eq!(message.message_type, Some(19), "{}", what);
         assert_eq!(message.transaction_id, text(&one["transactionID"]));
         assert_eq!(hex(&message.sender_nonce), text(&one["nonce"]));
-        cms::verify_signer(&message).unwrap_or_else(|e| panic!("{}: {:?}", what, e));
+        pki_message::verify_signer(&message)
+            .unwrap_or_else(|e| panic!("{}: {:?}", what, e));
         let node = &one["opened"];
-        let opened = match cms::open_envelope(
+        let opened = match pki_message::open_envelope(
             message.content.as_deref().unwrap(),
             ra_cert,
             ra_key,
         ) {
             Err(refused) => {
                 assert_eq!(node["ok"], false, "{}: Node opened it", what);
-                assert_eq!(refused.code.as_str(), text(&node["code"]), "{}", what);
+                assert_eq!(
+                    refused.code.as_str(),
+                    text(&node["code"]),
+                    "{}",
+                    what
+                );
                 assert_eq!(refused.why, text(&node["why"]), "{}", what);
-                assert_eq!(refused.fail_info, text(&node["failInfo"]), "{}", what);
+                assert_eq!(
+                    refused.fail_info,
+                    text(&node["failInfo"]),
+                    "{}",
+                    what
+                );
                 continue;
             }
             Ok(opened) => opened,
@@ -223,20 +244,33 @@ async fn node_enrollment_vectors() {
         let csr = w.core.parse_csr(&opened.content, false).unwrap();
         assert_eq!(csr.challenge_password, "p.challenge-value", "{}", what);
     }
-    assert_eq!(hex(&cms::certs_only(&pems, &[])), text(&s["certsOnly"]));
-    let rep = cms::parse_pki_message(&unhex(&s["certRep"])).unwrap();
+    assert_eq!(
+        hex(&pki_message::certs_only(&pems, &[])),
+        text(&s["certsOnly"])
+    );
+    let rep = pki_message::parse_pki_message(&unhex(&s["certRep"])).unwrap();
     assert_eq!(rep.message_type, Some(3));
     assert_eq!(rep.pki_status, "0");
     assert_eq!(rep.transaction_id, "vector-rep");
-    assert_eq!(hex(rep.recipient_nonce.as_deref().unwrap()), text(&s["recipientNonce"]));
-    cms::verify_signer(&rep).unwrap();
-    let opened =
-        cms::open_envelope(rep.content.as_deref().unwrap(), device_cert, device_key)
-            .unwrap();
+    assert_eq!(
+        hex(rep.recipient_nonce.as_deref().unwrap()),
+        text(&s["recipientNonce"])
+    );
+    pki_message::verify_signer(&rep).unwrap();
+    let opened = pki_message::open_envelope(
+        rep.content.as_deref().unwrap(),
+        device_cert,
+        device_key,
+    )
+    .unwrap();
     assert_eq!(hex(&opened.content), text(&s["certsOnly"]));
-    let failure = cms::parse_pki_message(&unhex(&s["failure"])).unwrap();
-    assert_eq!((failure.pki_status.as_str(), failure.fail_info.as_str()), ("2", "4"));
-    cms::verify_signer(&failure).unwrap();
+    let failure =
+        pki_message::parse_pki_message(&unhex(&s["failure"])).unwrap();
+    assert_eq!(
+        (failure.pki_status.as_str(), failure.fail_info.as_str()),
+        ("2", "4")
+    );
+    pki_message::verify_signer(&failure).unwrap();
 
     // The rows: Node's attributes on alicew, read by Rust's core.
     let r = &v["rows"];
@@ -256,7 +290,10 @@ async fn node_enrollment_vectors() {
         .core
         .redeem_scep_challenge(text(&r["challenge"]), true)
         .expect("Node's SCEP challenge");
-    assert_eq!((peek.entry, peek.profile.as_str()), (alice.clone(), text(&r["challengeProfile"])));
+    assert_eq!(
+        (peek.entry, peek.profile.as_str()),
+        (alice.clone(), text(&r["challengeProfile"]))
+    );
     assert_eq!(Json::from(w.core.enrolled_of(&alice)), r["enrolled"]);
     // `findEnrolled()` starts at the authority's register of what each CA
     // issued — sts-pki's rows, which `pki-authority-node.json` proves both
@@ -269,7 +306,10 @@ async fn node_enrollment_vectors() {
     // Rust's rows on bobw, for Node's core to read.
     let bob = Entry::new("person", "bobw");
     let eab = w.core.create_eab(&bob, None, "vector").unwrap();
-    let challenge = w.core.create_scep_challenge(&bob, None, None, "vector").unwrap();
+    let challenge = w
+        .core
+        .create_scep_challenge(&bob, None, None, "vector")
+        .unwrap();
     let key = sts_pki::authority::catalog::key_alg("ec-p256").unwrap();
     let (_, public) = key.generate().unwrap();
     let issued = w
@@ -293,8 +333,10 @@ async fn node_enrollment_vectors() {
         .await
         .unwrap();
     // The names as the directory spells them, which Node's slot is asked by.
-    let canonical: BTreeMap<String, String> =
-        attrs.keys().map(|k| (k.to_lowercase(), k.clone())).collect();
+    let canonical: BTreeMap<String, String> = attrs
+        .keys()
+        .map(|k| (k.to_lowercase(), k.clone()))
+        .collect();
     let bob_attrs: serde_json::Map<String, Json> = w
         .directory
         .attributes("person", "bobw")
@@ -312,21 +354,24 @@ async fn node_enrollment_vectors() {
     });
     // Rust's CertReps, for Node's requester.
     let nonce = unhex(&s["recipientNonce"]);
-    let content = cms::certs_only(&pems, &[]);
+    let content = pki_message::certs_only(&pems, &[]);
     let enveloped =
-        cms::envelope(&content, device_cert, "2.16.840.1.101.3.4.1.42").unwrap();
-    let spec = |status: &str, fail: &str, content: Option<Vec<u8>>| cms::CertRepSpec {
-        ra_certificate_pem: ra_cert.into(),
-        ra_private_key_pem: ra_key.into(),
-        transaction_id: "rust-rep".into(),
-        recipient_nonce: nonce.clone(),
-        pki_status: status.into(),
-        fail_info: fail.into(),
-        content,
-        digest: "sha256".into(),
+        pki_message::envelope(&content, device_cert, "2.16.840.1.101.3.4.1.42")
+            .unwrap();
+    let spec = |status: &str, fail: &str, content: Option<Vec<u8>>| {
+        pki_message::CertRepSpec {
+            ra_certificate_pem: ra_cert.into(),
+            ra_private_key_pem: ra_key.into(),
+            transaction_id: "rust-rep".into(),
+            recipient_nonce: nonce.clone(),
+            pki_status: status.into(),
+            fail_info: fail.into(),
+            content,
+            digest: "sha256".into(),
+        }
     };
-    let rep = cms::cert_rep(&spec("0", "", Some(enveloped))).unwrap();
-    let failure = cms::cert_rep(&spec("2", "2", None)).unwrap();
+    let rep = pki_message::cert_rep(&spec("0", "", Some(enveloped))).unwrap();
+    let failure = pki_message::cert_rep(&spec("2", "2", None)).unwrap();
     std::fs::write(
         dir.join("enroll-rust.json"),
         serde_json::to_string_pretty(&json!({

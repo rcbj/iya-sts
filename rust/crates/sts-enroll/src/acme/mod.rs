@@ -287,7 +287,7 @@ impl Acme {
     }
 
     fn send_refusal(&self, ctx: &Ctx<'_>, r: AcmeRefusal) -> Reply {
-        self.problem(ctx, r.status, &r.kind, r.code, &r.detail, r.extra)
+        self.problem(ctx, r.status, &r.kind, r.code, &r.detail, *r.extra)
     }
 
     /// `coreRefusal(ctx, refusal, fallbackCode)`: a core refusal in ACME's
@@ -369,7 +369,7 @@ impl Acme {
             .trim_end_matches('/')
             .split('/')
             .skip(1)
-            .map(|s| percent_decode(s))
+            .map(percent_decode)
             .collect();
         let seg: Vec<&str> = segments.iter().map(String::as_str).collect();
         let lower: Vec<String> = seg.iter().map(|s| s.to_lowercase()).collect();

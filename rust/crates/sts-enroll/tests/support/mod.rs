@@ -30,14 +30,22 @@ use sts_pki::authority::{Authority, MemoryRows, PkiConfig};
 // The fakes.
 // ---------------------------------------------------------------------
 
+/// An entry's attributes, by lower-cased name.
+pub type Attributes = BTreeMap<String, Vec<String>>;
+
 #[derive(Default)]
 pub struct Directory {
-    entries: Mutex<BTreeMap<(String, String), BTreeMap<String, Vec<String>>>>,
+    entries: Mutex<BTreeMap<(String, String), Attributes>>,
 }
 
 impl Directory {
     /// An entry with exactly these attributes (any case).
-    pub fn put(&self, kind: &str, id: &str, attrs: &BTreeMap<String, Vec<String>>) {
+    pub fn put(
+        &self,
+        kind: &str,
+        id: &str,
+        attrs: &BTreeMap<String, Vec<String>>,
+    ) {
         let held = attrs
             .iter()
             .map(|(k, v)| (k.to_lowercase(), v.clone()))
@@ -49,7 +57,11 @@ impl Directory {
     }
 
     /// An entry's attributes, by lower-cased name.
-    pub fn attributes(&self, kind: &str, id: &str) -> BTreeMap<String, Vec<String>> {
+    pub fn attributes(
+        &self,
+        kind: &str,
+        id: &str,
+    ) -> BTreeMap<String, Vec<String>> {
         self.entries
             .lock()
             .unwrap()
@@ -334,4 +346,3 @@ pub fn req(
 pub fn json_of(reply: &sts_enroll::http::Reply) -> Json {
     serde_json::from_slice(&reply.body).unwrap_or(Json::Null)
 }
-
