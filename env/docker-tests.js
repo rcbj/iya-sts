@@ -253,7 +253,8 @@ var config = {
     // any protocol and the directory stayed empty — which reads as a
     // broken hook and is a setting doing what it was told.
     autocreateUsers: true,
-    // 10000, not defaults.js's 2000 (2026-09-23). The cap is PROCESS-WIDE —
+    // 60000, not defaults.js's 2000 (10000 from 2026-09-23, 20000 from
+    // 10-27, 60000 from 11-15; why each, below). The cap is PROCESS-WIDE —
     // `totalEntries()` sums every realm's store — and every trust realm a
     // suite job creates is seeded and LEFT STANDING (tests/CLAUDE.md, *No job
     // removes a realm*), so the suite's own growth reached 2000 around the
@@ -261,7 +262,23 @@ var config = {
     // refused (`sts_federation_realms`, `vc_did`: "This directory holds its
     // maximum of 2000 entries"). The bulk-load jobs raise it further for
     // what they add, and leave it raised.
-    maxEntries: 10000,
+    // **IT REACHED 20000 IN RUNS #287 AND #300 (2026-11-15)**, in the memory
+    // mode, from about the 241st job on: `STS-LDAP-0007` logged 170 times,
+    // and `sts_development_only_settings` ("holds its maximum of 20000"),
+    // `sts_mode_weak_settings` ("ou=applications container is full") and
+    // `sts_admin_client_policies` (a realm's seeding refused, so no
+    // `sts-user-portal`) failed for a ceiling none of them set. The suite
+    // creates more realms, and seeds more into each, than it did on
+    // 10-27, and the bulk-load jobs raise the cap only at their END. So
+    // 60000: three times what the suite was measured to outgrow. **The
+    // modes differ on purpose, and this one number serves all of them.**
+    // memory, mariadb and cells count every realm the process holds, as
+    // above (only postgres outside cells has a directory window); in
+    // single-node, cluster and fuzz the directory is a window (#349, #320)
+    // and `cappedEntries()` counts the realm's own rows in the store, a
+    // per-realm cap the suite does not come near, which is why only the
+    // memory mode failed. The higher number changes nothing there.
+    maxEntries: 60000,
     sizeLimit: 500
   },
 
