@@ -697,6 +697,30 @@ fn marks(n: usize) -> String {
     vec!["?"; n].join(", ")
 }
 
+/// `directory_portable.js`'s `keysMatch()` (#1788): the WHERE text naming
+/// `count` rows by their key columns, `((a = ? AND b = ?) OR …)`, the values
+/// tuple by tuple in the order a row-constructor IN list took them. MariaDB
+/// 11.8 plans a DELETE or UPDATE whose WHERE is `(a, b) IN ((?, ?), …)` as a
+/// scan (`type ALL`, or `type index` for the counts' fold) though the tuple
+/// is the whole key, and a scanning write at READ COMMITTED waits on every
+/// row another transaction holds; this plans a range on the key. A SELECT
+/// keeps the row constructor, which MariaDB plans on the key.
+fn keys_match(columns: &[&str], count: usize) -> String {
+    if count == 0 {
+        // An empty OR would match every row.
+        return "(1 = 0)".to_string();
+    }
+    let one = format!(
+        "({})",
+        columns
+            .iter()
+            .map(|c| format!("{c} = ?"))
+            .collect::<Vec<_>>()
+            .join(" AND ")
+    );
+    format!("({})", vec![one.as_str(); count].join(" OR "))
+}
+
 /// The MariaDB store.
 pub struct MariadbDriver {
     pool: Pool,
@@ -884,8 +908,8 @@ impl MariadbDriver {
             }
             tx.exec_drop(
                 format!(
-                    "DELETE FROM sts_ldap_entry_keys WHERE (realm, dn_key) IN ({})",
-                    vec!["(?, ?)"; chunk.len()].join(", ")
+                    "DELETE FROM sts_ldap_entry_keys WHERE {}",
+                    keys_match(&["realm", "dn_key"], chunk.len())
                 ),
                 values,
             )
@@ -934,8 +958,8 @@ impl MariadbDriver {
         rows: &[(Vec<String>, i64)],
         shard: i64,
     ) -> StoreResult<()> {
-        let width = key_columns.split(", ").count();
-        let tuple = format!("({})", marks(width));
+        let columns: Vec<&str> = key_columns.split(", ").collect();
+        let width = columns.len();
         let matching = key_columns
             .split(", ")
             .map(|c| format!("{} = ?", c))
@@ -946,7 +970,6 @@ impl MariadbDriver {
                 .iter()
                 .flat_map(|(k, _)| k.iter().map(|v| Value::from(v.as_str())))
                 .collect();
-            let in_list = vec![tuple.as_str(); chunk.len()].join(", ");
             // MADE TO EXIST OUTSIDE THE TRANSACTION, so the UPDATE below is
             // the only lock taken on them, in key order with the rest.
             let mut ensure = vec![];
@@ -979,11 +1002,10 @@ impl MariadbDriver {
             values.extend(keys);
             tx.exec_drop(
                 format!(
-                    "UPDATE {} SET n = n + CASE {} ELSE 0 END WHERE shard = ? AND ({}) IN ({})",
+                    "UPDATE {} SET n = n + CASE {} ELSE 0 END WHERE shard = ? AND {}",
                     table,
                     cases.join(" "),
-                    key_columns,
-                    in_list
+                    keys_match(&columns, chunk.len())
                 ),
                 values,
             )
@@ -3240,5 +3262,17 @@ mod tests {
         assert!(table_key(&long).starts_with('#'));
         assert_eq!(table_key(&long).len(), 65);
         assert_eq!(parent_of("uid=a,ou=users,dc=x"), "ou=users,dc=x");
+    }
+
+    /// `keysMatch()`'s text, byte for byte (`tests/directory_portable.js`
+    /// A6's pattern).
+    #[test]
+    fn keys_match_is_node_text() {
+        assert_eq!(
+            keys_match(&["realm", "dn_key"], 2),
+            "((realm = ? AND dn_key = ?) OR (realm = ? AND dn_key = ?))"
+        );
+        assert_eq!(keys_match(&["a"], 1), "((a = ?))");
+        assert_eq!(keys_match(&["a", "b"], 0), "(1 = 0)");
     }
 }

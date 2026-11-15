@@ -15,20 +15,13 @@
 //! `sts_cluster_claims`; the risk tables are not ported), so the port is
 //! this pin: no DELETE or UPDATE in `src/mariadb.rs` may hold `) IN (`.
 //!
-//! EXCEPT THE TWO NODE STILL WRITES THAT WAY, kept for parity and listed
-//! here by their statement's start: `directory_portable.js`'s
-//! `rewriteKeys()` (`DELETE FROM sts_ldap_entry_keys WHERE (realm,
-//! dn_key) IN (…)`) and its counts fold (`UPDATE <counts> SET n = n +
-//! CASE … WHERE shard = ? AND (<key>) IN (…)`). Both scan on 11.8 with one
-//! tuple, measured: a Node defect, reported, not fixed here.
+//! `directory_portable.js`'s three text-built writes followed on
+//! 2026-11-14 (#1788, its `keysMatch()`): the key rows' DELETE in
+//! `rewriteKeys()`, the entries' DELETE in `deleteHeld()` (one statement
+//! per row with equalities here already) and the counts' fold UPDATE in
+//! `foldInto()`. So no write here is excepted any more.
 
 use std::path::PathBuf;
-
-/// The statements Node writes with a row constructor too.
-const AS_NODE: [&str; 2] = [
-    "DELETE FROM sts_ldap_entry_keys WHERE (realm, dn_key) IN (",
-    "UPDATE {} SET n = n + CASE {} ELSE 0 END WHERE shard = ? AND ({}) IN (",
-];
 
 /// Every string literal in `source` that starts with `head`.
 fn literals<'a>(source: &'a str, head: &str) -> Vec<&'a str> {
@@ -51,17 +44,11 @@ fn mariadb_writes_name_keys_by_equalities() {
     let mut writes = literals(&source, "DELETE ");
     writes.extend(literals(&source, "UPDATE "));
     assert!(writes.len() > 20, "found only {} writes", writes.len());
-    let mut kept = 0;
     for sql in writes {
-        if !sql.contains(") IN (") {
-            continue;
-        }
         assert!(
-            AS_NODE.iter().any(|n| sql.starts_with(n)),
+            !sql.contains(") IN ("),
             "a MariaDB write names its rows by a row constructor, which \
              11.8 plans as a table scan with one tuple: {sql}"
         );
-        kept += 1;
     }
-    assert_eq!(kept, AS_NODE.len(), "Node's two row constructors moved");
 }
