@@ -2565,8 +2565,9 @@ const JOBS = [
   // phase 7).
   { file: 'sts_gnap_application_claims.js', browser: false, local: true },
   // D12 (#444): the AuthZEN mapping contract, the tab's acts, the
-  // evaluation and the batch, each refusal by its code (authzen_map,
-  // authzen_evaluation, authzen_admin). Posts three outside test Roots to
+  // evaluation, the batch and the access request profile, each refusal by
+  // its code (authzen_map, authzen_evaluation, authzen_admin,
+  // authzen_access_request). Posts three outside test Roots to
   // the client truststore and removes them (tools/pep-credential.js).
   { file: 'sts_authzen_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through

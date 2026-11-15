@@ -35,7 +35,15 @@
 //   B. the batch: an unknown semantic (0036), more items than
 //      authzen.maxEvaluations (0038), a body over authzen.maxBodyBytes
 //      (0037), the batch switched off (0039);
-//   D. the metadata naming no PDP (0035).
+//   D. the metadata naming no PDP (0035);
+//   R. the access request and approval profile (authzen_access_request):
+//      a request that is not an object of the three (0071), with no denial
+//      (0072), for another subject than its denial's (0074), with a
+//      callback not registered (0079); the 202 task; an Idempotency-Key
+//      reused for another body (0076); the task asked by another caller
+//      (0080); approved through `/admin-api`, approved again (0089),
+//      cancelled once terminal (0082); an approval this realm cannot
+//      resolve not used (0084); the profile off (0070).
 //
 // (d), with the reason: authzen_map's grammar defaults and the request
 // builder's XACML output are functions (their outcomes are E's decisions);
@@ -62,10 +70,27 @@ const POLICY = [
   "        type = string }",
   "    attribute tags { category = resourceCat id = \"urn:example:tags\"",
   "        type = string }",
+  "    attribute approval { category = environmentCat",
+  "        id = \"urn:sts:xacml:authzen:approval-id\" type = string }",
   "    policy azcRoot {",
   "        id = \"urn:test:azc-root\"",
   "        apply firstApplicable",
   "        rule read { permit target clause act == \"read\" }",
+  "        rule approvedPublish {",
+  "            permit",
+  "            target clause act == \"publish\"",
+  "            condition integerGreaterThan(stringBagSize(approval), 0)",
+  "        }",
+  "        rule requestablePublish {",
+  "            deny",
+  "            target clause act == \"publish\"",
+  "            on deny {",
+  "                advice \"urn:sts:xacml:advice:access-request\" {",
+  "                    \"urn:sts:xacml:advice:access-request:approver-group\"",
+  "                        = \"azc-approvers\"",
+  "                }",
+  "            }",
+  "        }",
   "        rule explode {",
   "            permit",
   "            target clause act == \"explode\"",
@@ -100,7 +125,7 @@ function post(url, payload) {
 }
 
 // One request with a client certificate, as an AuthZEN PEP sends it.
-function pep(method, path, identity, payload) {
+function pep(method, path, identity, payload, extra) {
   log.debug("Entering pep(). " + method + " " + path);
   return new Promise(function (resolve, reject) {
     const target = new URL(K.base + path);
@@ -112,8 +137,8 @@ function pep(method, path, identity, payload) {
       rejectUnauthorized: false,
       cert: identity ? identity.certPem : undefined,
       key: identity ? identity.keyPem : undefined,
-      headers: data ? { "Content-Type": "application/json",
-                        "Content-Length": Buffer.byteLength(data) } : {}
+      headers: Object.assign(data ? { "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(data) } : {}, extra || {})
     }, function (response) {
       let text = "";
       response.on("data", function (chunk) {
@@ -422,6 +447,115 @@ async function batch() {
   log.debug("Leaving batch().");
 }
 
+async function accessRequests() {
+  log.debug("Entering accessRequests().");
+  log.info("=== R. access requests and approvals (#1180) ===");
+  const AR = PREFIX + "/access/v1/access-requests";
+  await K.ok(api("/groups/create"), { group: "azc-approvers" },
+             "the approvers' group");
+  await K.ok(api("/xacml/authzen/set-scope"), { caller: "azc-lonely-" +
+    K.STAMP, applications: [APPLICATION] }, "a second scoped caller");
+  const asked = question({ action: { name: "publish" } });
+  const denied = await pep("POST", PREFIX + "/access/v1/evaluation", caller,
+                           asked);
+  const ar = ((denied.json || {}).context || {}).access_request || {};
+  check("R0. a publish without an approval is a requestable denial",
+        function () {
+    assert.strictEqual(denied.json && denied.json.decision, false,
+                       denied.text);
+    assert.ok(ar.binding_token && ar.expires_at, denied.text);
+  });
+  const denial = { expires_at: ar.expires_at,
+                   binding_token: ar.binding_token };
+  await coded("STS-AUTHZEN-0071", "R1. an access request that is not an " +
+              "object of subject, resource and action is refused",
+              function () {
+    return pep("POST", AR, caller, { denial: denial });
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await coded("STS-AUTHZEN-0072", "R2. an access request carrying no " +
+              "denial is refused", function () {
+    return pep("POST", AR, caller, asked);
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await coded("STS-AUTHZEN-0074", "R3. an access request for another " +
+              "subject than its denial's is refused", function () {
+    return pep("POST", AR, caller, Object.assign({}, asked, {
+      subject: { type: "user", id: "azc-somebody-else" },
+      denial: denial }));
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await coded("STS-AUTHZEN-0079", "R4. a callback that is not an https " +
+              "endpoint registered for the caller is refused", function () {
+    return pep("POST", AR, caller, Object.assign({}, asked, {
+      denial: denial, callback: { endpoint: "http://azc.example/cb" } }));
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  const key = "azc-" + K.STAMP;
+  const submitted = await pep("POST", AR, caller, Object.assign({}, asked,
+    { denial: denial }), { "Idempotency-Key": key });
+  const task = (submitted.json || {}).task || {};
+  check("R5. the submission is 202 with a pending Task Handle", function () {
+    assert.strictEqual(submitted.status, 202, submitted.text);
+    assert.strictEqual(task.status, "pending");
+  });
+  await coded("STS-AUTHZEN-0076", "R6. the Idempotency-Key reused for a " +
+              "different body is refused", function () {
+    return pep("POST", AR, caller, Object.assign({}, asked, {
+      denial: denial, context: { application: APPLICATION,
+                                 business_justification: "other" } }),
+               { "Idempotency-Key": key });
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await coded("STS-AUTHZEN-0080", "R7. the task asked about by a caller " +
+              "who is not its requester is refused", function () {
+    return pep("GET", new URL(String(task.status_endpoint)).pathname,
+               lonely);
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await K.ok(api("/xacml/authzen/approve-access-request"),
+             { request: task.id }, "approved the access request");
+  await coded("STS-AUTHZEN-0089", "R8. an approval naming no pending " +
+              "request is refused", function () {
+    return K.send(api("/xacml/authzen/approve-access-request"),
+                  { json: { request: task.id } });
+  }, function (r) {
+    assert.ok(r.status >= 400, K.shown(r));
+  });
+  await coded("STS-AUTHZEN-0082", "R9. cancelling a task already approved " +
+              "is refused", function () {
+    return pep("POST", new URL(String(task.status_endpoint)).pathname +
+               "/cancel", caller, {});
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await coded("STS-AUTHZEN-0084", "R10. an approval this realm cannot " +
+              "resolve is not used: the evaluation is false", function () {
+    return pep("POST", PREFIX + "/access/v1/evaluation", caller,
+               Object.assign({}, asked, { context: {
+                 application: APPLICATION,
+                 approval: { id: "apr_nothing-" + K.STAMP } } }));
+  }, function (r) {
+    assert.strictEqual(r.json && r.json.decision, false, r.text);
+  });
+  await K.set(realm, "authzen.accessRequests", false);
+  await coded("STS-AUTHZEN-0070", "R11. the profile switched off refuses " +
+              "an access request", function () {
+    return pep("POST", AR, caller, Object.assign({}, asked,
+                                                 { denial: denial }));
+  }, function (r) {
+    assert.ok(r.status >= 400, r.text);
+  });
+  await K.unset(realm, "authzen.accessRequests");
+  log.debug("Leaving accessRequests().");
+}
+
 async function test() {
   log.debug("Entering test().");
   try {
@@ -429,6 +563,7 @@ async function test() {
     await catalogue();
     await evaluation();
     await batch();
+    await accessRequests();
   } finally {
     await credentials.forgetStored({ get: get, post: post }, K.base, stored);
     await credentials.settleAnchors(K.base, added, null);
@@ -436,4 +571,4 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-K.main(test, 28);
+K.main(test, 40);
