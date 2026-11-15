@@ -210,13 +210,38 @@ impl LiveDir {
             .copied_at
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if at.as_ref() == Some(&(now, realms.clone())) {
-            self.touched
-                .0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clear();
-            return;
+        if let Some((seen, _)) = at.as_ref().filter(|(_, r)| *r == realms) {
+            // What others wrote since — a password set, a sign-in's entry —
+            // is brought in entry by entry; a removal, a realm replaced
+            // whole or a log that no longer reaches back copies again.
+            if let Some(changed) = self.live.changed_since(*seen) {
+                let mut tree =
+                    self.tree.lock().unwrap_or_else(PoisonError::into_inner);
+                let mut whole = true;
+                for (realm_id, key) in &changed {
+                    match sts_store::shadow::EntryLookup::entry_at(
+                        &*self.live,
+                        realm_id,
+                        key,
+                    ) {
+                        Some(e) => tree.restore(realm_id, vec![e]),
+                        None => {
+                            whole = false;
+                            break;
+                        }
+                    }
+                }
+                drop(tree);
+                if whole {
+                    *at = Some((now, realms));
+                    self.touched
+                        .0
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .clear();
+                    return;
+                }
+            }
         }
         let fresh = self.fresh();
         *self.tree.lock().unwrap_or_else(PoisonError::into_inner) = fresh;

@@ -1580,7 +1580,15 @@ pub struct MemoryDirectory {
     /// How many writes it has taken, so a reader that copied it can tell
     /// whether its copy is still current without comparing every entry.
     changes: std::sync::atomic::AtomicU64,
+    /// The newest writes, `(change, realm, key)`, so such a reader can
+    /// bring its copy up to date entry by entry; a realm replaced whole is
+    /// logged with an empty key. Bounded: a reader further behind copies
+    /// again.
+    log: Mutex<std::collections::VecDeque<(u64, String, String)>>,
 }
+
+/// How many writes [`MemoryDirectory::changed_since`] remembers.
+const CHANGE_LOG: usize = 4096;
 
 impl MemoryDirectory {
     /// The writes taken so far. A hot path (asked before every request a
@@ -1589,15 +1597,49 @@ impl MemoryDirectory {
         self.changes.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    fn changed(&self) {
-        self.changes
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    fn changed(&self, realm: &str, key: &str) {
+        let mut log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        let n = self
+            .changes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        log.push_back((n, realm.to_string(), key.to_string()));
+        while log.len() > CHANGE_LOG {
+            log.pop_front();
+        }
+    }
+
+    /// The entries written since change `seen`, `(realm, key)` in the
+    /// order written, or None where the log no longer reaches back that
+    /// far or a realm was replaced whole since. A hot path (asked before
+    /// every request a copy is kept for), so it carries no span.
+    pub fn changed_since(&self, seen: u64) -> Option<Vec<(String, String)>> {
+        let log = self.log.lock().unwrap_or_else(PoisonError::into_inner);
+        let now = self.changes();
+        if now == seen {
+            return Some(Vec::new());
+        }
+        let first = log.front().map_or(u64::MAX, |(n, _, _)| *n);
+        if first > seen + 1 {
+            return None;
+        }
+        let mut out = Vec::new();
+        for (n, realm, key) in log.iter() {
+            if *n <= seen {
+                continue;
+            }
+            if key.is_empty() {
+                return None;
+            }
+            out.push((realm.clone(), key.clone()));
+        }
+        Some(out)
     }
 
     /// Puts an entry under its DN, lower-cased as its key.
     pub fn put(&self, realm: &str, entry: StoredEntry) {
-        self.changed();
         let key = entry.dn.to_lowercase();
+        self.changed(realm, &key);
         self.realms
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -1628,7 +1670,7 @@ impl LiveDirectory for MemoryDirectory {
             .unwrap_or_default()
     }
     fn replace_realm(&self, realm: &str, entries: Vec<StoredEntry>) {
-        self.changed();
+        self.changed(realm, "");
         let rows = entries
             .into_iter()
             .map(|e| (e.dn.to_lowercase(), e))
@@ -1639,7 +1681,7 @@ impl LiveDirectory for MemoryDirectory {
             .insert(realm.to_string(), rows);
     }
     fn apply_entry(&self, realm: &str, key: &str, entry: Option<StoredEntry>) {
-        self.changed();
+        self.changed(realm, key);
         let mut realms =
             self.realms.lock().unwrap_or_else(PoisonError::into_inner);
         let rows = realms.entry(realm.to_string()).or_default();
