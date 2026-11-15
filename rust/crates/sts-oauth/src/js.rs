@@ -177,6 +177,20 @@ pub fn string_of(value: Option<&Json>) -> String {
     }
 }
 
+/// `!!value`: JavaScript's truthiness of a JSON value.
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn truthy(value: Option<&Json>) -> bool {
+    match value {
+        None | Some(Json::Null) => false,
+        Some(Json::Bool(b)) => *b,
+        Some(Json::Number(n)) => {
+            n.as_f64().is_some_and(|f| f != 0.0 && !f.is_nan())
+        }
+        Some(Json::String(t)) => !t.is_empty(),
+        Some(_) => true,
+    }
+}
+
 /// `URLSearchParams#toString()`: application/x-www-form-urlencoded, space
 /// as `+`, and only `*-._` and alphanumerics left as they are.
 pub fn form_encode(pairs: &[(String, String)]) -> String {

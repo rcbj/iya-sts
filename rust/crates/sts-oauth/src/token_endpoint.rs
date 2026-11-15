@@ -1087,6 +1087,19 @@ impl TokenEndpoint {
                 "RFC 6749 section 4.1.3 and OIDC Core section 3.1.3.2: this authorization code was issued to client \"{}\" and is being redeemed by {}.",
                 issued_to, if presented.is_empty() { "a request that names no client".to_string() } else { format!("\"{}\"", presented) }));
         }
+        // RFC 6749 section 4.1.3: redirect_uri is REQUIRED at the token
+        // endpoint when it was in the authorization request, in every mode.
+        // OAuth 2.1 removed it (section 10.2) — PKCE binds the code — and
+        // asks it only of a code minted under the OpenID Connect nonce
+        // exemption (`oauth21.tokenRedirectUriRequired()`).
+        let required = !self.settings.value_of("oauth2.oauth21").as_bool()
+            || js::truthy(record.get("pkce_exempt"));
+        if !s(record.get("redirect_uri")).is_empty()
+            && asked_redirect.is_empty()
+            && required
+        {
+            return self.refusal(codes::STS_OAUTH_0147, 400, "invalid_grant", "RFC 6749 section 4.1.3: redirect_uri is required in the Token Request when it was present in the authorization request, and must be identical. It is missing.");
+        }
         if self.bcp_mode().enabled
             && js::string_of(record.get("code_challenge")).is_empty()
             && !s(body.get("code_verifier")).is_empty()
