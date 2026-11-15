@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-credentials"
+version = "0.1.0"
+description = "The credentials a sign-in step checks — passwords, authenticator apps, recovery codes, app passwords, WebAuthn passkeys, emailed codes — and the evidence each puts on an authentication event."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-pki.workspace = true
+base64.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

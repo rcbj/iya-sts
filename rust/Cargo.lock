@@ -2435,6 +2435,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-credentials"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "sts-pki",
+ "tracing",
+]
+
+[[package]]
 name = "sts-crypto"
 version = "0.1.0"
 dependencies = [
