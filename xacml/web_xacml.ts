@@ -1035,6 +1035,34 @@ class XacmlPage {
     return XacmlPage.pepHref(name) + '#' + XacmlPage.PROXY_TAB;
   }
 
+  // THE LISTENER TAB'S TWO SUB-TABS (rcbj, 2026-11-15: "Organize the UIs,
+  // the breadcrumb trail, and the multi-layer tabs the same way that the
+  // Reverse Proxy subtabs have now"), each an anchor a link or a crumb
+  // lands on.
+  static readonly LISTENER_TAB = 'xacml-pep-tab-listener';
+  static readonly LISTENERS_CONFIGURED_TAB = 'xacml-pep-listeners-configured';
+  static readonly LISTENERS_NEW_TAB = 'xacml-pep-listeners-new';
+
+  // ONE LISTENER's PAGE (rcbj, 2026-11-15: "an option to drill down and
+  // view / edit the full listener configuration for each configured
+  // listener"): a listener id on Configured Listeners drills down to
+  // `/admin/xacml/pep/listener`, the environment's four included.
+  static listenerHref(name: string, listener: string): string {
+    return '/admin/xacml/pep/listener?pep=' + encodeURIComponent(name) +
+      '&listener=' + encodeURIComponent(listener);
+  }
+
+  // The PEP's Listener tab, the trail's crumb for it.
+  static listenerTabHref(name: string): string {
+    return XacmlPage.pepHref(name) + '#' + XacmlPage.LISTENER_TAB;
+  }
+
+  // The way back from a listener's page: the Listener tab, on its
+  // Configured Listeners.
+  static listenersHref(name: string): string {
+    return XacmlPage.pepHref(name) + '#' + XacmlPage.LISTENERS_CONFIGURED_TAB;
+  }
+
   // THE REMOTE PEPS TAB AS A CRUMB (rcbj, 2026-11-14): a PEP's page and a
   // route's name the tab they were opened from, by the tab's own label.
   static pepsTabCrumb(t: Json): { label: string; href: string } {
@@ -1675,12 +1703,38 @@ class XacmlPage {
         : '') + renew;
   }
 
+  // WHERE A LISTENER LISTENS, as the PEP reported it, else as defined.
+  static listenerWhere(one: Json): string {
+    const said = one.reported;
+    return said && said.port
+      ? (said.address || '0.0.0.0') + ':' + said.port
+      : (one.definition
+          ? one.definition.address + ':' + one.definition.port
+          : '');
+  }
+
+  // The source cell: environment or defined here, and for the
+  // environment's the variables that set it.
+  static listenerSource(t: Json, words: Json, one: Json): string {
+    return words.source[one.source] +
+      (one.source === 'environment'
+        ? '<div class="sub">' + t.html('consoleXacml.listeners.defaultPort',
+            { env: one.env, port: one.defaultPort }) + '</div>' +
+          (one.enable
+            ? '<div class="sub">' +
+              t.html('consoleXacml.listeners.enableHint',
+                     { enable: one.enable }) + '</div>' : '')
+        : '');
+  }
+
   /**
-   * Draws a remote PEP's Listener tab (#1760): every listener it has —
-   * the environment's four, read-only, and the ones defined here — with its
-   * protocol, address, purpose, state, certificate and source, the issue
-   * control of the environment's pair, and the forms that define, edit,
-   * remove and renew the others.
+   * Draws a remote PEP's Listener tab (#1760) in two sub-tabs (rcbj,
+   * 2026-11-15), as the Reverse proxy tab is: **Configured Listeners**,
+   * every listener it has — the environment's four and the ones defined
+   * here — with its protocol, address, purpose, state, certificate and
+   * source, each id a link to the listener's own page, where it is edited,
+   * renewed and removed; and **Create a new listener**, the form that
+   * defines one and the environment's HTTPS pair with its Issue control.
    *
    * @param ctx - the render context
    * @param json - `pepsJson(name)`'s answer
@@ -1694,52 +1748,23 @@ class XacmlPage {
     const rows: Json[] = row.listenerRows || [];
     const reported = !!row.listenersInUse;
     const body = rows.map(function (one: Json) {
-      const said = one.reported;
-      const where = said && said.port
-        ? (said.address || '0.0.0.0') + ':' + said.port
-        : (one.definition
-            ? one.definition.address + ':' + one.definition.port
-            : '');
+      const where = self.listenerWhere(one);
       const state = self.listenerState(t, words, one);
-      const actions = one.source === 'environment'
-        ? '<span class="sub">' + t.html('consoleXacml.listeners.envOnly',
-            { env: one.env }) + '</span>'
-        : (ctx.write
-            ? '<form method="post" action="/admin/xacml/peps" ' +
-              'class="inline">' + self.hidden('action', 'remove-pep-listener') +
-              self.hidden('name', row.name) +
-              self.hidden('listener', one.id) + '<button type="submit">' +
-              t.html('consoleXacml.listeners.remove') + '</button></form>' +
-              (one.protocol === 'https'
-                ? ' <form method="post" action="/admin/xacml/peps" ' +
-                  'class="inline">' +
-                  self.hidden('action', 'renew-pep-listener-certificate') +
-                  self.hidden('name', row.name) +
-                  self.hidden('listener', one.id) + '<button type="submit">' +
-                  t.html('consoleXacml.listeners.renew') + '</button></form>'
-                : '')
-            : '<span class="sub">' + t.html('consoleXacml.readOnly') +
-              '</span>');
-      return '<tr id="pep-listener-' + esc(one.id) + '"><th><code>' +
-        esc(one.id) + '</code></th><td>' + words.source[one.source] +
-        (one.source === 'environment'
-          ? '<div class="sub">' + t.html('consoleXacml.listeners.defaultPort',
-              { env: one.env, port: one.defaultPort }) + '</div>' +
-            (one.enable
-              ? '<div class="sub">' +
-                t.html('consoleXacml.listeners.enableHint',
-                       { enable: one.enable }) + '</div>' : '')
-          : '') +
+      // EVERY ID A LINK TO ITS OWN PAGE (rcbj, 2026-11-15), the
+      // environment's four too, whose page is read-only.
+      return '<tr id="pep-listener-' + esc(one.id) + '"><th><a href="' +
+        esc(self.listenerHref(row.name, one.id)) + '"><code>' +
+        esc(one.id) + '</code></a></th><td>' +
+        self.listenerSource(t, words, one) +
         '</td><td>' + (one.protocol === 'https' ? 'HTTPS' : 'HTTP') +
         '</td><td>' + (where ? '<code>' + esc(where) + '</code>'
                              : '<span class="sub">' +
                                t.html('consoleXacml.listeners.notReported') +
                                '</span>') +
         '</td><td>' + words.purpose[one.purpose] + '</td><td>' + state +
-        '</td><td>' + self.listenerCertificate(t, one) + '</td><td>' +
-        actions + '</td></tr>';
+        '</td><td>' + self.listenerCertificate(t, one) + '</td></tr>';
     }).join('');
-    const table = self.wide(t, 'consoleXacml.pepPage.tab.listener',
+    const table = self.wide(t, 'consoleXacml.listeners.tab.configured',
       '<table><tr>' +
       self.th(t, 'consoleXacml.listeners.th.listener',
               'consoleXacml.tip.listeners.listener') +
@@ -1755,27 +1780,12 @@ class XacmlPage {
               'consoleXacml.tip.listeners.state') +
       self.th(t, 'consoleXacml.listeners.th.certificate',
               'consoleXacml.tip.listeners.certificate') +
-      self.th(t, 'consoleXacml.th.actions',
-              'consoleXacml.tip.listeners.actions') +
       '</tr>' + body + '</table>');
-    const defined = (row.listeners || []) as Json[];
     const catalogue = json.listenersCatalogue || {};
-    const forms = ctx.write
-      ? '<h3>' + t.html('consoleXacml.listeners.addHeading') + '</h3>' +
-        (catalogue.plainHttpProxyAllowed === false
-          ? '<p class="sub">' +
-            t.html('consoleXacml.listeners.plainProxyRefused') + '</p>' : '') +
-        self.listenerForm(t, json, row.name, null) +
-        defined.map(function (one: Json) {
-          return '<details><summary>' +
-            t.html('consoleXacml.listeners.editHeading', { id: one.id }) +
-            '</summary>' + self.listenerForm(t, json, row.name, one) +
-            '</details>';
-        }).join('')
-      : '';
-    return kit.note('<p>' + t.html('consoleXacml.listeners.lead') +
-                    '</p><p>' + t.html('consoleXacml.listeners.lead2') +
-                    '</p>', t.text('consoleXacml.pepPage.tab.listener')) +
+    const configured = kit.note('<p>' +
+      t.html('consoleXacml.listeners.lead') + '</p><p>' +
+      t.html('consoleXacml.listeners.lead2') + '</p>',
+      t.text('consoleXacml.pepPage.tab.listener')) +
       (reported ? ''
         : '<p class="sub">' + t.html('consoleXacml.listeners.olderPep') +
           '</p>') +
@@ -1783,13 +1793,219 @@ class XacmlPage {
         ? '<div class="sub xacml-alert">' +
           t.html('consoleXacml.listeners.problem') + ' ' +
           esc(row.listenersProblem) + '</div>' : '') +
-      table + forms +
+      table + '<p class="sub">' + t.html('consoleXacml.listeners.openOne') +
+      '</p>';
+    // CREATE A NEW LISTENER: the definition form, then the environment's
+    // HTTPS pair and its Issue control. A reader sees the pair, which
+    // `pepListener()` draws without its form.
+    const created = (ctx.write
+      ? '<h3>' + t.html('consoleXacml.listeners.addHeading') + '</h3>' +
+        (catalogue.plainHttpProxyAllowed === false
+          ? '<p class="sub">' +
+            t.html('consoleXacml.listeners.plainProxyRefused') + '</p>' : '') +
+        self.listenerForm(t, json, row.name, null)
+      : '') +
       '<h3>' + t.html('consoleXacml.listeners.envPairHeading') + '</h3>' +
       '<p>' + t.html('consoleXacml.listeners.envPairLead') + '</p>' +
       self.pepListener(ctx, json, row, true) +
       kit.note('<p>' + t.html('consoleXacml.peps.cert1') + '</p><p>' +
                t.html('consoleXacml.peps.cert2') + '</p>',
                t.text('consoleXacml.peps.certLabel'));
+    const html: Json = {};
+    html[XacmlPage.LISTENERS_CONFIGURED_TAB] = configured;
+    html[XacmlPage.LISTENERS_NEW_TAB] = created;
+    return kit.subTabbedPanels(t.text('consoleXacml.pepPage.tab.listener'),
+      self.listenerSubTabs(t).map(function (one: Json) {
+        return Object.assign({}, one, { html: html[one.id] });
+      }));
+  }
+
+  /**
+   * Draws one listener's page (rcbj, 2026-11-15: "view / edit the full
+   * listener configuration for each configured listener"),
+   * `/admin/xacml/pep/listener?pep=<name>&listener=<id>`, laid out as a
+   * route's page: the three rows of tabs with Configured Listeners
+   * current, "← Back to listeners", "Listener detail: <id>", then its
+   * whole configuration and what the PEP reported — source, protocol,
+   * purpose, address and port, state and reason, and for HTTPS its names,
+   * key and the certificate it serves — and, for one defined here, the
+   * edit form, Renew and Remove behind a confirmation. One of the
+   * environment's four is the same page, read-only, naming the variables
+   * that set it. Drawn from `GET /admin-api/xacml/peps?pep=<name>`: the
+   * listener is a row of the PEP's `listenerRows`, so the operation is
+   * unchanged (rule 7).
+   *
+   * @param ctx - the render context; `ctx.query.listener` names it
+   * @param json - `GET /admin-api/xacml/peps?pep=<name>`'s answer
+   * @returns the body as HTML
+   */
+  static listenerDetail(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const query = ctx.query || {};
+    const name = String(json.pep || query.pep || '');
+    const id = String(query.listener || '');
+    const back = '<p><a href="' + esc(self.listenersHref(name)) + '">' +
+      t.html('consoleXacml.listenerPage.back', { pep: name }) + '</a></p>';
+    const row = json.found ? (json.peps || [])[0] : null;
+    if (!row) {
+      return '<p class="warn">' + t.html('consoleXacml.pepPage.notFound',
+        { name: name }) + '</p>' + back;
+    }
+    const one = (row.listenerRows || []).filter(function (each: Json) {
+      return each.id === id;
+    })[0];
+    if (!one) {
+      return '<p class="warn">' + t.html('consoleXacml.listenerPage.notFound',
+        { listener: id, pep: name }) + '</p>' + back;
+    }
+    const words = self.listenerWords(t);
+    // The definition as stored (`row.listeners`), which the edit form
+    // posts back whole; else the one the row was joined with.
+    const d = (row.listeners || []).filter(function (each: Json) {
+      return each.id === one.id;
+    })[0] || one.definition || {};
+    const environment = one.source === 'environment';
+    const https = one.protocol === 'https';
+    const where = self.listenerWhere(one);
+    const code = function (value: unknown): string {
+      return value === undefined || value === null || value === ''
+        ? '<span class="sub">' + t.html('consoleXacml.listeners.notReported') +
+          '</span>'
+        : '<code>' + esc(String(value)) + '</code>';
+    };
+    const list = function (values: unknown): string {
+      const all = Array.isArray(values) ? values as string[] : [];
+      return all.length ? kit.codeList(all)
+        : '<span class="sub">' + t.html('consoleXacml.listenerPage.none') +
+          '</span>';
+    };
+    const line = function (labelKey: string, tipKey: string,
+                           value: string): string {
+      return '<tr><th' + self.tipOf(t, tipKey) + '>' + t.html(labelKey) +
+        '</th><td>' + value + '</td></tr>';
+    };
+    const said = one.reported || {};
+    const config = '<h3>' + t.html('consoleXacml.listenerPage.configHeading') +
+      '</h3>' + self.wide(t, 'consoleXacml.listenerPage.configHeading',
+      '<table>' +
+      line('consoleXacml.listeners.form.id', 'consoleXacml.tip.listener.id',
+           code(one.id)) +
+      line('consoleXacml.listeners.th.source',
+           'consoleXacml.tip.listeners.source',
+           self.listenerSource(t, words, one)) +
+      line('consoleXacml.listeners.form.protocol',
+           'consoleXacml.tip.listener.protocol', https ? 'HTTPS' : 'HTTP') +
+      line('consoleXacml.listeners.form.purpose',
+           'consoleXacml.tip.listener.purpose', words.purpose[one.purpose]) +
+      line('consoleXacml.listeners.form.address',
+           'consoleXacml.tip.listener.address',
+           code(environment ? said.address : d.address)) +
+      line('consoleXacml.listeners.form.port',
+           'consoleXacml.tip.listener.port',
+           code(environment ? (said.port || one.defaultPort) : d.port)) +
+      (https && !environment
+        ? line('consoleXacml.listeners.form.dnsNames',
+               'consoleXacml.tip.listener.dnsNames', list(d.dnsNames)) +
+          line('consoleXacml.listeners.form.ipAddresses',
+               'consoleXacml.tip.listener.ipAddresses',
+               list(d.ipAddresses)) +
+          line('consoleXacml.listeners.form.keyAlg',
+               'consoleXacml.tip.listener.keyAlg', code(d.keyAlg))
+        : '') +
+      '</table>');
+    const state = '<h3>' + t.html('consoleXacml.listenerPage.stateHeading') +
+      '</h3>' + self.wide(t, 'consoleXacml.listenerPage.stateHeading',
+      '<table>' +
+      line('consoleXacml.listeners.th.address',
+           'consoleXacml.tip.listeners.address',
+           where ? '<code>' + esc(where) + '</code>'
+                 : '<span class="sub">' +
+                   t.html('consoleXacml.listeners.notReported') + '</span>') +
+      line('consoleXacml.listeners.th.state',
+           'consoleXacml.tip.listeners.state',
+           self.listenerState(t, words, one)) +
+      line('consoleXacml.listeners.th.certificate',
+           'consoleXacml.tip.listeners.certificate',
+           self.listenerCertificate(t, one)) +
+      '</table>');
+    const lead = kit.note('<p>' + t.html(environment
+      ? 'consoleXacml.listenerPage.envLead'
+      : 'consoleXacml.listenerPage.lead', { env: one.env || '' }) +
+      '</p>');
+    const titled = kit.drillTitle(
+      t.html('consoleXacml.listenerPage.title', { listener: one.id }),
+      (https ? 'HTTPS' : 'HTTP') + (where
+        ? ' <code>' + esc(where) + '</code>' : ''),
+      self.listenersHref(name),
+      t.html('consoleXacml.listenerPage.backToListeners'));
+    let acts = '';
+    if (environment) {
+      acts = '<p class="sub">' + t.html('consoleXacml.listeners.envOnly',
+        { env: one.env }) + '</p>';
+    } else if (!ctx.write) {
+      acts = '<span class="sub">' + t.html('consoleXacml.readOnly') +
+        '</span>';
+    } else {
+      acts = '<h3>' + t.html('consoleXacml.listeners.editHeading',
+        { id: one.id }) + '</h3>' +
+        self.listenerForm(t, json, name, Object.assign({ id: one.id,
+          protocol: one.protocol, purpose: one.purpose }, d)) +
+        '<p class="sub">' + t.html('consoleXacml.listenerPage.saveNote') +
+        '</p>' +
+        (https
+          ? '<h3>' + t.html('consoleXacml.listenerPage.renewHeading') +
+            '</h3><form method="post" action="/admin/xacml/peps">' +
+            self.hidden('action', 'renew-pep-listener-certificate') +
+            self.hidden('name', name) + self.hidden('listener', one.id) +
+            '<button type="submit">' +
+            t.html('consoleXacml.listeners.renew') + '</button></form>'
+          : '') +
+        // REMOVE, BEHIND A CONFIRMATION: an unnamed required checkbox, as
+        // the route page's, so the operation's body is unchanged.
+        '<h3>' + t.html('consoleXacml.listenerPage.removeHeading') +
+        '</h3><form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'remove-pep-listener') +
+        self.hidden('name', name) + self.hidden('listener', one.id) +
+        '<label><input type="checkbox" required> ' +
+        t.html('consoleXacml.listenerPage.removeConfirm',
+               { listener: one.id }) +
+        '</label> <button type="submit">' +
+        t.html('consoleXacml.listeners.remove') + '</button></form>';
+    }
+    return self.withinListenerTabs(t, name,
+      titled + lead + config + state + acts) + back;
+  }
+
+  // `/admin/xacml/pep/listener` WITHOUT A LISTENER: every registered PEP's
+  // listeners, each a link to its page, so the address alone still leads
+  // somewhere (the route page's `routeIndex()`).
+  static listenerIndex(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const rows = (json.peps || []).filter(function (row: Json) {
+      return (row.listenerRows || []).length;
+    }).map(function (row: Json) {
+      return '<tr><td><a href="' + esc(self.listenersHref(row.name)) +
+        '"><code>' + esc(row.name) + '</code></a></td><td>' +
+        row.listenerRows.map(function (one: Json) {
+          return '<a href="' + esc(self.listenerHref(row.name, one.id)) +
+            '"><code>' + esc(one.id) + '</code></a> <span class="sub">' +
+            (one.protocol === 'https' ? 'HTTPS' : 'HTTP') + '</span>';
+        }).join('<br>') + '</td></tr>';
+    }).join('');
+    return kit.note('<p>' + t.html('consoleXacml.listenerPage.indexLead') +
+                    '</p>') +
+      (rows
+        ? self.wide(t, 'consoleXacml.listeners.tab.configured',
+          '<table><tr><th>PEP</th>' +
+          self.th(t, 'consoleXacml.listeners.th.listener',
+                  'consoleXacml.tip.listeners.listener') + '</tr>' + rows +
+          '</table>')
+        : '<p class="sub">' + t.html('consoleXacml.listenerPage.noListeners') +
+          '</p>') +
+      '<p><a href="/admin/xacml#xacml-tab-peps">' +
+      t.html('consoleXacml.pepPage.back') + '</a></p>';
   }
 
   // ---------------------------------------------------------------------------
@@ -3372,19 +3588,54 @@ class XacmlPage {
   // this page trapped the reader on it.
   static withinPepTabs(t: Json, name: string, html: string,
                        write: boolean): string {
+    return XacmlPage.withinPepSubTab(t, name, XacmlPage.PROXY_TAB,
+      XacmlPage.proxySubTabs(t).filter(function (one: Json) {
+        return write || one.id !== XacmlPage.PROXY_NEW_ROUTE_TAB;
+      }), XacmlPage.PROXY_ROUTES_TAB, html);
+  }
+
+  // THE LISTENER TAB'S SUB-TABS, in order, by their labels (rcbj,
+  // 2026-11-15).
+  static listenerSubTabs(t: Json): Array<{ id: string; label: string }> {
+    return [
+      { id: XacmlPage.LISTENERS_CONFIGURED_TAB,
+        label: t.text('consoleXacml.listeners.tab.configured') },
+      { id: XacmlPage.LISTENERS_NEW_TAB,
+        label: t.text('consoleXacml.listeners.tab.new') }
+    ];
+  }
+
+  // A LISTENER'S PAGE KEEPS THE TABS IT WAS OPENED FROM, as a route's does:
+  // the XACML page's bar with Remote PEPs current, the PEP page's with
+  // Listener current, its sub-tabs with Configured Listeners current, and
+  // the listener inside that.
+  static withinListenerTabs(t: Json, name: string, html: string): string {
+    return XacmlPage.withinPepSubTab(t, name, XacmlPage.LISTENER_TAB,
+      XacmlPage.listenerSubTabs(t), XacmlPage.LISTENERS_CONFIGURED_TAB, html);
+  }
+
+  // THE THREE ROWS A DRILL-DOWN OF A PEP's SUB-TAB IS DRAWN IN, one
+  // mechanism for the route's page and the listener's: `html` in sub-tab
+  // `subId` of the PEP page's tab `tabId`, inside the XACML page's bar.
+  // Every tab and sub-tab, the current ones included, links to the PEP
+  // page at that tab's anchor (rule 7a).
+  static withinPepSubTab(t: Json, name: string, tabId: string,
+                         subTabs: Array<{ id: string; label: string }>,
+                         subId: string, html: string): string {
     const self = this;
     const pep = self.pepHref(name);
-    const sub = kit.subTabbedPanels(t.text('consoleXacml.pepPage.tab.proxy'),
-      self.proxySubTabs(t).filter(function (one: Json) {
-        return write || one.id !== XacmlPage.PROXY_NEW_ROUTE_TAB;
-      }).map(function (one: Json) {
+    const label = (self.pepTabs(t).filter(function (one: Json) {
+      return one.id === tabId;
+    })[0] || { label: '' }).label;
+    const sub = kit.subTabbedPanels(label,
+      subTabs.map(function (one: Json) {
         return Object.assign({}, one, { href: pep + '#' + one.id },
-          one.id === XacmlPage.PROXY_ROUTES_TAB ? { html: html } : {});
+          one.id === subId ? { html: html } : {});
       }));
     return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
       self.pepTabs(t).map(function (one: Json) {
         return Object.assign({}, one, { href: pep + '#' + one.id },
-          one.id === XacmlPage.PROXY_TAB ? { html: sub } : {});
+          one.id === tabId ? { html: sub } : {});
       })));
   }
 

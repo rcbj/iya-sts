@@ -128,6 +128,7 @@
   "title.xacml-monitor": "XACML 决策",
   "title.xacml-pep": "远程 PEP",
   "title.xacml-pep-route": "远程 PEP 路由",
+  "title.xacml-pep-listener": "远程 PEP 监听器",
   "title.xacml-peps": "远程 PEP",
   "title.xacml-policies": "XACML 策略",
   "title.backup-codes": "恢复码",

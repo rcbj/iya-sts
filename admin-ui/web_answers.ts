@@ -1258,6 +1258,21 @@ class WebAnswers {
           pep: pep }).toString() + '#xacml-pep-proxy-routes';
       }
     }
+    // A REMOTE PEP LISTENER'S OWN PAGE (rcbj, 2026-11-15), the route
+    // page's arrangement: a save stays on the listener (its id is fixed),
+    // a removal lands on the PEP's Configured Listeners.
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep/listener') {
+      const pep = String(at.searchParams.get('pep') || '');
+      if (action === 'set-pep-listener' && fields && fields.id) {
+        return '/admin/xacml/pep/listener?' + new URLSearchParams({
+          pep: pep, listener: String(fields.id) }).toString();
+      }
+      if (action === 'remove-pep-listener') {
+        return '/admin/xacml/pep?' + new URLSearchParams({
+          pep: pep }).toString() + '#xacml-pep-listeners-configured';
+      }
+    }
     if (page === '/admin/xacml/peps' && at.pathname === '/admin/xacml/pep') {
       const pep = String(at.searchParams.get('pep') ||
                          (fields && fields.name) || '');
@@ -1269,6 +1284,11 @@ class WebAnswers {
       if (action === 'remove-pep-route') {
         return '/admin/xacml/pep?' + new URLSearchParams({
           pep: pep }).toString() + '#xacml-pep-proxy-routes';
+      }
+      // A LISTENER DEFINED on Create a new listener lands on its own page.
+      if (action === 'set-pep-listener' && fields && fields.id) {
+        return '/admin/xacml/pep/listener?' + new URLSearchParams({
+          pep: pep, listener: String(fields.id) }).toString();
       }
     }
     return null;

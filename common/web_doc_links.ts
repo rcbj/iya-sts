@@ -186,6 +186,7 @@ const CONSOLE: Record<string, string> = {
   // One remote PEP's page (#1760); its tabs follow the page's slug.
   '/admin/xacml/pep': 'remote-pep.html#its-page-on-the-console',
   '/admin/xacml/pep/route': 'remote-pep.html#a-routes-own-page',
+  '/admin/xacml/pep/listener': 'remote-pep.html#a-listeners-own-page',
   '/admin/backup-codes': 'authentication.html#recovery-codes',
   '/admin/persistence': 'persistence.html',
   '/admin/totp': 'authentication.html#totp-mfa',

@@ -1165,7 +1165,7 @@ as it always has; both naming different PEPs is refused. Its tabs:
 | Overview | what it registered as — its certificate subject, directory identity (and whether that entry is a [service account](#the-peps-entry-is-a-service-account), with its owners) and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging and Forget |
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
-| Listener | every listener it has — the four its environment binds, read-only, and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source; the forms that define, edit, remove and renew them; and the environment's HTTPS pair with Issue or Reissue (below) |
+| Listener | two sub-tabs: **Configured Listeners**, every listener it has — the four its environment binds and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source, each id a link to the listener's own page (below); and **Create a new listener**, the form that defines one and the environment's HTTPS pair with Issue or Reissue (below). Each listener is edited, renewed and removed on its own page |
 | Reverse proxy | three sub-tabs: **Configured Routes**, whether the proxy is enabled, its upstream and public base URL, and its routes as a table, each id a link to the route's own page (below) and each application linked; **Create a New Route**, the form that adds one; and **Manifest**, the whole configuration document with Save, Remove, Download and Load from file (below). Each route, its application included, is edited on its own page |
 | Signal streams | its CAEP/RISC stream health: the totals, then a table with one row per stream (below) |
 
@@ -1179,8 +1179,14 @@ same things.
 
 ### Its listeners
 
-The **Listener** tab is modelled on Server configuration → Listeners. Its
-table has one row per listener the PEP has:
+The **Listener** tab is modelled on Server configuration → Listeners, in
+two sub-tabs laid out as the Reverse proxy tab's are. **Configured
+Listeners** (`#xacml-pep-listeners-configured`) is the table, one row per
+listener the PEP has, each id a link to [the listener's own
+page](#a-listeners-own-page). **Create a new listener**
+(`#xacml-pep-listeners-new`) holds the form that defines one — once it is
+saved, the new listener's page opens — and the environment's HTTPS pair
+with its Issue control. The listeners are:
 
 * **The four its environment binds** — `api-http` (`PEP_PORT`), `api-https`
   (`PEP_HTTPS_PORT`), `proxy-http` (`PEP_PROXY_PORT`) and `proxy-https`
@@ -1238,6 +1244,38 @@ in the clear it is right only behind something that terminates TLS.
 * **A port that will not bind** is reported `failed` and tried again after
   the next pull (`STS-XPEP-0103`); the others are unaffected.
 
+### A listener's own page
+
+**Click a listener's id** in the Configured Listeners table to open
+`/admin/xacml/pep/listener?pep=<name>&listener=<id>`. It is laid out as [a
+route's own page](#a-routes-own-page): three rows of tabs — the XACML
+page's with **Remote PEPs** open, the PEP page's with **Listener** open,
+and the Listener sub-tabs with **Configured Listeners** open and the
+listener drawn in it — each tab a link to its own page and anchor. Just
+below the tab rows is **← Back to listeners**, then the heading **Listener
+detail: <id>** with its protocol and address. The trail is *Admin console ›
+XACML › Remote PEPs › the PEP › Listener › Configured Listeners › the
+listener*.
+
+* **Configuration**: the id, source, protocol, purpose, address and port,
+  and for an HTTPS listener defined here its DNS names, IP addresses and
+  key algorithm.
+* **What the PEP reported**: where it listens, its state and why, and the
+  certificate it serves (subject, names, issuer, validity, serial and
+  SHA-256 fingerprint) beside the one this realm issued.
+* **For a listener defined here**: the edit form (every value but the id,
+  saved by `set-pep-listener` through the same checks as the create form),
+  **Renew the certificate** for HTTPS, and **Remove** behind a
+  confirmation box. A save stays on the page; a removal opens Configured
+  Listeners.
+* **For one of the environment's four**: the same page, read-only, with
+  the variable that sets its port (and, for a plain-HTTP one, the switch
+  that turns it on), since only the PEP's environment changes it.
+
+The page answers `GET /admin-api/xacml/peps?pep=<name>`: the listener is a
+row of that PEP's `listenerRows`, so the management API has no operation
+of its own for it.
+
 ### Its routes, one at a time
 
 The **Create a New Route** sub-tab of the **Reverse proxy** tab
@@ -1262,13 +1300,17 @@ API, though the console no longer has a form for it.
 
 **Click a route's id** in the Configured Routes table to open
 `/admin/xacml/pep/route?pep=<name>&route=<id>`. The trail is *Admin
-console › XACML › Remote PEPs › the PEP › Reverse proxy › the route*: the
-PEP crumb opens the PEP's page and the Reverse proxy crumb its Configured
-Routes. The page draws three rows of tabs: the XACML page's, with
-**Remote PEPs** open; inside it the PEP page's, with **Reverse proxy**
-open; and inside that the sub-tabs, with **Configured Routes** open and the
-route drawn in it. Every other XACML tab opens `/admin/xacml` at that tab,
-and every other PEP tab and sub-tab opens the PEP's page at that tab. A
+console › XACML › Remote PEPs › the PEP › Reverse proxy › Configured Routes
+› the route*: the PEP crumb opens the PEP's page, the Reverse proxy crumb
+its Reverse proxy tab and the Configured Routes crumb that sub-tab. The
+page draws three rows of tabs: the XACML page's, with **Remote PEPs**
+open; inside it the PEP page's, with **Reverse proxy** open; and inside
+that the sub-tabs, with **Configured Routes** open and the route drawn in
+it. Every tab, the open ones included, is a link: an XACML tab opens
+`/admin/xacml` at that tab, and a PEP tab or sub-tab opens the PEP's page
+at that tab, so **Configured Routes** leads back to the list. Just below
+the tab rows is **← Back to routes**, then the heading **Route detail:
+<id>** with the route's path. A
 PEP's own page draws the first two rows the same way.
 The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
 `routeDetail` member holds what the page draws.

@@ -55,6 +55,11 @@
 //      PEPs › the PEP, and a route's adds › Reverse proxy › Configured
 //      Routes › the route, each tab a crumb linking to that tab, built by
 //      the runtime's drawView().
+//   LS/LD/LT. THE LISTENER TAB'S SUB-TABS AND A LISTENER'S OWN PAGE (rcbj,
+//      2026-11-15): Configured Listeners and Create a new listener; each
+//      listener id, the environment's too, a link to a page laid out as a
+//      route's, with its full configuration and the edit, renew and
+//      remove controls; its trail; where a save and a removal land.
 //   K. NO TAB TRAPS (rcbj, 2026-11-15): every tab of a route page's three
 //      rows links to the page it names, the current ones too, and the
 //      runtime navigates on it; the panel opens with Back to routes, then
@@ -676,15 +681,18 @@ async function run(t) {
           '<a href="#xacml-pep-tab-proxy">Reverse proxy</a>' +
           '<a href="#xacml-pep-tab-signals">Signal streams</a></nav>',
           'X5. its second row: its own tabs, each a panel of the page');
-  t.check(pepBars.length === 3 &&
-          /^<nav class="tabbar subbar" aria-label="Reverse proxy">/
+  t.check(pepBars.length === 4 &&
+          /^<nav class="tabbar subbar" aria-label="Listener">/
             .test(pepBars[2] || '') &&
+          /^<nav class="tabbar subbar" aria-label="Reverse proxy">/
+            .test(pepBars[3] || '') &&
           panelOf(pepPage.split('id="xacml-pep-tab-proxy">')[1] || '',
                   'xacml-pep-proxy-routes') !== '' &&
           pepPage.indexOf('<section class="tabpanel first" ' +
                           'id="xacml-tab-peps"><div class="tabs ' +
                           'xacml-pep-pages">') >= 0,
-          'X6. two rows of tabs; the Reverse proxy sub-tabs inside its tab',
+          'X6. two rows of tabs; the Listener and Reverse proxy sub-tabs ' +
+          'inside their tabs',
           String(pepBars.length));
 
   // -------------------------------------------------------------------------
@@ -1155,6 +1163,179 @@ async function run(t) {
           'orders-api',
           'T2. a route\'s page: Admin console › XACML › Remote PEPs › the ' +
           'PEP › Reverse proxy › Configured Routes › the route');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== LS/LD/LT. the Listener sub-tabs and a listener\'s page ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): Configured Listeners and Create a new listener, laid
+  // out as the Reverse proxy sub-tabs; each listener id a link to its own
+  // page, the environment's four read-only, drawn as a route's page is.
+  const pub = { id: 'public-https', protocol: 'https', purpose: 'proxy',
+                address: '0.0.0.0', port: 8443,
+                dnsNames: ['app.example.test'], ipAddresses: ['10.0.0.5'],
+                keyAlg: 'ec-p384', renew: 1 };
+  const pubRow = { id: 'public-https', source: 'service', protocol: 'https',
+    purpose: 'proxy', definition: pub,
+    reported: { state: 'listening', reason: 'none', address: '0.0.0.0',
+      port: 8443, renew: 1,
+      certificate: { subject: 'CN=pep-1', subjectAltName: 'DNS:app.example.test',
+        issuer: 'CN=Remote PEP listeners', validFrom: '2026-11-01',
+        validTo: '2027-11-01', serialHex: '0A1B', fingerprint256: 'AB:CD' } } };
+  const envHttp = envRow('api-http', 'http', 'PEP_HTTP', null);
+  const lpep = { name: 'pep-1', proxy: proxy, proxyRoutes: [],
+                 listeners: [pub], listenersInUse: { at: 'x' },
+                 listenerRows: [envHttp, pubRow] };
+  const lJson = { pep: 'pep-1', found: true, applicationChoices: [],
+    listenersCatalogue: { keyAlgorithms: ['ec-p256', 'ec-p384'],
+                          defaultKeyAlg: 'ec-p256' },
+    listenerCertificates: { keyAlgorithms: ['ES256'],
+                            defaultKeyAlg: 'ES256' },
+    peps: [lpep] };
+  const lTab = XacmlPage.listenersBody(writer, lJson, lpep);
+  const lSub = (lTab.match(/<nav class="tabbar subbar"[^>]*>[\s\S]*?<\/nav>/) ||
+                [''])[0];
+  t.equal(lSub, '<nav class="tabbar subbar" aria-label="Listener"><a ' +
+          'class="first" href="#xacml-pep-listeners-configured">Configured ' +
+          'Listeners</a><a href="#xacml-pep-listeners-new">Create a new ' +
+          'listener</a></nav>',
+          'LS1. the Listener tab\'s sub-tabs on the PEP page, each its anchor');
+  const lConfigured = panelOf(lTab, 'xacml-pep-listeners-configured');
+  const lNew = panelOf(lTab, 'xacml-pep-listeners-new');
+  t.check(lConfigured.indexOf('<a href="/admin/xacml/pep/listener?pep=pep-1' +
+                              '&amp;listener=public-https"><code>' +
+                              'public-https</code></a>') >= 0 &&
+          lConfigured.indexOf('<a href="/admin/xacml/pep/listener?pep=pep-1' +
+                              '&amp;listener=api-http"><code>api-http' +
+                              '</code></a>') >= 0 &&
+          lConfigured.indexOf('<form') < 0,
+          'LS2. Configured Listeners: the table, every id (the environment\'s ' +
+          'too) a link to its page, no form', lConfigured);
+  t.check(lNew.indexOf('value="set-pep-listener"') >= 0 &&
+          lNew.indexOf('Define a listener') >= 0 &&
+          lNew.indexOf('The environment\'s HTTPS pair') >
+            lNew.indexOf('Define a listener') &&
+          lNew.indexOf('remove-pep-listener') < 0 &&
+          lNew.indexOf('renew-pep-listener-certificate') < 0,
+          'LS3. Create a new listener: the definition form, then the ' +
+          'environment\'s HTTPS pair; no edit, renew or remove', lNew);
+  const lReaderTab = XacmlPage.listenersBody(kit.context({}, false), lJson,
+                                             lpep);
+  t.check(panelOf(lReaderTab, 'xacml-pep-listeners-new')
+            .indexOf('set-pep-listener') < 0 &&
+          panelOf(lReaderTab, 'xacml-pep-listeners-new')
+            .indexOf('The environment\'s HTTPS pair') >= 0,
+          'LS4. a reader\'s Create a new listener holds the pair, no form');
+
+  const lPage = XacmlPage.listenerDetail(
+    kit.context({ pep: 'pep-1', listener: 'public-https' }, true), lJson);
+  const lBars = lPage.match(/<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) ||
+    [];
+  t.equal(lBars[0] || '', xacmlBar,
+          'LD1. a listener\'s page: the XACML page\'s tabs first');
+  t.equal(lBars[1] || '', '<nav class="tabbar" aria-label="Sections of this ' +
+          'page"><a href="' + pepUrl + 'xacml-pep-tab-overview">Overview</a>' +
+          '<a href="' + pepUrl + 'xacml-pep-tab-decisions">Decisions</a>' +
+          '<a href="' + pepUrl + 'xacml-pep-tab-settings">Settings</a>' +
+          '<a class="first" href="' + pepUrl + 'xacml-pep-tab-listener">' +
+          'Listener</a>' +
+          '<a href="' + pepUrl + 'xacml-pep-tab-proxy">Reverse proxy</a>' +
+          '<a href="' + pepUrl + 'xacml-pep-tab-signals">Signal streams</a>' +
+          '</nav>',
+          'LD2. the PEP page\'s tabs, Listener current, every one a link');
+  t.equal(lBars[2] || '', '<nav class="tabbar subbar" aria-label="Listener">' +
+          '<a class="first" href="' + pepUrl + 'xacml-pep-listeners-configured">' +
+          'Configured Listeners</a><a href="' + pepUrl +
+          'xacml-pep-listeners-new">Create a new listener</a></nav>',
+          'LD3. the Listener sub-tabs, Configured Listeners current, both ' +
+          'links to the PEP page');
+  t.check(lBars.length === 3 && tabHrefs(lPage).every(function (one) {
+    return one.href.indexOf('/admin/xacml') === 0;
+  }) && tabHrefs(lPage).every(function (one) {
+    const done = clicked(one.href);
+    return done.prevented && done.went[0] === one.href;
+  }), 'LD4. three rows, every tab a link the runtime navigates on');
+  const lPanel = panelOf(lPage, 'xacml-pep-listeners-configured');
+  const lBack = lPanel.indexOf('<p class="drillback"><a href="' +
+    '/admin/xacml/pep?pep=pep-1#xacml-pep-listeners-configured">' +
+    '← Back to listeners</a></p>');
+  const lTitle = lPanel.indexOf('<div class="drilltitle"><h2>Listener ' +
+    'detail: public-https</h2><span class="drillaside">HTTPS <code>' +
+    '0.0.0.0:8443</code></span></div>');
+  t.check(lBack >= 0 && lTitle > lBack &&
+          lPanel.slice(0, lBack).indexOf('<h') < 0,
+          'LD5. the panel opens with Back to listeners, then the title',
+          lPanel.slice(0, 700));
+  t.check(['app.example.test', '10.0.0.5', 'ec-p384', 'CN=pep-1',
+           'CN=Remote PEP listeners', '2027-11-01', '0A1B', 'AB:CD',
+           'listening', 'defined here', 'reverse proxy', '8443']
+    .every(function (bit) {
+      return lPanel.indexOf(bit) >= 0;
+    }), 'LD6. the full configuration and what the PEP reported: names, ' +
+          'key, certificate, state, source, purpose, port', lPanel);
+  const lForms = lPanel.match(/<form\b[\s\S]*?<\/form>/g) || [];
+  t.check(lForms.length === 3 &&
+          /value="set-pep-listener"[\s\S]*name="id" value="public-https"/
+            .test(lForms[0]) &&
+          lForms[0].indexOf('value="0.0.0.0"') >= 0 &&
+          lForms[0].indexOf('value="8443"') >= 0 &&
+          lForms[0].indexOf('app.example.test') >= 0 &&
+          lForms[1].indexOf('value="renew-pep-listener-certificate"') >= 0 &&
+          lForms[2].indexOf('value="remove-pep-listener"') >= 0 &&
+          /<input type="checkbox" required>/.test(lForms[2]),
+          'LD7. the edit form filled from the definition, Renew, and Remove ' +
+          'behind a required confirmation', lForms.join('\n'));
+  const lEnv = XacmlPage.listenerDetail(
+    kit.context({ pep: 'pep-1', listener: 'api-http' }, true), lJson);
+  const lEnvPanel = panelOf(lEnv, 'xacml-pep-listeners-configured');
+  t.check(lEnvPanel.indexOf('class="drillback"') >= 0 &&
+          lEnvPanel.indexOf('Listener detail: api-http') >= 0 &&
+          lEnvPanel.indexOf('<form') < 0 &&
+          lEnvPanel.indexOf('PEP_PORT') >= 0 &&
+          lEnvPanel.indexOf('PEP_HTTP') >= 0 &&
+          lEnvPanel.indexOf('read-only') >= 0,
+          'LD8. an environment listener\'s page: the same layout, read-only, ' +
+          'naming the variables that set it', lEnvPanel);
+  const lGone = XacmlPage.listenerDetail(
+    kit.context({ pep: 'pep-1', listener: 'gone' }, true), lJson);
+  t.check(lGone.indexOf('has no listener called gone') >= 0 &&
+          lGone.indexOf('#xacml-pep-listeners-configured') >= 0,
+          'LD9. a listener that is not there says so and leads back', lGone);
+  t.equal(JSON.stringify(WebPages.operationQuery('/admin/xacml/pep/listener',
+          { pep: 'pep-1', listener: 'public-https' })),
+          JSON.stringify({ pep: 'pep-1' }),
+          'LD10. the page asks its operation for the PEP alone: `listener` ' +
+          'is the page\'s own (rule 7, #1476)');
+  const lTrail = crumbsOf(trailOf('/admin/xacml/pep/listener',
+    { pep: 'pep-1', listener: 'public-https' }));
+  t.equal(lTrail, 'Admin console -> /admin | XACML -> /admin/xacml | ' +
+          'Remote PEPs -> /admin/xacml#xacml-tab-peps | ' +
+          'pep-1 -> /admin/xacml/pep?pep=pep-1 | ' +
+          'Listener -> /admin/xacml/pep?pep=pep-1#xacml-pep-tab-listener | ' +
+          'Configured Listeners -> ' +
+          '/admin/xacml/pep?pep=pep-1#xacml-pep-listeners-configured | ' +
+          'public-https',
+          'LT1. a listener\'s page: Admin console › XACML › Remote PEPs › ' +
+          'the PEP › Listener › Configured Listeners › the listener');
+  const landed = function (back, action, fields) {
+    log.debug("Entering landed(). " + action);
+    log.debug("Leaving landed().");
+    return WebAnswersModule.landing('/admin/xacml/peps', action, { ok: true },
+                                    back, fields);
+  };
+  t.check(landed('/admin/xacml/pep?pep=pep-1#xacml-pep-listeners-new',
+                 'set-pep-listener', { name: 'pep-1', id: 'pub2' }) ===
+            '/admin/xacml/pep/listener?pep=pep-1&listener=pub2' &&
+          landed('/admin/xacml/pep/listener?pep=pep-1&listener=pub2',
+                 'set-pep-listener', { name: 'pep-1', id: 'pub2' }) ===
+            '/admin/xacml/pep/listener?pep=pep-1&listener=pub2' &&
+          landed('/admin/xacml/pep/listener?pep=pep-1&listener=pub2',
+                 'remove-pep-listener', { name: 'pep-1', listener: 'pub2' }) ===
+            '/admin/xacml/pep?pep=pep-1#xacml-pep-listeners-configured' &&
+          landed('/admin/xacml/pep/listener?pep=pep-1&listener=pub2',
+                 'renew-pep-listener-certificate',
+                 { name: 'pep-1', listener: 'pub2' }) === null,
+          'LT2. a new listener lands on its page, a save stays there, a ' +
+          'removal lands on Configured Listeners, a renew stays put');
 
   // -------------------------------------------------------------------------
   t.log.info('=== Z. the Authorization section (#1760) ===');

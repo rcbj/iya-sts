@@ -177,6 +177,11 @@ interface WebPage {
   // link to that tab, the PEP a link to its page. Each is `{ label, href }`
   // (`WebShell.trailBar()`), labelled in the reader's language by `t`.
   upVia?: (query: Json, t: Json) => Array<{ label: string; href: string }>;
+  // NAMES THE PAGE READS ITSELF (`ctx.query`) AND NEVER ASKS ITS
+  // OPERATION: a drill-down drawn from its parent's answer, such as a
+  // remote PEP listener's page, whose `listener` the operation does not
+  // declare and would refuse (#1476).
+  ownParams?: string[];
   render: (view: Json, ctx?: Json) => string;
   // A PICTURE'S `?format=svg` (#444 phase 2b): the drawing as a document on
   // its own, with no links, drawn from the page's answer in the browser as
@@ -1190,6 +1195,42 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.routeIndex(ctx || WebKit.context(), view);
     } },
+  // ONE LISTENER OF A REMOTE PEP (rcbj, 2026-11-15), reached from a
+  // listener id on the PEP's Configured Listeners: the PEP's own answer,
+  // the listener one row of its `listenerRows`, so `listener` is the
+  // page's own name and never asked of the operation (`ownParams`, rule 7:
+  // the operation is unchanged). Without `listener` it lists every PEP's
+  // listeners as links.
+  { path: '/admin/xacml/pep/listener', title: 'Remote PEP listener',
+    operation: '/admin-api/xacml/peps',
+    ownParams: ['listener'],
+    upTo: { path: '/admin/xacml' },
+    upVia: function (query: Json, t: Json): Array<{ label: string;
+                                                     href: string }> {
+      const pep = String((query && query.pep) || '');
+      return [XacmlPage.pepsTabCrumb(t)].concat(pep
+        ? [{ label: pep, href: XacmlPage.pepHref(pep) },
+           { label: t.text('consoleXacml.pepPage.tab.listener'),
+             href: XacmlPage.listenerTabHref(pep) },
+           { label: t.text('consoleXacml.listeners.tab.configured'),
+             href: XacmlPage.listenersHref(pep) }]
+        : []);
+    },
+    drill: {
+      param: 'listener',
+      sample: function (list: Json): string | null {
+        const held = (list.peps || []).filter(function (one: Json) {
+          return (one.listenerRows || []).length;
+        })[0];
+        return held ? held.listenerRows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.listenerDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.listenerIndex(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
     compose: {
       xacmlPolicies: '/admin-api/xacml/policies',
@@ -1371,7 +1412,11 @@ class WebPages {
                         declared?: string[]): Json {
     const page = WebPages.pageFor(path);
     const out: Json = {};
+    const own = (page && page.ownParams) || [];
     Object.keys(query || {}).forEach(function (name) {
+      if (own.indexOf(name) >= 0) {
+        return;
+      }
       const mapped = page && page.params && page.params[name];
       const asked = mapped || name;
       if (!declared || declared.indexOf(asked) >= 0) {

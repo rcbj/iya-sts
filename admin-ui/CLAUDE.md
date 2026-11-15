@@ -206,7 +206,18 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    PEP whichever tab or sub-tab a fragment opened: the trail is drawn with
    the view and a tab press changes only the fragment, so a tab crumb would
    go stale on the first press; the tab bar is what says which tab is open.
-   `tests/xacml_pep_console.js` X/W/T/K hold all of it. And `WebAnswers.landing()` sends that page's save to the route as it
+   `tests/xacml_pep_console.js` X/W/T/K hold all of it. **A remote PEP
+   LISTENER's page is the second** (rcbj 2026-11-15:
+   `/admin/xacml/pep/listener?pep=&listener=`, Listener › Configured
+   Listeners current, *← Back to listeners*, *Listener detail: <id>*, the
+   trail through Listener › Configured Listeners): both draw through
+   `XacmlPage.withinPepSubTab()`, the one wrapper for a drill-down of a PEP
+   sub-tab, so a third is a call, not a copy. It is drawn from the PEP's
+   own answer, so `listener` is the page row's `ownParams` — a name the
+   page reads from `ctx.query` and `WebPages.operationQuery()` never asks
+   the operation, which does not declare it (#1476) — and rule 7 owed
+   nothing. The environment's four listeners link to the same page,
+   read-only. `tests/xacml_pep_console.js` LS/LD/LT hold it. And `WebAnswers.landing()` sends that page's save to the route as it
    is now called (a rename moves its address) and its removal to the PEP's
    tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail
