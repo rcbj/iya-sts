@@ -280,7 +280,9 @@ async function test() {
   check("the acknowledgement: auth_req_id, expires_in and interval",
         function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
-    assert.ok(/^[A-Za-z0-9_-]{43}$/.test(id));
+    // 32 random octets, and in the `cells` mode the minting cell's
+    // twelve-character locator after them (common/cell_locator.ts, stamp()).
+    assert.ok(/^[A-Za-z0-9_-]{43}(?:[A-Za-z0-9_-]{12})?$/.test(id), id);
     assert.ok(r.json.expires_in > 0 && r.json.interval > 0);
   });
   const pending = await token("ciba-poll", id);
