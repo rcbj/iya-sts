@@ -106,6 +106,7 @@ impl KeySet {
 
     /// Whether the set holds its post-quantum half (`hasMember(blob,
     /// 'pqKeys')`).
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn has_pq_keys(&self) -> bool {
         has_member(&self.blob, "pqKeys")
     }
@@ -227,6 +228,7 @@ fn has_member(blob: &Json, member: &str) -> bool {
 /// taken. `None` where nothing is added, or where the offer is another set
 /// or another generation — the stored one is then kept, as Node keeps it.
 /// The rotation half of `decideKeys()` is [`KeySets::save`]'s.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn joined_members(stored: &Json, offered: &Json) -> Option<Json> {
     if generation_of(stored) != generation_of(offered)
         || stored.get("certB64") != offered.get("certB64")

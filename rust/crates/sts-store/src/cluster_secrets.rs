@@ -149,6 +149,7 @@ fn base64_std(bytes: &[u8]) -> String {
 
 impl ClusterSecrets {
     /// A register reading the environment through `env`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn with_env(env: EnvReader) -> ClusterSecrets {
         ClusterSecrets {
             values: Mutex::new(HashMap::new()),

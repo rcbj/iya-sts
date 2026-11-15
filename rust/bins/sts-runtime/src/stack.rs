@@ -1131,8 +1131,19 @@ mod tests {
         assert_eq!(default["keys"][0]["kty"], "RSA");
         // RSA, ES256, ES384, ES512 and ES256K, and the two request-object
         // encryption keys: the EdDSA and Ed448 keys the set holds are left
-        // out while keys.eddsaSigning is off, as Node leaves them out.
-        assert_eq!(default["keys"].as_array().unwrap().len(), 7);
+        // out while keys.eddsaSigning is off, as Node leaves them out. And
+        // the eleven post-quantum keys, which the first JWKS fetch makes
+        // (`pqKeysForAsync()`), keys.postQuantumSigning being on.
+        assert_eq!(default["keys"].as_array().unwrap().len(), 18);
+        assert_eq!(
+            default["keys"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|k| k["kty"] == "AKP")
+                .count(),
+            11
+        );
         let (status, acme) = jwks_of(&stack, "/realm/acme/oauth2/jwks").await;
         assert_eq!(status, 200);
         assert_ne!(acme["keys"][0]["kid"], default["keys"][0]["kid"]);

@@ -904,6 +904,7 @@ impl Persistence {
 
     /// The secrets every node agrees on: per process until
     /// [`Persistence::share_secrets`], the store's after.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn cluster_secrets(
         &self,
     ) -> Arc<crate::cluster_secrets::ClusterSecrets> {
