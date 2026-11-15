@@ -3312,6 +3312,8 @@ namespace IyaSts.Api.Management {
     `applicationChoices`?: (WithIdentifierName)[];
     `pep`?: string;
     `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
@@ -28423,7 +28425,7 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
   #{
     `operationId`:"getXacmlPeps",
     `summary`:"The REMOTE Policy Enforcement Points that pull this repository, and whether they are deciding with the same policy this service holds",
-    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml and GET /admin/xacml/pep` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep and GET /admin/xacml/pep/route` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -28442,11 +28444,19 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
         `required`:false,
         `schema`:null,
         `description`:"One registered PEP, by its name exactly. The answer then lists that row alone and says `found`; a name with no row answers 200 with `found: false`."
+      },
+      #{
+        `name`:"route",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `pep`: one route of that PEP's reverse proxy, by its id. The answer then carries `routeDetail`: the route, where it stands, whether its application resolves and which proxy listeners serve it; `found: false` there when the PEP has no such route."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:64,`examples`:#["orders"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
@@ -28465,6 +28475,8 @@ op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
     `applicationChoices`?: (WithIdentifierName)[];
     `pep`?: string;
     `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -30630,7 +30642,7 @@ op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`liste
   #{
     `operationId`:"setXacmlPepRoute",
     `summary`:"Add or replace one route of a remote PEP's reverse proxy",
-    `description`:"Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them; `from` renames the route it names to `id`. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30649,7 +30661,7 @@ op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`liste
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app"},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`public`:true},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app"},#{`name`:"pep-1",`from`:"orders",`id`:"orders-api",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session","oauth2"],`application`:"orders-app",`resource`:"https://orders.example.test",`routeAction`:"",`forwardCredentials`:"false",`signals`:"true",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:",",`position`:1},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`public`:true},`position`:0}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
     @js(#{`description`:"The route as one object (id, path, match, methods, public, mechanisms, application, resource, action, identity, forwardCredentials, signals), or its JSON, in place of the members below."}) `route`?: Record<unknown> | string;
     @js(#{`maxLength`:64,`description`:"The route's id; one already in the list is replaced where it stands, keeping its identity."}) `id`?: string;
@@ -30664,6 +30676,11 @@ op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"
     @js(#{`description`:"Whether the caller's own credential is forwarded upstream."}) `forwardCredentials`?: boolean | string;
     @js(#{`description`:"Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session."}) `signals`?: boolean | string;
     @js(#{`minimum`:0,`description`:"Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given."}) `position`?: integer;
+    @js(#{`maxLength`:64,`description`:"The route being edited, when it is not `id`: the route's own page renames a route by sending its current id here and the new one as `id`. An unknown route is STS-XACML-0230, and a new id another route holds is STS-XACML-0192."}) `from`?: string;
+    @js(#{`enum`:#["headers","saml","jwt"],`description`:"With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity."}) `mode`?: string;
+    @js(#{`description`:"mode headers: the header names, paired by position with `headerClaim`; a row with no name is left out."}) `headerName`?: string[] | string;
+    @js(#{`description`:"mode headers: the claim each header carries: sub, username, email, name, given_name, family_name, groups, mechanism, acr or amr."}) `headerClaim`?: string[] | string;
+    @js(#{`maxLength`:1,`description`:"mode headers: the one character that joins a claim's several values; , when empty."}) `separator`?: string;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,

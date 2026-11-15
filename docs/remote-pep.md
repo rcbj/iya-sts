@@ -982,7 +982,7 @@ the trail leading back to the tab. Its tabs:
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
 | Listener | every listener it has — the four its environment binds, read-only, and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source; the forms that define, edit, remove and renew them; and the environment's HTTPS pair with Issue or Reissue (below) |
-| Reverse proxy | its routes as a table, each with its application linked; a form to add a route, one to edit each, one to map an application to a route, each route's identity mode, the whole configuration document and Clear (below) |
+| Reverse proxy | its routes as a table, each id a link to the route's own page (below) and each application linked; a form to add a route, one to edit each, one to map an application to a route, each route's identity mode, the whole configuration document and Clear (below) |
 | Signal streams | its CAEP/RISC stream health: the totals, then a table with one row per stream (below) |
 
 **Every field and column on these tabs has a tooltip**, as do the Remote PEPs
@@ -1067,6 +1067,48 @@ Every form saves the whole document through the same checks as the editor,
 so a route a form can save is a route the document could hold, and the
 reverse. The operations are `set-pep-route`, `remove-pep-route` and
 `set-pep-route-application`.
+
+### A route's own page
+
+**Click a route's id** in the Reverse proxy tab's table to open
+`/admin/xacml/pep/route?pep=<name>&route=<id>`. The trail is *XACML ›
+the PEP › the route*, and the PEP crumb leads back to its Reverse proxy tab.
+The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
+`routeDetail` member holds what the page draws.
+
+* **Effective state**: whether the route is usable now (and why not), its
+  application linked to the application's page, its position in the list,
+  the PEP's upstream, and the reverse-proxy listeners that serve it, each
+  with what the PEP last reported. Every proxy listener serves every route.
+* **One form for every value**: the id, path and match, methods, public, the
+  mechanisms, the application, the XACML resource and action, credential
+  forwarding, signals, the position, and the identity (its mode, headers and
+  claims, separator). **Save** sends `set-pep-route` with the route's current
+  id in `from` and every member of the form. The save goes through the same
+  checks as the document editor and the other forms.
+* **Renaming is allowed.** Change the id and save. The page then opens at
+  the new id. A new id that another route already holds is refused
+  (`STS-XACML-0192`). Until the PEP's next poll, it holds the old document,
+  so for that one poll interval, a request on the route may be refused
+  while the PEP asks for an identity under the old id.
+* **The upstream is not on the form.** The model has one upstream per PEP,
+  not one per route. Change `upstream` in the configuration document.
+* **Remove** asks for a confirmation (a box to tick) and then sends
+  `remove-pep-route`. The page lands on the PEP's Reverse proxy tab.
+
+Opened without `route`, the page lists every PEP's routes as links.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://localhost:8081/admin-api/xacml/peps?pep=pep-1&route=orders" | jq .routeDetail
+
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"pep-1","from":"orders","id":"orders-api","path":"/orders",
+       "match":"prefix","methods":["GET","POST"],"mechanisms":["session"],
+       "application":"orders-app","mode":"headers",
+       "headerName":["X-Remote-User"],"headerClaim":["username"]}' \
+  https://localhost:8081/admin-api/xacml/set-pep-route
+```
 
 ### Its signal streams
 

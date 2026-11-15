@@ -1067,6 +1067,11 @@ class WebAnswers {
   // it and the Add member control is on the drill-down. A refusal stays put,
   // beside the form that produced it. Every other act goes back to its
   // page (`ConsoleRuntime.submit()`).
+  //
+  // A REMOTE PEP ROUTE'S OWN PAGE (#1760) is the third: a save lands on the
+  // route as it is now called, because a rename changes the id its address
+  // names, and a removal on the PEP's Reverse proxy tab, the route being
+  // gone. The fragment is kept, and the notice goes before it.
   // ---------------------------------------------------------------------------
   /**
    * The console path an act's answer is drawn on, where it is not `back`.
@@ -1075,10 +1080,12 @@ class WebAnswers {
    * @param action - the form's action
    * @param answer - the operation's answer
    * @param back - the page and list view the form was on
-   * @returns the path and query, without the notice, or null for `back`
+   * @param fields - optional; the form's fields
+   * @returns the path, query and fragment, without the notice, or null
+   *   for `back`
    */
   static landing(page: string, action: string, answer: Json,
-                 back: string): string | null {
+                 back: string, fields?: Json): string | null {
     if (!answer || !answer.ok) {
       return null;
     }
@@ -1092,6 +1099,18 @@ class WebAnswers {
         (action === 'create' || action === 'add-member')) {
       at.searchParams.set('group', String(answer.dn));
       return '/admin/groups?' + at.searchParams.toString();
+    }
+    if (page === '/admin/xacml/peps' &&
+        at.pathname === '/admin/xacml/pep/route') {
+      const pep = String(at.searchParams.get('pep') || '');
+      if (action === 'set-pep-route' && fields && fields.id) {
+        return '/admin/xacml/pep/route?' + new URLSearchParams({
+          pep: pep, route: String(fields.id) }).toString();
+      }
+      if (action === 'remove-pep-route') {
+        return '/admin/xacml/pep?' + new URLSearchParams({
+          pep: pep }).toString() + '#xacml-pep-tab-proxy';
+      }
     }
     return null;
   }

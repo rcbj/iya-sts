@@ -180,6 +180,24 @@ function checkOnce(t) {
           'C6. a group acted on lands on the group, a new application on its ' +
           'entry, keeping the list view; a refusal and any other act stay put',
           JSON.stringify([madeGroup, madeApp]));
+  // A REMOTE PEP ROUTE'S PAGE (#1760): a save lands on the route as it is
+  // now called, a removal on the PEP's Reverse proxy tab; a refused save,
+  // and the same act from the PEP's own page, stay put.
+  const routeBack = '/admin/xacml/pep/route?pep=pep-1&route=orders';
+  const renamed = WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
+    { ok: true }, routeBack, { from: 'orders', id: 'orders-api' });
+  const removed = WebAnswers.landing('/admin/xacml/peps', 'remove-pep-route',
+    { ok: true }, routeBack, { route: 'orders' });
+  t.check(renamed === '/admin/xacml/pep/route?pep=pep-1&route=orders-api' &&
+          removed === '/admin/xacml/pep?pep=pep-1#xacml-pep-tab-proxy' &&
+          WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
+            { ok: false }, routeBack, { id: 'orders-api' }) === null &&
+          WebAnswers.landing('/admin/xacml/peps', 'set-pep-route',
+            { ok: true }, '/admin/xacml/pep?pep=pep-1',
+            { id: 'orders-api' }) === null,
+          'C6b. a route page\'s save lands on the route as it is now called, ' +
+          'its removal on the PEP\'s Reverse proxy tab',
+          JSON.stringify([renamed, removed]));
   log.debug("Leaving checkOnce().");
 }
 

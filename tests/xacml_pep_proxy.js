@@ -2156,6 +2156,99 @@ async function childBody() {
           JSON.stringify(unknownR).slice(0, 200));
 
   // -------------------------------------------------------------------------
+  // P. A ROUTE'S OWN PAGE (#1760): `?pep=&route=` answers the route where
+  // it stands, its resolution and the proxy listeners; its save is
+  // set-pep-route with `from` (a rename) and the identity's form members,
+  // through the one validator.
+  // -------------------------------------------------------------------------
+  const pageView = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME, guarded.id);
+  });
+  const rd = pageView.routeDetail;
+  const atBefore = pageView.peps[0].proxy.routes.map(function (one) {
+    return one.id;
+  }).indexOf(guarded.id);
+  t.check(pageView.route === guarded.id && rd && rd.found === true &&
+          rd.route.id === guarded.id && rd.position === atBefore &&
+          rd.count === pageView.peps[0].proxy.routes.length &&
+          typeof rd.usable === 'boolean' &&
+          rd.application.identifier === guarded.application &&
+          rd.application.found === true &&
+          rd.servedBy.length >= 2 && rd.servedBy.every(function (one) {
+            return /^proxy-/.test(one.id) || one.source === 'service';
+          }),
+          'P1. ?route= answers the route where it stands, whether it resolves, ' +
+          'its application and the proxy listeners serving it',
+          JSON.stringify(rd));
+  const missingView = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME, 'no-such-route');
+  });
+  t.check(missingView.routeDetail && missingView.routeDetail.found === false &&
+          missingView.routeDetail.route === null,
+          'P2. a route the PEP does not hold is found: false',
+          JSON.stringify(missingView.routeDetail));
+  const newId = guarded.id + '-renamed';
+  const renamedR = routeAct({ action: 'set-pep-route', from: guarded.id,
+    id: newId, path: guarded.path, match: guarded.match,
+    methods: guarded.methods, public: 'false',
+    mechanisms: guarded.mechanisms, application: guarded.application,
+    resource: guarded.resource, routeAction: guarded.action,
+    forwardCredentials: 'false', signals: 'true',
+    mode: 'headers', headerName: ['X-Page-User', ''],
+    headerClaim: ['username', ''], separator: ';' });
+  const afterIds = renamedR && renamedR.proxy
+    ? renamedR.proxy.routes.map(function (one) {
+        return one.id;
+      }) : [];
+  const renamedRoute = renamedR && renamedR.proxy
+    ? renamedR.proxy.routes[afterIds.indexOf(newId)] : null;
+  t.check(renamedR && renamedR.ok && afterIds.indexOf(guarded.id) < 0 &&
+          afterIds.indexOf(newId) === atBefore && renamedRoute &&
+          renamedRoute.identity.mode === 'headers' &&
+          renamedRoute.identity.headers.length === 1 &&
+          renamedRoute.identity.headers[0].name === 'X-Page-User' &&
+          renamedRoute.identity.separator === ';',
+          'P3. the page\'s save renames the route where it stands and sets ' +
+          'its identity from the form', JSON.stringify(renamedRoute));
+  const other = renamedR.proxy.routes.filter(function (one) {
+    return one.id !== newId;
+  })[0];
+  const clash = routeAct({ action: 'set-pep-route', from: newId,
+    id: other.id, path: guarded.path, mechanisms: guarded.mechanisms,
+    application: guarded.application });
+  const noFrom = routeAct({ action: 'set-pep-route', from: 'no-such-route',
+    id: 'x', path: '/x', public: 'true' });
+  const badIdentity = routeAct({ action: 'set-pep-route', from: newId,
+    id: newId, path: guarded.path, mechanisms: guarded.mechanisms,
+    application: guarded.application, mode: 'headers',
+    headerName: ['Authorization'], headerClaim: ['sub'] });
+  t.check(errorCodes.codeOf(clash) === 'STS-XACML-0192' &&
+          errorCodes.codeOf(noFrom) === 'STS-XACML-0230' &&
+          badIdentity && !badIdentity.ok && errorCodes.codeOf(badIdentity),
+          'P4. a rename to an id another route holds is STS-XACML-0192, an ' +
+          'unknown `from` STS-XACML-0230, and a refused identity is refused',
+          JSON.stringify([clash, noFrom, badIdentity].map(function (o) {
+            return errorCodes.codeOf(o);
+          })));
+  const restored = routeAct({ action: 'set-pep-route', from: newId,
+                              route: guarded });
+  t.check(restored && restored.ok &&
+          JSON.stringify(restored.proxy.routes[atBefore]) ===
+            JSON.stringify(guarded),
+          'P5. the route object with `from` puts the route back whole',
+          JSON.stringify(restored && restored.proxy.routes[atBefore]));
+  const answersP = [
+    answerProblem('GET', '/admin-api/xacml/peps', 200, pageView),
+    answerProblem('GET', '/admin-api/xacml/peps', 200, missingView),
+    answerProblem('POST', '/admin-api/xacml/set-pep-route', 200, renamedR),
+    answerProblem('POST', '/admin-api/xacml/set-pep-route', 400, clash)
+  ];
+  t.check(answersP.every(function (one) {
+    return one === null;
+  }), 'P6. the route page\'s answer and its save meet their models',
+      JSON.stringify(answersP));
+
+  // -------------------------------------------------------------------------
   // T. THE SIGNAL STREAMS, ONE ROW EACH (#1760): ages turned into times on
   // arrival, a PEP's own times never believed, a client this PEP's routes
   // do not name answered empty, and the answer meeting its model.

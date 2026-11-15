@@ -127,6 +127,7 @@
   "title.xacml-decide": "試行決策",
   "title.xacml-monitor": "XACML 決策",
   "title.xacml-pep": "遠端 PEP",
+  "title.xacml-pep-route": "遠端 PEP 路由",
   "title.xacml-peps": "遠端 PEP",
   "title.xacml-policies": "XACML 原則",
   "title.backup-codes": "復原碼",

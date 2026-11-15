@@ -948,6 +948,18 @@ class XacmlPage {
     return '/admin/xacml/pep?pep=' + encodeURIComponent(name);
   }
 
+  // ONE ROUTE's PAGE (#1760): a route id on the Reverse proxy tab drills
+  // down to `/admin/xacml/pep/route`.
+  static routeHref(name: string, route: string): string {
+    return '/admin/xacml/pep/route?pep=' + encodeURIComponent(name) +
+      '&route=' + encodeURIComponent(route);
+  }
+
+  // The way back from a route's page: the PEP's Reverse proxy tab.
+  static proxyTabHref(name: string): string {
+    return XacmlPage.pepHref(name) + '#xacml-pep-tab-proxy';
+  }
+
   /**
    * Draws Remote PEPs from its view: the register as a table, each row a
    * link to the PEP's own page (#1760), where the listener certificate's
@@ -1101,7 +1113,10 @@ class XacmlPage {
         : [identity.mode === 'saml'
             ? t.text('consoleXacml.proxy.identity.cell.saml')
             : t.text('consoleXacml.proxy.identity.cell.jwt')];
-      return '<tr><td><code>' + esc(route.id) + '</code></td><td><code>' +
+      return '<tr><td>' + (name
+          ? '<a href="' + esc(self.routeHref(name, route.id)) + '"><code>' +
+            esc(route.id) + '</code></a>'
+          : '<code>' + esc(route.id) + '</code>') + '</td><td><code>' +
         esc(route.path) + '</code> (' + esc(route.match) + ')</td><td>' +
         (route.methods.length ? esc(route.methods.join(', '))
                               : t.html('consoleXacml.proxy.any')) +
@@ -1729,7 +1744,8 @@ class XacmlPage {
   // identity, each with its tooltip. `isNew` puts the add form's position
   // (last) in the box's placeholder.
   static routeFields(t: Json, json: Json, r: Json, count: number,
-                     listKey: string, isNew: boolean): string {
+                     listKey: string, isNew: boolean,
+                     position?: number): string {
     const self = this;
     const when = 'consoleXacml.tip.route.when';
     const box = function (field: string, value: string,
@@ -1792,7 +1808,10 @@ class XacmlPage {
       self.labelled(t, 'consoleXacml.routeForm.position',
         'consoleXacml.tip.route.position', '<input type="number" ' +
         'name="position" min="0" max="' + count + '" placeholder="' +
-        (isNew ? String(count) : '') + '">', when) + '</div>';
+        (isNew ? String(count) : '') + '"' +
+        (position === undefined ? ''
+          : ' value="' + esc(String(position)) + '"') + '>', when) +
+      '</div>';
   }
 
   // The realm's applications as a datalist: the chooser SUGGESTS, and the
@@ -2102,6 +2121,239 @@ class XacmlPage {
                     '</p><p>' + t.html('consoleXacml.pepSettings.lead2') +
                     '</p>', t.text('consoleXacml.pepPage.tab.settings')) +
       status + problem + form + bootstrap;
+  }
+
+  /**
+   * Draws one route's page (#1760, rcbj 2026-11-14: "click on a route name
+   * and go to another page and be able to update all the configuration
+   * values"), `/admin/xacml/pep/route?pep=<name>&route=<id>`: the route's
+   * effective state, then ONE form holding every member of the route —
+   * its id (a rename), path and match, methods, public, mechanisms,
+   * application, XACML resource and action, credential forwarding,
+   * signals, its identity and its position — saved by `set-pep-route`
+   * through the document editor's one validator, and Remove behind a
+   * confirmation. The upstream is the PEP's, one per proxy: the page says
+   * so and links the document that sets it.
+   *
+   * @param ctx - the render context
+   * @param json - `GET /admin-api/xacml/peps?pep=<name>&route=<id>`'s
+   *   answer
+   * @returns the body as HTML
+   */
+  static routeDetail(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const name = String(json.pep || '');
+    const id = String(json.route || '');
+    const back = '<p><a href="' + esc(self.proxyTabHref(name)) + '">' +
+      t.html('consoleXacml.routePage.back', { pep: name }) + '</a></p>';
+    const row = (json.peps || [])[0];
+    const detail = json.routeDetail;
+    if (!json.found || !row) {
+      return '<p class="warn">' + t.html('consoleXacml.pepPage.notFound',
+        { name: name }) + '</p>' + back;
+    }
+    if (!detail || !detail.found) {
+      return '<p class="warn">' + t.html('consoleXacml.routePage.notFound',
+        { route: id, pep: name }) + '</p>' + back;
+    }
+    const r = detail.route;
+    const proxy = row.proxy || {};
+    const usable = r.public
+      ? '<span>' + t.html('consoleXacml.routePage.publicUsable') + '</span>'
+      : (detail.usable === true
+          ? '<span>' + t.html('consoleXacml.routePage.usable') + '</span>'
+          : '<strong class="xacml-alert">' +
+            t.html('consoleXacml.routePage.unusable') + '</strong>' +
+            (detail.why ? '<div class="sub">' + esc(detail.why) + '</div>'
+                        : ''));
+    const application = detail.application
+      ? '<a href="/admin/applications?application=' +
+        encodeURIComponent(detail.application.identifier) + '"><code>' +
+        esc(detail.application.identifier) + '</code></a>' +
+        (detail.application.name &&
+         detail.application.name !== detail.application.identifier
+          ? ' ' + esc(detail.application.name) : '') +
+        (detail.application.found ? ''
+          : '<div class="sub xacml-alert">' +
+            t.html('consoleXacml.routePage.noSuchApplication') + '</div>')
+      : '<span class="sub">' +
+        t.html('consoleXacml.proxy.noApplication') + '</span>';
+    const words = self.listenerWords(t);
+    const served = (detail.servedBy || []).map(function (one: Json) {
+      const state = one.state === null || one.state === undefined
+        ? '<span class="sub">' + t.html('consoleXacml.listeners.notReported') +
+          '</span>'
+        : (one.state === 'listening' ? words.state.listening
+            : (words.state[one.state] || esc(one.state)) +
+              (one.reason && one.reason !== 'none'
+                ? ' <span class="sub">' + (words.reason[one.reason] ||
+                                           esc(one.reason)) + '</span>'
+                : ''));
+      return '<tr><td><code>' + esc(one.id) + '</code></td><td>' +
+        (one.protocol === 'https' ? 'HTTPS' : 'HTTP') + '</td><td><code>' +
+        esc(String(one.port)) + '</code></td><td>' + state + '</td></tr>';
+    }).join('');
+    const line = function (labelKey: string, tipKey: string,
+                           value: string): string {
+      return '<tr><th' + self.tipOf(t, tipKey) + '>' + t.html(labelKey) +
+        '</th><td>' + value + '</td></tr>';
+    };
+    const state = '<h3>' + t.html('consoleXacml.routePage.stateHeading') +
+      '</h3><table>' +
+      line('consoleXacml.routePage.th.usable',
+           'consoleXacml.tip.routePage.usable', usable) +
+      line('consoleXacml.proxy.th.application',
+           'consoleXacml.tip.route.application', application) +
+      line('consoleXacml.routePage.th.position',
+           'consoleXacml.tip.route.position',
+           t.html('consoleXacml.routePage.positionOf', {
+             position: detail.position, count: detail.count })) +
+      line('consoleXacml.routePage.th.upstream',
+           'consoleXacml.tip.routePage.upstream',
+           '<code>' + esc(proxy.upstream || '') + '</code>' +
+           '<div class="sub">' + t.html('consoleXacml.routePage.upstreamNote') +
+           '</div>') +
+      '</table><h4' + self.tipOf(t, 'consoleXacml.tip.routePage.servedBy') +
+      '>' + t.html('consoleXacml.routePage.servedBy') + '</h4>' +
+      (served
+        ? '<table><tr>' +
+          self.th(t, 'consoleXacml.listeners.th.listener',
+                  'consoleXacml.tip.listeners.listener') +
+          self.th(t, 'consoleXacml.listeners.th.protocol',
+                  'consoleXacml.tip.listener.protocol') +
+          self.th(t, 'consoleXacml.routePage.th.port',
+                  'consoleXacml.tip.listeners.address') +
+          self.th(t, 'consoleXacml.listeners.th.state',
+                  'consoleXacml.tip.listeners.state') + '</tr>' + served +
+          '</table>'
+        : '<p class="sub">' + t.html('consoleXacml.routePage.noListeners') +
+          '</p>');
+    if (!ctx.write) {
+      return kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
+        state + '<span class="sub">' + t.html('consoleXacml.readOnly') +
+        '</span>' + back;
+    }
+    const when = 'consoleXacml.tip.route.when';
+    const identity = r.identity || { mode: 'headers', headers: [],
+                                     separator: ',' };
+    const editor = '<h3>' + t.html('consoleXacml.routePage.editHeading') +
+      '</h3><form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+      self.hidden('from', r.id) +
+      '<div>' + self.labelled(t, 'consoleXacml.routeForm.id',
+        'consoleXacml.tip.routePage.rename', '<input type="text" name="id" ' +
+        'size="20" maxlength="64" required ' +
+        'value="' + esc(r.id) + '">', when) + '</div>' +
+      self.routeFields(t, json, r, Math.max(detail.count - 1, 0),
+                       'page-' + r.id, false, detail.position) +
+      '<h4' + self.tipOf(t, 'consoleXacml.tip.identity.mode') + '>' +
+      t.html('consoleXacml.routePage.identityHeading') + '</h4>' +
+      (r.public
+        ? '<p class="sub">' + t.html('consoleXacml.routePage.publicIdentity') +
+          '</p>'
+        : self.identityFields(t, identity)) +
+      '<button type="submit"' +
+      self.tipOf(t, 'consoleXacml.tip.route.when') + '>' +
+      t.html('consoleXacml.routeForm.update') + '</button></form>';
+    // REMOVE, BEHIND A CONFIRMATION: an unnamed required checkbox, so the
+    // browser holds the submit until it is ticked and the operation's body
+    // is the one `remove-pep-route` has always taken.
+    const remove = '<h3>' + t.html('consoleXacml.routePage.removeHeading') +
+      '</h3><form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'remove-pep-route') + self.hidden('name', name) +
+      self.hidden('route', r.id) + '<label' +
+      self.tipOf(t, 'consoleXacml.tip.routes.actions') +
+      '><input type="checkbox" required> ' +
+      t.html('consoleXacml.routePage.removeConfirm', { route: r.id }) +
+      '</label> <button type="submit">' +
+      t.html('consoleXacml.routeForm.remove') + '</button></form>';
+    return kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
+      state + editor + remove + back;
+  }
+
+  // `/admin/xacml/pep/route` WITHOUT A ROUTE (#1760): every registered
+  // PEP's routes, each a link to its page, so the address alone still
+  // leads somewhere.
+  static routeIndex(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const rows = (json.peps || []).filter(function (row: Json) {
+      return row.proxy && (row.proxy.routes || []).length;
+    }).map(function (row: Json) {
+      return '<tr><td><a href="' + esc(self.proxyTabHref(row.name)) +
+        '"><code>' + esc(row.name) + '</code></a></td><td>' +
+        row.proxy.routes.map(function (route: Json) {
+          return '<a href="' + esc(self.routeHref(row.name, route.id)) +
+            '"><code>' + esc(route.id) + '</code></a> <span class="sub">' +
+            esc(route.path) + '</span>';
+        }).join('<br>') + '</td></tr>';
+    }).join('');
+    return kit.note('<p>' + t.html('consoleXacml.routePage.indexLead') +
+                    '</p>') +
+      (rows
+        ? '<table><tr><th>PEP</th>' +
+          self.th(t, 'consoleXacml.routePage.th.routes',
+                  'consoleXacml.tip.routes.id') + '</tr>' + rows + '</table>'
+        : '<p class="sub">' + t.html('consoleXacml.routePage.noRoutes') +
+          '</p>') +
+      '<p><a href="/admin/xacml#xacml-tab-peps">' +
+      t.html('consoleXacml.pepPage.back') + '</a></p>';
+  }
+
+  // A route's identity as form members (`mode`, header rows, separator),
+  // the route page's half of `identityForm()`'s fields: the same names,
+  // read by the same `identityFromForm()` on the service.
+  static identityFields(t: Json, identity: Json): string {
+    const self = this;
+    const claims = ['sub', 'username', 'email', 'name', 'given_name',
+                    'family_name', 'groups', 'mechanism', 'acr', 'amr'];
+    const rows = (identity.headers || []).slice();
+    const blank = Math.min(16 - rows.length, 2);
+    for (let i = 0; i < blank; i++) {
+      rows.push({ name: '', claim: '' });
+    }
+    const labels: Json = {
+      headers: t.html('consoleXacml.proxy.identity.mode.headers'),
+      saml: t.html('consoleXacml.proxy.identity.mode.saml'),
+      jwt: t.html('consoleXacml.proxy.identity.mode.jwt')
+    };
+    const modes = ['headers', 'saml', 'jwt'].map(function (mode) {
+      return '<option value="' + mode + '"' +
+        (identity.mode === mode ? ' selected' : '') + '>' + labels[mode] +
+        '</option>';
+    }).join('');
+    const table = rows.map(function (one: Json) {
+      const options = ['<option value="">' +
+        t.html('consoleXacml.proxy.identity.none') + '</option>']
+        .concat(claims.map(function (claim) {
+          return '<option value="' + claim + '"' +
+            (one.claim === claim ? ' selected' : '') + '>' + claim +
+            '</option>';
+        })).join('');
+      return '<tr><td><input type="text" name="headerName" value="' +
+        esc(one.name || '') + '" placeholder="X-Remote-User"' +
+        self.tipOf(t, 'consoleXacml.tip.identity.headerName') +
+        '></td><td><select name="headerClaim"' +
+        self.tipOf(t, 'consoleXacml.tip.identity.claim') + '>' +
+        options + '</select></td></tr>';
+    }).join('');
+    return self.labelled(t, 'consoleXacml.proxy.identity.mode',
+                         'consoleXacml.tip.identity.mode',
+                         '<select name="mode">' + modes + '</select>') +
+      '<table><tr>' +
+      self.th(t, 'consoleXacml.proxy.identity.thName',
+              'consoleXacml.tip.identity.headerName') +
+      self.th(t, 'consoleXacml.proxy.identity.thClaim',
+              'consoleXacml.tip.identity.claim') +
+      '</tr>' + table + '</table>' +
+      self.labelled(t, 'consoleXacml.proxy.identity.separator',
+                    'consoleXacml.tip.identity.separator',
+                    '<input type="text" name="separator" maxlength="1" ' +
+                    'size="2" value="' + esc(identity.separator || ',') +
+                    '">') +
+      '<div class="sub">' + t.html('consoleXacml.proxy.identity.note') +
+      '</div>';
   }
 
   /**

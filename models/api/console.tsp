@@ -1540,6 +1540,8 @@ namespace IyaSts.Api.Console {
     `applicationChoices`?: (WithIdentifierName)[];
     `pep`?: string;
     `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 

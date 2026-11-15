@@ -127,6 +127,7 @@
   "title.xacml-decide": "Subukan ang isang decision",
   "title.xacml-monitor": "Mga XACML decision",
   "title.xacml-pep": "Remote PEP",
+  "title.xacml-pep-route": "Route ng remote PEP",
   "title.xacml-peps": "Mga remote PEP",
   "title.xacml-policies": "Mga XACML policy",
   "title.backup-codes": "Mga recovery code",

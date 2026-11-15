@@ -1504,6 +1504,22 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   stands keeping its `identity`, and inserts at `position`. A missing route
   object, a missing application or a position outside the list is
   `STS-XACML-0256`. The page carries `applicationChoices` for the chooser.
+* **A ROUTE'S OWN PAGE** (rcbj 2026-11-14: "click on a route name and go to
+  another page and be able to update all the configuration values"),
+  `/admin/xacml/pep/route?pep=&route=`: `getXacmlPeps` with `route` adds
+  `routeDetail` (`routeDetailOf()`: the normalised route, its position and
+  the count, usable and why from the resolution, the application as a
+  reference and whether the chooser knows it, and every proxy listener with
+  what the PEP reported — a route table is the proxy's, so every proxy
+  listener serves every route). Its one form is `set-pep-route` with
+  **`from`**, the route's current id: `withRoute()` takes only `from` out, so
+  a rename to an id another route holds is the validator's own
+  `STS-XACML-0192` and an unknown `from` is `0230`; and with **`mode`** the
+  form's identity members become the route's identity
+  (`identityFromForm()`, the one reading `set-pep-route-identity` shares).
+  No per-route upstream exists in the model; the page says so. A PEP still
+  holding the old document asks `/xacml/pep/identity` for the old id until
+  its next poll, which is the rename's one cost.
 * **A PEP REPORTS ONE ROW PER STREAM** inside `signals` as `streams` on its
   heartbeat (never on its `GET /`, which answers anybody): the client id,
   the transmitter's stream id, running, healthy, the AGES of its start,

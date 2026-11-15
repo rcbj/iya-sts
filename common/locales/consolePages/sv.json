@@ -127,6 +127,7 @@
   "title.xacml-decide": "Prova ett beslut",
   "title.xacml-monitor": "XACML-beslut",
   "title.xacml-pep": "Fjärr-PEP",
+  "title.xacml-pep-route": "Väg för fjärr-PEP",
   "title.xacml-peps": "Fjärr-PEP:ar",
   "title.xacml-policies": "XACML-policyer",
   "title.backup-codes": "Återställningskoder",

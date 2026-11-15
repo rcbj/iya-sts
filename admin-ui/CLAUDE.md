@@ -155,7 +155,13 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    the one control the shell had turned off.
 
    A drill-down view returns `up` — `upTo(section, leaf, listView)` — and
-   `respond()` threads it to `page()`. It makes the active tab a LINK as well.
+   `respond()` threads it to `page()`. **A static page row may add crumbs
+   between the section and the leaf** (`upVia(query)`, #1760): the remote
+   PEP route page is *XACML › the PEP › the route*, the PEP a link to its
+   Reverse proxy tab, through `trailBar()`'s `via`, as #1068's person pages
+   are; and `WebAnswers.landing()` sends that page's save to the route as it
+   is now called (a rename moves its address) and its removal to the PEP's
+   tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail
    naming the old one. **The last crumb is never a link**: a crumb that reloads
    the page you are on teaches a reader not to trust the ones beside it.

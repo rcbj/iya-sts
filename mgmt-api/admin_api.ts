@@ -7711,7 +7711,8 @@ class AdminApi {
 
       { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
         operationId: 'getXacmlPeps',
-        mirrors: 'GET /admin/xacml and GET /admin/xacml/pep',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep and GET ' +
+                 '/admin/xacml/pep/route',
         // ONE PEP's PAGE (#1760): `/admin/xacml/pep?pep=<name>` is this
         // answer narrowed to that row, `/admin-api/applications`'
         // `?application=` arrangement.
@@ -7721,7 +7722,16 @@ class AdminApi {
             description: 'One registered PEP, by its name exactly. The ' +
                          'answer then lists that row alone and says ' +
                          '`found`; a name with no row answers 200 with ' +
-                         '`found: false`.' }
+                         '`found: false`.' },
+          // ONE ROUTE's PAGE (#1760): `/admin/xacml/pep/route?pep=&route=`.
+          { name: 'route', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'With `pep`: one route of that PEP\'s reverse ' +
+                         'proxy, by its id. The answer then carries ' +
+                         '`routeDetail`: the route, where it stands, ' +
+                         'whether its application resolves and which ' +
+                         'proxy listeners serve it; `found: false` there ' +
+                         'when the PEP has no such route.' }
         ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML remote PEPs endpoint.");

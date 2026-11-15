@@ -3694,7 +3694,7 @@ REGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactl
 
 With `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.
 
-**Mirrors** `GET /admin/xacml and GET /admin/xacml/pep` on the admin console.
+**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep and GET /admin/xacml/pep/route` on the admin console.
 
 The reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).
 
@@ -3705,6 +3705,7 @@ Scope: `admin:read`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `pep` | query | string |  | One registered PEP, by its name exactly. The answer then lists that row alone and says `found`; a name with no row answers 200 with `found: false`. |
+| `route` | query | string |  | With `pep`: one route of that PEP's reverse proxy, by its id. The answer then carries `routeDetail`: the route, where it stands, whether its application resolves and which proxy listeners serve it; `found: false` there when the PEP has no such route. |
 | `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
 | `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
@@ -4056,6 +4057,44 @@ Scope: `admin:read`.
 | `protocolEndpoints[].transport` | string |  |  |
 | `protocolEndpoints[].url` | string |  |  |
 | `requiresCertificate` | boolean |  |  |
+| `route` | string |  |  |
+| `routeDetail` | object |  |  |
+| `routeDetail.application` | object |  |  |
+| `routeDetail.application.found` | boolean |  |  |
+| `routeDetail.application.identifier` | string |  |  |
+| `routeDetail.application.name` | string |  |  |
+| `routeDetail.count` | integer |  |  |
+| `routeDetail.found` | boolean |  |  |
+| `routeDetail.position` | integer |  |  |
+| `routeDetail.route` | object, or null |  |  |
+| `routeDetail.route.action` | string |  |  |
+| `routeDetail.route.application` | string |  |  |
+| `routeDetail.route.forwardCredentials` | boolean |  |  |
+| `routeDetail.route.id` | string |  |  |
+| `routeDetail.route.identity` | object |  |  |
+| `routeDetail.route.identity.headers` | list |  |  |
+| `routeDetail.route.identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `routeDetail.route.identity.headers[].name` | string |  |  |
+| `routeDetail.route.identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `routeDetail.route.identity.separator` | string |  |  |
+| `routeDetail.route.match` | one of `prefix`, `exact` |  |  |
+| `routeDetail.route.mechanisms` | list |  |  |
+| `routeDetail.route.mechanisms[]` | string |  |  |
+| `routeDetail.route.methods` | list |  |  |
+| `routeDetail.route.methods[]` | string |  |  |
+| `routeDetail.route.path` | string |  |  |
+| `routeDetail.route.public` | boolean |  |  |
+| `routeDetail.route.resource` | string |  |  |
+| `routeDetail.route.signals` | boolean |  |  |
+| `routeDetail.servedBy` | list |  |  |
+| `routeDetail.servedBy[].id` | string |  |  |
+| `routeDetail.servedBy[].port` | integer |  |  |
+| `routeDetail.servedBy[].protocol` | one of `http`, `https` |  |  |
+| `routeDetail.servedBy[].reason` | string, or null |  |  |
+| `routeDetail.servedBy[].source` | one of `environment`, `service` |  |  |
+| `routeDetail.servedBy[].state` | string, or null |  |  |
+| `routeDetail.usable` | boolean, or null |  |  |
+| `routeDetail.why` | string, or null |  |  |
 | `settingsCatalogue` | object |  |  |
 | `settingsCatalogue.bootstrap` | list |  |  |
 | `settingsCatalogue.bootstrap[].default` | string |  |  |
@@ -5016,7 +5055,7 @@ Scope: `admin:write`.
 
 **Add or replace one route of a remote PEP's reverse proxy**
 
-Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
+Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them; `from` renames the route it names to `id`. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -5035,12 +5074,18 @@ Scope: `admin:write`.
 |---|---|---|---|
 | `application` | string |  | The identifier of the application in this realm's registry the route fronts. |
 | `forwardCredentials` | boolean, or string |  | Whether the caller's own credential is forwarded upstream. |
+| `from` | string |  | The route being edited, when it is not `id`: the route's own page renames a route by sending its current id here and the new one as `id`. An unknown route is STS-XACML-0230, and a new id another route holds is STS-XACML-0192. |
+| `headerClaim` | list, or string |  |  |
+| `headerClaim[]` | string |  |  |
+| `headerName` | list, or string |  |  |
+| `headerName[]` | string |  |  |
 | `id` | string |  | The route's id; one already in the list is replaced where it stands, keeping its identity. |
 | `match` | one of `prefix`, `exact` |  | prefix (the default) or exact. |
 | `mechanisms` | list, or string |  |  |
 | `mechanisms[]` | string |  |  |
 | `methods` | list, or string |  |  |
 | `methods[]` | string |  |  |
+| `mode` | one of `headers`, `saml`, `jwt` |  | With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity. |
 | `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `path` | string |  | The path the route matches. |
 | `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |
@@ -5049,6 +5094,7 @@ Scope: `admin:write`.
 | `route` | map, or string |  |  |
 | `route.{key}` | any JSON |  |  |
 | `routeAction` | string |  | The XACML action (the route's `action`); the method when empty. |
+| `separator` | string |  | mode headers: the one character that joins a claim's several values; , when empty. |
 | `signals` | boolean, or string |  | Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session. |
 
 **200**: The operation was applied.

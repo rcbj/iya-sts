@@ -550,7 +550,7 @@ class XacmlAdmin {
    *
    * @returns the remote PEP view as JSON
    */
-  pepsJson(pep?: string): Record<string, any> {
+  pepsJson(pep?: string, route?: string): Record<string, any> {
     const { log, config, peps, pepHttp, pepTls, pki,
             pepProxy, pepSettings, pepListeners } = this.deps;
     log.debug('Entering XacmlAdmin.pepsJson().');
@@ -718,10 +718,69 @@ class XacmlAdmin {
       // The route form's application chooser (#1760), on the PEP's own
       // page only, as the roles page carries its own.
       json.applicationChoices = this.deps.applicationChoices();
+      // ONE ROUTE'S OWN PAGE (#1760, rcbj: "click on a route name and go
+      // to another page and be able to update all the configuration
+      // values"): `?pep=&route=` adds the route, where it stands, whether
+      // its application resolves and which proxy listeners serve it.
+      if (typeof route === 'string' && route !== '') {
+        json.route = route;
+        json.routeDetail = this.routeDetailOf(rows[0] || null, route,
+                                              json.applicationChoices);
+      }
     }
     log.debug('Leaving XacmlAdmin.pepsJson(). ' + rows.length +
               ' registered PEP(s).');
     return json;
+  }
+
+  // ONE ROUTE, as its page draws it (#1760). Read off the row `pepsJson()`
+  // built — the document as the validator normalised it, each route's
+  // resolution and every listener joined to the PEP's report — so the page
+  // shows nothing the PEP's own page does not. A route is served by EVERY
+  // proxy listener: the route table is the proxy's, not a listener's.
+  private routeDetailOf(row: any, id: string,
+                        choices: any[]): Record<string, any> {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.routeDetailOf().');
+    const routes = row && row.proxy ? row.proxy.routes : [];
+    const at = routes.map(function (one: any) {
+      return one.id;
+    }).indexOf(id);
+    if (at < 0) {
+      log.debug('Leaving XacmlAdmin.routeDetailOf(). Not found.');
+      return { found: false, route: null, position: 0, count: routes.length,
+               usable: null, why: null, application: null, servedBy: [] };
+    }
+    const route = routes[at];
+    const state = (row.proxyRoutes || []).filter(function (one: any) {
+      return one.route === id;
+    })[0] || null;
+    const chosen = route.public ? null
+      : (choices || []).filter(function (one: any) {
+          return one.identifier === route.application;
+        })[0] || null;
+    const servedBy = (row.listenerRows || []).filter(function (one: any) {
+      return one.purpose === 'proxy';
+    }).map(function (one: any) {
+      const said = one.reported;
+      return {
+        id: one.id, source: one.source, protocol: one.protocol,
+        port: said && said.port ? said.port
+          : (one.definition ? one.definition.port : one.defaultPort),
+        state: said ? said.state : null,
+        reason: said ? said.reason : null
+      };
+    });
+    log.debug('Leaving XacmlAdmin.routeDetailOf(). At ' + at);
+    return {
+      found: true, route: route, position: at, count: routes.length,
+      usable: route.public ? true : (state ? state.usable : null),
+      why: state && !state.usable ? state.why : null,
+      application: route.public ? null
+        : { identifier: route.application,
+            name: chosen ? chosen.name : '', found: !!chosen },
+      servedBy: servedBy
+    };
   }
 
   // ===========================================================================
@@ -954,6 +1013,18 @@ class XacmlAdmin {
                why: '"' + name + '" has no route "' + routeId + '".' },
                'STS-XACML-0230');
     }
+    route.identity = this.identityFromForm(body);
+    log.debug('Leaving XacmlAdmin.withRouteIdentity().');
+    return { ok: true, proxy: proxy };
+  }
+
+  // A route's identity from a form's members (`mode`, the paired
+  // `headerName` and `headerClaim` rows, `separator`): one reading for
+  // set-pep-route-identity and the route page's set-pep-route. A row with
+  // no header name is left out; the validator judges the rest.
+  private identityFromForm(body: any): any {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.identityFromForm().');
     const list = function (value: unknown): string[] {
       log.debug('Entering list().');
       log.debug('Leaving list().');
@@ -972,13 +1043,12 @@ class XacmlAdmin {
       }
     });
     const mode = String(body.mode || 'headers');
-    route.identity = mode === 'headers'
+    log.debug('Leaving XacmlAdmin.identityFromForm(). ' + mode);
+    return mode === 'headers'
       ? { mode: mode, headers: headers,
           separator: String(body.separator === undefined ||
                             body.separator === '' ? ',' : body.separator) }
       : { mode: mode };
-    log.debug('Leaving XacmlAdmin.withRouteIdentity().');
-    return { ok: true, proxy: proxy };
   }
 
   // A form or API boolean: true, false, or undefined for "not given".
@@ -1103,6 +1173,12 @@ class XacmlAdmin {
       if (signals !== undefined) {
         given.signals = signals;
       }
+      // THE ROUTE PAGE SENDS THE IDENTITY TOO (#1760): with `mode`, the
+      // form's identity members are the route's identity; a public route
+      // forwards nobody, so it takes none.
+      if (body.mode !== undefined && body.mode !== '' && !isPublic) {
+        given.identity = self.identityFromForm(body);
+      }
     }
     if (!given || typeof given !== 'object' || Array.isArray(given)) {
       log.debug('Leaving XacmlAdmin.withRoute(). No route.');
@@ -1113,7 +1189,21 @@ class XacmlAdmin {
                     'forwardCredentials, signals), or the console form\'s ' +
                     'members.' }, 'STS-XACML-0256');
     }
-    const at = ids.indexOf(given.id);
+    // A RENAME (#1760, the route's own page): `from` is the route being
+    // edited and `id` what it is called after the save. Only `from` is
+    // taken out, so a new id another route already holds is refused by
+    // the validator's own "two routes are called" (STS-XACML-0192). The
+    // pull carries the new id, and a PEP still holding the old document
+    // asks for the old one until its next poll.
+    const from = body.from === undefined || body.from === null ||
+      body.from === '' ? null : String(body.from);
+    if (from !== null && ids.indexOf(from) < 0) {
+      log.debug('Leaving XacmlAdmin.withRoute(). No route to rename.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" has no route "' + from + '" to edit.' },
+               'STS-XACML-0230');
+    }
+    const at = ids.indexOf(from !== null ? from : given.id);
     // AN EDIT KEEPS THE ROUTE'S IDENTITY where the form says nothing of it:
     // the identity has a form of its own (`set-pep-route-identity`), and a
     // route turned public forwards nobody.
@@ -2055,8 +2145,10 @@ class XacmlAdmin {
         peps: function (req?: any) {
           log.debug("Entering peps().");
           const one = req && req.query ? req.query.pep : undefined;
+          const route = req && req.query ? req.query.route : undefined;
           log.debug("Leaving peps().");
-          return self.pepsJson(typeof one === 'string' ? one : undefined);
+          return self.pepsJson(typeof one === 'string' ? one : undefined,
+                               typeof route === 'string' ? route : undefined);
         },
         // THE SIXTH VIEW, AND IT WAS MISSING UNTIL PHASE FIVE. Rule 7 says
         // every console page gets an operation on /admin-api in the same

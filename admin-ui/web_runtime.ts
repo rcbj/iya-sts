@@ -1843,7 +1843,10 @@ class ConsoleRuntime extends SpaClient {
                   ? '#' + page.upTo.fragment : ''),
           label: (this.shell.navLabels || {})[listPath] || page.title,
           leaf: String(query[page.drill.param]),
-          filtered: Object.keys(kit.listViewOf(listPath, query)).length > 0 }
+          filtered: Object.keys(kit.listViewOf(listPath, query)).length > 0,
+          // CRUMBS BETWEEN THE SECTION AND THE LEAF (#1760): a remote PEP
+          // route names its PEP, a link to that PEP's Reverse proxy tab.
+          via: page.upVia ? page.upVia(query) : undefined }
       : null;
     // The title in the reader's language (#539 phase 5).
     const title = WebPages.titleOf(page, this.t);
@@ -2461,11 +2464,16 @@ class ConsoleRuntime extends SpaClient {
     // success in `why`, as the PKI page's upload does — that, as the
     // server-rendered console's strip read it.
     const said = String((json && (json.message || json.why)) || 'Done.');
-    const landing = page ? WebAnswers.landing(page, action, json, back)
+    const landing = page ? WebAnswers.landing(page, action, json, back,
+                                              fields)
                          : null;
     if (landing) {
-      await this.go(landing + (landing.indexOf('?') < 0 ? '?' : '&') +
-                    'notice=' + encodeURIComponent(said));
+      // The notice goes in the query, before a landing's fragment (#1760).
+      const hashAt = landing.indexOf('#');
+      const path = hashAt < 0 ? landing : landing.slice(0, hashAt);
+      await this.go(path + (path.indexOf('?') < 0 ? '?' : '&') +
+                    'notice=' + encodeURIComponent(said) +
+                    (hashAt < 0 ? '' : landing.slice(hashAt)));
       return;
     }
     const key = json && json.ok ? 'notice' : 'error';

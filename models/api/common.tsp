@@ -1565,6 +1565,12 @@ namespace IyaSts.Api.Common;
 // (#1760, D10): the reference only.
 @hoisted model XacmlPepProxyRouteState { `route`?: string; `application`?: string; `usable`?: boolean; `why`?: NullableString }
 
+// One route of a remote PEP's reverse proxy, as its own console page
+// draws it (#1760): `GET /admin-api/xacml/peps?pep=&route=`. The route as
+// the validator normalised it, where it stands, whether its application
+// resolves (D10), and every proxy listener with what the PEP last reported.
+@js(#{ `additionalProperties`:false, `properties`:#{ `found`:#{`type`:"boolean"}, `route`:#{ `anyOf`:#[#{ `type`:"object", `additionalProperties`:false, `properties`:#{ `id`:#{`type`:"string"}, `path`:#{`type`:"string"}, `match`:#{`type`:"string",`enum`:#["prefix","exact"]}, `methods`:#{`type`:"array",`items`:#{`type`:"string"}}, `public`:#{`type`:"boolean"}, `mechanisms`:#{`type`:"array",`items`:#{`type`:"string"}}, `application`:#{`type`:"string"}, `resource`:#{`type`:"string"}, `action`:#{`type`:"string"}, `identity`:#{ `type`:"object", `additionalProperties`:false, `properties`:#{ `mode`:#{`type`:"string", `enum`:#["headers", "saml", "jwt"]}, `headers`:#{ `type`:"array", `items`:#{ `type`:"object", `additionalProperties`:false, `properties`:#{ `name`:#{`type`:"string"}, `claim`:#{`type`:"string", `enum`:#["sub", "username", "email", "name", "given_name", "family_name", "groups", "mechanism", "acr", "amr"]} } } }, `separator`:#{`type`:"string"} } }, `forwardCredentials`:#{`type`:"boolean"}, `signals`:#{`type`:"boolean"} } }, #{`type`:"null"}] }, `position`:#{`type`:"integer",`minimum`:0}, `count`:#{`type`:"integer",`minimum`:0}, `usable`:#{`type`:#["boolean","null"]}, `why`:#{`type`:#["string","null"]}, `application`:#{ `type`:#["object","null"], `additionalProperties`:false, `properties`:#{ `identifier`:#{`type`:"string"}, `name`:#{`type`:"string"}, `found`:#{`type`:"boolean"} } }, `servedBy`:#{ `type`:"array", `items`:#{ `type`:"object", `additionalProperties`:false, `properties`:#{ `id`:#{`type`:"string"}, `source`:#{`type`:"string",`enum`:#["environment","service"]}, `protocol`:#{`type`:"string",`enum`:#["http","https"]}, `port`:#{`type`:"integer",`minimum`:0}, `state`:#{`type`:#["string","null"]}, `reason`:#{`type`:#["string","null"]} } } } } }) @hoisted model XacmlPepRouteDetail {}
+
 // A route of a remote PEP that fronts an application (#1760, D10).
 @hoisted model XacmlPepRouteReference { `pep`?: string; `route`?: string; `path`?: string; `mechanisms`?: (string)[] }
 

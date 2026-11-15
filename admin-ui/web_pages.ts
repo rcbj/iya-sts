@@ -169,6 +169,10 @@ interface WebPage {
   // PEPs tab, so its trail's section crumb, and the nav it marks, are that
   // page's, and the crumb lands on the tab.
   upTo?: { path: string; fragment?: string };
+  // AND THE CRUMBS BETWEEN THAT SECTION AND THE LEAF (#1760): a remote PEP
+  // route's page is XACML › the PEP › the route, the PEP a link to its
+  // Reverse proxy tab. Each is `{ label, href }` (`WebShell.trailBar()`).
+  upVia?: (query: Json) => Array<{ label: string; href: string }>;
   render: (view: Json, ctx?: Json) => string;
   // A PICTURE'S `?format=svg` (#444 phase 2b): the drawing as a document on
   // its own, with no links, drawn from the page's answer in the browser as
@@ -1143,6 +1147,31 @@ const PAGES: WebPage[] = [
     },
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.pepsBody(ctx || WebKit.context(), view);
+    } },
+  // ONE ROUTE OF A REMOTE PEP'S REVERSE PROXY (#1760), reached from a route
+  // id on the PEP's Reverse proxy tab: the same operation asked with `pep`
+  // and `route`. Without `route` it lists every PEP's routes as links.
+  { path: '/admin/xacml/pep/route', title: 'Remote PEP route',
+    operation: '/admin-api/xacml/peps',
+    upTo: { path: '/admin/xacml', fragment: 'xacml-tab-peps' },
+    upVia: function (query: Json): Array<{ label: string; href: string }> {
+      const pep = String((query && query.pep) || '');
+      return pep ? [{ label: pep, href: XacmlPage.proxyTabHref(pep) }] : [];
+    },
+    drill: {
+      param: 'route',
+      sample: function (list: Json): string | null {
+        const held = (list.peps || []).filter(function (one: Json) {
+          return one.proxy && one.proxy.routes && one.proxy.routes.length;
+        })[0];
+        return held ? held.proxy.routes[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.routeDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.routeIndex(ctx || WebKit.context(), view);
     } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
     compose: {
