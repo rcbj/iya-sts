@@ -10258,7 +10258,8 @@ class AdminActions {
    */
   realmsAction(body: IyaApi.AdminActionBody<
     '/admin-api/realms'>) {
-    const { log, credentials, realms, rbac, mode, errorCodes } = this.deps;
+    const { log, credentials, realms, rbac, mode, errorCodes,
+            serviceAccounts } = this.deps;
     log.debug("Entering AdminActions.realmsAction(). action=" + (body &&
                                                                  body.action));
     const action = String((body && body.action) || '').trim();
@@ -10303,6 +10304,14 @@ class AdminActions {
       // And, in product, a realm left with nobody who may enter its console
       // is logged at once (#103, STS-ADMIN-0798).
       rbac.reportClosedConsole(result.realm.id);
+      // A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760), owned by the
+      // administrators just seeded: the realm's seed put its own
+      // `remote-pep-1` in the group before they existed.
+      realms.run(result.realm, function () {
+        log.debug("Entering realmsAction()'s designateRemotePeps().");
+        serviceAccounts.designateRemotePeps('a realm created');
+        log.debug("Leaving realmsAction()'s designateRemotePeps().");
+      });
       let password = '';
       if (seeded.ran && seeded.created && mode.isProduct()) {
         realms.run(result.realm, function () {

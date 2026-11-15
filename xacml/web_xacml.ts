@@ -2730,6 +2730,40 @@ class XacmlPage {
   }
 
   /**
+   * Draws the PEP's identity entry as a service account (#1760): whether it
+   * is one, its owners, and a link to the person's Service account tab.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the cell as HTML
+   */
+  static pepServiceAccount(t: Json, row: Json): string {
+    const account = row.identityAccount;
+    if (!account) {
+      return '<span class="sub">' +
+        t.html('consoleXacml.pepPage.serviceAccount.noEntry') + '</span>';
+    }
+    const href = '/admin/users?user=' +
+      encodeURIComponent(String(account.username || account.dn)) +
+      '#ucred-service';
+    const link = '<a href="' + esc(href) + '">' +
+      t.html('consoleXacml.pepPage.serviceAccount.link') + '</a>';
+    if (!account.serviceAccount) {
+      return '<span class="warn">' +
+        t.html('consoleXacml.pepPage.serviceAccount.not') + '</span> ' + link;
+    }
+    const owners = (account.owners || []).map(function (one: Json): string {
+      return '<code>' + esc(String(one.name || one.dn)) + '</code>';
+    });
+    return t.html('consoleXacml.pepPage.serviceAccount.yes') + ' ' +
+      (owners.length
+        ? t.html('consoleXacml.pepPage.serviceAccount.owners') + ' ' +
+          owners.join(', ')
+        : t.html('consoleXacml.pepPage.serviceAccount.noOwner')) +
+      ' ' + link;
+  }
+
+  /**
    * Draws one remote PEP's page (#1760), `/admin/xacml/pep?pep=<name>`:
    * tabs for its overview, its decisions, the settings this service sets
    * for it, its listener certificate, its reverse proxy and its CAEP/RISC
@@ -2769,6 +2803,11 @@ class XacmlPage {
            'consoleXacml.tip.peps.certificate') +
       line(t.html('consoleXacml.pepPage.th.identity'), code(row.identity),
            'consoleXacml.tip.overview.identity') +
+      // The identity as a service account (#1760), with its owners and a
+      // link to the person's Service account tab.
+      line(t.html('consoleXacml.pepPage.th.serviceAccount'),
+           self.pepServiceAccount(t, row),
+           'consoleXacml.tip.overview.serviceAccount') +
       line(t.html('consoleXacml.pepPage.th.thumbprint'),
            code(row.thumbprint), 'consoleXacml.tip.overview.thumbprint') +
       line(t.html('consoleXacml.pepPage.th.registered'),

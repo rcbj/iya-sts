@@ -137,6 +137,8 @@ interface DirectoryHooks {
   serviceAccountNames?(): string[];
   serviceAccountNamesAsync?(): Promise<string[]>;
   resolveOwner?(value: string): { kind: string; dn: string; name: string };
+  // The DNs of the PERSONS in the ambient realm's REMOTE_PEPS group (#1760).
+  remotePepMembers?(): string[];
   [hook: string]: unknown;
 }
 
@@ -187,6 +189,12 @@ interface ServiceAccountsDeps {
   // `found: null` where the register is not loaded in this process.
   destination(dn: string): { found: boolean | null; name?: string;
                              problems?: string[] };
+  // Who a remote PEP's identity is owned by, first that resolves (#1760):
+  // the realm's Admin Write group, then its bootstrap administrator.
+  remotePepOwnerCandidates?(): string[];
+  // Told once a remote PEP's identity was made a service account (#1760):
+  // the audit row, and the sessions a browser may no longer hold ended.
+  designated?(username: string, owner: string, why: string): void;
 }
 
 // What an entry is, as the domain model says it means (#1390), on any of the
@@ -325,6 +333,46 @@ class ServiceAccounts {
         return row ? { found: true, name: row.name,
                        problems: row.problems || [] }
           : { found: false };
+      },
+      remotePepOwnerCandidates: function () {
+        log.debug("Entering ServiceAccounts remotePepOwnerCandidates().");
+        // LAZY: `config` and the bootstrap name are read at the act, and
+        // `admin.writeGroup` is per process — the same name in every realm,
+        // resolved in the ambient realm's directory, so it is that realm's
+        // own roster group.
+        const config = require('./config');
+        const out = [String(config.value('admin.writeGroup') || ''),
+                     String(require('./bootstrap_name').current() || '')];
+        log.debug("Leaving ServiceAccounts remotePepOwnerCandidates().");
+        return out;
+      },
+      designated: function (username, owner, why) {
+        log.debug("Entering ServiceAccounts designated().");
+        require('./audit').audit({
+          action: 'admin.service-account.set', actor: 'system',
+          channel: 'internal', protocol: 'Directory', target: username,
+          outcome: 'success',
+          summary: 'make ' + username + ' a service account: it holds ' +
+                   'REMOTE_PEPS, so it is a remote PEP\'s identity',
+          detail: { owners: owner ? [owner] : [], reason: why,
+                    remotePep: true } });
+        // A REALM THAT KEEPS SERVICE ACCOUNTS OUT OF EVERY BROWSER ends the
+        // sessions the entry still holds, as the console's own act does
+        // (`admin_actions.ts`'s `serviceAccountAction()`): the next sign-in
+        // would be refused, and a session already open is the same browser.
+        const policy = require('./service_account_policy');
+        if (!policy.allowsDoor('browser', policy.profileFor(username))) {
+          try {
+            require('./account_state').endEverything(username, {
+              actor: 'system', channel: 'internal',
+              initiatingEntity: 'policy',
+              by: 'becoming a service account as a remote PEP\'s identity' });
+          } catch (e) {
+            log.debug("Caught in ServiceAccounts designated(): " +
+                      ((e && e.message) || e));
+          }
+        }
+        log.debug("Leaving ServiceAccounts designated().");
       }
     };
   }
@@ -572,6 +620,194 @@ class ServiceAccounts {
              one.destination.replace(/\s*,\s*/g, ',').toLowerCase() === dn;
     });
     log.debug("Leaving ServiceAccounts.secretNameInUse(). " + out);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760, rcbj: "The user that
+  // a remote PEP uses to map its client cert to and connect to the STS needs
+  // to be flagged as a service account. The realm admin can be listed as the
+  // owner.")
+  //
+  // The entry a remote PEP's client certificate resolves to is a PERSON
+  // entry holding REMOTE_PEPS (`roles.remotePepGroup`), and it is a program's
+  // identity, not a person's. So the moment an entry is put in that group it
+  // is made a service account, owned by the realm's administrators:
+  //
+  //   * ONE CHOKEPOINT: `ldap/ldap_server.js`'s `noteMembershipChange()`,
+  //     which every write of a group's members tells — the console's and the
+  //     API's add-member, an LDAP add, modify or modifyDN, a bulk import —
+  //     asks `designateRemotePep()` of each PERSON who JOINED the group. An
+  //     application holding REMOTE_PEPS is already a non-human identity of
+  //     its own kind and is left alone; so is anybody already a service
+  //     account, whose owners an administrator chose.
+  //   * THE SEED AND EVERY ENTRY THAT PREDATES THIS: `designateRemotePeps()`,
+  //     every person in the realm's group at once, called at startup right
+  //     after the realm's bootstrap administrator is seeded (`server.js`,
+  //     inside the bootstrap claim) and when a realm is created — the seed's
+  //     own group write is not told (`origin: 'seed'`), because the
+  //     administrator who is to own it does not exist yet at that point.
+  //
+  // THE OWNER is the realm's Admin Write group (`admin.writeGroup`, the
+  // realm's own roster), which outlives any one administrator; where the
+  // realm has none yet, its bootstrap administrator. Neither is a DEFERRAL
+  // (STS-SVCACCT-0051), never an ownerless write, whatever `requireOwner`
+  // says: the flag and its owner are one write, because a service account
+  // always keeps an owner and is never made a person again. The next start
+  // or the next membership change tries again. Nothing here changes an
+  // entry that is a service account already, and nothing here clears one.
+  //
+  // THE DOORS. A remote PEP authenticates by mutual TLS and its certificate
+  // is NAMED to the entry (`xacml.ts`'s `callerIdentity()`); the REMOTE_PEPS
+  // question is `roles.rolesOf()` and the access policy. Neither asks a
+  // service-account door — those are asked of a PASSWORD
+  // (`credentials.verifyPrepare()`) and of a BROWSER session
+  // (`authn.startSession()`) — so the PEP's connection is unchanged, and a
+  // browser sign-in as the entry is refused, which is the point.
+  //
+  // ROTATION. The entry names no push destination, so the rotation job skips
+  // it without a line above debug (`service_account_rotation.ts`'s
+  // `rotateDue()`): there is no password to rotate.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Reads a remote PEP's identity entry as the PEP page shows it: who it is,
+   * whether it is a service account, and its owners.
+   *
+   * @param key - the entry's DN, or any key the directory locates it by
+   * @returns the facts, or null where no person entry answers to the key
+   */
+  identityOf(key: unknown): { username: string; dn: string;
+                              serviceAccount: boolean;
+                              owners: ServiceAccountOwner[] } | null {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.identityOf().");
+    const found = this.read(key);
+    if (!found || !found.person) {
+      log.debug("Leaving ServiceAccounts.identityOf(). No person.");
+      return null;
+    }
+    const facts = this.of(found.dn);
+    log.debug("Leaving ServiceAccounts.identityOf(). " + !!facts);
+    return { username: found.username, dn: found.dn,
+             serviceAccount: !!facts, owners: facts ? facts.owners : [] };
+  }
+
+  // The owner a remote PEP's identity is given: the realm's Admin Write
+  // group where it exists, else its bootstrap administrator, else none.
+  private remotePepOwner(selfDn: string): ServiceAccountOwner | null {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.remotePepOwner().");
+    const candidates = typeof this.deps.remotePepOwnerCandidates === 'function'
+      ? this.deps.remotePepOwnerCandidates() : [];
+    for (const one of candidates) {
+      const text = String(one || '').trim();
+      if (!text || !this.directory ||
+          typeof this.directory.resolveOwner !== 'function') {
+        continue;
+      }
+      const owner = this.directory.resolveOwner(text);
+      if ((owner.kind === 'group' || owner.kind === 'person') &&
+          owner.dn.toLowerCase() !== String(selfDn || '').toLowerCase()) {
+        log.debug("Leaving ServiceAccounts.remotePepOwner(). " + owner.dn);
+        return { dn: owner.dn, kind: owner.kind, name: owner.name };
+      }
+    }
+    log.debug("Leaving ServiceAccounts.remotePepOwner(). None.");
+    return null;
+  }
+
+  /**
+   * Makes a remote PEP's identity — a person holding REMOTE_PEPS — a service
+   * account owned by the realm's administrators (#1760). An entry that is a
+   * service account already, or no person, is left as it is.
+   *
+   * @param key - the entry's DN, or any key the directory locates it by
+   * @param why - what asked, for the log and the audit row
+   * @returns `{ ok, changed, deferred?, code?, username?, owner? }`
+   */
+  designateRemotePep(key: unknown, why?: string) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering ServiceAccounts.designateRemotePep().");
+    const found = this.read(key);
+    if (!found || !found.person) {
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). No person.");
+      return { ok: true, changed: false, skipped: 'not a person' };
+    }
+    if (ServiceAccounts.isServiceAccount(found.values)) {
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). Already one.");
+      return { ok: true, changed: false, username: found.username };
+    }
+    // NEVER AN OWNERLESS WRITE, WHATEVER `requireOwner` SAYS: a service
+    // account always keeps at least one owner and cannot be made a person
+    // again (rcbj, `fix/service-account-irreversible`), so the flag and its
+    // owner go in ONE write or not at all.
+    const owner = this.remotePepOwner(found.dn);
+    if (!owner) {
+      log.warn(errorCodes.tag('STS-SVCACCT-0051') + 'service_accounts: ' +
+               found.username + ' holds REMOTE_PEPS and is not yet a ' +
+               'service account: this realm has no Admin Write group and no ' +
+               'bootstrap administrator to own it. It is tried again at the ' +
+               'next start and the next change to the group.');
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). Deferred.");
+      return { ok: false, changed: false, deferred: true,
+               code: 'STS-SVCACCT-0051', username: found.username };
+    }
+    const done: any = this.set(found.dn, {
+      serviceAccount: true, owners: [owner.dn] });
+    if (!done.ok) {
+      log.warn(errorCodes.tag('STS-SVCACCT-0052') + 'service_accounts: ' +
+               found.username + ' holds REMOTE_PEPS and could not be made a ' +
+               'service account: ' + ((done.errors || []).join(' ') ||
+                                      'the directory refused the write') +
+               '.');
+      log.debug("Leaving ServiceAccounts.designateRemotePep(). Refused.");
+      return { ok: false, changed: false, code: 'STS-SVCACCT-0052',
+               username: found.username };
+    }
+    log.info('service_accounts: ' + found.username + ' holds REMOTE_PEPS, ' +
+             'so it is now a service account, owned by ' + owner.dn + ' (' + (why || 'a remote PEP\'s identity') +
+             ').');
+    if (typeof this.deps.designated === 'function') {
+      this.deps.designated(found.username, owner.dn, String(why || ''));
+    }
+    log.debug("Leaving ServiceAccounts.designateRemotePep(). Flagged.");
+    return { ok: true, changed: true, username: found.username,
+             owner: owner.dn };
+  }
+
+  /**
+   * Makes every person in the ambient realm's REMOTE_PEPS group a service
+   * account (#1760): the seed's identity and every entry put in the group
+   * before this existed. Idempotent; called at startup after the realm's
+   * bootstrap administrator is seeded, and when a realm is created.
+   *
+   * @param why - what asked
+   * @returns counts: `members`, `flagged`, `already`, `deferred`, `failed`
+   */
+  designateRemotePeps(why?: string) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.designateRemotePeps().");
+    const out = { members: 0, flagged: 0, already: 0, deferred: 0,
+                  failed: 0 };
+    const members = this.directory &&
+                    typeof this.directory.remotePepMembers === 'function'
+      ? this.directory.remotePepMembers() : [];
+    for (const dn of members) {
+      out.members += 1;
+      const one: any = this.designateRemotePep(dn, why);
+      if (one.changed) {
+        out.flagged += 1;
+      } else if (one.deferred) {
+        out.deferred += 1;
+      } else if (!one.ok) {
+        out.failed += 1;
+      } else if (!one.skipped) {
+        out.already += 1;
+      }
+    }
+    log.debug("Leaving ServiceAccounts.designateRemotePeps(). " +
+              JSON.stringify(out));
     return out;
   }
 
@@ -1112,6 +1348,9 @@ export = {
   names: slot.forward('names'),
   namesAsync: slot.forward('namesAsync'),
   secretNameInUse: slot.forward('secretNameInUse'),
+  identityOf: slot.forward('identityOf'),
+  designateRemotePep: slot.forward('designateRemotePep'),
+  designateRemotePeps: slot.forward('designateRemotePeps'),
   check: slot.forward('check'),
   set: slot.forward('set'),
   addOwner: slot.forward('addOwner'),

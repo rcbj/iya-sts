@@ -181,6 +181,45 @@ own, changes this answer with everything else. `xacml.enforceAccess` turns the
 layer off and the old `xacml.pepRequireCertificate` refusal is what answers
 underneath.
 
+### The entry is a SERVICE ACCOUNT, owned by the realm's administrators (#1760)
+
+rcbj: "The user that a remote PEP uses to map its client cert to and connect
+to the STS needs to be flagged as a service account. The realm admin can be
+listed as the owner." `common/service_accounts.ts`'s *A REMOTE PEP'S IDENTITY
+IS A SERVICE ACCOUNT* is the design; `common/CLAUDE.md` 3cd has the rule. What
+this family needs to know:
+
+* **ONE CHOKEPOINT, THE MEMBERSHIP WRITE.** `ldap_server.js`'s
+  `noteMembershipChange()` — which every write of a group's members tells —
+  hands each PERSON who joins the group `roles.remotePepGroup` names to
+  `designateRemotePep()`. Not the registration: an entry designated by being
+  granted REMOTE_PEPS is one before any PEP knocks, and the gate stays a
+  read. The seed and the entries that predate this are
+  `designateRemotePeps()`, run at startup after each realm's bootstrap
+  administrator (`server.js`, inside the bootstrap claim) and at a realm's
+  create (`admin_actions.ts`). An application holding REMOTE_PEPS, and an
+  entry already a service account, are left as they are.
+* **THE OWNER** is the realm's Admin Write group, else its bootstrap
+  administrator, in the same write as the flag, else a deferral
+  (`STS-SVCACCT-0051`) — never an ownerless write, whatever `requireOwner`
+  says.
+* **NO DOOR IS ON THIS PATH, AND NONE WAS ADDED.** The four links above ask no
+  password and start no session: `callerIdentity()` reads the handshake and
+  names the entry, `pepAccess()` asks `roles.rolesOf()` and the access
+  policy. `credentials.serviceAccountDoorRefusal()` and
+  `secondFactorRefusal()` are asked inside `credentials.verifyPrepare()` /
+  `verify()` (a password), and the browser door in `authn.startSession()`;
+  none of `/xacml/pep/*`, `/xacml/pip`, the settings, the listener
+  certificate or the proxy's validation and identity doors reaches either
+  for the PEP's own entry — `basic()` verifies an END USER's password, and
+  `identity()` issues about the end user. A browser sign-in as the PEP's
+  entry is refused, which is wanted. `tests/xacml_pep_proxy.js` B0s/B1
+  registers and pulls as one; `tests/remote_pep_service_accounts.js` holds
+  the rest.
+* **THE PAGE** draws it on the PEP's Overview (`pepServiceAccount()`), from
+  `identityAccount` on each row of `pepsJson()`, read where it is
+  (`service_accounts.identityOf()`), never stored on `ou=peps`.
+
 ### This service's own policies are never pushed
 
 `GET /xacml/pep/policies` withholds the documents named by `xacml.accessPolicy`

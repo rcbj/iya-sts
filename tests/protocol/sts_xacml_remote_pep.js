@@ -1634,6 +1634,21 @@ async function itRegistersAndPulls() {
     assert.strictEqual(there.row.stale, false,
       "the PEP has just registered and pulled, so it cannot be stale. The " +
       "row says lastSeen=" + there.row.lastSeen);
+    // #1760: the entry a remote PEP's certificate maps to is a SERVICE
+    // ACCOUNT, owned by the realm's administrators — made one when it joined
+    // the REMOTE_PEPS group, or at the realm's creation for the seed. That
+    // the PEP registered and pulled above, as one, is the other half: its
+    // mutual-TLS door is no service-account door.
+    const account = there.row.identityAccount;
+    assert.ok(account && account.serviceAccount === true,
+      "THE PEP'S IDENTITY ENTRY SHOULD BE A SERVICE ACCOUNT (#1760). The " +
+      "row's identityAccount is " + JSON.stringify(account));
+    assert.ok(Array.isArray(account.owners) && account.owners.length >= 1 &&
+              account.owners.every(function (one) {
+                return one.kind === "group" || one.kind === "person";
+              }),
+      "and it should name an owner — the realm's Admin Write group, or its " +
+      "bootstrap administrator. It names " + JSON.stringify(account.owners));
     assert.ok(there.row.lastSeen &&
               Date.now() - Date.parse(there.row.lastSeen) < 60000,
       "and lastSeen should be seconds old — a pull moves it as well as a " +

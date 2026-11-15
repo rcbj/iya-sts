@@ -463,9 +463,20 @@ async function childBody() {
               ' created', JSON.stringify(one).slice(0, 300));
     });
     ldap.changeStoredCertificate('person', 'ppxpep', { add: derOf(pepCred) });
+    // THE REALM'S ADMINISTRATORS (#1760): an Admin Write group to own the
+    // PEP's identity, which joining remote-peps makes a service account.
+    ldap.createUser('ppxadmin', { invent: false });
+    ldap.createGroup(String(config.value('admin.writeGroup')));
+    adminActions.groupsAction({ action: 'add-member',
+      group: String(config.value('admin.writeGroup')), member: 'ppxadmin' });
     adminActions.groupsAction({ action: 'add-member',
       group: String(config.value('roles.remotePepGroup')),
       member: 'ppxpep' });
+    const account = require(ROOT + '/common/service_accounts').of('ppxpep');
+    t.check(!!account && account.owners.length === 1 &&
+            account.owners[0].kind === 'group',
+            'B0s. the PEP\'s identity is a service account owned by the ' +
+            'realm\'s Admin Write group (#1760)', JSON.stringify(account));
   });
   const serverCa = await testCa.makeCa();
   const serverLeaf = await testCa.listenerCertificate(serverCa, '127.0.0.1');
@@ -498,7 +509,9 @@ async function childBody() {
   let r = await request(port, 'POST', PREFIX + '/xacml/pep/register',
                         pepCred, { version: 'test' });
   t.check(r.status === 201 || r.status === 200,
-          'B1. the PEP registers in the realm', brief(r));
+          'B1. the PEP registers in the realm, its identity a service ' +
+          'account (#1760: the mTLS door is no service-account door)',
+          brief(r));
   const NAME = r.json ? r.json.name : '';
   const before = await request(port, 'GET', PULL, pepCred);
   t.check(before.status === 200 && before.json &&

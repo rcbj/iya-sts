@@ -13234,6 +13234,23 @@ is the operator's page; each file's header argues its part.
   each reference once per run and is off only where no profile of the
   realm rotates. **Who names a profile is the service-account index**
   (`service_accounts.names()`), not a walk: only a service account can.
+* **A REMOTE PEP'S IDENTITY IS ONE, AUTOMATICALLY (#1760).** A person who
+  joins the group `roles.remotePepGroup` names is made a service account by
+  `designateRemotePep()`, told from `ldap_server.js`'s
+  `noteMembershipChange()` — the one place every member write passes — in
+  the group's realm; a seed's write is not told (`seeding`, while `seed()` runs), and
+  `designateRemotePeps()` covers the seed and every entry already in the
+  group at startup (after the realm's bootstrap administrator, in the
+  bootstrap claim) and at a realm's create. The owner is the realm's
+  `admin.writeGroup` group, else its bootstrap administrator, written in
+  the SAME write as the flag; with neither it is DEFERRED (STS-SVCACCT-0051)
+  and nothing is written, whatever `requireOwner` says, because a service
+  account always keeps an owner and is never made a person again; a write the directory refuses is STS-SVCACCT-0052. An entry
+  already a service account keeps its owners. The write is audited
+  (`admin.service-account.set`, actor `system`) and, where the policy
+  refuses browsers, ends what the entry held (`account_state.endEverything()`),
+  as the console's own act does. No door is on the PEP's certificate path
+  (`xacml/CLAUDE.md`), and with no destination the rotation job skips it.
 
 ## 3be. `mail_factor.ts`: THE EMAILED FACTOR AS A FACT ABOUT A PERSON (#64, 2026-09-23)
 

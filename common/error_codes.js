@@ -22545,6 +22545,18 @@ const CODES = [
       'create, naming neither `default` nor a service-account policy of ' +
       'this realm (#1240).',
     spec: 'HTTP 400 (management API); constraintViolation (19) over LDAP' },
+  { code: 'STS-SVCACCT-0051',
+    summary: 'A remote PEP\'s identity (a person holding REMOTE_PEPS) was ' +
+      'not made a service account yet: the realm has neither an Admin ' +
+      'Write group nor its bootstrap administrator to own it, and a ' +
+      'service account is never written without an owner. Retried at the ' +
+      'next start and the next membership change (#1760).',
+    spec: '' },
+  { code: 'STS-SVCACCT-0052',
+    summary: 'A remote PEP\'s identity (a person holding REMOTE_PEPS) could ' +
+      'not be made a service account: the directory refused the write, or ' +
+      'the owner it named was refused (#1760).',
+    spec: '' },
   // ===== XACML =============================================================
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +

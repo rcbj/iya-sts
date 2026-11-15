@@ -562,6 +562,13 @@ class XacmlAdmin {
       return one === null || row.name === one;
     }).map(function (row) {
       const view = Object.assign({}, row);
+      // THE IDENTITY ENTRY AS A SERVICE ACCOUNT (#1760): the person the
+      // certificate resolves to, whether it is a service account, and its
+      // owners — read where it is, never stored on the row. Null where the
+      // row names no person entry here.
+      view.identityAccount = row.identity
+        ? require('../common/service_accounts').identityOf(row.identity)
+        : null;
       // THE MANAGED SETTINGS (#1760), read through the validator the pull
       // uses, so the page shows what the PEP would be sent; the stored
       // text itself is not answered. `settingsInUse` is the PEP's own

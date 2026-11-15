@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5615** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5617** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 183
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 115
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
@@ -4918,6 +4918,8 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0048` | stsServiceAccountPolicy was written on a person who is not a service account; only a service account names a service-account policy (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
 | `STS-SVCACCT-0049` | A named service-account policy was not deleted because a service account still names it in stsServiceAccountPolicy (#1240). | HTTP 400 (management API) |
 | `STS-SVCACCT-0050` | stsServiceAccountPolicy was written, over LDAP or at a create, naming neither `default` nor a service-account policy of this realm (#1240). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0051` | A remote PEP's identity (a person holding REMOTE_PEPS) was not made a service account yet: the realm has neither an Admin Write group nor its bootstrap administrator to own it, and a service account is never written without an owner. Retried at the next start and the next membership change (#1760). | — |
+| `STS-SVCACCT-0052` | A remote PEP's identity (a person holding REMOTE_PEPS) could not be made a service account: the directory refused the write, or the owner it named was refused (#1760). | — |
 
 ## STS-XACML
 

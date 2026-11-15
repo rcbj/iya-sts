@@ -870,6 +870,27 @@ serviceState.start({
   // does neither and says which node is. It is awaited below, before the
   // request workers start, so the listener still binds only after it ran.
   const bootstrapUsername = require('./common/bootstrap_name').current();
+  // A realm's remote PEP identities made service accounts (#1760). Never
+  // fatal: a failure leaves them as they were, and the next start asks again.
+  const designateRemotePeps = function (realmId) {
+    log.debug("Entering designateRemotePeps(). " + realmId);
+    try {
+      const done = require('./common/service_accounts')
+        .designateRemotePeps('startup');
+      if (done.flagged || done.deferred || done.failed) {
+        log.info('service accounts: the "' + (realmId || 'default') +
+                 '" realm\'s remote PEP identities: ' + done.flagged +
+                 ' made service accounts, ' + done.already + ' already, ' +
+                 done.deferred + ' deferred, ' + done.failed + ' failed.');
+      }
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-SVCACCT-0052') + 'service accounts: the ' +
+               '"' + (realmId || 'default') + '" realm\'s remote PEP ' +
+               'identities were not made service accounts: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving designateRemotePeps().");
+  };
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
@@ -892,6 +913,12 @@ serviceState.start({
     return realms.run(realms.DEFAULT_REALM, function () {
       return credentials.bootstrapOnce(realms.DEFAULT_ID, function () {
         adminRbac.seedBootstrapAdministrator();
+        // A REMOTE PEP'S IDENTITY IS A SERVICE ACCOUNT (#1760), owned by the
+        // realm's administrators — who exist from the line above. Every
+        // person in the REMOTE_PEPS group: the seeded `remote-pep-1` and any
+        // entry put there before this existed. Idempotent; a later member
+        // is made one as it joins (ldap_server.js's noteMembershipChange()).
+        designateRemotePeps(realms.DEFAULT_ID);
         // A CONSOLE NOBODY CAN ENTER IS SAID HERE, ONCE (#103): product mode
         // never opens it to whoever signs in, so a realm left with no
         // bootstrap administrator and an empty roster is logged under
@@ -913,6 +940,7 @@ serviceState.start({
           return realms.run(realm, function () {
             return credentials.bootstrapOnce(realm.id, function () {
               adminRbac.seedBootstrapAdministrator(realm.id);
+              designateRemotePeps(realm.id);
               adminRbac.reportClosedConsole(realm.id);
               return credentials.bootstrap({ username: bootstrapUsername });
             });

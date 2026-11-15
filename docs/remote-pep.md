@@ -196,6 +196,40 @@ its own membership.
 a predictable identity printed in this repository is not a grant a deployment should
 inherit — so every enforcement point needs its entry and its membership.
 
+### The PEP's entry is a service account
+
+The entry a PEP's certificate maps to is a program's identity, not a person's,
+so it is a [service account](service-accounts.md). An entry becomes one when it
+joins the `remote-peps` group, whichever way it joins: the console's **Add
+member**, `POST /admin-api/groups/add-member`, an LDAP modify or a bulk
+import. The seeded `cn=remote-pep-1` becomes one when the service starts and
+when a realm is created, after the realm's administrators exist. So does any
+entry that was already in the group before this release.
+
+- **The owner** is the realm's Admin Write group (`admin.writeGroup`, default
+  `admin-write`). A realm without that group is given its bootstrap
+  administrator instead. You can add or change owners on the person's
+  **Credentials → Service account** tab, as for any service account. An entry
+  that was already a service account keeps the owners it has.
+- **Nobody to own it.** Suppose a realm has no Admin Write group and no
+  bootstrap administrator. Then the entry is not changed, because a service
+  account is never made without an owner, STS-SVCACCT-0051 is logged, and it is tried
+  again at the next start and the next change to the group.
+- **The PEP's connection is unchanged.** Mutual TLS maps the certificate to
+  the entry, and the entry's `REMOTE_PEPS` role is checked by the access
+  policy. A service account's door rules apply to passwords and browser
+  sign-ins only, so they are never asked on this path.
+- **A browser sign-in as the entry is refused** (STS-SVCACCT-0010), unless the
+  realm's service-account policy allows browser sign-in. Sessions the entry
+  already held are ended when it becomes a service account.
+- **Nothing rotates.** The entry has no password and names no push
+  destination, so the rotation job passes over it.
+
+The PEP's **Overview** tab shows the entry's service-account status and its
+owners, with a link to the person's Service account tab.
+`GET /admin-api/xacml/peps` carries the same facts as `identityAccount` on
+each row.
+
 ### Minting the certificate
 
 `tests/tools/pep-credential.js` builds a Root CA, an Issuing CA and a client leaf
@@ -1124,7 +1158,7 @@ as it always has; both naming different PEPs is refused. Its tabs:
 
 | Tab | What is on it |
 |---|---|
-| Overview | what it registered as — its certificate subject, directory identity and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging and Forget |
+| Overview | what it registered as — its certificate subject, directory identity (and whether that entry is a [service account](#the-peps-entry-is-a-service-account), with its owners) and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging and Forget |
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
 | Listener | every listener it has — the four its environment binds, read-only, and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source; the forms that define, edit, remove and renew them; and the environment's HTTPS pair with Issue or Reissue (below) |

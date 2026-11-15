@@ -8,6 +8,27 @@ title: Release notes
 
 These changes are on a feature branch and are not part of any release yet.
 
+### A remote PEP's directory entry is a service account
+
+The entry a remote XACML PEP's client certificate maps to is now a
+[service account](service-accounts.md), owned by the realm's Admin Write
+group, or by its bootstrap administrator where that group does not exist
+([details](remote-pep.md#the-peps-entry-is-a-service-account)).
+
+* **When it happens.** An entry becomes one when it joins `remote-peps`. The
+  seeded `remote-pep-1` and every entry already in the group become one at
+  the next start, so an existing deployment needs no step of its own.
+* **What changes.** The PEP's connection is unaffected: mutual TLS is not a
+  service-account door. A browser sign-in as the entry is now refused
+  (STS-SVCACCT-0010) unless the realm's service-account policy allows it.
+* **When it waits.** A realm with no Admin Write group and no bootstrap
+  administrator leaves the entry as it is and logs STS-SVCACCT-0051: a
+  service account is never made without an owner.
+* **The console and the API.** The PEP's Overview tab shows it, with the
+  owners and a link to the person's Service account tab. Each row of
+  `GET /admin-api/xacml/peps` carries `identityAccount`. The change is
+  additive.
+
 ### The remote PEP binds no plain-HTTP listener by default
 
 The remote XACML PEP container (`iyasec/iya-sts-xacml-pep`) no longer binds

@@ -3782,6 +3782,14 @@ Scope: `admin:read`.
 | `peps[].enabled` | boolean |  |  |
 | `peps[].hostname` | string |  | The hostname the PEP reports on its registration and heartbeat (#1760), a DNS name; empty from a PEP that reports none. The realm's default listener certificate names it. |
 | `peps[].identity` | string |  |  |
+| `peps[].identityAccount` | object |  | The person entry the PEP's certificate resolves to, read as a service account (#1760): a remote PEP's identity is made one, owned by the realm's Admin Write group or its bootstrap administrator, when it joins the REMOTE_PEPS group. Null where no person entry answers to `identity`. |
+| `peps[].identityAccount.dn` | string |  |  |
+| `peps[].identityAccount.owners` | list |  |  |
+| `peps[].identityAccount.owners[].dn` | string |  |  |
+| `peps[].identityAccount.owners[].kind` | one of `person`, `group`, empty |  |  |
+| `peps[].identityAccount.owners[].name` | string |  |  |
+| `peps[].identityAccount.serviceAccount` | boolean |  |  |
+| `peps[].identityAccount.username` | string |  |  |
 | `peps[].lastNotify` | string |  |  |
 | `peps[].lastSeen` | string |  |  |
 | `peps[].listenerCertificate` | object |  |  |
