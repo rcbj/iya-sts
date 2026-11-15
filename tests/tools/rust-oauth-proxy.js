@@ -51,9 +51,18 @@ const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
   'fapi|challenge|device_authorization|' +
   'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
+// THE GRANTS THE RUST TOKEN ENDPOINT DOES NOT ISSUE YET (#444 phase 5,
+// the `oauth6` slice): a token request is routed by its `grant_type` as
+// well as its path — RFC 8693's token exchange, and the device and CIBA
+// grants whose endpoints are Node's above — so a job reaches the grants
+// after them. Both runtimes verify the other's tokens: one store, one key.
+const TOKEN_PATH = new RegExp('^(/realm/[^/]+)?(/[^/]+)?/oauth2/token' +
+  '(\\?|$)');
+const NODE_GRANTS = ['urn:ietf:params:oauth:grant-type:token-exchange',
+  'urn:ietf:params:oauth:grant-type:device_code',
+  'urn:openid:params:grant-type:ciba'];
 const counts = { rust: 0, node: 0 };
-https.createServer({ key: key, cert: cert }, function (req, res) {
-  const toNode = NODE_PATHS.test(req.url);
+function forward(req, res, toNode, body) {
   const target = new URL(toNode ? nodeBase : rustBase);
   counts[toNode ? 'node' : 'rust'] += 1;
   const upstream = https.request({ host: target.hostname, port: target.port,
@@ -66,7 +75,27 @@ https.createServer({ key: key, cert: cert }, function (req, res) {
     res.writeHead(502, { 'content-type': 'text/plain' });
     res.end('proxy: ' + e.message);
   });
-  req.pipe(upstream);
+  if (body === null) {
+    req.pipe(upstream);
+  } else {
+    upstream.end(body);
+  }
+}
+https.createServer({ key: key, cert: cert }, function (req, res) {
+  if (req.method === 'POST' && TOKEN_PATH.test(req.url)) {
+    const chunks = [];
+    req.on('data', function (c) {
+      chunks.push(c);
+    });
+    req.on('end', function () {
+      const body = Buffer.concat(chunks);
+      const grant = new URLSearchParams(body.toString('utf8'))
+        .get('grant_type') || '';
+      forward(req, res, NODE_GRANTS.indexOf(grant) >= 0, body);
+    });
+    return;
+  }
+  forward(req, res, NODE_PATHS.test(req.url), null);
 }).listen(Number(listen), '127.0.0.1', function () {
   console.log('proxy: listening on ' + listen);
 });
