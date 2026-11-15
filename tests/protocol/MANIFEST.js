@@ -2440,6 +2440,10 @@ const JOBS = [
   // is dialled at OUTBOUND_TEST_HOST, in a realm with
   // federation.outboundAllowHttp on.
   { file: 'sts_saml_metadata_sources.js', browser: false, local: true },
+  // D12 (#444): what WS-Trust and WS-Federation answer, held to
+  // tests/ws_model_wire.snapshot.json's development pass, over the wire
+  // (ws_model_wire; the product pass owed).
+  { file: 'sts_ws_model_wire.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
