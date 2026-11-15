@@ -2994,7 +2994,8 @@ const LOCAL_HELPERS = [
   // API with a token minted at that cell, a cookie jar and a browser that
   // follows no redirect, a JWT checked against a key set with node's own
   // crypto, and a bounded wait for the global tier. Nothing from the
-  // service.
+  // service. `sts_scim_client.js` reads it too, in the cells mode only, to
+  // wait for a setting at cell B (CI run #250).
   'cells_kit.js',
   // WHAT THE TWO TOKEN-EXCHANGE CHAIN JOBS SHARE (#467): the four tiers'
   // provisioning, a browser's authorization-code walk with a desktop
