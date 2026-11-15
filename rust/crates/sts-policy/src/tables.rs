@@ -118,10 +118,10 @@ fn field_of(row: &Value) -> Field {
             .get("maxItems")
             .and_then(Value::as_u64)
             .map(|n| n as usize),
-        mechanism: None,
-        role: None,
-        email: false,
-        door: None,
+        mechanism: row.get("mechanism").and_then(Value::as_str).map(String::from),
+        role: row.get("role").and_then(Value::as_str).map(String::from),
+        email: row.get("email").and_then(Value::as_bool).unwrap_or(false),
+        door: row.get("door").and_then(Value::as_str).map(String::from),
     }
 }
 
