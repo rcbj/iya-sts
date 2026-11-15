@@ -17345,7 +17345,7 @@ class Authn {
                 "verify.");
       return this.passkeyRefused(res, base, record,
         webauthnPolicy.failureCodeFor(verdict),
-        'the assertion did not verify — ' +
+        'the assertion did not verify; this check failed: ' +
         (verdict.failed || []).join('; '), SAID);
     }
     const spent = await credentials.spendAssertion({
@@ -17442,8 +17442,9 @@ class Authn {
         'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
-      return this.stepRefused(res, 'The second factor did not verify — ' +
-                              failed.join('; ') + '.');
+      return this.stepRefused(res, 'The second factor did not verify; ' +
+                              'this check failed: ' + failed.join('; ') +
+                              '.');
     }
 
     pendingMfa.delete(String(body.mfa_id));

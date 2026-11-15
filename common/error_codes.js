@@ -15838,8 +15838,9 @@ const CODES = [
       'the socket may test.',
     spec: 'LDAP result code 50, insufficientAccessRights' },
   { code: 'STS-LDAP-0076',
-    summary: 'In product mode, an add or modify named createTimestamp, ' +
-      'modifyTimestamp or entryDN, which the directory maintains itself.',
+    summary: 'An add or modify named an attribute the directory maintains ' +
+      'itself: entryUUID or stsProvisionedBy in every mode, and in product ' +
+      'mode createTimestamp, modifyTimestamp and entryDN as well.',
     spec: 'LDAP result code 19, constraintViolation' },
   { code: 'STS-LDAP-0077',
     summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
