@@ -42,6 +42,7 @@ use sts_credentials::backup_codes::BackupCodes;
 use sts_credentials::credentials::{
     Credentials, CredentialsDeps, PendingStores, VerifyOptions,
 };
+use sts_credentials::limits::{BucketStore, Limit, MemoryBuckets, RateLimiter};
 use sts_credentials::mail_factor::{MailFactor, MailFactorPorts, PersonValues};
 use sts_credentials::phishing::PhishingResistance;
 use sts_credentials::ports::{
@@ -481,6 +482,36 @@ impl MailFactorPorts for Tape {
 impl Tape {
     fn observe(&self, row: Json) {
         self.state.lock().unwrap().observed.push(row);
+    }
+}
+
+/// The tape with a clock that moves step by step.
+struct Clocked {
+    tape: Arc<Tape>,
+    at: Mutex<f64>,
+}
+
+impl Environment for Clocked {
+    fn setting(&self, key: &str) -> Json {
+        self.tape.setting(key)
+    }
+    fn predicate(&self, name: &str) -> bool {
+        self.tape.predicate(name)
+    }
+    fn now_ms(&self) -> f64 {
+        *self.at.lock().unwrap()
+    }
+    fn realm_id(&self) -> String {
+        self.tape.realm_id()
+    }
+    fn random_bytes(&self, n: usize) -> Vec<u8> {
+        self.tape.random_bytes(n)
+    }
+    fn random_int(&self, min: u64, max: u64) -> u64 {
+        self.tape.random_int(min, max)
+    }
+    fn hash_secret(&self, plaintext: &str) -> String {
+        self.tape.hash_secret(plaintext)
     }
 }
 
@@ -953,6 +984,76 @@ fn credentials_answer_what_node_answers() {
         {
             report.wrong.push(format!("phishing key {}", row["key"]));
         }
+    }
+    // The rate limit and the failure delay, each step at its instant.
+    for case in v["limits"].as_array().unwrap() {
+        let label = format!("limits {}", case["name"].as_str().unwrap());
+        let tape = Arc::new(Tape::new(case));
+        let clock = Arc::new(Clocked {
+            tape: tape.clone(),
+            at: Mutex::new(NOW),
+        });
+        let store = Arc::new(MemoryBuckets::default());
+        let limiter = RateLimiter::new(clock.clone(), store.clone());
+        let steps = case["steps"].as_array().unwrap();
+        let mut answers = Vec::new();
+        for st in steps {
+            *clock.at.lock().unwrap() = st["at"].as_f64().unwrap();
+            let a = st["args"].as_array().unwrap();
+            let t = |i: usize| js::string_or_empty(a.get(i));
+            let lim = Limit::from_json(a.get(3).unwrap_or(&Json::Null));
+            let out = match st["method"].as_str().unwrap() {
+                "attempt" => {
+                    let v = limiter.attempt(&t(0), &t(1), &t(2), &lim);
+                    (v.value.clone(), v.code_text().to_string(), None)
+                }
+                "blocked" => match limiter.blocked(&t(0), &t(1), &t(2), &lim) {
+                    Some(v) => {
+                        (v.value.clone(), v.code_text().to_string(), None)
+                    }
+                    None => (Json::Null, String::new(), None),
+                },
+                "succeeded" => {
+                    let keep = a
+                        .get(3)
+                        .is_some_and(|o| o["keepAddress"] == json!(true));
+                    limiter.succeeded(&t(0), &t(1), &t(2), keep);
+                    (Json::Null, String::new(), None)
+                }
+                "failureDelayMs" => (
+                    json!(limiter.failure_delay_ms(&t(0))),
+                    String::new(),
+                    None,
+                ),
+                "noteFailure" => {
+                    limiter.note_failure(&t(0));
+                    (Json::Null, String::new(), None)
+                }
+                "forgetFailures" => {
+                    limiter.forget_failures(&t(0));
+                    (Json::Null, String::new(), None)
+                }
+                other => (Json::Null, String::new(), Some(other.to_string())),
+            };
+            let mut rows = Map::new();
+            for k in store.keys() {
+                let b = store.get(&k).unwrap();
+                rows.insert(k, json!({ "count": b.count, "until": b.until }));
+            }
+            if !same(&st["buckets"], &Json::Object(rows.clone()), &Map::new()) {
+                report.wrong.push(format!(
+                    "{label} {}: buckets Node {} / Rust {}",
+                    st["method"],
+                    st["buckets"],
+                    Json::Object(rows)
+                ));
+            }
+            answers.push(out);
+        }
+        let expected: Vec<&Json> =
+            steps.iter().map(|st| &st["answer"]).collect();
+        check_case(&label, case, &tape, answers, expected, &mut report);
+        counted += 1;
     }
     // The emailed factor.
     for case in v["mail"].as_array().unwrap() {

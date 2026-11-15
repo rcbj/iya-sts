@@ -35,6 +35,7 @@ pub mod backup_codes;
 pub mod credentials;
 pub mod evidence;
 pub mod js;
+pub mod limits;
 pub mod mail_factor;
 pub mod phishing;
 pub mod ports;

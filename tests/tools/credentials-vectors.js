@@ -1156,6 +1156,86 @@ async function build(ROOT) {
     ['masked', ['dee@example.com']], ['masked', ['@x']],
     ['masked', ['nobody']], ['masked', ['é@x.org']]]);
 
+  // THE RATE LIMIT AND THE FAILURE DELAY: `WebSecurity`'s local buckets,
+  // a fresh table per scenario, each step at its own instant.
+  const WebSecurity = req('common/websecurity').WebSecurity;
+  const limitCases = [];
+  const limitScenario = function (name, spec, steps) {
+    const table = new Map();
+    const sec = new WebSecurity(Object.assign(WebSecurity.defaultDeps(), {
+      config: fakeConfig, mode: fakeMode, buckets: table,
+      clientAddress: { clientAddressOf: function (r) {
+        return String((r && r.address) || '');
+      } } }));
+    const out = [];
+    const run = recorded(Object.assign({ now: NOW }, spec), function () {
+      steps.forEach(function (step) {
+        const at = NOW + (step[2] || 0);
+        Date.now = function () {
+          return at;
+        };
+        const args = step[1].slice();
+        if (['attempt', 'blocked', 'succeeded'].indexOf(step[0]) >= 0) {
+          args[1] = { address: args[1] };
+        }
+        const answer = verdict(function () {
+          const v = sec[step[0]].apply(sec, args);
+          return v === undefined ? null : v;
+        });
+        const rows = {};
+        table.forEach(function (row, key) {
+          rows[key] = clone(row);
+        });
+        out.push({ method: step[0], args: clone(step[1]), at: at,
+                   answer: answer, buckets: rows });
+      });
+    });
+    limitCases.push(Object.assign({ name: name, spec: clone(spec),
+                                   steps: out }, run.taped));
+  };
+  const ip = '198.51.100.7';
+  limitScenario('five a minute, by identity and address', {},
+    [['attempt', ['sign-in', ip, 'Alice']], ['attempt', ['sign-in', ip,
+      'alice'], 1000], ['attempt', ['sign-in', ip, 'alice'], 2000],
+     ['attempt', ['sign-in', ip, 'alice'], 3000],
+     ['attempt', ['sign-in', ip, 'alice'], 4000],
+     ['blocked', ['sign-in', ip, 'alice'], 4500],
+     ['attempt', ['sign-in', ip, 'alice'], 5000],
+     ['attempt', ['sign-in', '203.0.113.9', 'alice'], 5500],
+     ['attempt', ['sign-in', ip, 'bob'], 6000],
+     ['attempt', ['sign-in', ip, 'alice'], 61000],
+     ['succeeded', ['sign-in', ip, 'alice', { keepAddress: true }], 62000],
+     ['blocked', ['sign-in', ip, 'alice'], 62000],
+     ['succeeded', ['sign-in', ip, 'alice'], 63000]]);
+  limitScenario('limits by setting and by door', {
+    settings: { 'security.rateLimitWindowS': 10,
+                'security.rateLimitPerIdentity': 2,
+                'security.rateLimitPerAddress': '3' } },
+    [['attempt', ['mfa-code', ip, 'carol']],
+     ['attempt', ['mfa-code', ip, 'carol'], 100],
+     ['attempt', ['mfa-code', ip, 'carol'], 200],
+     ['blocked', ['mfa-code', ip, 'carol'], 300],
+     ['attempt', ['mfa-code', ip, ''], 400],
+     ['attempt', ['mfa-code', ip, ''], 500],
+     ['blocked', ['mfa-code', ip, ''], 600],
+     ['attempt', ['kerberos', '', 'dave', { address: 9007199254740991 }],
+      700],
+     ['attempt', ['x', ip, 'erin', 1], 800],
+     ['attempt', ['x', ip, 'erin', 1], 900],
+     ['attempt', ['y', ip, 'erin', { identity: 3.7, address: -1 }], 950],
+     ['blocked', ['mfa-code', ip, 'carol'], 10300]]);
+  limitScenario('the failure delay', {},
+    [['failureDelayMs', ['Fred']], ['noteFailure', ['Fred']],
+     ['failureDelayMs', ['fred'], 1], ['noteFailure', ['fred'], 2],
+     ['noteFailure', ['fred'], 3], ['noteFailure', ['fred'], 4],
+     ['noteFailure', ['fred'], 5], ['noteFailure', ['fred'], 6],
+     ['failureDelayMs', ['fred'], 7],
+     ['failureDelayMs', ['fred'], 900007],
+     ['noteFailure', ['fred'], 900008],
+     ['failureDelayMs', ['fred'], 900009],
+     ['forgetFailures', ['fred'], 900010],
+     ['failureDelayMs', ['fred'], 900011]]);
+
   // WHAT A CREDENTIAL EARNS: authn.ts's own readers of an `amr`, a step's
   // first factor, an AAGUID and a key's lane.
   const Authn = req('authn/authn').Authn;
@@ -1189,7 +1269,7 @@ async function build(ROOT) {
   // the same scenario answered: filled in as the steps run.
   return { totp: totpCases, backup: backupCases, apps: appCases,
            phishing: phishing, phishingKeys: phishingKeys,
-           evidence: evidence, mail: mailCases,
+           evidence: evidence, mail: mailCases, limits: limitCases,
            scenarios: scenarios,
            webauthn: await req('tests/tools/credentials-webauthn.js')
              .build(ROOT) };
@@ -1211,7 +1291,7 @@ async function build(ROOT) {
 function checkRust(ROOT, rust, node, check) {
   const stsCrypto = require(path.join(ROOT, 'common', 'crypto'));
   const nodeCases = [].concat(node.totp, node.backup, node.apps,
-                              node.scenarios, node.mail);
+                              node.scenarios, node.limits, node.mail);
   const rustCases = rust.cases || [];
   let hashes = 0;
   const wrong = [];
