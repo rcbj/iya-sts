@@ -305,6 +305,15 @@ for r in "" /realm/acme; do
 done
 check "Node published acme's accent colour" \
   grep -q '#0b5d1e' "$OUT/theme-acme-node.css"
+# THE CERTIFICATE AUTHORITY (#444 phase 6): the authorities Node keeps,
+# fetched from its public /pki/ surface, for Rust's to be compared with.
+for ca in service/root process/intermediate process/tls acme/intermediate \
+          acme/acme default/intermediate; do
+  curl -sk "https://localhost:$NODE_PORT/pki/ca/$ca.cer" \
+    > "$OUT/pki-${ca//\//-}-node.cer"
+done
+check "Node published its Root at /pki/ca/service/root.cer" \
+  openssl x509 -inform DER -in "$OUT/pki-service-root-node.cer" -noout
 docker stop -t 30 "$NODE" >/dev/null
 docker logs "$NODE" > "$OUT/node-writer.log" 2>&1
 docker rm "$NODE" >/dev/null
@@ -334,6 +343,18 @@ cid="$(docker create "$NODE_IMAGE")"
 docker cp "$cid:/usr/src/sts/version.json" "$OUT/version.json" >/dev/null
 docker rm "$cid" >/dev/null
 chmod 0644 "$OUT/version.json"
+
+# THE `diff` REALM'S CERTIFICATE AUTHORITY ROW IS REMOVED from the store
+# Rust opens (not from the copy), so Rust has to build that branch — under
+# the Root Node stored — and seal it, and Node reads it back in step 7.
+if [ "$ENGINE" = postgres ]; then
+  docker exec "$DB" psql -q -U sts -d sts -v ON_ERROR_STOP=1 \
+    -c "DELETE FROM sts.sts_keys WHERE realm = 'pki:diff'" >/dev/null
+else
+  docker exec "$DB" mariadb -uroot -p"$OWNER_PW" sts_store \
+    -e "DELETE FROM sts_keys WHERE realm = 'pki:diff'"
+fi
+pass "the diff realm's certificate authority row removed for Rust to rebuild"
 
 # ---------------------------------------------------------------------------
 # 5. Rust on the store Node wrote.
@@ -406,6 +427,44 @@ done
 check "acme's restored accent colour is served" \
   grep -q '#0b5d1e' "$OUT/theme-acme-rust.css"
 
+say "== The certificate authority Node stored, read by Rust =="
+for ca in service/root process/intermediate process/tls acme/intermediate \
+          acme/acme default/intermediate; do
+  f="${ca//\//-}"
+  rust_get "/pki/ca/$ca.cer" "$OUT/pki-$f-rust.cer" >/dev/null
+  check "Rust's /pki/ca/$ca.cer is the certificate Node stored" \
+    cmp -s "$OUT/pki-$f-node.cer" "$OUT/pki-$f-rust.cer"
+done
+openssl x509 -inform DER -in "$OUT/pki-service-root-node.cer" \
+  -out "$OUT/pki-root.pem"
+rust_get /pki/ca/diff/intermediate.cer "$OUT/pki-diff-intermediate-rust.cer" \
+  >/dev/null
+openssl x509 -inform DER -in "$OUT/pki-diff-intermediate-rust.cer" \
+  -out "$OUT/pki-diff-intermediate-rust.pem" 2>/dev/null || true
+check "Rust built diff's Intermediate under the Root Node stored" \
+  openssl verify -CAfile "$OUT/pki-root.pem" \
+    "$OUT/pki-diff-intermediate-rust.pem"
+openssl x509 -inform DER -in "$OUT/pki-acme-intermediate-node.cer" \
+  -out "$OUT/pki-acme-intermediate.pem"
+rust_get /pki/crl/acme/intermediate.crl "$OUT/pki-acme-intermediate-rust.crl" \
+  >/dev/null
+check "Rust's CRL of acme's Intermediate verifies under Node's authority" \
+  openssl crl -inform DER -in "$OUT/pki-acme-intermediate-rust.crl" -noout \
+    -CAfile <(cat "$OUT/pki-acme-intermediate.pem" "$OUT/pki-root.pem")
+# The listener: a leaf of the process TLS Issuing CA Node stored.
+openssl s_client -connect "localhost:$RUST_PORT" -showcerts </dev/null \
+  2>/dev/null | awk '/BEGIN CERT/{n++} n==1' | sed '/END CERT/q' \
+  > "$OUT/pki-rust-listener.pem"
+openssl x509 -inform DER -in "$OUT/pki-process-intermediate-node.cer" \
+  -out "$OUT/pki-process-intermediate.pem"
+openssl x509 -inform DER -in "$OUT/pki-process-tls-node.cer" \
+  -out "$OUT/pki-process-tls.pem"
+check "Rust's listener certificate chains to Node's process TLS Issuing CA" \
+  openssl verify -CAfile "$OUT/pki-root.pem" \
+    -untrusted <(cat "$OUT/pki-process-tls.pem" \
+                     "$OUT/pki-process-intermediate.pem") \
+    "$OUT/pki-rust-listener.pem"
+
 say "== What Rust does not serve yet (listed, not failed) =="
 for p in "GET /.well-known/openid-configuration" "POST /oauth2/token" \
          "GET /authn/login" "GET /admin-api/status" "GET /realm/acme/scim/v2/Users" \
@@ -451,6 +510,28 @@ docker stop -t 30 "$RUST" >/dev/null
 docker logs "$RUST" > "$OUT/rust.log" 2>&1
 check "Rust stopped and closed the store without an error" \
   bash -c "! grep -q 'STS-STORE-0001' '$OUT/rust.log'"
+
+# ---------------------------------------------------------------------------
+# 7. Node on the store RUST wrote last: the branch Rust sealed is the one
+#    Node serves, and builds nothing over.
+# ---------------------------------------------------------------------------
+say "== Node reads the certificate authority Rust wrote =="
+docker stop -t 30 "$NODE" >/dev/null 2>&1 || true
+docker rm "$NODE" >/dev/null 2>&1 || true
+if start "$NODE" "$NODE_IMAGE" "$NODE_PORT" "$DB_URL"; then
+  curl -sk "https://localhost:$NODE_PORT/pki/ca/diff/intermediate.cer" \
+    > "$OUT/pki-diff-intermediate-node-after.cer"
+  check "Node serves the diff Intermediate Rust built and sealed" \
+    cmp -s "$OUT/pki-diff-intermediate-rust.cer" \
+      "$OUT/pki-diff-intermediate-node-after.cer"
+  curl -sk "https://localhost:$NODE_PORT/pki/ca/service/root.cer" \
+    > "$OUT/pki-service-root-node-after.cer"
+  check "and its Root is still the one it stored first" \
+    cmp -s "$OUT/pki-service-root-node.cer" \
+      "$OUT/pki-service-root-node-after.cer"
+else
+  fail "Node started on the store Rust wrote (see $OUT/$NODE.failed.log)"
+fi
 
 say "== $ENGINE: $( [ "$FAILED" = 0 ] && echo PASSED || echo FAILED ) =="
 exit "$FAILED"

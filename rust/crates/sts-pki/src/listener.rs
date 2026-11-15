@@ -449,7 +449,9 @@ pub struct ProcessBranch {
     root: Authority,
     intermediate: Authority,
     issuing: Authority,
-    points: DistributionPoints,
+    /// What a leaf names for the TLS Issuing CA's CRL, OCSP responder and
+    /// certificate (`DistributionPoints::of("process", "tls")`).
+    tls_points: Json,
 }
 
 impl ProcessBranch {
@@ -496,10 +498,50 @@ impl ProcessBranch {
                 root,
                 intermediate,
                 issuing,
-                points: options.points.clone(),
+                tls_points: options.points.of("process", "tls"),
             },
             fell_back,
         ))
+    }
+
+    /// THE STORED HIERARCHY (#444 phase 6, replacing the stand-in): the
+    /// service Root, the process Intermediate and its TLS Issuing CA as
+    /// `common/pki.js` keeps them — read from a 1.x install's keystore, or
+    /// built by [`crate::authority::Authority::start`] where there was
+    /// none. `None` while the process branch has no TLS Issuing CA.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn from_authority(
+        authority: &crate::authority::Authority,
+    ) -> Option<ProcessBranch> {
+        use crate::authority::catalog::PROCESS_SCOPE;
+        let tier = |t: &Json| -> Option<Authority> {
+            let text = |k: &str| t.get(k).and_then(Json::as_str);
+            Some(Authority {
+                cert_pem: text("certificatePem")?.to_string(),
+                key_pem: text("privateKeyPem")?.to_string(),
+                key_algorithm: text("keyAlg")?.to_string(),
+                not_after: chrono::DateTime::parse_from_rfc3339(text(
+                    "notAfter",
+                )?)
+                .ok()?
+                .with_timezone(&Utc),
+            })
+        };
+        let root = tier(&authority.service_root()?)?;
+        let intermediate =
+            tier(&authority.tier_for(PROCESS_SCOPE, "intermediate")?)?;
+        let issuing = tier(&authority.tier_for(PROCESS_SCOPE, "tls")?)?;
+        let points = authority.distribution_points(PROCESS_SCOPE, "tls");
+        Some(ProcessBranch {
+            root,
+            intermediate,
+            issuing,
+            tls_points: json!({
+                "crl": [points.http, points.ldap],
+                "ocsp": points.ocsp,
+                "caIssuers": points.ca_issuers,
+            }),
+        })
     }
 
     /// The service Root, PEM.
@@ -542,8 +584,7 @@ impl ProcessBranch {
             "usages": ["serverAuth"], "critical": false });
         extensions["subjectAltName"] = json!({ "present": true,
             "names": identity.alt_names(), "critical": false });
-        let extensions =
-            with_points(extensions, &self.points.of("process", "tls"));
+        let extensions = with_points(extensions, &self.tls_points);
         let issued = issue_certificate(&json!({
             "subject": identity.subject().replace(", ", ","),
             "subjectPublicKey": public_pem,
@@ -647,6 +688,59 @@ fn authority(
         key_algorithm: algorithm.to_string(),
         not_after,
     })
+}
+
+/// `storedKeyProblem()`: why a listener key a node stored
+/// (`tls.listenerKeys`) may not be used for this unit now, or `""` when it
+/// may — another unit, a key that will not parse, another type, an RSA
+/// modulus other than `tls.selfSignedKeyBits`.
+#[tracing::instrument(level = "debug", skip(row))]
+pub fn stored_key_problem(unit: &str, row: &Json, rsa_bits: u32) -> String {
+    let Some(pem) = row.get("privateKeyPem").and_then(Json::as_str) else {
+        return "the row holds no key".to_string();
+    };
+    let held = row.get("unit").and_then(Json::as_str).unwrap_or("");
+    if held != unit {
+        return format!("the row is for \"{}\"", held);
+    }
+    if unit == "rsa" {
+        return match PKey::private_key_from_pem(pem.as_bytes()) {
+            Err(e) => format!("the key will not parse ({})", e),
+            Ok(key) => match key.rsa() {
+                Err(_) => "it is not an RSA key".to_string(),
+                Ok(rsa) if rsa.size() * 8 != rsa_bits => format!(
+                    "it is {} bits and tls.selfSignedKeyBits is {}",
+                    rsa.size() * 8,
+                    rsa_bits
+                ),
+                Ok(_) => String::new(),
+            },
+        };
+    }
+    match crate::x509::keys::SigningKey::from_pem(pem) {
+        Err(e) => format!("the key will not parse ({})", e),
+        Ok(key) => match key.pqc() {
+            Some(id) if id.eq_ignore_ascii_case(unit) => String::new(),
+            Some(id) => {
+                format!("it is a {} key, not {}", id.to_lowercase(), unit)
+            }
+            None => format!("it is not a {} key", unit),
+        },
+    }
+}
+
+/// The bootstrap with the key a node stored in its place: what is
+/// certified is the stored key (`settleListenerKey()`), and the
+/// self-signed certificate made over the start's own key is discarded by
+/// the certification that follows.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn with_stored_key(
+    bootstrap: &ListenerCertificate,
+    private_key_pem: &str,
+) -> ListenerCertificate {
+    let mut out = bootstrap.clone();
+    out.private_key_pem = private_key_pem.to_string();
+    out
 }
 
 /// Why a supplied certificate was refused: the code and Node's sentence.

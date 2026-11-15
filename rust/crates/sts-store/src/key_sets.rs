@@ -544,6 +544,136 @@ impl KeySets {
 }
 
 // ---------------------------------------------------------------------------
+// A CERTIFICATE AUTHORITY'S ROW WRITTEN (#444 phase 6, `keystore.js`'s
+// `holdAndWritePki()` and `writePkiNow()`). The row is sealed under the
+// scope's `pki-hierarchy` data key and, where the driver merges, written
+// under the row's lock by a three-way merge the CALLER decides (`sts-pki`'s
+// `pki_merge.js` port: this crate holds the keys, that one the rules) from
+// the row this process last read or wrote (`pkiBase`), its own, and what the
+// store holds now. Without a merging driver it is the upsert Node's is. No
+// driver at all (development) holds nothing here: the hierarchy lives in the
+// authority's own memory, as Node's does when nothing persists.
+// ---------------------------------------------------------------------------
+
+/// The data class a hierarchy is sealed under.
+const PKI_LABEL: &str = "pki-hierarchy";
+
+/// The three-way merge of a hierarchy: `(base, mine, theirs)` opened,
+/// answering the row to write.
+pub type PkiMerge =
+    Box<dyn FnOnce(Option<Json>, Json, Option<Json>) -> Json + Send>;
+
+impl KeySets {
+    /// `pkiAll()`: the scopes holding a hierarchy.
+    pub fn pki_scopes(&self) -> Vec<String> {
+        self.hierarchies().keys().cloned().collect()
+    }
+
+    /// `pkiFor()` by the scope's own id (`*service`, `*process`, a realm,
+    /// `default`), as the row key spells it.
+    pub fn pki_row_exact(&self, scope: &str) -> Option<Json> {
+        let cipher = self.hierarchies().get(scope).cloned()?;
+        match self.open_row(&format!("{}{}", PKI_ROW_PREFIX, scope), &cipher) {
+            Ok(row) => Some(row),
+            Err(e) => {
+                tracing::error!("keystore: {}", e);
+                None
+            }
+        }
+    }
+
+    /// `writePkiNow()`: seals the row and writes it; `None` stores an empty
+    /// hierarchy, which Node reads back as none. Answers the row the store
+    /// holds afterwards (theirs merged in, where another writer was there
+    /// first), which is then the one held here.
+    pub async fn write_pki(
+        &self,
+        scope: &str,
+        row: Option<Json>,
+        merge: PkiMerge,
+    ) -> Result<Option<Json>, String> {
+        let Some(driver) = self.driver.clone() else {
+            return Ok(row);
+        };
+        let key = format!("{}{}", PKI_ROW_PREFIX, scope);
+        let mine = row.clone().unwrap_or_else(|| json!({}));
+        let cipher = self
+            .keys
+            .seal(&mine.to_string(), PKI_LABEL, scope)
+            .ok_or_else(|| {
+                format!(
+                    "{}keystore: the \"{}\" realm's certificate authority CANNOT BE WRITTEN — no \
+                     key-encryption key was read.",
+                    tag(codes::STS_KEYS_0041),
+                    scope
+                )
+            })?;
+        self.keys.settle().await;
+        let base_cipher = self.hierarchies().get(scope).cloned();
+        let stored = if driver.merges_keys() && row.is_some() {
+            self.keys.load(false).await?;
+            let keys = self.keys.clone();
+            let id = scope.to_string();
+            let sealed = cipher.clone();
+            let open = move |c: &str| -> Option<Json> {
+                keys.open(c, PKI_LABEL)
+                    .and_then(|p| serde_json::from_str(&p).ok())
+            };
+            let keys2 = self.keys.clone();
+            let decide: KeyMerge = Box::new(move |current: Option<&str>| {
+                if current.map(str::to_string) == base_cipher {
+                    return Ok(Some(sealed));
+                }
+                let base = base_cipher.as_deref().and_then(&open);
+                let theirs = match current {
+                    Some(c) => Some(
+                        open(c).ok_or_else(|| format!("{}{}", UNHELD, id))?,
+                    ),
+                    None => None,
+                };
+                let merged = merge(base, mine, theirs);
+                keys2
+                    .seal(&merged.to_string(), PKI_LABEL, &id)
+                    .map(Some)
+                    .ok_or_else(|| "no key-encryption key is held".to_string())
+            });
+            driver
+                .merge_keys(&key, decide)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "{}keystore: the \"{}\" realm's certificate authority could not be \
+                         written: {}",
+                        tag(codes::STS_KEYS_0042),
+                        scope,
+                        e
+                    )
+                })?
+                .unwrap_or(cipher)
+        } else {
+            driver.save_keys(&key, &cipher).await.map_err(|e| {
+                format!(
+                    "{}keystore: the \"{}\" realm's certificate authority could not be \
+                     written: {}",
+                    tag(codes::STS_KEYS_0042),
+                    scope,
+                    e
+                )
+            })?;
+            cipher
+        };
+        let held = self.open_row(&key, &stored)?;
+        self.hierarchies().insert(scope.to_string(), stored);
+        tracing::info!(
+            "keystore: the \"{}\" realm's certificate authority was written to the store, \
+             encrypted.",
+            scope
+        );
+        Ok(Some(held).filter(|r| r.as_object().is_some_and(|o| !o.is_empty())))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MAKING A KEY SET (`helpers.js`'s makeStsKeys()), in the blob's own shape:
 // every member a fresh Node set carries, each `kid` by Node's recipe, so a
 // set made here is a set Node reads and publishes the same names for. The
