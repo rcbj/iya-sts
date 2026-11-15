@@ -568,12 +568,19 @@ async function sectionD(ctx) {
               JSON.stringify(s.json.pages).slice(0, 300));
   });
 
-  const cross = await call("GET", ctx.bBase + "/admin-api/me",
-                           ctx.writer.token);
-  check("D6. a realm's token under another realm's prefix is refused",
-        function () {
+  const cross = await ctx.writer.api("GET", ctx.bBase + "/admin-api/me");
+  const bare = await call("GET", ctx.aBase + "/admin-api/me",
+                          ctx.writer.token);
+  check("D6. a realm's DPoP-bound token, properly presented under another " +
+        "realm's prefix, is refused", function () {
     assert.ok(cross.status === 401 || cross.status === 403,
               cross.status + " " + cross.text.slice(0, 300));
+    assert.ok(!/DPoP-bound/.test(errorsOf(cross)), errorsOf(cross));
+  });
+  check("D7. the console's token presented as a plain bearer token in its " +
+        "own realm is refused 401: it is DPoP-bound", function () {
+    assert.strictEqual(bare.status, 401, bare.text.slice(0, 300));
+    assert.ok(/DPoP-bound/.test(errorsOf(bare)), errorsOf(bare));
   });
   log.debug("Leaving sectionD().");
 }
