@@ -26,7 +26,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod channel;
+pub mod compose;
 pub mod js;
 pub mod locale;
 mod sanitize;
 pub mod templates;
+pub mod transports;
