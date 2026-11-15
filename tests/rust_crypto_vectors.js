@@ -113,6 +113,25 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // The certificate authority's (#444, phase 6): the hierarchy, leaf, CRL
+  // and OCSP answer sts-pki made, held and verified by Node in a child of
+  // its own (tests/tools/pki-authority-vectors.js).
+  if (fs.existsSync(path.join(VECTORS, 'pki-authority-rust.json'))) {
+    require('./tools/pki-authority-vectors.js').checkRust(
+      path.join(__dirname, '..'), path.join(VECTORS, 'pki-authority-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
+  // The sign-out's sealed result (#444, phase 5): what sts-logout sealed,
+  // opened by Node's own Logout (tests/tools/logout-vectors.js).
+  if (fs.existsSync(path.join(VECTORS, 'logout-rust.json'))) {
+    require('./tools/logout-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('logout-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The registers' role entries (#444, phase 4), which need no other set.
   if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
     registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,

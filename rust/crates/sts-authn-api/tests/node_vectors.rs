@@ -73,6 +73,7 @@ fn build(version: &str) -> Built {
         handles,
         directory: directory.clone(),
         persistence,
+        records: None,
         version: version.to_string(),
     });
     let surfaces = sts_http::surfaces::SurfaceHost::build(

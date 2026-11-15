@@ -8,13 +8,16 @@
 //! the process branch's TLS Issuing CA where `pki.autoBuild` is on
 //! (`certifyServerCertificateUnderPki()`, `takeIssuedCertificate()`).
 //!
-//! THE HIERARCHY IS BUILT FOR THIS RUN. Node's development mode does the
-//! same at every start; a product install keeps its Root and process
-//! branch in the keystore, and reading them is phase 6's
-//! (`sts-pki::listener`'s module comment). The runtime says which it did.
+//! THE HIERARCHY IS THE AUTHORITY'S (#444 phase 6): the Root and process
+//! branch `sts-pki`'s authority holds — read from the keystore where key
+//! material persists, built at this start where it does not, as Node's
+//! development mode builds it. Only without an authority is the old
+//! in-memory stand-in built. The runtime says which it did.
 
+use serde_json::{json, Value as Json};
 use sts_core::errors::{codes, ErrorCode};
 use sts_core::log::tag;
+use sts_core::realm_store::SharedMap;
 use sts_core::settings::Settings;
 use sts_pki::listener::{
     bootstrap, supplied, BranchOptions, DistributionPoints,
@@ -53,6 +56,83 @@ impl ListenerMaterial {
             _ => "self-signed and regenerated on every start",
         }
     }
+}
+
+/// `settleListenerKey()` (#162, #264): the key this node stored for the
+/// unit where it still fits — so a restart presents the same key under the
+/// Root it kept — and otherwise the key made at this start, stored.
+fn settle_listener_key(
+    map: &SharedMap<Json>,
+    node: &str,
+    bootstrap: &ListenerCertificate,
+    identity: &ListenerIdentity,
+) -> ListenerCertificate {
+    let unit = bootstrap.algorithm.clone();
+    let name = format!("{}@{}", unit, node);
+    if let Some(held) = map.get(&name) {
+        let problem = sts_pki::listener::stored_key_problem(
+            &unit,
+            &held,
+            identity.rsa_bits,
+        );
+        let pem = held.get("privateKeyPem").and_then(Json::as_str);
+        if let (true, Some(pem)) = (problem.is_empty(), pem) {
+            tracing::info!(
+                "tls: this node ({}) keeps its {} listener key across restarts, and the one it stored \
+                 is used again.",
+                node,
+                unit
+            );
+            return sts_pki::listener::with_stored_key(bootstrap, pem);
+        }
+        tracing::warn!(
+            "{}tls: the {} listener key stored for this node ({}) cannot be used — {} — so the key \
+             made at this start replaces it, and a new certificate is issued over it.",
+            tag(codes::STS_TLS_0048),
+            unit,
+            node,
+            problem
+        );
+    }
+    let mut row = json!({
+        "unit": unit,
+        "node": node,
+        "privateKeyPem": bootstrap.private_key_pem,
+        "createdAt": chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string(),
+    });
+    if unit == "rsa" {
+        row["bits"] = Json::from(identity.rsa_bits);
+    }
+    map.set(&name, row);
+    bootstrap.clone()
+}
+
+/// `rememberListenerCertificate()`: the certificate taken, on this node's
+/// row beside its key.
+fn remember_listener_certificate(
+    map: &SharedMap<Json>,
+    node: &str,
+    issued: &ListenerCertificate,
+) {
+    let name = format!("{}@{}", issued.algorithm, node);
+    let Some(mut held) = map.get(&name) else {
+        return;
+    };
+    if held.get("privateKeyPem").and_then(Json::as_str)
+        != Some(issued.private_key_pem.as_str())
+    {
+        return;
+    }
+    held["certificatePem"] = Json::from(issued.cert_pem.clone());
+    held["chainPem"] = Json::from(issued.chain_pem.clone());
+    held["certifiedAt"] = Json::from(
+        chrono::Utc::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string(),
+    );
+    map.set(&name, held);
 }
 
 /// Why the material could not be made: fatal at start.
@@ -194,6 +274,8 @@ fn algorithms(settings: &Settings) -> Vec<String> {
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn settle(
     settings: &Settings,
+    authority: Option<&sts_pki::authority::Authority>,
+    keys: Option<(&SharedMap<Json>, &str)>,
 ) -> Result<ListenerMaterial, MaterialProblem> {
     let identity = identity(settings);
     let cert_file = text(settings, "tls.certificateFile");
@@ -264,6 +346,41 @@ pub fn settle(
         return Ok(ListenerMaterial {
             certificates: bootstraps,
             branch: None,
+            identity,
+        });
+    }
+    // THE STORED HIERARCHY (#444 phase 6): the Root and process branch the
+    // authority holds — a 1.x install's, read from its keystore, or the one
+    // it built at this start where there was none.
+    if let Some(branch) = authority.and_then(ProcessBranch::from_authority) {
+        let days = int(settings, "pki.leafLifetimeDays").max(1);
+        let mut certificates = Vec::new();
+        for b in &bootstraps {
+            let boot = match keys {
+                Some((map, node)) => {
+                    settle_listener_key(map, node, b, &identity)
+                }
+                None => b.clone(),
+            };
+            let issued =
+                branch.certify(&boot, &identity, days).map_err(fail)?;
+            if let Some((map, node)) = keys {
+                remember_listener_certificate(map, node, &issued);
+            }
+            certificates.push(issued);
+        }
+        tracing::info!(
+            "tls: the listener certificate is a leaf of the process branch's TLS Issuing CA under the \
+             service Root{}.",
+            if authority.is_some_and(|a| a.persists()) {
+                " this service keeps in its store"
+            } else {
+                " built for this run (development: key material is generated per start)"
+            }
+        );
+        return Ok(ListenerMaterial {
+            certificates,
+            branch: Some(branch),
             identity,
         });
     }

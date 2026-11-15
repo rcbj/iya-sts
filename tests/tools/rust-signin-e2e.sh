@@ -25,9 +25,15 @@
 #      Chrome loads the UNCHANGED bundle from it, at /authn/login#authn=…,
 #      and signs the first person in with a password and the second with a
 #      password and a one-time code. Each ends with an `sts_session`.
-#   4. NODE again on the store Rust wrote: it reads both sessions Rust set
-#      (`GET /authn-api/logout`'s view names the person).
-#   5. The same two sign-ins against Node, for the comparison.
+#   4. RUST signs the first person out at its own /logout (the logout
+#      slice): headless Chrome holding that session's cookie loads the
+#      UNCHANGED sign-out bundle, which draws the inventory from Rust's
+#      /authn-api/logout, and presses Global logout; the result is drawn
+#      and the browser no longer holds the cookie.
+#   5. NODE again on the store Rust wrote: it reads the session Rust set
+#      and kept (`GET /authn-api/logout`'s view names the person), and no
+#      longer honours the one Rust signed out (401, nobody).
+#   6. The same two sign-ins against Node, for the comparison.
 #
 #   THE PASSKEY PERSON (the `passkeys` slice): `e2e.key` is left at the
 #   set-up step by Node, and in step 3 one browser holding a virtual
@@ -236,6 +242,21 @@ start "$RUST_IMAGE" rust
 browse pwd rust
 browse totp rust
 passkeys rust e2e.key
+
+say "== Rust signs the first person out at /logout: the unchanged bundle =="
+cookie="$(jq -r .cookie "$OUT/rust-pwd.json" 2>/dev/null || true)"
+if [ -n "$cookie" ] && $DRIVER signout "$BASE" "$cookie" \
+     > "$OUT/rust-signout.json" 2>> "$SUMMARY"; then
+  if [ "$(jq -r .drawn "$OUT/rust-signout.json")" = true ] &&
+     [ "$(jq -r .cookieKept "$OUT/rust-signout.json")" = false ]; then
+    pass "rust: e2e.pwd signed out ($(jq -r .heading \
+      "$OUT/rust-signout.json")), and the browser holds no sts_session"
+  else
+    fail "rust: the sign-out did not finish: $(cat "$OUT/rust-signout.json")"
+  fi
+else
+  fail "rust: the sign-out in the browser (see summary)"
+fi
 stop rust
 
 say "== Node reads the sessions Rust set =="
@@ -258,7 +279,14 @@ for who in pwd totp; do
   got="$($DRIVER honours "$BASE" "$cookie")"
   echo "$got" > "$OUT/honours-$who.json"
   name="$(echo "$got" | jq -r .username)"
-  if [ "$name" = "e2e.$who" ]; then
+  if [ "$who" = pwd ]; then
+    # SIGNED OUT AT RUST'S /logout: the old cookie names nobody here.
+    if [ "$(echo "$got" | jq -r .status)" = 401 ] && [ -z "$name" ]; then
+      pass "Node no longer honours the session Rust signed out (401)"
+    else
+      fail "Node still honours the session Rust signed out: $got"
+    fi
+  elif [ "$name" = "e2e.$who" ]; then
     pass "Node honours the session Rust set for $name"
   else
     fail "Node did not honour Rust's session for e2e.$who: $got"

@@ -4407,6 +4407,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-logout"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "flate2",
+ "serde_json",
+ "sts-authn",
+ "sts-authn-api",
+ "sts-core",
+ "sts-crypto",
+ "sts-http",
+ "sts-mgmt-api",
+ "sts-oauth",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "sts-mail"
 version = "0.1.0"
 dependencies = [
@@ -4790,6 +4809,7 @@ dependencies = [
  "sts-crypto",
  "sts-http",
  "sts-ldap",
+ "sts-logout",
  "sts-oauth",
  "sts-pki",
  "sts-store",
