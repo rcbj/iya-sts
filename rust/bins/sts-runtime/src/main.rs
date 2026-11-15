@@ -37,10 +37,12 @@
 //!    ([`SocketOwners`]);
 //! 8. on SIGTERM or Ctrl-C, what is pending is written and the store closed.
 //!
-//! WHAT IS WIRED, AND WHAT IS A SEAM. The store, the cluster, the
-//! scheduler (with this module's `tls.listener-renew` job), the caches,
-//! the HTTP layer and the settings are the phase-3 crates as merged on
-//! `feature/444`. `Settings` offers no change notification
+//! WHAT IS WIRED, AND WHAT IS A SEAM. The store (memory, ldif, postgres
+//! and mariadb, with the origin adopted at the store's opening, the run
+//! history over minted persistence and the read barrier a `syncNow()` pull:
+//! `store.rs`), the cluster, the scheduler (with this module's
+//! `tls.listener-renew` job), the caches, the HTTP layer and the settings
+//! are the phase-3 crates as merged on `feature/444`. `Settings` offers no change notification
 //! (`config.onOverridesChanged()`): whoever writes a setting through
 //! `set_override()` — the management API, phase 4 — calls
 //! `Listeners::reapply(true)` after it; the truststore doors (`/admin-api/tls/trust`,
@@ -57,6 +59,7 @@ mod listener;
 mod listeners;
 mod solo;
 mod stack;
+mod store;
 
 use std::collections::HashMap;
 use std::sync::Arc;

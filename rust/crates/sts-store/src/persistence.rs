@@ -69,6 +69,8 @@ pub enum StoreMode {
     Memory,
     Ldif,
     Postgres,
+    /// The same store on MariaDB (#677), a second engine.
+    Mariadb,
 }
 
 impl StoreMode {
@@ -77,8 +79,48 @@ impl StoreMode {
             StoreMode::Memory => "memory",
             StoreMode::Ldif => "ldif",
             StoreMode::Postgres => "postgres",
+            StoreMode::Mariadb => "mariadb",
         }
     }
+
+    /// `storeModes.isDatabase()`: postgres or mariadb.
+    // Hot path (every flush asks): no span.
+    pub fn is_database(self) -> bool {
+        matches!(self, StoreMode::Postgres | StoreMode::Mariadb)
+    }
+}
+
+/// A step the composition root runs at a fixed point of the store's life.
+pub type StoreStep = Arc<
+    dyn Fn() -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), String>> + Send>,
+        > + Send
+        + Sync,
+>;
+
+/// What the composition root runs at the points of [`Persistence::start`]
+/// and [`Persistence::stop`] that only it can fill, because what runs there
+/// is not the store's (`openStore()`'s and `stop()`'s chains in Node, which
+/// call `adoptStableOrigin()`, `cluster.leave()` and `releaseOrigin()` in
+/// line).
+#[derive(Clone, Default)]
+pub struct StoreHooks {
+    /// The moment the store is open and before anything is read from it or
+    /// written to it: Node's `adoptStableOrigin()` — every row a start
+    /// writes (a first data key, the shadow's flush) is stamped with the
+    /// origin, and the minted restore reads it. An `Err` is fatal, as
+    /// `openStore()`'s chain rejects.
+    pub after_open: Option<StoreStep>,
+    /// Minted persistence built and not yet restored: what each declared
+    /// store files beside its rows and which rows a start reads
+    /// (`set_index_hooks()`, `set_restore_expiring()`), which a store's
+    /// declaration says in Node and the composition root says here.
+    pub configure_minted:
+        Option<Arc<dyn Fn(&crate::minted::Minted) + Send + Sync>>,
+    /// Every write this process owed made, and the store not yet closed:
+    /// `cluster.leave()` and `releaseOrigin()`, each a statement. A failure
+    /// is logged; the store is closed anyway.
+    pub before_close: Option<StoreStep>,
 }
 
 /// What a start read back.
@@ -148,6 +190,8 @@ pub struct Persistence {
     handles: Mutex<Option<Arc<sts_core::realm_store::StoreHandles>>>,
     /// Minted persistence, built when the store opens and it applies.
     minted: Mutex<Option<Arc<crate::minted::Minted>>>,
+    /// The composition root's steps, set before [`Persistence::start`].
+    hooks: Mutex<StoreHooks>,
     me: Weak<Persistence>,
 }
 
@@ -179,6 +223,7 @@ impl Persistence {
             key_sets: Mutex::new(Some(crate::key_sets::KeySets::ephemeral())),
             handles: Mutex::new(None),
             minted: Mutex::new(None),
+            hooks: Mutex::new(StoreHooks::default()),
             me: me.clone(),
         });
         let weak = Arc::downgrade(&me);
@@ -298,7 +343,8 @@ impl Persistence {
     }
 
     fn write_delay_ms(&self) -> u64 {
-        if self.mode == StoreMode::Postgres {
+        // 0 for a database, `writeDelay` for a file.
+        if self.mode.is_database() {
             0
         } else {
             self.settings
@@ -784,6 +830,9 @@ impl Persistence {
                 p.schedule();
             }
         }));
+        if let Some(configure) = self.hooks().configure_minted {
+            configure(&minted);
+        }
         let keys = self.data_keys();
         let restored = minted.restore(&keys).await?;
         *self.minted.lock().unwrap_or_else(PoisonError::into_inner) =
@@ -806,6 +855,34 @@ impl Persistence {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    /// Installs the composition root's steps; before [`Persistence::start`].
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_hooks(&self, hooks: StoreHooks) {
+        *self.hooks.lock().unwrap_or_else(PoisonError::into_inner) = hooks;
+    }
+
+    fn hooks(&self) -> StoreHooks {
+        self.hooks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// `syncNow()`: a read barrier's pull, one that STARTED after this call
+    /// (`replication.rs`); `None` where this process does not coordinate.
+    // Hot path (every request's read barrier): no span.
+    pub async fn sync_now(&self) -> Option<crate::replication::Synced> {
+        let replication = self
+            .replication
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        match replication {
+            Some(r) => Some(r.sync_now().await),
+            None => None,
+        }
     }
 
     /// Opens the store and reads back what it holds: the keystore's data
@@ -890,6 +967,11 @@ impl Persistence {
     async fn restore(&self, driver: &dyn Driver) -> Result<Restored, String> {
         let mut restored = Restored::default();
         driver.open().await.map_err(|e| e.to_string())?;
+        // THIS PROCESS'S ORIGIN, BEFORE ANYTHING READS IT (Node's
+        // `adoptStableOrigin()`, 2026-09-18): the composition root's step.
+        if let Some(step) = self.hooks().after_open {
+            step().await?;
+        }
         // The change log's position BEFORE anything is read: a change
         // committed while this start reads is in the log after it.
         if let Some(log) = driver
@@ -1359,6 +1441,17 @@ impl Persistence {
             if let Err(e) = minted.stop(&self.data_keys()).await {
                 tracing::error!(
                     "persistence: the last minted flush failed: {}",
+                    e
+                );
+            }
+        }
+        // Leaving the cluster and giving the origin back, after the last
+        // write made under them and before the pool closes (Node's
+        // `stop()`): the composition root's step.
+        if let Some(step) = self.hooks().before_close {
+            if let Err(e) = step().await {
+                tracing::warn!(
+                    "persistence: what was owed before the store closes did not finish: {}",
                     e
                 );
             }
