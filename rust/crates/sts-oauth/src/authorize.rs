@@ -2658,6 +2658,21 @@ impl AuthorizationEndpoint {
         if let Some(r) = plan.refusal {
             return back(r.code, r.error, &r.description);
         }
+        // OIDC Core 5.5's claims request, parsed while the client is still
+        // being talked to (`parseClaimsRequest(query.claims)`), and carried
+        // by the code (`requested_claims`).
+        let claims_request = match self
+            .tokens
+            .as_ref()
+            .and_then(|t| t.requested.as_ref())
+            .map(|r| r.parse(q.get("claims")))
+        {
+            Some(Err(why)) => {
+                return back(codes::STS_OAUTH_0157, "invalid_request", &why)
+            }
+            Some(Ok(Some(parsed))) => parsed,
+            _ => Json::Null,
+        };
         let now = (self.now_ms)();
         if let Some((code, description)) = self.grants.check_transaction_values(
             self.bcp_enabled(),
@@ -2704,7 +2719,7 @@ impl AuthorizationEndpoint {
                 "dpop_jkt": s(q.get("dpop_jkt")),
                 "attested_jkt": "",
                 "authorization_details": null,
-                "claims": null,
+                "claims": claims_request,
                 // `oauth21.codeRecordFields()`: a code with no challenge
                 // got past `pkceDecision()` only by the nonce exemption.
                 "pkce_exempt": if self.settings.value_of("oauth2.oauth21").as_bool()

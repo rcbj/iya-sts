@@ -41,9 +41,10 @@
 //! WHAT IS NOT HERE, and how this endpoint answers meanwhile: the
 //! configured UserInfo claim set (`/admin/userinfo-claims`,
 //! `stats.jwtClaims('userinfo')`, which the claim-set slice owns), a claims
-//! request (OIDC Core 5.5, through the token or this request — a `claims`
-//! parameter here is ignored rather than refused), the Identity Assurance
-//! `verified_claims`, the Claims Providers, the `did` claim, a step-up
+//! request sent on THIS request (its `claims` and `claim` parameters are
+//! ignored rather than refused; the token's request is answered, through
+//! [`crate::requested_claims`], `verified_claims` among it), the Claims
+//! Providers, the `did` claim, a step-up
 //! requirement on this service's own resource (RFC 9470, off unless
 //! configured), FAPI 2.0 HTTP Signatures, opaque access tokens (#501, off
 //! by default: a handle is read as a foreign token), and a claim the
@@ -109,7 +110,7 @@ pub struct PresentedToken {
 /// The catalogue rows OIDC Core section 5.4's claims are read through
 /// (`vc_claims.ts`' `VC_ATTRIBUTES`, in catalogue order): the claim path
 /// and the attribute.
-const ROWS: [(&[&str], &str); 22] = [
+pub(crate) const ROWS: [(&[&str], &str); 22] = [
     (&["given_name"], "givenname"),
     (&["family_name"], "sn"),
     (&["email"], "mail"),
@@ -138,7 +139,7 @@ fn s(v: Option<&Json>) -> String {
     crate::js::string_of(v)
 }
 
-fn first_value(
+pub(crate) fn first_value(
     directory: &dyn ClaimDirectory,
     username: &str,
     attr: &str,
@@ -152,7 +153,7 @@ fn first_value(
 
 /// A row's `toClaim()`: `schacDateOfBirth`'s YYYYMMDD as YYYY-MM-DD, a
 /// postal address's `$` as a newline.
-fn to_claim(attr: &str, value: String) -> String {
+pub(crate) fn to_claim(attr: &str, value: String) -> String {
     match attr {
         "schacdateofbirth" => {
             let digits: String =
@@ -684,6 +685,24 @@ impl UserInfo {
             .unwrap_or_else(|| s(claims.get("username")));
         let user = self.tokens.people.user_for(&name);
         let mut body = self.scope_claims_of(&user, &scope);
+        // OIDC Core 5.5's `userinfo` member, as the access token carries
+        // the request the authorization endpoint understood
+        // (`mergedUserinfoRequest()`), `verified_claims` among it. A claim
+        // named beats the scope's (`requestedClaimsOf()`).
+        if let Some(requested) = &self.tokens.requested {
+            let request =
+                crate::requested_claims::RequestedClaims::merged_userinfo(
+                    claims.get("claims").filter(|c| c.is_object()),
+                    None,
+                );
+            if request.is_some() {
+                for (k, v) in
+                    requested.answer(request.as_ref(), "userinfo", &name, &user)
+                {
+                    body.insert(k, v);
+                }
+            }
+        }
         let client_id = s(claims.get("client_id"));
         let local = if sub.is_empty() {
             s(user.get("sub"))

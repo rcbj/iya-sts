@@ -248,6 +248,14 @@ impl IdTokens for CoreIdTokens {
                 }
             }
         }
+        // A claim THIS CLIENT asked for by name (OIDC Core 5.5's `id_token`
+        // member) is the most specific statement of all, so it wins over
+        // every layer below.
+        if let Some(Json::Object(asked)) = issuing.get("requested_claims") {
+            for (k, v) in asked {
+                p.insert(k.clone(), v.clone());
+            }
+        }
         let access = s(issuing.get("access_token"));
         if !access.is_empty() {
             p.insert("at_hash".into(), json!(Self::half(&access, &alg)));

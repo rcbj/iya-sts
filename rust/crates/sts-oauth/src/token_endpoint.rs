@@ -252,6 +252,9 @@ pub struct TokenEndpoint {
     /// subject is asked for, so the directory creates the person where
     /// this service creates people; `None` records nothing.
     pub records: Option<Arc<dyn sts_authn::ports::Records>>,
+    /// OIDC Core 5.5's claims request (`requestedClaimsOf()`), answered
+    /// into the ID Token; `None` answers no claims request.
+    pub requested: Option<Arc<crate::requested_claims::RequestedClaims>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -1760,6 +1763,11 @@ impl TokenEndpoint {
                 record.get("granted_at").unwrap_or(&Json::Null),
             ),
             with_refresh: true,
+            claims: record
+                .get("claims")
+                .filter(|c| c.is_object())
+                .cloned()
+                .unwrap_or(Json::Null),
             ..Mint::default()
         };
         let issued = self.issue(issuing, opts);
@@ -2220,6 +2228,11 @@ impl TokenEndpoint {
             ),
             origin_grant: s(claims.get("grant_type")),
             with_refresh: true,
+            claims: claims
+                .get("claims")
+                .filter(|c| c.is_object())
+                .cloned()
+                .unwrap_or(Json::Null),
             ..Mint::default()
         };
         let refreshed = self.issue(issuing, opts);
@@ -2456,6 +2469,7 @@ impl TokenEndpoint {
                     "session_id": opts.session_id, "grant": opts.grant,
                     "set_id": set_id, "access_token": access, "scope": scope,
                     "sub": own_sub,
+                    "requested_claims": self.id_token_requested(opts),
                 });
                 if let Some(id) = ids.id_token(base, &issuing_facts) {
                     body.insert("id_token".into(), json!(id));
@@ -2463,6 +2477,20 @@ impl TokenEndpoint {
             }
         }
         Ok(Json::Object(body))
+    }
+
+    /// The claims the `id_token` member of the claims request names, for
+    /// the ID Token (`idToken()`'s last layer).
+    fn id_token_requested(&self, opts: &Mint) -> Json {
+        match (&self.requested, opts.claims.is_object()) {
+            (Some(r), true) => Json::Object(r.answer(
+                Some(&opts.claims),
+                "id_token",
+                &opts.username,
+                &opts.user,
+            )),
+            _ => Json::Null,
+        }
     }
 
     /// `refreshTokenPlan()` + `refreshTokenNoted()`: the signed refresh
@@ -2512,6 +2540,10 @@ impl TokenEndpoint {
             .unwrap_or_else(|| opts.resources.clone());
         if !resources.is_empty() {
             p.insert("resources".into(), json!(resources));
+        }
+        // The claims request, so a refreshed access token still carries it.
+        if opts.claims.is_object() {
+            p.insert("claims".into(), opts.claims.clone());
         }
         p.insert("iat".into(), json!(iat));
         p.insert("nbf".into(), json!(iat));
@@ -2707,6 +2739,11 @@ impl TokenEndpoint {
             if !opts.acr.is_null() && !s(Some(&opts.acr)).is_empty() {
                 payload.insert("acr".into(), opts.acr.clone());
             }
+        }
+        // OIDC Core 5.5's claims request rides in the access token: UserInfo
+        // sees this token and nothing else.
+        if opts.claims.is_object() {
+            payload.insert("claims".into(), opts.claims.clone());
         }
         if !opts.jkt.is_empty() {
             payload.insert("cnf".into(), json!({ "jkt": opts.jkt }));
@@ -2907,6 +2944,9 @@ struct Mint {
     parent_refresh_family: String,
     with_refresh: bool,
     client_authenticated: bool,
+    /// OIDC Core 5.5's parsed claims request, carried in the access and
+    /// refresh tokens; `Null` for none.
+    claims: Json,
 }
 
 /// A [`Signer`] over a realm's key set: Node's header order, `alg`, `typ`,

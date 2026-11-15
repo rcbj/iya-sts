@@ -715,6 +715,22 @@ impl OAuthStack {
             passwords: Some(Arc::new(RopcChecks(parts.credentials.clone()))),
             used: Some(used.clone()),
             records: Some(parts.records.clone()),
+            requested: Some(Arc::new(
+                sts_oauth::requested_claims::RequestedClaims {
+                    directory: Arc::new(ClaimEntries(
+                        parts.directory_ports.clone(),
+                    )),
+                    settings: settings.clone(),
+                    invents: {
+                        let mode = mode.clone();
+                        Arc::new(move || {
+                            mode.predicate("inventsClaimValues")
+                                .unwrap_or(false)
+                        })
+                    },
+                    now_ms: Arc::new(|| chrono::Utc::now().timestamp_millis()),
+                },
+            )),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,
