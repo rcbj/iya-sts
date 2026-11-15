@@ -3780,10 +3780,27 @@ function reportNoteFailure(def: any, description: string): void {
   log.debug("Leaving reportNoteFailure().");
 }
 
+// THE INSTANT A JOB RUN IS FOR (2026-11-14, found by #444's D12). The
+// scheduler hands every job `ctx.nowMs` as a FUNCTION (cluster/scheduler.ts,
+// `nowMs: () => number`), and these two jobs read it as a number: the
+// schedule's `Number(ctx.nowMs)` was NaN, so no definition ever had a due
+// slot ({"enqueued":0} every minute), and the retention's arithmetic on a
+// function expired nothing. The tests' own entry points (`jobs.ts`'s
+// `reportScheduleNow(at)`) pass a number, which is why they never saw it.
+// Both forms are read; anything else is now.
+function reportJobNow(ctx: any): number {
+  log.debug("Entering reportJobNow().");
+  const given = ctx ? ctx.nowMs : undefined;
+  const at = typeof given === 'function' ? Number(given.call(ctx))
+    : Number(given);
+  log.debug("Leaving reportJobNow().");
+  return Number.isFinite(at) && at > 0 ? at : Date.now();
+}
+
 async function reportRetainWork(ctx: any): Promise<any> {
   log.debug("Entering reportRetainWork().");
   const limits = new Limits();
-  const now = ctx && ctx.nowMs ? ctx.nowMs : Date.now();
+  const now = reportJobNow(ctx);
   const artifactMs = limits.artifactRetentionS() * 1000;
   const jobMs = limits.jobRetentionS() * 1000;
   const list = stores.listJobs();
@@ -3838,7 +3855,7 @@ async function reportScheduleWork(ctx: any): Promise<any> {
   const scheduler = require('../cluster/scheduler');
   const rights = require('./rights');
   const jobsApi = require('./jobs');
-  const now = ctx && ctx.nowMs ? Number(ctx.nowMs) : Date.now();
+  const now = reportJobNow(ctx);
   const defs = stores.listDefinitions();
   let enqueued = 0;
   for (let i = 0; i < defs.length; i++) {
