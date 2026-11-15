@@ -36,6 +36,8 @@
 
 use std::sync::{Arc, Mutex, PoisonError};
 
+#[path = "admin_bootstrap.rs"]
+mod bootstrap;
 #[path = "admin_groups.rs"]
 mod groups;
 #[path = "admin_views.rs"]
@@ -345,12 +347,20 @@ impl rp::RosterDirectory for Roster {
     fn write_group_entry(
         &self,
         dn: &str,
-        _attributes: &Json,
-        _origin: &str,
+        attributes: &Json,
+        origin: &str,
     ) -> Json {
-        // The roster's writes (`rbac/grant`, `rbac/revoke`) are not routed
-        // in this runtime yet; nothing asks this.
-        json!({ "ok": false, "reason": "notPorted", "dn": dn })
+        // `writeGroupEntry()`: the roster's writes (`rbac/grant`,
+        // `rbac/revoke`, the bootstrap administrator's seeding) through the
+        // directory's group writer, in the roster's realm.
+        groups::write_group_json(
+            &self.dir,
+            &self.dir.settings,
+            &self.realm,
+            dn,
+            attributes,
+            origin,
+        )
     }
     fn normalize_dn(&self, dn: &str) -> String {
         sts_ldap::service_dn::normalize_dn(Some(dn))
@@ -542,15 +552,13 @@ impl rp::Mode for RegMode {
 }
 
 /// The bootstrap administrator's name (`common/bootstrap_name.ts`).
-struct Bootstrap(Arc<Settings>);
+struct Bootstrap(Arc<Settings>, Arc<Mode>);
 
 impl rp::BootstrapName for Bootstrap {
+    /// `BootstrapName.current()`, in the ambient realm's mode: the roster
+    /// counts the account the seeding makes (`admin-<hmac>` in product).
     fn current(&self) -> String {
-        self.0
-            .value_of("admin.bootstrapUsername")
-            .as_str()
-            .trim()
-            .to_string()
+        bootstrap::bootstrap_name(&self.0, &self.1)
     }
 }
 
@@ -670,7 +678,7 @@ impl RosterRoles {
             Arc::new(RegSettings(self.settings.clone())),
             Arc::new(LogAudit),
             self.mode.clone(),
-            Arc::new(Bootstrap(self.settings.clone())),
+            Arc::new(Bootstrap(self.settings.clone(), self.mode.mode.clone())),
         )
     }
 }
@@ -1308,6 +1316,8 @@ impl KeySource for Keys {
 struct Setup {
     /// The reads answered over the runtime (`admin_views.rs`).
     views: Arc<views::Views>,
+    /// A new realm's bootstrap administrator (`admin_bootstrap.rs`).
+    seeder: Arc<bootstrap::Seeder>,
     persistence: Arc<Persistence>,
     apps: Arc<ApplicationRegistry>,
     people: Arc<sts_registers::people::People>,
@@ -1319,11 +1329,9 @@ struct Setup {
 }
 
 impl SetupPorts for Setup {
-    fn seed_administrator(&self, _realm: &str) -> Seeded {
-        // `rbac.seedBootstrapAdministrator()` is not ported: a realm made
-        // here gets no administrator of its own (the service roster still
-        // reaches it).
-        Seeded::default()
+    fn seed_administrator(&self, realm: &str) -> Seeded {
+        // `rbac.seedBootstrapAdministrator()` (`admin_bootstrap.rs`).
+        self.seeder.seed(realm)
     }
     fn kid_of(&self, realm_id: &str) -> String {
         let Some(sets) = self.persistence.key_sets() else {
@@ -1769,7 +1777,16 @@ impl AdminStack {
             access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
             dpop,
             setup_ports: Arc::new(Setup {
+                seeder: Arc::new(bootstrap::Seeder {
+                    dir: dir.clone(),
+                    settings: settings.clone(),
+                    mode: mode.clone(),
+                    registry: parts.registry.clone(),
+                    roster: roster.clone(),
+                    credentials: parts.credentials.clone(),
+                }),
                 views: Arc::new(views::Views {
+                    roster: roster.clone(),
                     apps: apps.clone(),
                     dir: dir.clone(),
                     settings: settings.clone(),

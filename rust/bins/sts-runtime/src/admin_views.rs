@@ -8,6 +8,7 @@
 //! | Operation | Node | Over |
 //! |---|---|---|
 //! | `getGroups` | `groupsJson()`, `groupsListJson()`, `groupDetailJson()` | the directory's groups ([`super::groups::Groups`]), the identity register |
+//! | `grantAdminRole`, `revokeAdminRole` | `adminActions.rbacAction()` | `sts-registers`' `Rbac` over the roster, whose group writes are the directory's ([`super::groups::write_group_json`]) |
 //! | `grantGlobalConsent` | `consentAction()`'s `grant-global-consent`, `consent.grantGlobal()` | the application register |
 //!
 //! THE IDENTITY REGISTER (`common/admin_stats.js`'s `users`, persisted as
@@ -189,6 +190,7 @@ impl IdentityRegister {
 
 /// The views.
 pub struct Views {
+    pub roster: Arc<super::RosterRoles>,
     pub apps: Arc<sts_registers::applications::ApplicationRegistry>,
     pub dir: Arc<LiveDir>,
     pub settings: Arc<Settings>,
@@ -223,6 +225,9 @@ impl Views {
         let body = match asked.operation_id {
             "getGroups" => self.groups_json(asked, setup),
             "grantGlobalConsent" => return Some(self.grant_global(asked)),
+            "grantAdminRole" | "revokeAdminRole" => {
+                return Some(self.rbac_action(asked))
+            }
             _ => return None,
         };
         Some(Answered {
@@ -471,6 +476,28 @@ impl Views {
             status: 200,
             body,
             code: None,
+        }
+    }
+
+    /// `POST /admin-api/rbac/{grant,revoke}` (`adminActions.rbacAction()`):
+    /// the roster's act in the ambient realm, 200 for `ok` and 400
+    /// otherwise, marked with the act's code or STS-API-0034.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn rbac_action(&self, asked: &Asked<'_>) -> Answered {
+        let mut body = asked.body.as_object().cloned().unwrap_or_default();
+        body.insert("action".into(), json!(asked.action));
+        let actor = asked.caller.map(|c| c.name.clone()).unwrap_or_default();
+        let rbac = self.roster.rbac(&realm::current_id());
+        let outcome = rbac.act(&Json::Object(body), "api", &actor);
+        let ok = outcome.answer.get("ok") == Some(&Json::Bool(true));
+        Answered {
+            status: if ok { 200 } else { 400 },
+            code: if ok {
+                None
+            } else {
+                Some(outcome.code.unwrap_or(codes::STS_API_0034))
+            },
+            body: outcome.answer,
         }
     }
 }

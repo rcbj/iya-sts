@@ -158,8 +158,6 @@ macro_rules! not_yet_ported {
         | Operation::GetDirectoryDevices
         | Operation::GetDirectoryService
         | Operation::GetAdminRoles
-        | Operation::GrantAdminRole
-        | Operation::RevokeAdminRole
         | Operation::GetMultiFactor
         | Operation::ClearAuthenticatorApp
         | Operation::ClearSecurityKey

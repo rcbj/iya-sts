@@ -103,6 +103,71 @@ fn common_name_of(dn: &str) -> String {
         .unwrap_or_default()
 }
 
+/// `writeGroupEntry()`'s answer as the roster reads it (`{ok, created,
+/// dn, entry}`, or `{ok: false, reason, dn, parent}`), the touched entry
+/// put back into the live directory.
+#[tracing::instrument(level = "debug", skip(dir, settings, attributes))]
+pub fn write_group_json(
+    dir: &LiveDir,
+    settings: &Settings,
+    realm_id: &str,
+    dn: &str,
+    attributes: &Json,
+    origin: &str,
+) -> Json {
+    let answer = {
+        let mut tree = dir.tree.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(r) = LiveDir::realm_index(&tree, realm_id) else {
+            return json!({ "ok": false, "reason": "noParent", "dn": dn,
+                           "parent": parent_dn(Some(dn)) });
+        };
+        let existed = tree.get(r, dn).is_some();
+        let pairs: Vec<(String, Vec<String>)> = attributes
+            .as_object()
+            .map(|o| {
+                o.iter()
+                    .map(|(k, v)| {
+                        let values = match v {
+                            Json::Array(l) => l
+                                .iter()
+                                .map(|x| match x {
+                                    Json::String(t) => t.clone(),
+                                    other => other.to_string(),
+                                })
+                                .collect(),
+                            Json::String(t) => vec![t.clone()],
+                            other => vec![other.to_string()],
+                        };
+                        (k.clone(), values)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        match write_group(settings, &mut tree, r, dn, pairs, origin) {
+            Err(why) => {
+                let mut out = json!({ "ok": false, "reason": why.reason(),
+                                      "dn": dn });
+                if let WriteRefusal::NoParent(parent) = &why {
+                    out["parent"] = json!(parent);
+                }
+                if let WriteRefusal::Stored(e) = &why {
+                    out["errors"] = json!([e.message.clone()]);
+                }
+                out
+            }
+            Ok(_) => {
+                let reads = Groups { tree: &tree, r };
+                let stored = tree.get(r, dn).map(|e| e.dn.clone());
+                json!({ "ok": true, "created": !existed,
+                        "dn": stored.unwrap_or_else(|| dn.to_string()),
+                        "entry": reads.read_group_entry(dn) })
+            }
+        }
+    };
+    dir.write_back();
+    answer
+}
+
 /// The directory's reads of one realm's groups.
 pub struct Groups<'a> {
     pub tree: &'a Directory,
@@ -133,6 +198,7 @@ impl<'a> Groups<'a> {
     }
 
     /// `groupDnFor(name)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn group_dn_for(&self, name: &str) -> String {
         format!(
             "cn={},{}",
@@ -296,6 +362,7 @@ impl<'a> Groups<'a> {
 
     /// `readGroupEntry(dn)`: `entryObject()` with `rule` and `members`, or
     /// `None` where nothing there is a group.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn read_group_entry(&self, dn: &str) -> Option<Json> {
         let dn = self.dn_for_resource_id(dn);
         let stored = self.tree.get(self.r, &dn)?;
@@ -333,6 +400,7 @@ impl<'a> Groups<'a> {
 
     /// `directoryState()`: the realm's containers, the two sockets and the
     /// counts.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn directory_state(&self, settings: &Settings) -> Map<String, Json> {
         let sockets = crate::ldap_listener::state();
         let int = |k: &str| settings.value_of(k).as_int();
@@ -355,6 +423,7 @@ impl<'a> Groups<'a> {
 
     /// `groupsFor(dn)`: the directory's state, every group as a row sorted
     /// by normalised DN, and — given a DN — that group in full.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn groups_for(&self, settings: &Settings, wanted: &str) -> Json {
         let wanted = wanted.trim();
         let mut out = self.directory_state(settings);
@@ -464,7 +533,7 @@ impl<'a> Groups<'a> {
 }
 
 /// `writeGroupEntry(dn, attributes, origin)`'s refusals, before a write.
-enum WriteRefusal {
+pub enum WriteRefusal {
     NotAGroup,
     Full(i64),
     NoParent(String),
@@ -473,7 +542,9 @@ enum WriteRefusal {
 }
 
 impl WriteRefusal {
-    fn code(&self) -> ErrorCode {
+    /// The refusal's code.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn code(&self) -> ErrorCode {
         match self {
             WriteRefusal::NotAGroup => codes::STS_LDAP_0048,
             WriteRefusal::Full(_) => codes::STS_LDAP_0007,
@@ -482,7 +553,9 @@ impl WriteRefusal {
             WriteRefusal::Stored(e) => e.code.unwrap_or(codes::STS_LDAP_0008),
         }
     }
-    fn reason(&self) -> &'static str {
+    /// The refusal's `reason`.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn reason(&self) -> &'static str {
         match self {
             WriteRefusal::NotAGroup => "notAGroup",
             WriteRefusal::Full(_) => "full",
@@ -504,7 +577,6 @@ impl GroupWriter {
         LiveDir::realm_index(tree, &sts_core::realm::current_id())
     }
 
-    /// `writeGroupEntry()`: the entry stored whole, its `createdAt` kept.
     fn write(
         &self,
         tree: &mut Directory,
@@ -513,13 +585,30 @@ impl GroupWriter {
         attributes: Vec<(String, Vec<String>)>,
         origin: &str,
     ) -> Result<String, WriteRefusal> {
+        write_group(&self.settings, tree, r, dn, attributes, origin)
+    }
+}
+
+/// `writeGroupEntry(dn, attributes, origin)`: the entry stored whole, its
+/// `createdAt` kept; refused for an entry there that is not a group, a
+/// full directory, a missing container and a member that names nothing.
+#[tracing::instrument(level = "debug", skip(settings, tree, attributes))]
+pub fn write_group(
+    settings: &Settings,
+    tree: &mut Directory,
+    r: usize,
+    dn: &str,
+    attributes: Vec<(String, Vec<String>)>,
+    origin: &str,
+) -> Result<String, WriteRefusal> {
+    {
         let existing = tree.get(r, dn).cloned();
         if let Some(e) = &existing {
             if tree.group_rule(r, &e.dn, &e.attributes).is_empty() {
                 return Err(WriteRefusal::NotAGroup);
             }
         }
-        let max = self.settings.value_of("ldap.maxEntries").as_int();
+        let max = settings.value_of("ldap.maxEntries").as_int();
         let total: usize = tree.realms().iter().map(|t| t.entries.len()).sum();
         if existing.is_none() && total as i64 >= max {
             tracing::warn!(
