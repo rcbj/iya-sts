@@ -250,7 +250,11 @@ class ExtendedListing {
     const markTypes = ExtendedListing.values(q.trust_mark_type);
     const claims = ExtendedListing.values(q.claims);
 
-    const facts: Json[] = await entity.subordinateFacts(req);
+    // Every row described only when a filter reads what describing finds
+    // (`oidfed.ts`'s `subordinateFacts()` says what it costs); a
+    // `trust_marks` claim describes the page's rows alone, in addClaims().
+    const facts: Json[] = await entity.subordinateFacts(req,
+      types.length > 0 || intermediate !== undefined);
     const rows: Json[] = [];
     for (let i = 0; i < facts.length; i++) {
       const s = facts[i];
@@ -336,7 +340,8 @@ class ExtendedListing {
         continue;
       }
       if (name === 'trust_marks') {
-        const marks = this.marksOf(entity, fact);
+        const marks = this.marksOf(entity,
+                                   await entity.describedFact(req, fact));
         if (marks.length) {
           one.trust_marks = marks;
         }
