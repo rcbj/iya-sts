@@ -60,6 +60,14 @@
 //      listener id, the environment's too, a link to a page laid out as a
 //      route's, with its full configuration and the edit, renew and
 //      remove controls; its trail; where a save and a removal land.
+//   TR. THE TRAIL NAMES THE OPEN TAB (rcbj, 2026-11-15): a PEP's page's
+//      trail ends at the tab and sub-tab its fragment opens, drawn again by
+//      the runtime on every fragment change; /admin/xacml's too; the route
+//      and listener pages keep theirs.
+//   LF. CREATE A NEW LISTENER LAID OUT AS CREATE A NEW ROUTE (rcbj,
+//      2026-11-15): one field per row under legends, the certificate fields
+//      shown only for HTTPS, the environment's pair below in the same
+//      layout, the listener page's edit form the same; ids kept whole.
 //   K. NO TAB TRAPS (rcbj, 2026-11-15): every tab of a route page's three
 //      rows links to the page it names, the current ones too, and the
 //      runtime navigates on it; the panel opens with Back to routes, then
@@ -1336,6 +1344,241 @@ async function run(t) {
                  { name: 'pep-1', listener: 'pub2' }) === null,
           'LT2. a new listener lands on its page, a save stays there, a ' +
           'removal lands on Configured Listeners, a renew stays put');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== TR. the trail names the open tab and sub-tab ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15), reversing "a tabbed page's own trail names no open
+  // tab": Admin console › XACML › Remote PEPs › the PEP › Listener › Create
+  // a new listener. The runtime reads the tab tree from the body it drew
+  // (WebShell.tabTreeOf()) and draws the trail again for the fragment
+  // (redrawTrail(), on every draw, hashchange and fragment popstate).
+  const runtimeTrail = function (path, query, body, hash) {
+    log.debug("Entering runtimeTrail(). " + path + hash);
+    const drawn = {};
+    const render = WebPages.render;
+    WebPages.render = function () {
+      return body;
+    };
+    try {
+      ConsoleRuntime.prototype.drawView.call({
+        view: { page: WebPages.pageFor(path), query: query, json: {} },
+        me: { write: false }, t: tr,
+        shell: { navLabels: { '/admin/xacml': 'XACML' } },
+        draw: function (title, active, html, up) {
+          drawn.title = title;
+          drawn.active = active;
+          drawn.html = html;
+          drawn.up = up;
+        } }, null);
+    } finally {
+      WebPages.render = render;
+    }
+    // The trail element the frame drew, which redrawTrail() replaces.
+    const element = { outerHTML: '<p class="crumb"></p>' };
+    const search = Object.keys(query).map(function (k) {
+      return k + '=' + query[k];
+    }).join('&');
+    ConsoleRuntime.prototype.redrawTrail.call({
+      trailOf: { title: drawn.title, active: drawn.active, up: drawn.up,
+                 tree: WebShell.tabTreeOf(drawn.html) },
+      env: { location: { pathname: path, search: search ? '?' + search : '',
+                         hash: hash },
+             document: { querySelector: function (sel) {
+               return sel === '.card p.crumb' ? element : null;
+             } } },
+      shell: { navLabels: { '/admin/xacml': 'XACML' } }, t: tr, prefix: '',
+      openTabsNow: ConsoleRuntime.prototype.openTabsNow,
+      here: ConsoleRuntime.prototype.here,
+      consolePath: ConsoleRuntime.prototype.consolePath });
+    log.debug("Leaving runtimeTrail().");
+    return crumbsOf(element.outerHTML);
+  };
+  const pepBase = 'Admin console -> /admin | XACML -> /admin/xacml | ' +
+    'Remote PEPs -> /admin/xacml#xacml-tab-peps | ' +
+    'pep-1 -> /admin/xacml/pep?pep=pep-1 | ';
+  const pepQ = { pep: 'pep-1' };
+  t.equal(runtimeTrail('/admin/xacml/pep', pepQ, pepPage,
+                       '#xacml-pep-listeners-new'),
+          pepBase + 'Listener -> #xacml-pep-tab-listener | ' +
+          'Create a new listener',
+          'TR1. Listener › Create a new listener: the PEP a link to its ' +
+          'page, Listener to its anchor, the sub-tab the leaf');
+  t.equal(runtimeTrail('/admin/xacml/pep', pepQ, pepPage,
+                       '#xacml-pep-proxy-manifest'),
+          pepBase + 'Reverse proxy -> #xacml-pep-tab-proxy | Manifest',
+          'TR2. Reverse proxy › Manifest');
+  const subPaths = {
+    '': 'Overview',
+    '#xacml-pep-tab-overview': 'Overview',
+    '#xacml-pep-tab-decisions': 'Decisions',
+    '#xacml-pep-tab-settings': 'Settings',
+    '#xacml-pep-tab-listener': 'Listener -> #xacml-pep-tab-listener | ' +
+      'Configured Listeners',
+    '#xacml-pep-listeners-configured': 'Listener -> ' +
+      '#xacml-pep-tab-listener | Configured Listeners',
+    '#xacml-pep-tab-proxy': 'Reverse proxy -> #xacml-pep-tab-proxy | ' +
+      'Configured Routes',
+    '#xacml-pep-proxy-routes': 'Reverse proxy -> #xacml-pep-tab-proxy | ' +
+      'Configured Routes',
+    '#xacml-pep-proxy-new-route': 'Reverse proxy -> #xacml-pep-tab-proxy | ' +
+      'Create a New Route',
+    '#xacml-pep-tab-signals': 'Signal streams',
+    '#no-such-anchor': 'Overview'
+  };
+  const subMisses = Object.keys(subPaths).filter(function (hash) {
+    return runtimeTrail('/admin/xacml/pep', pepQ, pepPage, hash) !==
+      pepBase + subPaths[hash];
+  });
+  t.check(subMisses.length === 0,
+          'TR3. every tab and sub-tab of a PEP\'s page is named; with no ' +
+          'fragment, or one the page lacks, the first (Overview), and a ' +
+          'tab alone names its first sub-tab', subMisses.map(function (h) {
+            return h + ' => ' + runtimeTrail('/admin/xacml/pep', pepQ,
+                                             pepPage, h);
+          }).join('\n'));
+  // AN ANCHOR INSIDE A PANEL opens that panel's tabs: a listener's row.
+  const lPepPage = XacmlPage.pepDetail(writer, lJson);
+  t.equal(runtimeTrail('/admin/xacml/pep', pepQ, lPepPage,
+                       '#pep-listener-public-https'),
+          pepBase + 'Listener -> #xacml-pep-tab-listener | ' +
+          'Configured Listeners',
+          'TR4. an anchor inside a sub-tab names the tab and sub-tab that ' +
+          'hold it');
+  // /admin/xacml's own tabs: XACML › the tab.
+  const xacmlBody = kit.tabbedPanels('xacml-pages',
+    XacmlPage.xacmlTabs(tr).map(function (one) {
+      return Object.assign({}, one, { html: '<p>' + one.id + '</p>' });
+    }));
+  t.equal(runtimeTrail('/admin/xacml', {}, xacmlBody, '#xacml-tab-peps'),
+          'Admin console -> /admin | XACML -> /admin/xacml | Remote PEPs',
+          'TR5. /admin/xacml: XACML › Remote PEPs, XACML a link to the page');
+  t.equal(runtimeTrail('/admin/xacml', {}, xacmlBody, ''),
+          'Admin console -> /admin | XACML -> /admin/xacml | Metadata',
+          'TR6. /admin/xacml with no fragment: its first tab');
+  // A DRILL-DOWN'S TABS ARE LINKS TO OTHER PAGES: its trail is already
+  // full and gains nothing, whatever the fragment.
+  t.check(runtimeTrail('/admin/xacml/pep/route',
+            { pep: 'pep-1', route: 'orders-api' }, page, '') === routeTrail &&
+          runtimeTrail('/admin/xacml/pep/route',
+            { pep: 'pep-1', route: 'orders-api' }, page,
+            '#xacml-pep-proxy-routes') === routeTrail &&
+          runtimeTrail('/admin/xacml/pep/listener',
+            { pep: 'pep-1', listener: 'public-https' }, lPage, '') ===
+            lTrail,
+          'TR7. the route and listener pages keep their trails (T2, LT1)');
+  // A page with no tabs keeps its one leaf.
+  t.equal(runtimeTrail('/admin/xacml', {}, '<p>no tabs</p>', '#x'),
+          'Admin console -> /admin | XACML',
+          'TR8. a page with no tabs: the trail ends at the page');
+  // The handlers that call it: a fragment change draws the trail again.
+  const runtimeSource = require('fs').readFileSync(require.resolve(
+    '../admin-ui/web_runtime'), 'utf8');
+  const onHash = /addEventListener\('hashchange', function \(\) \{([\s\S]*?)\}\);/
+    .exec(runtimeSource);
+  t.check(!!onHash && /redrawTrail\(\)/.test(onHash[1]) &&
+          /tabTreeOf\(inner\)/.test(runtimeSource) &&
+          /tabs: this\.openTabsNow\(\)/.test(runtimeSource),
+          'TR9. the runtime draws the trail from the body\'s tab tree, and ' +
+          'again on every hashchange', onHash ? onHash[1] : '');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== LF. Create a new listener laid out as Create a New ' +
+             'Route ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): "the UI on the 'Create a new listener' is terrible.
+  // Organize and style it similar to the 'Create a route' sub-subtab".
+  const lNewForms = lNew.match(/<form\b[\s\S]*?<\/form>/g) || [];
+  const defForm = lNewForms[0] || '';
+  const legendsIn = function (html) {
+    log.debug("Entering legendsIn().");
+    const out = [];
+    const re = /<legend>([^<]*)<\/legend>/g;
+    let m = re.exec(html);
+    while (m) {
+      out.push(m[1]);
+      m = re.exec(html);
+    }
+    log.debug("Leaving legendsIn().");
+    return out.join(' | ');
+  };
+  // Each row's one control, by its name.
+  const rowsOf = function (html) {
+    log.debug("Entering rowsOf().");
+    const out = [];
+    (html.match(/<div class="formrow">[\s\S]*?<\/div>/g) || [])
+      .forEach(function (one) {
+        const names = one.match(/ name="[^"]*"/g) || [];
+        out.push(names.length === 1 ? names[0].slice(7, -1)
+          : (/<button type="submit"/.test(one) ? 'button'
+             : names.length + ' controls'));
+      });
+    log.debug("Leaving rowsOf().");
+    return out.join(' ');
+  };
+  t.equal(legendsIn(defForm), 'Listener | Address | Certificate (HTTPS only)',
+          'LF1. the definition form\'s legends: Listener, Address, ' +
+          'Certificate (HTTPS only)');
+  t.equal(rowsOf(defForm),
+          'id protocol purpose address port dnsNames ipAddresses keyAlg ' +
+          'button',
+          'LF2. one field per .formrow, then the button in a row of its own',
+          defForm);
+  t.check(/^<form [^>]*><input type="hidden" name="action" value="set-pep-listener"><input type="hidden" name="name" value="pep-1"><button type="submit" class="default-submit"/
+            .test(defForm) &&
+          (defForm.match(/<div class="formrow"><label title="[^"]+"/g) ||
+           []).length === 8,
+          'LF3. the hidden default submit first, every label with its ' +
+          'tooltip', defForm.slice(0, 600));
+  const certSet = /<fieldset class="pep-listener-cert"([^>]*)>/.exec(defForm);
+  t.check(/<select name="protocol" data-panels="listenerProtocol">/
+            .test(defForm) && !!certSet &&
+          /data-panel-of="listenerProtocol" data-panel="https"$/
+            .test(certSet[1]),
+          'LF4. the certificate fields are the protocol select\'s HTTPS ' +
+          'panel, shown for HTTPS', certSet ? certSet[1] : defForm);
+  const plainForm = XacmlPage.listenerForm(tr, lJson, 'pep-1',
+    { id: 'plain', protocol: 'http', purpose: 'api', address: '0.0.0.0',
+      port: 8080 });
+  t.check(/<fieldset class="pep-listener-cert"[^>]* hidden>/
+            .test(plainForm) &&
+          plainForm.indexOf('<input type="hidden" name="id" value="plain">') >=
+            0 &&
+          /<span class="formlabel tipword" title="[^"]+">Id<\/span> <code>plain<\/code>/
+            .test(plainForm) &&
+          legendsIn(plainForm) ===
+            'Listener | Address | Certificate (HTTPS only)',
+          'LF5. a defined HTTP listener\'s form: the certificate fields ' +
+          'hidden, the id fixed, the same legends', plainForm);
+  const pairAt = lNew.indexOf('<h3>The environment\'s HTTPS pair</h3>');
+  const pairForm = lNewForms[1] || '';
+  t.check(pairAt > lNew.indexOf(defForm) &&
+          lNew.indexOf(pairForm) > pairAt &&
+          /value="issue-pep-certificate"[\s\S]*class="default-submit"/
+            .test(pairForm) &&
+          legendsIn(pairForm) ===
+            'Certificate issued | Issue a new certificate' &&
+          rowsOf(pairForm) === '0 controls dnsNames ipAddresses keyAlg button',
+          'LF6. the environment\'s HTTPS pair below it, titled, laid out ' +
+          'the same way', pairForm);
+  const readerNew = panelOf(lReaderTab, 'xacml-pep-listeners-new');
+  t.check(readerNew.indexOf('<form') < 0 &&
+          legendsIn(readerNew) === 'Certificate issued' &&
+          readerNew.indexOf('none issued') >= 0,
+          'LF7. a reader sees the pair as issued, under its legend', readerNew);
+  const editForm = (lPanel.match(/<form\b[\s\S]*?<\/form>/g) || [])[0] || '';
+  t.check(legendsIn(editForm) ===
+            'Listener | Address | Certificate (HTTPS only)' &&
+          rowsOf(editForm) === '0 controls protocol purpose address port ' +
+            'dnsNames ipAddresses keyAlg button' &&
+          editForm.indexOf('Save the listener</button></div></form>') > 0,
+          'LF8. a listener\'s page edits it in the same layout', editForm);
+  const adminSource = require('fs').readFileSync(require.resolve(
+    '../admin-ui/admin'), 'utf8');
+  t.check(lConfigured.indexOf('<th class="pep-listener-id"><a href=') >= 0 &&
+          adminSource.indexOf('th.pep-listener-id{white-space:nowrap}') >= 0,
+          'LF9. Configured Listeners keeps each id whole (nowrap), inside ' +
+          'the table\'s sideways scroller');
 
   // -------------------------------------------------------------------------
   t.log.info('=== Z. the Authorization section (#1760) ===');

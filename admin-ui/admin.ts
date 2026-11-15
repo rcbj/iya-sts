@@ -4673,6 +4673,19 @@ class AdminConsole {
       // xacml/web_xacml.ts's warnings and scim/web_scim.ts's top-aligned
       // tiles, which were `style=""` until the families' pages followed.
       '.xacml-alert{color:#b00}.tiles.tiles-top{align-items:flex-start}' +
+      // A remote PEP's Configured Listeners: the Listener column kept whole
+      // (8081 at 1280px broke "api-http/s" mid-word); `.wide` scrolls the
+      // table sideways when the row is wider than the card.
+      'th.pep-listener-id{white-space:nowrap}' +
+      // The environment's pair as issued, on Create a new listener: its
+      // names and expiry drawn as the table cell draws them, small.
+      '.pep-envpair-held .sub{color:#666;font-size:.85em}' +
+      // At phone width a fieldset is as wide as its widest box by default
+      // (`min-width: min-content`), so a 40-column DNS names box pushed the
+      // Certificate legend past the card at 390px.
+      '.pep-listener-form fieldset,.pep-envpair-form fieldset{min-width:0}' +
+      '.pep-listener-form label,.pep-envpair-form label{max-width:100%}' +
+      '.pep-listener-form input,.pep-envpair-form input{max-width:100%}' +
       // A drill-down's title inside its parent's tabs (`kit.drillTitle()`,
       // rcbj 2026-11-15): indented under the innermost tab row, with the
       // tab colour's bar down its left, the level below that row.

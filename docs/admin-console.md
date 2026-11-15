@@ -274,6 +274,11 @@ single crumb. The navigation answers *what else is there*; the trail answers
   tooltip, because a `did:jwk` is hundreds of characters with nowhere to break.
 * The trail has no crumb for a section, because a section has no page of its
   own and a crumb that could not be a link would be a dead one.
+* **On a tabbed page the trail ends at the open tab and sub-tab** —
+  *Admin console › XACML › Remote PEPs › the PEP › Listener › Create a new
+  listener*. The page's own crumb then links to the page (its first tab),
+  each tab crumb to that tab, and the trail follows every tab you press. With
+  no tab chosen in the address it names the first tab.
 
 **The trail goes back to the list *as you left it*.** A drill-down link is
 built with the filter and page you were looking at —

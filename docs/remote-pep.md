@@ -1156,7 +1156,8 @@ every such request needs `REMOTE_PEPS` and is audited as
 Each row of **Protocols → XACML → Remote PEPs** opens the PEP's own page,
 `/admin/xacml/pep?pep=<name>` (`GET /admin-api/xacml/peps?pep=<name>`), with
 the trail *Admin console › XACML › Remote PEPs › the PEP*, its Remote PEPs
-crumb leading back to the tab. Every act on a PEP under
+crumb leading back to the tab, followed by the tab and sub-tab you have open
+(*› Listener › Create a new listener*). Every act on a PEP under
 `POST /admin-api/xacml/` takes the PEP as `pep`, the same name, or as `name`
 as it always has; both naming different PEPs is refused. Its tabs:
 
@@ -1184,9 +1185,14 @@ two sub-tabs laid out as the Reverse proxy tab's are. **Configured
 Listeners** (`#xacml-pep-listeners-configured`) is the table, one row per
 listener the PEP has, each id a link to [the listener's own
 page](#a-listeners-own-page). **Create a new listener**
-(`#xacml-pep-listeners-new`) holds the form that defines one — once it is
-saved, the new listener's page opens — and the environment's HTTPS pair
-with its Issue control. The listeners are:
+(`#xacml-pep-listeners-new`) holds the form that defines one, laid out as
+Create a New Route is — **Listener** (id, protocol, purpose), **Address**
+(address, port) and **Certificate (HTTPS only)** (DNS names, IP addresses,
+key), which shows only while the protocol is HTTPS — and once it is saved,
+the new listener's page opens. Below it, under its own heading, is the
+environment's HTTPS pair: the certificate issued, then the names and key
+for the next one and Issue or Reissue. A listener's own page edits it in
+the same layout. The listeners are:
 
 * **The four its environment binds** — `api-http` (`PEP_PORT`), `api-https`
   (`PEP_HTTPS_PORT`), `proxy-http` (`PEP_PROXY_PORT`) and `proxy-https`

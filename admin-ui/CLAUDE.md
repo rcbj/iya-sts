@@ -201,12 +201,51 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    The trail names every level: *XACML › Remote PEPs › the PEP › Reverse
    proxy › Configured Routes › the route*, Reverse proxy linking to
    `#xacml-pep-tab-proxy` and Configured Routes to
-   `#xacml-pep-proxy-routes`. **A tabbed page's own trail does not name the
-   tab that is open** — `/admin/xacml` ends at XACML and a PEP's page at the
-   PEP whichever tab or sub-tab a fragment opened: the trail is drawn with
-   the view and a tab press changes only the fragment, so a tab crumb would
-   go stale on the first press; the tab bar is what says which tab is open.
-   `tests/xacml_pep_console.js` X/W/T/K hold all of it. **A remote PEP
+   `#xacml-pep-proxy-routes`. `tests/xacml_pep_console.js` X/W/T/K hold
+   all of it.
+
+   **A TABBED PAGE'S TRAIL ENDS AT THE OPEN TAB AND SUB-TAB** (rcbj
+   2026-11-15: *"the breadcrumb trail does not correctly show Admin
+   console->XACML->Remote PEPs->PEP Name->Listener->Create a new
+   listener"*). **This reverses the rule recorded with `07f0f12a2` and
+   `f902f7a84`**, that a tabbed page's own trail names no open tab because
+   it is drawn with the view and a tab press changes only the fragment, so
+   a tab crumb would go stale on the first press. The staleness was the
+   whole argument, and the runtime answers it: the trail is drawn again on
+   every fragment change, without drawing the page. **It is generic, in
+   the shared mechanism, never per page**:
+   * `draw()` reads the body's tab tree from the SAME string it draws
+     (`WebShell.tabTreeOf()`: each `.tabs`/`.subtabs` with its
+     `nav.tabbar` links and its `.tabpanel`/`.subpanel`s, every id inside
+     each panel, the bars nested in each), so the trail cannot name a tab
+     the page lacks, and node holds it with no DOM.
+   * `WebShell.openTabs(tree, fragment)` walks it as `markOpenTabs()`
+     marks the bars: in each bar the tab whose panel is or holds the
+     target, else its `first`, else its first — so with no fragment, or
+     one the page lacks, the trail names the first tab, and a tab alone
+     names its first sub-tab. **A tab that links to another page is open
+     but is no crumb** (a drill-down's rows, above): the walk goes on into
+     the panel drawn, and the route and listener pages, whose every tab is
+     such a link, keep their trails unchanged.
+   * `trailBar()`'s `tabs` and `self`: the page's own crumb becomes a link
+     to the page with no fragment, each tab crumb but the deepest a link to
+     its `#<id>`, and the deepest the plain leaf.
+   * `redrawTrail()` replaces `.card p.crumb` on every `hashchange` and
+     fragment `popstate` (a tab press, a tab crumb, Back), from what the
+     page was drawn with; `drawProblem()` and `drawShellRefused()` clear
+     it.
+   So every console page drawn with `kit.tabbedPanels()` or
+   `subTabbedPanels()` is covered: a PEP's page (its six tabs and the
+   Listener and Reverse proxy sub-tabs), `/admin/xacml`, OAuth, SAML,
+   Kerberos, OpenID4VC, SSF and SCIM, every `WebPages.PROTOCOL_TABS` page
+   (delegation, federation, OpenID Federation, provider commands, claim
+   providers, GNAP, UMA, TOTP, recovery codes, WebAuthn, device
+   registration, LDAP, WS-Trust, WS-Federation, PKI, TLS, groups, roles,
+   applications, devices, attribute sources, secret destinations),
+   Certificate issuance with its ACME, EST, SCEP and SPIFFE sub-tabs,
+   Server configuration → Listeners, and the application, user (its
+   Credentials and person-field sub-tabs), group, role and policy pages
+   with their sub-tabs. `tests/xacml_pep_console.js` TR holds it. **A remote PEP
    LISTENER's page is the second** (rcbj 2026-11-15:
    `/admin/xacml/pep/listener?pep=&listener=`, Listener › Configured
    Listeners current, *← Back to listeners*, *Listener detail: <id>*, the

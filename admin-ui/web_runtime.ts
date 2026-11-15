@@ -130,6 +130,10 @@ class ConsoleRuntime extends SpaClient {
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
+  // What the trail of the page last drawn is drawn from, and its tab tree
+  // (`WebShell.tabTreeOf()`), so a fragment change draws the trail again
+  // without drawing the page (redrawTrail()). Null on a page with none.
+  private trailOf: Json;
   private spec: Json;
   // The sign-in again in progress, while the session that ended is replaced
   // (#508): its one-use values, the requests waiting on it and the channel
@@ -183,6 +187,7 @@ class ConsoleRuntime extends SpaClient {
     this.declaredQueries = null;
     this.view = null;
     this.drawnAt = '';
+    this.trailOf = null;
     this.spec = null;
     this.reauth = null;
     this.freshSignIn = false;
@@ -1392,12 +1397,17 @@ class ConsoleRuntime extends SpaClient {
     // frame and so below the runtime facts at the foot of the card: one
     // footer element, in the console's language.
     const footer = WebFooter.drawnIn(this.env.document, this.t);
+    // THE TRAIL NAMES THE OPEN TAB (rcbj 2026-11-15): the body's tab tree,
+    // read from the string drawn, and the tabs the fragment opens in it.
+    this.trailOf = { title: title, active: active, up: up,
+                     tree: WebShell.tabTreeOf(inner) };
     WebSafeDom.render(this.env.document.body,
       ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
         title: title, active: active, up: up, inner: messages + inner,
         path: this.here(), t: this.t, openSection: this.openSection,
-        accounts: this.accounts, subject: this.subject }), this.prefix) +
+        accounts: this.accounts, subject: this.subject,
+        tabs: this.openTabsNow(), self: this.here() }), this.prefix) +
       footer);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
@@ -1421,6 +1431,45 @@ class ConsoleRuntime extends SpaClient {
     this.wireChoicePanels();
     this.loadPageScripts();
     this.revealActiveNav();
+  }
+
+  // THE OPEN TAB PATH FOR THE ADDRESS AS IT IS NOW: the tabs of the page
+  // last drawn that its fragment opens (`WebShell.openTabs()`).
+  /**
+   * The tabs the current fragment opens on the page last drawn.
+   *
+   * @returns `{ label, href }` per open tab, outermost first
+   */
+  openTabsNow(): Json[] {
+    const hash = String((this.env.location && this.env.location.hash) || '');
+    return this.trailOf
+      ? WebShell.openTabs(this.trailOf.tree, hash) : [];
+  }
+
+  // THE TRAIL DRAWN AGAIN WHEN ONLY THE FRAGMENT CHANGED (rcbj 2026-11-15):
+  // a tab press, a tab crumb, Back over a fragment. The page is not drawn
+  // again — that would lose the `:target` — so the trail alone is replaced,
+  // from what the page was drawn with and the fragment now. Its tail is
+  // the tab tree's, so it cannot name a tab the bar does not have.
+  /**
+   * Draws the breadcrumb trail again for the current fragment.
+   *
+   * @returns nothing
+   */
+  redrawTrail(): void {
+    const doc = this.env.document;
+    if (!this.trailOf || !doc || typeof doc.querySelector !== 'function') {
+      return;
+    }
+    const element = doc.querySelector('.card p.crumb');
+    if (!element) {
+      return;
+    }
+    const shell = this.shell || { navLabels: {} };
+    WebSafeDom.replace(element, ConsoleRuntime.realmLinks(
+      WebShell.trailBar(this.trailOf.active, this.trailOf.up,
+                        this.trailOf.title, shell.navLabels, this.t,
+                        this.openTabsNow(), this.here()), this.prefix));
   }
 
   // THE TAB BEING READ, ON THE LINK (2026-10-25).
@@ -1602,6 +1651,8 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   drawProblem(title: string, detail: string): void {
+    // No tabbed page is drawn, so a fragment change has no trail to redraw.
+    this.trailOf = null;
     this.env.document.title = title + ' — IYA STS admin';
     const footer = WebFooter.drawnIn(this.env.document, this.t);
     WebSafeDom.render(this.env.document.body,
@@ -1633,6 +1684,8 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   drawShellRefused(refusal: Json): void {
+    // No tabbed page is drawn, so a fragment change has no trail to redraw.
+    this.trailOf = null;
     const t = this.t;
     const json = (refusal && refusal.json) || {};
     const why = String(json.error_description || json.error || '');
@@ -3822,6 +3875,7 @@ class ConsoleRuntime extends SpaClient {
       };
       this.env.window.addEventListener('hashchange', function () {
         self.markOpenTabs();
+        self.redrawTrail();
       });
       this.env.window.addEventListener('popstate', function () {
         // A FRAGMENT'S OWN NAVIGATION — a tab pressed, or targetFragment() —
@@ -3832,6 +3886,7 @@ class ConsoleRuntime extends SpaClient {
         if (self.env.location.pathname + self.env.location.search ===
             self.drawnAt) {
           self.markOpenTabs();
+          self.redrawTrail();
           return;
         }
         self.prefix = ConsoleRuntime.prefixOf(self.env.location.pathname);

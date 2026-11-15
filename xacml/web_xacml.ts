@@ -930,11 +930,11 @@ class XacmlPage {
   // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
   // and never whether the PEP is serving it: nothing on this page reaches
   // into another process, and the PEP's own GET / is where that is said.
-  // The issue control is on the PEP's own page (#1760).
-  static pepListener(ctx: Json, json: Json, row: Json,
-                     withForm: boolean): string {
+  // The issue control is on the PEP's Create a new listener sub-tab
+  // (`envPairForm()`, #1760); this is the pair as issued: its serial, names
+  // and expiry.
+  static pepListener(ctx: Json, row: Json): string {
     const t = ctx.t;
-    const self = this;
     const held = row.listenerCertificate;
     return (held
       ? '<code>' + esc(held.serialHex) + '</code>' +
@@ -946,29 +946,7 @@ class XacmlPage {
           : '') +
         t.html('consoleXacml.pep.until', { at: held.notAfter }) + '</div>'
       : '<span class="sub">' + t.html('consoleXacml.pep.noneIssued') +
-        '</span>') +
-      (withForm && ctx.write
-        ? '<form method="post" action="/admin/xacml/peps">' +
-          self.hidden('action', 'issue-pep-certificate') +
-          self.hidden('name', row.name) +
-          '<div class="sub">' + self.labelled(t, 'consoleXacml.pep.moreDns',
-            'consoleXacml.tip.issue.dnsNames', '<input name="dnsNames" ' +
-            'size="18" placeholder="pep.example.test">') + '</div>' +
-          '<div class="sub">' + self.labelled(t,
-            'consoleXacml.pep.ipAddresses', 'consoleXacml.tip.issue.ipAddresses',
-            '<input name="ipAddresses" size="14" placeholder="10.0.0.5">') +
-          '</div>' +
-          '<div class="sub">' + self.labelled(t, 'consoleXacml.pep.key',
-            'consoleXacml.tip.issue.keyAlg',
-            self.select('keyAlg', json.listenerCertificates.keyAlgorithms
-              .map(function (one) {
-                return { value: one, label: one };
-              }), json.listenerCertificates.defaultKeyAlg)) + ' ' +
-          '<button type="submit">' + (held
-            ? t.html('consoleXacml.pep.reissue')
-            : t.html('consoleXacml.pep.issue')) +
-          '</button></div></form>'
-        : '');
+        '</span>');
   }
 
   static pepActions(ctx: Json, row: Json): string {
@@ -1115,7 +1093,7 @@ class XacmlPage {
         esc(row.bias || t.text('consoleXacml.pep.notReported')) +
         '</td><td>' + self.pepCounts(t, row) +
         '</td><td>' + self.pepNotify(t, row) + '</td><td>' +
-        self.pepListener(ctx, json, row, false) + '</td><td>' + proxy +
+        self.pepListener(ctx, row) + '</td><td>' + proxy +
         '</td><td>' + self.pepActions(ctx, row) + '</td></tr>';
     }).join('') ||
       '<tr><td colspan="9">' + self.noPepsHere(json.elsewhere, t) +
@@ -1581,6 +1559,16 @@ class XacmlPage {
   }
 
   // One listener's form: a new one, or a defined one to edit (its id fixed).
+  // LAID OUT AS THE ROUTE FORMS ARE (rcbj, 2026-11-15: "the UI on the
+  // 'Create a new listener' is terrible. Organize and style it similar to
+  // the 'Create a route' sub-subtab"): the hidden default submit first, one
+  // field per `.formrow` with its tooltip on the label, under the legends
+  // Listener (id, protocol, purpose), Address (address, port) and
+  // Certificate (HTTPS only), then the button in a row of its own. The
+  // certificate's fields are a choice panel of the protocol
+  // (`ConsoleRuntime.wireChoicePanels()`): shown for HTTPS, hidden for HTTP,
+  // and drawn so before the script runs. Hidden, they are still posted, as
+  // they always were, and nothing in them is `required`.
   static listenerForm(t: Json, json: Json, name: string,
                       one: Json | null): string {
     const self = this;
@@ -1599,56 +1587,115 @@ class XacmlPage {
         return { value: v, label: labels[v] || v };
       });
     };
-    return '<form method="post" action="/admin/xacml/peps">' +
-      self.hidden('action', 'set-pep-listener') + self.hidden('name', name) +
-      (one ? self.hidden('id', d.id)
-        : self.labelled(t, 'consoleXacml.listeners.form.id',
-            'consoleXacml.tip.listener.id',
+    const when = 'consoleXacml.tip.listener.when';
+    const row = function (labelKey: string, tipKey: string,
+                          control: string): string {
+      return self.formRow(self.labelled(t, labelKey, tipKey, control, when));
+    };
+    const submit = one ? 'consoleXacml.listeners.form.update'
+      : 'consoleXacml.listeners.form.add';
+    // A DEFINED LISTENER'S ID IS FIXED: drawn as the row's value, and
+    // posted hidden.
+    const idRow = one
+      ? self.hidden('id', d.id) + self.formRow('<span class="formlabel ' +
+        'tipword"' + self.tipOf(t, 'consoleXacml.tip.listener.id') + '>' +
+        t.html('consoleXacml.listeners.form.id') + '</span> <code>' +
+        esc(d.id) + '</code>')
+      : row('consoleXacml.listeners.form.id', 'consoleXacml.tip.listener.id',
             '<input type="text" name="id" size="20" maxlength="64" ' +
-            'placeholder="public-https" required>',
-            'consoleXacml.tip.listener.when') + ' ') +
-      self.labelled(t, 'consoleXacml.listeners.form.protocol',
-        'consoleXacml.tip.listener.protocol',
-        self.select('protocol', options(['http', 'https']), d.protocol),
-        'consoleXacml.tip.listener.when') + ' ' +
-      self.labelled(t, 'consoleXacml.listeners.form.purpose',
-        'consoleXacml.tip.listener.purpose',
-        self.select('purpose', options(['api', 'proxy']), d.purpose),
-        'consoleXacml.tip.listener.when') + ' ' +
-      self.labelled(t, 'consoleXacml.listeners.form.address',
-        'consoleXacml.tip.listener.address',
-        '<input type="text" name="address" size="16" maxlength="64" ' +
-        'placeholder="0.0.0.0" value="' + esc(d.address) + '">',
-        'consoleXacml.tip.listener.when') + ' ' +
-      self.labelled(t, 'consoleXacml.listeners.form.port',
-        'consoleXacml.tip.listener.port',
-        '<input type="number" name="port" min="1" max="65535" required ' +
-        'placeholder="8443" value="' + esc(d.port) + '">',
-        'consoleXacml.tip.listener.when') +
-      '<div class="sub">' + t.html('consoleXacml.listeners.form.httpsOnly') +
-      '</div>' +
-      self.labelled(t, 'consoleXacml.listeners.form.dnsNames',
+            'placeholder="public-https" required>');
+    const https = d.protocol !== 'http';
+    return '<form method="post" action="/admin/xacml/peps" ' +
+      'class="pep-listener-form">' +
+      self.hidden('action', 'set-pep-listener') + self.hidden('name', name) +
+      self.defaultSubmit(t.text(submit)) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.listener',
+        idRow +
+        row('consoleXacml.listeners.form.protocol',
+          'consoleXacml.tip.listener.protocol',
+          self.select('protocol', options(['http', 'https']), d.protocol,
+                      ' data-panels="listenerProtocol"')) +
+        row('consoleXacml.listeners.form.purpose',
+          'consoleXacml.tip.listener.purpose',
+          self.select('purpose', options(['api', 'proxy']), d.purpose))) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.address',
+        row('consoleXacml.listeners.form.address',
+          'consoleXacml.tip.listener.address',
+          '<input type="text" name="address" size="16" maxlength="64" ' +
+          'placeholder="0.0.0.0" value="' + esc(d.address) + '">') +
+        row('consoleXacml.listeners.form.port',
+          'consoleXacml.tip.listener.port',
+          '<input type="number" name="port" min="1" max="65535" required ' +
+          'placeholder="8443" value="' + esc(d.port) + '">')) +
+      '<fieldset class="pep-listener-cert" data-panel-of="listenerProtocol" ' +
+      'data-panel="https"' + (https ? '' : ' hidden') + '><legend>' +
+      t.html('consoleXacml.listeners.legend.certificate') + '</legend>' +
+      '<p class="sub">' + t.html('consoleXacml.listeners.form.httpsOnly') +
+      '</p>' +
+      row('consoleXacml.listeners.form.dnsNames',
         'consoleXacml.tip.listener.dnsNames',
         '<input type="text" name="dnsNames" size="40" ' +
         'placeholder="pep.example.test, pep.internal" value="' +
-        esc((d.dnsNames || []).join(', ')) + '">',
-        'consoleXacml.tip.listener.when') + ' ' +
-      self.labelled(t, 'consoleXacml.listeners.form.ipAddresses',
+        esc((d.dnsNames || []).join(', ')) + '">') +
+      row('consoleXacml.listeners.form.ipAddresses',
         'consoleXacml.tip.listener.ipAddresses',
         '<input type="text" name="ipAddresses" size="24" ' +
         'placeholder="10.0.0.5" value="' +
-        esc((d.ipAddresses || []).join(', ')) + '">',
-        'consoleXacml.tip.listener.when') + ' ' +
-      self.labelled(t, 'consoleXacml.listeners.form.keyAlg',
+        esc((d.ipAddresses || []).join(', ')) + '">') +
+      row('consoleXacml.listeners.form.keyAlg',
         'consoleXacml.tip.listener.keyAlg',
         self.select('keyAlg', (catalogue.keyAlgorithms || [])
           .map(function (v: string) {
             return { value: v, label: v };
-          }), d.keyAlg || catalogue.defaultKeyAlg),
-        'consoleXacml.tip.listener.when') + ' ' +
-      '<button type="submit">' + (one
-        ? t.html('consoleXacml.listeners.form.update')
-        : t.html('consoleXacml.listeners.form.add')) + '</button></form>';
+          }), d.keyAlg || catalogue.defaultKeyAlg)) +
+      '</fieldset>' +
+      self.formRow('<button type="submit"' + self.tipOf(t, when) + '>' +
+        t.html(submit) + '</button>') + '</form>';
+  }
+
+  // THE ENVIRONMENT'S HTTPS PAIR ON CREATE A NEW LISTENER, laid out as the
+  // listener form above it (rcbj, 2026-11-15): the certificate held, then
+  // the names and key of the next one under a legend, one field per line,
+  // and Issue (or Reissue) in a row of its own. The Remote PEPs table's
+  // cell is `pepListener()`, which this does not replace.
+  static envPairForm(ctx: Json, json: Json, row: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const held = row.listenerCertificate;
+    const current = self.formRow('<span class="formlabel tipword"' +
+      self.tipOf(t, 'consoleXacml.tip.envPair.current') + '>' +
+      t.html('consoleXacml.listeners.envPair.current') + '</span>' +
+      '<div class="pep-envpair-held">' + self.pepListener(ctx, row) +
+      '</div>');
+    if (!ctx.write) {
+      return self.fieldGroup(t, 'consoleXacml.listeners.envPair.legendHeld',
+                             current);
+    }
+    const certs = json.listenerCertificates || { keyAlgorithms: [],
+                                                 defaultKeyAlg: '' };
+    const label = held ? 'consoleXacml.pep.reissue' : 'consoleXacml.pep.issue';
+    return '<form method="post" action="/admin/xacml/peps" ' +
+      'class="pep-envpair-form">' +
+      self.hidden('action', 'issue-pep-certificate') +
+      self.hidden('name', row.name) + self.defaultSubmit(t.text(label)) +
+      self.fieldGroup(t, 'consoleXacml.listeners.envPair.legendHeld',
+                      current) +
+      self.fieldGroup(t, 'consoleXacml.listeners.envPair.legendIssue',
+        self.formRow(self.labelled(t, 'consoleXacml.pep.moreDns',
+          'consoleXacml.tip.issue.dnsNames', '<input type="text" ' +
+          'name="dnsNames" size="40" placeholder="pep.example.test">')) +
+        self.formRow(self.labelled(t, 'consoleXacml.pep.ipAddresses',
+          'consoleXacml.tip.issue.ipAddresses', '<input type="text" ' +
+          'name="ipAddresses" size="24" placeholder="10.0.0.5">')) +
+        self.formRow(self.labelled(t, 'consoleXacml.pep.key',
+          'consoleXacml.tip.issue.keyAlg',
+          self.select('keyAlg', (certs.keyAlgorithms || [])
+            .map(function (one: string) {
+              return { value: one, label: one };
+            }), certs.defaultKeyAlg)))) +
+      self.formRow('<button type="submit"' +
+        self.tipOf(t, 'consoleXacml.tip.issue.keyAlg') + '>' +
+        t.html(label) + '</button>') + '</form>';
   }
 
   // WHAT ONE LISTENER IS DOING, AS THE STATE CELL DRAWS IT (2026-11-14).
@@ -1752,7 +1799,8 @@ class XacmlPage {
       const state = self.listenerState(t, words, one);
       // EVERY ID A LINK TO ITS OWN PAGE (rcbj, 2026-11-15), the
       // environment's four too, whose page is read-only.
-      return '<tr id="pep-listener-' + esc(one.id) + '"><th><a href="' +
+      return '<tr id="pep-listener-' + esc(one.id) + '"><th ' +
+        'class="pep-listener-id"><a href="' +
         esc(self.listenerHref(row.name, one.id)) + '"><code>' +
         esc(one.id) + '</code></a></th><td>' +
         self.listenerSource(t, words, one) +
@@ -1796,8 +1844,9 @@ class XacmlPage {
       table + '<p class="sub">' + t.html('consoleXacml.listeners.openOne') +
       '</p>';
     // CREATE A NEW LISTENER: the definition form, then the environment's
-    // HTTPS pair and its Issue control. A reader sees the pair, which
-    // `pepListener()` draws without its form.
+    // HTTPS pair and its Issue control as a section of its own, both laid
+    // out as Create a New Route is. A reader sees the pair as issued
+    // (`envPairForm()` without its form).
     const created = (ctx.write
       ? '<h3>' + t.html('consoleXacml.listeners.addHeading') + '</h3>' +
         (catalogue.plainHttpProxyAllowed === false
@@ -1806,8 +1855,8 @@ class XacmlPage {
         self.listenerForm(t, json, row.name, null)
       : '') +
       '<h3>' + t.html('consoleXacml.listeners.envPairHeading') + '</h3>' +
-      '<p>' + t.html('consoleXacml.listeners.envPairLead') + '</p>' +
-      self.pepListener(ctx, json, row, true) +
+      '<p class="sub">' + t.html('consoleXacml.listeners.envPairLead') +
+      '</p>' + self.envPairForm(ctx, json, row) +
       kit.note('<p>' + t.html('consoleXacml.peps.cert1') + '</p><p>' +
                t.html('consoleXacml.peps.cert2') + '</p>',
                t.text('consoleXacml.peps.certLabel'));
