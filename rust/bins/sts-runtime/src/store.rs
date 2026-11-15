@@ -24,7 +24,12 @@
 //!   `ORIGIN_RENEW_MS`; a process that is not clustered (development mode,
 //!   or `cluster.mode=off`) has no heartbeat, and renews it from the
 //!   per-process job `persistence.origin-renew` instead — the one job here
-//!   Node's scheduler page does not list.
+//!   Node's scheduler page does not list. Node needs no job because its
+//!   timer runs clustered or not; Rust's guard admits no second repeating
+//!   timer, so the job is what the timer became. Its prose is not in
+//!   `common/prose_locales/scheduler`: those catalogs are harvested from
+//!   Node's registry, and a key Node does not register is an orphan
+//!   `tests/server_prose_catalogs.js` fails.
 //! * **`setOriginLost()`.** Node's driver tells `persistence.js` when a write
 //!   finds the origin taken, and the process exits: unclustered with
 //!   `STS-STORE-0061` naming the refused write (`STS-CLUSTER-0001`), and on
