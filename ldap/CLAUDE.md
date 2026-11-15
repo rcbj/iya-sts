@@ -2405,7 +2405,9 @@ that emits an error is destroyed two seconds later rather than at once, so a
 TLS alert reaches a peer still sending the record it is about instead of
 being discarded by the TCP reset (`STS-LDAP-0213` if the option did not
 take; `ldap_server.js` above `plainServer` has the measurement; the main
-port's listeners have the same hold in `tls/alert_close.ts`). A change goes in THE FORK, never as a
+port's listeners have the same hold in `tls/alert_close.ts`); and since
+2026-11-14 it carries the five @ldapjs packages it decodes with, fixed
+(*THE @ldapjs PACKAGES ARE THE FORK'S*, below). A change goes in THE FORK, never as a
 patch from this repository into the library: an option whose default is
 upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
 `docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
@@ -2432,6 +2434,70 @@ them have already cost something:
   about 200 packages and a dozen advisories that have nothing to do with this
   service. `.npmrc` carries `omit=dev` and the Dockerfile passes `--omit=dev` as
   well; the duplication is deliberate.
+
+### THE @ldapjs PACKAGES ARE THE FORK'S (2026-11-14)
+
+**One unauthenticated PDU on 389 or 636 stopped the whole process**, every
+protocol and not just the connection that sent it. The Rust port of the wire
+codec (#444, `rust/crates/sts-ldap`) found four in its corpus, each recorded
+there as `Fault::Stalled`: a bind name of `cn=#4142 ,dc=example,dc=com`, a
+search whose control list runs past its sequence, and searches whose
+substring initial and extensible-match value are longer than their filter.
+None of the four was in node-ldapjs itself. They were in the @ldapjs packages
+it decodes with, and they were two defects:
+
+* **A BerReader read that cannot be satisfied answers null WITHOUT moving the
+  offset**, and every SEQUENCE OF was read with `while (ber.offset < end)`,
+  `end` from a length the peer sent. A length running past the message made
+  the loop read the same bytes for ever — on the event loop. Every such loop
+  now throws when an iteration did not advance; node-ldapjs reports a parser
+  error and destroys the connection, which is what it already did for other
+  undecodable BER. Twelve loops in `messages`, `attribute` and `filter`, and
+  the fork's own `lib/messages/sasl_bind.js` (#1047's), which had copied the
+  shape. Three of the four corpus cases and five more of the fork's test's
+  PDUs (an attribute selector, an add, a modify, a search result entry and
+  reference, a SASL bind's controls) timed out before.
+* **The DN parser never advanced past a character that was not a separator**
+  after an attribute value, and a hex-string value ends at a space. Spaces
+  before a separator are now skipped (as a string value's already were), so
+  that bind name is a DN; anything else is invalidDNSyntax (34).
+
+**rcbj's decision (2026-11-14): we are entirely responsible for our
+node-ldapjs, there is no disclosure, and the fix goes into the fork.** The
+packages are decommissioned upstream (npm deprecates every version, the
+repositories are archived), so a fork of each under rcbj would be five
+repositories with nothing to track and five git dependencies for every
+`npm ci`. **The fork CARRIES them instead**, in `node-ldapjs/packages/`
+(`attribute`, `controls`, `dn`, `filter`, `messages`): the published
+tarballs, versions unchanged, devDependencies dropped, each fix marked
+`iya-sts:` where it is made. `packages/README.md` there lists them, and its
+`test/malformed_ber.test.js` holds every loop. Two consequences here:
+
+* **This package.json depends on the five directories itself**
+  (`"@ldapjs/dn": "file:node-ldapjs/packages/dn"`, …). The fork's own
+  `file:packages/*` alone put the links in `node-ldapjs/node_modules`, and
+  `@ldapjs/change` — still the registry's, at the top — went on finding the
+  registry's `attribute` there, unfixed. As top-level dependencies they are
+  the only copy, and `tests/` requiring `@ldapjs/filter` gets the same one.
+  `npm ls @ldapjs/attribute` shows one, a link, deduped everywhere.
+* **`controls` needs `@ldapjs/asn1` 1.x** where everything else has 2.0.0,
+  and it requires it by the alias `ldapjs-asn1-v1`
+  (`npm:@ldapjs/asn1@1.2.0`), which npm puts at the top beside 2.0.0. Under
+  its own name npm records it in the lock under
+  `node-ldapjs/packages/controls/node_modules` and then `npm ci` never
+  installs it there — a nested copy inside a link target inside this tree —
+  so `controls` would find 2.0.0 and throw on every control that carries a
+  criticality, destroying every request that sent one. The first attempt
+  at this change did exactly that, and only the wire vectors noticed (37
+  changed where 5 should have); `tests/ldap_malformed_pdu.js` now searches
+  with a control as well.
+
+`tests/ldap_malformed_pdu.js` sends the four corpus PDUs to this module's own
+389 and asserts that a bind and a search are still answered afterwards. **The
+Rust port pinned these as stalls**, and once the pin moves the vectors
+`tests/tools/ldap-wire-vectors.js` writes record a destroyed connection (and
+for the DN, a bind handed to the handlers) instead of `hang`; the port's
+`Fault::Stalled` sites have to follow.
 
 (Moved here from the root `CLAUDE.md` on 2026-10-13; it was there because these
 are facts about the package root, and the root keeps the two warnings that
