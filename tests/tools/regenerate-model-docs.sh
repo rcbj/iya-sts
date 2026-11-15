@@ -61,6 +61,8 @@ docker run --rm --label com.docker.compose.project=none \
    cp models/generated/persistence.rs /out/rust-store/ && \
    cp models/generated/schemas.rs \
      /out/rust/sts-registers/src/generated/ && \
+   cp models/generated/application.schema.rust.json \
+     /out/rust/sts-registers/src/generated/application.schema.json && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
@@ -70,7 +72,8 @@ docker run --rm --label com.docker.compose.project=none \
      /out/types/api.generated.d.ts \
      /out/common/domain_classes.ts \
      /out/rust-store/persistence.rs \
-     /out/rust/sts-registers/src/generated/schemas.rs"
+     /out/rust/sts-registers/src/generated/schemas.rs \
+     /out/rust/sts-registers/src/generated/application.schema.json"
 # sts-mgmt-api's copy (#444, phase 4): the operation enum it routes by and the
 # two documents /admin-api serves and validates against, as the image's model
 # build wrote them.

@@ -300,8 +300,9 @@ async function generate() {
     }
   });
   // The application register's whole SCHEMA for sts-registers' port of
-  // common/applications.js (#444 phase 4), in the Rust tree.
-  writeRust('sts-registers/src/generated/application.schema.json',
+  // common/applications.js (#444 phase 4), beside schemas.rs, which the
+  // regenerate script copies into the same directory.
+  fs.writeFileSync(path.join(out, 'application.schema.rust.json'),
     renderRustApplicationSchema(objects, schemaOf));
   // The policy kinds' tables for the Rust runtime's sts-policy (#444
   // phase 4), in the Rust tree the regenerate script copies.
