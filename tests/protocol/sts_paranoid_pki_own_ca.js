@@ -20,9 +20,11 @@
 //
 //   A. THE MAIN PORT (`GET /admin-api/tls-connection` asked over the
 //      connection presenting it): with `pki.paranoid` off a revoked client
-//      certificate still verifies (OpenSSL reads no list); PINNED: with it
-//      on (and hard-fail) the view STILL reports it verified, where the
-//      in-process claim demotes it; an unrevoked one verifies;
+//      certificate still verifies (OpenSSL reads no list); with it on the
+//      view still reports the handshake's verdict, which carries no
+//      revocation on this port by design, and the DOOR refuses it:
+//      /tls/sign-in starts no session, refusedOnRevocation, STS-PKI-0118;
+//      an unrevoked one verifies;
 //   B. AN OUTBOUND DIAL (the RFC 9728 import, `load-resource-metadata`, at a
 //      listener this job runs on OUTBOUND_TEST_HOST with a `tls-server`
 //      certificate the realm issued for that host): with paranoid on the
@@ -53,7 +55,7 @@ const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
 const keys = require(path.join(REPO, "common", "crypto_impl",
                                "key_material.js"));
 
-const FLOOR = 5;
+const FLOOR = 6;
 const HOST = process.env.OUTBOUND_TEST_HOST || process.env.GNAP_PUSH_HOST ||
              "localhost";
 const PW = "Ppo-" + nodeCrypto.randomBytes(15).toString("base64url");
@@ -111,6 +113,37 @@ function connection(tls) {
         }
         log.debug("Leaving connection().");
         resolve(json);
+      });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+function signIn(realm, tls) {
+  log.debug("Entering signIn().");
+  const u = new URL(K.rb(realm) + "/tls/sign-in");
+  return new Promise(function (resolve, reject) {
+    const req = https.request({ host: u.hostname, port: u.port,
+      path: u.pathname, method: "GET", agent: false,
+      headers: { accept: "application/json" },
+      cert: tls.chain, key: tls.key }, function (res) {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", function (c) {
+        text += c;
+      });
+      res.on("end", function () {
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in signIn(): " + ((e && e.message) || e));
+          // Not JSON: the check reports the text.
+          json = null;
+        }
+        log.debug("Leaving signIn().");
+        resolve({ status: res.statusCode, json: json, text: text });
       });
     });
     req.on("error", reject);
@@ -192,14 +225,37 @@ async function test(realm) {
     await K.set(realm, one[0], one[1]);
   }
   const on = await settle(bad, false);
-  // PINNED AS OBSERVED (D12): the in-process claim (listener_path_rules C)
-  // is that paranoid mode demotes a revoked client before its first byte.
-  // On a running service, with pki.paranoid on and pki.revocationCheck
-  // hard-fail in both realms, the view still reports the revoked
-  // certificate verified. Listed in d12-list.md for rcbj; a change is seen.
-  check("A2. (pinned) with it on, the view still reports the revoked " +
-        "certificate verified", function () {
+  // THE MAIN PORT'S HANDSHAKE VERDICT DOES NOT CARRY REVOCATION, BY DESIGN
+  // (tls/tls_server.js `observeConnectionsOn()` / `resumedProblem()`'s
+  // "revocation by the request's verdict"): `socket.authorized`, which the
+  // view reports, is OpenSSL's answer held to the path rules. Revocation is
+  // the DOOR's verdict, through `checkedSocket()`. Revocation before the
+  // first byte (listener_path_rules C) is `holdConnectionsOn()`'s, for LDAPS,
+  // the debugger and the cells' channel — not this port.
+  check("A2. with it on, the main port's view still reports the handshake's " +
+        "verdict (revocation is not part of it)", function () {
     assert.strictEqual(verified(on), true, JSON.stringify(on));
+  });
+  const realmBefore = await K.codeCount(realm, "STS-PKI-0118");
+  const defBefore = await K.codeCount(null, "STS-PKI-0118");
+  const door = await signIn(realm, bad);
+  let rows = 0;
+  for (let i = 0; i < 20 && rows < 1; i += 1) {
+    rows = (await K.codeCount(realm, "STS-PKI-0118")) - realmBefore +
+           (await K.codeCount(null, "STS-PKI-0118")) - defBefore;
+    if (rows < 1) {
+      await K.sleep(150);
+    }
+  }
+  check("A2b. and the door refuses it: /tls/sign-in starts no session, " +
+        "refusedOnRevocation off the service's own register, recorded " +
+        "STS-PKI-0118", function () {
+    const j = door.json || {};
+    assert.strictEqual(j.signedIn, false, door.text.slice(0, 300));
+    assert.strictEqual(j.session && j.session.refusedOnRevocation, true,
+                       door.text.slice(0, 300));
+    assert.ok(/REVOKED/.test(j.session.why), door.text.slice(0, 300));
+    assert.ok(rows >= 1, "STS-PKI-0118 rows: " + rows);
   });
   const onGood = await settle(good, true);
   check("A3. and an unrevoked one from the same CA still verifies",
