@@ -396,6 +396,67 @@ function childMain() {
                           ended: ((edResult || {}).terminated || [])
                             .map(function (row) { return row.id; }) }));
 
+    // --- 6k. a realm with several sign-out addresses: every one is told ----
+    // (2026-11-15). A realm declaring two `wsfedSignOutUri` values is one
+    // sign-in and two rows, `<sid>|<realm>` and `<sid>|<realm>|1` (#747).
+    // Until this, the second row read its realm as `<realm>|1` and did
+    // nothing while saying it had, and only the first address was ever sent
+    // a cleanup. Ending either row now sends one to both and forgets the
+    // realm once; the sibling row then reports it already forgotten.
+    const applications = require(ROOT_DIR + '/common/applications');
+    const TWO = 'urn:la:two';
+    const OUTS = ['https://rp.la.example/out-a',
+                  'https://rp.la.example/out-b?x=1'];
+    const twoMade = applications.createApplication({ identifier: TWO,
+      protocols: ['wsfed'],
+      fields: { wsfedReplyUrl: ['https://rp.la.example/wsfed-two'],
+                wsfedSignOutUri: OUTS } });
+    const urlsOf = function (result) {
+      return ((result || {}).cleanups || []).map(function (one) {
+        return one.url;
+      }).sort();
+    };
+    const wanted = [OUTS[0] + '?wa=wsignoutcleanup1.0',
+                    OUTS[1] + '&wa=wsignoutcleanup1.0'].sort();
+    // The second row on its own.
+    const two = await signIn('la-two');
+    const twoSession = sessionIdOf(two.jar);
+    const twoHeld = authn.sessionById(twoSession);
+    twoHeld.wsfedRealms = { [TWO]: 'https://rp.la.example/wsfed-two' };
+    authn.noteSessionChanged(twoHeld);
+    const twoUser = String((twoHeld.user || {}).username || 'la-two');
+    const second = logout.terminate(twoUser,
+      ['wsfed-rp:' + twoSession + '|' + TWO + '|1'],
+      { by: 'the logout_api test' });
+    const twoAfter = authn.sessionById(twoSession) || {};
+    note(twoMade && twoMade.ok !== false &&
+         JSON.stringify(urlsOf(second)) === JSON.stringify(wanted) &&
+         !Object.prototype.hasOwnProperty.call(twoAfter.wsfedRealms || {},
+                                                TWO),
+         '6k. ending a realm\'s SECOND address row sends a cleanup to both ' +
+         'its addresses and forgets the realm',
+         JSON.stringify({ made: twoMade && twoMade.errors,
+                          cleanups: urlsOf(second),
+                          realms: Object.keys(twoAfter.wsfedRealms || {}) }));
+    // Both rows together, as a sign-out of the session ends them.
+    twoAfter.wsfedRealms = { [TWO]: 'https://rp.la.example/wsfed-two' };
+    authn.noteSessionChanged(twoAfter);
+    const both = logout.terminate(twoUser,
+      ['wsfed-rp:' + twoSession + '|' + TWO,
+       'wsfed-rp:' + twoSession + '|' + TWO + '|1'],
+      { by: 'the logout_api test' });
+    const bothRows = ((both || {}).terminated || []).filter(function (row) {
+      return String(row.id).indexOf('wsfed-rp:') === 0;
+    });
+    note(JSON.stringify(urlsOf(both)) === JSON.stringify(wanted) &&
+         bothRows.length === 2,
+         '6k2. ending both rows sends each address exactly one cleanup, and ' +
+         'both rows are ended',
+         JSON.stringify({ cleanups: urlsOf(both),
+                          ended: bothRows.map(function (row) {
+                            return row.id;
+                          }) }));
+
     // --- 7. the JSON door, and a form posted to /logout ---------------------
     const dee = await signIn('la-dee');
     const deeSession = sessionIdOf(dee.jar);
