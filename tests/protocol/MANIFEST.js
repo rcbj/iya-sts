@@ -2433,6 +2433,13 @@ const JOBS = [
   // (saml_signature_algorithms 1, 2). Needs node 24's ML-DSA and SLH-DSA
   // keys (the tests image's runtime).
   { file: 'sts_saml_signature_families.js', browser: false, local: true },
+  // D12 (#444): a service provider's metadata after it is consumed — the
+  // refresher run through /admin-api/scheduler, a realm trust anchor and
+  // aggregates, MDQ against this job's listener, product's refusals for an
+  // unknown entityID (saml_metadata_lifecycle 3b, 3c, D, F). Its listener
+  // is dialled at OUTBOUND_TEST_HOST, in a realm with
+  // federation.outboundAllowHttp on.
+  { file: 'sts_saml_metadata_sources.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
