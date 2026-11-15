@@ -18,9 +18,17 @@
 //!   * **no I/O but appconfig files**: no `std` or `os` module, no loader, no
 //!     timers, no network. `require()` resolves a RELATIVE or ABSOLUTE path
 //!     as node does (`X`, `X.js`, `X.json`, `X/index.js`, `X/index.json`)
-//!     and reads only that file; a bare name — `fs`, `path`, a package — is
-//!     refused by name, since an appconfig file is data and this runtime has
-//!     no node modules to give it;
+//!     and reads only that file; a bare name — `fs`, a package — is refused
+//!     by name, since an appconfig file is data and this runtime has no node
+//!     modules to give it;
+//!   * **one node module, `path`** (or `node:path`; #444 phase 3, rcbj left
+//!     the design to the slice): a PURE module — `join`, `resolve`,
+//!     `normalize`, `isAbsolute`, `dirname`, `basename`, `extname`, `sep`,
+//!     `delimiter` and `posix` — that behaves as node's `path.posix` does,
+//!     ported from node's `lib/path.js` line for line, because an operator's
+//!     file builds a certificate's path with `path.join(__dirname, …)`. It
+//!     reads nothing; `resolve()` asks for the working directory and nothing
+//!     else. Every other module, `fs` first, is still refused;
 //!   * **CommonJS as node runs it**: the module wrapper's five arguments
 //!     (`exports`, `require`, `module`, `__filename`, `__dirname`), a
 //!     module cache so a cycle answers a half-built `exports` exactly as
@@ -224,7 +232,7 @@ fn read_module(path: &Path) -> Result<String, String> {
 }
 
 /// The CommonJS loader and the walk that turns the exports into JSON,
-/// in the engine. `__sts` is the three natives below.
+/// in the engine. `sts` is the natives `run()` hands it.
 const LOADER: &str = r#"
 (function (sts, env, platform) {
   'use strict';
@@ -240,6 +248,288 @@ const LOADER: &str = r#"
   globalThis.console = Object.freeze({
     log: write, info: write, warn: write, error: write, debug: write
   });
+  // node's `path.posix` (lib/path.js), the one module an appconfig file
+  // may require: pure string work, and the working directory for resolve().
+  const SLASH = 47;
+  const DOT = 46;
+  function received(v) {
+    if (v === null || v === undefined) {
+      return ' Received ' + v;
+    }
+    if (typeof v === 'function') {
+      return ' Received function ' + (v.name || '<anonymous>');
+    }
+    if (typeof v === 'object') {
+      const made = v.constructor && v.constructor.name;
+      return made ? ' Received an instance of ' + made :
+        ' Received ' + String(v);
+    }
+    let shown = String(v);
+    if (typeof v === 'string') {
+      shown = "'" + (v.length > 28 ? v.slice(0, 25) + '...' : v) + "'";
+    }
+    return ' Received type ' + typeof v + ' (' + shown + ')';
+  }
+  function validateString(value, name) {
+    if (typeof value !== 'string') {
+      const e = new TypeError('The "' + name + '" argument must be of ' +
+                              'type string.' + received(value));
+      e.code = 'ERR_INVALID_ARG_TYPE';
+      throw e;
+    }
+  }
+  function normalizeString(path, allowAboveRoot) {
+    let res = '';
+    let lastSegmentLength = 0;
+    let lastSlash = -1;
+    let dots = 0;
+    let code = 0;
+    for (let i = 0; i <= path.length; ++i) {
+      if (i < path.length) {
+        code = path.charCodeAt(i);
+      } else if (code === SLASH) {
+        break;
+      } else {
+        code = SLASH;
+      }
+      if (code === SLASH) {
+        if (lastSlash === i - 1 || dots === 1) {
+          // A NOOP: an empty segment or '.'.
+        } else if (dots === 2) {
+          if (res.length < 2 || lastSegmentLength !== 2 ||
+              res.charCodeAt(res.length - 1) !== DOT ||
+              res.charCodeAt(res.length - 2) !== DOT) {
+            if (res.length > 2) {
+              const lastSlashIndex = res.lastIndexOf('/');
+              if (lastSlashIndex === -1) {
+                res = '';
+                lastSegmentLength = 0;
+              } else {
+                res = res.slice(0, lastSlashIndex);
+                lastSegmentLength = res.length - 1 - res.lastIndexOf('/');
+              }
+              lastSlash = i;
+              dots = 0;
+              continue;
+            } else if (res.length !== 0) {
+              res = '';
+              lastSegmentLength = 0;
+              lastSlash = i;
+              dots = 0;
+              continue;
+            }
+          }
+          if (allowAboveRoot) {
+            res += res.length > 0 ? '/..' : '..';
+            lastSegmentLength = 2;
+          }
+        } else {
+          if (res.length > 0) {
+            res += '/' + path.slice(lastSlash + 1, i);
+          } else {
+            res = path.slice(lastSlash + 1, i);
+          }
+          lastSegmentLength = i - lastSlash - 1;
+        }
+        lastSlash = i;
+        dots = 0;
+      } else if (code === DOT && dots !== -1) {
+        ++dots;
+      } else {
+        dots = -1;
+      }
+    }
+    return res;
+  }
+  const PATH = {
+    sep: '/',
+    delimiter: ':',
+    resolve: function resolve() {
+      let resolvedPath = '';
+      let resolvedAbsolute = false;
+      for (let i = arguments.length - 1; i >= -1 && !resolvedAbsolute; i--) {
+        const path = i >= 0 ? arguments[i] : sts.cwd();
+        validateString(path, 'paths[' + i + ']');
+        if (path.length === 0) {
+          continue;
+        }
+        resolvedPath = path + '/' + resolvedPath;
+        resolvedAbsolute = path.charCodeAt(0) === SLASH;
+      }
+      resolvedPath = normalizeString(resolvedPath, !resolvedAbsolute);
+      if (resolvedAbsolute) {
+        return '/' + resolvedPath;
+      }
+      return resolvedPath.length > 0 ? resolvedPath : '.';
+    },
+    normalize: function normalize(path) {
+      validateString(path, 'path');
+      if (path.length === 0) {
+        return '.';
+      }
+      const isAbsolute = path.charCodeAt(0) === SLASH;
+      const trailingSeparator = path.charCodeAt(path.length - 1) === SLASH;
+      path = normalizeString(path, !isAbsolute);
+      if (path.length === 0) {
+        if (isAbsolute) {
+          return '/';
+        }
+        return trailingSeparator ? './' : '.';
+      }
+      if (trailingSeparator) {
+        path += '/';
+      }
+      return isAbsolute ? '/' + path : path;
+    },
+    isAbsolute: function isAbsolute(path) {
+      validateString(path, 'path');
+      return path.length > 0 && path.charCodeAt(0) === SLASH;
+    },
+    join: function join() {
+      if (arguments.length === 0) {
+        return '.';
+      }
+      const parts = [];
+      for (let i = 0; i < arguments.length; ++i) {
+        const arg = arguments[i];
+        validateString(arg, 'path');
+        if (arg.length > 0) {
+          parts.push(arg);
+        }
+      }
+      if (parts.length === 0) {
+        return '.';
+      }
+      return PATH.normalize(parts.join('/'));
+    },
+    dirname: function dirname(path) {
+      validateString(path, 'path');
+      if (path.length === 0) {
+        return '.';
+      }
+      const hasRoot = path.charCodeAt(0) === SLASH;
+      let end = -1;
+      let matchedSlash = true;
+      for (let i = path.length - 1; i >= 1; --i) {
+        if (path.charCodeAt(i) === SLASH) {
+          if (!matchedSlash) {
+            end = i;
+            break;
+          }
+        } else {
+          matchedSlash = false;
+        }
+      }
+      if (end === -1) {
+        return hasRoot ? '/' : '.';
+      }
+      if (hasRoot && end === 1) {
+        return '//';
+      }
+      return path.slice(0, end);
+    },
+    basename: function basename(path, suffix) {
+      if (suffix !== undefined) {
+        validateString(suffix, 'suffix');
+      }
+      validateString(path, 'path');
+      let start = 0;
+      let end = -1;
+      let matchedSlash = true;
+      if (suffix !== undefined && suffix.length > 0 &&
+          suffix.length <= path.length) {
+        if (suffix === path) {
+          return '';
+        }
+        let extIdx = suffix.length - 1;
+        let firstNonSlashEnd = -1;
+        for (let i = path.length - 1; i >= 0; --i) {
+          const code = path.charCodeAt(i);
+          if (code === SLASH) {
+            if (!matchedSlash) {
+              start = i + 1;
+              break;
+            }
+          } else {
+            if (firstNonSlashEnd === -1) {
+              matchedSlash = false;
+              firstNonSlashEnd = i + 1;
+            }
+            if (extIdx >= 0) {
+              if (code === suffix.charCodeAt(extIdx)) {
+                if (--extIdx === -1) {
+                  end = i;
+                }
+              } else {
+                extIdx = -1;
+                end = firstNonSlashEnd;
+              }
+            }
+          }
+        }
+        if (start === end) {
+          end = firstNonSlashEnd;
+        } else if (end === -1) {
+          end = path.length;
+        }
+        return path.slice(start, end);
+      }
+      for (let i = path.length - 1; i >= 0; --i) {
+        if (path.charCodeAt(i) === SLASH) {
+          if (!matchedSlash) {
+            start = i + 1;
+            break;
+          }
+        } else if (end === -1) {
+          matchedSlash = false;
+          end = i + 1;
+        }
+      }
+      if (end === -1) {
+        return '';
+      }
+      return path.slice(start, end);
+    },
+    extname: function extname(path) {
+      validateString(path, 'path');
+      let startDot = -1;
+      let startPart = 0;
+      let end = -1;
+      let matchedSlash = true;
+      let preDotState = 0;
+      for (let i = path.length - 1; i >= 0; --i) {
+        const code = path.charCodeAt(i);
+        if (code === SLASH) {
+          if (!matchedSlash) {
+            startPart = i + 1;
+            break;
+          }
+          continue;
+        }
+        if (end === -1) {
+          matchedSlash = false;
+          end = i + 1;
+        }
+        if (code === DOT) {
+          if (startDot === -1) {
+            startDot = i;
+          } else if (preDotState !== 1) {
+            preDotState = 1;
+          }
+        } else if (startDot !== -1) {
+          preDotState = -1;
+        }
+      }
+      if (startDot === -1 || end === -1 || preDotState === 0 ||
+          (preDotState === 1 && startDot === end - 1 &&
+           startDot === startPart + 1)) {
+        return '';
+      }
+      return path.slice(startDot, end);
+    }
+  };
+  PATH.posix = PATH;
+  Object.freeze(PATH);
   function load(file) {
     if (cache[file]) {
       return cache[file].exports;
@@ -260,7 +550,11 @@ const LOADER: &str = r#"
     }
     const dir = sts.dirname(file);
     const require = function require(spec) {
-      return load(sts.resolve(dir, String(spec)));
+      const name = String(spec);
+      if (name === 'path' || name === 'node:path') {
+        return PATH;
+      }
+      return load(sts.resolve(dir, name));
     };
     require.cache = cache;
     module.require = require;
@@ -395,6 +689,14 @@ fn run(ctx: &Ctx<'_>, path: &Path, env: &str) -> rquickjs::Result<String> {
         })?,
     )?;
     natives.set(
+        "cwd",
+        Function::new(ctx.clone(), || -> String {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "/".to_string())
+        })?,
+    )?;
+    natives.set(
         "stderr",
         Function::new(ctx.clone(), |line: String| {
             eprintln!("{}", line);
@@ -526,6 +828,30 @@ mod tests {
         assert_eq!(thrown.unwrap_err(), "undefined");
         let coded = eval(&d, "c.js", "throw { message: 42 };");
         assert_eq!(coded.unwrap_err(), "42");
+    }
+
+    #[test]
+    fn path_is_node_s_posix_path_and_nothing_else_is_given() {
+        let d = dir();
+        let got = eval(
+            &d,
+            "p.js",
+            "const path = require('path');\nmodule.exports = { r: \
+             path.resolve('x', '../y'), j: path.join('/a', 'b', '../c'), \
+             d: path.dirname('/a/b/c.pem'), b: path.basename('/a/c.pem', \
+             '.pem'), e: path.extname('c.tar.gz'), s: path.sep, same: \
+             path === require('node:path') };",
+        )
+        .unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            got,
+            json!({"r": format!("{}/y", cwd.display()), "j": "/a/c",
+                   "d": "/a/b", "b": "c", "e": ".gz", "s": "/",
+                   "same": true})
+        );
+        let os = eval(&d, "os.js", "module.exports = require('os');");
+        assert!(os.unwrap_err().contains("require('os') is not available"));
     }
 
     #[test]

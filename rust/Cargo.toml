@@ -141,6 +141,27 @@ tracing = "0.1"
 # The appconfig file a 1.x operator wrote is a JavaScript module (D11):
 # QuickJS evaluates it with no I/O but the appconfig files it requires.
 rquickjs = "0.11"
+# The cloud secret managers and key management services secrets.js reaches
+# through their official SDKs (#444 phase 3, rcbj 2026-11-14): AWS Secrets
+# Manager and KMS over the SDK's own credential chain; Google's own Rust
+# client libraries for Secret Manager and Cloud KMS over Application Default
+# Credentials; Azure's Key Vault secrets and keys clients over azure_identity
+# (sts-core's `secrets` features, on by default).
+aws-config = { version = "1.13.2", features = ["behavior-version-latest"] }
+aws-sdk-secretsmanager = "1.128.0"
+aws-sdk-kms = "1.131.0"
+google-cloud-secretmanager-v1 = "2.0.0"
+google-cloud-kms-v1 = "1.17.0"
+google-cloud-auth = "1.19.0"
+# `client_certificate` is EnvironmentCredential's AZURE_CLIENT_CERTIFICATE_PATH.
+# Azure's and Google's libraries share reqwest 0.13 over rustls, trusting the
+# platform's roots (SSL_CERT_FILE replaces them).
+azure_core = "1.1.0"
+azure_identity = { version = "1.0.0", features = ["client_certificate"] }
+azure_security_keyvault_secrets = "1.0.1"
+azure_security_keyvault_keys = "1.0.1"
+# azure_core's TokenCredential is an async_trait; the Azure chain implements it.
+async-trait = "0.1"
 
 [workspace.lints.rust]
 # DENY here and FORBID at each crate root: the one exception (rust/DESIGN.md
