@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5494** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5495** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 41
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 42
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
@@ -4927,6 +4927,7 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0065` | An LDAP modify would have left a service account that names an owner with no stsServiceAccountOwner, whatever requireOwner says (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
 | `STS-SVCACCT-0066` | An LDAP modify by the bound DN took that DN off a service account's stsServiceAccountOwner (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
 | `STS-SVCACCT-0067` | An LDAP modify took off a service account the group that was the bound DN's only way of owning it (rcbj, 2026-11-15). | constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0068` | A service account's last owner (a person or a group) was deleted and the realm has neither an Admin Write group nor a bootstrap administrator to own it instead, so it names no owner now. An administrator adding an owner repairs it (rcbj, 2026-11-15). | none — a warning in the log |
 
 ## STS-XACML
 

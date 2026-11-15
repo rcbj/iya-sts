@@ -13260,10 +13260,23 @@ is the operator's page; each file's header argues its part.
   still lets an account be MADE, and edited, with no owner** — the rule is
   about taking owners away, and refusing every edit of an ownerless account
   would turn the setting off for existing accounts; and **deleting the
-  PERSON OR GROUP that is the last owner is not refused**:
-  `rewriteOwnerReferences()` takes the DN off and the audit row says the
-  account names no owner now, because a leaver's deletion (often SCIM, from
-  an HR system) cannot wait on an ownership detail.
+  PERSON OR GROUP that is the last owner is not refused**, because a
+  leaver's deletion (often SCIM, from an HR system) cannot wait on an
+  ownership detail. **INSTEAD THE REALM'S ADMINISTRATOR INHERITS IT (rcbj,
+  2026-11-15: "if the last owner is deleted, then the realm admin account
+  should be added as the owner")**: `rewriteOwnerReferences()` — the one
+  cleanup a person's delete (`removePersonEntry()`: SCIM, an LDAP delete, a
+  re-homing) and a group's (`deleteGroupEntry()` and the LDAP delete
+  handler) reach — takes the DN off and, where that empties the list, names
+  `realmAdministratorOwner()` in the SAME write: the realm's
+  `admin.writeGroup` group, else its bootstrap administrator, never the
+  deleted entry or the account itself — the order #1760's remote-PEP
+  identity uses, so the two agree. An `admin.service-account.owner-added`
+  row, actor `system`, names both DNs. With neither, the account names no
+  owner and STS-SVCACCT-0068 is logged; an administrator's add-owner
+  repairs it, and nothing refuses that. The console and `/admin-api` have
+  no person or group delete of their own. An account that named no owner
+  before is never visited. `tests/service_account_orphan_owner.js`.
 * **ONE PREDICATE.** `ServiceAccounts.isServiceAccount(entry)` is asked by
   every door; `isServiceAccountName()` for a door holding a name. No door
   reads the attribute. The directory's only writer of the attributes is
