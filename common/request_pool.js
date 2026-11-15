@@ -2440,6 +2440,24 @@ function size(pool) {
   return wanted;
 }
 
+// WHETHER THIS IS A FRONT PROCESS THAT HAS REQUEST WORKERS (2026-11-15): one
+// whose copy of the store can trail what a worker wrote a moment ago — a
+// realm a worker created, which `app.js`'s enterRealm() then catches up on
+// before deciding a path names no realm. False in a worker, and where no pool
+// is configured.
+/**
+ * Tells whether this process is a front process with request workers.
+ *
+ * @returns true in the front process when either pool has a worker
+ */
+function frontWithWorkers() {
+  log.debug("Entering frontWithWorkers().");
+  const answer = !IS_REQUEST_WORKER &&
+    (size(PROTOCOL_POOL) > 0 || size(SURFACE_POOL) > 0);
+  log.debug("Leaving frontWithWorkers(). " + answer);
+  return answer;
+}
+
 // ---------------------------------------------------------------------------
 // ONE LIST OF WHAT IS DISPATCHED, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.
 //
@@ -9579,6 +9597,8 @@ module.exports = {
   // Where the scheduler's leader runs a cluster job's body (#408).
   schedulerRunner: schedulerRunner,
   size: size,
+  // Whether app.js's realm middleware catches up on an unknown realm here.
+  frontWithWorkers: frontWithWorkers,
   start: start,
   confirmCoordination: confirmCoordination,
   stop: stop,
