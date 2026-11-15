@@ -191,7 +191,6 @@ crates/sts-cluster/src/scheduler/history.rs history_plan
 crates/sts-cluster/src/scheduler/history.rs purge_history
 crates/sts-cluster/src/scheduler/history.rs register_history_job
 crates/sts-cluster/src/scheduler/history.rs to_json
-crates/sts-cluster/src/scheduler/report.rs find_run
 crates/sts-cluster/src/scheduler/report.rs iso
 crates/sts-cluster/src/scheduler/report.rs recent_runs
 crates/sts-cluster/src/scheduler/report.rs run_view
