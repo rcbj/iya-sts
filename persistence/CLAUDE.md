@@ -282,7 +282,25 @@ cannot have. A key new
 at the lock is "insert or nothing", and one another flush took meanwhile is
 locked and judged. `retryableConflict()` reads `dialect.isRetryable()`, so an
 InnoDB deadlock is run again. A value longer than its MariaDB column is
-refused (STS-STORE-0120), since INSERT IGNORE would truncate it. The expiry
+refused (STS-STORE-0120), since INSERT IGNORE would truncate it.
+**A WRITE NAMES ITS KEYS BY COLUMN EQUALITIES ON MARIADB, NEVER BY A ROW
+CONSTRUCTOR (2026-11-14).** Knex spells `whereIn(['a', 'b'], tuples)` as
+`(a, b) IN ((?, ?), …)`, and MariaDB 11.8 plans a single-table DELETE or
+UPDATE whose WHERE is that with ONE tuple as a FULL TABLE SCAN (EXPLAIN
+`type ALL`, `possible_keys NULL`) though the tuple is the whole primary key;
+the SELECT of the same predicate is `const`. A scanning write at READ
+COMMITTED waits on every row another transaction holds, so every flush that
+removed one session, one key's index rows or one claim queued behind, and
+deadlocked with, every other flush in flight: GitHub Actions run 43642810770's
+mariadb mode retried 3719 transactions and 104 minted flushes ran out of
+retries (STS-STORE-0021, their requests 503 under STS-STORE-0066). Eight
+connections each running 150 flush-shaped transactions on MariaDB 11.8
+deadlocked 796 times with the row constructor and none with equalities.
+`dialect.whereKeys()` (`sql_dialect.js`) writes `(a = ? AND b = ?) OR …` on
+MariaDB and keeps the row constructor on PostgreSQL, whose text is unchanged;
+an empty list stays Knex's `1 = 0`. The flush's three DELETEs,
+`releaseClaims()` and the risk engine's stalled-import UPDATE use it; a new
+key-named write on MariaDB owes it. `tests/mariadb_deadlock_retry.js`. The expiry
 purge's batch is `DELETE … LIMIT n`. **Held whole on MariaDB**: every
 on-demand store, and every session — the driver says `lendsNoBridge`, and
 `authn/session_window.ts` turns the window off for it (`on` is refused),
@@ -315,7 +333,12 @@ stored and asked as `#` + SHA-256. `dek_keys` is never NULL here, so
 `indexSealed()` has nothing to do. An empty store starts at zero counts and
 every MariaDB writer of the table is this library; a table loaded any other
 way is not supported (no backfill). InnoDB's deadlock and lock-wait timeout
-are retried like PostgreSQL's (`retryableConflict()`). The driver's flush
+are retried like PostgreSQL's (`retryableConflict()`). **A retry runs `saveDirectory()`'s
+body again without coming back through `attempt()`, so the body forgets what
+the rolled-back attempt decided** — `pendingLost` always, and since 2026-11-14
+`outcomes` too, on both engines: an outcome read from the older row the failed
+attempt locked was otherwise applied to the live directory and the shadow
+after the attempt that committed. The driver's flush
 also needs `recordChanges()` in MariaDB's text, which is the small-tables
 family's. `tests/directory_portable.js` (A static, C against MariaDB 11.8, D
 the driver's doors) holds it.
@@ -4190,6 +4213,17 @@ per cell. In multi-cell mode the scheduler claims those runs under
 `scheduler.run.global` (`tiers.GLOBAL_RUN_SCOPE`), and the tiered driver keeps
 that scope in the global database (`claimTierOf()`); `purgeClaims()` runs on
 both. A new job that writes global state belongs on that list.
+
+**AND `pki.js`'s BUILD CLAIM IS THE GLOBAL TIER'S TOO (2026-11-14)**
+(`tiers.PKI_BUILD_SCOPE`, `pki.build`). Every certificate authority row is
+`sts_keys`, a global table, so the builders `oneBuildInTheCluster()` must
+exclude are every cell's. Kept in the cell's database it excluded one cell's
+processes only, two cells each built a branch of one realm, and the row's
+first-writer-wins merge was the only arbiter: GitHub Actions run 43642810770's
+`cells` mode published two Intermediates, two JOSE and two XML Signing CAs of
+one name in three realms (`sts_pki_distribution_points`). A new claim scope
+that guards a write to a global table belongs in `GLOBAL_CLAIM_SCOPES`.
+`tests/cell_tiers.js` (`pkiBuildClaim()`).
 
 **SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
 key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives

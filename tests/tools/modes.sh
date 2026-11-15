@@ -56,10 +56,11 @@
 # keeping and why the two production modes are separate.
 #
 # **AND THE COST IN TIME.** `cluster` is a whole run on two nodes of five
-# processes each, the heaviest stack this suite starts. CI runs it as a job
-# of its own (`.github/workflows/tests.yml`) beside `memory,single-node`,
-# both through `./run-tests.sh`, so each job's timeout still covers the modes
-# it runs (tests/teardown_bounds.js holds that arithmetic).
+# processes each, the heaviest stack this suite starts. CI runs every mode
+# of STS_ALL_MODES, this one included, on a runner of its own
+# (`.github/workflows/tests.yml`'s `mode` matrix, 2026-11-14), each through
+# `./run-tests.sh`, so each job's timeout still covers its mode
+# (tests/teardown_bounds.js holds that arithmetic).
 #
 # ---------------------------------------------------------------------------
 # SIX SINCE 2026-11-14, BY rcbj: "Make all six part of the standard test run."
@@ -487,7 +488,7 @@ stsModeNeedsPostgres()
 # in its last job, the /admin-api bulk load, on the next run with two jobs
 # more and nothing failing. 80 minutes is that pace with room;
 # STS_SINGLE_NODE_MODE_TIMEOUT overrides it. tests/teardown_bounds.js holds
-# the CI `tests` job's timeout above the largest of the bounds it runs.
+# each CI mode job's timeout above the bound it runs with.
 # 150 MINUTES SINCE 2026-11-10: run 14's single-node mode on 942307fd1 was
 # stopped by the 80-minute bound with 43 of about 1,136 jobs never started —
 # every conformance job among them — nothing wedged. The same suite's memory

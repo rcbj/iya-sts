@@ -101,6 +101,11 @@ function childMain() {
     });
     const server = http.createServer(function (req, res) {
       req.socket.encrypted = req.headers['x-probe-tls'] === '1';
+      // What `cell_channel.ts`'s `serveRelayed()` sets on a request another
+      // cell relayed here, which a header cannot.
+      if (req.headers['x-probe-relay'] === '1') {
+        req.stsCellRelay = { from: 'a', client: '127.0.0.1', reason: 'test' };
+      }
       app(req, res);
     });
     await new Promise(function (r) {
@@ -145,6 +150,26 @@ function childMain() {
     note(JSON.parse(r.text).cookie === 'sts_lang=fr',
          'and a request arrives under its inside name, the forgery gone',
          r.text);
+    // A REQUEST ANOTHER CELL RELAYED (#98, CI run 43642810770): the sending
+    // cell's front process translated the header already, so what arrives
+    // is the inside names, and they are kept — dropping them refused a
+    // traveller's sign-in at home (STS-AUTHN-0327).
+    r = await ask('GET', '/cookie-probe', {
+      cookie: 'sts_session=held.x; sts_cell=pin', 'x-probe-tls': '1',
+      'x-probe-relay': '1' });
+    note(JSON.parse(r.text).cookie === 'sts_session=held.x; sts_cell=pin',
+         'a relayed request keeps the inside names its sending cell wrote',
+         r.text);
+    r = await ask('GET', '/cookie-probe', {
+      cookie: 'sts_session=held.x', 'x-probe-tls': '1' });
+    note(JSON.parse(r.text).cookie === '',
+         'and the same header from a browser is still dropped', r.text);
+    r = await ask('POST', '/authn/language', Object.assign({
+      'x-probe-tls': '1', 'x-probe-relay': '1' }, form), 'lang=fr&return=/');
+    note(/^__Host-sts_lang=fr;/.test(String((r.headers['set-cookie'] ||
+                                             [])[0])),
+         'and its answer\'s cookie is still prefixed: the relaying cell ' +
+         'copies it as it arrives', String(r.headers['set-cookie']));
     r = await choose({});
     note(/^sts_lang=fr;/.test(String((r.headers['set-cookie'] || [])[0])),
          'cleartext: not prefixed, or a browser would refuse it',

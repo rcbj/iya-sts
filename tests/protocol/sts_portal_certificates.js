@@ -296,8 +296,11 @@ async function test() {
                          challenge.json.view.fresh.challenge) || "");
   check("it is made for the chosen profile and shown once", function () {
     assert.strictEqual(challenge.status, 200, "answered " + challenge.status);
-    assert.ok(/^scep-p-[A-Za-z0-9_-]+-[0-9a-f]{16}\.[A-Za-z0-9_-]+$/
-      .test(secret), "no challenge on the page: " + secret);
+    // In the `cells` mode the id carries the minting cell's twelve-character
+    // locator after its sixteen hex digits (common/cell_locator.ts, stamp()).
+    assert.ok(/^scep-p-[A-Za-z0-9_-]+-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?\./
+      .test(secret) && /\.[A-Za-z0-9_-]+$/.test(secret),
+      "no challenge on the page: " + secret);
     assert.ok(secret.indexOf("scep-p-" +
       Buffer.from(OWNER).toString("base64url") + "-") === 0,
               "the challenge does not name the owner");

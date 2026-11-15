@@ -531,8 +531,21 @@ const GLOBAL_JOBS = [
 ];
 // The claim scope a global job's run is claimed under.
 const GLOBAL_RUN_SCOPE = 'scheduler.run.global';
+// THE CLAIM `common/pki.js` TAKES BEFORE IT BUILDS A ROOT, A PROCESS BRANCH
+// OR A REALM'S BRANCH (`oneBuildInTheCluster()`). Every certificate
+// authority row is `sts_keys`, a WHOLE global table, so the builders the
+// claim has to exclude are every cell's, not one cell's. Kept in the cell's
+// database it excluded only the processes of one cell: two cells could each
+// win it and each build a branch of one realm, the row's first-writer-wins
+// merge the only arbiter left between them — and a cell whose build lost had
+// already certified keys under the Issuing CAs it threw away. GitHub
+// Actions run 43642810770's `cells` mode published two JOSE Signing CAs, two
+// Intermediates and two XML Signing CAs of one name in three realms
+// (`sts_pki_distribution_points`: "jose.crl is named by certificates of two
+// different authorities"), where the `cluster` mode, one database, did not.
+const PKI_BUILD_SCOPE = 'pki.build';
 // The claim scopes kept in the global tier.
-const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE];
+const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE];
 
 /**
  * Tells whether a scheduler job's work is the global tier's.
@@ -625,6 +638,7 @@ module.exports = {
   MEMBER_ATTRIBUTES: MEMBER_ATTRIBUTES,
   GLOBAL_JOBS: GLOBAL_JOBS,
   GLOBAL_RUN_SCOPE: GLOBAL_RUN_SCOPE,
+  PKI_BUILD_SCOPE: PKI_BUILD_SCOPE,
   isGlobalJob: isGlobalJob,
   claimTierOf: claimTierOf
 };

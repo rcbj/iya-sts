@@ -36,6 +36,17 @@
 //   7. in the cluster mode, both nodes answer on the realm's port (the stack's
 //      HAProxy balances 8099 like the main port).
 //
+// IN THE `cells` MODE A CUSTOM LISTENER IS REFUSED, AND THAT IS WHAT IS
+// ASSERTED THERE (2026-11-14, CI run 43642810770): `common/listener_map.js`
+// answers `set-listeners` 400 "Custom listeners are not supported while this
+// service runs as several cells" (STS-CORE-0148, recorded and never sent),
+// because a cell's public name and a listener's would both claim the
+// browser — a follow-up of #99 and #472. The job sees the mode the way the
+// cells jobs do (`cells_kit.js`'s `cellsFromEnv()`: both STS_TEST_CELL_A_URL
+// and STS_TEST_CELL_B_URL set), asserts step 1's main-port refusal, the
+// documented refusal, its code on the realm's audit log, and that the realm
+// was given no listener, and stops there: steps 2 to 7 need the listener.
+//
 // The port is `STS_TEST_REALM_LISTENER_PORT` (8099). The realm is left
 // standing, as every realm a job makes is.
 // ===========================================================================
@@ -146,6 +157,69 @@ async function ok(method, url, body, what) {
   return r;
 }
 
+// The `cells` mode, read as `cells_kit.js` reads it.
+function cellsMode() {
+  log.debug("Entering cellsMode().");
+  const a = String(process.env.STS_TEST_CELL_A_URL || "").trim();
+  const b = String(process.env.STS_TEST_CELL_B_URL || "").trim();
+  log.debug("Leaving cellsMode(). " + !!(a && b));
+  return !!(a && b);
+}
+
+// How many of the realm's audit rows carry `code`: a code is recorded and
+// never sent.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await request("GET", base + "/realm/" + REALM +
+                          "/admin-api/audit?per=500&code=" +
+                          encodeURIComponent(code));
+  const body = r.json && typeof r.json === "object" ? r.json : {};
+  const rows = body.rows || body.events || [];
+  log.debug("Leaving codeCount(). " + rows.length);
+  return rows.length;
+}
+
+// Steps 1's refusal and the cells mode's: a custom listener is not
+// supported while the service runs as several cells (see the header).
+async function refusedInCells(realmApi) {
+  log.debug("Entering refusedInCells().");
+  const code = "STS-CORE-0148";
+  const before = await codeCount(code);
+  const r = await request("POST", realmApi + "set-listeners",
+    { value: [{ id: LISTENER, port: PORT, publicBaseUrl: OWN_BASE }] });
+  check("in the cells mode a custom listener is refused 400, with the " +
+        "documented sentence and no error code in the answer", function () {
+    assert.strictEqual(r.status, 400, r.status + " " + r.text.slice(0, 300));
+    const errors = (r.json && r.json.errors) || [];
+    assert.ok(errors.some(function (one) {
+      return /Custom listeners are not supported while this service runs as several cells/
+        .test(String(one));
+    }), r.text.slice(0, 300));
+    assert.ok(!/STS-[A-Z0-9]+-\d{4}/.test(r.text), r.text.slice(0, 300));
+  });
+  let after = before;
+  for (let i = 0; i < 20 && after <= before; i += 1) {
+    await new Promise(function (res) { setTimeout(res, 150); });
+    after = await codeCount(code);
+  }
+  check("and " + code + " is recorded on the realm's audit log", function () {
+    assert.ok(after > before, "rows with " + code + ": " + before + " -> " +
+              after);
+  });
+  const listed = await ok("GET", base + "/admin-api/realms", undefined,
+                          "listing the realms again");
+  const row = realmRows(listed.json).filter(function (one) {
+    return one.id === REALM;
+  })[0];
+  check("and the realm was given no listener", function () {
+    assert.ok(row, "realm " + REALM + " is not listed");
+    assert.ok(!(row.listeners || []).some(function (one) {
+      return Number(one.port) === PORT || one.id === LISTENER;
+    }), JSON.stringify(row.listeners));
+  });
+  log.debug("Leaving refusedInCells().");
+}
+
 function realmRows(json) {
   log.debug("Entering realmRows().");
   log.debug("Leaving realmRows().");
@@ -178,6 +252,13 @@ async function main() {
   check("the main port is refused as the realm's listener's", function () {
     assert.notStrictEqual(refused.status, 200, refused.text.slice(0, 200));
   });
+  if (cellsMode()) {
+    await refusedInCells(realmApi);
+    log.info("sts_realm_listener passed (the cells mode): " + checks +
+             " checks.");
+    log.debug("Leaving main(). The cells mode.");
+    return;
+  }
   await ok("POST", realmApi + "set-listeners",
            { value: [{ id: LISTENER, port: PORT, publicBaseUrl: OWN_BASE }] },
            "gave it a listener on port " + PORT);
