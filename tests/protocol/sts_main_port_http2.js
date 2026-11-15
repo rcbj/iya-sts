@@ -216,11 +216,23 @@ function h2(s, headers, body) {
 
 async function api(method, path, payload) {
   log.debug("Entering api(). " + method + " " + path);
-  const r = await fetch(base + path, {
-    method: method,
-    headers: { "Content-Type": "application/json",
-               Accept: "application/json" },
-    body: payload === undefined ? undefined : JSON.stringify(payload) });
+  const ask = function () {
+    return fetch(base + path, {
+      method: method,
+      headers: { "Content-Type": "application/json",
+                 Accept: "application/json" },
+      body: payload === undefined ? undefined : JSON.stringify(payload) });
+  };
+  let r;
+  try {
+    r = await ask();
+  } catch (e) {
+    log.debug("Caught in api(): " + ((e && e.message) || e));
+    // A kept-alive connection the service closed under a short
+    // http.keepAliveTimeoutS (section 8): ask once more on a new one.
+    await sleep(200);
+    r = await ask();
+  }
   const raw = await r.text();
   let body = null;
   try {
