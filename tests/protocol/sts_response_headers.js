@@ -36,6 +36,10 @@
 // The revocation listener is `PKI_DISTRIBUTION_BASE_URL` (the launcher's
 // `http://sts:8082`), or port 8082 of the service's host.
 //
+// Its realms are left standing, as every job's are, unless
+// STS_TEST_REMOVE_REALMS=1 asks for them to be removed at the end: a hand
+// run against a private probe would otherwise fill its directory.
+//
 // OWNED HERE (local: true): this repository's own HTTP spine.
 // ---------------------------------------------------------------------------
 
@@ -472,7 +476,13 @@ async function sectionHealth() {
     assert.deepStrictEqual(plain.body, { message: "Success" });
   });
   const other = await send(plainBase + "/oauth2/jwks");
-  const ca = await send(plainBase + "/pki/ca/" + DEV + "/intermediate.cer");
+  // A new realm's Intermediate CA is built in the background, so its
+  // certificate is waited for rather than asked for once.
+  let ca = await send(plainBase + "/pki/ca/" + DEV + "/intermediate.cer");
+  for (let i = 0; i < 50 && ca.status === 404; i += 1) {
+    await sleep(200);
+    ca = await send(plainBase + "/pki/ca/" + DEV + "/intermediate.cer");
+  }
   check("the revocation listener still refuses a path that is neither it " +
         "nor /pki/..., and serves /pki/...", function () {
     assert.strictEqual(other.status, 404);
@@ -511,10 +521,39 @@ async function test() {
   log.debug("Leaving test().");
 }
 
+// THE REALMS ARE LEFT STANDING, as every job leaves its own (tests/CLAUDE.md,
+// "No job removes a realm"), unless STS_TEST_REMOVE_REALMS is "1": a hand
+// run against a private probe that hundreds of realms would otherwise fill
+// asks for them to be removed, and so for everything made in them.
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Left standing.");
+    return;
+  }
+  for (const id of [DEV, PROD]) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("removed the realm " + id + ": " + r.status);
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A removal that fails leaves a realm behind, which is the default.
+      log.info("could not remove the realm " + id);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
 async function main() {
   log.debug("Entering main().");
   try {
-    await test();
+    try {
+      await test();
+    } finally {
+      await removeRealms();
+    }
     log.info("Test completed successfully.");
     log.debug("Leaving main().");
     process.exit(0);

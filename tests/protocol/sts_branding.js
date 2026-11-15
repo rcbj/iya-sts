@@ -36,6 +36,10 @@
 //      with its layout and its preview stylesheet; its one form posts with
 //      autocomplete off.
 //
+// Its realms are left standing, as every job's are, unless
+// STS_TEST_REMOVE_REALMS=1 asks for them to be removed at the end: a hand
+// run against a private probe would otherwise fill its directory.
+//
 // OWNED HERE (local: true): this repository's own management API and its
 // public pages.
 // ---------------------------------------------------------------------------
@@ -537,10 +541,39 @@ async function test() {
   log.debug("Leaving test().");
 }
 
+// THE REALMS ARE LEFT STANDING, as every job leaves its own (tests/CLAUDE.md,
+// "No job removes a realm"), unless STS_TEST_REMOVE_REALMS is "1": a hand
+// run against a private probe that hundreds of realms would otherwise fill
+// asks for them to be removed, and so for everything made in them.
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Left standing.");
+    return;
+  }
+  for (const id of [REALM]) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("removed the realm " + id + ": " + r.status);
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A removal that fails leaves a realm behind, which is the default.
+      log.info("could not remove the realm " + id);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
 async function main() {
   log.debug("Entering main().");
   try {
-    await test();
+    try {
+      await test();
+    } finally {
+      await removeRealms();
+    }
     log.info("Test completed successfully.");
     log.debug("Leaving main().");
     process.exit(0);
