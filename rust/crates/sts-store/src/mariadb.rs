@@ -56,10 +56,19 @@
 //! which a driver whose statements are checked against the model rather
 //! than against a live database does not want.
 //!
+//! A WRITE NAMES ITS ROWS BY COLUMN EQUALITIES (Node's `whereKeys()`,
+//! develop 7b4af8837): 11.8 plans a DELETE or UPDATE whose WHERE is a
+//! one-tuple row constructor as a table scan, which deadlocked concurrent
+//! flushes. Each minted, session, index and claim row is removed here by
+//! `a = ? AND b = ?`; the two row constructors Node keeps in its directory
+//! flush are kept with it, and `tests/mariadb_write_keys.rs` holds the line.
+//!
 //! Not here, as on PostgreSQL: a deadlocked transaction is reported rather
 //! than run again (Node's `withTransaction()` retries it), and the queries a
 //! windowed worker asks beyond [`MariadbDriver::directory_children_page`]
-//! and [`MariadbDriver::directory_count`].
+//! and [`MariadbDriver::directory_count`]. So the same commit's other fix —
+//! `saveDirectory()` clearing `outcomes` on a retry — has nothing to port:
+//! a flush's outcomes are made inside the one attempt that commits them.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;

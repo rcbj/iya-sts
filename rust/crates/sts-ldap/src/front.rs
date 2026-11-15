@@ -22,11 +22,12 @@
 //!   request; an abandon is answered with nothing;
 //! * [`Event::Destroy`] — a PDU that does not decode, a response from the
 //!   client, an unknown operation;
-//! * [`Event::Stalled`] — where node-ldapjs loops for ever on the event
-//!   loop (and so stops the whole Node process): Rust closes the
-//!   connection instead (see [`crate::fault`]);
 //! * [`Event::Thrown`] — the parser's own `assert` failing, which in Node
-//!   escapes the read handler.
+//!   escapes the read handler (and nothing more is read);
+//! * [`Event::Stalled`] — never produced since the `rcbj/node-ldapjs`
+//!   fork stopped looping for ever on a malformed SEQUENCE OF or DN
+//!   (#1784): those are [`Event::Destroy`] now, in Node and here. The
+//!   variant stays only while `sts-runtime`'s listener still matches it.
 //!
 //! Framing is the parser's: bytes are kept until the outer TLV is complete
 //! (a first tag of 0x00 is never complete — the bytes are kept for ever),
@@ -65,6 +66,7 @@ pub enum Event {
     Dispatch(Box<Message>),
     Write(Vec<u8>),
     Destroy,
+    /// Never produced (see the module comment).
     Stalled,
     Thrown(String),
 }
@@ -75,7 +77,7 @@ pub struct Connection {
     options: FrontOptions,
     buffer: Option<Vec<u8>>,
     destroyed: bool,
-    stalled: bool,
+    halted: bool,
 }
 
 impl Connection {
@@ -85,7 +87,7 @@ impl Connection {
             options,
             buffer: None,
             destroyed: false,
-            stalled: false,
+            halted: false,
         }
     }
 
@@ -95,15 +97,17 @@ impl Connection {
         self.buffer.as_ref().map_or(0, Vec::len)
     }
 
-    /// Whether the connection was destroyed (or stalled).
+    /// Whether the connection was destroyed (or halted).
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn is_closed(&self) -> bool {
-        self.destroyed || self.stalled
+        self.destroyed || self.halted
     }
 
+    /// Whether an exception escaped the read handler ([`Event::Thrown`]),
+    /// after which nothing more is read.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn is_stalled(&self) -> bool {
-        self.stalled
+    pub fn is_halted(&self) -> bool {
+        self.halted
     }
 
     fn destroy(&mut self, events: &mut Vec<Event>) {
@@ -155,7 +159,7 @@ impl Connection {
                 // throw out of the read handler.
                 if let Err(e) = again.read_sequence(None) {
                     events.push(Event::Thrown(e.message().to_string()));
-                    self.stalled = true;
+                    self.halted = true;
                     return events;
                 }
                 if again.remain() != again.length() {
@@ -164,7 +168,7 @@ impl Connection {
                         again.remain(),
                         again.length()
                     )));
-                    self.stalled = true;
+                    self.halted = true;
                     return events;
                 }
                 again
@@ -173,11 +177,6 @@ impl Connection {
             };
             match Message::decode(&whole.sequence_to_reader()) {
                 Ok(m) => self.on_message(m, &mut events),
-                Err(Fault::Stalled) => {
-                    events.push(Event::Stalled);
-                    self.stalled = true;
-                    return events;
-                }
                 Err(Fault::Thrown(_)) => {
                     self.destroy(&mut events);
                     return events;
@@ -238,12 +237,6 @@ impl Connection {
         };
         let invalid = match checked {
             Ok(ok) => !ok,
-            // `DN.fromString()` looping inside the listener.
-            Err(Fault::Stalled) => {
-                events.push(Event::Stalled);
-                self.stalled = true;
-                return;
-            }
             Err(Fault::Thrown(_)) => true,
         };
         if invalid {

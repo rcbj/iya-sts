@@ -11,7 +11,9 @@
 //!   handlers, decoded to the same structure and re-encoded to the same
 //!   bytes (or the same refusal to re-encode), the same answer the
 //!   library writes itself, the connection destroyed — and the same bytes
-//!   left pending. Where Node HANGS, Rust must report `Stalled`;
+//!   left pending. Node's harness records a loop it never leaves as
+//!   `hang`; since the fork's fix (#1784) none is left, and Rust never
+//!   produces one, so a `hang` in Node's file fails here;
 //! * DN parsing, printing, comparing; the service's DN helpers; filter
 //!   strings and filter BER (tree, text, BER, refusal sentence); both
 //!   escapers; every response the service sends; the error classes.
@@ -322,7 +324,6 @@ fn request_json(m: &Message) -> Json {
 fn front(chunks: &[Vec<u8>]) -> Json {
     let mut c = Connection::new(FrontOptions::default());
     let mut events = Vec::new();
-    let mut hung = false;
     for chunk in chunks {
         if c.is_closed() {
             break;
@@ -338,19 +339,15 @@ fn front(chunks: &[Vec<u8>]) -> Json {
                 }),
                 Event::Write(b) => json!({ "write": js::hex(&b) }),
                 Event::Destroy => json!({ "destroy": true }),
-                Event::Stalled => {
-                    hung = true;
-                    json!({ "hang": true })
-                }
+                Event::Stalled => panic!("the front never stalls (#1784)"),
                 Event::Thrown(m) => json!({ "thrown": m }),
             });
         }
-        if c.is_stalled() {
+        if c.is_halted() {
             break;
         }
     }
-    let pending = if hung { 0 } else { c.pending() };
-    json!({ "events": events, "pending": pending })
+    json!({ "events": events, "pending": c.pending() })
 }
 
 // ---- the other answers ------------------------------------------------
@@ -374,7 +371,6 @@ fn dn_case(input: &str) -> Json {
             json!({ "input": input, "ok": true, "text": d.to_text(),
                     "rdns": rdns, "length": d.len() })
         }
-        Err(Fault::Stalled) => json!({ "input": input, "hang": true }),
         Err(Fault::Thrown(e)) => {
             json!({ "input": input, "ok": false, "error": e })
         }

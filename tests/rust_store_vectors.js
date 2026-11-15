@@ -380,10 +380,11 @@ async function run(t) {
   const history = read('scheduler-history-node.json');
   const historyRust = read('scheduler-history-rust.json');
   if (history && historyRust) {
-    ['status', 'acme', 'purged', 'pinned'].forEach(function (k) {
-      t.check(canonical(historyRust[k]) === canonical(history[k]),
-              'Rust\'s scheduler ' + k + ' is Node\'s');
-    });
+    ['status', 'acme', 'purged', 'pinned', 'foundStored']
+      .forEach(function (k) {
+        t.check(canonical(historyRust[k]) === canonical(history[k]),
+                'Rust\'s scheduler ' + k + ' is Node\'s');
+      });
   }
   const tick = read('scheduler-tick-node.json');
   const tickRust = read('scheduler-tick-rust.json');
