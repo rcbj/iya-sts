@@ -500,7 +500,17 @@ where Node puts them in its place (only the crypto module may build a
 store). The origin claim is renewed beside a clustered node's heartbeat;
 without a heartbeat (development, `cluster.mode=off`) it is renewed by the
 per-process job `persistence.origin-renew`, the one job Node's scheduler page
-does not list.
+does not list. It stays (phase 3's cleanup): Node renews from a `setInterval`
+of its own whether or not it is clustered, one of `no_periodic_timers.js`'
+permanent exceptions, and the Rust guard admits one repeating timer, the
+heartbeat. It has no `common/prose_locales/scheduler` entry, because those
+catalogs are harvested from Node's registry and a key Node does not register
+is an orphan that `server_prose_catalogs` fails; its title and description
+are English until the catalogs move to Rust. The node now joins, and a
+standby waits for the service lease, before the restore (`cluster.gate()`),
+a write the origin fence refuses is reported and stops the process
+(`setOriginLost()`), and the scheduler page's newest window reads the run
+store's sort index (`minted.newest`).
 
 ## 5. The management API is the console's and the portal's only door
 

@@ -709,6 +709,97 @@ impl ClusterNode {
         self.state().beat_hooks.push(hook);
     }
 
+    /// `waitForServiceLease()`: in active-passive mode a joined node waits
+    /// here, before anything is restored or bound, until it holds the
+    /// service lease — asked now and then once a heartbeat, which is
+    /// Node's `setTimeout(attempt, heartbeatMs())`. A STANDBY says so once
+    /// and keeps renewing its membership meanwhile. Node's own repeating
+    /// timeout is one of `tests/no_periodic_timers.js`' permanent
+    /// exceptions; here the asking rides on the heartbeat
+    /// ([`ClusterNode::on_beat`]), which is the one timer this crate keeps.
+    /// `Err` when the node stops while it waits.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn wait_for_service_lease(&self) -> Result<LeaseAnswer, String> {
+        let first = self.acquire(SERVICE_LEASE).await;
+        if first.held {
+            tracing::info!(
+                "cluster: node {} is the ACTIVE node (service lease token {}). Restoring the store and binding.",
+                self.node_id,
+                first.token
+            );
+            return Ok(first);
+        }
+        tracing::info!(
+            "cluster: node {} is a STANDBY. The service lease is held by {}; nothing is restored and nothing \
+             binds until it is released or expires. Asking again every {}ms.",
+            self.node_id,
+            if first.holder.is_empty() {
+                "nobody reachable"
+            } else {
+                first.holder.as_str()
+            },
+            self.heartbeat_ms
+        );
+        let (tell, mut told) = tokio::sync::mpsc::unbounded_channel();
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let asking = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let me = self.me.clone();
+        let hook_done = done.clone();
+        self.on_beat(Arc::new(move || {
+            let (me, tell, done, asking) =
+                (me.clone(), tell.clone(), hook_done.clone(), asking.clone());
+            Box::pin(async move {
+                use std::sync::atomic::Ordering;
+                if done.load(Ordering::SeqCst)
+                    || asking.swap(true, Ordering::SeqCst)
+                {
+                    return;
+                }
+                if let Some(me) = me.upgrade() {
+                    let answer = me.acquire(SERVICE_LEASE).await;
+                    if answer.held {
+                        done.store(true, Ordering::SeqCst);
+                        let _sent = tell.send(answer);
+                    }
+                }
+                asking.store(false, Ordering::SeqCst);
+            })
+        }));
+        loop {
+            if self.state().stopping {
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(
+                    "the node stopped while it waited for the service lease"
+                        .to_string(),
+                );
+            }
+            let waited = tokio::time::timeout(
+                Duration::from_millis(self.ttl_ms as u64),
+                told.recv(),
+            )
+            .await;
+            match waited {
+                Ok(Some(answer)) => {
+                    tracing::info!(
+                        "cluster: node {} is the ACTIVE node (service lease token {}). Restoring the store and \
+                         binding.",
+                        self.node_id,
+                        answer.token
+                    );
+                    return Ok(answer);
+                }
+                Ok(None) => {
+                    return Err(
+                        "the service lease's wait was dropped".to_string()
+                    );
+                }
+                // Not a timer: a bound on one wait, so a node that stopped
+                // meanwhile is seen.
+                Err(_) => continue,
+            }
+        }
+    }
+
     /// Sets the mode this node runs in (`resolve_mode()`'s answer): in
     /// active-passive mode a lost service lease is fatal.
     #[tracing::instrument(level = "debug", skip(self))]

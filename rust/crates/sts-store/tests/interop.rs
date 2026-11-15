@@ -560,6 +560,29 @@ async fn side_differences(
             side["index"], index
         ));
     }
+    // `minted.newest` (#820): the indexed row found through its sort row,
+    // as the scheduler page's newest window reads the run store.
+    let sorted: Vec<String> = side["index"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|r| r.as_str())
+        .map(|r| r.split('|').collect::<Vec<_>>())
+        .filter(|p| p.len() == 5 && p[2] == "$sort$" && !p[4].is_empty())
+        .map(|p| p[3].to_string())
+        .collect();
+    let realm = minted["indexed"]["realm"].as_str().unwrap();
+    let newest = driver
+        .read_minted_newest(INDEXED, realm, 0, 10)
+        .await
+        .unwrap();
+    let found: Vec<String> = newest.iter().map(|r| r.key.clone()).collect();
+    if sorted.is_empty() || found != sorted {
+        out.push(format!(
+            "minted.newest: the sort rows name {:?}, the read found {:?}",
+            sorted, found
+        ));
+    }
     let changes: Vec<String> = side["changes"]
         .as_array()
         .unwrap()

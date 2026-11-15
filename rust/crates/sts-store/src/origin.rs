@@ -32,7 +32,7 @@
 //! poll takes it within `pollMs` of then; a live holder renews and both
 //! keep the random origin.
 
-use std::sync::{Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use sts_core::errors::codes;
 use sts_core::log::tag;
@@ -134,10 +134,15 @@ pub trait OriginEngine: Send + Sync {
     fn clock(&self) -> StoreFuture<'_, i64>;
 }
 
+/// What is told when a write was refused because this process's origin was
+/// taken (`setOriginLost()`'s function), with the refusal's message.
+pub type OriginLost = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// The origin a process writes under, and its claim.
 pub struct Origin {
     process_id: RwLock<String>,
     claim: Mutex<Option<OriginClaim>>,
+    lost: RwLock<Option<OriginLost>>,
 }
 
 /// The fence's refusal (`fenced('origin', …)`).
@@ -155,7 +160,34 @@ impl Origin {
         Ok(Origin {
             process_id: RwLock::new(format!("{}-{}", std::process::id(), id)),
             claim: Mutex::new(None),
+            lost: RwLock::new(None),
         })
+    }
+
+    /// `setOriginLost()`: who is told when a write is refused because the
+    /// origin was taken. Node's `persistence.js` hands its `originLost()`,
+    /// which logs STS-STORE-0061 and exits; a clustered node's fence
+    /// handler is told instead (`transactionOn()`'s two branches).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_lost(&self, f: Option<OriginLost>) {
+        *self.lost.write().unwrap_or_else(PoisonError::into_inner) = f;
+    }
+
+    /// A write refused by the origin fence (`STS-CLUSTER-0001`), reported to
+    /// [`Origin::set_lost`]'s function and handed back to be returned:
+    /// a process that has lost its origin must not go on trying to write
+    /// under it (`adoptOrigin()`).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn lost(&self, refusal: StoreError) -> StoreError {
+        let f = self
+            .lost
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(f) = f {
+            f(&refusal.to_string());
+        }
+        refusal
     }
 
     /// This process's name in the change log.
@@ -325,5 +357,29 @@ impl Origin {
             Some(claim) => engine.release(&claim).await,
             None => Ok(false),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)] // tests
+
+    use super::*;
+
+    #[test]
+    fn a_refused_write_is_reported_and_handed_back() {
+        let origin = Origin::new().unwrap();
+        let refusal = origin.lost(fenced("no hook, no report"));
+        assert!(refusal
+            .to_string()
+            .starts_with(&tag(codes::STS_CLUSTER_0001)));
+        let told: Arc<Mutex<Vec<String>>> = Arc::default();
+        let into = told.clone();
+        origin.set_lost(Some(Arc::new(move |m: &str| {
+            into.lock().unwrap().push(m.to_string());
+        })));
+        let refusal = origin.lost(fenced("the claim is gone"));
+        assert_eq!(*told.lock().unwrap(), vec![refusal.to_string()]);
+        assert!(refusal.to_string().contains("the claim is gone"));
     }
 }
