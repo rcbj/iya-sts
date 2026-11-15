@@ -2619,6 +2619,12 @@ const JOBS = [
   // D12 (#444): the AuthZEN tab's view and its acts' effects
   // (authzen_admin).
   { file: 'sts_authzen_admin_view.js', browser: false, local: true },
+  // D12 (#444): the enable's grant to the realm's REMOTE_PEPS holders, the
+  // exchange's bound (STS-FGA-0017), a policy denying delete (0014) and
+  // AuthZEN as the granted holder (STS-AUTHZEN-0046) (fga_pep_grant,
+  // fga_issuance, fga_authzen). Posts two outside test Roots to the client
+  // truststore and removes them.
+  { file: 'sts_fga_grant_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
