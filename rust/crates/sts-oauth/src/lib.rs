@@ -77,6 +77,7 @@ pub mod oauth21;
 pub mod pairwise;
 pub mod par;
 pub mod refresh_crypto;
+pub mod reports;
 pub mod request_object;
 pub mod revocation;
 pub mod scopes;

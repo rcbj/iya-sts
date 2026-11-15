@@ -21,10 +21,15 @@
 //! * **Which one a request is for** is ambient for the request ([`run`],
 //!   [`current`]) where Node carries `req.__asProfile`.
 //!
+//! * **A named server's own FAPI profile** (#138, `fapi.withProfile()`):
+//!   its `fapi` member (`fapiOf(id)`, the `server` document) is ambient for
+//!   its requests ([`with_fapi`]), and [`fapi_profile`] — Node's
+//!   `fapi.profile()` — is the one reader every FAPI rule here asks: the
+//!   server's own, `off` opting it out, else the realm's `oauth2.fapi`.
+//!
 //! WHAT IS NOT HERE: the console's and `/admin-api`'s writes (create, set,
 //! remove, reset — the management API's slice), the catalogue's prose and
-//! the drift report, and a named server's own FAPI profile (FAPI's slice):
-//! a server whose profile names one is served without it.
+//! the drift report.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -53,6 +58,48 @@ const OTHER_DOCUMENT: &[(&str, &str)] = &[
     ("key_rotation_supported", "gnap"),
     ("token_formats_supported", "gnap"),
 ];
+
+/// `PROFILES`: the FAPI profiles a value may name.
+const FAPI_PROFILES: [&str; 4] = [
+    "1-baseline",
+    "1-advanced",
+    "2-security",
+    "2-message-signing",
+];
+
+/// `NONE`: a named server's profile opting out of the realm's.
+const FAPI_NONE: &str = "off";
+
+tokio::task_local! {
+    static FAPI: String;
+}
+
+/// `fapi.withProfile(value, fn)`: `work` with a named authorization
+/// server's FAPI profile in force; an empty value leaves the realm's.
+#[tracing::instrument(level = "debug", skip(work))]
+pub async fn with_fapi<F: Future>(value: String, work: F) -> F::Output {
+    FAPI.scope(value, work).await
+}
+
+/// `fapi.profile()`: the profile in force — the named server's own, then
+/// the realm's `oauth2.fapi` — or `""`.
+// Hot path (every FAPI rule asks): no span.
+pub fn fapi_profile(settings: &Settings) -> String {
+    let own = FAPI.try_with(Clone::clone).unwrap_or_default();
+    if own == FAPI_NONE {
+        return String::new();
+    }
+    let value = if own.is_empty() {
+        settings.value_of("oauth2.fapi").as_str().to_string()
+    } else {
+        own
+    };
+    if FAPI_PROFILES.contains(&value.as_str()) {
+        value
+    } else {
+        String::new()
+    }
+}
 
 tokio::task_local! {
     static PROFILE: String;
@@ -198,6 +245,13 @@ impl AuthorizationServers {
             self.profiles.set(key, profile.clone());
         }
         Some(profile)
+    }
+
+    /// `fapiOf(id)`: the server's own `fapi` member, or `""`.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn fapi_of(&self, id: &str) -> String {
+        let own = self.capabilities_of(id, json!({}), "server");
+        crate::js::string_of(own.get("fapi"))
     }
 
     /// `apply(metadata, id)` and `capabilitiesOf(id, defaults, document)`:

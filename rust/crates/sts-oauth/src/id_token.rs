@@ -52,7 +52,7 @@ pub struct CoreIdTokens {
 
 /// `fapi.defaultSigningAlg()`: PS256 under FAPI 1.0 Advanced.
 fn fapi_default_alg(settings: &Settings) -> &'static str {
-    if settings.value_of("oauth2.fapi").as_str() == "1-advanced" {
+    if crate::authorization_servers::fapi_profile(settings) == "1-advanced" {
         "PS256"
     } else {
         ""

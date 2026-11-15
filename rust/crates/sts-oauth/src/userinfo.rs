@@ -465,36 +465,19 @@ impl UserInfo {
         bound: &str,
     ) -> Result<crate::dpop::Proof, crate::dpop::Failure> {
         let tokens = &self.tokens;
-        let header = ask.dpop.as_deref();
-        let skew =
-            crate::dpop::ProofContext::iat_skew_seconds(tokens.dpop.as_ref());
-        let reservation = crate::dpop_reservation::Reservation::reserve(
+        crate::dpop_reservation::verify_reserved(
             tokens.claims.as_ref(),
-            header,
-            skew,
+            tokens.dpop.as_ref(),
+            ask.dpop.as_deref(),
+            &crate::dpop::ProofRequest {
+                htm: &ask.method,
+                htu: &ask.htu,
+                access_token: Some(token),
+                expected_jkt: (!bound.is_empty()).then_some(bound),
+                now: tokens.clock.now_s(),
+            },
         )
-        .await;
-        let checked = {
-            let ctx = crate::dpop_reservation::Reserved {
-                local: tokens.dpop.as_ref(),
-                reservation: reservation.as_ref(),
-            };
-            crate::dpop::verify_proof(
-                header,
-                &crate::dpop::ProofRequest {
-                    htm: &ask.method,
-                    htu: &ask.htu,
-                    access_token: Some(token),
-                    expected_jkt: (!bound.is_empty()).then_some(bound),
-                    now: tokens.clock.now_s(),
-                },
-                &ctx,
-            )
-        };
-        if let Some(r) = &reservation {
-            r.settle(tokens.claims.as_ref()).await;
-        }
-        checked
+        .await
     }
 
     /// `tokenFailure(token)`: why a token did not verify.
@@ -872,7 +855,9 @@ impl UserInfo {
 
     /// `fapi.signingAlgAllowed(alg)`.
     fn fapi_allows(&self, alg: &str) -> bool {
-        match self.tokens.settings.value_of("oauth2.fapi").as_str() {
+        match crate::authorization_servers::fapi_profile(&self.tokens.settings)
+            .as_str()
+        {
             "1-advanced" => ["PS256", "ES256"].contains(&alg),
             "2-security" | "2-message-signing" => {
                 ["PS256", "ES256", "EdDSA"].contains(&alg)

@@ -255,6 +255,11 @@ pub struct AssertionClaim {
 /// against: its own slice ports the store.
 pub trait AssertionHistory: Send + Sync {
     fn claim(&self, claim: &AssertionClaim) -> Spent;
+    /// `usedAssertions.summary().live`: the rows not yet past their time,
+    /// for `GET /oauth2/rfc9700`.
+    fn live(&self, _now_ms: i64) -> usize {
+        0
+    }
 }
 
 /// An in-process history: what one process remembers.
@@ -272,6 +277,15 @@ impl AssertionHistory for MemoryAssertionHistory {
         }
         held.insert(key, claim.expires_at);
         Spent::Ok
+    }
+
+    fn live(&self, now_ms: i64) -> usize {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .filter(|until| **until > now_ms)
+            .count()
     }
 }
 
@@ -531,6 +545,12 @@ pub struct ClientAuth {
 }
 
 impl ClientAuth {
+    /// `clientAuth.assertionsRemembered()`.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn assertions_remembered(&self) -> usize {
+        self.history.live(self.clock.now_ms())
+    }
+
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(
         settings: Arc<Settings>,

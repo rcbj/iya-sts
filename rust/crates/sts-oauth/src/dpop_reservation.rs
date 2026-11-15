@@ -154,3 +154,32 @@ impl ProofContext for Reserved<'_> {
         self.local.key_policy()
     }
 }
+
+/// `verifyProof(header, { htm, htu, accessToken, expectedJkt, req })` with
+/// the proof's `jti` reserved across the cluster first and the reservation
+/// settled after: the one way a resource or the push endpoint checks a
+/// proof, so the two cannot reserve differently. `local` is the nonce store
+/// and the replay history.
+#[tracing::instrument(level = "debug", skip_all)]
+pub async fn verify_reserved(
+    claims: &dyn Claims,
+    local: &(dyn ProofContext + Sync),
+    header: Option<&str>,
+    request: &crate::dpop::ProofRequest<'_>,
+) -> Result<crate::dpop::Proof, crate::dpop::Failure> {
+    let skew = local.iat_skew_seconds();
+    let reservation = Reservation::reserve(claims, header, skew).await;
+    // The proof's context is dropped before the reservation is settled, so
+    // nothing held across the await is shared.
+    let checked = {
+        let ctx = Reserved {
+            local,
+            reservation: reservation.as_ref(),
+        };
+        crate::dpop::verify_proof(header, request, &ctx)
+    };
+    if let Some(r) = &reservation {
+        r.settle(claims).await;
+    }
+    checked
+}

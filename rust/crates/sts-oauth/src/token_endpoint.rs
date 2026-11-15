@@ -2169,13 +2169,22 @@ impl TokenEndpoint {
         }
         if scope.split_whitespace().any(|w| w == "openid") {
             if let Some(ids) = &self.id_tokens {
+                // `opts.sub` only where the grant named a subject of its
+                // own (a token exchange's): Node's code and refresh grants
+                // pass none, so `idToken()` derives the CLIENT'S subject —
+                // pairwise or ephemeral — from the person's.
+                let own_sub = if opts.sub != s(opts.user.get("sub")) {
+                    json!(opts.sub)
+                } else {
+                    Json::Null
+                };
                 let issuing_facts = json!({
                     "user": opts.user, "client_id": opts.client_id,
                     "nonce": opts.nonce, "auth_time": opts.auth_time,
                     "amr": opts.amr, "acr": opts.acr,
                     "session_id": opts.session_id, "grant": opts.grant,
                     "set_id": set_id, "access_token": access, "scope": scope,
-                    "sub": opts.sub,
+                    "sub": own_sub,
                 });
                 if let Some(id) = ids.id_token(base, &issuing_facts) {
                     body.insert("id_token".into(), json!(id));

@@ -2718,18 +2718,101 @@ const PAR_NOT_PARAMETERS: [&str; 3] =
 const PAR_PRIVATE_FIELDS: [&str; 5] = crate::request_object::ROUND_TRIP_FIELDS;
 
 impl AuthorizationEndpoint {
+    /// `parRequest()`'s refusals after the vetting, in Node's order: the
+    /// resource indicators (`STS-OAUTH-0154`), an ungranted permission
+    /// (`STS-OAUTH-0155`), a scope the client may not be issued
+    /// (`scopeRefusal()`), and the access token's audience plan — on a
+    /// code with several resources refused only where none of them alone
+    /// could be issued a token (#607). `authorization_details` and
+    /// fine-grained authorization are this slice's later work.
+    fn push_refusal(
+        &self,
+        ask: &AuthorizeAsk,
+        q: &Map<String, Json>,
+        client_id: &str,
+    ) -> Option<(sts_core::errors::ErrorCode, &'static str, String)> {
+        let scope = match s(q.get("scope")) {
+            v if v.is_empty() => "openid".to_string(),
+            v => v,
+        };
+        let resources =
+            match parse_resource_indicators(&values(q.get("resource"))) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Some((codes::STS_OAUTH_0154, "invalid_target", e))
+                }
+            };
+        let reserved =
+            protocol_scopes(&self.settings, &self.scopes.credential_scopes);
+        let found = audience_scopes(
+            self.clients.as_ref(),
+            &reserved,
+            &scope,
+            client_id,
+        );
+        let refused = permission_refusal(
+            &found,
+            &self.settings,
+            &self.mode,
+            client_id,
+            "",
+        );
+        if !refused.is_empty() {
+            return Some((codes::STS_OAUTH_0155, "invalid_scope", refused));
+        }
+        if let Some(r) = self.scopes.refusal(&scope, client_id) {
+            return Some((r.code, "invalid_scope", r.description));
+        }
+        let plan_of = |resources: &[String]| {
+            crate::token_endpoint::plan_for(
+                self.clients.as_ref(),
+                &self.settings,
+                &self.scopes,
+                &ask.base,
+                &scope,
+                client_id,
+                resources,
+            )
+        };
+        let mut plan = plan_of(&resources);
+        let types = s(q.get("response_type"));
+        if plan.refusal.is_some()
+            && !types.split_whitespace().any(|t| t == "token")
+            && resources.len() > 1
+        {
+            if let Some(one) = resources
+                .iter()
+                .map(|one| plan_of(std::slice::from_ref(one)))
+                .find(|p| p.refusal.is_none())
+            {
+                plan = one;
+            }
+        }
+        plan.refusal.map(|r| (r.code, r.error, r.description))
+    }
+
     /// `POST /oauth2/par` (`parRequest()`, RFC 9126 section 2): the client
     /// authenticated as at the token endpoint, the parameters — or a
     /// request object, verified — vetted as the authorization endpoint
     /// vets them, and kept under a `request_uri`. `201 { request_uri,
     /// expires_in }`, or the refusal as JSON.
+    ///
+    /// A `DPoP` proof sent with the push (RFC 9449 section 10.1) is
+    /// verified against this endpoint's URL, its `jti` reserved across the
+    /// cluster, and binds the code as `dpop_jkt` does; the two must name one
+    /// key. After the vetting, the push is refused for the authorization
+    /// endpoint's reasons — the resource indicators, an ungranted
+    /// permission, a scope the client may not be issued, and an access
+    /// token no audience could take — rather than when the `request_uri`
+    /// is used.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn push(
+    pub async fn push(
         &self,
         ask: &AuthorizeAsk,
         tokens: &crate::token_endpoint::TokenEndpoint,
         authorization: &str,
         peer: Option<crate::client_auth::PeerCertificate>,
+        dpop: Option<&str>,
     ) -> Answer {
         let refuse = |status: u16, error: &str, description: &str, code| {
             tracing::info!(
@@ -2800,6 +2883,46 @@ impl AuthorizationEndpoint {
             return refuse(401, "invalid_client", &format!(
                 "The client \"{}\" is not registered in this realm. In product mode this authorization server serves only a client registered ahead of time (the console, /admin-api, RFC 7591, an LDAP add under ou=applications or an OpenID Federation); one that was only seen is not registered.",
                 client_id), codes::STS_OAUTH_0947);
+        }
+        // --- 3. A DPoP PROOF, checked against THIS endpoint's URL.
+        let mut dpop_jkt = String::new();
+        if dpop.is_some() {
+            let checked = crate::dpop_reservation::verify_reserved(
+                tokens.claims.as_ref(),
+                tokens.dpop.as_ref(),
+                dpop,
+                &crate::dpop::ProofRequest {
+                    htm: "POST",
+                    htu: &format!("{}/oauth2/par", ask.base),
+                    access_token: None,
+                    expected_jkt: None,
+                    now: tokens.clock.now_s(),
+                },
+            )
+            .await;
+            match checked {
+                Ok(proof) => dpop_jkt = proof.jkt,
+                Err(f) if f.need_nonce => {
+                    let mut a = refuse(
+                        400,
+                        "use_dpop_nonce",
+                        "Authorization server requires nonce in DPoP proof",
+                        f.code,
+                    );
+                    if let Ok(n) = tokens.dpop.issue_nonce() {
+                        a.set("DPoP-Nonce", &n);
+                    }
+                    return a;
+                }
+                Err(f) => {
+                    return refuse(
+                        400,
+                        "invalid_dpop_proof",
+                        &f.description,
+                        f.code,
+                    )
+                }
+            }
         }
         let (authenticated, method) = match tokens.authenticate_push(
             &ask.base,
@@ -2882,6 +3005,15 @@ impl AuthorizationEndpoint {
             params.remove(name);
         }
         params.insert("client_id".into(), json!(client_id));
+        if !dpop_jkt.is_empty() {
+            let named = s(params.get("dpop_jkt"));
+            if !named.is_empty() && named != dpop_jkt {
+                return refuse(400, "invalid_dpop_proof", &format!(
+                    "The push carries a DPoP proof for the key {} and dpop_jkt \"{}\". RFC 9449 section 10.1: where both are sent they must name the same key.",
+                    dpop_jkt, named), codes::STS_OAUTH_0417);
+            }
+            params.insert("dpop_jkt".into(), json!(dpop_jkt));
+        }
         let q = match self.vet(ask, &params) {
             Ok((q, _, _)) => q,
             Err(e) => {
@@ -2889,6 +3021,11 @@ impl AuthorizationEndpoint {
                 return refuse(400, v.error, &v.description, v.code);
             }
         };
+        if let Some((code, error, description)) =
+            self.push_refusal(ask, &q, &client_id)
+        {
+            return refuse(400, error, &description, code);
+        }
         if let Some(o) = once.as_ref() {
             objects.spend(o);
         }
@@ -2900,7 +3037,7 @@ impl AuthorizationEndpoint {
             method,
             source: source.into(),
             alg,
-            dpop_jkt: String::new(),
+            dpop_jkt,
             redirect_relaxed: false,
         }) {
             Err((code, error, description)) => {

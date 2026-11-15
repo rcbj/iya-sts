@@ -693,6 +693,29 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        // The two mode reports (`GET /oauth2/rfc9700`, `/oauth2/oauth21`).
+        let routes = routes.route(
+            "/oauth2/rfc9700",
+            axum::routing::get({
+                let me = me.clone();
+                move || {
+                    let me = me.clone();
+                    async move { me.report(true) }
+                }
+            })
+            .fallback(unrouted),
+        );
+        let routes = routes.route(
+            "/oauth2/oauth21",
+            axum::routing::get({
+                let me = me.clone();
+                move || {
+                    let me = me.clone();
+                    async move { me.report(false) }
+                }
+            })
+            .fallback(unrouted),
+        );
         // `/oauth2/userinfo`, GET and POST (OIDC Core section 5.3.1).
         let routes = routes.route(
             "/oauth2/userinfo",
@@ -1033,14 +1056,42 @@ impl OAuthStack {
             },
             ..AuthorizeAsk::default()
         };
-        self.authorize
-            .push(
-                &ask,
-                &self.tokens,
-                &header_of(&headers, "authorization"),
-                None,
-            )
-            .into_response()
+        let dpop = headers
+            .get("dpop")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(self.authorize.push(
+            &ask,
+            &self.tokens,
+            &header_of(&headers, "authorization"),
+            None,
+            dpop.as_deref(),
+        ))
+        .await
+        .into_response()
+    }
+
+    /// `bcp.state()` or `oauth21.state()`, for the ambient realm.
+    fn report(&self, rfc9700: bool) -> Response {
+        let reports = sts_oauth::reports::Reports {
+            settings: &self.settings,
+            mode: &self.mode,
+        };
+        let grants = &self.tokens.grants;
+        let state = if rfc9700 {
+            reports.rfc9700(sts_oauth::reports::Remembered {
+                transactions: grants.transactions.len(),
+                client_assertions: self.tokens.auth.assertions_remembered(),
+                refresh_tokens: grants.refresh_tokens.len(),
+                refresh_families: grants.refresh_families.len(),
+            })
+        } else {
+            reports.oauth21_state()
+        };
+        sts_oauth::reports::answer(&state).into_response()
     }
 
     /// `userinfoResponse()`: the base is `baseUrlOf(req)` — the realm's,
@@ -1300,7 +1351,10 @@ impl OAuthStack {
             }
         };
         self.servers.ensure(&id, true, true);
-        named::run(id, handler()).await
+        // A NAMED SERVER'S OWN FAPI PROFILE (#138): in force for its
+        // requests, the realm's where it names none.
+        let own = self.servers.fapi_of(&id);
+        named::run(id, named::with_fapi(own, handler())).await
     }
 }
 
