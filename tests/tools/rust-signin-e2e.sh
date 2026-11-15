@@ -29,6 +29,13 @@
 #      (`GET /authn-api/logout`'s view names the person).
 #   5. The same two sign-ins against Node, for the comparison.
 #
+#   THE PASSKEY PERSON (the `passkeys` slice): `e2e.key` is left at the
+#   set-up step by Node, and in step 3 one browser holding a virtual
+#   authenticator (CDP's WebAuthn domain) registers a passkey at Rust's
+#   set-up step, signs in with it as the second factor, and with no
+#   username; Node honours all three sessions in step 4, and `e2e.key2`
+#   does the same against Node in step 5.
+#
 # Writes <out-dir> (default tests/vectors/rust-signin-e2e, gitignored).
 # Needs google-chrome on the host and NODE_PATH holding `ws`.
 # ---------------------------------------------------------------------------
@@ -195,16 +202,56 @@ browse() {
   fi
 }
 
+# THE PASSKEY PERSON (#444, the `passkeys` slice): one browser with a
+# virtual authenticator registers a passkey at the set-up step, then signs in
+# with it as the second factor, then with no username.
+passkeys() {
+  local label="$1" user="$2" ids pw what cookie location
+  ids="$(jq -r .key "$OUT/pending.json")"
+  pw="$(jq -r ".\"$user\".password" "$OUT/people.json")"
+  if $DRIVER passkeys "$BASE" "$ids" "$user" "$pw" \
+       > "$OUT/$label-key.json" 2>> "$SUMMARY"; then
+    for what in enrol second usernameless; do
+      cookie="$(jq -r ".$what.cookie" "$OUT/$label-key.json")"
+      location="$(jq -r ".$what.location" "$OUT/$label-key.json")"
+      if [ -n "$cookie" ] && [ "$cookie" != null ] &&
+         echo "$location" | grep -qE '/oauth2/authorize|/portal/callback\?code='
+      then
+        pass "$label: $user signed in ($(jq -r ".$what.steps | join(\", \")" \
+          "$OUT/$label-key.json")) and holds $(echo "$cookie" | cut -d= -f1)"
+      else
+        fail "$label: $user's $what did not finish: $(jq -c ".$what" \
+          "$OUT/$label-key.json")"
+      fi
+    done
+  else
+    fail "$label: the passkey sign-ins of $user in the browser (see summary)"
+  fi
+}
+
 say "== Rust on the store Node wrote: the unchanged bundle in Chrome =="
 # The enrolment spent this step's code: the next one is the person's next.
 sleep 31
 start "$RUST_IMAGE" rust
 browse pwd rust
 browse totp rust
+passkeys rust e2e.key
 stop rust
 
 say "== Node reads the sessions Rust set =="
 start "$NODE_IMAGE" node-reader
+for what in enrol second usernameless; do
+  cookie="$(jq -r ".$what.cookie" "$OUT/rust-key.json" 2>/dev/null || true)"
+  [ -n "$cookie" ] && [ "$cookie" != null ] || continue
+  got="$($DRIVER honours "$BASE" "$cookie")"
+  echo "$got" > "$OUT/honours-key-$what.json"
+  name="$(echo "$got" | jq -r .username)"
+  if [ "$name" = "e2e.key" ]; then
+    pass "Node honours the session Rust set for $name ($what)"
+  else
+    fail "Node did not honour Rust's $what session for e2e.key: $got"
+  fi
+done
 for who in pwd totp; do
   cookie="$(jq -r .cookie "$OUT/rust-$who.json" 2>/dev/null || true)"
   [ -n "$cookie" ] || continue
@@ -223,6 +270,7 @@ $DRIVER begin "$BASE" "$OUT/pending.json" >> "$SUMMARY" 2>&1
 sleep 31
 browse pwd node
 browse totp node
+passkeys node e2e.key2
 stop node-reader
 
 say "== $( [ "$FAILED" = 0 ] && echo PASSED || echo FAILED ) =="
