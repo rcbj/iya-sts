@@ -64,7 +64,7 @@ function clone(value) {
  * @returns {any} the recorder
  */
 function recorder(errorCodes) {
-  const rec = { calls: null, depth: 0 };
+  const rec = { calls: null, depth: 0, opaque: [] };
   rec.codeOf = function (value) {
     if (!value || typeof value !== 'object') {
       return null;
@@ -87,7 +87,12 @@ function recorder(errorCodes) {
       } finally {
         rec.depth -= 1;
       }
-      const row = { port: port, method: method, args: clone(args) };
+      // A module handed as an argument (`settingFor(app, key, config)`)
+      // is recorded by name, not by its whole table.
+      const row = { port: port, method: method,
+                    args: clone(args.map(function (one) {
+                      return rec.opaque.indexOf(one) >= 0 ? '[module]' : one;
+                    })) };
       if (threw) {
         row.threw = String((threw && threw.message) || threw);
         rec.calls.push(row);
@@ -159,6 +164,7 @@ async function build(ROOT) {
   const config = req('common/config');
   const realValue = config.value;
   config.value = rec.fn('settings', 'value', realValue);
+  rec.opaque.push(config);
 
   // The slots the directory fills at its require, wrapped before it is
   // required so that what it installs is recorded.

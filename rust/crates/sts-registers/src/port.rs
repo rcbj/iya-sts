@@ -279,3 +279,13 @@ pub struct PolicyRefusal {
     pub code: ErrorCode,
     pub message: String,
 }
+
+/// The claim tables of `common/admin_stats.js` the groups claim reads.
+pub trait ClaimTables: Send + Sync {
+    /// `RESERVED_JWT_CLAIMS`: the names this service sets itself.
+    fn reserved_jwt_claims(&self) -> Vec<String>;
+    /// `CLAIM_SET_IDS`.
+    fn claim_set_ids(&self) -> Vec<String>;
+    /// `DEFAULT_SAML11_NAMESPACE`.
+    fn default_saml11_namespace(&self) -> String;
+}

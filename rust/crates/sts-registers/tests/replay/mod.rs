@@ -34,6 +34,10 @@ const PURE: &[&str] = &[
     "mode.opensConsoleToAnyone",
     "mode.verifiesCredentials",
     "stats.identityKeyOf",
+    "applications.settingFor",
+    "stats.RESERVED_JWT_CLAIMS",
+    "stats.CLAIM_SET_IDS",
+    "stats.DEFAULT_SAML11_NAMESPACE",
 ];
 
 /// One step's recorded calls.
@@ -490,5 +494,20 @@ impl ScopePolicy for Replay {
     }
     fn delegated_permission_scopes(&self, identifier: &str) -> Vec<String> {
         strings_of(&self.answer("scopePolicy", "delegatedPermissionScopes", json!([identifier])))
+    }
+}
+
+impl ClaimTables for Replay {
+    fn reserved_jwt_claims(&self) -> Vec<String> {
+        strings_of(&self.answer("stats", "RESERVED_JWT_CLAIMS", json!([])))
+    }
+    fn claim_set_ids(&self) -> Vec<String> {
+        strings_of(&self.answer("stats", "CLAIM_SET_IDS", json!([])))
+    }
+    fn default_saml11_namespace(&self) -> String {
+        self.answer("stats", "DEFAULT_SAML11_NAMESPACE", json!([]))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     }
 }

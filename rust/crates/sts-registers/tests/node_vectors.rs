@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use replay::{code_text, Replay};
 use serde_json::{json, Value};
+use sts_registers::group_claims::GroupClaims;
 use sts_registers::outcome::Outcome;
 use sts_registers::people::{AccountChange, AccountState, People, PeopleDeps};
 use sts_registers::rbac::Rbac;
@@ -191,6 +192,26 @@ fn every_register_answers_as_node_does() {
             "groups" => Some(got(
                 people_over(&replay).groups(&step["input"]["body"], "vectors"),
             )),
+            "groupClaims" => {
+                let gc = GroupClaims::new(
+                    Some(replay.clone()),
+                    replay.clone(),
+                    replay.clone(),
+                    replay.clone(),
+                );
+                let input = &step["input"];
+                let text = |k: &str| input[k].as_str().unwrap_or("").to_string();
+                Some(match step["op"].as_str().unwrap_or("") {
+                    "groupsOf" => got(gc.groups_of(&text("username"), &text("app"))),
+                    "jwtClaimsFor" => {
+                        plain(gc.jwt_claims_for(&text("set"), &input["context"]))
+                    }
+                    "samlAttributesFor" => plain(json!(
+                        gc.saml_attributes_for(&text("set"), &input["context"])
+                    )),
+                    _ => plain(gc.state()),
+                })
+            }
             "rbac" => {
                 let rbac = Rbac::new(
                     Some(replay.clone()),
