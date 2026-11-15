@@ -53,6 +53,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const facts = require("./service_facts.js");
 const portalSignin = require("./portal_signin.js");
 
 var appconfig;
@@ -511,13 +512,18 @@ async function unitsOverTheWire(f) {
   const realmOwn = await send(base + "/realm/" + plainRealm + "/oauth2/fapi");
   const realm9700 = await send(base + "/realm/" + plainRealm +
                                "/oauth2/rfc9700");
+  // PRODUCT MODE IMPLIES RFC 9700 MODE (run #300): a realm with no profile
+  // in a product process is in RFC 9700 mode because of the mode, not of a
+  // profile, so what this asserts is the realm's mode, asked.
+  const plainProduct = await facts.isProduct(plainApi);
   check("i/A. a named server carries a profile its realm does not, and the " +
-        "realm itself has none and is not in RFC 9700 mode", function () {
+        "realm itself has none and is in RFC 9700 mode only as product " +
+        "implies it", function () {
     assert.strictEqual(own.body.enabled, true, own.raw.slice(0, 300));
     assert.strictEqual(own.body.profile, "1-baseline", own.raw.slice(0, 300));
     assert.strictEqual(realmOwn.body.enabled, false,
                        realmOwn.raw.slice(0, 300));
-    assert.strictEqual(realm9700.body.enabled, false,
+    assert.strictEqual(realm9700.body.enabled, plainProduct,
                        realm9700.raw.slice(0, 300));
   });
   r = await postJson(plainApi + "/authorization-servers/set",
