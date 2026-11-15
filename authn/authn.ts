@@ -1817,7 +1817,8 @@ class Authn {
   // protocol module reads to answer "is this person already signed in?", and
   // the only place in the service that writes it.
   /**
-   * Parses a request's Cookie header.
+   * Parses a request's Cookie header. A cookie whose value is not
+   * URI-encoded is skipped, never thrown.
    *
    * @param req - the request
    * @returns a map of cookie name to decoded value
@@ -1826,13 +1827,31 @@ class Authn {
     const { log } = this.deps;
     log.debug("Entering Authn.cookiesOf().");
     const out: Record<string, any> = {};
+    let skipped = 0;
+    // ONE COOKIE THAT DOES NOT DECODE IS THAT COOKIE'S PROBLEM, NOT THE
+    // BROWSER'S (2026-11-14, found by #444's D12). `decodeURIComponent()`
+    // throws `URIError` on a bad percent escape, and a site on a shared
+    // parent domain can set any cookie it likes (`x=%E0%A4%A`), so one bad
+    // value made every session door answer 500 and the account set read as
+    // unreadable — a 503 picker and STS-AUTHN-0344 on every request — for
+    // a browser whose own cookies were all well formed. A value this service
+    // wrote is always encoded, so one that does not decode is not one of
+    // ours: it is left out and the others are read.
     String(req.headers.cookie || '').split(';').forEach(function (part) {
       const i = part.indexOf('=');
-      if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(
-          part.slice(i + 1).trim());
+      if (i <= 0) {
+        return;
+      }
+      try {
+        out[part.slice(0, i).trim()] = decodeURIComponent(
+            part.slice(i + 1).trim());
+      } catch (e) {
+        log.debug("Caught in Authn.cookiesOf(): " + ((e && e.message) || e));
+        skipped++;
+      }
     });
     log.debug("Leaving Authn.cookiesOf(). " + Object.keys(out).length +
-              " cookie(s).");
+              " cookie(s)" + (skipped ? ", " + skipped + " skipped." : "."));
     return out;
   }
 
