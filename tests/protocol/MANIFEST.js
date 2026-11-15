@@ -2543,6 +2543,10 @@ const JOBS = [
   // a GNAP right by its code, and RFC 9396 reading the same catalogue at
   // /oauth2/token (gnap_catalogue, gnap_limits_ownership).
   { file: 'sts_gnap_catalogue_codes.js', browser: false, local: true },
+  // D12 (#444): who must be asked for a GNAP grant, the step-up and
+  // approval by an absent owner, each refusal by its code
+  // (gnap_interaction). Waits a minute for gnap.ownerApprovalLifetimeS.
+  { file: 'sts_gnap_interaction_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required

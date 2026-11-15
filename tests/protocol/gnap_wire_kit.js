@@ -39,9 +39,11 @@ function gnapKit(K) {
   // in-process `['pwd']` session.
   async function gnapRealm(prefix, mode, overrides, password) {
     log.debug("Entering gnapRealm(). " + prefix);
-    const id = await K.realm(prefix, mode, Object.assign({
-      "authn.allowOptionalSecondFactor": true,
-      "gnap.continueWaitS": 0 }, overrides || {}));
+    // Only product's: in a development realm the switch sends a password
+    // sign-in on to a second-factor step.
+    const id = await K.realm(prefix, mode, Object.assign(
+      mode === "product" ? { "authn.allowOptionalSecondFactor": true } : {},
+      { "gnap.continueWaitS": 0 }, overrides || {}));
     const h = flowLib.harness({ base: K.base, realm: id,
                                 password: password, log: log });
     gnap.setRegistrar(null);
