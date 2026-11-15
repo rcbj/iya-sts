@@ -746,6 +746,26 @@ before it ran. It walks what an empty journal already made it walk; nothing
 new is paid at start. `tests/directory_window.js` section M starts the real
 directory over an empty store double in both modes and compares the rows.
 
+### And the third, in the REALM shadow (GitHub Actions run #300, 2026-11-15)
+
+The realm registry's shadow is the same idea one table over, and it was
+advanced to the STORED row after every change-log apply, whatever the live
+realm had taken. A stored override the live realm does not hold then reads as
+one this process CLEARED, and the next flush that touched the realm deleted it
+from the store for everybody. Two ways in: a value `restorableOverrides()`
+leaves out (STS-CORE-0008, documented as "left in the store"), and a
+replicated `realms.update()` the registry refused — silently, until this —
+which run #300 hit when cfa8ca851 (#444's D12) re-judged a pair of signing
+settings the writer had taken one at a time (`sts_signature_policy` H, every
+mode with request workers; the reset of `oauth2.accessTokenSigningAlg`
+refused STS-CORE-0007 on the writer too). Now a replicated or restored
+realm's overrides are checked for what each value IS
+(`config.checkStoredOverride()`, no rule between settings); a refused update
+is STS-STORE-0174 and that realm keeps its old shadow; and every other
+shadow is the stored row less what the live realm left out
+(`heldShadowRowOf()`), bar what this process cleared and has not written.
+`tests/realm_replicated_overrides.js`.
+
 ## When the flush happens
 
 Both modes schedule; they differ only in the delay.

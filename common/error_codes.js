@@ -2130,6 +2130,12 @@ const CODES = [
       'slower plan; the next start tries again, or the owner runs the ' +
       'upgrade script.',
     spec: 'none — the store opens without it' },
+  { code: 'STS-STORE-0174',
+    summary: 'A realm another process changed could not be applied in ' +
+      'this one: the realm registry refused the replicated update. This ' +
+      'process keeps the realm as it was until a later change applies, ' +
+      'and does not write its copy back over the store.',
+    spec: 'none — logged; the request that wrote it was already answered' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
