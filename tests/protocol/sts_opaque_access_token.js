@@ -25,10 +25,9 @@
 //      minted while it was on still resolves;
 //   6. a full store (`oauth2.maxOpaqueAccessTokens` at its minimum, 16)
 //      refuses the next mint rather than evicting a live token, and the
-//      earlier handles still introspect active. PINNED NODE DEFECT: that
-//      refusal is a 500 the token endpoint records as STS-OAUTH-0228 (the
-//      token endpoint failed), not the STS-OAUTH-0979 refusal the module
-//      names.
+//      earlier handles still introspect active. The refusal is 503
+//      temporarily_unavailable, recorded STS-OAUTH-0979 (until
+//      fix/node-defects-1114 it was a 500 recorded STS-OAUTH-0228).
 //
 // NOT carried, and why: the store's row shape (the handle's SHA-256 as the
 // key, no handle in the row, the jti index), an expired row deleted on read
@@ -216,18 +215,13 @@ async function test() {
     assert.ok(!(r.json && r.json.access_token), K.shown(r));
     assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.text), r.text);
   });
-  // NODE DEFECT, PINNED: the token endpoint does not catch the store's
-  // refusal. It answers 500 and records STS-OAUTH-0228 ("the token
-  // endpoint failed"), with the store's error in the log line, and no row
-  // carries STS-OAUTH-0979. The design (opaque_access_token.ts) says the
-  // mint is refused
-  // STS-OAUTH-0979. This check holds today's answer so a change is seen.
-  check("6c. PINNED: it is answered 500 and recorded STS-OAUTH-0228, not " +
-        "STS-OAUTH-0979",
-        function () {
-    assert.strictEqual(r.status, 500, K.shown(r));
-    assert.strictEqual(rose0979, 0, "STS-OAUTH-0979 rows: " + rose0979);
-    assert.strictEqual(rose0228, 1, "STS-OAUTH-0228 rows: " + rose0228);
+  check("6c. it is answered 503 temporarily_unavailable and recorded " +
+        "STS-OAUTH-0979, not STS-OAUTH-0228", function () {
+    assert.strictEqual(r.status, 503, K.shown(r));
+    assert.strictEqual(r.json && r.json.error, "temporarily_unavailable",
+                       K.shown(r));
+    assert.ok(rose0979 >= 1, "STS-OAUTH-0979 rows: " + rose0979);
+    assert.strictEqual(rose0228, 0, "STS-OAUTH-0228 rows: " + rose0228);
   });
   const first = await introspect(F, filled[0]);
   check("6d. rather than evicting a live token: the first still " +

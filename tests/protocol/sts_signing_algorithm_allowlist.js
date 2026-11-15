@@ -135,6 +135,20 @@ function setting(realm, key, value) {
     value: String(value) }, "set " + key + " on " + realm);
 }
 
+// HOW MANY ROWS CARRY A CODE, in the default realm's audit log and in the
+// list realm's together: the root API's refusal may be recorded in either.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  let n = 0;
+  for (const where of [base, base + "/realm/" + LIST]) {
+    const r = await send(where + "/admin-api/audit?per=500&code=" +
+                         encodeURIComponent(code));
+    n += Number((r.body && r.body.matched) || 0);
+  }
+  log.debug("Leaving codeCount(). " + n);
+  return n;
+}
+
 function headerOf(token) {
   log.debug("Entering headerOf().");
   const h = JSON.parse(Buffer.from(String(token).split(".")[0], "base64url")
@@ -388,11 +402,20 @@ async function test() {
     assert.ok(/keys\.signingAlgorithms/.test(atWrite.raw),
               atWrite.raw.slice(0, 300));
   });
+  const k192Before = await codeCount("STS-KEYS-0192");
   const atRoot = await postJson(base + "/admin-api/realms/set", {
     id: LIST, key: "oauth2.accessTokenSigningAlg", value: "ES256" });
-  check("C8a. PINNED (a Node defect): the root API's realms/set takes the " +
-        "same write, skipping the rule across settings", function () {
-    assert.strictEqual(atRoot.status, 200, atRoot.raw.slice(0, 300));
+  let k192 = await codeCount("STS-KEYS-0192");
+  for (let i = 0; i < 20 && k192 <= k192Before; i += 1) {
+    await sleep(150);
+    k192 = await codeCount("STS-KEYS-0192");
+  }
+  check("C8a. the root API's realms/set refuses the same write, 400, by " +
+        "the rule across settings, recorded STS-KEYS-0192", function () {
+    assert.strictEqual(atRoot.status, 400, atRoot.raw.slice(0, 300));
+    assert.ok(/keys\.signingAlgorithms/.test(atRoot.raw),
+              atRoot.raw.slice(0, 300));
+    assert.ok(k192 > k192Before, k192Before + " -> " + k192);
   });
   await ok(base + "/realm/" + LIST + "/admin-api/config/reset",
            { key: "oauth2.accessTokenSigningAlg" }, "reset the setting");

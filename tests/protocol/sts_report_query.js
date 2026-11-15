@@ -39,13 +39,10 @@
 //      report:use (mine) and report:admin (realm, name order, one owner),
 //      another owner refused (0038), oneself allowed; the schedules',
 //      definitions' and jobs' pages and caps, and a cursor walk;
-//   4b. THE SCHEDULE'S TICKS — PINNED. The in-process file's scheduleNow()
-//      queues a due definition, notes a missing parameter (0035) and a
-//      disabled owner (0048, #1042). On a running service the realm's
-//      report.schedule job runs every minute and answers enqueued 0, and
-//      nothing is queued, slotted or noted. The job waits for two ticks off
-//      /admin-api/scheduler and asserts what it sees (a Node defect; see the
-//      section's comment).
+//   4b. THE SCHEDULE'S TICKS: the realm's report.schedule job, waited for
+//      twice off /admin-api/scheduler, queues a due definition, notes a
+//      missing parameter (0035) and a disabled owner (0048, #1042) — the
+//      in-process file's scheduleNow() expectations, on a running service.
 //
 // NOT carried, and why: the artifact and sealed-artifact store, the time
 // budget (0034, 0005 by the clock) and the row projections given invented
@@ -720,21 +717,13 @@ async function test() {
            "disabled the owner");
   const madeAt = Date.now();
 
-  log.info("=== 4b. the schedule's ticks (PINS a Node defect) ===");
-  // THE IN-PROCESS EXPECTATION, which is the behaviour owed: at a due
-  // minute `who` is queued as a job "schedule" and its lastSlotAt is that
-  // minute; `theirs` keeps its slot and is noted "A saved parameter was not
-  // given." (STS-REPORT-0035); `locked`, whose owner is disabled, has its
-  // slot consumed and is noted "The owner's account is disabled."
-  // (STS-REPORT-0048). WHAT A RUNNING NODE SERVICE DOES (a memory store,
-  // one process, 2026-11-15): the realm's report.schedule job runs every
-  // minute and answers {"enqueued":0}, and none of the three is touched —
-  // no job, no slot, no note. (By reading: the scheduler hands a job's ctx
-  // `nowMs` as a function, and reportScheduleWork() reads Number(ctx.nowMs),
-  // NaN, so cronPrev() finds no slot.) The job PINS that: two ticks of this
-  // realm's report.schedule are waited for, off /admin-api/scheduler, and
-  // the three views read after them. When the defect is fixed these checks
-  // fail, and the in-process file's expectations above take their place.
+  log.info("=== 4b. the schedule's ticks ===");
+  // At a due minute `who` is queued as a job "schedule" and its lastSlotAt
+  // is that minute; `theirs` keeps its slot and is noted "A saved parameter
+  // was not given." (STS-REPORT-0035); `locked`, whose owner is disabled,
+  // has its slot consumed and is noted "The owner's account is disabled."
+  // (STS-REPORT-0048). Until fix/node-defects-1114 a running service
+  // answered {"enqueued":0} here (ctx.nowMs read as a number).
   let ticks = [];
   const until = Date.now() + 200000;
   while (Date.now() < until) {
@@ -762,18 +751,44 @@ async function test() {
     .filter(function (one) {
       return [WHO, THEIRS, LOCKED].indexOf(one.definitionId) >= 0;
     });
-  check("4b. PINNED: each tick answered enqueued 0, and no due definition " +
-        "was queued, slotted or noted (the in-process file queues `who`, " +
-        "notes `theirs` 0035 and `locked` 0048)", function () {
+  check("4b. each tick answered enqueued 1: `who`, due every minute with " +
+        "its value, is queued; `theirs` and `locked` are not", function () {
     ticks.forEach(function (run) {
-      assert.strictEqual(run.result, "{\"enqueued\":0}", run.result);
+      assert.strictEqual(run.result, "{\"enqueued\":1}", run.result);
     });
-    assert.strictEqual(scheduledJobs.length, 0, brief(jobsAfter));
-    [WHO, THEIRS, LOCKED].forEach(function (id) {
-      assert.strictEqual(after[id].lastSlotAt, null, JSON.stringify(after[id]));
-      assert.strictEqual((after[id].failures || []).length, 0,
-                         JSON.stringify(after[id]));
+  });
+  check("4b. `who`'s jobs are queued because of the schedule, and its " +
+        "slot is the minute it ran", function () {
+    const whose = scheduledJobs.filter(function (one) {
+      return one.definitionId === WHO;
     });
+    assert.ok(whose.length >= 1, brief(jobsAfter));
+    whose.forEach(function (one) {
+      assert.strictEqual(one.queuedBecause, "schedule", JSON.stringify(one));
+    });
+    assert.ok(after[WHO].lastSlotAt, JSON.stringify(after[WHO]));
+  });
+  check("4b. `theirs`, with no value for its parameter, keeps its slot and " +
+        "is noted (STS-REPORT-0035)", function () {
+    assert.strictEqual(after[THEIRS].lastSlotAt, null,
+                       JSON.stringify(after[THEIRS]));
+    const notes = after[THEIRS].failures || [];
+    assert.ok(notes.length >= 1, JSON.stringify(after[THEIRS]));
+    assert.strictEqual(notes[notes.length - 1].description,
+                       "A saved parameter was not given.",
+                       JSON.stringify(notes));
+  });
+  check("4b. `locked`, whose owner is disabled, has its slot consumed and " +
+        "is noted (STS-REPORT-0048)", function () {
+    assert.ok(after[LOCKED].lastSlotAt, JSON.stringify(after[LOCKED]));
+    const notes = after[LOCKED].failures || [];
+    assert.ok(notes.length >= 1, JSON.stringify(after[LOCKED]));
+    assert.strictEqual(notes[notes.length - 1].description,
+                       "The owner's account is disabled.",
+                       JSON.stringify(notes));
+    assert.ok(scheduledJobs.every(function (one) {
+      return one.definitionId === WHO;
+    }), brief(jobsAfter));
   });
   await ok(RB + "/admin-api/users/enable", { user: OWNER },
            "enabled the owner again");

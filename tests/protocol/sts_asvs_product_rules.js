@@ -32,9 +32,10 @@
 //      it back.
 //   E. SCIM AND SHARED SIGNALS (#1473): with HTTP Basic and a person's own
 //      password, a person with no console role is refused at SCIM and at
-//      SSF, and `security.allowUnscopedPeople` lifts it. PINNED NODE DEFECT:
-//      in a trust realm Admin Read and Admin Write granted through the
-//      realm's `/admin-api/rbac/grant` are not seen there either.
+//      SSF, and `security.allowUnscopedPeople` lifts it; in a trust realm
+//      Admin Read and Admin Write granted through the realm's own
+//      `/admin-api/rbac/grant` are seen there: Admin Read reads SCIM,
+//      Admin Write writes it and reaches SSF.
 //   F. A SECOND FACTOR FOR EVERYBODY (#1490): with the optional-second-factor
 //      opt-out cleared, the person's own password is refused at SCIM, and an
 //      app password for that door works with no second factor held.
@@ -326,26 +327,20 @@ async function roles() {
   check("E2. at SSF a password with no role is refused", function () {
     assert.strictEqual(sp.status, 403, K.shown(sp));
   });
-  // NODE DEFECT, PINNED: in a TRUST REALM the console roles granted through
-  // the realm's own `/admin-api/rbac/grant` (its Admin Read / Admin Write
-  // groups) are not seen by the role check SCIM and SSF make of a Basic
-  // credential: the access policy says the person holds only EVERYBODY and
-  // ALL_AUTHENTICATED_USERS (STS-SCIM-0060, STS-XACML-0044), and SSF says
-  // they do not hold Admin Write. In process, in the default realm, Admin
-  // Read reads SCIM and Admin Write writes both. The likely root is the one
-  // phase 3-4 found for #246 (the default realm's roster is read). These
-  // checks hold today's answer so a change is seen.
-  check("E3. PINNED: in a trust realm, Admin Read granted on the realm is " +
-        "still refused at SCIM, read and write", function () {
-    assert.strictEqual(r.status, 403, K.shown(r));
+  // A TRUST REALM's console roles, granted through its own
+  // `/admin-api/rbac/grant`, are what SCIM and SSF ask of a Basic
+  // credential (until fix/node-defects-1114 the default realm's roster was
+  // read, and both were refused STS-SCIM-0060 / STS-XACML-0044).
+  check("E3. in a trust realm, Admin Read granted on the realm reads SCIM " +
+        "(200) and does not write it", function () {
+    assert.strictEqual(r.status, 200, K.shown(r));
     assert.strictEqual(rw.status, 403, K.shown(rw));
   });
-  check("E4. PINNED: and Admin Write is refused at SCIM and at SSF, like " +
-        "Admin Read", function () {
-    assert.strictEqual(ww.status, 403, K.shown(ww));
-    assert.ok(sr.status === 403 || sr.status === 401, K.shown(sr));
-    assert.ok(sw.status === 403 || sw.status === 401, K.shown(sw));
-    assert.ok(/does not hold Admin Write/.test(sw.text), sw.text);
+  check("E4. and Admin Write writes SCIM and reaches SSF", function () {
+    assert.strictEqual(ww.status, 201, K.shown(ww));
+    assert.ok(sw.status !== 401 && sw.status !== 403, K.shown(sw));
+    assert.ok(!/does not hold Admin Write/.test(sw.text), sw.text);
+    log.info("E4. Admin Read at SSF answered " + sr.status);
   });
   await K.set(PROD, "security.allowUnscopedPeople", true);
   const lifted = await scimRead(plain, PASS);
@@ -354,8 +349,8 @@ async function roles() {
   });
 
   log.info("=== F. a second factor for everybody ===");
-  // The role check stays lifted (E's defect would otherwise refuse both
-  // credentials alike); what is asked here is the second factor alone.
+  // The role check stays lifted, so what is asked here is the second
+  // factor alone.
   await K.unset(PROD, "authn.allowOptionalSecondFactor");
   const own = await scimRead(reader, PASS);
   const made = await K.send(K.rb(PROD) +

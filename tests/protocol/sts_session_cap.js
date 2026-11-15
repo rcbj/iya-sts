@@ -18,8 +18,8 @@
 //
 //   A. at the realm cap a NEW person's sign-in is refused and the sessions
 //      already held all still sign their browsers in (nobody was ended to
-//      make room). PINNED: a new browser is given no arrival session, so the
-//      screen answers 403 asking for a reload, with no code on any row;
+//      make room). The screen answers 403 saying the realm is full, and the
+//      refusal is recorded STS-AUTHN-0337;
 //   B. a person signing in AGAIN in their own browser at the cap is not an
 //      insert: it is answered;
 //   C. lowering the cap below what is held ends nobody; a new person is
@@ -477,22 +477,24 @@ async function test() {
   const b = await signIn(PEOPLE[1]);
   must(b.ok, "the second sign-in, into the last place: " + b.shown);
   const atCap = await held();
+  const fullBefore = await codeCount(REALM, "STS-AUTHN-0337");
   const c = await signIn(PEOPLE[2]);
+  const fullAfter = await newRowWith(REALM, "STS-AUTHN-0337", fullBefore);
   await check("A. at the realm cap a new person's sign-in is refused — " +
               "the browser does not come back to the client with a code",
               async function () {
     expect(!c.ok, c.shown);
   });
-  // PINNED (D12, #444): a NEW browser at the cap is given no arrival
-  // session, so the screen's act answers 403 "This browser holds no session
-  // for this sign-in. Load the sign-in page again." — which no reload can
-  // change while the realm is full — and no audit row names a code for it.
-  // The chosen-session refusal STS-AUTHN-0337 is asserted at L.
-  await check("A. (pinned) the new browser was given no arrival session: " +
-              "the screen answers 403 and asks for a reload",
+  // A NEW browser at the cap is told the realm is full, 403, and the
+  // refusal is recorded STS-AUTHN-0337 (until fix/node-defects-1114 it was
+  // given no arrival session and asked to reload, with no code recorded).
+  await check("A. the screen answers 403 saying the realm is full, and " +
+              "records STS-AUTHN-0337 with no code in the answer",
               async function () {
-    expect(/^403 /.test(c.shown) && /holds no session/.test(c.shown),
-           c.shown);
+    expect(/^403 /.test(c.shown) && /full/i.test(c.shown), c.shown);
+    expect(!/holds no session/.test(c.shown), c.shown);
+    expect(!/STS-[A-Z]+-\d{4}/.test(c.shown), c.shown);
+    expect(fullAfter, "no new STS-AUTHN-0337 row after " + fullBefore);
   });
   await check("A. the store stays at the cap, and nobody was ended to make " +
               "room: both sessions still sign their browsers in",

@@ -20,12 +20,11 @@
 // post-quantum ID Token algorithm registrable by default; and, at a PRODUCT
 // realm's token endpoint (development checks no client credential), an
 // ML-DSA-44 private_key_jwt assertion accepted with keys.postQuantumSigning
-// on and refused with it off. Two things are PINNED rather than asserted as
-// the in-process file states them, and both are Node findings: the refusal
-// is recorded STS-OAUTH-0007 (the client-authentication code) and never
-// STS-KEYS-0157, and an ES256 assertion is still ACCEPTED under
-// keys.acceptedSigningAlgorithms=RS256 although discovery then publishes
-// RS256 alone for token_endpoint_auth (STS-KEYS-0179 is never recorded).
+// on and refused with it off, recorded STS-KEYS-0157; and an ES256
+// assertion refused under keys.acceptedSigningAlgorithms=RS256, as
+// discovery then publishes, recorded STS-KEYS-0179. (Until
+// fix/node-defects-1114 the first was recorded STS-OAUTH-0007 and the
+// second was accepted.)
 // NOT carried, and why: the COSE, XML, X.509 and Data Integrity doors and
 // the HTTP message-signature door are owed by the families that sign and
 // verify those (FAPI HTTP signatures in this phase; phases 6, 7 and 9);
@@ -369,24 +368,24 @@ async function d12Sections() {
     key: "keys.postQuantumSigning", value: "false" });
   assert.strictEqual(off.status, 200, off.text.slice(0, 300));
   const pqOff = await present("pkj-pq", pqAssertion());
-  let authAfter = await codeCount(pBase, "STS-OAUTH-0007");
-  for (let i = 0; i < 20 && authAfter <= authBefore; i += 1) {
+  let keysAfter = await codeCount(pBase, "STS-KEYS-0157");
+  for (let i = 0; i < 20 && keysAfter <= keysBefore; i += 1) {
     await new Promise(function (resolve) {
       setTimeout(resolve, 150);
     });
-    authAfter = await codeCount(pBase, "STS-OAUTH-0007");
+    keysAfter = await codeCount(pBase, "STS-KEYS-0157");
   }
+  const authAfter = await codeCount(pBase, "STS-OAUTH-0007");
   check("I3. with keys.postQuantumSigning off the same assertion is refused " +
         "invalid_client, and no code is sent", function () {
     assert.strictEqual(pqOff.status, 401, pqOff.text.slice(0, 300));
     assert.strictEqual(pqOff.json.error, "invalid_client");
     assert.ok(!/STS-[A-Z]+-\d{4}/.test(pqOff.text));
   });
-  const keysAfter = await codeCount(pBase, "STS-KEYS-0157");
-  check("I4. PINNED: it is recorded STS-OAUTH-0007, the client-" +
-        "authentication refusal, and never STS-KEYS-0157", function () {
-    assert.ok(authAfter > authBefore, authBefore + " -> " + authAfter);
-    assert.strictEqual(keysAfter, keysBefore);
+  check("I4. it is recorded STS-KEYS-0157, the post-quantum switch's own " +
+        "code, not STS-OAUTH-0007", function () {
+    assert.ok(keysAfter > keysBefore, keysBefore + " -> " + keysAfter);
+    assert.strictEqual(authAfter, authBefore);
   });
   const ecOk = await present("pkj-ec", ecAssertion());
   check("I5. an ES256 assertion is accepted", function () {
@@ -401,12 +400,21 @@ async function d12Sections() {
     assert.deepStrictEqual(
       pdoc.token_endpoint_auth_signing_alg_values_supported, ["RS256"]);
   });
+  const k179Before = await codeCount(pBase, "STS-KEYS-0179");
   const unlisted = await present("pkj-ec", ecAssertion());
-  const k179 = await codeCount(pBase, "STS-KEYS-0179");
-  check("I7. PINNED (a Node defect): an ES256 assertion is still accepted " +
-        "there, and STS-KEYS-0179 is not recorded", function () {
-    assert.strictEqual(unlisted.status, 200, unlisted.text.slice(0, 300));
-    assert.strictEqual(k179, 0);
+  let k179 = await codeCount(pBase, "STS-KEYS-0179");
+  for (let i = 0; i < 20 && k179 <= k179Before; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    k179 = await codeCount(pBase, "STS-KEYS-0179");
+  }
+  check("I7. an ES256 assertion is refused there, 401 invalid_client, " +
+        "recorded STS-KEYS-0179 and no code sent", function () {
+    assert.strictEqual(unlisted.status, 401, unlisted.text.slice(0, 300));
+    assert.strictEqual(unlisted.json.error, "invalid_client");
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(unlisted.text));
+    assert.ok(k179 > k179Before, k179Before + " -> " + k179);
   });
   log.debug("Leaving d12Sections().");
 }

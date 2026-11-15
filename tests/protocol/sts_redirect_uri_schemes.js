@@ -336,24 +336,14 @@ async function registration(realm) {
       assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.raw), r.raw.slice(0, 300));
     });
   }
-  // NODE DEFECT, PINNED: the allowlist refuses the empty string, but in a
-  // DEVELOPMENT realm the registration endpoint takes `redirect_uris: [""]`,
-  // answering 201 and echoing [""] back; a product realm refuses it through
-  // RFC 9700 mode's absolute-URI check. The wire is asserted; the defect is
-  // listed in the D12 notes.
+  // An empty redirect URI is refused in both modes (a development realm
+  // registered `[""]` and echoed it until fix/node-defects-1114).
   const empty = await register(realm, { redirect_uris: [""] });
-  const product = realm === PROD;
-  check("A. " + realm + ": " + (product
-    ? "an empty redirect URI is refused invalid_redirect_uri"
-    : "PINNED DEFECT — an empty redirect URI is registered (201, echoed " +
-      "back), where the allowlist refuses it"), function () {
-    if (product) {
-      assert.strictEqual(empty.status, 400, empty.raw.slice(0, 300));
-      assert.strictEqual(empty.body.error, "invalid_redirect_uri");
-    } else {
-      assert.strictEqual(empty.status, 201, empty.raw.slice(0, 300));
-      assert.deepStrictEqual(empty.body.redirect_uris, [""]);
-    }
+  check("A. " + realm + ": an empty redirect URI is refused 400 " +
+        "invalid_redirect_uri", function () {
+    assert.strictEqual(empty.status, 400, empty.raw.slice(0, 300));
+    assert.strictEqual(empty.body.error, "invalid_redirect_uri",
+                       empty.raw.slice(0, 300));
   });
   const mixed = await register(realm, { redirect_uris:
     ["https://ok.example/cb", "javascript:alert(1)"] });

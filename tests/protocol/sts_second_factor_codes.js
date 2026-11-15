@@ -22,8 +22,8 @@
 //      RIGHT password of a person who holds a second factor or of whom one
 //      is required is refused with exactly the answer a WRONG password gets,
 //      and the two are told apart only in the record: STS-AUTHN-0213 for
-//      the right one, STS-AUTHN-0054 for the wrong one, at LDAP and SCIM;
-//      WS-Trust, SSF and EST record only their own refusal for both
+//      the right one at every door, and for the wrong one STS-AUTHN-0054 at
+//      LDAP and SCIM, the door's own refusal at WS-Trust, SSF and EST
 //      (STS-WSTRUST-0003, STS-SSF-0009, STS-ENROLL-0014). Four people, one for
 //      each way: stsMfaRequired on the entry, an authenticator app enrolled
 //      as `/portal/mfa` enrols it (totp_password_only_doors.js, #417), a
@@ -431,18 +431,18 @@ async function factorsOf(realm, who) {
 // ---------------------------------------------------------------------------
 // THE ASSERTION ABOUT ONE DOOR AND ONE PERSON, BY CODE.
 // ---------------------------------------------------------------------------
-// WHAT EACH DOOR RECORDS. LDAP and SCIM record the verifier's own code —
-// STS-AUTHN-0213 for the right password, STS-AUTHN-0054 for a wrong one.
-// WS-Trust, SSF and EST record only their own door's refusal for both
-// (STS-WSTRUST-0003, STS-SSF-0009, STS-ENROLL-0014): the verifier's reason
-// does not reach the audit log there. That is an observed difference from
-// the in-process claim, which read the verifier's answer, and it is pinned.
+// WHAT EACH DOOR RECORDS. Every door records the verifier's own code for
+// the right password, STS-AUTHN-0213. For a wrong one LDAP and SCIM record
+// STS-AUTHN-0054, and WS-Trust, SSF and EST their own door's refusal
+// (STS-WSTRUST-0003, STS-SSF-0009, STS-ENROLL-0014). Until
+// fix/node-defects-1114 those three recorded their own code for the right
+// password too.
 const RECORDED = {
   ldap: ["STS-AUTHN-0213", "STS-AUTHN-0054"],
-  wstrust: ["STS-WSTRUST-0003", "STS-WSTRUST-0003"],
+  wstrust: ["STS-AUTHN-0213", "STS-WSTRUST-0003"],
   scim: ["STS-AUTHN-0213", "STS-AUTHN-0054"],
-  ssf: ["STS-SSF-0009", "STS-SSF-0009"],
-  est: ["STS-ENROLL-0014", "STS-ENROLL-0014"]
+  ssf: ["STS-AUTHN-0213", "STS-SSF-0009"],
+  est: ["STS-AUTHN-0213", "STS-ENROLL-0014"]
 };
 
 async function refusedByCode(realm, door, who, why) {

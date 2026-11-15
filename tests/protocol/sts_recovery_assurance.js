@@ -44,7 +44,8 @@
 //      offers no recovery code and one spent anyway is refused
 //      (STS-AUTHN-0380); under `not-weaker` a code spent there leads to the
 //      recovery set-up step (a passkey's registration), not to the
-//      application, with nothing written on the entry;
+//      application, and the recovery is written on the entry as pending
+//      (#31);
 //   F. UNDER `operator-only` an administrator's reset link is still spent.
 //
 // NOT carried, and why: B (the built-in rules document and
@@ -369,19 +370,18 @@ async function underAnyAndNotWeaker(realm) {
       JSON.stringify(registered.armed && registered.armed.json)
         .slice(0, 300));
   });
-  // OBSERVED: the ceremony's act answers `redirect`, and the authorization
-  // request it names sends the browser back to the sign-in screen — no
-  // session was started — with no STS-AUTHN-0381 row recorded. The
-  // in-process claim read the code off startSession()'s detail; over the
-  // wire the code is not on the audit log (pinned, see notes).
+  // The ceremony's act answers `redirect`, and the authorization request
+  // it names sends the browser back to the sign-in screen — no session was
+  // started — and the refusal is one STS-AUTHN-0381 row (until
+  // fix/node-defects-1114 none was recorded).
   check("D. a key REGISTERED in the act does not complete the recovery: " +
         "its redirect lands back on the sign-in screen, the recovery is " +
-        "still pending, and no STS-AUTHN-0381 row is recorded (#901)",
+        "still pending, and one STS-AUTHN-0381 row is recorded (#901)",
         function () {
     assert.strictEqual(landed, "screen", landed + " " +
                        JSON.stringify(registered.json).slice(0, 300));
     assert.strictEqual(stillPending.door, "admin-reset", stillPending.raw);
-    assert.strictEqual(got81, 0, "STS-AUTHN-0381 rows gained: " + got81);
+    assert.strictEqual(got81, 1, "STS-AUTHN-0381 rows gained: " + got81);
   });
   const typed = await k.typed(realm, ann.who);
   const byKey = await k.ceremony(typed.step, function (c) {
@@ -536,12 +536,17 @@ async function recoveryCodes() {
                        JSON.stringify(signed.step.view.links));
     assert.ok(!wentOn(viaCode), viaCode.next + " " +
               JSON.stringify(viaCode.json).slice(0, 300));
-    // The recovery the code began is held by the sign-in's own step, not
-    // written on the entry: nothing is pending there (observed).
     assert.strictEqual(viaCode.next, "mfa", viaCode.next);
     assert.ok(isRecoverySetup(next),
               JSON.stringify(next && next.view).slice(0, 300));
-    assert.strictEqual(pending.raw, "");
+  });
+  // The recovery the code began is written on the entry, as an
+  // administrator's is (#31; until fix/node-defects-1114 nothing was).
+  check("E. and the recovery that code began is pending on the entry",
+        function () {
+    assert.ok(pending.raw !== "", "nothing pending: " +
+              JSON.stringify(pending));
+    log.info("E. pending: " + pending.raw);
   });
   log.debug("Leaving recoveryCodes().");
 }

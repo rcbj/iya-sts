@@ -40,8 +40,8 @@
 //      SessionIndex names in the set, not the default;
 //   8. WS-Federation: wsignout1.0 asks which account (a link each) and ends
 //      the one followed; wsignoutcleanup1.0 asks nobody and ends every
-//      session of the set that signed in to the realm. PINNED NODE DEFECT:
-//      in a trust realm each account's link names the realm's prefix twice.
+//      session of the set that signed in to the realm. In a trust realm
+//      each account's link names the realm's prefix once.
 //
 // Already asked by `sts_multi_account.js`, and not repeated: the account
 // step's view by key with no sid, `login_hint` preselecting, the JSON
@@ -1032,17 +1032,16 @@ async function partWsfed() {
   const drawn = unescapeHtml(bobLink.replace(/^href="/, "")
     .replace(/"$/, ""));
   const prefix = "/realm/" + REALM;
-  // A NODE DEFECT, PINNED (D12): in a trust realm each account's link
-  // carries the realm's prefix TWICE, `/realm/<id>/realm/<id>/wsfed?…`, the
-  // same doubling as the authorization error page's portal link
-  // (sts_static_surfaces.js). The link is followed with the prefix once,
-  // which is the address the page means.
-  check("8b-ii. (pinned defect) each account's link names the realm's " +
-        "prefix twice", function () {
-    assert.ok(drawn.indexOf(prefix + prefix + "/wsfed?") === 0, drawn);
+  // In a trust realm each account's link carries the realm's prefix ONCE,
+  // `/realm/<id>/wsfed?…` (it carried it twice until fix/node-defects-1114,
+  // D12), and is followed as drawn.
+  check("8b-ii. each account's link names the realm's prefix once",
+        function () {
+    assert.ok(drawn.indexOf(prefix + "/wsfed?") === 0, drawn);
+    assert.ok(drawn.indexOf(prefix + prefix) < 0, drawn);
   });
-  await b.go("GET", new URL(drawn.replace(prefix + prefix, prefix),
-                            ORIGIN + "/").toString(), { navigate: true });
+  await b.go("GET", new URL(drawn, ORIGIN + "/").toString(),
+             { navigate: true });
   const afterLink = [await liveFor(alice), await liveFor(bob)];
   check("8c. following bob's link ends his session only", function () {
     assert.ok(bobKey, step.text.slice(0, 300));

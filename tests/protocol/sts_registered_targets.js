@@ -23,8 +23,8 @@
 //       product redirect too); a registered
 //       application by its audience and permission base URI (a client_id or
 //       identifier is no absolute URI, refused 400 by the request schema
-//       first — whose sentence names parameter '0', a pinned Node
-//       defect), the default resource indicator, a named authorization
+//       first, its sentence naming `resource`), the default resource
+//       indicator, a named authorization
 //       server's, /admin-api, /account-api and /report-api pass;
 //       /gnap/rs/resource (the deleted demonstration resource server) and a
 //       path of this service that is no resource server do not;
@@ -341,17 +341,20 @@ async function authorizationEndpoint(realm) {
   // A CLIENT ID OR AN IDENTIFIER IS NO RESOURCE AT THIS DOOR: RFC 8707
   // section 2 asks for an absolute URI, and the request's schema refuses
   // one that is not before the target check (the units file asked the
-  // definition, which knows the four names). NODE DEFECT, PINNED: the
-  // sentence names "the query parameter '0'", not `resource`.
+  // definition, which knows the four names). The sentence names
+  // `resource` (it named "the query parameter '0'" until
+  // fix/node-defects-1114).
   for (const one of ["rt-api-client", "rt-api"]) {
     const r = await send(RB + "/oauth2/authorize?" + new URLSearchParams({
       response_type: "code", client_id: "rt-oauth", resource: one }));
     check("T3c. " + realm + ": the bare name " + one + " is refused 400 " +
-          "invalid_request as no absolute URI (and the sentence names " +
-          "parameter '0' — pinned)", function () {
+          "invalid_request as no absolute URI, the sentence naming " +
+          "resource", function () {
       assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
       assert.strictEqual(r.body.error, "invalid_request");
-      assert.ok(/'0'/.test(r.body.error_description), r.raw.slice(0, 300));
+      assert.ok(/resource/.test(r.body.error_description),
+                r.raw.slice(0, 300));
+      assert.ok(!/'0'/.test(r.body.error_description), r.raw.slice(0, 300));
     });
   }
   const passing = [API_AUD, BASE_URI,
