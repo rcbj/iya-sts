@@ -307,8 +307,8 @@ check "Node published acme's accent colour" \
   grep -q '#0b5d1e' "$OUT/theme-acme-node.css"
 # THE CERTIFICATE AUTHORITY (#444 phase 6): the authorities Node keeps,
 # fetched from its public /pki/ surface, for Rust's to be compared with.
-for ca in service/root process/intermediate process/tls acme/intermediate \
-          acme/acme default/intermediate; do
+for ca in service/root process/intermediate process/tls \
+          default/intermediate default/acme; do
   curl -sk "https://localhost:$NODE_PORT/pki/ca/$ca.cer" \
     > "$OUT/pki-${ca//\//-}-node.cer"
 done
@@ -345,8 +345,9 @@ docker rm "$cid" >/dev/null
 chmod 0644 "$OUT/version.json"
 
 # THE `diff` REALM'S CERTIFICATE AUTHORITY ROW IS REMOVED from the store
-# Rust opens (not from the copy), so Rust has to build that branch — under
-# the Root Node stored — and seal it, and Node reads it back in step 7.
+# Rust opens (not from the copy), should Node have built one, so Rust has to
+# build that branch — under the Root Node stored — and seal it, and Node
+# reads it back in step 7.
 if [ "$ENGINE" = postgres ]; then
   docker exec "$DB" psql -q -U sts -d sts -v ON_ERROR_STOP=1 \
     -c "DELETE FROM sts.sts_keys WHERE realm = 'pki:diff'" >/dev/null
@@ -428,8 +429,8 @@ check "acme's restored accent colour is served" \
   grep -q '#0b5d1e' "$OUT/theme-acme-rust.css"
 
 say "== The certificate authority Node stored, read by Rust =="
-for ca in service/root process/intermediate process/tls acme/intermediate \
-          acme/acme default/intermediate; do
+for ca in service/root process/intermediate process/tls \
+          default/intermediate default/acme; do
   f="${ca//\//-}"
   rust_get "/pki/ca/$ca.cer" "$OUT/pki-$f-rust.cer" >/dev/null
   check "Rust's /pki/ca/$ca.cer is the certificate Node stored" \
@@ -437,20 +438,28 @@ for ca in service/root process/intermediate process/tls acme/intermediate \
 done
 openssl x509 -inform DER -in "$OUT/pki-service-root-node.cer" \
   -out "$OUT/pki-root.pem"
-rust_get /pki/ca/diff/intermediate.cer "$OUT/pki-diff-intermediate-rust.cer" \
-  >/dev/null
-openssl x509 -inform DER -in "$OUT/pki-diff-intermediate-rust.cer" \
-  -out "$OUT/pki-diff-intermediate-rust.pem" 2>/dev/null || true
-check "Rust built diff's Intermediate under the Root Node stored" \
-  openssl verify -CAfile "$OUT/pki-root.pem" \
-    "$OUT/pki-diff-intermediate-rust.pem"
-openssl x509 -inform DER -in "$OUT/pki-acme-intermediate-node.cer" \
-  -out "$OUT/pki-acme-intermediate.pem"
-rust_get /pki/crl/acme/intermediate.crl "$OUT/pki-acme-intermediate-rust.crl" \
-  >/dev/null
-check "Rust's CRL of acme's Intermediate verifies under Node's authority" \
-  openssl crl -inform DER -in "$OUT/pki-acme-intermediate-rust.crl" -noout \
-    -CAfile <(cat "$OUT/pki-acme-intermediate.pem" "$OUT/pki-root.pem")
+# A REALM CREATED AT RUNTIME has no branch until a process STARTS knowing
+# it (Node's `pki.start()` builds one per realm it is given, and builds the
+# rest on first use), so acme's and diff's are Rust's to build here: under
+# the Root Node stored, sealed, and read by Node in step 7.
+for r in acme diff; do
+  rust_get "/pki/ca/$r/intermediate.cer" "$OUT/pki-$r-intermediate-rust.cer" \
+    >/dev/null
+  openssl x509 -inform DER -in "$OUT/pki-$r-intermediate-rust.cer" \
+    -out "$OUT/pki-$r-intermediate-rust.pem" 2>/dev/null || true
+  check "Rust built $r's Intermediate under the Root Node stored" \
+    openssl verify -CAfile "$OUT/pki-root.pem" \
+      "$OUT/pki-$r-intermediate-rust.pem"
+done
+openssl x509 -inform DER -in "$OUT/pki-default-intermediate-node.cer" \
+  -out "$OUT/pki-default-intermediate.pem"
+rust_get /pki/crl/default/intermediate.crl \
+  "$OUT/pki-default-intermediate-rust.crl" >/dev/null
+cat "$OUT/pki-default-intermediate.pem" "$OUT/pki-root.pem" \
+  > "$OUT/pki-default-chain.pem"
+check "Rust's CRL of the default Intermediate verifies under Node's authority" \
+  openssl crl -inform DER -in "$OUT/pki-default-intermediate-rust.crl" \
+    -noout -CAfile "$OUT/pki-default-chain.pem"
 # The listener: a leaf of the process TLS Issuing CA Node stored.
 openssl s_client -connect "localhost:$RUST_PORT" -showcerts </dev/null \
   2>/dev/null | awk '/BEGIN CERT/{n++} n==1' | sed '/END CERT/q' \
@@ -459,11 +468,11 @@ openssl x509 -inform DER -in "$OUT/pki-process-intermediate-node.cer" \
   -out "$OUT/pki-process-intermediate.pem"
 openssl x509 -inform DER -in "$OUT/pki-process-tls-node.cer" \
   -out "$OUT/pki-process-tls.pem"
+cat "$OUT/pki-process-tls.pem" "$OUT/pki-process-intermediate.pem" \
+  > "$OUT/pki-process-chain.pem"
 check "Rust's listener certificate chains to Node's process TLS Issuing CA" \
   openssl verify -CAfile "$OUT/pki-root.pem" \
-    -untrusted <(cat "$OUT/pki-process-tls.pem" \
-                     "$OUT/pki-process-intermediate.pem") \
-    "$OUT/pki-rust-listener.pem"
+    -untrusted "$OUT/pki-process-chain.pem" "$OUT/pki-rust-listener.pem"
 
 say "== What Rust does not serve yet (listed, not failed) =="
 for p in "GET /.well-known/openid-configuration" "POST /oauth2/token" \
@@ -519,11 +528,13 @@ say "== Node reads the certificate authority Rust wrote =="
 docker stop -t 30 "$NODE" >/dev/null 2>&1 || true
 docker rm "$NODE" >/dev/null 2>&1 || true
 if start "$NODE" "$NODE_IMAGE" "$NODE_PORT" "$DB_URL"; then
-  curl -sk "https://localhost:$NODE_PORT/pki/ca/diff/intermediate.cer" \
-    > "$OUT/pki-diff-intermediate-node-after.cer"
-  check "Node serves the diff Intermediate Rust built and sealed" \
-    cmp -s "$OUT/pki-diff-intermediate-rust.cer" \
-      "$OUT/pki-diff-intermediate-node-after.cer"
+  for r in acme diff; do
+    curl -sk "https://localhost:$NODE_PORT/pki/ca/$r/intermediate.cer" \
+      > "$OUT/pki-$r-intermediate-node-after.cer"
+    check "Node serves the $r Intermediate Rust built and sealed" \
+      cmp -s "$OUT/pki-$r-intermediate-rust.cer" \
+        "$OUT/pki-$r-intermediate-node-after.cer"
+  done
   curl -sk "https://localhost:$NODE_PORT/pki/ca/service/root.cer" \
     > "$OUT/pki-service-root-node-after.cer"
   check "and its Root is still the one it stored first" \
