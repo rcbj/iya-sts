@@ -1935,6 +1935,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -1974,6 +1975,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -2033,6 +2035,7 @@ Scope: `admin:write`.
 | `settings.pip` | boolean |  |  |
 | `settings.pollIntervalMs` | integer |  |  |
 | `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
 | `settings.proxyMaxSessions` | integer |  |  |
 | `settings.proxyRpAllowInsecure` | boolean |  |  |
 | `settings.proxySessionRecheckMs` | integer |  |  |
@@ -2070,6 +2073,7 @@ Scope: `admin:write`.
 | `settings.pip` | boolean |  |  |
 | `settings.pollIntervalMs` | integer |  |  |
 | `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
 | `settings.proxyMaxSessions` | integer |  |  |
 | `settings.proxyRpAllowInsecure` | boolean |  |  |
 | `settings.proxySessionRecheckMs` | integer |  |  |
@@ -3892,6 +3896,7 @@ Scope: `admin:read`.
 | `peps[].proxy.routes[].mechanisms[]` | string |  |  |
 | `peps[].proxy.routes[].methods` | list |  |  |
 | `peps[].proxy.routes[].methods[]` | string |  |  |
+| `peps[].proxy.routes[].multipleAccounts` | boolean |  |  |
 | `peps[].proxy.routes[].path` | string |  |  |
 | `peps[].proxy.routes[].public` | boolean |  |  |
 | `peps[].proxy.routes[].resource` | string |  |  |
@@ -3922,6 +3927,7 @@ Scope: `admin:read`.
 | `peps[].settings.pip` | boolean |  |  |
 | `peps[].settings.pollIntervalMs` | integer |  |  |
 | `peps[].settings.proxyJwksTtlMs` | integer |  |  |
+| `peps[].settings.proxyMaxAccounts` | integer |  |  |
 | `peps[].settings.proxyMaxSessions` | integer |  |  |
 | `peps[].settings.proxyRpAllowInsecure` | boolean |  |  |
 | `peps[].settings.proxySessionRecheckMs` | integer |  |  |
@@ -3978,6 +3984,9 @@ Scope: `admin:read`.
 | `peps[].settingsInUse.values.proxyJwksTtlMs` | object |  |  |
 | `peps[].settingsInUse.values.proxyJwksTtlMs.source` | one of `service`, `environment`, `default` |  |  |
 | `peps[].settingsInUse.values.proxyJwksTtlMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxyMaxAccounts` | object |  |  |
+| `peps[].settingsInUse.values.proxyMaxAccounts.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxyMaxAccounts.value` | integer |  |  |
 | `peps[].settingsInUse.values.proxyMaxSessions` | object |  |  |
 | `peps[].settingsInUse.values.proxyMaxSessions.source` | one of `service`, `environment`, `default` |  |  |
 | `peps[].settingsInUse.values.proxyMaxSessions.value` | integer |  |  |
@@ -4082,6 +4091,7 @@ Scope: `admin:read`.
 | `routeDetail.route.mechanisms[]` | string |  |  |
 | `routeDetail.route.methods` | list |  |  |
 | `routeDetail.route.methods[]` | string |  |  |
+| `routeDetail.route.multipleAccounts` | boolean |  |  |
 | `routeDetail.route.path` | string |  |  |
 | `routeDetail.route.public` | boolean |  |  |
 | `routeDetail.route.resource` | string |  |  |
@@ -4399,6 +4409,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -4438,6 +4449,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5001,6 +5013,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5040,6 +5053,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5086,6 +5100,7 @@ Scope: `admin:write`.
 | `methods` | list, or string |  |  |
 | `methods[]` | string |  |  |
 | `mode` | one of `headers`, `saml`, `jwt` |  | With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity. |
+| `multipleAccounts` | boolean, or string |  | true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257). |
 | `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `path` | string |  | The path the route matches. |
 | `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |
@@ -5127,6 +5142,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5166,6 +5182,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5232,6 +5249,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5271,6 +5289,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5342,6 +5361,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5381,6 +5401,7 @@ Scope: `admin:write`.
 | `proxy.routes[].mechanisms[]` | string |  |  |
 | `proxy.routes[].methods` | list |  |  |
 | `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
 | `proxy.routes[].public` | boolean |  |  |
 | `proxy.routes[].resource` | string |  |  |
@@ -5428,6 +5449,7 @@ Scope: `admin:write`.
 | `pip` | boolean |  | Sets `pip` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `pollIntervalMs` | integer |  | Sets `pollIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `proxyJwksTtlMs` | integer |  | Sets `proxyJwksTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxyMaxAccounts` | integer |  | Sets `proxyMaxAccounts` at the PEP: the most accounts one browser holds on a route with `multipleAccounts`; absent, null or empty is not set, so the PEP uses PEP_PROXY_MAX_ACCOUNTS or its default, 5. |
 | `proxyMaxSessions` | integer |  | Sets `proxyMaxSessions` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `proxyRpAllowInsecure` | boolean |  | Sets `proxyRpAllowInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `proxySessionRecheckMs` | integer |  | Sets `proxySessionRecheckMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
@@ -5465,6 +5487,7 @@ Scope: `admin:write`.
 | `settings.pip` | boolean |  |  |
 | `settings.pollIntervalMs` | integer |  |  |
 | `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
 | `settings.proxyMaxSessions` | integer |  |  |
 | `settings.proxyRpAllowInsecure` | boolean |  |  |
 | `settings.proxySessionRecheckMs` | integer |  |  |
@@ -5502,6 +5525,7 @@ Scope: `admin:write`.
 | `settings.pip` | boolean |  |  |
 | `settings.pollIntervalMs` | integer |  |  |
 | `settings.proxyJwksTtlMs` | integer |  |  |
+| `settings.proxyMaxAccounts` | integer |  |  |
 | `settings.proxyMaxSessions` | integer |  |  |
 | `settings.proxyRpAllowInsecure` | boolean |  |  |
 | `settings.proxySessionRecheckMs` | integer |  |  |

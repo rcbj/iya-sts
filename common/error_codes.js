@@ -23393,6 +23393,11 @@ const CODES = [
       'set-pep-route-application named no application; ' +
       'set-pep-route\'s position is outside the route list.',
     spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0257',
+    summary: 'A remote PEP proxy route sets multipleAccounts without the ' +
+      'session mechanism: several accounts in one browser are several ' +
+      'browser sign-ins, which only that mechanism makes (#1760).',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -23983,6 +23988,25 @@ const CODES = [
       'true nor false; the plain-HTTP listener it switches stays off ' +
       '(#1760). Logged once at start.',
     spec: 'none; the listener is reported off (http-off)' },
+  { code: 'STS-XPEP-0108',
+    summary: 'A sign-in on a remote PEP proxy route with multipleAccounts ' +
+      'was refused: the browser\'s account set already holds ' +
+      'proxyMaxAccounts accounts (PEP_PROXY_MAX_ACCOUNTS). The new ' +
+      'session is ended; the others are kept (#1760).',
+    spec: 'HTTP 403, the proxy\'s own page' },
+  { code: 'STS-XPEP-0109',
+    summary: 'A remote PEP proxy account act (switch, sign out) came from ' +
+      'another site (Origin or Sec-Fetch-Site) and was refused (#1760).',
+    spec: 'HTTP 403' },
+  { code: 'STS-XPEP-0110',
+    summary: 'A remote PEP proxy account page was asked for something it ' +
+      'does not answer: no such page, or an add whose return path is not ' +
+      'on a session route with multipleAccounts (#1760).',
+    spec: 'HTTP 404' },
+  { code: 'STS-XPEP-0111',
+    summary: 'A remote PEP proxy account act named an account the ' +
+      'browser\'s set does not hold (#1760).',
+    spec: 'HTTP 404' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

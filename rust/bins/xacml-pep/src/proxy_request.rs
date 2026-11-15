@@ -23,6 +23,11 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue};
 /// The proxy's own session cookie (D5).
 pub const SESSION_COOKIE: &str = "iya_pep_session";
 
+/// A browser's account set on a `multipleAccounts` route (#1760). It is
+/// the proxy's alone and NEVER reaches the application, whatever the
+/// route's `forwardCredentials`.
+pub const ACCOUNTS_COOKIE: &str = "iya_pep_accounts";
+
 /// Why a path was refused.
 pub type PathRefusal = &'static str;
 
@@ -193,7 +198,8 @@ pub fn forward_headers(
                 let rest = value
                     .to_str()
                     .ok()
-                    .and_then(|v| cookie_without(v, SESSION_COOKIE));
+                    .and_then(|v| cookie_without(v, SESSION_COOKIE))
+                    .and_then(|v| cookie_without(&v, ACCOUNTS_COOKIE));
                 if let Some(v) =
                     rest.and_then(|r| HeaderValue::from_str(&r).ok())
                 {
@@ -201,6 +207,18 @@ pub fn forward_headers(
                 }
                 continue;
             }
+        }
+        if n == "cookie" {
+            // Forwarded credentials still never carry the account set.
+            let rest = value
+                .to_str()
+                .ok()
+                .and_then(|v| cookie_without(v, ACCOUNTS_COOKIE));
+            if let Some(v) = rest.and_then(|r| HeaderValue::from_str(&r).ok())
+            {
+                out.append(name.clone(), v);
+            }
+            continue;
         }
         out.append(name.clone(), value.clone());
     }

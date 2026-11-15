@@ -524,6 +524,7 @@ keys, variables and bounds); the table below marks them.
 | `PEP_PROXY_HTTP` | `false` | **`true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT`.** Off by default since #1760, as `PEP_HTTP`. |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | Its HTTPS listener: the SAME `PEP_HTTPS_CERT`/`KEY` pair 9443 serves, re-read on the same interval, and a client is ASKED for a certificate (never required to present one) so a certificate-bound token's `cnf.x5t#S256` can be checked. No pair, no listener. |
 | `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | On a session route with `signals: false` (or whose receiver would not start): how old the service's last "live" answer about a proxy session may be before the next access asks `POST /xacml/pep/session` again. `0` asks on every access. *Managed* (`proxySessionRecheckMs`). |
+| `PEP_PROXY_MAX_ACCOUNTS` | `5` | **Several accounts in one browser (#1760)**: the most accounts one browser's set holds on a `multipleAccounts` route, 1 to 32; past it a sign-in is refused (403, `STS-XPEP-0108`). *Managed* (`proxyMaxAccounts`). |
 | `PEP_PROXY_SESSION_TTL_MS` | `28800000` (8 h) | The longest a proxy session lives, whatever the service says. *Managed* (`proxySessionTtlMs`). |
 | `PEP_PROXY_MAX_SESSIONS` | `10000` | The most proxy sessions held — a new one past it is REFUSED (503, `STS-XPEP-0085`), never made by evicting somebody — and, separately, the most sign-ins in flight, where the OLDEST is dropped. *Managed* (`proxyMaxSessions`). |
 | `PEP_PROXY_JWKS_TTL_MS` | `300000` | How long the realm's JWKS is used before it is fetched again. An unknown `kid` refetches at once after an ordinary fetch, then at most every 5 s. *Managed* (`proxyJwksTtlMs`). |
@@ -904,8 +905,31 @@ PEP_PROXY_PORT        9180   plain HTTP, only with PEP_PROXY_HTTP=true
 PEP_PROXY_HTTPS_PORT  9543   the pair 9443 serves, a client certificate asked for
 GET  /.iya-pep/callback      the session mechanism's redirect URI
 GET  /.iya-pep/logout        ends the proxy session, then the service's
+GET  /.iya-pep/accounts      the account chooser (multipleAccounts routes)
+GET  /.iya-pep/accounts/add  another account, prompt=login
+POST /.iya-pep/accounts/{switch,logout,logout-all}
 everything else              the route table
 ```
+
+**SEVERAL ACCOUNTS IN ONE BROWSER (#1760, rcbj 2026-11-14)**, on a session
+route with `multipleAccounts`. The pattern is the `oidc-caep-risc` libraries'
+demo: an account set per browser, an active account, add, switch, and sign
+out one or all. The Rust repository's own demo does not draw it; the Node.js
+library's `demo/server.ts` does. **Built on the library's 0.3.0 API with
+nothing faked**: `authorize_options` (`prompt=login`, `login_hint`,
+`expected_sub`), one `complete_session` per account under its own proxy
+session id, and the receiver's `track`/`untrack` per session. So the
+library's CAEP `session-revoked` ends exactly the account whose sign-on
+session it names. The set is `rp_session.rs`'s: per browser
+(`iya_pep_accounts` cookie, never forwarded), ACTIVE per application client,
+and an ended session drops ITS account and makes no other active (the
+browser is sent to the chooser; an identity is never picked for the person).
+The same subject signing in again replaces its own account's session. A
+full set (`proxyMaxAccounts`) refuses, `STS-XPEP-0108`. The chooser and its
+acts are server-drawn HTML under `default-src 'none'`, with forms only.
+Cross-site POSTs are refused (`STS-XPEP-0109`; the cookie is SameSite=Lax
+as well). The active account is per browser, not per tab: a proxy cannot
+tell tabs apart without rewriting the application's URLs.
 
 **rcbj's ticket: this container in front of ONE application, deciding
 locally whether a request goes through, on routes and mechanisms the

@@ -1574,12 +1574,12 @@ async function childBody() {
   t.check(refusedIn(productCatalogue) ===
             'proxyUpstreamInsecure,proxyRpAllowInsecure' &&
           refusedIn(devCatalogue) === '' &&
-          devCatalogue.settings.length === 23 &&
+          devCatalogue.settings.length === 24 &&
           devCatalogue.bootstrap.map(function (one) {
             return one.env;
           }).indexOf('PEP_PDP_URL') >= 0 &&
           devCatalogue.precedence.join(',') === 'service,environment,default',
-          'S10. the catalogue names the 23 settings, the bootstrap ' +
+          'S10. the catalogue names the 24 settings, the bootstrap ' +
           'environment and the precedence; refusedInProduct follows the mode',
           refusedIn(productCatalogue) + ' / ' + refusedIn(devCatalogue));
   // Kept across a registration and a heartbeat; the report held to its
@@ -2247,6 +2247,59 @@ async function childBody() {
     return one === null;
   }), 'P6. the route page\'s answer and its save meet their models',
       JSON.stringify(answersP));
+  // SEVERAL ACCOUNTS IN ONE BROWSER (#1760): a session route's member,
+  // false by default, refused without the session mechanism, set from the
+  // form, and the PEP's bound a managed setting.
+  const nonSession = (pageView.peps[0].proxy.routes || [])
+    .filter(function (one) {
+      return !one.public && one.mechanisms.indexOf('session') < 0;
+    })[0];
+  const everyFalse = pageView.peps[0].proxy.routes.every(function (one) {
+    return one.multipleAccounts === false;
+  });
+  const withRoute = function (extra) {
+    log.debug("Entering withRoute().");
+    const doc = example();
+    doc.routes.push(Object.assign({ id: 'multi', path: '/multi',
+      mechanisms: ['session'], application: 'multi-app' }, extra));
+    log.debug("Leaving withRoute().");
+    return pepProxy.validate(doc);
+  };
+  const multiOn = withRoute({ multipleAccounts: true });
+  const multiOff = withRoute({});
+  const multiOauth = withRoute({ mechanisms: ['oauth2'],
+                                 multipleAccounts: true });
+  const multiBad = withRoute({ multipleAccounts: 'yes' });
+  const lastOf = function (checked) {
+    return checked.ok ? checked.proxy.routes[checked.proxy.routes.length - 1]
+      : null;
+  };
+  // The form's flag reaches the validator: on a route without the session
+  // mechanism it is refused by the same code.
+  const multiRefused = nonSession ? routeAct({ action: 'set-pep-route',
+    from: nonSession.id, id: nonSession.id, path: nonSession.path,
+    mechanisms: nonSession.mechanisms, application: nonSession.application,
+    multipleAccounts: 'true' }) : null;
+  t.check(everyFalse && multiOn.ok && lastOf(multiOn).multipleAccounts &&
+          multiOff.ok && lastOf(multiOff).multipleAccounts === false &&
+          errorCodes.codeOf(multiOauth) === 'STS-XACML-0257' &&
+          errorCodes.codeOf(multiBad) === 'STS-XACML-0199' &&
+          nonSession && errorCodes.codeOf(multiRefused) === 'STS-XACML-0257',
+          'P7. multipleAccounts is false by default, true on a session route, ' +
+          'and refused without the session mechanism, from the form too',
+          JSON.stringify([everyFalse, multiOn.ok, multiOff.ok,
+                          errorCodes.codeOf(multiOauth),
+                          errorCodes.codeOf(multiBad), !!nonSession,
+                          errorCodes.codeOf(multiRefused)]));
+  const maxRow = pageView.settingsCatalogue.settings.filter(function (one) {
+    return one.key === 'proxyMaxAccounts';
+  })[0];
+  t.check(maxRow && maxRow.env === 'PEP_PROXY_MAX_ACCOUNTS' &&
+          maxRow.min === 1 && maxRow.max === 32 && maxRow.default === 5 &&
+          answerProblem('POST', '/admin-api/xacml/set-pep-route', 400,
+                        multiRefused) === null,
+          'P8. proxyMaxAccounts is a managed setting (1 to 32, default 5), ' +
+          'and the answers meet their models', JSON.stringify(maxRow));
 
   // -------------------------------------------------------------------------
   // T. THE SIGNAL STREAMS, ONE ROW EACH (#1760): ages turned into times on

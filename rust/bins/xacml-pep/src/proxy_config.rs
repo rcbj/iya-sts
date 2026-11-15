@@ -98,6 +98,9 @@ pub struct Route {
     /// How the identity reaches the application (D11).
     pub identity: IdentitySpec,
     pub forward_credentials: bool,
+    /// SEVERAL ACCOUNTS IN ONE BROWSER on this session route (#1760):
+    /// absent or false is one sign-in per browser, as before.
+    pub multiple_accounts: bool,
 }
 
 /// D11's three ways of telling the application who is asking.
@@ -625,6 +628,12 @@ fn route_of(
         forward_credentials: bool_member(
             said,
             "forwardCredentials",
+            false,
+            &what,
+        )?,
+        multiple_accounts: bool_member(
+            said,
+            "multipleAccounts",
             false,
             &what,
         )?,

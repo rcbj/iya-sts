@@ -174,6 +174,10 @@ const SETTINGS: SettingRow[] = [
     applies: 'now', default: 28800000 },
   { key: 'proxyMaxSessions', env: 'PEP_PROXY_MAX_SESSIONS', type: 'integer',
     group: 'proxy', min: 1, max: 1000000, applies: 'now', default: 10000 },
+  // SEVERAL ACCOUNTS IN ONE BROWSER (#1760): the bound on one browser's
+  // account set on a `multipleAccounts` route.
+  { key: 'proxyMaxAccounts', env: 'PEP_PROXY_MAX_ACCOUNTS', type: 'integer',
+    group: 'proxy', min: 1, max: 32, applies: 'now', default: 5 },
   { key: 'proxyJwksTtlMs', env: 'PEP_PROXY_JWKS_TTL_MS', type: 'integer',
     group: 'proxy', min: 0, max: DAY_MS, applies: 'nextReconcile',
     default: 300000 },

@@ -1110,6 +1110,53 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   https://localhost:8081/admin-api/xacml/set-pep-route
 ```
 
+### Several accounts in one browser
+
+A session route with **`multipleAccounts: true`** (the route page's and the
+route forms' *Several accounts*, false by default) lets one browser hold
+several signed-in accounts and switch between them. This follows the pattern
+of the `oidc-caep-risc` libraries' demo: an account set per browser, an
+active account, adding an account, switching, and signing one or all out.
+
+| Address on the proxy | What it does |
+|---|---|
+| `GET /.iya-pep/accounts?return=<path>` | the chooser: every account in this browser, with its application, the active one marked, and *Switch to this account*, *Sign out*, *Add another account* and *Sign out of all accounts*. `?format=json` answers the same list as JSON. |
+| `GET /.iya-pep/accounts/add?return=<path>` | signs another account in with `prompt=login`, so the service asks for a sign-in rather than reusing the session it holds. With `&account=<id>`, it signs that account in again, sending its `login_hint` and requiring that the ID Token name the same subject. |
+| `POST /.iya-pep/accounts/switch` (`account`, `return`) | makes that account the active one |
+| `POST /.iya-pep/accounts/logout` (`account`, `return`) | signs that account out here; the others stay |
+| `POST /.iya-pep/accounts/logout-all` (`return`) | signs every account in this browser out here |
+
+* **Only the active account's identity is forwarded**, through the route's
+  identity mode. The proxy strips forged identity headers first and makes
+  the same XACML decision as for a single sign-in. The account-set cookie
+  (`iya_pep_accounts`) never reaches the application, even with
+  `forwardCredentials`.
+* **Each account is its own sign-on session at the service.** So a CAEP
+  `session-revoked` (or a sign-out the session endpoint reports) ends only
+  that account. No other account is made active in its place: a browser is
+  sent to the chooser to pick one, and an API client gets a 401.
+* **The bound** is the managed setting `proxyMaxAccounts`
+  (`PEP_PROXY_MAX_ACCOUNTS`, 1 to 32, default 5). A sign-in past it is
+  refused with a 403 page (`STS-XPEP-0108`) rather than signing another
+  account out. The same person signing in again replaces their own
+  account's session.
+* **The pages** are the proxy's own: plain forms, no script, and
+  `Content-Security-Policy: default-src 'none'; form-action 'self';
+  frame-ancestors 'none'; base-uri 'none'`, `no-store`. A switch or sign-out
+  posted from another site is refused (`STS-XPEP-0109`). The pages are in
+  English: the PEP holds no message catalogs.
+* **The active account is per browser, not per tab.** Every tab of one
+  browser sends the same cookie, and the proxy cannot tell tabs apart
+  without changing the application's URLs, which a proxy does not do. In
+  one tab you can hold several accounts and switch between them. Two tabs
+  show the same active account.
+* **With iya-sts as the provider** (`authn.multipleAccounts`, on by
+  default), adding an account adds a session to the service's own account
+  set for that browser, so the person can also choose between the same
+  accounts on the service's own pages.
+* **Backwards compatible**: a route without the member is one sign-in per
+  browser, as before. An older PEP ignores the member and serves one sign-in.
+
 ### Its signal streams
 
 The **Signal streams** tab gives the totals, then a table with one row per
@@ -1209,6 +1256,7 @@ environment's, then the default.
 | `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | on a `signals: false` session route: how old the service's last answer that a session is live may be. `0` asks on every access — *managed*: `proxySessionRecheckMs` |
 | `PEP_PROXY_SESSION_TTL_MS` | `28800000` | the longest a proxy session lives — *managed*: `proxySessionTtlMs` |
 | `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `503` — *managed*: `proxyMaxSessions` |
+| `PEP_PROXY_MAX_ACCOUNTS` | `5` | the most accounts one browser holds on a `multipleAccounts` route, 1 to 32. A sign-in past it is refused `403` — *managed*: `proxyMaxAccounts` |
 | `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept — *managed*: `proxyJwksTtlMs` |
 | `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled — *managed*: `proxySignalsPollMs` |
 | `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | how long the stream may go without a successful poll. After that, sessions are checked with the service's session endpoint until it answers again. `GET /` shows the stream's state under `proxy.signals` — *managed*: `proxySignalsStaleMs` |

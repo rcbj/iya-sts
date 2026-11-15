@@ -9,6 +9,9 @@
 //!                               asking every client for a certificate
 //! GET  /.iya-pep/callback       the session mechanism's redirect URI
 //! GET  /.iya-pep/logout         ends the proxy session, then the service's
+//! GET  /.iya-pep/accounts       the account chooser (multipleAccounts)
+//! GET  /.iya-pep/accounts/add   sign in another account (prompt=login)
+//! POST /.iya-pep/accounts/switch, /logout, /logout-all
 //! everything else               the route table
 //! ```
 //!
@@ -66,16 +69,26 @@ use crate::proxy_config::{
 };
 use crate::proxy_request::{
     cookie_value, forward_headers, is_browser, normalise_path,
-    response_headers, SESSION_COOKIE,
+    response_headers, ACCOUNTS_COOKIE, SESSION_COOKIE,
 };
 use crate::rp_session::{self, Pending, Session};
 use crate::rp_set::{self, RpLimits, RpSet};
 use crate::service::Pep;
 use crate::sync::encode;
-use oidc_caep_risc::EndSessionOptions;
+use oidc_caep_risc::{AuthorizeOptions, EndSessionOptions};
 
 pub const CALLBACK_PATH: &str = "/.iya-pep/callback";
 pub const LOGOUT_PATH: &str = "/.iya-pep/logout";
+/// SEVERAL ACCOUNTS IN ONE BROWSER (#1760): the chooser and its acts.
+pub const ACCOUNTS_PATH: &str = "/.iya-pep/accounts";
+pub const ACCOUNTS_ADD_PATH: &str = "/.iya-pep/accounts/add";
+pub const ACCOUNTS_SWITCH_PATH: &str = "/.iya-pep/accounts/switch";
+pub const ACCOUNTS_LOGOUT_PATH: &str = "/.iya-pep/accounts/logout";
+pub const ACCOUNTS_LOGOUT_ALL_PATH: &str = "/.iya-pep/accounts/logout-all";
+/// The proxy's own pages: nothing but the markup itself and a form posting
+/// back here, never framed, never cached.
+const PAGE_CSP: &str = "default-src 'none'; form-action 'self'; \
+                        frame-ancestors 'none'; base-uri 'none'";
 
 /// The reverse proxy: the PEP it decides with, the mechanisms, and one
 /// client to the upstream per timeout.
@@ -218,6 +231,13 @@ fn json_answer(status: u16, body: serde_json::Value) -> Response<Body> {
     response
 }
 
+/// A 303 after a form: the browser asks for the page with GET.
+fn see_other(location: &str) -> Response<Body> {
+    let mut response = redirect(location);
+    *response.status_mut() = StatusCode::SEE_OTHER;
+    response
+}
+
 fn redirect(location: &str) -> Response<Body> {
     let mut response = Response::new(Body::empty());
     *response.status_mut() = StatusCode::FOUND;
@@ -243,6 +263,113 @@ fn session_cookie(id: &str, https: bool, clear: bool) -> Option<HeaderValue> {
         text.push_str("; Secure");
     }
     HeaderValue::from_str(&text).ok()
+}
+
+fn accounts_cookie(set_id: &str, https: bool, clear: bool) -> Option<HeaderValue> {
+    let mut text = if clear {
+        format!(
+            "{}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
+            ACCOUNTS_COOKIE
+        )
+    } else {
+        format!("{}={}; Path=/; HttpOnly; SameSite=Lax", ACCOUNTS_COOKIE,
+                set_id)
+    };
+    if https {
+        text.push_str("; Secure");
+    }
+    HeaderValue::from_str(&text).ok()
+}
+
+/// A page of the proxy's own, under its strict policy.
+fn own_page(status: u16, title: &str, body: &str) -> Response<Body> {
+    let html = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width\">\
+         <title>{}</title></head><body>{}</body></html>",
+        html_escape(title),
+        body
+    );
+    let mut response = Response::new(Body::from(html));
+    *response.status_mut() =
+        StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(PAGE_CSP),
+    );
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    response
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// Where an account act sends the browser back to: a path on THIS proxy
+/// (normalised, with its query), never a value that leaves it.
+fn return_path(asked: Option<&str>) -> String {
+    let Some(raw) = asked.filter(|r| r.starts_with('/') && !r.starts_with("//"))
+    else {
+        return "/".into();
+    };
+    let (path, query) = match raw.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (raw, None),
+    };
+    match normalise_path(path) {
+        Ok(path) if !path.starts_with("/.iya-pep/") => match query {
+            Some(q) if !q.contains('#') => format!("{}?{}", path, q),
+            _ => path,
+        },
+        _ => "/".into(),
+    }
+}
+
+/// An account act's form is this proxy's own page: a cross-site POST is
+/// refused whatever the cookie (it is SameSite=Lax as well).
+fn same_origin(headers: &HeaderMap) -> bool {
+    if let Some(site) = headers
+        .get("sec-fetch-site")
+        .and_then(|v| v.to_str().ok())
+    {
+        if site != "same-origin" && site != "none" {
+            return false;
+        }
+    }
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())
+    else {
+        return true;
+    };
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    reqwest::Url::parse(origin)
+        .ok()
+        .and_then(|u| {
+            u.host_str().map(|h| match u.port() {
+                Some(p) => format!("{}:{}", h, p),
+                None => h.to_string(),
+            })
+        })
+        .is_some_and(|o| o.eq_ignore_ascii_case(host))
 }
 
 fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
@@ -467,6 +594,21 @@ impl Proxy {
         }
         if path == LOGOUT_PATH {
             return (self.logout(&parts.headers, &pulled, &transport), false);
+        }
+        if path == ACCOUNTS_PATH || path.starts_with("/.iya-pep/accounts/") {
+            let form = if method == "POST" {
+                axum::body::to_bytes(body, 4096)
+                    .await
+                    .map(|b| String::from_utf8_lossy(&b).into_owned())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let answer = self
+                .accounts(config, &pulled, &parts.headers, &transport,
+                          &method, &path, query.as_deref(), &form, &asked)
+                .await;
+            return (answer, false);
         }
         let Some(route) = config.route_for(&path) else {
             let refusal = Refusal::new(
@@ -772,6 +914,14 @@ impl Proxy {
         path: &str,
         query: Option<&str>,
     ) -> Established {
+        if route.multiple_accounts {
+            return self
+                .session_of_account(
+                    route, pulled, config, headers, transport, method, path,
+                    query,
+                )
+                .await;
+        }
         let stores = &self.pep.sync.proxy_sessions;
         let browser = is_browser(method, headers);
         let id = cookie_value(headers, SESSION_COOKIE).unwrap_or_default();
@@ -783,35 +933,15 @@ impl Proxy {
             return self
                 .no_session(
                     route, pulled, config, transport, browser, path, query,
-                    false,
+                    false, None, AuthorizeOptions::default(),
                 )
                 .await;
         };
-        let party = self.rps.held(&session.client_id);
-        let by_signals = route.signals
-            && party.as_ref().is_some_and(rp_set::Party::signals_live);
-        let alive = if by_signals {
-            // THE LIBRARY'S ANSWER: its receiver removes the session a
-            // CAEP session-revoked names, so the session still being in
-            // its cache is the session still being live. A map lookup.
-            party.as_ref().is_some_and(|p| p.rp.session(&id).is_some())
-        } else {
-            let recheck = Duration::from_millis(
-                self.pep.options.now().proxy_session_recheck_ms,
-            );
-            if session.last_checked.elapsed() < recheck {
-                true
-            } else {
-                match self.auth.session_live(&session.sid, pulled).await {
-                    Err(refusal) => return Established::Refused(refusal),
-                    Ok(Some((sub, username))) => {
-                        stores.checked(&id, &sub, &username);
-                        true
-                    }
-                    Ok(None) => false,
-                }
-            }
-        };
+        let (alive, by_signals) =
+            match self.alive(route, pulled, &id, &session).await {
+                Ok(answer) => answer,
+                Err(refusal) => return Established::Refused(refusal),
+            };
         if !alive {
             self.end_session(&id, &session.client_id);
             tracing::info!(
@@ -829,7 +959,7 @@ impl Proxy {
             return self
                 .no_session(
                     route, pulled, config, transport, browser, path, query,
-                    true,
+                    true, None, AuthorizeOptions::default(),
                 )
                 .await;
         }
@@ -840,6 +970,140 @@ impl Proxy {
             Mechanism::Session,
         );
         who.session_id = Some(id.clone());
+        Established::Who(who)
+    }
+
+    /// Whether a proxy session is still live, and whether the library's
+    /// signals said so: its receiver's cache (a CAEP session-revoked removes
+    /// the session from it), or the service's session endpoint when its
+    /// last answer is older than `proxySessionRecheckMs`.
+    async fn alive(
+        &self,
+        route: &Route,
+        pulled: &Pulled,
+        id: &str,
+        session: &Session,
+    ) -> Result<(bool, bool), Refusal> {
+        let party = self.rps.held(&session.client_id);
+        let by_signals = route.signals
+            && party.as_ref().is_some_and(rp_set::Party::signals_live);
+        if by_signals {
+            // THE LIBRARY'S ANSWER: a map lookup.
+            return Ok((
+                party.as_ref().is_some_and(|p| p.rp.session(id).is_some()),
+                true,
+            ));
+        }
+        let recheck = Duration::from_millis(
+            self.pep.options.now().proxy_session_recheck_ms,
+        );
+        if session.last_checked.elapsed() < recheck {
+            return Ok((true, false));
+        }
+        match self.auth.session_live(&session.sid, pulled).await? {
+            Some((sub, username)) => {
+                self.pep
+                    .sync
+                    .proxy_sessions
+                    .checked(id, &sub, &username);
+                Ok((true, false))
+            }
+            None => Ok((false, false)),
+        }
+    }
+
+    /// THE SESSION MECHANISM WITH SEVERAL ACCOUNTS (#1760): the browser's
+    /// account set (the `iya_pep_accounts` cookie) holds one proxy session
+    /// per account, and the request is the ACTIVE account's for the
+    /// route's application — the one identity forwarded, held to the same
+    /// liveness check, header stripping and decision as a single sign-in.
+    /// No active account while others are held sends a browser to the
+    /// chooser: an identity is never picked for the person.
+    #[allow(clippy::too_many_arguments)]
+    async fn session_of_account(
+        &self,
+        route: &Route,
+        pulled: &Pulled,
+        config: &ProxyConfig,
+        headers: &HeaderMap,
+        transport: &Transport,
+        method: &str,
+        path: &str,
+        query: Option<&str>,
+    ) -> Established {
+        let stores = &self.pep.sync.proxy_sessions;
+        let browser = is_browser(method, headers);
+        let client = route.resolved.client_id.clone();
+        let set_id = cookie_value(headers, ACCOUNTS_COOKIE).unwrap_or_default();
+        let set = stores.account_set(&set_id);
+        let here = match query {
+            Some(q) => format!("{}?{}", path, q),
+            None => path.to_string(),
+        };
+        let chooser = || {
+            Established::Answer(redirect(&format!(
+                "{}?return={}",
+                ACCOUNTS_PATH,
+                encode(&here)
+            )))
+        };
+        let active = set.as_ref().and_then(|s| s.active_for(&client).cloned());
+        let Some(account) = active else {
+            let others = set.as_ref().map(|s| s.of_client(&client).len())
+                .unwrap_or(0);
+            if others > 0 && browser {
+                return chooser();
+            }
+            return self
+                .no_session(
+                    route, pulled, config, transport, browser, path, query,
+                    false, Some(set_id), AuthorizeOptions::default(),
+                )
+                .await;
+        };
+        let Some(session) = stores.get(&account.session_id) else {
+            stores.end(&account.session_id);
+            return if browser { chooser() } else {
+                Established::Refused(Refusal::new(
+                    401, "STS-XPEP-0084",
+                    "the active account's proxy session has ended"))
+            };
+        };
+        let (alive, by_signals) = match self
+            .alive(route, pulled, &account.session_id, &session)
+            .await
+        {
+            Ok(answer) => answer,
+            Err(refusal) => return Established::Refused(refusal),
+        };
+        if !alive {
+            // THAT account ends, and only that one.
+            self.end_session(&account.session_id, &session.client_id);
+            tracing::info!(
+                "{}xacml-pep: proxy: the sign-on session behind one account \
+                 of a browser's set has ended at the service ({}, route {}); \
+                 that account is signed out and the others are kept.",
+                tag("STS-XPEP-0084"),
+                if by_signals {
+                    "a CAEP/RISC signal"
+                } else {
+                    "its session endpoint"
+                },
+                route.id
+            );
+            return if browser { chooser() } else {
+                Established::Refused(Refusal::new(
+                    401, "STS-XPEP-0084",
+                    "the active account's sign-on session has ended"))
+            };
+        }
+        let current = stores.get(&account.session_id).unwrap_or(session);
+        let mut who = proxy_auth::identity(
+            &current.sub,
+            &current.username,
+            Mechanism::Session,
+        );
+        who.session_id = Some(account.session_id.clone());
         Established::Who(who)
     }
 
@@ -871,6 +1135,8 @@ impl Proxy {
         path: &str,
         query: Option<&str>,
         ended: bool,
+        account_set: Option<String>,
+        options: AuthorizeOptions,
     ) -> Established {
         let _ = config;
         if !browser {
@@ -903,7 +1169,7 @@ impl Proxy {
                 }
             };
         let rp = party.rp.clone();
-        let authorized = rp.authorize_async(Default::default()).await;
+        let authorized = rp.authorize_async(options).await;
         let transaction = match authorized {
             Ok(transaction) => transaction,
             Err(error) => {
@@ -926,6 +1192,7 @@ impl Proxy {
                 client_id,
                 return_to,
                 created: Instant::now(),
+                account_set,
             },
         );
         tracing::info!(
@@ -1068,11 +1335,292 @@ impl Proxy {
             receiver.track(tracked);
         }
         self.pep.sync.count_sign_in();
+        // SEVERAL ACCOUNTS (#1760): the sign-in joins the browser's set and
+        // becomes its active account; the same person again replaces their
+        // own account's session; a full set refuses the new one.
+        if let Some(set_id) = &pending.account_set {
+            let max = self.pep.options.now().proxy_max_accounts;
+            let stores = &self.pep.sync.proxy_sessions;
+            let username = stores
+                .get(&id)
+                .map(|s| s.username)
+                .unwrap_or_default();
+            match stores.add_account(set_id, &id, &pending.client_id,
+                                     &login.subject, &username, max) {
+                Ok(added) => {
+                    if let Some(old) = &added.replaced {
+                        self.end_session(old, &pending.client_id);
+                    }
+                    tracing::info!(
+                        "xacml-pep: proxy: an account joined a browser's \
+                         set and is its active one."
+                    );
+                    let mut response = redirect(&pending.return_to);
+                    if let Some(cookie) =
+                        accounts_cookie(&added.set_id, transport.https, false)
+                    {
+                        response.headers_mut().insert(header::SET_COOKIE,
+                                                      cookie);
+                    }
+                    return response;
+                }
+                Err(refused) => {
+                    self.end_session(&id, &pending.client_id);
+                    let held = match refused {
+                        rp_session::AddRefused::Full(n) => n,
+                        rp_session::AddRefused::NoRandom => 0,
+                    };
+                    tracing::warn!(
+                        "{}xacml-pep: proxy: a sign-in was refused: the \
+                         browser's set already holds {} account(s) \
+                         (proxyMaxAccounts {}).",
+                        tag("STS-XPEP-0108"),
+                        held,
+                        max
+                    );
+                    return own_page(
+                        403,
+                        "Too many accounts",
+                        &format!(
+                            "<h1>Too many accounts</h1><p>This browser is \
+                             already signed in to {} account(s) here, the \
+                             most this proxy allows. Sign one out first.</p>\
+                             <p><a href=\"{}?return={}\">Choose an \
+                             account</a></p>",
+                            held,
+                            ACCOUNTS_PATH,
+                            html_escape(&encode(&pending.return_to))
+                        ),
+                    );
+                }
+            }
+        }
         let mut response = redirect(&pending.return_to);
         if let Some(cookie) = session_cookie(&id, transport.https, false) {
             response.headers_mut().insert(header::SET_COOKIE, cookie);
         }
         response
+    }
+
+    /// THE ACCOUNT CHOOSER AND ITS ACTS (#1760), the multipleAccounts
+    /// routes' pages, under `/.iya-pep/accounts`. GET draws the browser's
+    /// accounts (HTML, or JSON with `?format=json`); `add` starts a sign-in
+    /// of another account with `prompt=login` (or of a held account again,
+    /// with its `login_hint` and the subject the ID Token must name); the
+    /// three POSTs switch, sign one out, or sign all out — HERE: the
+    /// service's sign-on sessions are the person's to end there.
+    #[allow(clippy::too_many_arguments)]
+    async fn accounts(
+        &self,
+        config: &ProxyConfig,
+        pulled: &Pulled,
+        headers: &HeaderMap,
+        transport: &Transport,
+        method: &str,
+        path: &str,
+        query: Option<&str>,
+        form: &str,
+        asked: &Asked<'_>,
+    ) -> Response<Body> {
+        let stores = &self.pep.sync.proxy_sessions;
+        let set_id = cookie_value(headers, ACCOUNTS_COOKIE).unwrap_or_default();
+        let given: HashMap<String, String> = query_pairs(query)
+            .into_iter()
+            .chain(query_pairs(Some(form)))
+            .collect();
+        let back = return_path(given.get("return").map(String::as_str));
+        let refuse = |status: u16, code: &'static str, why: &str| {
+            self.refuse(&Refusal::new(status, code, why), asked, pulled)
+        };
+        if method == "POST" && !same_origin(headers) {
+            return refuse(403, "STS-XPEP-0109",
+                          "an account act from another site is refused");
+        }
+        let application_of = |client: &str| -> String {
+            config
+                .routes
+                .iter()
+                .find(|r| r.resolved.client_id == client)
+                .map(|r| r.application.clone())
+                .unwrap_or_default()
+        };
+        match (method, path) {
+            ("GET", ACCOUNTS_PATH) | ("HEAD", ACCOUNTS_PATH) => {
+                let set = stores.account_set(&set_id).unwrap_or_default();
+                if given.get("format").map(String::as_str) == Some("json") {
+                    let accounts: Vec<Value> = set
+                        .accounts
+                        .iter()
+                        .map(|a| {
+                            json!({
+                                "account": a.account,
+                                "username": a.username,
+                                "application": application_of(&a.client_id),
+                                "active": set.active.get(&a.client_id)
+                                    == Some(&a.account)
+                            })
+                        })
+                        .collect();
+                    return json_answer(200, json!({
+                        "accounts": accounts,
+                        "max": self.pep.options.now().proxy_max_accounts
+                    }));
+                }
+                own_page(200, "Accounts", &self.chooser_html(&set, &back,
+                                                              &application_of))
+            }
+            ("GET", ACCOUNTS_ADD_PATH) => {
+                let Some(route) = config
+                    .route_for(back.split('?').next().unwrap_or("/"))
+                    .filter(|r| {
+                        r.multiple_accounts
+                            && r.mechanisms.contains(&Mechanism::Session)
+                            && !r.public
+                    })
+                else {
+                    return refuse(404, "STS-XPEP-0110",
+                                  "the page to return to is not on a route \
+                                   that holds several accounts");
+                };
+                let again = given
+                    .get("account")
+                    .and_then(|a| stores.account_of(&set_id, a));
+                let options = AuthorizeOptions {
+                    prompt: "login".into(),
+                    login_hint: again
+                        .as_ref()
+                        .map(|a| a.username.clone())
+                        .unwrap_or_default(),
+                    expected_sub: again
+                        .as_ref()
+                        .map(|a| a.sub.clone())
+                        .unwrap_or_default(),
+                    ..AuthorizeOptions::default()
+                };
+                let (path_part, query_part) = match back.split_once('?') {
+                    Some((p, q)) => (p.to_string(), Some(q.to_string())),
+                    None => (back.clone(), None),
+                };
+                match self
+                    .no_session(route, pulled, config, transport, true,
+                                &path_part, query_part.as_deref(), false,
+                                Some(set_id), options)
+                    .await
+                {
+                    Established::Answer(response) => response,
+                    Established::Refused(refusal) => {
+                        self.refuse(&refusal, asked, pulled)
+                    }
+                    Established::Who(_) => refuse(500, "STS-XPEP-0110",
+                                                  "no sign-in was started"),
+                }
+            }
+            ("POST", ACCOUNTS_SWITCH_PATH) => {
+                let account = given.get("account").cloned().unwrap_or_default();
+                if stores.switch_account(&set_id, &account).is_none() {
+                    return refuse(404, "STS-XPEP-0111",
+                                  "this browser holds no such account");
+                }
+                tracing::info!(
+                    "xacml-pep: proxy: a browser switched its active account."
+                );
+                see_other(&back)
+            }
+            ("POST", ACCOUNTS_LOGOUT_PATH) => {
+                let account = given.get("account").cloned().unwrap_or_default();
+                let Some(one) = stores.account_of(&set_id, &account) else {
+                    return refuse(404, "STS-XPEP-0111",
+                                  "this browser holds no such account");
+                };
+                self.end_session(&one.session_id, &one.client_id);
+                tracing::info!(
+                    "xacml-pep: proxy: one account of a browser's set signed \
+                     out here; the others are kept."
+                );
+                see_other(&format!("{}?return={}", ACCOUNTS_PATH,
+                                   encode(&back)))
+            }
+            ("POST", ACCOUNTS_LOGOUT_ALL_PATH) => {
+                for one in stores.sessions_of_set(&set_id) {
+                    self.end_session(&one.session_id, &one.client_id);
+                }
+                let mut response = see_other(&back);
+                if let Some(cookie) = accounts_cookie("", transport.https, true)
+                {
+                    response.headers_mut().insert(header::SET_COOKIE, cookie);
+                }
+                response
+            }
+            _ => refuse(404, "STS-XPEP-0110", "no such account page"),
+        }
+    }
+
+    /// The chooser: each account by its name and application, the active
+    /// one marked, a Switch and a Sign out per account, Add another, and
+    /// Sign out of all. Plain forms: no script.
+    fn chooser_html(
+        &self,
+        set: &rp_session::AccountSet,
+        back: &str,
+        application_of: &dyn Fn(&str) -> String,
+    ) -> String {
+        let back_html = html_escape(back);
+        let rows: String = set
+            .accounts
+            .iter()
+            .map(|a| {
+                let active = set.active.get(&a.client_id) == Some(&a.account);
+                let name = if a.username.is_empty() { &a.sub } else {
+                    &a.username };
+                format!(
+                    "<li><strong>{}</strong> ({}){}{} <form method=\"post\" \
+                     action=\"{}\"><input \
+                     type=\"hidden\" name=\"account\" value=\"{}\"><input \
+                     type=\"hidden\" name=\"return\" value=\"{}\"><button \
+                     type=\"submit\">Sign out</button></form></li>",
+                    html_escape(name),
+                    html_escape(&application_of(&a.client_id)),
+                    if active { " — active" } else { "" },
+                    if active { String::new() } else {
+                        format!(
+                            " <form method=\"post\" action=\"{}\"><input \
+                             type=\"hidden\" name=\"account\" value=\"{}\">\
+                             <input type=\"hidden\" name=\"return\" \
+                             value=\"{}\"><button type=\"submit\">Switch to \
+                             this account</button></form>",
+                            ACCOUNTS_SWITCH_PATH,
+                            html_escape(&a.account),
+                            back_html
+                        )
+                    },
+                    ACCOUNTS_LOGOUT_PATH,
+                    html_escape(&a.account),
+                    back_html
+                )
+            })
+            .collect();
+        let max = self.pep.options.now().proxy_max_accounts;
+        format!(
+            "<h1>Accounts in this browser</h1>{}<p><a href=\"{}?return={}\">\
+             Add another account</a> (at most {})</p>{}",
+            if rows.is_empty() {
+                "<p>No account is signed in here.</p>".to_string()
+            } else {
+                format!("<ul>{}</ul>", rows)
+            },
+            ACCOUNTS_ADD_PATH,
+            html_escape(&encode(back)),
+            max,
+            if set.accounts.is_empty() { String::new() } else {
+                format!(
+                    "<form method=\"post\" action=\"{}\"><input \
+                     type=\"hidden\" name=\"return\" value=\"{}\"><button \
+                     type=\"submit\">Sign out of all accounts</button>\
+                     </form>",
+                    ACCOUNTS_LOGOUT_ALL_PATH, back_html
+                )
+            }
+        )
     }
 
     /// `/.iya-pep/logout`: the proxy session ended here and in the library

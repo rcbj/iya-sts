@@ -171,6 +171,8 @@ interface ProxyRoute {
   // How the identity reaches the application (D11).
   identity: Identity;
   forwardCredentials: boolean;
+  // Several accounts in one browser on a session route (#1760).
+  multipleAccounts: boolean;
   // A session route's sign-out reaches the proxy through CAEP/RISC (true)
   // or through `POST /xacml/pep/session` polling (false).
   signals: boolean;
@@ -277,7 +279,8 @@ const DOCUMENT_MEMBERS = ['enabled', 'upstream', 'publicBaseUrl',
                           'upstreamTimeoutMs', 'maxBodyBytes', 'routes'];
 const ROUTE_MEMBERS = ['id', 'path', 'match', 'methods', 'public',
                        'mechanisms', 'application', 'resource', 'action',
-                       'identity', 'forwardCredentials', 'signals'];
+                       'identity', 'forwardCredentials', 'signals',
+                       'multipleAccounts'];
 const IDENTITY_MODES = ['headers', 'saml', 'jwt'];
 const IDENTITY_MEMBERS = ['mode', 'headers', 'separator'];
 const IDENTITY_CLAIMS = ['sub', 'username', 'email', 'name', 'given_name',
@@ -831,6 +834,22 @@ class PepProxy {
       return this.refuse(where + ' ("' + id + '"): `forwardCredentials` is ' +
         'true or false.', 'STS-XACML-0199');
     }
+    // SEVERAL ACCOUNTS IN ONE BROWSER (#1760): the session mechanism's,
+    // so a route that cannot sign a browser in cannot hold several.
+    const multiple = route.multipleAccounts === undefined
+      ? false : route.multipleAccounts;
+    if (typeof multiple !== 'boolean') {
+      log.debug("Leaving PepProxy.validateRoute(). multipleAccounts.");
+      return this.refuse(where + ' ("' + id + '"): `multipleAccounts` is ' +
+        'true or false.', 'STS-XACML-0199');
+    }
+    if (multiple && mechanisms.indexOf('session') < 0) {
+      log.debug("Leaving PepProxy.validateRoute(). Accounts, no session.");
+      return this.refuse(where + ' ("' + id + '") sets `multipleAccounts` ' +
+        'but takes no `session` mechanism: several accounts are several ' +
+        'browser sign-ins, which only the session mechanism makes.',
+        'STS-XACML-0257');
+    }
     seen.push(id);
     log.debug("Leaving PepProxy.validateRoute(). Usable.");
     return {
@@ -839,7 +858,8 @@ class PepProxy {
       mechanisms: mechanisms.slice() as string[],
       application: application, resource: resource, action: action,
       identity: identity as Identity,
-      forwardCredentials: forward, signals: signals
+      forwardCredentials: forward, signals: signals,
+      multipleAccounts: multiple
     };
   }
 

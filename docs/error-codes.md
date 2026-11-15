@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5604** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5609** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,8 +86,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 178
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 107
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 179
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 111
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5105,6 +5105,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0254` | POST /xacml/pep/listener-certificate carried no readable PKCS #10 request, one whose signature does not prove possession of its key, or a key the pep-tls Issuing CA does not certify for a listener. | HTTP 400, invalid_request |
 | `STS-XACML-0255` | A remote PEP's listener certificate could not be issued from the realm's pep-tls Issuing CA. | HTTP 500, server_error |
 | `STS-XACML-0256` | set-pep-route was sent no route object, or set-pep-route-application named no application; set-pep-route's position is outside the route list. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0257` | A remote PEP proxy route sets multipleAccounts without the session mechanism: several accounts in one browser are several browser sign-ins, which only that mechanism makes (#1760). | HTTP 400 on /admin-api; the console names why |
 
 ## STS-XPEP
 
@@ -5221,6 +5222,10 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0105` | A listener definition the service sent fails the remote PEP's own reading of it; that listener is left out and the others are bound (#1760). | none; that one listener is left out |
 | `STS-XPEP-0106` | The remote PEP started with PEP_PORT (or PEP_PROXY_PORT) set and PEP_HTTP (or PEP_PROXY_HTTP) not set: plain HTTP is off by default since #1760, so that listener is not bound. Logged once at start; PEP_HTTP=true (or PEP_PROXY_HTTP=true) brings it back. | none; the listener is reported off (http-off) |
 | `STS-XPEP-0107` | PEP_HTTP or PEP_PROXY_HTTP holds a value that is neither true nor false; the plain-HTTP listener it switches stays off (#1760). Logged once at start. | none; the listener is reported off (http-off) |
+| `STS-XPEP-0108` | A sign-in on a remote PEP proxy route with multipleAccounts was refused: the browser's account set already holds proxyMaxAccounts accounts (PEP_PROXY_MAX_ACCOUNTS). The new session is ended; the others are kept (#1760). | HTTP 403, the proxy's own page |
+| `STS-XPEP-0109` | A remote PEP proxy account act (switch, sign out) came from another site (Origin or Sec-Fetch-Site) and was refused (#1760). | HTTP 403 |
+| `STS-XPEP-0110` | A remote PEP proxy account page was asked for something it does not answer: no such page, or an add whose return path is not on a session route with multipleAccounts (#1760). | HTTP 404 |
+| `STS-XPEP-0111` | A remote PEP proxy account act named an account the browser's set does not hold (#1760). | HTTP 404 |
 
 ## STS-AUTHZEN
 

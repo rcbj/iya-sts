@@ -36,6 +36,16 @@ unless you ask for them. Over HTTPS, 9443 and 9543 behave as before.
 [Plain HTTP is off by default](remote-pep.md#plain-http-is-off-by-default)
 has the precedence and the reasons.
 
+### New: a remote PEP route's own page, and several accounts in one browser
+
+* Each reverse-proxy route has a console page of its own, where every
+  value can be edited and the route renamed
+  ([A route's own page](remote-pep.md#a-routes-own-page)).
+* A session route can let one browser hold several signed-in accounts and
+  switch between them (`multipleAccounts`, off by default; the bound is
+  `proxyMaxAccounts`, `PEP_PROXY_MAX_ACCOUNTS`, default 5;
+  [Several accounts in one browser](remote-pep.md#several-accounts-in-one-browser)).
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the

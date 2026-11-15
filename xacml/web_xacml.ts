@@ -1121,7 +1121,11 @@ class XacmlPage {
         (route.methods.length ? esc(route.methods.join(', '))
                               : t.html('consoleXacml.proxy.any')) +
         '</td><td>' + (route.public ? t.html('consoleXacml.proxy.public')
-          : esc(route.mechanisms.join(', '))) + '</td><td>' +
+          : esc(route.mechanisms.join(', ')) +
+            (route.multipleAccounts
+              ? '<div class="sub">' +
+                t.html('consoleXacml.proxy.multipleAccounts') + '</div>'
+              : '')) + '</td><td>' +
         (route.public ? '<span class="sub">' +
                         t.html('consoleXacml.proxy.noApplication') + '</span>'
           // THE APPLICATION IT FRONTS (D10), linked; what each mechanism
@@ -1805,6 +1809,10 @@ class XacmlPage {
       self.labelled(t, 'consoleXacml.routeForm.signals',
         'consoleXacml.tip.route.signals',
         self.yesNo('signals', r.signals !== false, t), when) + ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.multipleAccounts',
+        'consoleXacml.tip.route.multipleAccounts',
+        self.yesNo('multipleAccounts', r.multipleAccounts === true, t),
+        when) + ' ' +
       self.labelled(t, 'consoleXacml.routeForm.position',
         'consoleXacml.tip.route.position', '<input type="number" ' +
         'name="position" min="0" max="' + count + '" placeholder="' +
@@ -1883,6 +1891,7 @@ class XacmlPage {
       proxySessionTtlMs:
         t.html('consoleXacml.pepSettings.key.proxySessionTtlMs'),
       proxyMaxSessions: t.html('consoleXacml.pepSettings.key.proxyMaxSessions'),
+      proxyMaxAccounts: t.html('consoleXacml.pepSettings.key.proxyMaxAccounts'),
       proxyJwksTtlMs: t.html('consoleXacml.pepSettings.key.proxyJwksTtlMs'),
       proxyUpstreamInsecure:
         t.html('consoleXacml.pepSettings.key.proxyUpstreamInsecure'),
@@ -1927,6 +1936,7 @@ class XacmlPage {
         t.text('consoleXacml.tip.setting.proxySessionRecheckMs'),
       proxySessionTtlMs: t.text('consoleXacml.tip.setting.proxySessionTtlMs'),
       proxyMaxSessions: t.text('consoleXacml.tip.setting.proxyMaxSessions'),
+      proxyMaxAccounts: t.text('consoleXacml.tip.setting.proxyMaxAccounts'),
       proxyJwksTtlMs: t.text('consoleXacml.tip.setting.proxyJwksTtlMs'),
       proxyUpstreamInsecure:
         t.text('consoleXacml.tip.setting.proxyUpstreamInsecure'),

@@ -1167,6 +1167,10 @@ class XacmlAdmin {
       };
       const forward = self.flagOf(body.forwardCredentials);
       const signals = self.flagOf(body.signals);
+      const multiple = self.flagOf(body.multipleAccounts);
+      if (multiple !== undefined && !isPublic) {
+        given.multipleAccounts = multiple;
+      }
       if (forward !== undefined) {
         given.forwardCredentials = forward;
       }

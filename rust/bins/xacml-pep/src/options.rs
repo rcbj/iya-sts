@@ -106,6 +106,9 @@ pub struct Options {
     pub proxy_session_ttl_ms: u64,
     /// The most proxy sessions (and, separately, sign-ins in flight) held.
     pub proxy_max_sessions: usize,
+    /// The most accounts one browser's set holds on a route with
+    /// `multipleAccounts` (#1760); a sign-in past it is refused.
+    pub proxy_max_accounts: usize,
     /// How long a fetched JWKS is used before it is fetched again.
     pub proxy_jwks_ttl_ms: u64,
     /// Anchors for an https upstream, beside the system's; read once.
@@ -150,6 +153,9 @@ pub struct Now {
     pub proxy_session_recheck_ms: u64,
     pub proxy_session_ttl_ms: u64,
     pub proxy_max_sessions: usize,
+    /// The most accounts one browser's set holds on a route with
+    /// `multipleAccounts` (#1760); a sign-in past it is refused.
+    pub proxy_max_accounts: usize,
     pub proxy_jwks_ttl_ms: u64,
     pub proxy_upstream_insecure: bool,
     pub proxy_rp_allow_insecure: bool,
@@ -175,6 +181,7 @@ impl Now {
             "proxySessionRecheckMs": self.proxy_session_recheck_ms,
             "proxySessionTtlMs": self.proxy_session_ttl_ms,
             "proxyMaxSessions": self.proxy_max_sessions,
+            "proxyMaxAccounts": self.proxy_max_accounts,
             "proxyJwksTtlMs": self.proxy_jwks_ttl_ms,
             "proxyUpstreamInsecure": self.proxy_upstream_insecure,
             "proxyRpAllowInsecure": self.proxy_rp_allow_insecure,
@@ -527,6 +534,10 @@ impl Options {
                 "proxyMaxSessions",
                 self.proxy_max_sessions as u64,
             ) as usize,
+            proxy_max_accounts: int(
+                "proxyMaxAccounts",
+                self.proxy_max_accounts as u64,
+            ) as usize,
             proxy_jwks_ttl_ms: int("proxyJwksTtlMs", self.proxy_jwks_ttl_ms),
             proxy_upstream_insecure: flag(
                 "proxyUpstreamInsecure",
@@ -637,6 +648,11 @@ impl Options {
                 10_000usize,
             )
             .max(1),
+            proxy_max_accounts: int_from_env(
+                "PEP_PROXY_MAX_ACCOUNTS",
+                5usize,
+            )
+            .clamp(1, 32),
             proxy_jwks_ttl_ms: int_from_env(
                 "PEP_PROXY_JWKS_TTL_MS",
                 300_000u64,

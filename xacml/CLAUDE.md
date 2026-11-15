@@ -1520,6 +1520,11 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   No per-route upstream exists in the model; the page says so. A PEP still
   holding the old document asks `/xacml/pep/identity` for the old id until
   its next poll, which is the rename's one cost.
+* **`multipleAccounts`** (#1760, rcbj: "support multiple authenticated
+  users within a tab"), a route member, false by default and normalised
+  onto every route; true needs the `session` mechanism (`STS-XACML-0257`).
+  The PEP's half, its pages and its bound (`proxyMaxAccounts`, a managed
+  setting) are `xacml-pep/CLAUDE.md`'s. An older PEP ignores the member.
 * **A PEP REPORTS ONE ROW PER STREAM** inside `signals` as `streams` on its
   heartbeat (never on its `GET /`, which answers anybody): the client id,
   the transmitter's stream id, running, healthy, the AGES of its start,

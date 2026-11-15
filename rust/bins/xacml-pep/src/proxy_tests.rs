@@ -77,6 +77,8 @@ struct ServiceState {
     acs_url: String,
     /// The heartbeats the PEP sent, as their bodies.
     heartbeats: Vec<Value>,
+    /// Who the next ID Token names, (sub, username); carol when unset.
+    who: Option<(String, String)>,
 }
 
 /// What the application has seen of its SAML sessions.
@@ -232,14 +234,15 @@ fn id_token(
     nonce: &str,
     sid: &str,
     access_token: &str,
+    who: &(String, String),
 ) -> String {
     let now = chrono::Utc::now().timestamp();
     let digest = openssl::sha::sha256(access_token.as_bytes());
     jws(
         key,
         &json!({ "alg": "RS256", "kid": "k1", "typ": "JWT" }),
-        &json!({ "iss": issuer, "aud": client, "sub": "urn:uuid:carol",
-                 "preferred_username": "carol", "nonce": nonce, "sid": sid,
+        &json!({ "iss": issuer, "aud": client, "sub": who.0,
+                 "preferred_username": who.1, "nonce": nonce, "sid": sid,
                  "at_hash": b64url_encode(&digest[..16]),
                  "exp": now + 300, "iat": now }),
     )
@@ -467,9 +470,12 @@ async fn service(
                         "token_type": "Bearer", "expires_in": 300 })),
                 );
             }
-            let (issuer, expect) = {
+            let (issuer, expect, who) = {
                 let g = s.lock().unwrap();
-                (g.issuer.clone(), g.expect.clone())
+                (g.issuer.clone(), g.expect.clone(),
+                 g.who.clone().unwrap_or_else(|| {
+                     ("urn:uuid:carol".to_string(), "carol".to_string())
+                 }))
             };
             let Some((challenge, nonce, sid)) = expect else {
                 return (StatusCode::BAD_REQUEST, Json(json!({})));
@@ -494,7 +500,8 @@ async fn service(
                 StatusCode::OK,
                 Json(json!({
                     "id_token":
-                        id_token(&key, &issuer, &client, &nonce, &sid, &access),
+                        id_token(&key, &issuer, &client, &nonce, &sid, &access,
+                                 &who),
                     "access_token": access, "token_type": "Bearer",
                     "expires_in": 300 })),
             )
@@ -687,7 +694,12 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
                 { "id": "sso", "path": "/sso", "mechanisms": ["basic"],
                   "application": "sso-app",
                   "resolved": resolved_for(false, false, ""),
-                  "identity": { "mode": "saml" } }
+                  "identity": { "mode": "saml" } },
+                { "id": "multi", "path": "/multi", "mechanisms": ["session"],
+                  "application": LIVE_CLIENT, "multipleAccounts": true,
+                  "resolved": resolved_for(false, false, LIVE_CLIENT),
+                  "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Remote-User", "claim": "username" } ] } }
             ]
         },
         "realm": {
@@ -726,6 +738,7 @@ async fn harness() -> Harness {
     // The mock provider is plain http on loopback.
     options.proxy_rp_allow_insecure = true;
     options.proxy_signals_poll_ms = 100;
+    options.proxy_max_accounts = 2;
     // Short enough for the stale-stream test, long enough that a busy
     // machine never makes a working stream look stale.
     options.proxy_signals_stale_ms = 2000;
@@ -1697,7 +1710,7 @@ async fn the_configuration_is_pulled_with_its_token_and_etag() {
         overview["active"], true,
         "kept through a 304, a 500 and a document refused whole"
     );
-    assert_eq!(overview["routes"], 13);
+    assert_eq!(overview["routes"], 14);
     assert_eq!(overview["lastPullOk"], false);
     assert!(overview["lastPullWhy"]
         .as_str()
@@ -1919,4 +1932,265 @@ async fn a_session_route_proves_its_subject_with_the_librarys_token() {
     assert_eq!(route, "apptok");
     assert_eq!(evidence["kind"], "access_token");
     assert_eq!(evidence["value"], "at-sid-tok", "the library's token");
+}
+
+impl Harness {
+    /// A browser holding `cookie` asks `path`: where the proxy sends it.
+    async fn location_of(&self, path: &str, cookie: &str) -> (u16, String) {
+        let r = self
+            .get(path)
+            .header("accept", "text/html")
+            .header("cookie", cookie)
+            .send()
+            .await
+            .unwrap();
+        let to = r
+            .headers()
+            .get("location")
+            .map(|v| v.to_str().unwrap().to_string())
+            .unwrap_or_default();
+        (r.status().as_u16(), to)
+    }
+
+    /// Signs `who` in through the authorization URL `location`, the
+    /// service answering for `sid`; the callback's answer.
+    async fn sign_in_as(
+        &self,
+        location: &str,
+        who: (&str, &str),
+        sid: &str,
+        code: &str,
+    ) -> reqwest::Response {
+        let q = query_of(location);
+        {
+            let mut g = self.service.lock().unwrap();
+            g.expect = Some((
+                member(&q, "code_challenge"),
+                member(&q, "nonce"),
+                sid.into(),
+            ));
+            g.who = Some((who.0.into(), who.1.into()));
+        }
+        self.come_back(code, &member(&q, "state")).await
+    }
+
+    /// The browser's accounts as `GET /.iya-pep/accounts?format=json`.
+    async fn accounts_of(&self, cookie: &str) -> Value {
+        self.get("/.iya-pep/accounts?format=json")
+            .header("cookie", cookie)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap()
+    }
+
+    /// An account act's form, from this proxy's own page.
+    async fn account_act(
+        &self,
+        path: &str,
+        form: &str,
+        cookie: &str,
+        origin: &str,
+    ) -> reqwest::Response {
+        self.http
+            .post(format!("{}{}", self.proxy, path))
+            .header("cookie", cookie)
+            .header("origin", origin)
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body(form.to_string())
+            .send()
+            .await
+            .unwrap()
+    }
+
+    /// Who the application was told is asking, on `/multi/page`.
+    async fn forwarded_as(&self, cookie: &str) -> Value {
+        echoed(
+            self.get("/multi/page")
+                .header("cookie", format!("{}; other=1", cookie))
+                .send()
+                .await
+                .unwrap(),
+        )
+        .await
+    }
+}
+
+fn account_named(list: &Value, username: &str) -> Value {
+    list["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["username"] == username)
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+/// SEVERAL ACCOUNTS IN ONE BROWSER (#1760): a second account added with
+/// prompt=login, the ACTIVE one the only identity forwarded, switching,
+/// a CAEP session-revoked ending ONLY its account (and no other made active
+/// in its place), signing one out, and the account-set cookie never
+/// reaching the application.
+#[tokio::test]
+async fn several_accounts_in_one_browser() {
+    let h = harness().await;
+    let origin = h.proxy.clone();
+    // The first sign-in: no set yet, an ordinary authorization request.
+    let (status, to) = h.location_of("/multi/page", "").await;
+    assert_eq!(status, 302);
+    assert_eq!(member(&query_of(&to), "prompt"), "");
+    let r = h.sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-a", "m1")
+        .await;
+    assert_eq!(r.status(), 302);
+    assert_eq!(r.headers()["location"], "/multi/page");
+    let set_cookie = r.headers()["set-cookie"].to_str().unwrap().to_string();
+    assert!(set_cookie.starts_with("iya_pep_accounts="), "{}", set_cookie);
+    assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax"));
+    let set = cookie_of(&r);
+    let said = h.forwarded_as(&set).await;
+    assert_eq!(said["headers"]["x-remote-user"], "alice");
+    assert_eq!(said["headers"]["cookie"], "other=1",
+               "the account set never reaches the application");
+    // ADD ANOTHER: prompt=login, the browser back where it was.
+    let (status, to) = h
+        .location_of("/.iya-pep/accounts/add?return=%2Fmulti%2Fpage", &set)
+        .await;
+    assert_eq!(status, 302);
+    assert_eq!(member(&query_of(&to), "prompt"), "login");
+    let r = h.sign_in_as(&to, ("urn:uuid:bob", "bob"), "sid-b", "m2").await;
+    assert_eq!(r.status(), 302);
+    assert_eq!(cookie_of(&r), set, "one set for the browser");
+    // The account added last is the active one: only bob is forwarded.
+    let said = h.forwarded_as(&set).await;
+    assert_eq!(said["headers"]["x-remote-user"], "bob");
+    let list = h.accounts_of(&set).await;
+    assert_eq!(list["accounts"].as_array().unwrap().len(), 2);
+    assert_eq!(account_named(&list, "bob")["active"], true);
+    assert_eq!(account_named(&list, "alice")["active"], false);
+    assert_eq!(list["accounts"][0]["application"], LIVE_CLIENT);
+    let alice = account_named(&list, "alice")["account"]
+        .as_str().unwrap().to_string();
+    let bob = account_named(&list, "bob")["account"]
+        .as_str().unwrap().to_string();
+    // The chooser is the proxy's own page under a strict policy.
+    let page = h.get("/.iya-pep/accounts?return=%2Fmulti%2Fpage")
+        .header("cookie", set.clone()).send().await.unwrap();
+    assert_eq!(page.status(), 200);
+    let csp = page.headers()["content-security-policy"].to_str().unwrap()
+        .to_string();
+    assert!(csp.contains("default-src 'none'") && csp.contains("frame-ancestors 'none'"));
+    let html = page.text().await.unwrap();
+    assert!(html.contains("alice") && html.contains("bob")
+            && html.contains("Add another account")
+            && html.contains("Sign out of all accounts"));
+    assert!(!html.contains("<script"), "no script on the chooser");
+    // SWITCH: alice is forwarded again, and only she.
+    let r = h.account_act("/.iya-pep/accounts/switch",
+        &format!("account={}&return=%2Fmulti%2Fpage", alice), &set, &origin)
+        .await;
+    assert_eq!(r.status(), 303);
+    assert_eq!(r.headers()["location"], "/multi/page");
+    assert_eq!(h.forwarded_as(&set).await["headers"]["x-remote-user"],
+               "alice");
+    // A switch from another site is refused, and changes nothing.
+    let r = h.account_act("/.iya-pep/accounts/switch",
+        &format!("account={}", bob), &set, "https://evil.example").await;
+    assert_eq!(r.status(), 403);
+    assert_eq!(h.forwarded_as(&set).await["headers"]["x-remote-user"],
+               "alice");
+    // An account the set does not hold is refused.
+    let r = h.account_act("/.iya-pep/accounts/switch", "account=nobody",
+                          &set, &origin).await;
+    assert_eq!(r.status(), 404);
+    // CAEP SESSION-REVOKED FOR ALICE'S SESSION ends HER account only.
+    let (key, issuer) = (h.key.clone(), h.service_base.clone());
+    h.service.lock().unwrap().queued.push((
+        "set-sid-a".into(),
+        session_revoked(&key, &issuer, "sid-a"),
+    ));
+    let mut status = 200;
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        status = h.get("/multi/page").header("cookie", set.clone())
+            .send().await.unwrap().status().as_u16();
+        if status != 200 {
+            break;
+        }
+    }
+    assert_eq!(status, 401, "alice's account ended; nobody else stands in");
+    let list = h.accounts_of(&set).await;
+    assert_eq!(list["accounts"].as_array().unwrap().len(), 1);
+    assert_eq!(list["accounts"][0]["username"], "bob");
+    assert_eq!(list["accounts"][0]["active"], false,
+               "no account is made active for the person");
+    // A browser is sent to the chooser to pick, not signed in as bob.
+    let (status, to) = h.location_of("/multi/page", &set).await;
+    assert_eq!(status, 302);
+    assert!(to.starts_with("/.iya-pep/accounts?return="), "{}", to);
+    let r = h.account_act("/.iya-pep/accounts/switch",
+        &format!("account={}", bob), &set, &origin).await;
+    assert_eq!(r.status(), 303);
+    assert_eq!(h.forwarded_as(&set).await["headers"]["x-remote-user"], "bob");
+    // SIGN OUT ONE, then the set is empty and the next sign-in starts afresh.
+    let r = h.account_act("/.iya-pep/accounts/logout",
+        &format!("account={}&return=%2Fmulti%2Fpage", bob), &set, &origin)
+        .await;
+    assert_eq!(r.status(), 303);
+    assert!(h.accounts_of(&set).await["accounts"].as_array().unwrap()
+              .is_empty());
+    assert_eq!(h.get("/multi/page").header("cookie", set.clone())
+                 .send().await.unwrap().status(), 401);
+}
+
+/// THE BOUND (`proxyMaxAccounts`, 2 in the harness): a third account is
+/// refused rather than evicting one; the same person signing in again
+/// replaces their own account; and Sign out of all ends every account.
+#[tokio::test]
+async fn the_account_set_is_bounded() {
+    let h = harness().await;
+    let origin = h.proxy.clone();
+    let (_, to) = h.location_of("/multi/page", "").await;
+    let set = cookie_of(&h.sign_in_as(&to, ("urn:uuid:alice", "alice"),
+                                      "sid-1", "b1").await);
+    let add = "/.iya-pep/accounts/add?return=%2Fmulti%2Fpage";
+    let (_, to) = h.location_of(add, &set).await;
+    h.sign_in_as(&to, ("urn:uuid:bob", "bob"), "sid-2", "b2").await;
+    let (_, to) = h.location_of(add, &set).await;
+    let r = h.sign_in_as(&to, ("urn:uuid:carol", "carol"), "sid-3", "b3")
+        .await;
+    assert_eq!(r.status(), 403, "a full set refuses the third");
+    let list = h.accounts_of(&set).await;
+    assert_eq!(list["accounts"].as_array().unwrap().len(), 2);
+    assert_eq!(list["max"], 2);
+    // Alice again (her account named): prompt=login with her login_hint,
+    // and her account kept, its session replaced.
+    let alice = account_named(&list, "alice")["account"]
+        .as_str().unwrap().to_string();
+    let (_, to) = h
+        .location_of(&format!("{}&account={}", add, alice), &set)
+        .await;
+    assert_eq!(member(&query_of(&to), "login_hint"), "alice");
+    let r = h.sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-4", "b4")
+        .await;
+    assert_eq!(r.status(), 302);
+    let list = h.accounts_of(&set).await;
+    assert_eq!(list["accounts"].as_array().unwrap().len(), 2);
+    assert_eq!(account_named(&list, "alice")["account"], alice.as_str());
+    assert_eq!(account_named(&list, "alice")["active"], true);
+    // The ID Token must name the account asked for again.
+    let (_, to) = h
+        .location_of(&format!("{}&account={}", add, alice), &set)
+        .await;
+    let r = h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"), "sid-5", "b5")
+        .await;
+    assert_eq!(r.status(), 401, "another person than the one asked for");
+    // SIGN OUT OF ALL.
+    let r = h.account_act("/.iya-pep/accounts/logout-all",
+                          "return=%2Fmulti%2Fpage", &set, &origin).await;
+    assert_eq!(r.status(), 303);
+    assert!(r.headers()["set-cookie"].to_str().unwrap().contains("Max-Age=0"));
+    assert!(h.accounts_of(&set).await["accounts"].as_array().unwrap()
+              .is_empty());
 }

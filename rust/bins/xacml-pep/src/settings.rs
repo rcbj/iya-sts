@@ -138,6 +138,11 @@ pub const SETTINGS: &[Row] = &[
         kind: Kind::Int(1, 1_000_000),
     },
     Row {
+        key: "proxyMaxAccounts",
+        env: "PEP_PROXY_MAX_ACCOUNTS",
+        kind: Kind::Int(1, 32),
+    },
+    Row {
         key: "proxyJwksTtlMs",
         env: "PEP_PROXY_JWKS_TTL_MS",
         kind: Kind::Int(0, DAY_MS),
