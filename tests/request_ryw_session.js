@@ -168,6 +168,25 @@ const STUB = [
   "      res.end(body.length ? body : 'ok');",
   "    });",
   "  });",
+  // WHAT CLOSED A CONNECTION THE FRONT WAS STILL WRITING (GitHub Actions
+  // run 43672106260 and two before it: R15's issuance to W answered 502,
+  // `write EPIPE`, after its bytes were accepted, so not sent again). This
+  // server closes a connection early only on a parse error or a socket
+  // error, and neither said anything. Written to stderr, which the run's
+  // log for this file keeps; it decides nothing.
+  "  server.on('clientError', function (e, sock) {",
+  "    process.stderr.write('[ryw stub ' + wt.threadId + '] clientError ' +",
+  "      (e && e.code) + ': ' + (e && e.message) + ' raw=' +",
+  "      JSON.stringify(e && e.rawPacket ?",
+  "        e.rawPacket.toString('latin1').slice(0, 600) : '') + '\\n');",
+  "    sock.destroy();",
+  "  });",
+  "  server.on('connection', function (sock) {",
+  "    sock.on('error', function (e) {",
+  "      process.stderr.write('[ryw stub ' + wt.threadId + '] socket ' +",
+  "        (e && e.code) + ': ' + (e && e.message) + '\\n');",
+  "    });",
+  "  });",
   "  server.listen(m.socket, function () {",
   "    wt.parentPort.postMessage({ ready: true });",
   "  });",
