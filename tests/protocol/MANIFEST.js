@@ -2461,6 +2461,16 @@ const JOBS = [
   // JARM, nonces, registrations, refresh, 1-advanced over mutual TLS
   // (federation_fapi_client, federation_oidc_rp 10).
   { file: 'sts_federation_fapi_client.js', browser: false, local: true },
+  // D12 (#444): a partner's sign-out, every refusal by its code, in a
+  // development and a product realm, against partners written here
+  // (federation_signout 0, 2-6).
+  { file: 'sts_federation_signout_codes.js', browser: false, local: true },
+  // D12 (#444): a partner's encrypted assertion or ID Token, every refusal
+  // by its code, in both modes (federation_encryption 0, 3-6). Its product
+  // realm needs a process that holds a key-encryption key and persists
+  // keys, as every product and store stack does.
+  { file: 'sts_federation_encryption_codes.js', browser: false,
+    local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
