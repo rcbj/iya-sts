@@ -534,6 +534,93 @@ async function child(ROOT, outFile) {
   update('reg-oauth', { attribute: 'oauthClientSecret', mode: 'set',
                         value: 'another-typed-secret' });
 
+  // EACH CHECK'S FAMILY, a good value and a bad one: introspection, request
+  // objects, response and request defaults, subject types, CIBA, PAR, HTTP
+  // signatures, step-up, delegation, Kerberos trust, AuthZEN, RFC 9396
+  // types, mutual TLS, GNAP trust, DIDs, claim rows and selections, the
+  // closed choices and the setting overrides.
+  [['oauthIntrospectionSignedResponseAlg', 'set', 'RS256'],
+   ['oauthIntrospectionSignedResponseAlg', 'set', 'HS999'],
+   ['oauthIntrospectionEncryptedResponseEnc', 'set', 'A128GCM'],
+   ['oauthIntrospectionEncryptedResponseAlg', 'set', 'RSA-OAEP-256'],
+   ['oauthIntrospectionEncryptedResponseAlg', 'set', 'bogus'],
+   ['oauthRequestUri', 'add', 'https://reg.example/request'],
+   ['oauthRequestUri', 'add', 'http://reg.example/request'],
+   ['oauthRequestUri', 'add', 'not a uri'],
+   ['oauthRequestObjectSigningAlg', 'set', 'ES256'],
+   ['oauthRequestObjectSigningAlg', 'set', 'XS256'],
+   ['oauthRequestObjectEncryptionEnc', 'set', 'A256GCM'],
+   ['oauthRequireSignedRequestObject', 'set', 'TRUE'],
+   ['oauthRequireSignedRequestObject', 'set', 'maybe'],
+   ['oauthIdTokenSignedResponseAlg', 'set', 'PS256'],
+   ['oauthIdTokenSignedResponseAlg', 'set', 'none'],
+   ['oauthIdTokenEncryptedResponseEnc', 'set', 'A256GCM'],
+   ['oauthIdTokenEncryptedResponseAlg', 'set', 'ECDH-ES'],
+   ['oauthUserinfoSignedResponseAlg', 'set', 'none'],
+   ['oauthAuthorizationSignedResponseAlg', 'set', 'nope'],
+   ['oauthDefaultAcrValues', 'add', 'urn:acr:one'],
+   ['oauthDefaultAcrValues', 'add', 'two words'],
+   ['oauthDefaultMaxAge', 'set', '300'],
+   ['oauthDefaultMaxAge', 'set', '-1'],
+   ['oauthDefaultMaxAge', 'set', 'abc'],
+   ['oauthSubjectType', 'set', 'pairwise'],
+   ['oauthSubjectType', 'set', 'secret'],
+   ['oauthSectorIdentifierUri', 'set', 'http://sector.example/'],
+   ['oauthSectorIdentifierUri', 'set', 'https://sector.example/s.json'],
+   ['oauthTokenEndpointAuthSigningAlg', 'set', 'RS256'],
+   ['oauthTokenEndpointAuthSigningAlg', 'set', 'HS256'],
+   ['oauthBackchannelTokenDeliveryMode', 'set', 'poll'],
+   ['oauthBackchannelTokenDeliveryMode', 'set', 'carrier'],
+   ['oauthBackchannelClientNotificationEndpoint', 'set', 'http://x.example/'],
+   ['oauthRequirePushedAuthorizationRequests', 'set', 'TRUE'],
+   ['oauthRequirePushedAuthorizationRequests', 'set', 'often'],
+   ['oauthHttpSignedRequests', 'set', 'sometimes'],
+   ['oauthStepUpAcrValues', 'add', 'urn:acr:strong'],
+   ['oauthStepUpAcrValues', 'add', 'two words'],
+   ['oauthStepUpMaxAge', 'set', '999999999999'],
+   ['appNotDelegated', 'set', 'perhaps'],
+   ['appDelegationSemantics', 'set', 'impersonation'],
+   ['appDelegationSemantics', 'set', 'possession'],
+   ['authzenAttribute', 'add', 'not a row'],
+   ['oauthAuthorizationDetailsType', 'add', 'payment_initiation'],
+   ['oauthAuthorizationDetailsType', 'add', '{"type":"x","actions":["read"]}'],
+   ['oauthAuthorizationDetailsType', 'add', '{broken'],
+   ['oauthTokenEndpointAuthMethod', 'add', 'carrier_pigeon'],
+   ['oauthGrantType', 'add', 'telepathy'],
+   ['oauthGrantType', 'add', 'authorization_code'],
+   ['appAuthnPolicy', 'set', 'default'],
+   ['appAuthnPolicy', 'set', 'no-such-profile'],
+   ['oauthAccessTokenLifetimeS', 'set', '600'],
+   ['oauthAccessTokenLifetimeS', 'set', 'soon'],
+   ['oauthClaimAttributesAccessToken', 'set', '["mail"]'],
+   ['oauthClaimAttributesAccessToken', 'set', 'not json'],
+   ['oauthClaimsAccessToken', 'set', 'not json'],
+   ['appLocalePolicy', 'set', 'default']
+  ].forEach(function (one) {
+    update('reg-oauth', { attribute: one[0], mode: one[1], value: one[2] });
+  });
+  [['reg-mtls', 'oauthTlsClientAuthSubjectDn', 'set', 'CN=reg-mtls,O=Example'],
+   ['reg-mtls', 'oauthTlsClientAuthSubjectDn', 'set', 'not=a=dn,,'],
+   ['reg-mtls', 'oauthTlsClientAuthSanDns', 'set', 'client.example.test'],
+   ['reg-mtls', 'oauthTlsClientAuthSanIp', 'set', '300.1.1.1'],
+   ['reg-gnap', 'gnapMtlsTrust', 'set', 'nonsense'],
+   ['reg-many', 'didAlsoKnownAs', 'add', 'https://aka.example/'],
+   ['reg-many', 'didAlsoKnownAs', 'add', 'not a uri'],
+   ['reg-many', 'didService', 'add', '{"id":"#site","type":"LinkedDomains",' +
+                                     '"serviceEndpoint":"https://x.example"}'],
+   ['reg-many', 'didService', 'add', '{"id":"#x","type":"Bogus"}'],
+   ['reg-many', 'didPublicKeyJwk', 'add', '{"kty":"oct","k":"AAAA"}'],
+   ['reg-many', 'didPublicKeyJwk', 'add', 'not json'],
+   ['HTTP/reg.example.test@EXAMPLE.TEST', 'krb5S4uSelfRealm', 'set',
+    'OTHER.TEST'],
+   ['reg-ssf', 'ssfAllowedEvents', 'add', 'not-an-event'],
+   ['reg-ssf', 'ssfDeliveryEndpoint', 'set', 'https://receiver.example/'],
+   ['reg-saml2', 'samlAssertionConsumerService', 'add',
+    'https://saml.example/acs2']
+  ].forEach(function (one) {
+    update(one[0], { attribute: one[1], mode: one[2], value: one[3] });
+  });
+
   // THE RETURN-ADDRESS PROVENANCE PAIR, and a sighting's observed mark.
   call('confirmReturnAddress', ['web-client', {
     attribute: 'oauthRedirectUri', value: 'https://web.example/cb' }]);
@@ -696,6 +783,12 @@ async function child(ROOT, outFile) {
     settings: settings, modes: modes, parses: parses, inForce: inForce,
     allows: allows, scopeKept: scopeKept, refusalReasons: overrides,
     persists: !!req('common/keystore').persists(),
+    // The other families' answers the checks ask: the SSF event types,
+    // and whether the KDC accepts a realm.
+    ssfEvents: Object.keys(req('ssf/ssf_events').EVENT_BY_URI),
+    kerberosRealms: ['OTHER.TEST', 'EXAMPLE.TEST'].filter(function (one) {
+      return !!req('kerberos/krb5_trusts').acceptsRealm(one);
+    }),
     steps: steps
   }));
 }

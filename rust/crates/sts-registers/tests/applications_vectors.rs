@@ -148,6 +148,8 @@ impl AppEnv for Replay {
 struct Effects {
     seen: Mutex<Vec<Value>>,
     scope_kept: Vec<Value>,
+    ssf_events: Vec<Value>,
+    kerberos_realms: Vec<Value>,
 }
 
 impl Effects {
@@ -226,12 +228,12 @@ impl AppEffects for Effects {
         String::new()
     }
 
-    fn ssf_event_known(&self, _uri: &str) -> bool {
-        true
+    fn ssf_event_known(&self, uri: &str) -> bool {
+        self.ssf_events.contains(&json!(uri))
     }
 
-    fn kerberos_accepts_realm(&self, _realm: &str) -> bool {
-        false
+    fn kerberos_accepts_realm(&self, realm: &str) -> bool {
+        self.kerberos_realms.contains(&json!(realm))
     }
 }
 
@@ -470,6 +472,11 @@ fn the_application_register_answers_as_node_does() {
     let effects = Arc::new(Effects {
         seen: Mutex::new(Vec::new()),
         scope_kept: v["scopeKept"].as_array().cloned().unwrap_or_default(),
+        ssf_events: v["ssfEvents"].as_array().cloned().unwrap_or_default(),
+        kerberos_realms: v["kerberosRealms"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default(),
     });
     let reg = ApplicationRegistry::new(
         Some(dir.clone()),
