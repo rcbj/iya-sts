@@ -338,6 +338,72 @@ fn node_saml_vectors_both_ways() {
     let mut signed_out = Vec::new();
     let mut checked = 0;
 
+    // SAML 1.1's assertions.
+    for a in v["saml11"].as_array().unwrap() {
+        checked += 2;
+        let o = &a["opts"];
+        let attrs = |list: &Json| -> Vec<sts_saml::saml11::Attribute11> {
+            list.as_array()
+                .map(|l| {
+                    l.iter()
+                        .map(|x| sts_saml::saml11::Attribute11 {
+                            name: s(&x["name"]).into(),
+                            namespace: s(&x["namespace"]).into(),
+                            values: match &x["values"] {
+                                Json::Array(v) => {
+                                    v.iter().map(|y| s(y).to_string()).collect()
+                                }
+                                _ => vec![s(&x["value"]).to_string()],
+                            },
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let opts = sts_saml::saml11::Options11 {
+            subject: s(&o["subject"]).into(),
+            audience: s(&o["audience"]).into(),
+            issuer: "https://idp.vectors.example".into(),
+            authn_instant: s(&o["authnInstant"]).into(),
+            authn_method: s(&o["authnMethod"]).into(),
+            name_id_format: s(&o["nameIdFormat"]).into(),
+            name_id_value: o["nameIdValue"].as_str().map(String::from),
+            name_qualifier: s(&o["nameQualifier"]).into(),
+            confirmation_method: s(&o["confirmationMethod"]).into(),
+            do_not_cache: o["doNotCache"].as_bool().unwrap_or(false),
+            locality: o["subjectLocality"].as_object().map(|l| {
+                sts_saml::saml11::Locality {
+                    ip_address: l["ipAddress"].as_str().unwrap_or("").into(),
+                    dns_address: l["dnsAddress"].as_str().unwrap_or("").into(),
+                }
+            }),
+            attributes: attrs(&o["attributes"]),
+            custom: attrs(&a["custom"]),
+            without_authentication_statement: o["authenticationStatement"]
+                == json!(false),
+        };
+        let at = Instants {
+            id: s(&a["instants"]["id"]).into(),
+            now: s(&a["instants"]["now"]).into(),
+            not_before: s(&a["instants"]["notBefore"]).into(),
+            not_on_or_after: s(&a["instants"]["notOnOrAfter"]).into(),
+        };
+        let ours = sts_saml::saml11::build_unsigned(&at, &opts);
+        if ours != s(&a["unsigned"]) {
+            fail(format!(
+                "saml11 {}:\n  node {}\n  rust {}",
+                a["name"], a["unsigned"], ours
+            ));
+            continue;
+        }
+        let signed = signer.sign(&ours, Placement::Last).unwrap();
+        if signed != s(&a["signed"]) {
+            fail(format!("signed saml11 {}", a["name"]));
+        }
+        signed_out.push(json!({ "name": a["name"], "element": "Assertion",
+                                "xml": signed, "certPem": signer.cert_pem }));
+    }
+
     // The back channel and Single Logout's messages.
     for l in v["logout"].as_array().unwrap() {
         checked += 1;

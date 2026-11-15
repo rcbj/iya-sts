@@ -30,4 +30,5 @@ pub mod metadata;
 pub mod model;
 pub mod request;
 pub mod response;
+pub mod saml11;
 pub mod sp_signature;

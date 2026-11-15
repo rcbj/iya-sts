@@ -125,6 +125,42 @@ function build(ROOT) {
     nameQualifier: 'https://idp.vectors.example', spNameQualifier: SP,
     attributeQuery: true });
 
+  // SAML 1.1 (saml11.ts): the assertion, unsigned and signed LAST.
+  const saml11Lib = require(path.join(ROOT, 'saml', 'saml11'));
+  const v11 = [];
+  const one11 = function (name, opts) {
+    const o = Object.assign({ issuer: 'https://idp.vectors.example',
+                              sign: false }, opts);
+    const xml = saml11Lib.buildSaml11Assertion(o);
+    const pick = function (re) {
+      const m = re.exec(xml);
+      return m ? m[1] : '';
+    };
+    v11.push({ name: name, opts: opts,
+               custom: JSON.parse(JSON.stringify(stats.samlAttributes(
+                 'saml11', { subject: opts.subject,
+                             audience: opts.audience }))),
+               instants: { id: pick(/AssertionID="([^"]+)"/),
+                           now: pick(/ IssueInstant="([^"]+)"/),
+                           notBefore: pick(/NotBefore="([^"]+)"/),
+                           notOnOrAfter: pick(/NotOnOrAfter="([^"]+)"/) },
+               unsigned: xml,
+               signed: saml11Lib.signSaml11Assertion(xml) });
+  };
+  one11('the defaults', { subject: 'alice' });
+  one11('everything', { subject: 'a<b', audience: SP, lifetimeMin: 5,
+    authnInstant: '2026-11-15T09:00:00.000Z',
+    authnMethod: 'urn:oasis:names:tc:SAML:1.0:am:password',
+    nameIdFormat: 'urn:x:f', nameIdValue: 'v&1', nameQualifier: 'q',
+    confirmationMethod: 'urn:oasis:names:tc:SAML:1.0:cm:artifact',
+    doNotCache: true,
+    subjectLocality: { ipAddress: '10.0.0.1', dnsAddress: 'h.example' },
+    attributes: [{ name: 'mail', namespace: 'urn:ns', value: 'a@b' },
+                 { name: 'g', namespace: 'urn:ns', values: ['x', 'y'] }] });
+  one11('no authentication statement', { subject: 'bob',
+    authenticationStatement: false,
+    attributes: [{ name: 'n', namespace: 'urn:ns', value: '1' }] });
+
   // THE RESPONSES.
   const responses = [];
   [['urn:oasis:names:tc:SAML:2.0:status:Success', '', ''],
@@ -373,7 +409,7 @@ function build(ROOT) {
   const signatures = signatureVectors(ROOT, request);
 
   return { signer: signer, signatures: signatures, metadata: metadata,
-           logout: logout,
+           logout: logout, saml11: v11,
            assertions: assertions, responses: responses,
            bindings: bindings, requests: requests, artifacts: artifacts,
            idpEntityId: direct.idpEntityId() };
