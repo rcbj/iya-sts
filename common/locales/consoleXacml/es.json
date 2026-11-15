@@ -597,6 +597,8 @@
   "routeForm.remove": "Eliminar",
   "routePage.lead": "Una ruta del proxy inverso de este PEP. Cada valor de la ruta se edita en el formulario de abajo, y al guardar se comprueba la configuración completa exactamente como lo hace el editor del documento de la subpestaña Manifiesto de la pestaña Proxy inverso. El PEP carga el cambio en su siguiente sondeo.",
   "routePage.back": "Volver a la pestaña Proxy inverso de {pep}",
+  "routePage.title": "Detalle de la ruta: {route}",
+  "routePage.backToRoutes": "← Volver a las rutas",
   "routePage.notFound": "{pep} no tiene ninguna ruta llamada {route}. Puede que se haya renombrado o quitado.",
   "routePage.stateHeading": "Estado efectivo",
   "routePage.th.usable": "Utilizable",

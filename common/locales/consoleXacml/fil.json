@@ -597,6 +597,8 @@
   "routeForm.remove": "Alisin",
   "routePage.lead": "Isang route ng reverse proxy ng PEP na ito. Ine-edit ang bawat value ng route sa form sa ibaba, at sinusuri ng pag-save ang buong configuration tulad ng ginagawa ng document editor sa sub-tab na Manifest ng tab na Reverse proxy. Nilo-load ng PEP ang pagbabago sa susunod nitong poll.",
   "routePage.back": "Bumalik sa tab na Reverse proxy ng {pep}",
+  "routePage.title": "Detalye ng route: {route}",
+  "routePage.backToRoutes": "← Bumalik sa mga route",
   "routePage.notFound": "Walang route na {route} ang {pep}. Maaaring napalitan ang pangalan nito o naalis.",
   "routePage.stateHeading": "Kasalukuyang estado",
   "routePage.th.usable": "Magagamit",

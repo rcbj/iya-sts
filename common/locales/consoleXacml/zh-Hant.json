@@ -597,6 +597,8 @@
   "routeForm.remove": "刪除",
   "routePage.lead": "此 PEP 反向代理的一條路由。路由的每個值都在下面的表單中編輯，儲存時會像「反向代理」分頁「清單」子分頁上的文件編輯器一樣檢查整個組態。PEP 在下一次輪詢時載入變更。",
   "routePage.back": "返回 {pep} 的「反向代理」分頁",
+  "routePage.title": "路由詳情：{route}",
+  "routePage.backToRoutes": "← 返回路由",
   "routePage.notFound": "{pep} 沒有名為 {route} 的路由。它可能已被重新命名或移除。",
   "routePage.stateHeading": "實際狀態",
   "routePage.th.usable": "可用",

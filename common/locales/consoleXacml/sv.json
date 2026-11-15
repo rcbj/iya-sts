@@ -597,6 +597,8 @@
   "routeForm.remove": "Ta bort",
   "routePage.lead": "En väg i den här PEP:ens omvända proxy. Varje värde i vägen redigeras i formuläret nedan, och sparandet kontrollerar hela konfigurationen precis som dokumentredigeraren på underfliken Manifest på fliken Omvänd proxy. PEP:en läser in ändringen vid sin nästa hämtning.",
   "routePage.back": "Tillbaka till fliken Omvänd proxy för {pep}",
+  "routePage.title": "Vägdetaljer: {route}",
+  "routePage.backToRoutes": "← Tillbaka till vägarna",
   "routePage.notFound": "{pep} har ingen väg som heter {route}. Den kan ha bytt namn eller tagits bort.",
   "routePage.stateHeading": "Faktiskt tillstånd",
   "routePage.th.usable": "Användbar",

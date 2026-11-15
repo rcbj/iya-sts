@@ -52,8 +52,13 @@
 //      forms: helpers with no name, never posted; the runtime's
 //      wireCheckAll() ticks and unticks, and keeps both showing the state.
 //   T. THE TRAILS (rcbj): a PEP's page is Admin console › XACML › Remote
-//      PEPs › the PEP, and a route's adds › Reverse proxy › the route, each
-//      tab a crumb linking to that tab, built by the runtime's drawView().
+//      PEPs › the PEP, and a route's adds › Reverse proxy › Configured
+//      Routes › the route, each tab a crumb linking to that tab, built by
+//      the runtime's drawView().
+//   K. NO TAB TRAPS (rcbj, 2026-11-15): every tab of a route page's three
+//      rows links to the page it names, the current ones too, and the
+//      runtime navigates on it; the panel opens with Back to routes, then
+//      Route detail: <id> with the path beside it.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -592,7 +597,7 @@ async function run(t) {
     '<a href="' + x + 'xacml-tab-settings">Global settings</a>' +
     '<a href="' + x + 'xacml-tab-policies">Policies</a>' +
     '<a href="' + x + 'xacml-tab-editor">Policy editor</a>' +
-    '<a class="first" href="#xacml-tab-peps">Remote PEPs</a>' +
+    '<a class="first" href="' + x + 'xacml-tab-peps">Remote PEPs</a>' +
     '<a href="' + x + 'xacml-tab-decide">Try a decision</a>' +
     '<a href="' + x + 'xacml-tab-authzen">AuthZEN</a></nav>';
   t.equal(bars[0] || '', xacmlBar,
@@ -608,13 +613,15 @@ async function run(t) {
           '<a href="' + pepUrl + 'xacml-pep-tab-decisions">Decisions</a>' +
           '<a href="' + pepUrl + 'xacml-pep-tab-settings">Settings</a>' +
           '<a href="' + pepUrl + 'xacml-pep-tab-listener">Listener</a>' +
-          '<a class="first" href="#xacml-pep-tab-proxy">Reverse proxy</a>' +
+          '<a class="first" href="' + pepUrl + 'xacml-pep-tab-proxy">' +
+          'Reverse proxy</a>' +
           '<a href="' + pepUrl + 'xacml-pep-tab-signals">Signal streams</a>' +
           '</nav>',
           'W1. the PEP page\'s tabs, Reverse proxy current, the others ' +
           'links to the PEP page');
   t.equal(bars[1] || '', '<nav class="tabbar subbar" aria-label="Reverse ' +
-          'proxy"><a class="first" href="#xacml-pep-proxy-routes">Configured ' +
+          'proxy"><a class="first" href="' + pepUrl +
+          'xacml-pep-proxy-routes">Configured ' +
           'Routes</a><a href="' + pepUrl + 'xacml-pep-proxy-new-route">Create ' +
           'a New Route</a><a href="' + pepUrl + 'xacml-pep-proxy-manifest">' +
           'Manifest</a></nav>',
@@ -637,7 +644,8 @@ async function run(t) {
                    position: 0, count: 2, servedBy: [] } });
   t.check(reader.indexOf('xacml-pep-proxy-new-route') < 0 &&
           reader.indexOf('xacml-pep-proxy-manifest') >= 0 &&
-          reader.indexOf('<a class="first" href="#xacml-pep-tab-proxy">') >= 0,
+          reader.indexOf('<a class="first" href="' + pepUrl +
+                         'xacml-pep-tab-proxy">') >= 0,
           'W4. a reader\'s route page keeps the tabs, without Create a New ' +
           'Route', reader);
   const readerBars = reader.match(
@@ -678,6 +686,111 @@ async function run(t) {
                           'xacml-pep-pages">') >= 0,
           'X6. two rows of tabs; the Reverse proxy sub-tabs inside its tab',
           String(pepBars.length));
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== K. no tab on a route\'s page traps the reader ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): "clicking on that leaves you trapped on the route
+  // detail sub-subtab". The current tabs were `#<id>`, fragments of the
+  // route's own page; every tab of the three rows now links to the page
+  // it names, and the runtime navigates on each.
+  const ConsoleRuntimeK = require('../admin-ui/web_runtime');
+  const tabHrefs = function (html) {
+    log.debug("Entering tabHrefs().");
+    const out = [];
+    (html.match(/<nav class="tabbar[^"]*"[^>]*>[\s\S]*?<\/nav>/g) || [])
+      .forEach(function (bar) {
+        const re = /<a[^>]* href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
+        let m = re.exec(bar);
+        while (m) {
+          out.push({ href: m[1].replace(/&amp;/g, '&'), label: m[2] });
+          m = re.exec(bar);
+        }
+      });
+    log.debug("Leaving tabHrefs().");
+    return out;
+  };
+  const routeTabs = tabHrefs(page);
+  t.check(routeTabs.length === 16 && routeTabs.every(function (one) {
+    return one.href.indexOf('/admin/xacml') === 0;
+  }), 'K1. every tab of the route page\'s three rows is a link to another ' +
+          'page, the current ones included',
+          JSON.stringify(routeTabs));
+  t.check(routeTabs.some(function (one) {
+    return one.label === 'Configured Routes' &&
+      one.href === '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes';
+  }) && routeTabs.some(function (one) {
+    return one.label === 'Remote PEPs' &&
+      one.href === '/admin/xacml#xacml-tab-peps';
+  }), 'K2. Configured Routes links to the PEP page\'s sub-tab, Remote PEPs ' +
+          'to the XACML page\'s list');
+  // The runtime's click handler, against a route page's address.
+  const clicked = function (href) {
+    log.debug("Entering clicked(). " + href);
+    const went = [];
+    let prevented = false;
+    const at = new URL('https://sts.example.test/admin/xacml/pep/route' +
+                       '?pep=pep-1&route=orders-api');
+    const link = { tagName: 'A', target: '', parentElement: null,
+                   getAttribute: function (name) {
+                     return name === 'href' ? href : null;
+                   },
+                   hasAttribute: function () {
+                     return false;
+                   } };
+    ConsoleRuntimeK.prototype.onClick.call({
+      env: { location: at }, prefix: '', accounts: { enabled: false },
+      view: null, consolePath: ConsoleRuntimeK.prototype.consolePath,
+      go: function (to) {
+        went.push(to);
+      } }, { defaultPrevented: false, button: 0, target: link,
+             preventDefault: function () {
+               prevented = true;
+             } });
+    log.debug("Leaving clicked().");
+    return { went: went, prevented: prevented, hash: at.hash };
+  };
+  t.check(routeTabs.every(function (one) {
+    const done = clicked(one.href);
+    return done.prevented && done.went.length === 1 &&
+      done.went[0] === one.href;
+  }), 'K3. the runtime navigates on every tab with an href, to its page ' +
+          'and fragment');
+  const fragmentOnly = clicked('#xacml-pep-proxy-routes');
+  t.check(fragmentOnly.went.length === 0 &&
+          fragmentOnly.hash === '#xacml-pep-proxy-routes',
+          'K4. a fragment of the route page only moves the fragment: the ' +
+          'trap the hrefs replace');
+  const routesPanelK = panelOf(page, 'xacml-pep-proxy-routes');
+  const backAt = routesPanelK.indexOf('<p class="drillback"><a href="' +
+    '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes">' +
+    '← Back to routes</a></p>');
+  const titleAt = routesPanelK.indexOf('<div class="drilltitle"><h2>' +
+    'Route detail: orders-api</h2><span class="drillaside"><code>/api' +
+    '</code></span></div>');
+  t.check(backAt >= 0 && titleAt > backAt &&
+          routesPanelK.slice(0, backAt).indexOf('<form') < 0 &&
+          routesPanelK.slice(0, backAt).indexOf('<h') < 0 &&
+          routesPanelK.indexOf('One route of this PEP') > titleAt,
+          'K5. the route\'s panel opens with Back to routes, then its title ' +
+          'and path, then the lead', routesPanelK.slice(0, 900));
+  const readerPanel = panelOf(reader, 'xacml-pep-proxy-routes');
+  t.check(readerPanel.indexOf('class="drillback"') >= 0 &&
+          readerPanel.indexOf('Route detail: orders-api') >= 0 &&
+          tabHrefs(reader).every(function (one) {
+            return one.href.charAt(0) !== '#';
+          }),
+          'K6. a reader\'s route page: the same title, back link and tabs');
+  // The kit, for any drill-down drawn inside a parent's tabs: a panel with
+  // both `href` and `html` is drawn and its tab links back.
+  const kitTabs = kit.tabbedPanels('k', [
+    { id: 'k-a', label: 'A', href: '/admin/p#k-a' },
+    { id: 'k-b', label: 'B', href: '/admin/p#k-b', html: '<p>here</p>' }]);
+  t.check(kitTabs.indexOf('<a class="first" href="/admin/p#k-b">B</a>') >= 0 &&
+          kitTabs.indexOf('<section class="tabpanel first" id="k-b">') >= 0 &&
+          kitTabs.indexOf('id="k-a"') < 0,
+          'K7. the kit draws a panel with an href and links its tab there',
+          kitTabs);
 
   // -------------------------------------------------------------------------
   t.log.info('=== F. one field per line, under legends ===');
@@ -1036,10 +1149,12 @@ async function run(t) {
           'Remote PEPs -> /admin/xacml#xacml-tab-peps | ' +
           'pep-1 -> /admin/xacml/pep?pep=pep-1 | ' +
           'Reverse proxy -> ' +
+          '/admin/xacml/pep?pep=pep-1#xacml-pep-tab-proxy | ' +
+          'Configured Routes -> ' +
           '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-routes | ' +
           'orders-api',
           'T2. a route\'s page: Admin console › XACML › Remote PEPs › the ' +
-          'PEP › Reverse proxy › the route');
+          'PEP › Reverse proxy › Configured Routes › the route');
 
   // -------------------------------------------------------------------------
   t.log.info('=== Z. the Authorization section (#1760) ===');

@@ -597,6 +597,8 @@
   "routeForm.remove": "删除",
   "routePage.lead": "此 PEP 反向代理的一条路由。路由的每个值都在下面的表单中编辑，保存时会像“反向代理”标签页“清单”子标签页上的文档编辑器一样检查整个配置。PEP 在下一次轮询时加载变更。",
   "routePage.back": "返回 {pep} 的“反向代理”标签页",
+  "routePage.title": "路由详情：{route}",
+  "routePage.backToRoutes": "← 返回路由",
   "routePage.notFound": "{pep} 没有名为 {route} 的路由。它可能已被重命名或删除。",
   "routePage.stateHeading": "实际状态",
   "routePage.th.usable": "可用",

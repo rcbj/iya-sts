@@ -1168,6 +1168,10 @@ const PAGES: WebPage[] = [
       return [XacmlPage.pepsTabCrumb(t)].concat(pep
         ? [{ label: pep, href: XacmlPage.pepHref(pep) },
            { label: t.text('consoleXacml.pepPage.tab.proxy'),
+             href: XacmlPage.proxyHref(pep) },
+           // THE SUB-TAB TOO (rcbj, 2026-11-15): the trail names every
+           // level the reader went down, Configured Routes the last link.
+           { label: t.text('consoleXacml.proxy.tab.routes'),
              href: XacmlPage.proxyTabHref(pep) }]
         : []);
     },

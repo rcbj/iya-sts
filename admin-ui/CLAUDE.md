@@ -175,7 +175,38 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    `/admin/xacml#<tab>` (`XacmlPage.withinXacmlTabs()`, the one tab list
    `XacmlPage.xacmlTabs()` that `/admin/xacml` draws too). Three levels
    needed no change to the kit: every rule of the stylesheet is a child
-   rule on its own `.tabs` or `.subtabs`. And `WebAnswers.landing()` sends that page's save to the route as it
+   rule on its own `.tabs` or `.subtabs`.
+
+   **A DRILL-DOWN DRAWN INSIDE A PARENT'S TABS LINKS EVERY TAB BACK, TITLES
+   ITSELF, AND OFFERS A BACK LINK** (rcbj 2026-11-15: *"clicking on that
+   leaves you trapped on the route detail sub-subtab"*). The trap: the tab
+   of the one panel drawn was `#<its id>`, a fragment of the DRILL-DOWN's
+   own page, so Configured Routes, Reverse proxy and Remote PEPs on a
+   route's page each pointed at the route's page and the runtime, finding
+   the same path and query, only set the fragment. On a drill-down no tab
+   is the page itself, so **every tab carries `href`, the current ones
+   included**: a panel with `html` is drawn whatever its `href`
+   (`WebKit.drawsPanel()`), its tab links to the `href`, and it is still
+   the `first`, shown and marked current with no fragment — the
+   stylesheet's `a.first` rule, and `markOpenTabs()`, which falls back to
+   the `first` link when no link's fragment holds the target. The runtime
+   needed nothing: a tab whose `href` is another page goes through
+   `onClick()`'s `go()` like any link. The panel then opens with
+   `kit.drillTitle()`: *← Back to routes* directly under the innermost tab
+   row (rcbj: *"just below the 'Configured Routes' tab marker"*), then
+   *Route detail: <id>* with the path beside it — an indented heading with
+   the tab colour's bar (`.drilltitle`) as the level below that row, rather
+   than a fourth row of one tab, which would offer nothing to press but the
+   page.
+   The trail names every level: *XACML › Remote PEPs › the PEP › Reverse
+   proxy › Configured Routes › the route*, Reverse proxy linking to
+   `#xacml-pep-tab-proxy` and Configured Routes to
+   `#xacml-pep-proxy-routes`. **A tabbed page's own trail does not name the
+   tab that is open** — `/admin/xacml` ends at XACML and a PEP's page at the
+   PEP whichever tab or sub-tab a fragment opened: the trail is drawn with
+   the view and a tab press changes only the fragment, so a tab crumb would
+   go stale on the first press; the tab bar is what says which tab is open.
+   `tests/xacml_pep_console.js` X/W/T/K hold all of it. And `WebAnswers.landing()` sends that page's save to the route as it
    is now called (a rename moves its address) and its removal to the PEP's
    tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail

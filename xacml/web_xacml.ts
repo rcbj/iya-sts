@@ -1029,6 +1029,12 @@ class XacmlPage {
     return XacmlPage.pepHref(name) + '#' + XacmlPage.PROXY_ROUTES_TAB;
   }
 
+  // The PEP's Reverse proxy tab itself, the trail's crumb for it (rcbj,
+  // 2026-11-15), which opens on its first sub-tab.
+  static proxyHref(name: string): string {
+    return XacmlPage.pepHref(name) + '#' + XacmlPage.PROXY_TAB;
+  }
+
   // THE REMOTE PEPS TAB AS A CRUMB (rcbj, 2026-11-14): a PEP's page and a
   // route's name the tab they were opened from, by the tab's own label.
   static pepsTabCrumb(t: Json): { label: string; href: string } {
@@ -2896,6 +2902,17 @@ class XacmlPage {
       t.html('consoleXacml.routePage.back', { pep: name }) + '</a></p>';
     const row = (json.peps || [])[0];
     const detail = json.routeDetail;
+    // THE LEVEL BELOW CONFIGURED ROUTES, SAID (rcbj, 2026-11-15): the tab
+    // rows mark Configured Routes current, so the panel opens with the
+    // route's title, its path beside it and the way back to the list
+    // (`kit.drillTitle()`).
+    const titled = function (route: Json, html: string): string {
+      return kit.drillTitle(
+        t.html('consoleXacml.routePage.title', { route: route.id }),
+        '<code>' + esc(String(route.path || '')) + '</code>',
+        self.proxyTabHref(name),
+        t.html('consoleXacml.routePage.backToRoutes')) + html;
+    };
     if (!json.found || !row) {
       return '<p class="warn">' + t.html('consoleXacml.pepPage.notFound',
         { name: name }) + '</p>' + back;
@@ -2981,10 +2998,10 @@ class XacmlPage {
         : '<p class="sub">' + t.html('consoleXacml.routePage.noListeners') +
           '</p>');
     if (!ctx.write) {
-      return self.withinPepTabs(t, name,
+      return self.withinPepTabs(t, name, titled(r,
         kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
         state + '<span class="sub">' + t.html('consoleXacml.readOnly') +
-        '</span>', false) + back;
+        '</span>'), false) + back;
     }
     const when = 'consoleXacml.tip.route.when';
     // The form as the reader left it at the chooser's last press, else the
@@ -3051,9 +3068,9 @@ class XacmlPage {
         self.tipOf(t, 'consoleXacml.tip.authz.regenerate') + '>' +
         t.html('consoleXacml.authz.regenerate') + '</button></form>'
       : '';
-    return self.withinPepTabs(t, name,
+    return self.withinPepTabs(t, name, titled(r,
       kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
-      state + editor + regenerate + remove, true) + back;
+      state + editor + regenerate + remove), true) + back;
   }
 
   // `/admin/xacml/pep/route` WITHOUT A ROUTE (#1760): every registered
@@ -3300,12 +3317,14 @@ class XacmlPage {
   // drawn inside it; every other XACML tab a link to `/admin/xacml` at its
   // anchor (`kit.tabbedPanels()`'s `href`). Nesting needs nothing of the
   // kit: the stylesheet's rules are child rules on each `.tabs`.
+  // REMOTE PEPS LINKS BACK TOO (rcbj, 2026-11-15): it is drawn here, and
+  // its tab is `/admin/xacml#xacml-tab-peps`, the list, never a fragment
+  // of this page, which would leave the reader where they are.
   static withinXacmlTabs(t: Json, html: string): string {
     return kit.tabbedPanels('xacml-pages',
       XacmlPage.xacmlTabs(t).map(function (one: Json) {
-        return one.id === XacmlPage.PEPS_TAB
-          ? Object.assign({}, one, { html: html })
-          : Object.assign({}, one, { href: '/admin/xacml#' + one.id });
+        return Object.assign({}, one, { href: '/admin/xacml#' + one.id },
+          one.id === XacmlPage.PEPS_TAB ? { html: html } : {});
       }));
   }
 
@@ -3344,9 +3363,13 @@ class XacmlPage {
   // the XACML page's bar with Remote PEPs current (2026-11-15), inside it
   // the PEP page's bar with Reverse proxy current, inside it the Reverse
   // proxy sub-tabs with Configured Routes current, and the route inside
-  // that. Every other tab and sub-tab is a link to the PEP page at that
-  // tab's anchor (`kit.tabbedPanels()`'s `href`), so it is the PEP page's
-  // own panel a reader goes to, drawn from the PEP page's own answer.
+  // that. Every tab and sub-tab is a link to the PEP page at that tab's
+  // anchor (`kit.tabbedPanels()`'s `href`), so it is the PEP page's own
+  // panel a reader goes to, drawn from the PEP page's own answer — THE
+  // CURRENT ONES INCLUDED (rcbj, 2026-11-15): Reverse proxy and Configured
+  // Routes are drawn here and still link to the PEP page, since on a
+  // route's page none of the tabs is the page itself, and a fragment of
+  // this page trapped the reader on it.
   static withinPepTabs(t: Json, name: string, html: string,
                        write: boolean): string {
     const self = this;
@@ -3355,15 +3378,13 @@ class XacmlPage {
       self.proxySubTabs(t).filter(function (one: Json) {
         return write || one.id !== XacmlPage.PROXY_NEW_ROUTE_TAB;
       }).map(function (one: Json) {
-        return one.id === XacmlPage.PROXY_ROUTES_TAB
-          ? Object.assign({}, one, { html: html })
-          : Object.assign({}, one, { href: pep + '#' + one.id });
+        return Object.assign({}, one, { href: pep + '#' + one.id },
+          one.id === XacmlPage.PROXY_ROUTES_TAB ? { html: html } : {});
       }));
     return self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
       self.pepTabs(t).map(function (one: Json) {
-        return one.id === XacmlPage.PROXY_TAB
-          ? Object.assign({}, one, { html: sub })
-          : Object.assign({}, one, { href: pep + '#' + one.id });
+        return Object.assign({}, one, { href: pep + '#' + one.id },
+          one.id === XacmlPage.PROXY_TAB ? { html: sub } : {});
       })));
   }
 

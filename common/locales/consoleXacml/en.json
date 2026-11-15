@@ -597,6 +597,8 @@
   "routeForm.remove": "Remove",
   "routePage.lead": "One route of this PEP's reverse proxy. Every value of the route is edited in the form below, and saving checks the whole configuration exactly as the document editor on the Reverse proxy tab's Manifest sub-tab does. The PEP loads the change at its next poll.",
   "routePage.back": "Back to {pep}'s Reverse proxy tab",
+  "routePage.title": "Route detail: {route}",
+  "routePage.backToRoutes": "← Back to routes",
   "routePage.notFound": "{pep} has no route called {route}. It may have been renamed or removed.",
   "routePage.stateHeading": "Effective state",
   "routePage.th.usable": "Usable",
