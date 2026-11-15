@@ -1089,6 +1089,190 @@ impl Views {
         })
     }
 
+    /// `usersListJson(req)` (`GET /admin-api/users` without `?user=`), IN
+    /// PART: the people this service has seen authenticate (the identity
+    /// register's rows, as `userRow()` builds each) and the directory's
+    /// people it has not (a blank row, `knownBy: directory`), applications
+    /// left out, sorted by name, filtered by `q` and `protocol` and paged.
+    ///
+    /// NOT YET: the credential census (`secondFactorPopulation()`,
+    /// `peopleCensus()`), so every row's `factors` is null, `factor`
+    /// filters nothing and the `factors`, `directoryCounts` and service
+    /// account members are absent; the live-session count is zero.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn users_list_json(&self, asked: &Asked<'_>) -> Json {
+        let realm_id = realm::current_id();
+        let mut by: indexmap::IndexMap<String, Json> =
+            indexmap::IndexMap::new();
+        for key in self.register.user_keys() {
+            if let Some(mut row) = self.user_row(&key) {
+                row["factors"] = Json::Null;
+                row["inDirectory"] = json!(false);
+                by.insert(key, row);
+            }
+        }
+        let (people, applications) = self.dir.with(|t| {
+            let Some(r) = t.realms().iter().position(|x| x.id == realm_id)
+            else {
+                return (Vec::new(), Vec::new());
+            };
+            let people: Vec<String> = t.realms()[r]
+                .entries
+                .values()
+                .filter(|e| t.is_person_dn(r, &e.dn))
+                .map(sts_directory::Directory::person_name_of)
+                .filter(|n| !n.is_empty())
+                .collect();
+            let apps: Vec<String> = t.realms()[r]
+                .entries
+                .values()
+                .filter(|e| e.dn.to_lowercase().contains(",ou=applications,"))
+                .filter_map(|e| e.first("cn").map(str::to_string))
+                .collect();
+            (people, apps)
+        });
+        for name in &people {
+            let key = sts_registers::persona::plain_identity_key(name);
+            if key.is_empty() {
+                continue;
+            }
+            let row = by.entry(key.clone()).or_insert_with(|| {
+                json!({ "key": key, "name": name, "forms": [],
+                        "realms": [], "protocols": [], "authentications": 0,
+                        "firstAt": 0, "lastAt": 0, "isClient": false,
+                        "authenticated": false, "knownBy": "directory",
+                        "events": [], "eventsForgotten": 0,
+                        "tokens": { "issued": 0, "valid": 0, "expired": 0,
+                                    "revoked": 0, "other": 0 },
+                        "artifactKinds": [], "artifacts": 0,
+                        "lastActivityAt": 0, "factors": Json::Null,
+                        "inDirectory": false })
+            });
+            row["inDirectory"] = json!(true);
+        }
+        // `isApplicationRow()`: a client the register saw is not a person.
+        let mut all: Vec<Json> = by
+            .into_values()
+            .filter(|row| {
+                let key = row["key"].as_str().unwrap_or("");
+                !(row["isClient"] == json!(true)
+                    && !row["inDirectory"].as_bool().unwrap_or(false))
+                    && !applications.iter().any(|a| a == key)
+            })
+            .collect();
+        all.sort_by(|a, b| {
+            let n = |v: &Json| v["name"].as_str().unwrap_or("").to_lowercase();
+            if n(a) < n(b) {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
+        });
+        for row in all.iter_mut() {
+            row["serviceAccount"] = json!(false);
+        }
+        let wanted_text = text_of(asked.query, "q").trim().to_string();
+        let wanted_protocol = text_of(asked.query, "protocol");
+        let wanted_factor = text_of(asked.query, "factor");
+        let kind = text_of(asked.query, "kind");
+        let wanted_kind = if kind == "service" || kind == "person" {
+            kind
+        } else {
+            String::new()
+        };
+        let mut protocols: Vec<String> = Vec::new();
+        for row in &all {
+            for f in row["protocols"].as_array().cloned().unwrap_or_default() {
+                if let Some(p) = f["protocol"].as_str() {
+                    if !protocols.iter().any(|x| x == p) {
+                        protocols.push(p.to_string());
+                    }
+                }
+            }
+        }
+        protocols.sort();
+        let filtered: Vec<Json> = all
+            .iter()
+            .filter(|row| {
+                let key = row["key"].as_str().unwrap_or("").to_lowercase();
+                if !wanted_text.is_empty()
+                    && !key.contains(&wanted_text.to_lowercase())
+                {
+                    return false;
+                }
+                if !wanted_protocol.is_empty()
+                    && !row["protocols"].as_array().is_some_and(|l| {
+                        l.iter().any(|f| {
+                            f["protocol"].as_str()
+                                == Some(wanted_protocol.as_str())
+                        })
+                    })
+                {
+                    return false;
+                }
+                wanted_kind != "service"
+            })
+            .cloned()
+            .collect();
+        // `pagedRows(query, filtered)`: no noun, so `rows`.
+        let paging =
+            Paging::of(asked.query, filtered.len(), Options::default());
+        let users_dn = self.dir.with(|t| {
+            t.realms()
+                .iter()
+                .position(|x| x.id == realm_id)
+                .map(|r| t.users_dn(r))
+                .unwrap_or_default()
+        });
+        let shown: Vec<Json> = paging
+            .slice(&filtered)
+            .into_iter()
+            .map(|mut row| {
+                let key = row["key"].as_str().unwrap_or("").to_string();
+                let dn = self.dir.with(|t| {
+                    t.realms()
+                        .iter()
+                        .position(|x| x.id == realm_id)
+                        .and_then(|r| t.locate(r, &key).map(|e| e.dn.clone()))
+                        .unwrap_or_default()
+                });
+                row["liveSessions"] = json!(0);
+                row["dn"] = json!(dn);
+                row
+            })
+            .collect();
+        let or_null = |s: &str| {
+            if s.is_empty() {
+                Json::Null
+            } else {
+                json!(s)
+            }
+        };
+        let field_count = sts_registers::persona::tables()
+            .map_or(0, |t| t.person_fields.len());
+        json!({
+            "known": all.len(), "matched": filtered.len(),
+            "shown": shown.len(),
+            "authenticatedHere": all.iter()
+                .filter(|r| r["authenticated"] == json!(true)).count(),
+            "registryCap": MAX_USERS,
+            "filter": { "q": or_null(&wanted_text),
+                        "protocol": or_null(&wanted_protocol),
+                        "factor": or_null(&wanted_factor),
+                        "kind": or_null(&wanted_kind) },
+            "serviceAccounts": 0,
+            "protocols": protocols,
+            "page": paging.page, "pages": paging.pages,
+            "perPage": paging.per_page, "firstRow": paging.first_row,
+            "lastRow": paging.last_row, "paging": paging.to_json(),
+            "withActiveSession": 0,
+            "personFieldCount": field_count,
+            "newUserContainer": users_dn,
+            "registryKeeps": MAX_USERS,
+            "users": shown,
+        })
+    }
+
     /// `tokenStateOf(record, now)`.
     fn token_state(&self, record: &Json, now_ms: f64) -> &'static str {
         let skew = self.settings.value_of("oauth2.clockSkewS").as_int() as f64
@@ -1327,7 +1511,7 @@ impl Views {
     fn users_json(&self, asked: &Asked<'_>) -> Option<Json> {
         let wanted = text_of(asked.query, "user").trim().to_string();
         if wanted.is_empty() {
-            return None;
+            return Some(self.users_list_json(asked));
         }
         let realm_id = realm::current_id();
         let row = self.user_row(&wanted).or_else(|| {
