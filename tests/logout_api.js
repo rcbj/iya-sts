@@ -352,6 +352,50 @@ function childMain() {
     note(r.status === 400, '6i. no result at all is refused (400)',
          r.status);
 
+    // --- 6j. a selected WS-Federation or SAML row tells the store ----------
+    // (2026-11-15, found by #444's D12): forgetting a realm or a service
+    // provider edits an object the session store holds and does not
+    // journal, so the session is written back through noteSessionChanged()
+    // as the oidc-rp row's forget always was. The calls are counted on the
+    // module's facade, which logout.ts calls at the time of the act.
+    const ed = await signIn('la-ed');
+    const edSession = sessionIdOf(ed.jar);
+    const edHeld = authn.sessionById(edSession);
+    edHeld.wsfedRealms = { 'urn:la:ed': 'https://rp.la.example/wsfed-ed' };
+    edHeld.saml2ServiceProviders = { 'urn:la:sp': {
+      acs: 'https://sp.la.example/acs', idpEntityId: 'urn:la:idp',
+      at: Date.now(), nameId: 'la-ed', nameIdFormat: '' } };
+    authn.noteSessionChanged(edHeld);
+    const noted = [];
+    const realNote = authn.noteSessionChanged;
+    authn.noteSessionChanged = function (one) {
+      noted.push(one && one.id);
+      return realNote.apply(this, arguments);
+    };
+    let edResult;
+    try {
+      edResult = logout.terminate(String((edHeld.user || {}).username ||
+                                         'la-ed'),
+        ['wsfed-rp:' + edSession + '|urn:la:ed',
+         'saml2-sp:' + edSession + '|urn:la:sp'],
+        { by: 'the logout_api test' });
+    } finally {
+      authn.noteSessionChanged = realNote;
+    }
+    const edAfter = authn.sessionById(edSession) || {};
+    note(noted.filter(function (id) {
+      return id === edSession;
+    }).length >= 2 &&
+         !Object.prototype.hasOwnProperty.call(edAfter.wsfedRealms || {},
+                                                'urn:la:ed') &&
+         !Object.prototype.hasOwnProperty.call(
+           edAfter.saml2ServiceProviders || {}, 'urn:la:sp'),
+         '6j. forgetting a WS-Federation realm and a SAML service provider ' +
+         'writes the session back to the store, once for each',
+         JSON.stringify({ noted: noted,
+                          ended: ((edResult || {}).terminated || [])
+                            .map(function (row) { return row.id; }) }));
+
     // --- 7. the JSON door, and a form posted to /logout ---------------------
     const dee = await signIn('la-dee');
     const deeSession = sessionIdOf(dee.jar);

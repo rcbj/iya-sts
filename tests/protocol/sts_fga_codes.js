@@ -24,7 +24,8 @@
 //   S. the switch and the types: enabling while a member is uncovered
 //      (0018), a type written to an enforcing application leaving a member
 //      uncovered (0019), a mapping row removed that is not on the type
-//      (0023 — PINNED: answered 500, STS-API-0139, a suspected defect);
+//      (0023, a 400 naming `path` — #40; it was a 500, STS-API-0139, which
+//      this job pinned), and a row that does not read (0023);
 //   I. issuance: the default policy issuing a read, the application's
 //      policy disabled — the token endpoint's server_error (0006);
 //   N. applications named `constructor`, `toString`, `valueOf`,
@@ -162,18 +163,34 @@ async function switchAndTypes() {
     return K.send(api("/applications/set-access-type"), { json: typeBody({
       colour: { type: "string" } }) });
   });
-  // PINNED AS OBSERVED, a suspected defect (reported, not fixed): the
-  // door's refusal (STS-FGA-0023 in admin_actions.ts) is not a member of
-  // the operation's response model, so the answer is replaced by a 500
-  // and STS-API-0139 (#1353's model gap). When the model takes it, this
-  // is a 400 recording STS-FGA-0023.
-  await coded("STS-API-0139", "S3. a mapping row removed that is not on " +
-              "the type is refused — answered 500, the refusal outside the " +
-              "operation's response model", function () {
+  // A 400 RECORDING STS-FGA-0023 (#40, 2026-11-15): the refusal's `field`
+  // is a member of the operation's response model now. Until #40 the
+  // answer was replaced by a 500 and STS-API-0139 (#1353's model gap), which
+  // this check pinned.
+  const before0139 = await K.codeCount(realm, "STS-API-0139");
+  await coded("STS-FGA-0023", "S3. a mapping row removed that is not on " +
+              "the type is refused 400, naming the path (#40)", function () {
     return K.send(api("/applications/remove-access-type-row"), { json: {
       application: DOCS, type: TYPE, path: "never-mapped" } });
   }, function (r) {
-    assert.strictEqual(r.status, 500, K.shown(r));
+    assert.strictEqual(r.status, 400, K.shown(r));
+    assert.strictEqual(r.json && r.json.ok, false, K.shown(r));
+    assert.strictEqual(r.json && r.json.field, "path", K.shown(r));
+  });
+  // The sibling: set-access-type-row's refusal carries `field` too.
+  await coded("STS-FGA-0023", "S3b. a mapping row that does not read is " +
+              "refused 400, naming its member (#40)", function () {
+    return K.send(api("/applications/set-access-type-row"), { json: {
+      application: DOCS, type: TYPE, path: "classification",
+      attributeId: "urn:example:c", category: "not-a-category" } });
+  }, function (r) {
+    assert.strictEqual(r.status, 400, K.shown(r));
+    assert.ok(r.json && typeof r.json.field === "string", K.shown(r));
+  });
+  const after0139 = await K.codeCount(realm, "STS-API-0139");
+  check("S3c. and neither is a model gap (no STS-API-0139)", function () {
+    assert.strictEqual(after0139, before0139, before0139 + " -> " +
+                       after0139);
   });
   log.debug("Leaving switchAndTypes().");
 }

@@ -11665,7 +11665,10 @@ reason it is one file: the identity rule (`authorizeTarget()`), the profile
 table and the settings that narrow it (`checkProfile()`), the proof of
 possession (`parseCsr()` — RSA/ECDSA through pkijs, Ed25519 through node, ML-DSA
 and the composites through `x509.verifyBytes()`, a KEM key refused unless the CSR
-is a TEMPLATE), the certificate's content (`namesFor()` — subject and SAN from
+is a TEMPLATE, and an RSA key under 2048 bits refused in every mode as a key
+this authority cannot certify, `STS-ENROLL-0031` — #35, 2026-11-15: nothing
+asked the size, so a development realm certified RSA-1024 over EST, and ACME
+and SCEP read the same function), the certificate's content (`namesFor()` — subject and SAN from
 the ENTRY, an unowned name REFUSES rather than being dropped, and `email`,
 `smartcard-logon` and the two `tls-server*` profiles adding or requiring a name of
 their own), issuance and storage (`issue()` over `pki.issueEnrolled()`), the two
@@ -15021,7 +15024,12 @@ not refused, and the default stays.
   link's `stsPasswordResetSource`), the administrator's `reset-password`
   (`admin-password`), and the activation link's finish (`activation`, only
   where a passkey enrolled BEFORE the link was issued is held:
-  `noteActivationRecovery()`). The first passkey sign-in clears it
+  `noteActivationRecovery()`), and the three self-service doors of a
+  sign-in — a recovery code (`recovery-code`, 2026-11-14) and an emailed
+  code or link (`email-code`, `email-link`, #31, 2026-11-15), first factor
+  or second — through `authn.ts`'s `noteRecoveryDoor()`, before either way
+  on, and not for a door `operator-only` refuses outright
+  (`STS-AUTHN-0380`). The first passkey sign-in clears it
   (`authn.ts`'s `recoveryCompleted()`, audit `authn.recovery.completed`).
 * **The question is the issuance policy's** (`recover-account`, xacml/
   CLAUDE.md), asked through `passkeyPolicy.recoveryRefusal()` with the facts

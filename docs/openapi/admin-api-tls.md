@@ -181,6 +181,7 @@ Scope: `admin:read`.
 | `clientCertificate.certificate.subjectAltName` | string, or null |  |  |
 | `clientCertificate.certificate.validFrom` | string, or null |  |  |
 | `clientCertificate.certificate.validTo` | string, or null |  |  |
+| `clientCertificate.handshakeVerified` | boolean |  |  |
 | `clientCertificate.identity` | object |  |  |
 | `clientCertificate.identity.accepted` | boolean |  |  |
 | `clientCertificate.identity.issuedHere` | boolean |  |  |
@@ -255,6 +256,12 @@ Scope: `admin:read`.
 | `clientCertificate.revocation.unknown[].subject` | string, or null |  |  |
 | `clientCertificate.revocation.unknown[].why` | string |  |  |
 | `clientCertificate.revocation.why` | string |  |  |
+| `clientCertificate.revocationStatus` | object |  |  |
+| `clientCertificate.revocationStatus.checked` | boolean |  |  |
+| `clientCertificate.revocationStatus.policy` | string |  |  |
+| `clientCertificate.revocationStatus.refused` | boolean |  |  |
+| `clientCertificate.revocationStatus.source` | string |  |  |
+| `clientCertificate.revocationStatus.status` | string |  |  |
 | `clientCertificate.signIn` | string |  |  |
 | `clientCertificate.thumbprint` | string, or null |  |  |
 | `clientCertificate.verified` | boolean |  |  |

@@ -2349,9 +2349,9 @@ class Saml2Sso {
     // class this assertion has always carried.
     const askedClass = PhishingResistance.assertionUri(
       session, request.requestedAuthnContexts);
+    // Read as it stands (#39): the row's `min: 1` bounds it.
     const lifetimeMin = Number(this.settingFor(spEntityId,
-                                               'saml2.assertionLifetimeMin')) ||
-                                                 60;
+                                               'saml2.assertionLifetimeMin'));
     const format = this.nameIdFormatFor(request, spEntityId);
     const assertion = buildSamlAssertion(user.username, spEntityId, lifetimeMin,
                                          {
@@ -4464,9 +4464,9 @@ class Saml2Sso {
       });
     });
     const idpEntityId = this.idpEntityId();
+    // Read as it stands (#39): the row's `min: 1` bounds it.
     const lifetimeMin = Number(this.settingFor(spEntityId,
-                                               'saml2.assertionLifetimeMin')) ||
-                                                 60;
+                                               'saml2.assertionLifetimeMin'));
     const built = buildSamlAssertion(
       String((session.user || {}).username || ''), spEntityId, lifetimeMin, {
         issuer: idpEntityId, nameIdFormat: nameIdFormat, nameIdValue: nameId,

@@ -961,10 +961,14 @@ class Est {
    * @param res - the response
    * @param ctx - the request's context
    * @param parseOptions - passed to the core's CSR parser
+   * @param afterAuthentication - optional: asked once the caller is
+   *   authenticated and before the body is read; it answers true when it has
+   *   refused the request itself (`serverkeygen`'s switch, #36)
    * @returns a promise of the parsed request, or null when the request has been
    * answered
    */
-  async enrollmentRequest(req, res, ctx, parseOptions?) {
+  async enrollmentRequest(req, res, ctx, parseOptions?,
+                          afterAuthentication?) {
     const { log, codec, errorCodes, core } = this.deps;
     log.debug("Entering Est.enrollmentRequest().");
     ctx.basic = this.basicCredentialOf(req);
@@ -987,6 +991,11 @@ class Est {
     }
     ctx.principal = authenticated.principal;
     ctx.identity = this.principalLabel(ctx.principal);
+    if (afterAuthentication && afterAuthentication(ctx)) {
+      log.debug("Leaving Est.enrollmentRequest(). Refused once " +
+                "authenticated.");
+      return null;
+    }
     const decoded = codec.decodeBody(req.body);
     if (!decoded.ok) {
       errorCodes.mark(res, 'STS-EST-0008');
@@ -1400,24 +1409,40 @@ class Est {
   async serverkeygen(req, res, ctx) {
     const { log, config, errorCodes, codec, keyMaterial, core } = this.deps;
     log.debug("Entering Est.serverkeygen().");
-    // Off for the realm refuses here, before the template is read — unless
-    // the caller is an application whose own estServerKeyGeneration turns
-    // it on, or an administrator, who may be asking for such an
-    // application; `core.issue()` then asks the switch of the TARGET
-    // (rcbj, 2026-10-01: the application's setting overrides the realm's).
-    const asker = ctx.principal || {};
-    const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
-      (asker.kind === 'application' &&
-       core.estSwitch('serverKeyGeneration', asker));
-    if (config.value('est.serverKeyGeneration') === false && !mayStillBeOn) {
-      errorCodes.mark(res, 'STS-EST-0005');
-      this.estError(req, res, ctx, 501,
-                    'Server-side key generation is turned off ' +
-                    'for EST in this realm (est.serverKeyGeneration).');
-      log.debug("Leaving Est.serverkeygen(). Off.");
-      return;
-    }
-    const csr = await this.enrollmentRequest(req, res, ctx, { template: true });
+    // Off for the realm refuses ONCE THE CALLER IS AUTHENTICATED, and before
+    // the template is read — unless the caller is an application whose own
+    // estServerKeyGeneration turns it on, or an administrator, who may be
+    // asking for such an application; `core.issue()` then asks the switch of
+    // the TARGET (rcbj, 2026-10-01: the application's setting overrides the
+    // realm's).
+    //
+    // AUTHENTICATED FIRST (#36, 2026-11-15). The switch was asked before
+    // `enrollmentRequest()` had authenticated anybody, so `ctx.principal`
+    // was always empty: an anonymous caller learnt the realm's setting from
+    // a 501 where every other EST refusal asks for a credential first (RFC
+    // 7030 section 3.2.3), and the two exceptions above could never apply,
+    // because nobody was an administrator or an application yet.
+    const self = this;
+    const switchedOff = function (authenticated: any): boolean {
+      log.debug("Entering switchedOff().");
+      const asker = authenticated.principal || {};
+      const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
+        (asker.kind === 'application' &&
+         core.estSwitch('serverKeyGeneration', asker));
+      if (config.value('est.serverKeyGeneration') === false &&
+          !mayStillBeOn) {
+        errorCodes.mark(res, 'STS-EST-0005');
+        self.estError(req, res, authenticated, 501,
+                      'Server-side key generation is turned off ' +
+                      'for EST in this realm (est.serverKeyGeneration).');
+        log.debug("Leaving switchedOff(). Off.");
+        return true;
+      }
+      log.debug("Leaving switchedOff().");
+      return false;
+    };
+    const csr = await this.enrollmentRequest(req, res, ctx, { template: true },
+                                             switchedOff);
     if (!csr) {
       log.debug("Leaving Est.serverkeygen(). Answered.");
       return;

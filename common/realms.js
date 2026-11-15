@@ -1277,8 +1277,44 @@ function realmTextErrors(spec) {
   return errors;
 }
 
-function create(spec) {
-  log.debug("Entering create(). id=" + (spec || {}).id);
+// A STORED REALM'S OVERRIDES, EACH RE-CHECKED AS THE PROCESS-WIDE ONES ARE
+// (2026-11-15, #39). `config.applyPersistedOverrides()` reports and skips a
+// saved value that no longer passes its row. A realm's went whole through
+// `checkOverrides()`, which refuses the REALM for one bad value, so a bound
+// added to a row after the value was written — `saml2.assertionLifetimeMin`'s
+// and `saml11.assertionLifetimeMin`'s `min: 1`, where 0 had been accepted and
+// read as sixty — would cost a restored or replicated realm itself
+// (persistence's STS-STORE-0007). For a realm read back (`restored`) or
+// arriving from another process (`replicated`) the one value is reported
+// under STS-CORE-0008 and left out, so the realm reads the row's default;
+// the stored row is not rewritten. A write made here is still refused whole.
+function restorableOverrides(id, overrides) {
+  log.debug("Entering restorableOverrides(). id=" + id);
+  const kept = {};
+  Object.keys(overrides || {}).forEach(function (key) {
+    const problem = checkRealmOverride(key, overrides[key]);
+    if (problem) {
+      log.warn(errorCodes.tag('STS-CORE-0008') + 'realms: the saved ' +
+               'override "' + key + '" of the realm "' + id + '" was not ' +
+               'applied: ' + problem + ' It is left in the store.');
+      return;
+    }
+    kept[key] = overrides[key];
+  });
+  log.debug("Leaving restorableOverrides().");
+  return kept;
+}
+
+function create(given) {
+  log.debug("Entering create(). id=" + (given || {}).id);
+  // Read back or replicated: a stored value no longer valid is skipped,
+  // not the realm (restorableOverrides()).
+  const spec = given && (given.restored || given.replicated) &&
+    given.overrides
+    ? Object.assign({}, given, {
+      overrides: restorableOverrides(String(given.id || ''), given.overrides)
+    })
+    : given;
   const id = String((spec || {}).id || '').trim().toLowerCase();
   const errors = validateId(id);
   if (errors.length) {
@@ -1398,7 +1434,12 @@ function update(id, changes) {
         'is defined.'] },
                            'STS-CORE-0013');
   }
-  const spec = changes || {};
+  // Replicated: a stored value no longer valid is skipped, not the change
+  // (restorableOverrides(), #39).
+  const spec = changes && changes.replicated && changes.overrides
+    ? Object.assign({}, changes, {
+      overrides: restorableOverrides(String(id), changes.overrides) })
+    : (changes || {});
   // FIXED AT CREATION — see the domain's note above. The same value again is
   // not a change, which is what lets a replicated update carry the whole row.
   if (spec.domain !== undefined && spec.domain !== null &&

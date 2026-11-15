@@ -32,9 +32,10 @@
 //   A. `oauth2.accessTokenRequireDpop`: UserInfo refusing a bearer token
 //      with a DPoP challenge (STS-OAUTH-0528), a bound token with no proof
 //      (STS-OAUTH-0529), a proved bound token answered, the realm's own
-//      /admin-api refusing this job's bearer token meanwhile (so the codes
-//      are read once the setting is off), and with the setting off the same
-//      bearer token accepted;
+//      /admin-api still answering this job's bearer token meanwhile — the
+//      service-wide API client's, held to the default realm's rule (#28;
+//      refused until then) — and with the setting off the same bearer token
+//      accepted;
 //   T. `oauth2.accessTokenRequireMtls`: a token carrying no thumbprint
 //      refused at UserInfo (STS-OAUTH-0530);
 //   G. `/admin-api` refusing a DPoP-bound token presented as Bearer.
@@ -293,8 +294,11 @@ async function resources(boundAccess) {
   log.debug("Entering resources().");
   log.info("=== A. oauth2.accessTokenRequireDpop ===");
   // WHILE A REALM REQUIRES DPoP OF EVERY ACCESS TOKEN, ITS OWN /admin-api
-  // REFUSES THIS JOB'S BEARER TOKEN TOO (it is a resource of the realm), so
-  // the codes are read after the setting is off again.
+  // STILL ANSWERS THIS JOB'S BEARER TOKEN (#28, 2026-11-15): the token is
+  // the default realm's service-wide API client's, and the management API
+  // asks the setting in the realm that issued the token. Until #28 it was
+  // refused (STS-OAUTH-0528), which A4 pinned. The codes are still read
+  // after the setting is off again.
   const plain = await issue(R.atDpop);
   const bearer = plain.json.access_token;
   const boundSet = await issue(R.atDpop, { DPoP: proof(R.atDpop) });
@@ -336,9 +340,10 @@ async function resources(boundAccess) {
   check("A3. a proved bound token is answered", function () {
     assert.strictEqual(proved.status, 200, K.shown(proved));
   });
-  check("A4. and the realm's own /admin-api refuses a bearer access token " +
-        "while the setting is on", function () {
-    assert.strictEqual(ownApi.status, 401, K.shown(ownApi));
+  check("A4. and the realm's own /admin-api still answers the service-wide " +
+        "API client's bearer token while the setting is on (#28)",
+        function () {
+    assert.strictEqual(ownApi.status, 200, K.shown(ownApi));
   });
   let r = await userinfo(R.atDpop, "Bearer", bearer);
   check("A5. with the setting off the same bearer token is accepted — the " +

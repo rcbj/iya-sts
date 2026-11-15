@@ -16,9 +16,9 @@
 //
 //   1. it signs in its holder;
 //   2. after the entry is renamed over LDAP (modifyDN), it signs in the
-//      RENAMED person, not a name;
-//      PINNED NODE DEFECT: that sign-in also makes an entry under the OLD
-//      name, `origin: authentication`;
+//      RENAMED person, not a name, and makes no entry under the OLD name
+//      (#33, 2026-11-15; until then it made one, `origin: authentication`,
+//      which this job pinned);
 //   3. after that person is deleted (over LDAP) and somebody new is
 //      created under the
 //      old name, it signs nobody in: the holder is gone, and the newcomer
@@ -203,15 +203,15 @@ async function test() {
   const second = await signIn(realm, tls);
   const afterSign = await K.send(K.rb(realm) + "/admin-api/users?user=" + who);
   const phantom = ((afterSign.json || {}).ldap || {}).entry || null;
-  // A NODE DEFECT, PINNED (D12): the certificate signs the RENAMED person
-  // in, and the same sign-in also makes a new entry under the OLD name
-  // (the certificate's CN), `origin: authentication`, so nobody can be
-  // created under that name afterwards by an administrator.
-  check("2b. (pinned defect) the sign-in also makes an entry under the old " +
-        "name, origin authentication", function () {
-    assert.ok(phantom, "no entry under the old name");
-    assert.strictEqual(phantom.origin, "authentication",
-                       JSON.stringify(phantom).slice(0, 300));
+  // NO ENTRY UNDER THE OLD NAME (#33, 2026-11-15): the handshake's
+  // sighting is filed on the entry the certificate's holder subject names
+  // now. Until #33 the same sign-in made a new entry under the OLD name
+  // (the certificate's CN), `origin: authentication`, so nobody could be
+  // created under that name afterwards by an administrator; this job pinned
+  // it.
+  check("2b. the sign-in makes no entry under the old name (#33)",
+        function () {
+    assert.strictEqual(phantom, null, JSON.stringify(phantom).slice(0, 300));
   });
   check("2. after a rename it signs in the RENAMED person", function () {
     assert.strictEqual(second.json && second.json.signedIn, true,
@@ -220,9 +220,6 @@ async function test() {
   });
   const gone = await ldapOp(binderDn, await dnOf(realm, renamed), null);
   assert.ok(gone.ok, "the delete over LDAP: " + gone.message);
-  // The pinned entry under the old name goes too, so the name is free.
-  const ghost = await ldapOp(binderDn, await dnOf(realm, who), null);
-  assert.ok(ghost.ok, "deleting the old name's entry: " + ghost.message);
   await person(realm, who);
   const third = await signIn(realm, tls);
   check("3. once its holder is deleted it signs nobody in, though somebody " +

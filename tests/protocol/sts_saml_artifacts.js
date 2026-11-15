@@ -980,9 +980,15 @@ async function bounds(c) {
             assert.ok(liveRef.success && liveRef.text.indexOf(assertionId) >=
                       0, liveRef.text.slice(0, 300));
           });
-  // ONE MINUTE, the shortest lifetime that is one: 0 is accepted by the
-  // setting and read as the default 60 (`Number(...) || 60`), so the wait
-  // is the minute, once.
+  // ONE MINUTE, the shortest lifetime that is one, so the wait is the
+  // minute, once. 0 is refused by the setting (#39, 2026-11-15); until then
+  // it was accepted and read as the default 60 (`Number(...) || 60`).
+  const zero = await K.send(K.base + "/admin-api/realms/set",
+    { json: { id: M, key: "saml11.assertionLifetimeMin", value: "0" } });
+  K.check("M8b. realms/set refuses saml11.assertionLifetimeMin 0 (#39)",
+          function () {
+            assert.strictEqual(zero.status, 400, K.shown(zero));
+          });
   await K.set(M, "saml11.assertionLifetimeMin", 1);
   const brief = await mint11(M, b, rp);
   const briefGot = await resolve11(at, artifact11(brief.artifact));

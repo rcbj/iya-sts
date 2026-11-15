@@ -21,9 +21,11 @@
 //   A. THE MAIN PORT (`GET /admin-api/tls-connection` asked over the
 //      connection presenting it): with `pki.paranoid` off a revoked client
 //      certificate still verifies (OpenSSL reads no list); with it on the
-//      view still reports the handshake's verdict, which carries no
-//      revocation on this port by design, and the DOOR refuses it:
-//      /tls/sign-in starts no session, refusedOnRevocation, STS-PKI-0118;
+//      view reports it NOT verified (#37: `verified` holds the revocation
+//      verdict, `handshakeVerified` the handshake's, which carries no
+//      revocation on this port by design), and the DOOR refuses it:
+//      /tls/sign-in starts no session, refusedOnRevocation, STS-PKI-0118
+//      on the realm's audit log (#38);
 //      an unrevoked one verifies;
 //   B. AN OUTBOUND DIAL (the RFC 9728 import, `load-resource-metadata`, at a
 //      listener this job runs on OUTBOUND_TEST_HOST with a `tls-server`
@@ -157,12 +159,22 @@ function verified(view) {
   return !!(view && view.clientCertificate && view.clientCertificate.verified);
 }
 
+// The handshake's own verdict (#37): `verified` also holds the revocation
+// verdict since then, which a policy that consults revocation refuses.
+function handshakeVerified(view) {
+  log.debug("Entering handshakeVerified().");
+  log.debug("Leaving handshakeVerified().");
+  return !!(view && view.clientCertificate &&
+            view.clientCertificate.handshakeVerified);
+}
+
 // The view, asked until it says `want` or a few seconds pass: a setting is
 // applied to the listener's context, and the next handshake reads it.
-async function settle(tls, want) {
+async function settle(tls, want, read) {
   log.debug("Entering settle().");
+  const asked = read || verified;
   let view = await connection(tls);
-  for (let i = 0; i < 20 && verified(view) !== want; i += 1) {
+  for (let i = 0; i < 20 && asked(view) !== want; i += 1) {
     await K.sleep(300);
     view = await connection(tls);
   }
@@ -211,10 +223,10 @@ async function test(realm) {
   const good = await enrol(realm, who, "tls-client");
   const bad = await enrol(realm, who, "tls-client");
   await revoke(realm, bad);
-  const off = await settle(bad, true);
+  const off = await settle(bad, true, handshakeVerified);
   check("A1. with pki.paranoid off a revoked client certificate of the " +
         "realm's CA still verifies at the handshake", function () {
-    assert.strictEqual(verified(off), true, JSON.stringify(off));
+    assert.strictEqual(handshakeVerified(off), true, JSON.stringify(off));
   });
   // Revocation is consulted only where pki.revocationCheck asks it to;
   // development's `auto` asks nothing, so hard-fail beside paranoid.
@@ -232,21 +244,36 @@ async function test(realm) {
   // the DOOR's verdict, through `checkedSocket()`. Revocation before the
   // first byte (listener_path_rules C) is `holdConnectionsOn()`'s, for LDAPS,
   // the debugger and the cells' channel — not this port.
-  check("A2. with it on, the main port's view still reports the handshake's " +
-        "verdict (revocation is not part of it)", function () {
-    assert.strictEqual(verified(on), true, JSON.stringify(on));
+  // #37 (2026-11-15): `verified` no longer reads true for a certificate the
+  // doors refuse on revocation; the handshake's own verdict is
+  // `handshakeVerified`, and the revocation verdict is in brief at
+  // `revocationStatus`. Until #37 this check pinned `verified: true`.
+  check("A2. with it on, the main port's view reports the revoked " +
+        "certificate NOT verified, its handshake verdict apart (#37)",
+        function () {
+    const cc = (on && on.clientCertificate) || {};
+    const rs = cc.revocationStatus || {};
+    assert.strictEqual(verified(on), false, JSON.stringify(on));
+    assert.strictEqual(cc.handshakeVerified, true, JSON.stringify(cc));
+    assert.strictEqual(rs.status, "revoked", JSON.stringify(rs));
+    assert.strictEqual(rs.refused, true, JSON.stringify(rs));
+    assert.ok(rs.source, JSON.stringify(rs));
   });
   const realmBefore = await K.codeCount(realm, "STS-PKI-0118");
   const defBefore = await K.codeCount(null, "STS-PKI-0118");
   const door = await signIn(realm, bad);
-  let rows = 0;
-  for (let i = 0; i < 20 && rows < 1; i += 1) {
-    rows = (await K.codeCount(realm, "STS-PKI-0118")) - realmBefore +
-           (await K.codeCount(null, "STS-PKI-0118")) - defBefore;
-    if (rows < 1) {
+  // The door's refusal is on the REALM's audit log (#38, 2026-11-15); the
+  // handshake's own row stays the default realm's, a handshake having no
+  // realm. Until #38 only that row existed, so this job summed both.
+  let realmRows = 0;
+  for (let i = 0; i < 20 && realmRows < 1; i += 1) {
+    realmRows = (await K.codeCount(realm, "STS-PKI-0118")) - realmBefore;
+    if (realmRows < 1) {
       await K.sleep(150);
     }
   }
+  const rows = realmRows +
+               (await K.codeCount(null, "STS-PKI-0118")) - defBefore;
   check("A2b. and the door refuses it: /tls/sign-in starts no session, " +
         "refusedOnRevocation off the service's own register, recorded " +
         "STS-PKI-0118", function () {
@@ -255,7 +282,8 @@ async function test(realm) {
     assert.strictEqual(j.session && j.session.refusedOnRevocation, true,
                        door.text.slice(0, 300));
     assert.ok(/REVOKED/.test(j.session.why), door.text.slice(0, 300));
-    assert.ok(rows >= 1, "STS-PKI-0118 rows: " + rows);
+    assert.ok(realmRows >= 1, "STS-PKI-0118 rows in the realm: " +
+              realmRows + " (both realms: " + rows + ")");
   });
   const onGood = await settle(good, true);
   check("A3. and an unrevoked one from the same CA still verifies",

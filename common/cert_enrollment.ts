@@ -131,6 +131,12 @@ const FAMILIES = ['acme', 'est', 'scep'];
  */
 const FAMILY_LABELS = { acme: 'ACME', est: 'EST', scep: 'SCEP' };
 
+/**
+ * The smallest RSA modulus a certificate request may carry, in bits, in every
+ * mode (#35): the floor `acme_jws.ts` holds an account key to.
+ */
+const MIN_RSA_BITS = 2048;
+
 // ---------------------------------------------------------------------------
 // THE PROFILES.
 //
@@ -1729,6 +1735,23 @@ class CertEnrollment {
       return self.refuse('STS-ENROLL-0031', 400, 'The public key in the ' +
                          'request is not one this certificate authority can ' +
                          'certify.');
+    }
+    // AN RSA KEY OF AT LEAST 2048 BITS, IN EVERY MODE (#35, 2026-11-15).
+    // ACME, EST and SCEP all read a request through here, and nothing here
+    // asked the size: a development realm certified an RSA-1024 key over
+    // EST. 2048 is the floor everything else in this service holds an RSA
+    // key to — an ACME account key (`acme_jws.ts`'s MIN_RSA_BITS), an
+    // uploaded signing key (`pki.js`), the realm's own CA keys — and NIST SP
+    // 800-131A Rev. 2 disallows less for a signature. It is refused as a key
+    // this authority cannot certify, the code ACME answers `badPublicKey`
+    // for; the elliptic curves and the post-quantum families are already
+    // held to their lists by `describePublicPem()` above.
+    if (desc.kind === 'rsa' && Number(desc.bits || 0) < MIN_RSA_BITS) {
+      log.debug("Leaving CertEnrollment.parseCsr(). A short RSA key.");
+      return self.refuse('STS-ENROLL-0031', 400, 'The request carries a ' +
+                         Number(desc.bits || 0) + '-bit RSA key, and this ' +
+                         'certificate authority certifies an RSA key of at ' +
+                         'least ' + MIN_RSA_BITS + ' bits.');
     }
     const kem = desc.kind === 'pqc' && desc.use && desc.use !== 'sig';
     if (kem && !opts.template) {

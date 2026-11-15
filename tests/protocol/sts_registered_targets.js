@@ -18,9 +18,8 @@
 //       the modes no longer differ (#1140);
 //   T3. THE AUTHORIZATION ENDPOINT: a resource naming nobody, or one
 //       nobody-address beside a registered one, is refused STS-OAUTH-0950
-//       in both modes — a REDIRECTED invalid_target in development, but
-//       this service's own 400 page in product (pinned; the units file has
-//       product redirect too); a registered
+//       in both modes, a REDIRECTED invalid_target in each (#26; product's
+//       was this service's own 400 page, pinned until then); a registered
 //       application by its audience and permission base URI (a client_id or
 //       identifier is no absolute URI, refused 400 by the request schema
 //       first, its sentence naming `resource`), the default resource
@@ -312,25 +311,18 @@ async function authorizationEndpoint(realm) {
   const before = await codeCount(realm, "STS-OAUTH-0950");
   const refused = [NOBODY, [API_AUD, NOBODY], RB + "/gnap/rs/resource",
                    RB + "/resource/x", RB + "/other"];
-  // ON THE WIRE A PRODUCT REALM DOES NOT REDIRECT IT: the development
-  // realm sends invalid_target back to the registered redirect URI, as the
-  // units file has both modes do, but the product realm answers this
-  // service's own 400 page (the code is recorded all the same). Pinned, and
-  // listed in the D12 notes: RFC 6749 section 4.1.2.1 redirects an error
-  // once the client and its redirect URI are good.
-  const product = realm === PROD;
+  // BOTH MODES REDIRECT IT (#26, 2026-11-15): rt-oauth is a registered
+  // client and REDIRECT its own registered URI, so invalid_target goes back
+  // there even with nobody signed in. Until #26 the product realm answered
+  // this service's own 400 page (RFC 9700 section 4.11.2's
+  // authenticate-before-redirect), which this job pinned.
   for (const one of refused) {
     const r = await authorize(realm, one);
     check("T3. " + realm + ": resource " + JSON.stringify(one) + " is " +
-          (product ? "refused on this service's 400 page (pinned)"
-                   : "a redirected invalid_target"), function () {
-      if (product) {
-        assert.strictEqual(r.status, 400, r.status + " " + r.location);
-      } else {
-        assert.ok(r.status === 302 || r.status === 303, r.status + " " +
-                  r.location);
-        assert.strictEqual(r.error, "invalid_target", r.location);
-      }
+          "a redirected invalid_target", function () {
+      assert.ok(r.status === 302 || r.status === 303, r.status + " " +
+                r.location);
+      assert.strictEqual(r.error, "invalid_target", r.location);
     });
   }
   const after = await codeCount(realm, "STS-OAUTH-0950",

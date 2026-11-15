@@ -456,6 +456,33 @@ function childMain() {
            bobCeremony.view.webauthn.mode === 'create',
            'E3. and its ceremony is a REGISTRATION although they hold a ' +
            'passkey', JSON.stringify(bobCeremony.view || '').slice(0, 200));
+      // (2026-11-15, #31) AN EMAILED CODE OR LINK IS A RECOVERY DOOR TOO,
+      // and its finisher records it as the recovery code's does. Asked of
+      // finishEmailSecondFactor() directly, as a verified emailed secret
+      // reaches it: the note is made before either way on, so the fake
+      // response's limits after it do not matter here.
+      ['code', 'link'].forEach(function (kind) {
+        credentials.setRecoveryPending(BOB, '');
+        const emailed = { username: BOB, firstAmr: ['pwd'],
+                          authn: { protocol: 'a test', application: '' } };
+        // The child has no logger: what the fake request led to is carried
+        // on the finding instead.
+        let threw = '';
+        try {
+          authn.finishEmailSecondFactor({ headers: {}, query: {} }, res,
+                                        'ra-email-' + kind, emailed, kind);
+        } catch (e) {
+          // The session the fake request leads to is not this check's;
+          // the entry is.
+          threw = String((e && e.message) || e);
+        }
+        note((credentials.recoveryPending(BOB) || {}).door === 'email-' + kind,
+             'E3b. an emailed ' + kind + ' at the second-factor step is ' +
+             'pending on the entry as a recovery (#31)',
+             JSON.stringify(credentials.recoveryPending(BOB)) +
+             (threw ? ' (after it, the fake request threw: ' + threw + ')'
+                    : ''));
+      });
 
       rows('operator-only');
       r = await signInAt({ username: BOB, password: 'Bob-Pass-333!' });
