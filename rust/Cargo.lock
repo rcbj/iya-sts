@@ -2244,6 +2244,247 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sts-model-account",
+ "sts-model-authn",
+ "sts-model-base",
+ "sts-model-console",
+ "sts-model-console-components-1",
+ "sts-model-console-components-2",
+ "sts-model-console-components-3",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+ "sts-model-management-operations-1",
+ "sts-model-management-operations-2",
+ "sts-model-management-operations-3",
+ "sts-model-management-operations-4",
+ "sts-model-management-operations-5",
+ "sts-model-management-operations-6",
+ "sts-model-management-operations-7",
+ "sts-model-management-operations-8",
+ "sts-model-report",
+]
+
+[[package]]
+name = "sts-model-account"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+]
+
+[[package]]
+name = "sts-model-authn"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+]
+
+[[package]]
+name = "sts-model-base"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sts-model-console"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-console-components-1",
+ "sts-model-console-components-2",
+ "sts-model-console-components-3",
+]
+
+[[package]]
+name = "sts-model-console-components-1"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+]
+
+[[package]]
+name = "sts-model-console-components-2"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-console-components-1",
+]
+
+[[package]]
+name = "sts-model-console-components-3"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+]
+
+[[package]]
+name = "sts-model-management-components-1"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+]
+
+[[package]]
+name = "sts-model-management-components-2"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+]
+
+[[package]]
+name = "sts-model-management-components-3"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+]
+
+[[package]]
+name = "sts-model-management-components-4"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+]
+
+[[package]]
+name = "sts-model-management-operations-1"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-2"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-3"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-4"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-5"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-6"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-7"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-management-operations-8"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
+ "sts-model-management-components-1",
+ "sts-model-management-components-2",
+ "sts-model-management-components-3",
+ "sts-model-management-components-4",
+]
+
+[[package]]
+name = "sts-model-report"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sts-model-base",
 ]
 
 [[package]]

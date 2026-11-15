@@ -709,8 +709,6 @@ crates/sts-http/src/lib.rs not_found
 crates/sts-mgmt-api/src/gate.rs check
 crates/sts-mgmt-api/src/gate.rs presented_token_of
 crates/sts-mgmt-api/src/gate.rs wanted_audiences
-crates/sts-model/src/lib.rs deserialize
-crates/sts-model/src/lib.rs serialize
 crates/sts-oauth/src/dpop.rs ath_of
 crates/sts-oauth/src/dpop.rs normalize_htu
 crates/sts-oauth/src/dpop.rs signing_algs
