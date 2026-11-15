@@ -6664,6 +6664,21 @@ function answerCertificateSignIn(req, res) {
         errorCodes.mark(res, session.refusedAsStored === 'STORED_TWICE'
           ? 'STS-TLS-0055' : 'STS-TLS-0054');
       }
+      // REFUSED ON REVOCATION, ON THE AUDIT LOG OF THE REALM ASKED (#34,
+      // #38, 2026-11-15). Nothing marked it, so it was a log line only:
+      // STS-PKI-0119 (the status could not be established under hard-fail)
+      // and STS-PKI-0189 (RFC 9608 noRevAvail beside a distribution point)
+      // reached no audit row at all, and STS-PKI-0118 only the handshake's
+      // row, written in the default realm because a handshake has no realm.
+      // Marked here, under the revocation verdict's own code, the call log
+      // writes the refusal's row in the realm this request named, as it
+      // does for STS-TLS-0054 above. The answer is unchanged: 200,
+      // `session.refusedOnRevocation`.
+      if (session.refusedOnRevocation) {
+        errorCodes.mark(res, errorCodes.codeOf(revocation) ||
+          (revocation && revocation.status === 'revoked' ? 'STS-PKI-0118'
+                                                         : 'STS-PKI-0119'));
+      }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&
                            req.socket.getPeerCertificate().raw.length);

@@ -23,7 +23,8 @@
 //      status unknown (STS-PKI-0119's reason, `refusedOnRevocation`);
 //   C. a leaf asserting RFC 9608 noRevAvail beside a cRLDistributionPoints
 //      extension, which section 3 forbids, is refused (STS-PKI-0189's
-//      reason). PINNED: neither code is on an audit row.
+//      reason). Each code is on an audit row of the realm (#34,
+//      2026-11-15; until then neither was on any, which this job pinned).
 //
 // NOT carried, and why: a foreign CRL that is badly signed, stale, slow or
 // a redirect, the cache and the failure memory (claims about requests NOT
@@ -106,18 +107,22 @@ async function settledSignIn(realm, tls) {
 // A code counted in the realm's audit log and the default realm's together:
 // the handshake's revocation verdict is made before a request names a
 // realm, so its row may be the process's.
+// The code's rows in the realm the request named (#34, #38: the door's
+// refusal is written there) and in the default realm, before and after.
 async function bothRealms(realm, code, act) {
   log.debug("Entering bothRealms(). " + code);
-  const before = (await K.codeCount(realm, code)) +
-                 (await K.codeCount(null, code));
+  const realmBefore = await K.codeCount(realm, code);
+  const defaultBefore = await K.codeCount(null, code);
   const answer = await act();
-  let after = before;
-  for (let i = 0; i < 20 && after <= before; i += 1) {
+  let inRealm = realmBefore;
+  for (let i = 0; i < 20 && inRealm <= realmBefore; i += 1) {
     await K.sleep(150);
-    after = (await K.codeCount(realm, code)) + (await K.codeCount(null, code));
+    inRealm = await K.codeCount(realm, code);
   }
-  log.debug("Leaving bothRealms(). " + (after - before));
-  return { answer: answer, rose: after - before };
+  const inDefault = await K.codeCount(null, code);
+  const rose = inRealm - realmBefore + inDefault - defaultBefore;
+  log.debug("Leaving bothRealms(). " + rose);
+  return { answer: answer, rose: rose, realmRose: inRealm - realmBefore };
 }
 
 async function personWith(realm, name, leafPem) {
@@ -211,9 +216,13 @@ async function test() {
                        unknown.answer.text.slice(0, 300));
     assert.ok(/could not be established/.test(session.why || ""),
               unknown.answer.text.slice(0, 300));
-    // PINNED: the code is in the reason's log line only, on no audit row.
-    log.info("B. STS-PKI-0119 audit rows: " + unknown.rose);
     assert.ok(!/STS-[A-Z]+-\d{4}/.test(unknown.answer.text));
+  });
+  // #34 (2026-11-15): the refusal is on the realm's audit log; until then
+  // the code was in the reason's log line only, which this job pinned.
+  check("B. and STS-PKI-0119 is on an audit row of the realm (#34)",
+        function () {
+    assert.ok(unknown.realmRose >= 1, JSON.stringify(unknown.rose));
   });
 
   log.info("=== C. noRevAvail beside a CRL distribution point ===");
@@ -234,8 +243,10 @@ async function test() {
                        forbidden.answer.text.slice(0, 300));
     assert.ok(/noRevAvail beside cRLDistributionPoints/.test(
       session.why || ""), forbidden.answer.text.slice(0, 300));
-    // PINNED: as B's, no audit row carries the code.
-    log.info("C. STS-PKI-0189 audit rows: " + forbidden.rose);
+  });
+  check("C. and STS-PKI-0189 is on an audit row of the realm (#34)",
+        function () {
+    assert.ok(forbidden.realmRose >= 1, JSON.stringify(forbidden.rose));
   });
   check("C. and no code is sent", function () {
     assert.ok(!/STS-[A-Z]+-\d{4}/.test(forbidden.answer.text));

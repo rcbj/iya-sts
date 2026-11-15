@@ -3826,7 +3826,24 @@ async function childBody() {
              refused: session.refusedOnRevocation,
              started: session.started, why: session.why };
   };
+  // #34, #38 (2026-11-15): the door's refusal is a row of its own, the call
+  // log's for GET /tls/sign-in, under the verdict's code — the handshake's
+  // row (target "the main port") was the only one until then.
+  const audit = require('../common/audit');
+  const doorRows = function () {
+    log.debug("Entering doorRows().");
+    log.debug("Leaving doorRows().");
+    return audit.localEvents().filter(function (row) {
+      return row.errorCode === 'STS-PKI-0118' &&
+        String(row.target || '') === '/tls/sign-in';
+    }).length;
+  };
+  const doorBefore = doorRows();
   out.revoked = summary(await ask(bad));
+  await new Promise(function (ok) {
+    setTimeout(ok, 200);
+  });
+  out.revokedDoorRows = doorRows() - doorBefore;
   out.good = summary(await ask(good));
   await new Promise(function (ok) {
     listener.close(ok);
@@ -3908,6 +3925,10 @@ function theListeners(t, got) {
           'certificate that must not be an identity is refused where it is ' +
           'USED and the answer is a 200 saying so',
           JSON.stringify(got.revoked));
+  t.check(got.revokedDoorRows >= 1,
+          'and the door\'s refusal is on the audit log under STS-PKI-0118, ' +
+          'the call log\'s row for GET /tls/sign-in (#34, #38)',
+          String(got.revokedDoorRows));
   t.check(got.good.status === 200 && got.good.revocation === 'good' &&
           got.good.signedIn === true && got.good.started === true,
           'while a good certificate from the SAME authority signs its holder ' +

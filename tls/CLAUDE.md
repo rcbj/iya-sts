@@ -424,7 +424,15 @@ What is this directory's:
   awaits it before `recordClientCertificate()`. A certificate the policy refuses
   starts **no session** and is **not recorded** as an authentication — it gets a
   refusal audit row with `STS-PKI-0118` or `-0119` instead — and the route says
-  so in its answer, which carries the whole verdict at `revocation`. **It also
+  so in its answer, which carries the whole verdict at `revocation`. **The
+  route's refusal is a row of its own since 2026-11-15 (#34, #38)**: the
+  handshake's row is the default realm's (a handshake has no realm) and it is
+  written only where the PROCESS's policy refuses, so `STS-PKI-0119` under a
+  realm's hard-fail and `STS-PKI-0189` (RFC 9608) were a log line only, and
+  `STS-PKI-0118` never reached the realm the request named. `GET /tls/sign-in`
+  now marks its answer with the verdict's own code, and the call log writes
+  the row in the request's realm; the answer is still 200 with
+  `session.refusedOnRevocation`. **It also
   answered 403 on 9443 until 2026-09-16**; that listener is gone and nothing
   here refuses a connection any more. `GET /tls` carries the policy.
 * **NOT AT THE HANDSHAKE, AND THAT WAS MEASURED RATHER THAN ASSUMED.** Node's
