@@ -2285,6 +2285,38 @@ const JOBS = [
   // / operator-only at the reset link, an administrator's set-password,
   // the keytab door (STS-KRB-0128) and a recovery code (STS-AUTHN-0380).
   { file: 'sts_recovery_assurance.js', browser: false, local: true },
+  // ---------------------------------------------------------------------
+  // #444's D12, PHASE 6 (2026-11-15): PKI and certificate enrollment —
+  // ACME, EST, SCEP, stored certificates, the CA's build, the signer
+  // truststore and pinned signers. Same rules as phase 5's block: throwaway
+  // realms, codes off /admin-api/audit, realms removed only when
+  // STS_TEST_REMOVE_REALMS=1; none is exclusive.
+  // ---------------------------------------------------------------------
+  // D12 (#444): the ACME envelope read strictly, by code (STS-ACME-0012,
+  // 0013, 0014, 0018, 0024, 0025, 0032) (acme_jws, acme_protocol).
+  { file: 'sts_acme_envelope.js', browser: false, local: true },
+  // D12 (#444): the enrollment core's rules and EST's door by code
+  // (cert_enrollment, est_handlers, application_enrollment).
+  { file: 'sts_enrollment_rules.js', browser: false, local: true },
+  // D12 (#444): SCEP's CMS rules by code — an empty transactionID, a
+  // messageDigest not the content's, an envelope for another key
+  // (scep_enrollment).
+  { file: 'sts_scep_rules.js', browser: false, local: true },
+  // D12 (#444): a certificate stored on an application or a person through
+  // the admin doors, and the certificate details view (stored_certificates,
+  // application_stored_certificates, application_entry_unowned,
+  // certificate_details).
+  { file: 'sts_stored_certificate_doors.js', browser: false, local: true },
+  // D12 (#444): what a realm's CA is built from — the key and signature
+  // settings, the alternative key, a rebuild recertifying the signing keys
+  // (pki_defaults, pki_hybrid, pki_rebuild_recertifies).
+  { file: 'sts_pki_rules.js', browser: false, local: true },
+  // D12 (#444): the signer truststore's admission and refusals, and pinned
+  // signers (signer_truststore, pinned_signers).
+  { file: 'sts_signer_trust.js', browser: false, local: true },
+  // D12 (#444): the main port's chain ends with the service Root, byte for
+  // byte (tls_presented_root).
+  { file: 'sts_tls_presented_root.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
