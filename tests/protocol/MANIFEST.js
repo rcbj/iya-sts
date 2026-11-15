@@ -2420,6 +2420,13 @@ const JOBS = [
   // rules, the SAML 1.1 responder's queries, the WS-Federation metadata's
   // honesty (saml_family_hardcoded B, C, E, G, H, I).
   { file: 'sts_saml_family_rules.js', browser: false, local: true },
+  // D12 (#444): the rest of what the SAML interoperability harnesses
+  // found — a LogoutRequest's Destination, the logout link's query
+  // signature, /saml2/unsolicited, product's attribute authority, SAML 1.1
+  // for Shibboleth and its product responder — and Single Logout's
+  // signatures and the console's SAML 2.0 actions (saml_interop_findings A,
+  // C, D, E, G; saml_request_signatures I, J).
+  { file: 'sts_saml_interop_rules.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
