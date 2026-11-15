@@ -17,3 +17,4 @@ pub mod rbac;
 pub mod role_actions;
 pub mod people;
 pub mod group_claims;
+pub mod ownership;

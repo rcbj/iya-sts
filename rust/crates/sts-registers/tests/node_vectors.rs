@@ -25,6 +25,7 @@ use replay::{code_text, Replay};
 use serde_json::{json, Value};
 use sts_registers::group_claims::GroupClaims;
 use sts_registers::outcome::Outcome;
+use sts_registers::ownership::{Ownership, OwnershipDeps};
 use sts_registers::people::{AccountChange, AccountState, People, PeopleDeps};
 use sts_registers::rbac::Rbac;
 use sts_registers::role_actions::RoleActions;
@@ -210,6 +211,33 @@ fn every_register_answers_as_node_does() {
                         gc.saml_attributes_for(&text("set"), &input["context"])
                     )),
                     _ => plain(gc.state()),
+                })
+            }
+            "ownership" => {
+                let o = Ownership::new(OwnershipDeps {
+                    settings: replay.clone(),
+                    directory: replay.clone(),
+                    roles: Arc::new(roles_over(&replay)),
+                    applications: replay.clone(),
+                    service_accounts: replay.clone(),
+                    scope_policy: replay.clone(),
+                });
+                let input = &step["input"];
+                let text = |k: &str| input[k].as_str().unwrap_or("").to_string();
+                Some(match step["op"].as_str().unwrap_or("") {
+                    "identityOf" => plain(o.identity_of(&text("username"))),
+                    "ownsAnything" => {
+                        plain(json!({"owns": o.owns_anything(&text("username"))}))
+                    }
+                    "objectOf" => plain(o.object_of(&text("kind"), &text("name"))),
+                    "owns" => plain(json!({"owns": o.owns(
+                        &text("username"), &text("kind"), &text("name"))})),
+                    _ => got(o.set_protected(
+                        &text("kind"),
+                        &text("name"),
+                        &input["flag"],
+                        &json!({"actor": "vectors"}),
+                    )),
                 })
             }
             "rbac" => {
