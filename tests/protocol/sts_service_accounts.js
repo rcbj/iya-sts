@@ -287,7 +287,11 @@ function modify(client, dn, changes) {
         modification: new ldapjs.Attribute({ type: one[1],
                                              values: one[2] }) });
     }), function (e) {
-      resolve({ code: e ? e.code : 0, message: e ? e.message : "" });
+      // The refusal's text is the result's diagnosticMessage (#261): the
+      // client error's own `message` is the result code's name ("Constraint
+      // Violation"), which is what section m read in run #300.
+      resolve({ code: e ? e.code : 0, message: e ? String(
+        e.diagnosticMessage || e.lde_message || e.message || "") : "" });
     });
   });
 }
