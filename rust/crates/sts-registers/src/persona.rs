@@ -4,7 +4,11 @@
 //! THE INVENTED PERSON AND THE TYPED-ATTRIBUTE CHECK (#444, phase 5, the
 //! `apis5` slice): what `users/create` reads about a person in Node.
 //!
-//! * [`Persona::for_name`] — `oid4vc/vc_claims.ts`'s `personaFor(name)`:
+//! * [`Persona::for_name`] — `oid4vc/vc_claims.ts`'s `personaFor(name)`,
+//!   WHOLE: what `applyVcAttributes()` writes beyond the five facts
+//!   `namePlan()` takes, which are `sts_directory::funnel::persona_for()`'s
+//!   (the identity funnel's, from the same stream; `tests/people_vectors.rs`
+//!   holds the two to each other):
 //!   one consistent person drawn from a mulberry32 stream seeded by the
 //!   first four bytes (little-endian) of SHA-256 over the username, every
 //!   field from the same stream in Node's order, so one name is one person

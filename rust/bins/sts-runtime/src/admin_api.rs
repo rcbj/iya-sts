@@ -1034,17 +1034,19 @@ impl rp::PersonWriter for PersonWriter {
                 .unwrap_or(false);
             let key = sts_registers::persona::plain_identity_key(&wanted);
             if invent {
-                let persona = sts_registers::persona::Persona::for_name(&key);
-                let text =
-                    |k: &str| persona[k].as_str().unwrap_or("").to_string();
-                attributes.insert("cn".into(), vec![text("display")]);
-                attributes.insert("sn".into(), vec![text("family")]);
-                attributes.insert("givenname".into(), vec![text("given")]);
+                // `namePlan()`'s five facts are the identity funnel's
+                // (`sts_directory::funnel`), the same draw a sign-in's
+                // auto-created entry is given.
+                let persona =
+                    sts_directory::funnel::persona_for(&wanted, &|_| None);
+                attributes.insert("cn".into(), vec![persona.display.clone()]);
+                attributes.insert("sn".into(), vec![persona.family]);
+                attributes.insert("givenname".into(), vec![persona.given]);
                 attributes.insert(
                     "displayname".into(),
-                    vec![format!("{} (mock)", text("display"))],
+                    vec![format!("{} (mock)", persona.display)],
                 );
-                attributes.insert("mail".into(), vec![text("email")]);
+                attributes.insert("mail".into(), vec![persona.email]);
             }
             let mut typed: Vec<String> = Vec::new();
             let mut typed_mail = false;

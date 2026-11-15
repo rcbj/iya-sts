@@ -54,6 +54,18 @@ fn a_persona_is_drawn_as_node_draws_it() {
 }
 
 #[test]
+fn the_funnel_draws_the_same_five_facts() {
+    for name in ["alice", "bob", "e2e.ann", "MiXeD.Case", "ünïcode", ""] {
+        let whole = Persona::for_name(&plain_identity_key(name));
+        let five = sts_directory::funnel::persona_for(name, &|_| None);
+        assert_eq!(whole["given"], json!(five.given), "{name}");
+        assert_eq!(whole["family"], json!(five.family), "{name}");
+        assert_eq!(whole["display"], json!(five.display), "{name}");
+        assert_eq!(whole["email"], json!(five.email), "{name}");
+    }
+}
+
+#[test]
 fn people_match_node() {
     let Some((dir, v)) = vectors() else {
         eprintln!("STS_CRYPTO_VECTORS is not set: people-node.json skipped");
