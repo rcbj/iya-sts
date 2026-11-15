@@ -60,6 +60,10 @@ pub struct EstStore {
     challenges: RealmMap<Json>,
 }
 
+/// `enrollmentRequest()`'s `afterAuthentication` hook (#36): asked once the
+/// caller is authenticated, it answers the refusal it made itself.
+type AfterAuthentication<'a> = dyn Fn(&Ctx) -> Option<Reply> + Sync + 'a;
+
 impl EstStore {
     /// Declares the store (before the store opens).
     #[tracing::instrument(level = "debug", skip_all)]
@@ -569,7 +573,7 @@ impl Est {
         req: &Req,
         ctx: &mut Ctx,
         template: bool,
-        after_authentication: Option<&(dyn Fn(&Ctx) -> Option<Reply> + Sync)>,
+        after_authentication: Option<&AfterAuthentication<'_>>,
     ) -> Result<Csr, Reply> {
         ctx.basic = Est::basic_of(req);
         ctx.identity = Est::identity_hint_of(req, &ctx.basic);
