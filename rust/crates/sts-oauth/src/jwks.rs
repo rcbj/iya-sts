@@ -349,11 +349,8 @@ pub fn x5c_of(
     pems.iter().map(|pem| strip_pem(pem)).collect()
 }
 
-/// The RSA key's JWK. The certificate may be PEM or the bare base64 the
-/// hierarchy stores a published certificate as (`publishedCertificateFor()`
-/// once Node certified the key, which product always has).
 fn rsa_jwk(kid: &str, cert_pem: &str, x5c: Vec<String>) -> Option<Json> {
-    let key = JwsKey::from_pem(&as_pem(cert_pem)).ok()?;
+    let key = JwsKey::from_pem(cert_pem).ok()?;
     let public = key.public_jwk().ok()??;
     Some(json!({
         "kty": "RSA", "use": "sig", "kid": kid,
@@ -396,7 +393,9 @@ fn current_rsa(inputs: &JwksInputs<'_>) -> Result<Json, String> {
         .published("jose", "RS256", &kid)
         .unwrap_or((self_signed, Vec::new()));
     let x5c = x5c_of(&cert, &chain, inputs.sources);
-    rsa_jwk(&kid, &cert, x5c)
+    // The hierarchy files a published certificate as bare base64 (once
+    // Node certified the key, which product always has): read as PEM.
+    rsa_jwk(&kid, &as_pem(&cert), x5c)
         .ok_or_else(|| "the RSA certificate could not be read".to_string())
 }
 

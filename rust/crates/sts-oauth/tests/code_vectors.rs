@@ -264,7 +264,7 @@ fn steady_claims(claims: &Json) -> Json {
     let mut c = claims.clone();
     if let Some(o) = c.as_object_mut() {
         let iat = o.get("iat").and_then(Json::as_i64).unwrap_or(0);
-        for k in ["iat", "nbf", "exp", "chain_iat", "auth_time"] {
+        for k in ["iat", "nbf", "exp", "chain_iat"] {
             if let Some(v) = o.get(k).and_then(Json::as_i64) {
                 o.insert(k.into(), json!(v - iat));
             }
@@ -752,6 +752,16 @@ async fn the_code_flow() {
                         b["error_description"] = json!(cut);
                     }
                 }
+                // How long ago is each runtime's own clock.
+                if let Some(d) =
+                    b.get("error_description").and_then(Json::as_str)
+                {
+                    let d = regex::Regex::new(r"redeemed \d+ second")
+                        .unwrap()
+                        .replace_all(d, "redeemed N second")
+                        .to_string();
+                    b["error_description"] = json!(d);
+                }
                 for k in ["access_token", "refresh_token", "id_token"] {
                     if b.get(k).is_some() {
                         b[k] = json!("<token>");
@@ -810,9 +820,11 @@ async fn the_code_flow() {
                 // NODE'S refresh token opens and verifies here.
                 let node_jws =
                     sts_oauth::refresh_crypto::open(&node_rt, keys).unwrap();
+                // Node signed it as it answered, a moment after the case's
+                // instant was read.
                 let verified = signer.verify_own(
                     &node_jws,
-                    case["nowMs"].as_i64().unwrap() / 1000,
+                    case["nowMs"].as_i64().unwrap() / 1000 + 5,
                 );
                 assert_eq!(
                     verified.as_ref().map(|c| c["jti"].clone()).ok(),
