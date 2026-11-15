@@ -45,14 +45,31 @@ function read(name) {
 }
 
 /**
- * The Kerberos codec's checks first (they need no other Rust vector), then
- * the signing and encryption ones.
+ * The audit log's and the mail channel's checks, then the Kerberos codec's
+ * (none needs another Rust vector), then the signing and encryption ones.
  *
  * @param {any} t - the runner's check collector
  * @returns {Promise<void>|undefined} when the asynchronous checks are done
  */
 function run(t) {
   log.debug("Entering run().");
+  log.debug("Leaving run(). The audit and mail checks are asynchronous.");
+  // The audit log's and the mail channel's (#444, phase 4) first: each
+  // half checks only what Rust wrote (tests/tools/auditmail-vectors.js).
+  return require('./tools/auditmail-vectors.js').fromRust(t, VECTORS)
+    .then(function () {
+      return runKerberos(t);
+    });
+}
+
+/**
+ * The Kerberos codec's checks, then the rest.
+ *
+ * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
+ */
+function runKerberos(t) {
+  log.debug("Entering runKerberos().");
   // The named policies' (#444 phase 4), which need no key and so no other
   // set: `tests/tools/policy-vectors.js` holds what the sts-policy crate
   // answered to Node's answers, and its generated passwords to Node's
@@ -98,10 +115,11 @@ function run(t) {
       read('directory-rust.json'));
   }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
-    log.debug("Leaving run(). No Kerberos vectors.");
+    log.debug("Leaving runKerberos(). No Kerberos vectors.");
     return runSigned(t);
   }
-  log.debug("Leaving run(). The Kerberos checks are asynchronous.");
+  log.debug("Leaving runKerberos(). The Kerberos checks are " +
+            "asynchronous.");
   return krb5CodecFromRust(t, read('krb5-codec-rust.json'))
     .then(function () {
       return runSigned(t);

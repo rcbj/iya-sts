@@ -5508,7 +5508,16 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'directory-node.json',
                    build: function () {
                      return require('./directory-vectors.js').build(ROOT);
-                   } }];
+                   } },
+                 // The audit log's and the mail channel's (#444, phase 4):
+                 // tests/tools/auditmail-vectors.js.
+                 { file: 'auditmail-node.json', build: auditMailVectors }];
+
+// THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and
+// `sts-mail`'s vectors, built by the two files `auditmail-vectors.js` names.
+function auditMailVectors() {
+  return require('./auditmail-vectors.js').build(ROOT, OUT);
+}
 
 // A PRIVATE KEY MADE PKCS#8 (#444, phase 3): the conversion `sts-core`'s
 // secrets reader needs for OpenBao's PKCS#1 client key, as node does it —

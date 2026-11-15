@@ -2368,6 +2368,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-audit"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sts-cluster",
+ "sts-core",
+ "sts-crypto",
+ "sts-model-management-components-1",
+ "sts-store",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "sts-cache"
 version = "0.1.0"
 dependencies = [
@@ -2506,6 +2525,24 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "sts-mail"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "indexmap",
+ "regex",
+ "serde",
+ "serde_json",
+ "sts-cluster",
+ "sts-core",
+ "sts-crypto",
+ "thiserror",
+ "tokio",
  "tracing",
 ]
 
