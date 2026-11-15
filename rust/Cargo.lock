@@ -4843,12 +4843,27 @@ dependencies = [
  "sts-oauth",
  "sts-pki",
  "sts-registers",
+ "sts-saml",
  "sts-store",
  "sts-tls",
  "sts-xacml",
  "tokio",
  "tokio-openssl",
  "tower",
+ "tracing",
+]
+
+[[package]]
+name = "sts-saml"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "flate2",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "sts-xml",
  "tracing",
 ]
 

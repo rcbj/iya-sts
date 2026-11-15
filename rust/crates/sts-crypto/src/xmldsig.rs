@@ -114,6 +114,9 @@ pub mod uri {
 
 use uri::*;
 
+mod wssec;
+pub use wssec::*;
+
 // ---------------------------------------------------------------------------
 // The hashes.
 // ---------------------------------------------------------------------------
@@ -961,6 +964,19 @@ pub fn algorithm_verdict(
     digests: &[String],
     policy: &XmlPolicy,
 ) -> AlgorithmVerdict {
+    algorithm_verdict_keyed(signature, digests, policy, false)
+}
+
+/// [`algorithm_verdict`] with `xmlAlgorithmVerdict()`'s `sharedKey`: true
+/// only for a WS-Security signature whose KeyInfo names a Kerberos token
+/// (#658), where an HMAC is a method this service can check.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn algorithm_verdict_keyed(
+    signature: &str,
+    digests: &[String],
+    policy: &XmlPolicy,
+    shared_key: bool,
+) -> AlgorithmVerdict {
     let Some(sig) = signature_method(signature) else {
         let why = refused_signature_method(signature);
         return AlgorithmVerdict {
@@ -984,10 +1000,10 @@ pub fn algorithm_verdict(
     };
     // AN HMAC NEEDS A SHARED KEY (#658). Node's only one is a Kerberos
     // token's session key, in a WS-Security signature whose KeyInfo names
-    // the token (`verifyWsSecurityHmac()`, which passes `sharedKey`); no
-    // caller of this module holds one, so an HMAC is always answered as a
-    // method a certificate cannot check.
-    if sig.family == Family::Hmac {
+    // the token (`verifyWsSecurityHmac()`, which passes `sharedKey`, and
+    // `wssec`'s reading); every other caller answers an HMAC as a method a
+    // certificate cannot check.
+    if sig.family == Family::Hmac && !shared_key {
         out.problem = format!(
             "the SignatureMethod \"{}\" is an HMAC, which needs a shared \
              key; a certificate cannot check one",
@@ -1041,6 +1057,41 @@ pub fn algorithm_verdict(
         out.code = Some(codes::STS_KEYS_0062);
     }
     out
+}
+
+/// `signaturePolicy.xmlAlgorithmSupport(digests)` (#1368): what the SAML
+/// metadata's Algorithm Support elements publish — `(digests, signing)`.
+/// The signing methods are the registry's XML rows in its order, neither
+/// weak nor an HMAC, that the policy accepts; the digests are the ones
+/// computed here, neither weak nor refused, strongest first.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn xml_algorithm_support(policy: &XmlPolicy) -> (Vec<String>, Vec<String>) {
+    use crate::algorithms::{Registry, Surface};
+    let signing: Vec<String> = Registry::get()
+        .on(Surface::Xml)
+        .into_iter()
+        .filter(|row| !row.weak && row.family != "hmac")
+        .filter_map(|row| row.spelled(Surface::Xml))
+        .filter(|uri| policy.accept_cause(uri).is_none())
+        .collect();
+    const RANK: [&str; 8] = [
+        "SHA-512", "SHA-384", "SHA-256", "SHA3-512", "SHA3-384", "SHA3-256",
+        "SHA-224", "SHA3-224",
+    ];
+    let rank = |h: Hash| {
+        RANK.iter()
+            .position(|r| *r == h.label(true))
+            .map(|p| p as i64)
+            .unwrap_or(-1)
+    };
+    let mut digests: Vec<(String, Hash)> = digest_methods()
+        .into_iter()
+        .filter(|(_, h)| {
+            !h.weak() && policy.accept_digest_cause(&h.label(true)).is_none()
+        })
+        .collect();
+    digests.sort_by_key(|(_, h)| rank(*h));
+    (digests.into_iter().map(|(u, _)| u).collect(), signing)
 }
 
 // ---------------------------------------------------------------------------

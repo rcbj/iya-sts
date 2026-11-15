@@ -246,6 +246,14 @@ function declarations(t) {
       'utf8'),
   'rust/crates/sts-oauth/src/generated/oauth.json is what the model ' +
     'generates (tests/tools/regenerate-model-docs.sh)');
+  // sts-saml's copy of the SAML model (#444, phase 7): the file
+  // saml_model.ts reads, read whole by the crate.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-saml',
+    'src', 'generated', 'saml.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'saml.json'),
+      'utf8'),
+  'rust/crates/sts-saml/src/generated/saml.json is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   // sts-authn-api's copy (#444, phase 5): the document /authn-api serves.
   t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-authn-api',
     'src', 'generated', 'openapi.authn.json'), 'utf8') ===

@@ -53,6 +53,7 @@ members = [
   "crates/sts-authn",
   "crates/sts-authn-api",
   "crates/sts-logout",
+  "crates/sts-saml",
   "crates/sts-enroll",
   "bins/xacml-pep",
   "bins/sts-runtime",
@@ -92,6 +93,7 @@ sts-credentials = { path = "crates/sts-credentials" }
 sts-authn = { path = "crates/sts-authn" }
 sts-authn-api = { path = "crates/sts-authn-api" }
 sts-logout = { path = "crates/sts-logout" }
+sts-saml = { path = "crates/sts-saml" }
 sts-enroll = { path = "crates/sts-enroll" }
 axum = "0.8"
 # /admin-api's request and answer checks against the served documents
