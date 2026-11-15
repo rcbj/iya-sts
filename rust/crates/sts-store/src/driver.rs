@@ -269,6 +269,90 @@ pub trait Driver: Send + Sync {
     fn shares_secrets(&self) -> bool {
         false
     }
+    /// `countWindow(scope, realm, key, windowMs)` (#46,
+    /// `cluster/cluster_counters.js`): one attempt counted in a fixed
+    /// window every process shares (`sts_cluster_windows`), a window that
+    /// has passed reset to a fresh one at 1. Answers the count including
+    /// this attempt and what is left of the window; `None` where this
+    /// store shares no windows ([`Driver::shares_windows`]).
+    fn count_window<'a>(
+        &'a self,
+        _scope: &'a str,
+        _realm: &'a str,
+        _key: &'a str,
+        _window_ms: i64,
+    ) -> StoreFuture<'a, Option<WindowCount>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `peekWindow(scope, realm, key)`: the count of a window still
+    /// running, counting nothing; a passed one is a count of zero.
+    fn peek_window<'a>(
+        &'a self,
+        _scope: &'a str,
+        _realm: &'a str,
+        _key: &'a str,
+    ) -> StoreFuture<'a, Option<WindowCount>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `clearWindow(scope, realm, key)`: a window forgotten — what a
+    /// success does to its bucket. Whether there was one.
+    fn clear_window<'a>(
+        &'a self,
+        _scope: &'a str,
+        _realm: &'a str,
+        _key: &'a str,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async { Ok(false) })
+    }
+    /// `claimUsedAssertion(row, { cap, now })` (`common/used_assertions.js`,
+    /// `sts_used_assertions`): one document's use claimed ONCE, the
+    /// primary key arbitrating — an expired row with the key is replaced,
+    /// a live one refuses, and a realm already holding `cap` live rows
+    /// refuses too. `None` where this store holds no such table
+    /// ([`Driver::holds_used_assertions`]).
+    fn claim_used_assertion<'a>(
+        &'a self,
+        _row: &'a UsedAssertionRow,
+        _cap: i64,
+        _now_ms: i64,
+    ) -> StoreFuture<'a, Option<UsedClaim>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `settleUsedAssertion(realm, key, reservation, spent, at)`: a
+    /// reservation made `spent`, or deleted while still `reserved`, both
+    /// pinned to the reservation. The rows touched.
+    fn settle_used_assertion<'a>(
+        &'a self,
+        _realm: &'a str,
+        _key: &'a str,
+        _reservation: &'a str,
+        _spent: bool,
+        _at_ms: i64,
+    ) -> StoreFuture<'a, u64> {
+        Box::pin(async { Ok(0) })
+    }
+    /// `findUsedAssertion(realm, key, now)`: one live row by its key.
+    fn find_used_assertion<'a>(
+        &'a self,
+        _realm: &'a str,
+        _key: &'a str,
+        _now_ms: i64,
+    ) -> StoreFuture<'a, Option<UsedAssertionRow>> {
+        Box::pin(async { Ok(None) })
+    }
+    /// `purgeUsedAssertions(now)`: the expired rows swept.
+    fn purge_used_assertions(&self, _now_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async { Ok(0) })
+    }
+    /// Whether this store holds `sts_used_assertions`.
+    fn holds_used_assertions(&self) -> bool {
+        false
+    }
+    /// Whether this store shares the rate windows (`windowStore()` found
+    /// `countWindow`, `peekWindow` and `clearWindow`).
+    fn shares_windows(&self) -> bool {
+        false
+    }
     /// Whether [`Driver::merge_keys`] decides under the row's lock.
     fn merges_keys(&self) -> bool {
         false
@@ -289,6 +373,44 @@ pub trait Driver: Send + Sync {
             )))
         })
     }
+}
+
+/// One `sts_used_assertions` row, in `used_assertions.js`' shape. The
+/// four text columns (`issuer`, `identifier`, `client_id`, `subject`) are
+/// as the caller sealed them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UsedAssertionRow {
+    pub realm: String,
+    pub key: String,
+    pub format: String,
+    pub used_as: String,
+    pub issuer: String,
+    pub identifier: String,
+    pub client_id: String,
+    pub subject: String,
+    pub state: String,
+    pub reservation: String,
+    pub origin: String,
+    pub used_at: i64,
+    pub spent_at: i64,
+    pub expires_at: i64,
+}
+
+/// What a claim answers: claimed, or the realm's live count and the row
+/// that holds the key (none: the cap refused).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct UsedClaim {
+    pub claimed: bool,
+    pub live: i64,
+    pub existing: Option<UsedAssertionRow>,
+}
+
+/// A shared window's count, as `countWindow()` and `peekWindow()` answer
+/// it: `{ count, remainingMs }`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WindowCount {
+    pub count: i64,
+    pub remaining_ms: i64,
 }
 
 /// One `sts_cluster_secrets` row, as `ensureSharedSecret()` answers it.

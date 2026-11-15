@@ -762,6 +762,7 @@ impl Stack {
                     ),
                 )),
                 tokens: tokens.clone(),
+                credentials: signin.signin.credentials.clone(),
             });
         let authn_routes = signin
             .mount(&http, surfaces.clone(), settings.clone())

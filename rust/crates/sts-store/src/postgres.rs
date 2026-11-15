@@ -174,6 +174,63 @@ const LEASE_WRITE: &str = crate::written!(
     acquired_at,
     expires_at
 );
+/// What a statement writes to `sts_used_assertions`.
+const USED_WRITE: &str = crate::written!(
+    POSTGRES,
+    "sts_used_assertions",
+    realm,
+    key,
+    format,
+    used_as,
+    issuer,
+    identifier,
+    client_id,
+    subject,
+    state,
+    reservation,
+    origin,
+    used_at,
+    spent_at,
+    expires_at
+);
+/// What a used-assertion read answers (`usedRowFrom()`).
+const USED_READ: &str = "format, used_as, issuer, identifier, client_id, \
+    subject, state, origin, used_at, spent_at, expires_at";
+
+fn used_row_of(
+    realm: &str,
+    key: &str,
+    r: &Row,
+) -> crate::driver::UsedAssertionRow {
+    crate::driver::UsedAssertionRow {
+        realm: realm.to_string(),
+        key: key.to_string(),
+        format: r.get("format"),
+        used_as: r.get("used_as"),
+        issuer: r.get("issuer"),
+        identifier: r.get("identifier"),
+        client_id: r.get("client_id"),
+        subject: r.get("subject"),
+        state: r.get("state"),
+        reservation: String::new(),
+        origin: r.get("origin"),
+        used_at: r.get("used_at"),
+        spent_at: r.get("spent_at"),
+        expires_at: r.get("expires_at"),
+    }
+}
+
+/// What a statement writes to `sts_cluster_windows`.
+const WINDOW_WRITE: &str = crate::written!(
+    POSTGRES,
+    "sts_cluster_windows",
+    scope,
+    realm,
+    key,
+    count,
+    window_ends_at,
+    origin
+);
 /// What a statement writes to `sts_cluster_claims`.
 const CLAIM_WRITE: &str = crate::written!(
     POSTGRES,
@@ -864,6 +921,274 @@ impl Driver for PostgresDriver {
                 created_at: r.get(2),
                 offered: inserted > 0,
             }))
+        })
+    }
+
+    fn holds_used_assertions(&self) -> bool {
+        true
+    }
+
+    // `claimUsedAssertion()`: ONE statement — inserted where the realm is
+    // under its cap, an EXPIRED row with the key replaced, a live one left
+    // (nothing returned). Only on that answer is the store asked again, to
+    // say which of the two refusals it was and whose row it is.
+    fn claim_used_assertion<'a>(
+        &'a self,
+        row: &'a crate::driver::UsedAssertionRow,
+        cap: i64,
+        now_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::UsedClaim>> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let won = client
+                .query_opt(
+                    &format!(
+                        "INSERT INTO sts_used_assertions ({w}) SELECT \
+                         $1::text, $2::text, $3::text, $4::text, $5::text, \
+                         $6::text, $7::text, $8::text, $9::text, $10::text, \
+                         $11::text, $12::bigint, $13::bigint, $14::bigint \
+                         WHERE (SELECT count(*) FROM sts_used_assertions \
+                         WHERE realm = $1::text AND expires_at >= \
+                         $15::bigint) < $16::bigint ON CONFLICT (realm, key) \
+                         DO UPDATE SET format = EXCLUDED.format, used_as = \
+                         EXCLUDED.used_as, issuer = EXCLUDED.issuer, \
+                         identifier = EXCLUDED.identifier, client_id = \
+                         EXCLUDED.client_id, subject = EXCLUDED.subject, \
+                         state = EXCLUDED.state, reservation = \
+                         EXCLUDED.reservation, origin = EXCLUDED.origin, \
+                         used_at = EXCLUDED.used_at, spent_at = \
+                         EXCLUDED.spent_at, expires_at = EXCLUDED.expires_at \
+                         WHERE sts_used_assertions.expires_at < $15::bigint \
+                         RETURNING key",
+                        w = USED_WRITE
+                    ),
+                    &[
+                        &row.realm,
+                        &row.key,
+                        &row.format,
+                        &row.used_as,
+                        &row.issuer,
+                        &row.identifier,
+                        &row.client_id,
+                        &row.subject,
+                        &row.state,
+                        &row.reservation,
+                        &row.origin,
+                        &row.used_at,
+                        &row.spent_at,
+                        &row.expires_at,
+                        &now_ms,
+                        &cap,
+                    ],
+                )
+                .await
+                .map_err(err)?;
+            if won.is_some() {
+                return Ok(Some(crate::driver::UsedClaim {
+                    claimed: true,
+                    ..Default::default()
+                }));
+            }
+            let found = client
+                .query_opt(
+                    &format!(
+                        "SELECT {} FROM sts_used_assertions WHERE realm = $1 \
+                         AND key = $2 AND expires_at >= $3",
+                        USED_READ
+                    ),
+                    &[&row.realm, &row.key, &now_ms],
+                )
+                .await
+                .map_err(err)?;
+            let live: i64 = client
+                .query_one(
+                    "SELECT count(*) AS live FROM sts_used_assertions WHERE \
+                     realm = $1 AND expires_at >= $2",
+                    &[&row.realm, &now_ms],
+                )
+                .await
+                .map_err(err)?
+                .get("live");
+            Ok(Some(crate::driver::UsedClaim {
+                claimed: false,
+                live,
+                existing: found.map(|r| used_row_of(&row.realm, &row.key, &r)),
+            }))
+        })
+    }
+
+    fn settle_used_assertion<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+        reservation: &'a str,
+        spent: bool,
+        at_ms: i64,
+    ) -> StoreFuture<'a, u64> {
+        Box::pin(async move {
+            let client = self.client().await?;
+            let n = if spent {
+                client
+                    .execute(
+                        "UPDATE sts_used_assertions SET state = 'spent', \
+                         spent_at = $4 WHERE realm = $1 AND key = $2 AND \
+                         reservation = $3",
+                        &[&realm, &key, &reservation, &at_ms],
+                    )
+                    .await
+            } else {
+                client
+                    .execute(
+                        "DELETE FROM sts_used_assertions WHERE realm = $1 \
+                         AND key = $2 AND reservation = $3 AND state = \
+                         'reserved'",
+                        &[&realm, &key, &reservation],
+                    )
+                    .await
+            }
+            .map_err(err)?;
+            Ok(n)
+        })
+    }
+
+    fn find_used_assertion<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+        now_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::UsedAssertionRow>> {
+        Box::pin(async move {
+            let found = self
+                .client()
+                .await?
+                .query_opt(
+                    &format!(
+                        "SELECT {} FROM sts_used_assertions WHERE realm = $1 \
+                         AND key = $2 AND expires_at >= $3",
+                        USED_READ
+                    ),
+                    &[&realm, &key, &now_ms],
+                )
+                .await
+                .map_err(err)?;
+            Ok(found.map(|r| used_row_of(realm, key, &r)))
+        })
+    }
+
+    fn purge_used_assertions(&self, now_ms: i64) -> StoreFuture<'_, u64> {
+        Box::pin(async move {
+            self.client()
+                .await?
+                .execute(
+                    "DELETE FROM sts_used_assertions WHERE expires_at < $1",
+                    &[&now_ms],
+                )
+                .await
+                .map_err(err)
+        })
+    }
+
+    fn shares_windows(&self) -> bool {
+        true
+    }
+
+    // `countWindow()`: ONE conditional upsert — a passed window is reset
+    // to a fresh one at 1, a live one incremented — under the primary
+    // key's row lock, so two nodes counting one bucket at once both land.
+    // "Now" is taken once, from the inserted row's own window end less the
+    // span: two readings of `clock_timestamp()` in one statement are two
+    // instants, which at the boundary would reset the count and keep the
+    // old window.
+    fn count_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+        window_ms: i64,
+    ) -> StoreFuture<'a, Option<crate::driver::WindowCount>> {
+        Box::pin(async move {
+            let span = window_ms.max(1);
+            let origin = self.origin.id();
+            let row = self
+                .client()
+                .await?
+                .query_one(
+                    &format!(
+                        "INSERT INTO sts_cluster_windows ({w}) VALUES ($1, $2, \
+                         $3, 1, {now} + $4::bigint, $5) ON CONFLICT (scope, \
+                         realm, key) DO UPDATE SET count = CASE WHEN \
+                         sts_cluster_windows.window_ends_at <= \
+                         EXCLUDED.window_ends_at - $4::bigint THEN 1 ELSE \
+                         sts_cluster_windows.count + 1 END, window_ends_at = \
+                         CASE WHEN sts_cluster_windows.window_ends_at <= \
+                         EXCLUDED.window_ends_at - $4::bigint THEN \
+                         EXCLUDED.window_ends_at ELSE \
+                         sts_cluster_windows.window_ends_at END, origin = \
+                         EXCLUDED.origin RETURNING count, window_ends_at - \
+                         {now} AS remaining",
+                        w = WINDOW_WRITE,
+                        now = DB_NOW
+                    ),
+                    &[&scope, &realm, &key, &span, &origin],
+                )
+                .await
+                .map_err(err)?;
+            Ok(Some(crate::driver::WindowCount {
+                count: row.get::<_, i64>("count"),
+                remaining_ms: row.get::<_, i64>("remaining").max(0),
+            }))
+        })
+    }
+
+    fn peek_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, Option<crate::driver::WindowCount>> {
+        Box::pin(async move {
+            let row = self
+                .client()
+                .await?
+                .query_opt(
+                    &format!(
+                        "SELECT count, window_ends_at - {now} AS remaining \
+                         FROM sts_cluster_windows WHERE scope = $1 AND \
+                         realm = $2 AND key = $3 AND window_ends_at > {now}",
+                        now = DB_NOW
+                    ),
+                    &[&scope, &realm, &key],
+                )
+                .await
+                .map_err(err)?;
+            Ok(Some(match row {
+                Some(r) => crate::driver::WindowCount {
+                    count: r.get::<_, i64>("count"),
+                    remaining_ms: r.get::<_, i64>("remaining").max(0),
+                },
+                None => crate::driver::WindowCount::default(),
+            }))
+        })
+    }
+
+    fn clear_window<'a>(
+        &'a self,
+        scope: &'a str,
+        realm: &'a str,
+        key: &'a str,
+    ) -> StoreFuture<'a, bool> {
+        Box::pin(async move {
+            let n = self
+                .client()
+                .await?
+                .execute(
+                    "DELETE FROM sts_cluster_windows WHERE scope = $1 AND \
+                     realm = $2 AND key = $3",
+                    &[&scope, &realm, &key],
+                )
+                .await
+                .map_err(err)?;
+            Ok(n > 0)
         })
     }
 

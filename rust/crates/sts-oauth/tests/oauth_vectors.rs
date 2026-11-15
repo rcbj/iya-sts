@@ -492,6 +492,9 @@ async fn token_endpoint() {
                 gated: Arc::new(sts_oauth::authorize::NoGatedScopes),
                 people: Arc::new(NoPeople),
                 sessions: Arc::new(NoSessions),
+                limits: None,
+                passwords: None,
+                used: None,
             };
             let form: Vec<(String, String)> = case["form"]
                 .as_object()

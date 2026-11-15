@@ -80,6 +80,8 @@ pub struct OAuthParts {
     pub directory_ports: Arc<sts_authn_api::wiring::DirectoryPorts>,
     /// `authn.clientDisplay(clientId)` (#1300), for the consent view.
     pub client_display: Arc<dyn Fn(&str) -> Json + Send + Sync>,
+    /// The credential store, for the password grant.
+    pub credentials: Arc<sts_credentials::credentials::Credentials>,
 }
 
 /// The authorization server, built.
@@ -103,6 +105,10 @@ pub struct OAuthStack {
     /// The bootstrap administrator's claim at the authorization endpoint,
     /// handed its work when `/admin-api` is built.
     pub console_claim: Arc<crate::admin_api::ConsoleClaim>,
+    /// `/oauth2/logout` (RP-Initiated Logout 1.0).
+    pub logout: Arc<sts_oauth::logout_endpoint::LogoutEndpoint>,
+    /// The shared used-assertion history (`common/used_assertions.js`).
+    pub used: Arc<sts_oauth::used_assertions::UsedAssertions>,
 }
 
 /// The person's entry for UserInfo's claims: the live directory's person
@@ -201,6 +207,17 @@ impl Signer for RealmSigner {
         }
         .verify_own(token, now_s)
     }
+
+    fn verify_own_signature(
+        &self,
+        token: &str,
+        now_s: i64,
+    ) -> Result<Json, String> {
+        sts_oauth::token_endpoint::KeySetSigner {
+            set: Arc::new(self.set()?),
+        }
+        .verify_own_signature(token, now_s)
+    }
 }
 
 /// THE REGISTER'S ENVIRONMENT WITH THE STORE'S DATA KEYS. `CoreEnv` opens
@@ -288,6 +305,212 @@ struct GrantSessionsOf(Arc<sts_authn::Sessions>);
 impl sts_oauth::token_endpoint::GrantSessions for GrantSessionsOf {
     fn ended(&self, sid: &str) -> String {
         sts_oauth::token_endpoint::GrantSessions::ended(self.0.as_ref(), sid)
+    }
+}
+
+/// `cluster_counters.js`' windows in the store every process shares
+/// (`sts_cluster_windows`, realm `''`), where the driver shares them.
+struct StoreWindows(Arc<Persistence>);
+
+impl sts_oauth::secret_limit::SharedWindows for StoreWindows {
+    fn shares(&self) -> bool {
+        self.0.driver().is_some_and(|d| d.shares_windows())
+    }
+
+    fn count<'a>(
+        &'a self,
+        key: &'a str,
+        window_ms: i64,
+    ) -> sts_oauth::secret_limit::WindowFuture<
+        'a,
+        Result<sts_oauth::secret_limit::Window, String>,
+    > {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            let w = driver
+                .count_window(
+                    sts_oauth::secret_limit::SHARED_SCOPE,
+                    "",
+                    key,
+                    window_ms,
+                )
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("unshared")?;
+            Ok(sts_oauth::secret_limit::Window {
+                count: w.count,
+                remaining_ms: w.remaining_ms,
+            })
+        })
+    }
+
+    fn peek<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> sts_oauth::secret_limit::WindowFuture<
+        'a,
+        Result<sts_oauth::secret_limit::Window, String>,
+    > {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            let w = driver
+                .peek_window(sts_oauth::secret_limit::SHARED_SCOPE, "", key)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or("unshared")?;
+            Ok(sts_oauth::secret_limit::Window {
+                count: w.count,
+                remaining_ms: w.remaining_ms,
+            })
+        })
+    }
+
+    fn clear<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> sts_oauth::secret_limit::WindowFuture<'a, Result<bool, String>> {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            driver
+                .clear_window(sts_oauth::secret_limit::SHARED_SCOPE, "", key)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+}
+
+/// `sts_used_assertions` in the store every process shares, where the
+/// driver holds it.
+struct StoreUsed(Arc<Persistence>);
+
+impl sts_oauth::used_assertions::UsedStore for StoreUsed {
+    fn holds(&self) -> bool {
+        self.0.driver().is_some_and(|d| d.holds_used_assertions())
+    }
+
+    fn origin(&self) -> String {
+        self.0
+            .driver()
+            .and_then(|d| d.change_log().map(|log| log.origin()))
+            .unwrap_or_else(|| "local".to_string())
+    }
+
+    fn claim<'a>(
+        &'a self,
+        row: &'a sts_oauth::used_assertions::Row,
+        cap: i64,
+        now_ms: i64,
+    ) -> sts_oauth::used_assertions::UsedFuture<
+        'a,
+        Result<sts_store::driver::UsedClaim, String>,
+    > {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            driver
+                .claim_used_assertion(row, cap, now_ms)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "the store holds no used assertions".into())
+        })
+    }
+
+    fn settle<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+        reservation: &'a str,
+        spent: bool,
+        at_ms: i64,
+    ) -> sts_oauth::used_assertions::UsedFuture<'a, Result<u64, String>> {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            driver
+                .settle_used_assertion(realm, key, reservation, spent, at_ms)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn find<'a>(
+        &'a self,
+        realm: &'a str,
+        key: &'a str,
+        now_ms: i64,
+    ) -> sts_oauth::used_assertions::UsedFuture<
+        'a,
+        Result<Option<sts_oauth::used_assertions::Row>, String>,
+    > {
+        Box::pin(async move {
+            let driver = self.0.driver().ok_or("no store")?;
+            driver
+                .find_used_assertion(realm, key, now_ms)
+                .await
+                .map_err(|e| e.to_string())
+        })
+    }
+}
+
+/// The keystore's data keys for the history's four text columns
+/// (`sealedRowOf()`: where the keystore persists and is sealed).
+struct UsedSealer {
+    settings: Arc<Settings>,
+    mode: Arc<Mode>,
+    persistence: Arc<Persistence>,
+}
+
+impl sts_oauth::used_assertions::Sealer for UsedSealer {
+    fn seals(&self) -> bool {
+        sts_store::keystore::DataKeys::persists(&self.settings, &self.mode)
+            && self.persistence.data_keys().sealed()
+    }
+    fn seal(&self, text: &str, label: &str, realm: &str) -> Option<String> {
+        self.persistence.data_keys().seal(text, label, realm)
+    }
+    fn open(&self, text: &str, label: &str) -> Option<String> {
+        self.persistence.data_keys().open(text, label)
+    }
+}
+
+/// The password grant's checks over the credential store (`door: 'ropc'`).
+struct RopcChecks(Arc<sts_credentials::credentials::Credentials>);
+
+impl sts_oauth::token_endpoint::PasswordChecks for RopcChecks {
+    fn verify(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<String, (String, String)> {
+        let opts = sts_credentials::credentials::VerifyOptions::from_json(
+            &json!({ "via": "the OAuth 2.0 password grant", "door": "ropc" }),
+        );
+        let verdict = self.0.verify(username, password, &opts);
+        let reason = verdict.reason().to_string();
+        if verdict.ok() {
+            Ok(reason)
+        } else {
+            let detail = verdict
+                .value
+                .get("detail")
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string();
+            Err((reason, detail))
+        }
+    }
+
+    // `mechanismsFor(username)`: `webauthn` for a key that counts as a
+    // second factor, else `totp` for an enrolment (`secondFactorDemand()`
+    // reads the same two). The emailed factor (#64, off by default) is
+    // not in this runtime yet.
+    fn second_factor(&self, username: &str) -> String {
+        let held = self.0.second_factor_demand(username);
+        if held.get("key") == Some(&Json::Bool(true)) {
+            "webauthn".into()
+        } else if held.get("totp") == Some(&Json::Bool(true)) {
+            "totp".into()
+        } else {
+            String::new()
+        }
     }
 }
 
@@ -438,6 +661,16 @@ impl OAuthStack {
             ),
             now_ms: Arc::new(sts_core::time::now_ms_f64),
         });
+        let used = Arc::new(sts_oauth::used_assertions::UsedAssertions::new(
+            settings.clone(),
+            Arc::new(StoreUsed(parts.persistence.clone())),
+            Arc::new(UsedSealer {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                persistence: parts.persistence.clone(),
+            }),
+            Arc::new(|| chrono::Utc::now().timestamp_millis()),
+        ));
         let tokens = Arc::new(TokenEndpoint {
             settings: settings.clone(),
             mode: mode.clone(),
@@ -445,7 +678,9 @@ impl OAuthStack {
             auth: Arc::new(ClientAuth::new(
                 settings.clone(),
                 mode.clone(),
-                Arc::new(MemoryAssertionHistory::default()),
+                Arc::new(sts_oauth::used_assertions::SharedAssertionHistory {
+                    local: MemoryAssertionHistory::default(),
+                }),
                 Arc::new(sts_oauth::client_auth::NoAssertionKeys),
                 Arc::new(SystemClock),
             )),
@@ -469,6 +704,13 @@ impl OAuthStack {
             gated: console_claim.clone(),
             people: Arc::new(Directories(parts.people.clone())),
             sessions: Arc::new(GrantSessionsOf(parts.sessions.clone())),
+            limits: Some(Arc::new(sts_oauth::secret_limit::SharedLimits::new(
+                settings.clone(),
+                Arc::new(StoreWindows(parts.persistence.clone())),
+                Arc::new(|| chrono::Utc::now().timestamp_millis()),
+            ))),
+            passwords: Some(Arc::new(RopcChecks(parts.credentials.clone()))),
+            used: Some(used.clone()),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,
@@ -579,8 +821,22 @@ impl OAuthStack {
             directory: Arc::new(ClaimEntries(parts.directory_ports.clone())),
             pairwise: Some(pairwise.clone()),
         });
+        let logout = Arc::new(sts_oauth::logout_endpoint::LogoutEndpoint {
+            settings: settings.clone(),
+            mode: mode.clone(),
+            clients: clients.clone(),
+            sessions: parts.sessions.clone(),
+            hints: authorize.clone(),
+            catalogs: parts.catalogs.clone(),
+            footer: parts.footer.clone(),
+            // No audit ring here (`LogAudit`): no incident ID to reserve.
+            incident: Arc::new(|| 0),
+            channels: Arc::new(sts_oauth::logout_endpoint::NoChannels),
+        });
         Arc::new(OAuthStack {
             console_claim,
+            logout,
+            used,
             settings,
             mode,
             registry: parts.registry,
@@ -738,6 +994,26 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        // `/oauth2/logout`, GET and POST (RP-Initiated Logout 1.0 section
+        // 2's MUST).
+        let routes = routes.route(
+            "/oauth2/logout",
+            axum::routing::get({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.logout(h, r).await }
+                }
+            })
+            .post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.logout(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         let routes = routes.route(
             "/oauth2/par",
             axum::routing::post({
@@ -869,6 +1145,22 @@ impl OAuthStack {
                 }
             })
             .fallback(unrouted),
+        );
+        let logout = {
+            let (me, h) = (me.clone(), h.clone());
+            move |Path(server): Path<String>, r: AxumRequest| {
+                let (me, h) = (me.clone(), h.clone());
+                async move {
+                    let inner = me.clone();
+                    me.for_profile(server, move || inner.logout(h, r)).await
+                }
+            }
+        };
+        let routes = routes.route(
+            "/{as}/oauth2/logout",
+            axum::routing::get(logout.clone())
+                .post(logout)
+                .fallback(unrouted),
         );
         let routes = routes.route(
             "/{as}/oauth2/par",
@@ -1016,7 +1308,22 @@ impl OAuthStack {
         {
             tracing::debug!("oauth2: no arrival session was started.");
         }
-        let answer = self.authorize.answer(&ask);
+        // AN RFC 9101 REQUEST OBJECT'S jti, claimed in the shared history
+        // on arrival (`lookUp()` reads it, `spend()` keeps it); a redirect
+        // is the endpoint's success, so anything below 400 keeps a claim
+        // the verifier spent.
+        let input = if ask.method.eq_ignore_ascii_case("POST") {
+            sts_oauth::js::fold(&sts_oauth::js::form_decode(&ask.body))
+        } else {
+            sts_oauth::js::fold(&sts_oauth::js::form_decode(&ask.query))
+        };
+        let claimed = sts_oauth::used_assertions::reserve_request_object(
+            &self.used, &input,
+        )
+        .await;
+        let answer = sts_oauth::used_assertions::ARRIVAL
+            .sync_scope(claimed.clone(), || self.authorize.answer(&ask));
+        claimed.settle(&self.used, answer.status, 400).await;
         let mut response = answer.into_response();
         for line in arrival.cookies {
             if let Ok(v) = axum::http::HeaderValue::from_str(&line) {
@@ -1028,6 +1335,65 @@ impl OAuthStack {
         // What the session core queued on the request (an account set's
         // cookie, #561).
         for line in session_request.accounts.lock().appended.drain(..) {
+            if let Ok(v) = axum::http::HeaderValue::from_str(&line) {
+                response
+                    .headers_mut()
+                    .append(axum::http::header::SET_COOKIE, v);
+            }
+        }
+        response
+    }
+
+    /// `GET`/`POST /oauth2/logout` (RP-Initiated Logout 1.0): the page or
+    /// the return, with the cookies the session core wrote.
+    async fn logout(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let url = match request.uri().query() {
+            Some(q) => format!("{}?{}", request.uri().path(), q),
+            None => request.uri().path().to_string(),
+        };
+        let mut session_request = sts_authn::ports::Request {
+            cookie: header_of(&headers, "cookie"),
+            user_agent: header_of(&headers, "user-agent"),
+            address,
+            url,
+            ..sts_authn::ports::Request::default()
+        };
+        session_request.accounts.lock().response_open = true;
+        self.sessions.spend_account_ticket(&mut session_request);
+        let query = session_request
+            .url
+            .split_once('?')
+            .map(|(_, q)| q.to_string())
+            .unwrap_or_default();
+        let ask = sts_oauth::logout_endpoint::LogoutAsk {
+            method: request.method().to_string(),
+            content_type: header_of(&headers, "content-type"),
+            query,
+            body,
+            accept_language: header_of(&headers, "accept-language"),
+            fetch_dest: header_of(&headers, "sec-fetch-dest"),
+            fetch_mode: header_of(&headers, "sec-fetch-mode"),
+            base,
+            prefix: http.registry().current_prefix(),
+            as_path: named::path_of(&named::current()),
+            request: session_request.clone(),
+        };
+        let answered = self.logout.answer(&ask);
+        let mut response = answered.answer.into_response();
+        for line in answered
+            .response
+            .cookies
+            .iter()
+            .cloned()
+            .chain(session_request.accounts.lock().appended.drain(..))
+        {
             if let Ok(v) = axum::http::HeaderValue::from_str(&line) {
                 response
                     .headers_mut()
@@ -1066,15 +1432,37 @@ impl OAuthStack {
         fn sendable<T: Send>(t: T) -> T {
             t
         }
-        sendable(self.authorize.push(
-            &ask,
-            &self.tokens,
-            &header_of(&headers, "authorization"),
-            None,
-            dpop.as_deref(),
-        ))
-        .await
-        .into_response()
+        // The client assertion and the request object, claimed on arrival
+        // and settled by the answer (a push is answered 201).
+        let folded =
+            sts_oauth::js::fold(&sts_oauth::js::form_decode(&ask.body));
+        let authorization = header_of(&headers, "authorization");
+        let client_id =
+            sts_oauth::token_endpoint::client_from(&authorization, &folded)
+                .client_id;
+        let arrival = sts_oauth::used_assertions::reserve_for_token(
+            &self.used, &folded, &client_id,
+        )
+        .await;
+        let objects = sts_oauth::used_assertions::reserve_request_object(
+            &self.used, &folded,
+        )
+        .await;
+        arrival.absorb(&objects);
+        let answer = sts_oauth::used_assertions::ARRIVAL
+            .scope(
+                arrival.clone(),
+                sendable(self.authorize.push(
+                    &ask,
+                    &self.tokens,
+                    &authorization,
+                    None,
+                    dpop.as_deref(),
+                )),
+            )
+            .await;
+        arrival.settle(&self.used, answer.status, 300).await;
+        answer.into_response()
     }
 
     /// `bcp.state()` or `oauth21.state()`, for the ambient realm.
@@ -1143,9 +1531,10 @@ impl OAuthStack {
     ) -> Response {
         self.reload_directory();
         self.ensure_keys().await;
-        let (base, headers, _address, body) = self.arrived(&http, &request);
+        let (base, headers, address, body) = self.arrived(&http, &request);
         let ask = TokenAsk {
             base: base.clone(),
+            address,
             body,
             authorization: header_of(&headers, "authorization"),
             dpop: headers

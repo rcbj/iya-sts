@@ -199,6 +199,15 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // The used-assertion history (#444 phase 5, `oauth6`): the row keys and
+  // replay clauses Rust computed, computed again by Node.
+  if (fs.existsSync(path.join(VECTORS, 'used-assertions-rust.json'))) {
+    require('./tools/used-assertions-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('used-assertions-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The shared secrets (#444 phase 5, `oauth5`): the `sts_cluster_secrets`
   // rows Rust offered, opened and kept by Node, and the pairwise subjects
   // Rust derived from them, derived again by Node.

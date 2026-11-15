@@ -902,6 +902,13 @@ impl Persistence {
             .clone()
     }
 
+    /// The store's driver, for the cluster's shared tables a caller asks
+    /// directly (the rate windows); `None` in memory.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn driver(&self) -> Option<Arc<dyn Driver>> {
+        self.driver.clone()
+    }
+
     /// The secrets every node agrees on: per process until
     /// [`Persistence::share_secrets`], the store's after.
     #[tracing::instrument(level = "debug", skip_all)]

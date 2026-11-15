@@ -686,6 +686,9 @@ async fn the_code_flow() {
             gated: Arc::new(NoGatedScopes),
             people: Arc::new(Person(realm_row["user"].clone())),
             sessions: Arc::new(Live),
+            limits: None,
+            passwords: None,
+            used: None,
         };
         // ---- Discovery ---------------------------------------------------
         for case in cases
