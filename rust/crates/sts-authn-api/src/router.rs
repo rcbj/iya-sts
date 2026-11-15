@@ -37,8 +37,16 @@ use crate::flow::SignIn;
 
 /// The router: every path under `/authn-api`.
 #[tracing::instrument(level = "debug", skip_all)]
-pub fn router(api: Arc<AuthnApi>, http: Arc<HttpLayer>, settings: Arc<sts_core::settings::Settings>) -> Router {
-    let state = Arc::new(Mounted { api, http, settings });
+pub fn router(
+    api: Arc<AuthnApi>,
+    http: Arc<HttpLayer>,
+    settings: Arc<sts_core::settings::Settings>,
+) -> Router {
+    let state = Arc::new(Mounted {
+        api,
+        http,
+        settings,
+    });
     Router::new()
         .route(API, any(serve))
         .route(&format!("{}/{{*rest}}", API), any(serve))
@@ -79,12 +87,19 @@ pub fn base_of(
         return format!("{}{}", pinned, prefix);
     }
     let trust = settings.value_of("global.trustProxy").as_bool();
-    let first = |v: String| v.split(',').next().unwrap_or("").trim().to_string();
+    let first =
+        |v: String| v.split(',').next().unwrap_or("").trim().to_string();
     let scheme = Some(header_of(headers, "x-forwarded-proto"))
         .filter(|_| trust)
         .map(first)
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| if over_tls { "https".into() } else { "http".into() });
+        .unwrap_or_else(|| {
+            if over_tls {
+                "https".into()
+            } else {
+                "http".into()
+            }
+        });
     let host = Some(header_of(headers, "x-forwarded-host"))
         .filter(|_| trust)
         .map(first)
@@ -100,12 +115,18 @@ pub fn base_of(
     format!("{}://{}{}", scheme, host, prefix)
 }
 
-async fn serve(State(mounted): State<Arc<Mounted>>, request: AxumRequest) -> Response {
+async fn serve(
+    State(mounted): State<Arc<Mounted>>,
+    request: AxumRequest,
+) -> Response {
     let over_tls = request
         .extensions()
         .get::<sts_http::cookie_wire::OverTls>()
         .is_some();
-    let peer = request.extensions().get::<sts_http::client_address::Peer>().copied();
+    let peer = request
+        .extensions()
+        .get::<sts_http::client_address::Peer>()
+        .copied();
     let original = request
         .extensions()
         .get::<sts_http::OriginalPath>()
@@ -124,15 +145,24 @@ async fn serve(State(mounted): State<Arc<Mounted>>, request: AxumRequest) -> Res
         query: request.uri().query().unwrap_or("").to_string(),
         base: base_of(&mounted.settings, &headers, over_tls, &prefix),
         prefix,
-        own_origins: mounted.http.own_origins(&headers, peer.as_ref(), over_tls),
+        own_origins: mounted.http.own_origins(
+            &headers,
+            peer.as_ref(),
+            over_tls,
+        ),
         address: mounted.http.client_address_of(&headers, peer.as_ref()),
         headers,
         body: body_text,
     };
     let sent = mounted.api.serve(&arrived).await;
     if sent.unrouted {
-        let path = if original.is_empty() { arrived.path.clone() } else { original };
-        let method = Method::from_bytes(arrived.method.as_bytes()).unwrap_or(Method::GET);
+        let path = if original.is_empty() {
+            arrived.path.clone()
+        } else {
+            original
+        };
+        let method = Method::from_bytes(arrived.method.as_bytes())
+            .unwrap_or(Method::GET);
         let uri = path.parse().unwrap_or_default();
         return sts_http::not_found(method, uri, None).await;
     }
@@ -163,7 +193,11 @@ const STEP_PAGES: &[(&str, &str)] = &[
     ("post-login", "/authn/post-login"),
 ];
 
-const SHELLS: &[&str] = &["/authn/login", "/authn/select-idp", "/authn/password-change"];
+const SHELLS: &[&str] = &[
+    "/authn/login",
+    "/authn/select-idp",
+    "/authn/password-change",
+];
 
 fn query_value(query: &str, name: &str) -> Json {
     let parsed = sts_mgmt_api::request::parse_query(query);
@@ -172,7 +206,10 @@ fn query_value(query: &str, name: &str) -> Json {
 
 /// `vt.opt(vt.base64url)` under `name`, as a plain object: the other names
 /// a query carries are dropped.
-fn opt_base64url(query: &str, names: &[&str]) -> Result<serde_json::Map<String, Json>, String> {
+fn opt_base64url(
+    query: &str,
+    names: &[&str],
+) -> Result<serde_json::Map<String, Json>, String> {
     let mut properties = serde_json::Map::new();
     for name in names {
         properties.insert(
@@ -214,7 +251,12 @@ fn oauth_error(why: &str, code: ErrorCode) -> Response {
 
 impl SignInShells {
     /// `signInShell(req, res, application, person)`.
-    fn shell(&self, headers: &HeaderMap, application: &str, person: &str) -> Response {
+    fn shell(
+        &self,
+        headers: &HeaderMap,
+        application: &str,
+        person: &str,
+    ) -> Response {
         let shown = self.signin.facts.client_display(application);
         let logo = shown
             .get("logoOrigin")
@@ -227,12 +269,10 @@ impl SignInShells {
 
     fn answer_shell(&self, ask: &Ask<'_>, path: &str) -> Response {
         let hides = self.signin.facts.predicate("hidesStepIds");
-        let named = ["authn", "mfa", "change"]
-            .iter()
-            .any(|n| {
-                let v = query_value(ask.query, n);
-                !v.is_null() && v != Json::String(String::new())
-            });
+        let named = ["authn", "mfa", "change"].iter().any(|n| {
+            let v = query_value(ask.query, n);
+            !v.is_null() && v != Json::String(String::new())
+        });
         if hides && !named {
             let asked = query_value(ask.query, "app");
             let asked = asked.as_str().unwrap_or("");
@@ -255,8 +295,12 @@ impl SignInShells {
                     answer.code.unwrap_or(codes::STS_AUTHN_0144),
                 ),
                 Ok(step) => {
-                    let application = step["authn"]["application"].as_str().unwrap_or("").to_string();
-                    let person = step["username"].as_str().unwrap_or("").to_string();
+                    let application = step["authn"]["application"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    let person =
+                        step["username"].as_str().unwrap_or("").to_string();
                     self.shell(ask.headers, &application, &person)
                 }
             };
@@ -267,7 +311,11 @@ impl SignInShells {
                 Err(why) => {
                     return oauth_error(
                         &why,
-                        if *page == "setup" { codes::STS_AUTHN_0174 } else { codes::STS_AUTHN_0018 },
+                        if *page == "setup" {
+                            codes::STS_AUTHN_0174
+                        } else {
+                            codes::STS_AUTHN_0018
+                        },
                     )
                 }
             };
@@ -275,8 +323,12 @@ impl SignInShells {
             return match self.signin.step_problem(page, id) {
                 Err((code, why)) => oauth_error(&why, code),
                 Ok(step) => {
-                    let application = step["authn"]["application"].as_str().unwrap_or("").to_string();
-                    let person = step["username"].as_str().unwrap_or("").to_string();
+                    let application = step["authn"]["application"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    let person =
+                        step["username"].as_str().unwrap_or("").to_string();
                     self.shell(ask.headers, &application, &person)
                 }
             };
@@ -310,8 +362,10 @@ impl SignInShells {
                 );
             }
         }
-        let application = record["application"].as_str().unwrap_or("").to_string();
-        let person = record["lockedUsername"].as_str().unwrap_or("").to_string();
+        let application =
+            record["application"].as_str().unwrap_or("").to_string();
+        let person =
+            record["lockedUsername"].as_str().unwrap_or("").to_string();
         self.shell(ask.headers, &application, &person)
     }
 
@@ -321,8 +375,7 @@ impl SignInShells {
         let request = sts_authn::ports::Request {
             cookie: header_of(ask.headers, "cookie"),
             user_agent: header_of(ask.headers, "user-agent"),
-            address: String::new(),
-            device_fp: String::new(),
+            ..sts_authn::ports::Request::default()
         };
         self.signin.sessions.touch_arrival_session(&request);
         let mut response = sts_authn::ports::Response::default();

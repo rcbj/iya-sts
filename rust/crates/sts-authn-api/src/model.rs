@@ -33,7 +33,10 @@ pub const FAILED_BODY: &str =
 
 static DOCUMENT: LazyLock<Json> = LazyLock::new(|| {
     serde_json::from_str(DOCUMENT_TEXT).unwrap_or_else(|e| {
-        tracing::error!("authn-api: the model's document does not parse: {}", e);
+        tracing::error!(
+            "authn-api: the model's document does not parse: {}",
+            e
+        );
         Json::Object(Map::new())
     })
 });
@@ -67,10 +70,7 @@ pub fn served(base_url: &str, version: &str) -> Json {
         );
     }
     if let Some(root) = doc.as_object_mut() {
-        root.insert(
-            "servers".into(),
-            serde_json::json!([{ "url": base_url }]),
-        );
+        root.insert("servers".into(), serde_json::json!([{ "url": base_url }]));
     }
     doc
 }

@@ -15,13 +15,8 @@
 //! trait, built by the composition root ([`crate::wiring`]) over what the
 //! runtime holds; a test answers it from a table.
 //!
-//! **THE ACCOUNT SETS ARE NOT HERE YET** (#561, `authn/account_sets.ts`,
-//! being ported in `sts-authn` on `feature/444-p5-accounts`). The picker
-//! and the switch are reached through [`AccountChoice`], the narrowest
-//! port this surface needs of them: whether the setting is on, the
-//! picker's view and acts, the browser's list. With no implementation
-//! installed the answers are Node's with `authn.multipleAccounts` off —
-//! which is its default.
+//! THE ACCOUNT SETS (#561) are the session core's (`sts-authn`'s
+//! `sessions::accounts`), reached on `Sessions` directly.
 
 use serde_json::Value as Json;
 use sts_core::errors::ErrorCode;
@@ -48,7 +43,8 @@ pub trait SignInFacts: Send + Sync {
     /// primaryAllowed }`.
     fn key_policy(&self) -> Json;
     /// `webauthnPolicy.useAllowed(use)`: `Ok` or the sentence and its code.
-    fn key_use_allowed(&self, key_use: &str) -> Result<(), (String, ErrorCode)>;
+    fn key_use_allowed(&self, key_use: &str)
+        -> Result<(), (String, ErrorCode)>;
     /// `gate.check({ application, kind: SESSION, subject, … })`:
     /// `{ allowed, why, retiring }`.
     fn gate_session(
@@ -59,7 +55,8 @@ pub trait SignInFacts: Send + Sync {
     ) -> Json;
     /// `mfaAllowedFor(application, username)`: the second factors an
     /// application narrows a sign-in to (#475); empty for every one.
-    fn mfa_allowed_for(&self, application: &str, username: &str) -> Vec<String>;
+    fn mfa_allowed_for(&self, application: &str, username: &str)
+        -> Vec<String>;
     /// `clientDisplay(application)`: `{ name, logo, logoOrigin, policy,
     /// tos }`, or null.
     fn client_display(&self, application: &str) -> Json;
@@ -82,26 +79,4 @@ pub trait SignInFacts: Send + Sync {
     fn audit(&self, row: &Json);
     /// `stats.recordRefusedAuthentication(row)` (#954).
     fn note_refused(&self, row: &Json);
-}
-
-/// The account sets' part of this surface (#561), owned by `sts-authn`'s
-/// account-set slice.
-pub trait AccountChoice: Send + Sync {
-    /// `AccountSets.enabled()`: `authn.multipleAccounts`.
-    fn enabled(&self) -> bool;
-    /// `browserAccounts(req)`: `{ enabled, accounts, … }`.
-    fn browser_accounts(&self, cookie: &str) -> Json;
-}
-
-/// No account sets: Node with `authn.multipleAccounts` off.
-pub struct NoAccountSets;
-
-impl AccountChoice for NoAccountSets {
-    fn enabled(&self) -> bool {
-        false
-    }
-
-    fn browser_accounts(&self, _cookie: &str) -> Json {
-        serde_json::json!({ "enabled": false, "accounts": [], "max": 0 })
-    }
 }

@@ -216,7 +216,8 @@ impl SignIn {
             self.stores.pending.delete(&text(record.get("id")));
             return None;
         }
-        if truthy(record.get("restartOnly")) || truthy(record.get("accountsOnly"))
+        if truthy(record.get("restartOnly"))
+            || truthy(record.get("accountsOnly"))
         {
             return None;
         }
@@ -236,7 +237,8 @@ impl SignIn {
         if truthy(step.get("postLogin"))
             && accepts != "any"
             && accepts != "post-login"
-            && !(accepts == "webauthn" && text(step.get("factor")) == "webauthn")
+            && !(accepts == "webauthn"
+                && text(step.get("factor")) == "webauthn")
         {
             return None;
         }
@@ -246,7 +248,12 @@ impl SignIn {
     /// `claimStepForBrowser(id, sessionId, kind)` (#1454): a step belongs
     /// to the first browser that asks about it.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn claim_step_for_browser(&self, id: &str, sid: &str, kind: &str) -> bool {
+    pub fn claim_step_for_browser(
+        &self,
+        id: &str,
+        sid: &str,
+        kind: &str,
+    ) -> bool {
         let store = match kind {
             "pending" => &self.stores.pending,
             "password-change" => &self.stores.password_change,
@@ -338,10 +345,14 @@ impl SignIn {
         post_quantum_required: bool,
     ) -> Answer {
         let id = text(record.get("id"));
-        let live = !id.is_empty() && !(number(record.get("expires")) < self.now());
+        let live =
+            !id.is_empty() && !(number(record.get("expires")) < self.now());
         if live {
-            record["screenError"] =
-                json!(if from_step { message.to_string() } else { String::new() });
+            record["screenError"] = json!(if from_step {
+                message.to_string()
+            } else {
+                String::new()
+            });
             record["postQuantumRequired"] = json!(post_quantum_required);
             self.stores.pending.set(&id, record.clone());
         }
@@ -372,7 +383,10 @@ impl SignIn {
         code: ErrorCode,
         note: &str,
     ) {
-        let authn = pending.get("authn").filter(|a| a.is_object()).unwrap_or(pending);
+        let authn = pending
+            .get("authn")
+            .filter(|a| a.is_object())
+            .unwrap_or(pending);
         self.facts.note_refused(&json!({
             "presented": username,
             "protocol": text(authn.get("protocol")),
@@ -393,8 +407,18 @@ impl SignIn {
         call: &Call,
         record: &Json,
         error: Option<(&str, &str)>,
+        started: Option<&Response>,
     ) -> Answer {
         let mut target = text(record.get("returnTo"));
+        // THE FLOW RESUMES AS THE SESSION THIS SIGN-IN STARTED (#561): a
+        // selection ticket, where the session joined an account set.
+        if let (None, Some(response)) = (error, started) {
+            target = self.sessions.ticketed_return(
+                response,
+                &text(record.get("id")),
+                &target,
+            );
+        }
         if let Some((error, description)) = error {
             target.push(if target.contains('?') { '&' } else { '?' });
             target.push_str(&format!(
@@ -447,7 +471,12 @@ impl SignIn {
     /// slices' that port those doors; until then each is answered as Node
     /// answers it with that door not configured (null, or `false`).
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn screen_view(&self, call: &Call, record: &Json, problem: &str) -> Json {
+    pub fn screen_view(
+        &self,
+        call: &Call,
+        record: &Json,
+        problem: &str,
+    ) -> Json {
         let key_policy = self.facts.key_policy();
         let locked = text(record.get("lockedUsername"));
         let restricted: Vec<String> = record
@@ -494,12 +523,16 @@ impl SignIn {
             })
             .unwrap_or_default();
         let remember = self.facts.remembers_browsers() && locked.is_empty();
-        let anonymous = truthy(Some(&self.facts.setting("authn.unauthenticatedSessions")))
-            && locked.is_empty()
-            && restricted.is_empty();
-        let partners_offered = locked.is_empty() && SignIn::offers(&restricted, "federation");
-        let kerberos_offered = locked.is_empty() && SignIn::offers(&restricted, "spnego");
-        let wallet_offered = locked.is_empty() && SignIn::offers(&restricted, "wallet");
+        let anonymous =
+            truthy(Some(&self.facts.setting("authn.unauthenticatedSessions")))
+                && locked.is_empty()
+                && restricted.is_empty();
+        let partners_offered =
+            locked.is_empty() && SignIn::offers(&restricted, "federation");
+        let kerberos_offered =
+            locked.is_empty() && SignIn::offers(&restricted, "spnego");
+        let wallet_offered =
+            locked.is_empty() && SignIn::offers(&restricted, "wallet");
         json!({
             "id": text(record.get("id")),
             "base": call.base,
@@ -555,11 +588,12 @@ impl SignIn {
         let name = username.trim();
         let keys = self.credentials.keys_of(name);
         let held = keys.len();
-        let primary = if held > 0 && self.facts.key_use_allowed("primary").is_ok() {
-            held
-        } else {
-            0
-        };
+        let primary =
+            if held > 0 && self.facts.key_use_allowed("primary").is_ok() {
+                held
+            } else {
+                0
+            };
         let mfa = if held > 0 && self.facts.key_use_allowed("mfa").is_ok() {
             held
         } else {
@@ -611,7 +645,11 @@ impl SignIn {
                 self.return_to_caller(
                     call,
                     &record,
-                    Some(("access_denied", "The user cancelled at the sign-in screen.")),
+                    Some((
+                        "access_denied",
+                        "The user cancelled at the sign-in screen.",
+                    )),
+                    None,
                 )
                 .marked(codes::STS_AUTHN_0004),
             );
@@ -619,10 +657,16 @@ impl SignIn {
         let locked = text(record.get("lockedUsername"));
         if action == "anonymous"
             && locked.is_empty()
-            && truthy(Some(&self.facts.setting("authn.unauthenticatedSessions")))
+            && truthy(Some(
+                &self.facts.setting("authn.unauthenticatedSessions"),
+            ))
         {
             let application = text(record.get("application"));
-            let gate = self.facts.gate_session(&application, ANONYMOUS_USERNAME, false);
+            let gate = self.facts.gate_session(
+                &application,
+                ANONYMOUS_USERNAME,
+                false,
+            );
             if gate.get("allowed") != Some(&Json::Bool(true)) {
                 tracing::info!(
                     "authn: the issuance policy refused an unauthenticated \
@@ -631,8 +675,15 @@ impl SignIn {
                     text(gate.get("why"))
                 );
                 return Outcome::Answered(
-                    self.screen_refused(call, &mut record, &text(gate.get("why")), 400, false, false)
-                        .marked(codes::STS_AUTHN_0005),
+                    self.screen_refused(
+                        call,
+                        &mut record,
+                        &text(gate.get("why")),
+                        400,
+                        false,
+                        false,
+                    )
+                    .marked(codes::STS_AUTHN_0005),
                 );
             }
             self.stores.pending.delete(&id);
@@ -662,9 +713,13 @@ impl SignIn {
         }
         record["rememberBrowser"] = json!(fields.remember_browser == "1");
         match action {
-            "certificate" => return Outcome::Unported("continueWithCertificate"),
+            "certificate" => {
+                return Outcome::Unported("continueWithCertificate")
+            }
             "passkey" => return Outcome::Unported("signInWithPasskey"),
-            "email-code" | "email-link" => return Outcome::Unported("signInByEmail"),
+            "email-code" | "email-link" => {
+                return Outcome::Unported("signInByEmail")
+            }
             _ => {}
         }
         let username = if locked.is_empty() {
@@ -706,8 +761,8 @@ impl SignIn {
                 .marked(codes::STS_AUTHN_0354),
             );
         }
-        let passwordless =
-            truthy(record.get("forcePasswordless")) || fields.webauthn_only == "1";
+        let passwordless = truthy(record.get("forcePasswordless"))
+            || fields.webauthn_only == "1";
         let second_factor = !passwordless
             && (truthy(record.get("forceMfa"))
                 || truthy(record.get("forceKey"))
@@ -728,18 +783,30 @@ impl SignIn {
             );
         }
         if passwordless || second_factor {
-            if let Err((why, code)) =
-                self.facts.key_use_allowed(if passwordless { "primary" } else { "mfa" })
+            if let Err((why, code)) = self
+                .facts
+                .key_use_allowed(if passwordless { "primary" } else { "mfa" })
             {
                 tracing::info!(
                     "authn: a security-key sign-in was asked for as a {} \
                      credential and this realm does not allow it. {}",
-                    if passwordless { "primary" } else { "second-factor" },
+                    if passwordless {
+                        "primary"
+                    } else {
+                        "second-factor"
+                    },
                     why
                 );
                 return Outcome::Answered(
-                    self.screen_refused(call, &mut record, &why, 400, false, false)
-                        .marked(code),
+                    self.screen_refused(
+                        call,
+                        &mut record,
+                        &why,
+                        400,
+                        false,
+                        false,
+                    )
+                    .marked(code),
                 );
             }
         }
@@ -847,12 +914,16 @@ impl SignIn {
             }
             let delay = self.limits.wait_after_failures_ms(&username);
             if delay > 0.0 {
-                tokio::time::sleep(std::time::Duration::from_millis(delay as u64)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    delay as u64,
+                ))
+                .await;
             }
             let opts = VerifyOptions::from_json(&json!({
                 "via": "the sign-in screen", "allowPasswordReset": true,
                 "secondFactor": "asked-next" }));
-            let credential = self.credentials.verify(&username, &fields.password, &opts);
+            let credential =
+                self.credentials.verify(&username, &fields.password, &opts);
             if !credential.ok() {
                 self.limits.note_failure(&username);
                 tracing::info!(
@@ -882,9 +953,15 @@ impl SignIn {
                     .marked(code),
                 );
             }
-            self.limits.succeeded("sign-in", &call.request.address, &username, false);
+            self.limits.succeeded(
+                "sign-in",
+                &call.request.address,
+                &username,
+                false,
+            );
             self.limits.forget_failures(&username);
-            if self.facts.setting("risk.breachCheckAtSignIn") != Json::Bool(false)
+            if self.facts.setting("risk.breachCheckAtSignIn")
+                != Json::Bool(false)
                 && self.facts.breached(&fields.password)
             {
                 breached_at_sign_in = true;
@@ -897,7 +974,8 @@ impl SignIn {
             }
         }
         if !passwordless
-            && (breached_at_sign_in || self.credentials.password_reset_required(&username))
+            && (breached_at_sign_in
+                || self.credentials.password_reset_required(&username))
         {
             self.stores.pending.delete(&id);
             let change_id = self.facts.random_id(24);
@@ -932,9 +1010,13 @@ impl SignIn {
                 "change",
             ));
         }
-        Outcome::Answered(
-            self.finish_password_sign_in(call, record, &username, passwordless, second_factor),
-        )
+        Outcome::Answered(self.finish_password_sign_in(
+            call,
+            record,
+            &username,
+            passwordless,
+            second_factor,
+        ))
     }
 
     /// `finishPasswordSignIn(req, res, base, record, username,
@@ -986,7 +1068,14 @@ impl SignIn {
                 codes::STS_AUTHN_0009
             };
             return self
-                .screen_refused(call, &mut record, &text(gate.get("why")), 400, false, false)
+                .screen_refused(
+                    call,
+                    &mut record,
+                    &text(gate.get("why")),
+                    400,
+                    false,
+                    false,
+                )
                 .marked(code);
         }
         let enrolled = self.mechanisms_for(username);
@@ -997,7 +1086,10 @@ impl SignIn {
         };
         let mfa_keys = number(enrolled.get("mfaKeys"));
         let force_key = truthy(record.get("forceKey"));
-        if force_key && !passwordless && mfa_keys == 0.0 && truthy(enrolled.get("mfaRequired"))
+        if force_key
+            && !passwordless
+            && mfa_keys == 0.0
+            && truthy(enrolled.get("mfaRequired"))
         {
             return self
                 .screen_refused(
@@ -1033,7 +1125,11 @@ impl SignIn {
                          on its own is one factor. Sign in with your \
                          password; you will be asked for your second factor, \
                          or to set one up.",
-                        if by_user { "for this account" } else { "in this realm" }
+                        if by_user {
+                            "for this account"
+                        } else {
+                            "in this realm"
+                        }
                     ),
                     400,
                     false,
@@ -1121,9 +1217,19 @@ impl SignIn {
                  asking them to set one up.",
                 username
             );
-            return self.step_answer(call, "mfa", "enrol", &setup_id, MFA_SETUP_PATH, "mfa");
+            return self.step_answer(
+                call,
+                "mfa",
+                "enrol",
+                &setup_id,
+                MFA_SETUP_PATH,
+                "mfa",
+            );
         }
-        if truthy(requirement.get("offered")) && factor.is_empty() && !passwordless {
+        if truthy(requirement.get("offered"))
+            && factor.is_empty()
+            && !passwordless
+        {
             let offered = self.enrolment_offered_for(&mfa_allowed);
             if offered.0 || offered.1 {
                 self.stores.pending.delete(&id);
@@ -1146,7 +1252,14 @@ impl SignIn {
                     "summary": format!("{} holds an administrator role and \
                         no second factor; offered one before signing in", username),
                     "detail": { "requiredBy": "administrator" } }));
-                return self.step_answer(call, "mfa", "enrol", &offer_id, MFA_SETUP_PATH, "mfa");
+                return self.step_answer(
+                    call,
+                    "mfa",
+                    "enrol",
+                    &offer_id,
+                    MFA_SETUP_PATH,
+                    "mfa",
+                );
             }
         }
         if !factor.is_empty() {
@@ -1162,7 +1275,9 @@ impl SignIn {
             } else {
                 ""
             };
-            let remaining = number(enrolled.get("backupCodes").and_then(|b| b.get("remaining")));
+            let remaining = number(
+                enrolled.get("backupCodes").and_then(|b| b.get("remaining")),
+            );
             let backup = !force_key && remaining > 0.0;
             let mut step = json!({ "authn": record, "username": username,
                 "challenge": self.facts.random_id(32),
@@ -1185,7 +1300,9 @@ impl SignIn {
                 }
             }
             if factor == "totp" {
-                return self.step_answer(call, "mfa", "totp", &mfa_id, TOTP_PATH, "mfa");
+                return self.step_answer(
+                    call, "mfa", "totp", &mfa_id, TOTP_PATH, "mfa",
+                );
             }
             if factor == "email-code" || factor == "email-link" {
                 return self.step_answer(
@@ -1193,11 +1310,22 @@ impl SignIn {
                     "mfa",
                     &factor,
                     &mfa_id,
-                    if factor == "email-code" { EMAIL_CODE_PATH } else { EMAIL_LINK_PATH },
+                    if factor == "email-code" {
+                        EMAIL_CODE_PATH
+                    } else {
+                        EMAIL_LINK_PATH
+                    },
                     "mfa",
                 );
             }
-            return self.step_answer(call, "mfa", "webauthn", &mfa_id, WEBAUTHN_PATH, "mfa");
+            return self.step_answer(
+                call,
+                "mfa",
+                "webauthn",
+                &mfa_id,
+                WEBAUTHN_PATH,
+                "mfa",
+            );
         }
         self.stores.pending.delete(&id);
         let mut said = Map::new();
@@ -1214,7 +1342,15 @@ impl SignIn {
             &mut said,
             Some(&call.request),
         );
-        self.after_session(call, &mut record, username, started, &said, response, false)
+        self.after_session(
+            call,
+            &mut record,
+            username,
+            started,
+            &said,
+            response,
+            false,
+        )
     }
 
     /// `enrolmentOfferedFor(allowed)`: `(totp, webauthn)`.
@@ -1274,11 +1410,13 @@ impl SignIn {
         from_step: bool,
     ) -> Answer {
         if started.is_some() {
-            let mut answer = self.return_to_caller(call, record, None);
+            let mut answer =
+                self.return_to_caller(call, record, None, Some(&response));
             answer.cookies = response.cookies;
             return answer;
         }
-        let refused = said.get("refusedWith").and_then(Json::as_str).unwrap_or("");
+        let refused =
+            said.get("refusedWith").and_then(Json::as_str).unwrap_or("");
         let code = if !refused.is_empty() {
             sts_core::errors::known(refused).unwrap_or(codes::STS_AUTHN_0010)
         } else if self.credentials.account_disabled(username) {
@@ -1337,10 +1475,12 @@ impl SignIn {
     // -------------------------------------------------------------------
 
     /// `keyDemandProblem(step, what)`.
-    fn key_demand_problem(step: &Json, what: &str) -> Option<(ErrorCode, String)> {
-        let force = step
-            .get("authn")
-            .is_some_and(|a| truthy(a.get("forceKey")));
+    fn key_demand_problem(
+        step: &Json,
+        what: &str,
+    ) -> Option<(ErrorCode, String)> {
+        let force =
+            step.get("authn").is_some_and(|a| truthy(a.get("forceKey")));
         if !force && !truthy(step.get("riskKey")) {
             return None;
         }
@@ -1363,13 +1503,19 @@ impl SignIn {
     /// `stepProblem(page, mfaId)`: the step a page is drawn for, or the
     /// refusal's code and sentence.
     #[tracing::instrument(level = "debug", skip(self, id))]
-    pub fn step_problem(&self, page: &str, id: &str) -> Result<Json, (ErrorCode, String)> {
-        let restart = " Start the request again from the application that sent you here.";
+    pub fn step_problem(
+        &self,
+        page: &str,
+        id: &str,
+    ) -> Result<Json, (ErrorCode, String)> {
+        let restart =
+            " Start the request again from the application that sent you here.";
         if page == "setup" {
             let setup = self.stores.mfa.get(id);
             let live = setup.as_ref().filter(|s| {
                 !(number(s.get("expires")) < self.now())
-                    && ["enrol", "enrol-totp"].contains(&text(s.get("factor")).as_str())
+                    && ["enrol", "enrol-totp"]
+                        .contains(&text(s.get("factor")).as_str())
             });
             if let Some(s) = live {
                 return Ok(s.clone());
@@ -1394,7 +1540,11 @@ impl SignIn {
         }
         if page == "password" {
             return match step {
-                Some(s) if !SignIn::first_amr_of(&s).iter().any(|a| a == "pwd") => Ok(s),
+                Some(s)
+                    if !SignIn::first_amr_of(&s).iter().any(|a| a == "pwd") =>
+                {
+                    Ok(s)
+                }
                 _ => Err((
                     codes::STS_AUTHN_0019,
                     format!(
@@ -1414,7 +1564,9 @@ impl SignIn {
         let username = text(step.get("username"));
         match page {
             "totp" => {
-                if let Some(p) = SignIn::key_demand_problem(&step, "a one-time code") {
+                if let Some(p) =
+                    SignIn::key_demand_problem(&step, "a one-time code")
+                {
                     return Err(p);
                 }
                 if !truthy(self.mechanisms_for(&username).get("totp")) {
@@ -1483,7 +1635,11 @@ impl SignIn {
         links["wallet"] = json!(false);
         links["password"] = json!(truthy(step.get("passwordAlternate")));
         let email = text(step.get("email"));
-        links["email"] = json!(if email == "code" || email == "link" { email } else { String::new() });
+        links["email"] = json!(if email == "code" || email == "link" {
+            email
+        } else {
+            String::new()
+        });
         links["backup"] = json!(truthy(step.get("backup")));
         links
     }
@@ -1507,17 +1663,25 @@ impl SignIn {
         };
         let _ = &call.base;
         let username = text(step.get("username"));
-        let application = step.get("authn").map(|a| text(a.get("application"))).unwrap_or_default();
+        let application = step
+            .get("authn")
+            .map(|a| text(a.get("application")))
+            .unwrap_or_default();
         let mut view = json!({ "page": page, "id": id, "username": username,
                                "passwordless": truthy(step.get("passwordless")),
                                "links": self.step_links(page, &step),
                                "clientDisplay": self.facts.client_display(&application) });
         match page {
             "totp" => {
-                let detail = self.mechanisms_for(&username)["totpDetail"].clone();
+                let detail =
+                    self.mechanisms_for(&username)["totpDetail"].clone();
                 let or = |k: &str, d: i64| {
                     let n = number(detail.get(k));
-                    if n.is_finite() && n != 0.0 { num(n) } else { json!(d) }
+                    if n.is_finite() && n != 0.0 {
+                        num(n)
+                    } else {
+                        json!(d)
+                    }
                 };
                 view["totp"] = json!({ "digits": or("digits", 6), "period": or("period", 30) });
             }
@@ -1530,7 +1694,11 @@ impl SignIn {
                 let status = self.credentials.backup_code_status(&username);
                 let factor = text(step.get("factor"));
                 let remaining = number(status.get("remaining"));
-                let remaining = if remaining.is_finite() { remaining } else { 0.0 };
+                let remaining = if remaining.is_finite() {
+                    remaining
+                } else {
+                    0.0
+                };
                 let total = number(status.get("total"));
                 let total = if total.is_finite() { total } else { 0.0 };
                 view["backup"] = json!({
@@ -1545,7 +1713,10 @@ impl SignIn {
             }
             _ => {}
         }
-        let ui = step.get("authn").map(|a| text(a.get("uiLocales"))).unwrap_or_default();
+        let ui = step
+            .get("authn")
+            .map(|a| text(a.get("uiLocales")))
+            .unwrap_or_default();
         let own = self.facts.preferred_language_of(&username);
         Ok(Ok(json!({ "view": view, "uiLocales": ui,
                       "preferredLanguage": own.unwrap_or(Json::Null) })))
@@ -1562,7 +1733,9 @@ impl SignIn {
         match factor.as_str() {
             "enrol" | "enrol-totp" => "setup".into(),
             "post-login" => "post-login".into(),
-            "totp" | "webauthn" | "password" | "email-code" | "email-link" => factor,
+            "totp" | "webauthn" | "password" | "email-code" | "email-link" => {
+                factor
+            }
             _ => "totp".into(),
         }
     }
@@ -1589,9 +1762,17 @@ impl SignIn {
 
     /// A step's session, started with the evidence its act verified
     /// (`finishTotp()`, `finishBackupCode()`, `mfaPasswordAct()`'s ends).
-    fn finish_step(&self, call: &Call, mut step: Json, evidence: Evidence) -> Answer {
+    fn finish_step(
+        &self,
+        call: &Call,
+        mut step: Json,
+        evidence: Evidence,
+    ) -> Answer {
         let username = text(step.get("username"));
-        let application = step.get("authn").map(|a| text(a.get("application"))).unwrap_or_default();
+        let application = step
+            .get("authn")
+            .map(|a| text(a.get("application")))
+            .unwrap_or_default();
         let mut said = Map::new();
         said.insert("postLoginHold".into(), json!(true));
         said.insert("application".into(), json!(application));
@@ -1599,7 +1780,10 @@ impl SignIn {
             said.insert("risk".into(), risk.clone());
         }
         let mut response = Response::default();
-        let protocol = step.get("authn").map(|a| text(a.get("protocol"))).unwrap_or_default();
+        let protocol = step
+            .get("authn")
+            .map(|a| text(a.get("protocol")))
+            .unwrap_or_default();
         let mut evidence = evidence;
         evidence.acr = "mfa".into();
         let started = evidence.start_session(
@@ -1611,7 +1795,15 @@ impl SignIn {
             Some(&call.request),
         );
         let mut record = step["authn"].take();
-        self.after_session(call, &mut record, &username, started, &said, response, true)
+        self.after_session(
+            call,
+            &mut record,
+            &username,
+            started,
+            &said,
+            response,
+            true,
+        )
     }
 
     /// `mfaTotpAct(req, res, mfaId, body)` and `finishTotp()`.
@@ -1622,10 +1814,21 @@ impl SignIn {
             Err(a) => return Outcome::Answered(a),
         };
         let username = text(step.get("username"));
-        if let Some(refused) = self.rate_limited("mfa-code", call, &username, codes::STS_AUTHN_0040, "one-time code") {
+        if let Some(refused) = self.rate_limited(
+            "mfa-code",
+            call,
+            &username,
+            codes::STS_AUTHN_0040,
+            "one-time code",
+        ) {
             return Outcome::Answered(refused);
         }
-        let verdict = match self.credentials.verify_totp(&username, &json!(code), None, None) {
+        let verdict = match self.credentials.verify_totp(
+            &username,
+            &json!(code),
+            None,
+            None,
+        ) {
             Ok(v) => v,
             Err(e) => {
                 tracing::error!(
@@ -1635,47 +1838,89 @@ impl SignIn {
                     e
                 );
                 return Outcome::Answered(
-                    SignIn::step_refused("That code could not be checked. Try the next one.", 400)
-                        .marked(codes::STS_AUTHN_0182),
+                    SignIn::step_refused(
+                        "That code could not be checked. Try the next one.",
+                        400,
+                    )
+                    .marked(codes::STS_AUTHN_0182),
                 );
             }
         };
         if !verdict.ok() {
             return Outcome::Answered(self.step_verdict_refused(
-                &step, &username, "totp", &verdict, codes::STS_AUTHN_0105, "one-time code",
+                &step,
+                &username,
+                "totp",
+                &verdict,
+                codes::STS_AUTHN_0105,
+                "one-time code",
             ));
         }
-        self.limits.succeeded("mfa-code", &call.request.address, &username, false);
+        self.limits.succeeded(
+            "mfa-code",
+            &call.request.address,
+            &username,
+            false,
+        );
         self.stores.mfa.delete(id);
         if truthy(step.get("thenEnrol")) {
             return Outcome::Unported("thenEnrol");
         }
-        Outcome::Answered(self.finish_step(call, step.clone(), Evidence::totp_after(&step)))
+        Outcome::Answered(self.finish_step(
+            call,
+            step.clone(),
+            Evidence::totp_after(&step),
+        ))
     }
 
     /// `mfaBackupCodeAct(req, res, mfaId, body)` and `finishBackupCode()`.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub fn mfa_backup_code_act(&self, call: &Call, id: &str, code: &str) -> Outcome {
+    pub fn mfa_backup_code_act(
+        &self,
+        call: &Call,
+        id: &str,
+        code: &str,
+    ) -> Outcome {
         let step = match self.code_step_of(id, "a recovery code") {
             Ok(s) => s,
             Err(a) => return Outcome::Answered(a),
         };
         let username = text(step.get("username"));
-        if let Some(refused) = self.rate_limited("mfa-code", call, &username, codes::STS_AUTHN_0042, "recovery code") {
+        if let Some(refused) = self.rate_limited(
+            "mfa-code",
+            call,
+            &username,
+            codes::STS_AUTHN_0042,
+            "recovery code",
+        ) {
             return Outcome::Answered(refused);
         }
         let verdict = self.credentials.verify_backup_code(&username, code);
         if !verdict.ok() {
             return Outcome::Answered(self.step_verdict_refused(
-                &step, &username, "backup-code", &verdict, codes::STS_AUTHN_0092, "recovery code",
+                &step,
+                &username,
+                "backup-code",
+                &verdict,
+                codes::STS_AUTHN_0092,
+                "recovery code",
             ));
         }
-        self.limits.succeeded("mfa-code", &call.request.address, &username, false);
+        self.limits.succeeded(
+            "mfa-code",
+            &call.request.address,
+            &username,
+            false,
+        );
         self.stores.mfa.delete(id);
         if truthy(step.get("thenEnrol")) {
             return Outcome::Unported("thenEnrol");
         }
-        Outcome::Answered(self.finish_step(call, step.clone(), Evidence::recovery_code_after(&step)))
+        Outcome::Answered(self.finish_step(
+            call,
+            step.clone(),
+            Evidence::recovery_code_after(&step),
+        ))
     }
 
     fn step_verdict_refused(
@@ -1695,8 +1940,15 @@ impl SignIn {
             username,
             reason
         );
-        self.note_refused(step, username, method, code, if reason.is_empty() { "refused" } else { reason });
-        SignIn::step_refused(&text(verdict.value.get("detail")), 400).marked(code)
+        self.note_refused(
+            step,
+            username,
+            method,
+            code,
+            if reason.is_empty() { "refused" } else { reason },
+        );
+        SignIn::step_refused(&text(verdict.value.get("detail")), 400)
+            .marked(code)
     }
 
     fn rate_limited(
@@ -1707,7 +1959,12 @@ impl SignIn {
         code: ErrorCode,
         what: &str,
     ) -> Option<Answer> {
-        let allowed = self.limits.attempt(door, &call.request.address, username, &Limit::from_json(&Json::Null));
+        let allowed = self.limits.attempt(
+            door,
+            &call.request.address,
+            username,
+            &Limit::from_json(&Json::Null),
+        );
         if allowed.ok() {
             return None;
         }
@@ -1719,26 +1976,45 @@ impl SignIn {
             text(allowed.value.get("kind")),
             text(allowed.value.get("retryAfterS"))
         );
-        Some(SignIn::step_refused(&text(allowed.value.get("detail")), 429).marked(code))
+        Some(
+            SignIn::step_refused(&text(allowed.value.get("detail")), 429)
+                .marked(code),
+        )
     }
 
     /// `mfaPasswordAct(req, res, mfaId, body)`.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn mfa_password_act(&self, call: &Call, id: &str, password: &str) -> Outcome {
+    pub async fn mfa_password_act(
+        &self,
+        call: &Call,
+        id: &str,
+        password: &str,
+    ) -> Outcome {
         let step = match self.step_problem("password", id) {
             Ok(s) => s,
-            Err((code, why)) => return Outcome::Answered(SignIn::step_refused(&why, 400).marked(code)),
+            Err((code, why)) => {
+                return Outcome::Answered(
+                    SignIn::step_refused(&why, 400).marked(code),
+                )
+            }
         };
         let username = text(step.get("username"));
-        let allowed = self.limits.attempt("sign-in", &call.request.address, &username, &Limit::from_json(&Json::Null));
+        let allowed = self.limits.attempt(
+            "sign-in",
+            &call.request.address,
+            &username,
+            &Limit::from_json(&Json::Null),
+        );
         if !allowed.ok() {
             return Outcome::Answered(
-                SignIn::step_refused(&text(allowed.value.get("detail")), 429).marked(codes::STS_AUTHN_0008),
+                SignIn::step_refused(&text(allowed.value.get("detail")), 429)
+                    .marked(codes::STS_AUTHN_0008),
             );
         }
         let delay = self.limits.wait_after_failures_ms(&username);
         if delay > 0.0 {
-            tokio::time::sleep(std::time::Duration::from_millis(delay as u64)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(delay as u64))
+                .await;
         }
         let opts = VerifyOptions::from_json(&json!({
             "via": "the password-factor screen", "secondFactor": "asked-next" }));
@@ -1755,7 +2031,12 @@ impl SignIn {
                     .marked(credential.code.unwrap_or(codes::STS_AUTHN_0196)),
             );
         }
-        self.limits.succeeded("sign-in", &call.request.address, &username, false);
+        self.limits.succeeded(
+            "sign-in",
+            &call.request.address,
+            &username,
+            false,
+        );
         self.limits.forget_failures(&username);
         self.stores.mfa.delete(id);
         if truthy(step.get("thenEnrol")) {
@@ -1785,11 +2066,17 @@ impl SignIn {
                 r.remove("postQuantumRequired");
                 r.remove("passkeyChallenge");
                 r.insert("rememberBrowser".into(), json!(false));
-                r.insert("expires".into(), num(self.now() + self.pending_ttl_ms()));
+                r.insert(
+                    "expires".into(),
+                    num(self.now() + self.pending_ttl_ms()),
+                );
             }
             self.stores.pending.set(&id, record.clone());
         }
-        let protocol = record.get("protocol").map(|p| text(Some(p))).filter(|p| !p.is_empty())
+        let protocol = record
+            .get("protocol")
+            .map(|p| text(Some(p)))
+            .filter(|p| !p.is_empty())
             .unwrap_or_else(|| "Authentication".into());
         self.facts.audit(&json!({
             "action": "authn.sign-in.started-over", "outcome": "success",
@@ -1800,12 +2087,20 @@ impl SignIn {
                 if back { "" } else { "; it had no request to return to" }),
             "detail": { "step": kind, "returned": back } }));
         let target = if back {
-            format!("{}{}?authn={}", call.prefix, LOGIN_PATH, encode_component(&id))
+            format!(
+                "{}{}?authn={}",
+                call.prefix,
+                LOGIN_PATH,
+                encode_component(&id)
+            )
         } else {
             format!("{}/", call.prefix)
         };
-        Answer::json(200, json!({ "ok": true, "next": "redirect",
-                                  "location": self.location_of(call, &target) }))
+        Answer::json(
+            200,
+            json!({ "ok": true, "next": "redirect",
+                                  "location": self.location_of(call, &target) }),
+        )
     }
 
     fn already_ended() -> Answer {
@@ -1826,7 +2121,15 @@ impl SignIn {
         };
         self.stores.mfa.delete(id);
         let factor = text(step.get("factor"));
-        self.restart_from(call, &step, if factor.is_empty() { "second-factor" } else { &factor })
+        self.restart_from(
+            call,
+            &step,
+            if factor.is_empty() {
+                "second-factor"
+            } else {
+                &factor
+            },
+        )
     }
 
     // -------------------------------------------------------------------
@@ -1838,7 +2141,9 @@ impl SignIn {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn password_change_step(&self, id: &str) -> Result<Json, Answer> {
         match self.stores.password_change.get(id) {
-            Some(step) if !(number(step.get("expires")) < self.now()) => Ok(step),
+            Some(step) if !(number(step.get("expires")) < self.now()) => {
+                Ok(step)
+            }
             _ => {
                 self.stores.password_change.delete(id);
                 Err(Answer::json(
@@ -1882,9 +2187,13 @@ impl SignIn {
             ""
         };
         if !problem.is_empty() {
-            return SignIn::step_refused(problem, 400).marked(codes::STS_AUTHN_0146);
+            return SignIn::step_refused(problem, 400)
+                .marked(codes::STS_AUTHN_0146);
         }
-        let application = step.get("authn").map(|a| text(a.get("application"))).unwrap_or_default();
+        let application = step
+            .get("authn")
+            .map(|a| text(a.get("application")))
+            .unwrap_or_default();
         let written = match self.credentials.set_password(
             &username,
             new_password,
@@ -1913,7 +2222,11 @@ impl SignIn {
                 .unwrap_or_default();
             let said = errors.join(" ");
             return SignIn::step_refused(
-                if said.is_empty() { "The new password was not accepted." } else { &said },
+                if said.is_empty() {
+                    "The new password was not accepted."
+                } else {
+                    &said
+                },
                 400,
             )
             .marked(written.code.unwrap_or(codes::STS_AUTHN_0146));
@@ -1940,14 +2253,22 @@ impl SignIn {
             username
         );
         let record = step.get("authn").cloned().unwrap_or(Json::Null);
-        self.finish_password_sign_in(call, record, &username, false, truthy(step.get("secondFactor")))
+        self.finish_password_sign_in(
+            call,
+            record,
+            &username,
+            false,
+            truthy(step.get("secondFactor")),
+        )
     }
 
     /// `passwordChangeStartOver(req, res, changeId)`.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn password_change_start_over(&self, call: &Call, id: &str) -> Answer {
         let step = self.stores.password_change.get(id);
-        let Some(step) = step.filter(|s| !(number(s.get("expires")) < self.now())) else {
+        let Some(step) =
+            step.filter(|s| !(number(s.get("expires")) < self.now()))
+        else {
             self.stores.password_change.delete(id);
             return SignIn::already_ended();
         };
@@ -1965,8 +2286,9 @@ fn held_count(n: usize) -> Json {
 /// post-quantum passkey.
 #[tracing::instrument(level = "trace")]
 pub fn is_lane_name(username: &str) -> bool {
-    static LANE: std::sync::LazyLock<Option<regex::Regex>> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(r"(?i)\+(ml-dsa(-[0-9]+)?|pqc)$").ok()
-    });
+    static LANE: std::sync::LazyLock<Option<regex::Regex>> =
+        std::sync::LazyLock::new(|| {
+            regex::Regex::new(r"(?i)\+(ml-dsa(-[0-9]+)?|pqc)$").ok()
+        });
     LANE.as_ref().is_some_and(|r| r.is_match(username.trim()))
 }

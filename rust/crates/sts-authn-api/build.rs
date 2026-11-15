@@ -40,7 +40,11 @@ fn rows(source: &str) -> Vec<(String, String, String)> {
             cursor = &after[close + 1..];
         }
         if strings.len() == 3 {
-            out.push((strings[0].clone(), strings[1].clone(), strings[2].clone()));
+            out.push((
+                strings[0].clone(),
+                strings[1].clone(),
+                strings[2].clone(),
+            ));
         }
     }
     // The one-line row (`op("GET", "/authn-api", ...)`).

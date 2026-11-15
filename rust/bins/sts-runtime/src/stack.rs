@@ -77,6 +77,11 @@ pub struct Stack {
     pub origin: Option<Arc<OriginKeeper>>,
     /// The cluster mode the settings resolved to, and why.
     pub cluster_mode: (ClusterMode, String),
+    /// The sign-on session, the credentials and `/authn-api` with the
+    /// sign-in surface's shells (`8` and `8-api`, #444 phase 5).
+    pub signin: sts_authn_api::wiring::SignInStack,
+    /// `/authn-api`'s router, put behind the HTTP layer.
+    pub authn_routes: axum::Router,
 }
 
 /// The change-log pull the read barrier waits on: `syncNow()`, a pull that
@@ -603,12 +608,37 @@ impl Stack {
             settings.clone(),
             mode.clone(),
         );
-        http.add_routes(sts_http::surfaces::SurfaceHost::build(
+        let root = sts_http::files::WebRoot::from_env();
+        let version = sts_core::version::load(&root.0).version;
+        let surfaces = sts_http::surfaces::SurfaceHost::build(
             settings.clone(),
             mode.clone(),
             registry.clone(),
-            sts_http::files::WebRoot::from_env(),
-        ));
+            root,
+        );
+        http.add_routes(surfaces.clone());
+        // THE SIGN-ON SESSION AND THE SIGN-IN SURFACE (#444 phase 5): its
+        // stores declared before the store opens, its shells added after
+        // the static surfaces', and its jobs on the one scheduler.
+        let signin = sts_authn_api::wiring::SignInStack::declare(
+            sts_authn_api::wiring::RuntimeParts {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                registry: registry.clone(),
+                lifecycle: lifecycle.clone(),
+                handles: handles.clone(),
+                directory: directory.clone(),
+                persistence: persistence.clone(),
+                version,
+            },
+        );
+        scheduler.register(sts_authn::job::session_expiry_job(
+            signin.sessions.clone(),
+        ))?;
+        scheduler.register(sts_authn::job::account_set_expiry_job(
+            signin.sessions.clone(),
+        ))?;
+        let authn_routes = signin.mount(&http, surfaces, settings.clone());
         let barrier_settings = settings.clone();
         let barrier = ReadBarrier::new(
             Arc::new(PersistencePull(Arc::downgrade(&persistence))),
@@ -643,6 +673,8 @@ impl Stack {
             caches,
             origin,
             cluster_mode: resolved,
+            signin,
+            authn_routes,
         })
     }
 
@@ -684,7 +716,7 @@ impl Stack {
     pub fn router(&self) -> axum::Router {
         let persistence = Arc::downgrade(&self.persistence);
         let (settings, mode) = (self.settings.clone(), self.mode.clone());
-        let routes = axum::Router::new().route(
+        let routes = self.authn_routes.clone().route(
             "/oauth2/jwks",
             axum::routing::get(move || {
                 let persistence = persistence.clone();

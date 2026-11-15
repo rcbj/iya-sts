@@ -117,7 +117,15 @@ use Handler as H;
 
 /// Every operation, in Node's order.
 pub static OPERATIONS: &[Operation] = &[
-    op("GET", "/authn-api", "getIndex", A::Public, None, H::Index, None),
+    op(
+        "GET",
+        "/authn-api",
+        "getIndex",
+        A::Public,
+        None,
+        H::Index,
+        None,
+    ),
     op(
         "GET",
         "/authn-api/openapi.json",

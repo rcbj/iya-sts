@@ -239,7 +239,8 @@ fn string_issues(schema: &Json, value: &str, at: &str) -> Vec<Issue> {
         };
     }
     if let Some(values) = schema.get("enum").and_then(Json::as_array) {
-        let allowed: Vec<&Json> = values.iter().filter(|v| !v.is_null()).collect();
+        let allowed: Vec<&Json> =
+            values.iter().filter(|v| !v.is_null()).collect();
         return if allowed.iter().any(|v| v.as_str() == Some(value)) {
             Vec::new()
         } else {
@@ -263,7 +264,10 @@ fn string_issues(schema: &Json, value: &str, at: &str) -> Vec<Issue> {
         if (n as u64) < min {
             out.push(issue(
                 "too_small",
-                format!("Too small: expected string to have >={} characters", min),
+                format!(
+                    "Too small: expected string to have >={} characters",
+                    min
+                ),
                 true,
             ));
         }
@@ -272,7 +276,10 @@ fn string_issues(schema: &Json, value: &str, at: &str) -> Vec<Issue> {
         if (n as u64) > max {
             out.push(issue(
                 "too_big",
-                format!("Too big: expected string to have <={} characters", max),
+                format!(
+                    "Too big: expected string to have <={} characters",
+                    max
+                ),
                 true,
             ));
         }
@@ -287,7 +294,10 @@ fn string_issues(schema: &Json, value: &str, at: &str) -> Vec<Issue> {
                 .and_then(Json::as_str)
                 .map(str::to_string)
                 .unwrap_or_else(|| {
-                    format!("Invalid string: must match pattern {}", shown_pattern(p))
+                    format!(
+                        "Invalid string: must match pattern {}",
+                        shown_pattern(p)
+                    )
                 });
             out.push(issue("invalid_format", message, true));
         }
@@ -344,7 +354,8 @@ fn member_issues(schema: &Json, value: Option<&Json>, at: &str) -> Vec<Issue> {
             }
             if let Some(items) = schema.get("items") {
                 for (i, one) in list.iter().enumerate() {
-                    let mut found = member_issues(items, Some(one), &i.to_string());
+                    let mut found =
+                        member_issues(items, Some(one), &i.to_string());
                     out.append(&mut found);
                 }
             }
@@ -354,7 +365,10 @@ fn member_issues(schema: &Json, value: Option<&Json>, at: &str) -> Vec<Issue> {
         (_, Some(_)) => vec![Issue {
             code: "invalid_type",
             path: Some(at.to_string()),
-            message: format!("Invalid input: expected {}, received array", kind),
+            message: format!(
+                "Invalid input: expected {}, received array",
+                kind
+            ),
             missing: false,
             continues: false,
         }],
@@ -386,7 +400,10 @@ fn member_issues(schema: &Json, value: Option<&Json>, at: &str) -> Vec<Issue> {
 }
 
 /// The first issue of an object schema over the flattened members.
-fn first_issue(schema: &Json, members: &IndexMap<String, Json>) -> Option<Issue> {
+fn first_issue(
+    schema: &Json,
+    members: &IndexMap<String, Json>,
+) -> Option<Issue> {
     let empty = Map::new();
     let properties = schema
         .get("properties")
@@ -402,7 +419,8 @@ fn first_issue(schema: &Json, members: &IndexMap<String, Json>) -> Option<Issue>
         if value.is_none() && !required.contains(&name.as_str()) {
             continue;
         }
-        if let Some(first) = member_issues(member, value, name).into_iter().next()
+        if let Some(first) =
+            member_issues(member, value, name).into_iter().next()
         {
             return Some(first);
         }
@@ -505,7 +523,10 @@ mod tests {
     }
 
     fn said(v: Json) -> String {
-        check_parsed(&v, "body", &schema()).err().map(|r| r.detail).unwrap()
+        check_parsed(&v, "body", &schema())
+            .err()
+            .map(|r| r.detail)
+            .unwrap()
     }
 
     #[test]
@@ -535,9 +556,12 @@ mod tests {
              must match pattern /^[A-Za-z0-9]*$/."
         );
         // A number is a string by the time the schema sees it.
-        assert!(check_parsed(&json!({ "kind": "code", "username": 5 }), "body",
-                             &schema())
-            .is_ok());
+        assert!(check_parsed(
+            &json!({ "kind": "code", "username": 5 }),
+            "body",
+            &schema()
+        )
+        .is_ok());
         assert!(said(json!({ "kind": "code", "username": {} }))
             .contains("arrived as a structure"));
     }

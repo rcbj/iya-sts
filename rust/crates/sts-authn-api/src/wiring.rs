@@ -42,7 +42,9 @@ use sts_core::realm::RealmRegistry;
 use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::StoreHandles;
 use sts_core::settings::{SettingValue, Settings};
-use sts_credentials::credentials::{Credentials, CredentialsDeps, PendingStores as CredentialPending};
+use sts_credentials::credentials::{
+    Credentials, CredentialsDeps, PendingStores as CredentialPending,
+};
 use sts_credentials::limits::{MemoryBuckets, RateLimiter};
 use sts_credentials::ports::{self as cred_ports, Hook};
 use sts_credentials::session_checks::SessionChecks;
@@ -53,7 +55,7 @@ use sts_store::shadow::EntryLookup;
 use crate::door::AuthnApi;
 use crate::flow::SignIn;
 use crate::pending::PendingStores;
-use crate::ports::{NoAccountSets, SignInFacts};
+use crate::ports::SignInFacts;
 
 /// A setting as Node's `config.value()` answers it.
 fn json_of(value: SettingValue) -> Json {
@@ -150,8 +152,11 @@ impl cred_ports::Environment for Environment {
     }
 
     fn hash_secret(&self, plaintext: &str) -> String {
-        sts_crypto::secrets::hash_secret(plaintext, sts_crypto::secrets::ScryptCost::default())
-            .unwrap_or_default()
+        sts_crypto::secrets::hash_secret(
+            plaintext,
+            sts_crypto::secrets::ScryptCost::default(),
+        )
+        .unwrap_or_default()
     }
 }
 
@@ -185,7 +190,10 @@ impl DirectoryPorts {
 
     fn key_of(&self, name: &str) -> (String, String) {
         let (realm, base) = self.realm();
-        (realm, format!("uid={},ou=users,{}", name.trim(), base).to_lowercase())
+        (
+            realm,
+            format!("uid={},ou=users,{}", name.trim(), base).to_lowercase(),
+        )
     }
 
     /// `existingUserEntry(name)`: the person's entry, by its `uid` DN.
@@ -194,10 +202,17 @@ impl DirectoryPorts {
             return None;
         }
         let (realm, key) = self.key_of(name);
-        self.directory.entry_at(&realm, &key).map(|e| (realm, key, e))
+        self.directory
+            .entry_at(&realm, &key)
+            .map(|e| (realm, key, e))
     }
 
-    fn write(&self, name: &str, attribute: &str, values: Option<Vec<String>>) -> Hook<bool> {
+    fn write(
+        &self,
+        name: &str,
+        attribute: &str,
+        values: Option<Vec<String>>,
+    ) -> Hook<bool> {
         let Some((realm, key, mut entry)) = self.person(name) else {
             return Ok(false);
         };
@@ -211,7 +226,9 @@ impl DirectoryPorts {
             }
         }
         let stamp = chrono::Utc::now().format("%Y%m%d%H%M%SZ").to_string();
-        entry.attributes.insert("modifytimestamp".into(), vec![stamp]);
+        entry
+            .attributes
+            .insert("modifytimestamp".into(), vec![stamp]);
         self.directory.put(&realm, entry);
         self.persistence.directory_changed(Some(&key));
         Ok(true)
@@ -219,7 +236,10 @@ impl DirectoryPorts {
 
     fn entry_by_uuid(&self, subject: &str) -> Option<StoredEntry> {
         let wanted = subject.trim().to_lowercase();
-        let wanted = wanted.strip_prefix("urn:uuid:").unwrap_or(&wanted).to_string();
+        let wanted = wanted
+            .strip_prefix("urn:uuid:")
+            .unwrap_or(&wanted)
+            .to_string();
         let (realm, base) = self.realm();
         let users = format!(",ou=users,{}", base).to_lowercase();
         self.directory
@@ -227,7 +247,8 @@ impl DirectoryPorts {
             .into_iter()
             .find(|(k, e)| {
                 k.ends_with(&users)
-                    && first(e, "entryUUID").is_some_and(|u| u.to_lowercase() == wanted)
+                    && first(e, "entryUUID")
+                        .is_some_and(|u| u.to_lowercase() == wanted)
             })
             .map(|(_, e)| e)
     }
@@ -235,11 +256,24 @@ impl DirectoryPorts {
 
 impl authn_ports::People for DirectoryPorts {
     fn user_for(&self, username: &str) -> Json {
-        let typed = if username.is_empty() { "mock-user" } else { username };
+        let typed = if username.is_empty() {
+            "mock-user"
+        } else {
+            username
+        };
         let sub = self.subject_for_name(typed);
-        let filed = if sub.is_empty() { String::new() } else { self.name_for_subject(&sub) };
-        let name = if filed.is_empty() { typed.to_string() } else { filed };
-        let mut user = json!({ "sub": sub, "username": name, "preferred_username": name });
+        let filed = if sub.is_empty() {
+            String::new()
+        } else {
+            self.name_for_subject(&sub)
+        };
+        let name = if filed.is_empty() {
+            typed.to_string()
+        } else {
+            filed
+        };
+        let mut user =
+            json!({ "sub": sub, "username": name, "preferred_username": name });
         if self.mode.predicate("inventsClaimValues").unwrap_or(false) {
             user["name"] = json!(format!("{} (mock)", name));
             user["given_name"] = json!(name);
@@ -270,21 +304,35 @@ impl authn_ports::People for DirectoryPorts {
 
 impl authn_ports::Accounts for DirectoryPorts {
     fn is_disabled(&self, who: &str) -> bool {
-        self.person(who).is_some_and(|(_, _, e)| first(&e, "pwdAccountLockedTime").is_some())
+        self.person(who).is_some_and(|(_, _, e)| {
+            first(&e, "pwdAccountLockedTime").is_some()
+        })
     }
 
-    fn service_account_refuses_door(&self, _username: &str, _door: &str) -> bool {
+    fn service_account_refuses_door(
+        &self,
+        _username: &str,
+        _door: &str,
+    ) -> bool {
         false
     }
 }
 
 impl cred_ports::CredentialDirectory for DirectoryPorts {
     fn read_password(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self.person(name).and_then(|(_, _, e)| first(&e, "userPassword")))
+        Ok(self
+            .person(name)
+            .and_then(|(_, _, e)| first(&e, "userPassword")))
     }
 
-    fn write_password(&self, name: &str, hash: &str, history: Option<&[String]>) -> Hook<bool> {
-        let done = self.write(name, "userPassword", Some(vec![hash.to_string()]))?;
+    fn write_password(
+        &self,
+        name: &str,
+        hash: &str,
+        history: Option<&[String]>,
+    ) -> Hook<bool> {
+        let done =
+            self.write(name, "userPassword", Some(vec![hash.to_string()]))?;
         if let Some(h) = history {
             self.write(name, "pwdHistory", Some(h.to_vec()))?;
         }
@@ -292,7 +340,9 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
     }
 
     fn read_password_reset(&self, name: &str) -> Hook<bool> {
-        Ok(self.person(name).is_some_and(|(_, _, e)| is_true(&e, "pwdReset")))
+        Ok(self
+            .person(name)
+            .is_some_and(|(_, _, e)| is_true(&e, "pwdReset")))
     }
 
     fn read_password_history(&self, name: &str) -> Hook<Vec<String>> {
@@ -315,11 +365,15 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
     }
 
     fn read_mfa_required(&self, name: &str) -> Hook<bool> {
-        Ok(self.person(name).is_some_and(|(_, _, e)| is_true(&e, "stsMfaRequired")))
+        Ok(self
+            .person(name)
+            .is_some_and(|(_, _, e)| is_true(&e, "stsMfaRequired")))
     }
 
     fn read_totp(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self.person(name).and_then(|(_, _, e)| first(&e, "stsTotpSecret")))
+        Ok(self
+            .person(name)
+            .and_then(|(_, _, e)| first(&e, "stsTotpSecret")))
     }
 
     fn write_totp(&self, name: &str, value: Option<&str>) -> Hook<bool> {
@@ -327,25 +381,39 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
     }
 
     fn read_backup_codes(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self.person(name).and_then(|(_, _, e)| first(&e, "stsBackupCodes")))
+        Ok(self
+            .person(name)
+            .and_then(|(_, _, e)| first(&e, "stsBackupCodes")))
     }
 
-    fn write_backup_codes(&self, name: &str, value: Option<&str>) -> Hook<bool> {
+    fn write_backup_codes(
+        &self,
+        name: &str,
+        value: Option<&str>,
+    ) -> Hook<bool> {
         self.write(name, "stsBackupCodes", value.map(|v| vec![v.to_string()]))
     }
 
     fn read_app_passwords(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self.person(name).and_then(|(_, _, e)| first(&e, "stsAppPassword")))
+        Ok(self
+            .person(name)
+            .and_then(|(_, _, e)| first(&e, "stsAppPassword")))
     }
 
-    fn write_app_passwords(&self, name: &str, value: Option<&str>) -> Hook<bool> {
+    fn write_app_passwords(
+        &self,
+        name: &str,
+        value: Option<&str>,
+    ) -> Hook<bool> {
         self.write(name, "stsAppPassword", value.map(|v| vec![v.to_string()]))
     }
 
     fn read_webauthn(&self, name: &str) -> Hook<Vec<Json>> {
         Ok(self
             .person(name)
-            .and_then(|(_, _, e)| e.attributes.get("stswebauthncredential").cloned())
+            .and_then(|(_, _, e)| {
+                e.attributes.get("stswebauthncredential").cloned()
+            })
             .unwrap_or_default()
             .into_iter()
             .map(Json::String)
@@ -353,12 +421,15 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
     }
 
     fn replace_webauthn(&self, name: &str, values: &[String]) -> Hook<Json> {
-        let done = self.write(name, "stsWebauthnCredential", Some(values.to_vec()))?;
+        let done =
+            self.write(name, "stsWebauthnCredential", Some(values.to_vec()))?;
         Ok(json!({ "ok": done }))
     }
 
     fn read_recovery_pending(&self, name: &str) -> Hook<Option<String>> {
-        Ok(self.person(name).and_then(|(_, _, e)| first(&e, "stsRecoveryPending")))
+        Ok(self
+            .person(name)
+            .and_then(|(_, _, e)| first(&e, "stsRecoveryPending")))
     }
 
     fn write_recovery_pending(&self, name: &str, value: &str) -> Hook<bool> {
@@ -413,7 +484,11 @@ impl authn_ports::SignInPolicy for Unconfigured {
         !matches!(mechanism, "emailCode" | "emailLink")
     }
 
-    fn declared_mechanisms(&self, _application: &str, _username: &str) -> Vec<String> {
+    fn declared_mechanisms(
+        &self,
+        _application: &str,
+        _username: &str,
+    ) -> Vec<String> {
         Vec::new()
     }
 
@@ -421,7 +496,11 @@ impl authn_ports::SignInPolicy for Unconfigured {
         Vec::new()
     }
 
-    fn post_login_due(&self, _username: &str, _application: &str) -> Option<Json> {
+    fn post_login_due(
+        &self,
+        _username: &str,
+        _application: &str,
+    ) -> Option<Json> {
         None
     }
 
@@ -439,7 +518,11 @@ impl authn_ports::Gate for Unconfigured {
 }
 
 impl authn_ports::Devices for Unconfigured {
-    fn recognize(&self, _ask: &Json, _request: &Request) -> Result<Json, String> {
+    fn recognize(
+        &self,
+        _ask: &Json,
+        _request: &Request,
+    ) -> Result<Json, String> {
         Ok(Json::Null)
     }
 
@@ -465,6 +548,10 @@ impl authn_ports::Records for Unconfigured {
         _tags: &[String],
     ) -> usize {
         0
+    }
+
+    fn record_account_choice(&self, kind: &str, n: Option<u64>) {
+        tracing::debug!("authn: an account choice ({}, {:?}).", kind, n);
     }
 }
 
@@ -521,12 +608,20 @@ impl cred_ports::Policies for Unconfigured {
         json!({ "algorithm": "scrypt" })
     }
 
-    fn password_problems(&self, _password: &str, _profile: &Json) -> Vec<String> {
+    fn password_problems(
+        &self,
+        _password: &str,
+        _profile: &Json,
+    ) -> Vec<String> {
         Vec::new()
     }
 
     fn password_history_value(&self, hash: &str) -> String {
-        format!("{}#1.3.6.1.4.1.1466.115.121.1.40#{}", chrono::Utc::now().format("%Y%m%d%H%M%SZ"), hash)
+        format!(
+            "{}#1.3.6.1.4.1.1466.115.121.1.40#{}",
+            chrono::Utc::now().format("%Y%m%d%H%M%SZ"),
+            hash
+        )
     }
 
     fn breach_screening(&self) -> bool {
@@ -641,26 +736,46 @@ impl SignInFacts for Facts {
                 "primaryAllowed": u.key_setting("webauthn.primaryAllowed", true) })
     }
 
-    fn key_use_allowed(&self, key_use: &str) -> Result<(), (String, ErrorCode)> {
+    fn key_use_allowed(
+        &self,
+        key_use: &str,
+    ) -> Result<(), (String, ErrorCode)> {
         if cred_ports::Policies::key_use_allowed(&*self.unconfigured, key_use) {
             Ok(())
         } else {
             Err((
                 format!(
                     "This realm does not allow a passkey as {} (webauthn.{}).",
-                    if key_use == "primary" { "a first factor" } else { "a second factor" },
-                    if key_use == "primary" { "primaryAllowed" } else { "mfaAllowed" }
+                    if key_use == "primary" {
+                        "a first factor"
+                    } else {
+                        "a second factor"
+                    },
+                    if key_use == "primary" {
+                        "primaryAllowed"
+                    } else {
+                        "mfaAllowed"
+                    }
                 ),
                 codes::STS_AUTHN_0044,
             ))
         }
     }
 
-    fn gate_session(&self, _application: &str, _username: &str, _authenticated: bool) -> Json {
+    fn gate_session(
+        &self,
+        _application: &str,
+        _username: &str,
+        _authenticated: bool,
+    ) -> Json {
         json!({ "allowed": true, "why": "" })
     }
 
-    fn mfa_allowed_for(&self, _application: &str, _username: &str) -> Vec<String> {
+    fn mfa_allowed_for(
+        &self,
+        _application: &str,
+        _username: &str,
+    ) -> Vec<String> {
         Vec::new()
     }
 
@@ -670,7 +785,8 @@ impl SignInFacts for Facts {
 
     fn preferred_language_of(&self, username: &str) -> Option<Json> {
         let (_, _, entry) = self.directory.person(username)?;
-        first(&entry, "preferredLanguage").map(|v| json!({ "value": v, "populated": true }))
+        first(&entry, "preferredLanguage")
+            .map(|v| json!({ "value": v, "populated": true }))
     }
 
     fn remembers_browsers(&self) -> bool {
@@ -690,7 +806,9 @@ impl SignInFacts for Facts {
     }
 
     fn clear_password_reset(&self, username: &str) -> bool {
-        self.directory.write(username, "pwdReset", None).unwrap_or(false)
+        self.directory
+            .write(username, "pwdReset", None)
+            .unwrap_or(false)
     }
 
     fn audit(&self, row: &Json) {
@@ -723,11 +841,17 @@ fn csrf_secret() -> String {
 
 /// RFC 4648 base64 with padding, as Node's `toString('base64')`.
 fn standard_base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in bytes.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
-        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n =
+            (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
         for i in 0..4 {
             if i <= chunk.len() {
                 out.push(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize] as char);
@@ -787,9 +911,15 @@ impl SignInStack {
             people: unconfigured.clone(),
             observers: unconfigured.clone(),
             directory: Some(directory.clone()),
-            pending: CredentialPending::declare(&parts.lifecycle, &parts.handles),
+            pending: CredentialPending::declare(
+                &parts.lifecycle,
+                &parts.handles,
+            ),
         }));
-        let checks = Arc::new(SessionChecks::new(credentials.clone(), unconfigured.clone()));
+        let checks = Arc::new(SessionChecks::new(
+            credentials.clone(),
+            unconfigured.clone(),
+        ));
         let sessions = Arc::new(Sessions::new(
             SessionsDeps {
                 settings: env.clone(),
@@ -827,12 +957,15 @@ impl SignInStack {
         });
         let api = Arc::new(AuthnApi {
             signin: signin.clone(),
-            accounts: Arc::new(NoAccountSets),
             csrf_secret: csrf_secret(),
             version: parts.version,
             https: parts.settings.value_of("global.https").as_bool(),
         });
-        SignInStack { sessions, signin, api }
+        SignInStack {
+            sessions,
+            signin,
+            api,
+        }
     }
 
     /// Mounts the shells on the HTTP layer and answers the router to put
