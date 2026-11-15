@@ -722,9 +722,13 @@ impl Persistence {
                 })
                 .collect();
             // A snapshot driver rewrites a file per realm touched, so it is
-            // handed those realms whole.
+            // handed those realms whole. Only that driver: a row store
+            // writes the upserts alone, and copying every touched realm
+            // on each flush made every write cost the directory's size
+            // (#444, the `apis5` slice).
             let mut all = BTreeMap::new();
-            for realm in &d.touched {
+            let whole = driver.name() == "ldif";
+            for realm in d.touched.iter().filter(|_| whole) {
                 if self.lifecycle.registry().get(realm).is_some()
                     || realm == DEFAULT_ID
                 {
