@@ -50,6 +50,15 @@
 //! * [`scopes`] — the scope policy, delegated permissions and RFC 8707's
 //!   registered targets;
 //! * [`metadata`] — RFC 8414 discovery.
+//!
+//! The token exchange (#444, phase 5, the `oauth8` slice):
+//!
+//! * `token_endpoint::exchange` — RFC 8693 at the token endpoint;
+//! * [`delegation_policy`] — who may act for whom (rule 3az), the built-in
+//!   issuance policy's exchange questions and every access token's
+//!   `may_act`;
+//! * [`delegation_acts`] — the delegation register an exchange is written
+//!   to.
 
 #![forbid(unsafe_code)]
 
@@ -60,6 +69,8 @@ pub mod bcp;
 pub mod client_auth;
 pub mod clients;
 pub mod consent;
+pub mod delegation_acts;
+pub mod delegation_policy;
 pub mod dpop;
 pub mod dpop_reservation;
 pub mod dpop_stores;
