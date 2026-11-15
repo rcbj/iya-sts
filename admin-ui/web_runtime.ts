@@ -1418,6 +1418,7 @@ class ConsoleRuntime extends SpaClient {
     this.wireFileLoads();
     this.wireOrderedChoices();
     this.wireCheckAll();
+    this.wireChoicePanels();
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -2738,11 +2739,15 @@ class ConsoleRuntime extends SpaClient {
   async pepRouteSearch(fields: Json): Promise<void> {
     const before = (this.view.json && this.view.json.state) || {};
     let found = null;
+    const pressed = WebAnswers.fieldSearchOf(fields);
+    // WHICH LIST (#1760): the Application chooser asks the Applications
+    // page's, the authorization's policy chooser the repository's search
+    // and its role choosers the Roles page's.
+    const kind = WebAnswers.pepRouteKindOf(String(pressed.attribute || ''));
     if (!WebAnswers.has(fields, 'fgadd')) {
-      const asked = WebAnswers.fieldSearchOf(fields);
       const answer = await this.apiJson('GET',
-        WebAnswers.fieldSearchPath('applications', asked, []));
-      found = WebAnswers.fieldSearchFound('applications', asked,
+        WebAnswers.fieldSearchPath(kind, pressed, []));
+      found = WebAnswers.fieldSearchFound(kind, pressed,
         answer && answer.status === 200 ? answer.json : null);
     }
     this.view.json = Object.assign({}, this.view.json, {
@@ -2755,7 +2760,8 @@ class ConsoleRuntime extends SpaClient {
     }
     const doc = this.env.document;
     const refocus = function () {
-      const box = doc.getElementById('fgq-application');
+      const box = doc.getElementById('fgq-' + String(pressed.attribute ||
+                                                     'application'));
       if (box && box.focus) {
         box.focus({ preventScroll: true });
       }
@@ -3383,6 +3389,46 @@ class ConsoleRuntime extends SpaClient {
         ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
         this.prefix));
+    }
+  }
+
+  // A SELECT THAT SHOWS ONE PANEL OF ITS FORM (#1760, the route forms'
+  // Authorization choice): `select[data-panels="<group>"]`, and in the same
+  // form every `[data-panel-of="<group>"]` is shown when its `data-panel`
+  // holds the select's value (a space-separated list) and hidden
+  // otherwise. The page is drawn with the stored choice's panels shown, so
+  // it reads right before this runs. A hidden panel's fields are still
+  // posted; the save reads only the chosen kind's, and nothing in a panel
+  // is `required`, so a hidden one cannot hold a submit back.
+  /**
+   * Shows each choice select's panels for its value, now and on change.
+   *
+   * @returns nothing
+   */
+  wireChoicePanels(): void {
+    const doc = this.env.document;
+    const selects = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('select[data-panels]') : [];
+    for (let i = 0; i < selects.length; i++) {
+      const select = selects[i];
+      const form = select.form;
+      const group = String(select.getAttribute('data-panels') || '');
+      if (!form || !group) {
+        continue;
+      }
+      const show = function (): void {
+        const panels = form.querySelectorAll('[data-panel-of]');
+        for (let j = 0; j < panels.length; j++) {
+          if (panels[j].getAttribute('data-panel-of') !== group) {
+            continue;
+          }
+          const values = String(panels[j].getAttribute('data-panel') || '')
+            .split(/\s+/);
+          panels[j].hidden = values.indexOf(String(select.value)) < 0;
+        }
+      };
+      select.addEventListener('change', show);
+      show();
     }
   }
 

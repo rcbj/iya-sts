@@ -1154,10 +1154,14 @@ class XacmlPage {
       maxBodyBytes: 1048576,
       routes: [
         { id: 'public', path: '/public', match: 'prefix',
-          methods: ['GET', 'HEAD'], public: true },
-        { id: 'api', path: '/api', match: 'prefix', methods: [],
+          methods: ['GET', 'HEAD'],
+          authorization: { kind: 'public' } },
+        { id: 'api', path: '/api', match: 'prefix',
+          methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
           mechanisms: ['oauth2'], application: 'my-api',
-          resource: '', action: '',
+          authorization: { kind: 'simple', actionModel: 'read-write',
+                           roles: { read: ['my-api-users'],
+                                    write: ['my-api-admins'] } },
           identity: { mode: 'headers',
                       headers: [{ name: 'X-Remote-User',
                                   claim: 'username' }],
@@ -1176,10 +1180,24 @@ class XacmlPage {
     });
     const rows = (proxy.routes || []).map(function (route: Json) {
       const status = statusOf[route.id];
-      const decision = route.public
-        ? t.html('consoleXacml.proxy.public')
-        : esc(route.resource || t.text('consoleXacml.proxy.thePath')) +
-          ' / ' + esc(route.action || t.text('consoleXacml.proxy.theMethod'));
+      // THE ROUTE'S AUTHORIZATION (#1760): the choice, the policy that
+      // decides it and, for a simple route, each action's roles — and why
+      // the PEP would refuse its every request, where it would.
+      const choice = route.authorization || {};
+      const isPublic = choice.kind === 'public';
+      const roleList = Object.keys(choice.roles || {}).map(function (a) {
+        return a + ': ' + (choice.roles[a] || []).join(' | ');
+      });
+      const decision = XacmlPage.kindLabel(t, choice.kind) +
+        (choice.policy ? ' <a href="/admin/xacml/editor?policy=' +
+          encodeURIComponent(choice.policy) + '"><code>' +
+          esc(choice.policy) + '</code></a>' : '') +
+        (roleList.length ? '<div class="sub">' + esc(roleList.join('; ')) +
+          '</div>' : '') +
+        (status && status.policyProblem
+          ? '<div class="sub xacml-alert">' +
+            XacmlPage.problemLabel(t, status.policyProblem) +
+            '</div>' : '');
       // HOW THE IDENTITY REACHES THE APPLICATION (D11): the header=claim
       // pairs, or the token or assertion the proxy forwards instead.
       const identity = route.identity || { mode: 'headers', headers: [] };
@@ -1196,15 +1214,17 @@ class XacmlPage {
           : '<code>' + esc(route.id) + '</code>') + '</td><td><code>' +
         esc(route.path) + '</code> (' + esc(route.match) + ')</td><td>' +
         (route.methods.length ? esc(route.methods.join(', '))
-                              : t.html('consoleXacml.proxy.any')) +
-        '</td><td>' + (route.public ? t.html('consoleXacml.proxy.public')
+                              : '<strong class="xacml-alert">' +
+                                t.html('consoleXacml.proxy.denyAll') +
+                                '</strong>') +
+        '</td><td>' + (isPublic ? t.html('consoleXacml.proxy.public')
           : esc(route.mechanisms.join(', ')) +
             (route.multipleAccounts
               ? '<div class="sub">' +
                 t.html('consoleXacml.proxy.multipleAccounts') + '</div>'
               : '')) + '</td><td>' +
-        (route.public ? '<span class="sub">' +
-                        t.html('consoleXacml.proxy.noApplication') + '</span>'
+        (isPublic ? '<span class="sub">' +
+                    t.html('consoleXacml.proxy.noApplication') + '</span>'
           // THE APPLICATION IT FRONTS (D10), linked; what each mechanism
           // needs is read off that entry by the pull.
           : '<a href="/admin/applications?application=' +
@@ -1225,6 +1245,14 @@ class XacmlPage {
           ? '<td><form method="post" action="/admin/xacml/peps" ' +
             'class="inline">' + self.hidden('action', 'remove-pep-route') +
             self.hidden('name', name) + self.hidden('route', route.id) +
+            // A GENERATED POLICY GOES WITH ITS ROUTE (#1760): the remove
+            // is held until the box naming it is ticked.
+            (choice.kind && choice.kind !== 'policy'
+              ? '<label' + self.tipOf(t, 'consoleXacml.tip.authz.removeWith') +
+                '><input type="checkbox" name="removePolicy" value="true" ' +
+                'required> ' + t.html('consoleXacml.authz.removeWith',
+                  { policy: choice.policy || '' }) + '</label> '
+              : '') +
             '<button type="submit">' +
             t.html('consoleXacml.routeForm.remove') + '</button></form></td>'
           : '') + '</tr>';
@@ -1771,9 +1799,14 @@ class XacmlPage {
     // WHAT THE READER TYPED SURVIVES A SEARCH of the Application chooser:
     // each Find, Previous, Next, Use and Clear draws the form again from
     // its draft (`routeOfDraft()`), as the grid's field search does.
+    // NO AUTHORIZATION IS CHOSEN for the reader (#1760, rcbj: "force them
+    // to pick"): the choice starts empty and a save without one is
+    // refused (STS-XACML-0263).
     const drafted = self.routeOfDraft({ id: '', path: '/', match: 'prefix',
-      methods: [], public: false, mechanisms: ['session'], application: '',
-      resource: '', action: '', forwardCredentials: false, signals: true },
+      methods: [], mechanisms: ['session'], application: '',
+      authorization: { kind: '', policy: '', resource: '',
+                       actionModel: 'read-write', roles: {} },
+      forwardCredentials: false, signals: true },
       self.routeSearchOf(json, 'new'));
     const r = drafted.route;
     const when = 'consoleXacml.tip.route.when';
@@ -1923,12 +1956,12 @@ class XacmlPage {
             r.match), when)) +
         row(self.checkGroup(t, listId + '-methods',
           'consoleXacml.routeForm.methods', 'consoleXacml.tip.route.methods',
-          methods) + '<span class="sub">' +
+          methods) + self.hidden('methodsGiven', 'true') +
+          '<span class="sub">' +
           t.html('consoleXacml.routeForm.methodsNote') + '</span>')) +
       group('consoleXacml.routeForm.legend.authentication',
-        row(self.labelled(t, 'consoleXacml.routeForm.public',
-          'consoleXacml.tip.route.public',
-          self.yesNo('public', r.public, t), when)) +
+        '<p class="sub">' + t.html('consoleXacml.routeForm.publicNote') +
+        '</p>' +
         row(self.checkGroup(t, listId + '-mechanisms',
           'consoleXacml.routeForm.mechanisms',
           'consoleXacml.tip.route.mechanisms', mechanisms)) +
@@ -1941,18 +1974,10 @@ class XacmlPage {
         row(self.labelled(t, 'consoleXacml.routeForm.multipleAccounts',
           'consoleXacml.tip.route.multipleAccounts',
           self.yesNo('multipleAccounts', r.multipleAccounts === true, t),
-          when))) +
+          when)) +
+        self.applicationChooser(t, json, r, listKey)) +
       group('consoleXacml.routeForm.legend.authorization',
-        self.applicationChooser(t, json, r, listKey) +
-        row(self.labelled(t, 'consoleXacml.routeForm.resource',
-          'consoleXacml.tip.route.resource', '<input type="text" ' +
-          'name="resource" size="20" ' +
-          'placeholder="https://orders.example.test" value="' +
-          esc(r.resource) + '">', when)) +
-        row(self.labelled(t, 'consoleXacml.routeForm.action',
-          'consoleXacml.tip.route.action', '<input type="text" ' +
-          'name="routeAction" size="12" placeholder="read" value="' +
-          esc(r.action) + '">', when))) +
+        self.authorizationFields(t, json, r, listKey)) +
       group('consoleXacml.routeForm.legend.order',
         row(self.labelled(t, 'consoleXacml.routeForm.position',
           'consoleXacml.tip.route.position', '<input type="number" ' +
@@ -2010,6 +2035,355 @@ class XacmlPage {
   }
 
   // ---------------------------------------------------------------------------
+  // THE ROUTE'S AUTHORIZATION (#1760, rcbj 2026-11-15): "the authorization
+  // section to have two approaches to the XACML policy: 1) select an
+  // existing XACML policy ... 2) provide the parameters for a very simple
+  // (and common policy)", and then "force them to pick one of these two
+  // policies or Public ... All authorization decisions are made in XACML".
+  //
+  // ONE SELECTOR, THE MATCHING FIELDS BELOW IT. `authzKind` is the choice —
+  // an existing policy, a simple policy, Public — drawn with an empty
+  // first option on a new route, so nothing is chosen for the reader and a
+  // save with none is refused (STS-XACML-0263). Each choice's fields are a
+  // panel (`data-panel-of="authz"`) the runtime shows for the value
+  // (`ConsoleRuntime.wireChoicePanels()`); the save reads only the chosen
+  // kind's. The Resource box is shared: what a generated policy decides
+  // (empty: the proxy's base URL and the path, which the save fills), and
+  // for an existing policy what the PEP sends (empty: the request's path).
+  //
+  // THE CHOOSERS ARE THE APPLICATION'S PATTERN (#459, #602): a hidden
+  // value, a box and Find, five results a page, each a Use, answered in the
+  // browser (`ConsoleRuntime.pepRouteSearch()`) and never sent. The policy
+  // chooser asks `GET /admin-api/xacml/policies?routable=true`; each role
+  // chooser `GET /admin-api/roles`, the configured roles. A simple route's
+  // action takes SEVERAL roles (any of them permits): a Use adds one, a
+  // role's Remove takes it off.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a route form's Authorization fields: the choice, the resource,
+   * and each choice's panel.
+   *
+   * @param t - the page's translator
+   * @param json - the page's answer
+   * @param r - the route as the form draws it
+   * @param listKey - the form's key, `new` or `page-<route id>`
+   * @returns the fields as HTML
+   */
+  static authorizationFields(t: Json, json: Json, r: Json,
+                             listKey: string): string {
+    const self = this;
+    const when = 'consoleXacml.tip.route.when';
+    const choice = r.authorization || {};
+    const kind = String(choice.kind || '');
+    const row = (json.peps || [])[0] || {};
+    const detail = json.routeDetail && json.routeDetail.found &&
+      json.routeDetail.route && listKey !== 'new'
+      ? json.routeDetail.authorization : null;
+    const base = row.proxyResourceBase || {};
+    const path = String(r.path || '/');
+    const fallback = detail ? String(detail.defaultResource || '')
+      : String(base.base || '') + (path === '/' ? '/'
+        : path.replace(/\/+$/, ''));
+    const options = [{ value: '',
+                       label: t.text('consoleXacml.authz.choose') }]
+      .filter(function () {
+        return !kind;
+      }).concat([
+        { value: 'policy', label: t.text('consoleXacml.authz.kind.policy') },
+        { value: 'simple', label: t.text('consoleXacml.authz.kind.simple') },
+        { value: 'public', label: t.text('consoleXacml.authz.kind.public') }
+      ]);
+    const panel = function (values: string, html: string): string {
+      return '<div class="pep-authz-panel" data-panel-of="authz" ' +
+        'data-panel="' + values + '"' +
+        (values.split(' ').indexOf(kind) < 0 ? ' hidden' : '') + '>' +
+        html + '</div>';
+    };
+    // THE DEFAULT RESOURCE AND THE APPLICATION'S URL (rcbj: "a reasonable
+    // default assembled from the Remote PEP's default HTTPS listener base
+    // URL + the path ... cross referenced with the URL given in the
+    // application object if present"): the default and where its base
+    // comes from, and on the route's page the application's home page,
+    // offered as the resource (a Use) and flagged where its origin differs.
+    const source = String((detail ? detail.defaultSource : base.source) ||
+                          'listener');
+    const app = detail && detail.applicationUrl ? detail.applicationUrl
+                                                : null;
+    const offer = app && app.url && app.resource
+      ? '<div class="sub">' + t.html('consoleXacml.authz.appUrl', {
+          url: app.url, resource: app.resource }) + ' ' +
+        (String(choice.resource || '') === app.resource ? ''
+          : '<button type="submit" class="secondary fg-add" name="fgadd" ' +
+            'value="' + esc('authzResource|' + app.resource) +
+            '" formnovalidate' +
+            kit.tip(t.text('consoleXacml.tip.authz.appUrlUse'), Infinity) +
+            '>' + t.html('consoleKit.find.use') + '</button>') +
+        (app.mismatch
+          ? '<div class="xacml-alert">' +
+            t.html('consoleXacml.authz.appUrlMismatch') + '</div>'
+          : '') + '</div>'
+      : '';
+    const generatedName = detail && detail.policy && detail.policy.name
+      ? String(detail.policy.name) : '';
+    const generated = '<p class="sub">' + (generatedName && kind !== 'policy'
+      ? t.html('consoleXacml.authz.generatedAs', { policy: generatedName })
+      : t.html('consoleXacml.authz.generated')) + '</p>';
+    const resource = self.formRow(self.labelled(t,
+        'consoleXacml.authz.resource', 'consoleXacml.tip.authz.resource',
+        '<input type="text" name="authzResource" size="40" ' +
+        'placeholder="' + esc(fallback) + '" value="' +
+        esc(choice.resource || '') + '">', when)) +
+      '<div class="sub">' + t.html(source === 'publicBaseUrl'
+        ? 'consoleXacml.authz.defaultFromBase'
+        : 'consoleXacml.authz.defaultFromListener',
+        { resource: fallback }) + '</div>' + offer;
+    const models = function (name: string, value: string,
+                             withMethod: boolean, extra?: string): string {
+      return self.select(name, (withMethod ? [{ value: 'method',
+          label: t.text('consoleXacml.authz.model.method') }] : [])
+        .concat([
+          { value: 'crud', label: t.text('consoleXacml.authz.model.crud') },
+          { value: 'read-write',
+            label: t.text('consoleXacml.authz.model.readWrite') }]),
+        value, extra);
+    };
+    const policyPanel = panel('policy',
+      self.policyChooser(t, json, choice, listKey) +
+      self.formRow(self.labelled(t, 'consoleXacml.authz.policyModel',
+        'consoleXacml.tip.authz.policyModel',
+        models('authzPolicyActionModel', kind === 'policy'
+          ? String(choice.actionModel || 'method') : 'method', true), when)));
+    const model = kind === 'simple'
+      ? String(choice.actionModel || 'read-write') : 'read-write';
+    const roles = choice.roles || {};
+    const actionRow = function (action: string, models: string): string {
+      const on = Object.prototype.hasOwnProperty.call(roles, action);
+      return '<div class="pep-authz-action" data-panel-of="authzModel" ' +
+        'data-panel="' + models + '"' +
+        (models.split(' ').indexOf(model) < 0 ? ' hidden' : '') + '>' +
+        '<label' + self.tipOf(t, 'consoleXacml.tip.authz.action') +
+        '><input type="checkbox" name="authzActions" value="' + action +
+        '"' + (on ? ' checked' : '') + '> ' +
+        XacmlPage.actionLabel(t, action) + '</label>' +
+        self.roleChooser(t, json, action, on ? roles[action] : [],
+                         listKey) + '</div>';
+    };
+    const simplePanel = panel('simple',
+      self.formRow(self.labelled(t, 'consoleXacml.authz.model',
+        'consoleXacml.tip.authz.model',
+        models('authzActionModel', model, false,
+               ' data-panels="authzModel"'), when)) +
+      '<p class="sub">' + t.html('consoleXacml.authz.mapping') + '</p>' +
+      actionRow('create', 'crud') + actionRow('read', 'crud read-write') +
+      actionRow('update', 'crud') + actionRow('delete', 'crud') +
+      actionRow('write', 'read-write'));
+    const publicPanel = panel('public', '<p class="sub">' +
+      t.html('consoleXacml.authz.publicNote') + '</p>');
+    return self.formRow(self.labelled(t, 'consoleXacml.authz.kind',
+        'consoleXacml.tip.authz.kind',
+        self.select('authzKind', options, kind, ' data-panels="authz"'),
+        when)) +
+      resource + policyPanel + simplePanel + publicPanel +
+      panel('simple public', generated) +
+      (detail ? self.policyState(t, detail.policy, kind) : '');
+  }
+
+  // EACH LABEL BY ITS OWN KEY, so the catalogs' check finds them (#1760).
+  static kindLabel(t: Json, kind: string): string {
+    const labels: Json = {
+      policy: t.html('consoleXacml.authz.kind.policy'),
+      simple: t.html('consoleXacml.authz.kind.simple'),
+      public: t.html('consoleXacml.authz.kind.public')
+    };
+    return labels[kind] || '';
+  }
+
+  static problemLabel(t: Json, problem: string): string {
+    const labels: Json = {
+      missing: t.html('consoleXacml.authz.problem.missing'),
+      disabled: t.html('consoleXacml.authz.problem.disabled'),
+      withheld: t.html('consoleXacml.authz.problem.withheld')
+    };
+    return labels[problem] || esc(problem);
+  }
+
+  static actionLabel(t: Json, action: string): string {
+    const labels: Json = {
+      create: t.html('consoleXacml.authz.action.create'),
+      read: t.html('consoleXacml.authz.action.read'),
+      update: t.html('consoleXacml.authz.action.update'),
+      delete: t.html('consoleXacml.authz.action.delete'),
+      write: t.html('consoleXacml.authz.action.write')
+    };
+    return labels[action] || esc(action);
+  }
+
+  // WHAT THE ROUTE'S POLICY IS NOW, on its page (#1760): held and enabled,
+  // or why the PEP refuses every request on the route (STS-XPEP-0117), and
+  // whether it was generated for the route — linked to the editor, where a
+  // generated policy says so.
+  static policyState(t: Json, state: Json, kind: string): string {
+    if (!state || !state.name) {
+      return '';
+    }
+    const link = '<a href="/admin/xacml/editor?policy=' +
+      encodeURIComponent(state.name) + '"><code>' + esc(state.name) +
+      '</code></a>';
+    const problem = state.problem
+      ? '<div class="xacml-alert">' +
+        XacmlPage.problemLabel(t, state.problem) + '</div>'
+      : '';
+    return '<div class="formrow"><span class="formlabel tipword"' +
+      XacmlPage.tipOf(t, 'consoleXacml.tip.authz.state') + '>' +
+      t.html('consoleXacml.authz.state') + '</span><span>' + link + ' ' +
+      (state.generated
+        ? '<span class="sub">' + t.html('consoleXacml.authz.isGenerated') +
+          '</span>'
+        : (kind === 'policy' ? '' : '<span class="sub">' +
+            t.html('consoleXacml.authz.notYetGenerated') + '</span>')) +
+      problem + '</span></div>';
+  }
+
+  // ONE CHOOSER'S RESULTS AND FIND BOX (#1760), shared by the policy and
+  // the role choosers: the application chooser's markup with its
+  // attribute, so `WebAnswers.fieldSearchOf()` reads every press alike.
+  static chooserSearch(t: Json, json: Json, listKey: string,
+                       attribute: string, labelId: string,
+                       placeholderKey: string, findTipKey: string,
+                       noneKey: string, chosen: string[]): string {
+    const search = XacmlPage.routeSearchOf(json, listKey);
+    const found = search && search.find &&
+      search.find.attribute === attribute ? search.find : null;
+    const button = function (name: string, value: string, label: string,
+                             tipText: string, cls: string,
+                             off?: boolean): string {
+      return '<button type="submit" class="secondary ' + cls + '" name="' +
+        name + '" value="' + esc(value) + '" formnovalidate' +
+        kit.tip(tipText, Infinity) + (off ? ' disabled' : '') + '>' +
+        esc(label) + '</button>';
+    };
+    const pager = !found || found.failed || found.pages <= 1 ? ''
+      : '<div class="fg-pager">' +
+        button('fgsearch', attribute + '|' + (found.page - 1),
+               t.text('consoleKit.find.previous'),
+               t.text('consoleKit.find.previous.tip',
+                      { n: kit.FIND_PER_PAGE }),
+               'fg-prev', found.page <= 1) +
+        '<span class="fg-pageof">' + t.html('consoleKit.find.pageOf', {
+          page: found.page, pages: found.pages, matched: found.matched }) +
+        '</span>' +
+        button('fgsearch', attribute + '|' + (found.page + 1),
+               t.text('consoleKit.find.next'),
+               t.text('consoleKit.find.next.tip', { n: kit.FIND_PER_PAGE }),
+               'fg-next', found.page >= found.pages) + '</div>';
+    const results = !found ? ''
+      : '<div class="fg-found" aria-live="polite">' +
+        XacmlPage.hidden('fgpage.' + attribute, String(found.page || 1)) +
+        (found.failed
+          // A FAILURE, and failures stay English (#539).
+          ? '<span class="state-none">The search could not be run: ' +
+            '/admin-api did not answer it.</span>'
+          : !found.rows.length
+            ? '<span class="state-none fg-none">' + (found.query
+              ? t.html('consoleKit.find.noMatches', { query: found.query })
+              : t.html(noneKey)) + '</span>'
+            : found.rows.map(function (one: Json) {
+              return '<div class="fg-hit"><span class="fg-hit-name">' +
+                '<code>' + esc(one.value) + '</code>' +
+                (one.label ? ' ' + esc(one.label) : '') +
+                (one.generated ? ' <span class="sub">' +
+                  t.html('consoleXacml.authz.generatedFor',
+                         { route: one.generated }) + '</span>' : '') +
+                '</span>' + (chosen.indexOf(one.value) >= 0
+                  ? '<span class="state-none">' +
+                    t.html('consoleXacml.routeForm.appChosen') + '</span>'
+                  : button('fgadd', attribute + '|' + one.value,
+                      t.text('consoleKit.find.use'),
+                      t.text('consoleXacml.tip.authz.use',
+                             { value: one.value }), 'fg-add',
+                      !one.value)) + '</div>';
+            }).join('')) + pager + '</div>';
+    const placeholder = t.text(placeholderKey);
+    const findTip = t.text(findTipKey, { n: kit.FIND_PER_PAGE });
+    return '<div class="sa-find" id="fgc-' + esc(attribute) +
+      '" role="search" aria-labelledby="' + esc(labelId) + '">' +
+      '<div class="fg-item fg-findrow"><input type="search" ' +
+      'id="fgq-' + esc(attribute) + '" name="fgfind.' + esc(attribute) +
+      '" data-fg-find="' + esc(attribute) + '" value="' +
+      esc(found ? found.query : '') + '" placeholder="' + esc(placeholder) +
+      '" aria-label="' + esc(placeholder) + '"' + kit.tip(findTip, Infinity) +
+      '>' + button('fgsearch', attribute, t.text('consoleKit.find.find'),
+                   findTip, 'fg-findbtn') + '</div>' + results + '</div>';
+  }
+
+  /**
+   * Draws the existing-policy chooser: the chosen policy, linked to the
+   * editor, and its search.
+   *
+   * @param t - the page's translator
+   * @param json - the page's answer
+   * @param choice - the route's authorization as the form draws it
+   * @param listKey - the form's key
+   * @returns the field as HTML
+   */
+  static policyChooser(t: Json, json: Json, choice: Json,
+                       listKey: string): string {
+    const chosen = choice.kind === 'policy' ? String(choice.policy || '')
+                                            : '';
+    const labelId = 'pep-route-authz-' + listKey + '-policy-label';
+    const current = chosen
+      ? '<a href="/admin/xacml/editor?policy=' + encodeURIComponent(chosen) +
+        '"><code>' + esc(chosen) + '</code></a>'
+      : '<span class="state-none">' + t.html('consoleXacml.authz.noPolicy') +
+        '</span>';
+    return XacmlPage.formRow('<span class="formlabel tipword" id="' +
+        esc(labelId) + '"' +
+        XacmlPage.tipOf(t, 'consoleXacml.tip.authz.policy') + '>' +
+        t.html('consoleXacml.authz.policy') + '</span><span ' +
+        'aria-labelledby="' + esc(labelId) + '">' +
+        XacmlPage.hidden('authzPolicy', chosen) + current + '</span>') +
+      XacmlPage.chooserSearch(t, json, listKey, 'authzPolicy', labelId,
+        'consoleXacml.authz.policyFindPlaceholder',
+        'consoleXacml.tip.authz.policyFind', 'consoleXacml.authz.noPolicies',
+        chosen ? [chosen] : []);
+  }
+
+  /**
+   * Draws one action's role chooser for a simple route: the roles chosen,
+   * each with a Remove, and the search.
+   *
+   * @param t - the page's translator
+   * @param json - the page's answer
+   * @param action - the action
+   * @param roles - the roles chosen for it
+   * @param listKey - the form's key
+   * @returns the chooser as HTML
+   */
+  static roleChooser(t: Json, json: Json, action: string, roles: string[],
+                     listKey: string): string {
+    const attribute = 'authzRole.' + action;
+    const labelId = 'pep-route-authz-' + listKey + '-' + action + '-label';
+    const held = (roles || []).map(function (one) {
+      return XacmlPage.hidden(attribute, one) + '<code>' + esc(one) +
+        '</code> <button type="submit" class="secondary fg-add" ' +
+        'name="fgadd" value="' + esc(attribute + '|!' + one) +
+        '" formnovalidate' + kit.tip(t.text('consoleXacml.tip.authz.roleOff',
+          { role: one }), Infinity) + '>' +
+        t.html('consoleXacml.authz.roleOff') + '</button>';
+    }).join(' ');
+    return '<div class="pep-authz-roles"><span class="formlabel tipword" ' +
+      'id="' + esc(labelId) + '"' +
+      XacmlPage.tipOf(t, 'consoleXacml.tip.authz.roles') + '>' +
+      t.html('consoleXacml.authz.roles') + '</span> ' +
+      (held || '<span class="state-none">' +
+        t.html('consoleXacml.authz.noRoles') + '</span>') +
+      XacmlPage.chooserSearch(t, json, listKey, attribute, labelId,
+        'consoleXacml.authz.roleFindPlaceholder',
+        'consoleXacml.tip.authz.roleFind', 'consoleXacml.authz.noRolesInRealm',
+        roles || []) + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ROUTE'S APPLICATION IS CHOSEN BY A SEARCH (#1760, rcbj 2026-11-15:
   // "an application name search field, results field, and the ability to
   // choose a search result. we've implemented this pattern many times in
@@ -2045,7 +2419,9 @@ class XacmlPage {
                             listKey: string): string {
     const self = this;
     const search = self.routeSearchOf(json, listKey);
-    const found = search && search.find;
+    const found = search && search.find &&
+      (search.find.attribute || 'application') === 'application'
+      ? search.find : null;
     const chosen = String(r.application || '');
     const labelId = 'pep-route-apps-' + listKey + '-application-label';
     const button = function (name: string, value: string, label: string,
@@ -2165,15 +2541,30 @@ class XacmlPage {
       return ([] as Json[]).concat(fields[name] === undefined ? []
         : fields[name]).map(String).filter(Boolean);
     };
+    // THE AUTHORIZATION AS THE FORM HELD IT (#1760): the choice, the
+    // resource, the policy and, for a simple route, each ticked action's
+    // roles under its model.
+    const kind = one('authzKind');
+    const roles: Json = {};
+    all('authzActions').forEach(function (action: string) {
+      roles[action] = all('authzRole.' + action);
+    });
+    const authorization = fields.authzKind === undefined
+      ? base.authorization
+      : { kind: kind, policy: one('authzPolicy'),
+          resource: one('authzResource'),
+          actionModel: kind === 'policy'
+            ? one('authzPolicyActionModel') || 'method'
+            : one('authzActionModel') || 'read-write',
+          roles: roles };
     const route = Object.assign({}, base, {
       path: one('path'), match: one('match') || base.match,
-      methods: all('methods'), public: one('public') === 'true',
+      methods: all('methods'),
       mechanisms: all('mechanisms'),
       forwardCredentials: one('forwardCredentials') === 'true',
       signals: one('signals') !== 'false',
       multipleAccounts: one('multipleAccounts') === 'true',
-      application: one('application'), resource: one('resource'),
-      action: one('routeAction') });
+      application: one('application'), authorization: authorization });
     const names = ([] as Json[]).concat(fields.headerName === undefined
       ? [] : fields.headerName);
     const claims = ([] as Json[]).concat(fields.headerClaim === undefined
@@ -2515,7 +2906,8 @@ class XacmlPage {
     }
     const r = detail.route;
     const proxy = row.proxy || {};
-    const usable = r.public
+    const routePublic = !!r.authorization && r.authorization.kind === 'public';
+    const usable = routePublic
       ? '<span>' + t.html('consoleXacml.routePage.publicUsable') + '</span>'
       : (detail.usable === true
           ? '<span>' + t.html('consoleXacml.routePage.usable') + '</span>'
@@ -2621,7 +3013,7 @@ class XacmlPage {
       '<div class="sub">' + t.html('consoleXacml.routePage.applicationNote') +
       '</div>' +
       self.fieldGroup(t, 'consoleXacml.routeForm.legend.identity',
-        (edited.public
+        (edited.authorization && edited.authorization.kind === 'public'
           ? '<p class="sub">' +
             t.html('consoleXacml.routePage.publicIdentity') + '</p>'
           : self.identityFields(t, identity))) +
@@ -2631,18 +3023,37 @@ class XacmlPage {
     // REMOVE, BEHIND A CONFIRMATION: an unnamed required checkbox, so the
     // browser holds the submit until it is ticked and the operation's body
     // is the one `remove-pep-route` has always taken.
+    // A GENERATED POLICY GOES WITH IT (#1760, rcbj: "ask for confirmation
+    // on remove"): the same box, named `removePolicy`, says so.
+    const policyState = detail.authorization && detail.authorization.policy;
+    const withPolicy = !!policyState && !!policyState.generated;
     const remove = '<h3>' + t.html('consoleXacml.routePage.removeHeading') +
       '</h3><form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'remove-pep-route') + self.hidden('name', name) +
       self.hidden('route', r.id) + '<label' +
       self.tipOf(t, 'consoleXacml.tip.routes.actions') +
-      '><input type="checkbox" required> ' +
-      t.html('consoleXacml.routePage.removeConfirm', { route: r.id }) +
+      '><input type="checkbox"' + (withPolicy
+        ? ' name="removePolicy" value="true"' : '') + ' required> ' +
+      (withPolicy
+        ? t.html('consoleXacml.authz.removeConfirm',
+                 { route: r.id, policy: policyState.name })
+        : t.html('consoleXacml.routePage.removeConfirm', { route: r.id })) +
       '</label> <button type="submit">' +
       t.html('consoleXacml.routeForm.remove') + '</button></form>';
+    // GENERATE AGAIN (#1760): a simple or public route's policy written
+    // again from the route as stored, after a hand edit or a delete —
+    // `generate-pep-route-policy`, rule 7's operation for it.
+    const regenerate = r.authorization && r.authorization.kind !== 'policy'
+      ? '<form method="post" action="/admin/xacml/peps" class="inline">' +
+        self.hidden('action', 'generate-pep-route-policy') +
+        self.hidden('name', name) + self.hidden('route', r.id) +
+        '<button type="submit" class="secondary"' +
+        self.tipOf(t, 'consoleXacml.tip.authz.regenerate') + '>' +
+        t.html('consoleXacml.authz.regenerate') + '</button></form>'
+      : '';
     return self.withinPepTabs(t, name,
       kit.note('<p>' + t.html('consoleXacml.routePage.lead') + '</p>') +
-      state + editor + remove, true) + back;
+      state + editor + regenerate + remove, true) + back;
   }
 
   // `/admin/xacml/pep/route` WITHOUT A ROUTE (#1760): every registered

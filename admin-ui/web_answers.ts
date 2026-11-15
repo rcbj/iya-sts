@@ -473,24 +473,77 @@ class WebAnswers {
    *   (`fieldSearchFound()`), or null for a Use or a Clear
    * @returns `{ key, draft, find, chosen, label }`
    */
+  //
+  // THE AUTHORIZATION'S CHOOSERS (#1760) are the same presses on three
+  // more attributes: `authzPolicy` (one existing policy; a Use also makes
+  // the choice "an existing policy"), `authzRole.<action>` (a simple
+  // route's roles for one action, several: a Use adds the role and ticks
+  // the action, a press whose value starts `!` takes that role off), and
+  // `authzResource` (the application's home page offered as the resource:
+  // a Use puts it in the box). `find.attribute` says which chooser a Find
+  // answered, so only that one draws results.
   static pepRouteState(fields: Json, prior: Json, found: Json): Json {
     const key = WebAnswers.pepRouteKeyOf(fields);
     const before = prior && prior.key === key ? prior : null;
     if (!WebAnswers.has(fields, 'fgadd')) {
-      return { key: key, draft: fields, find: found,
+      return { key: key, draft: fields,
+               find: found ? Object.assign({}, found, {
+                 attribute: WebAnswers.fieldSearchOf(fields).attribute })
+                 : found,
                chosen: before ? before.chosen : '',
                label: before ? before.label : '' };
     }
     const asked = WebAnswers.fieldSearchOf(fields);
-    const picked = asked.attribute === 'application' ? asked.add : '';
+    const attribute = String(asked.attribute || '');
     const row = before && before.find && (before.find.rows || [])
       .filter(function (one: Json) {
-        return one.value === picked;
+        return one.value === asked.add;
       })[0];
+    if (attribute === 'authzPolicy' || attribute === 'authzResource') {
+      const draft = Object.assign({}, fields);
+      draft[attribute] = asked.add;
+      if (attribute === 'authzPolicy') {
+        draft.authzKind = 'policy';
+      }
+      return { key: key, draft: draft, find: null,
+               chosen: before ? before.chosen : '',
+               label: before ? before.label : '' };
+    }
+    if (attribute.indexOf('authzRole.') === 0) {
+      const action = attribute.slice('authzRole.'.length);
+      const off = asked.add.charAt(0) === '!';
+      const role = off ? asked.add.slice(1) : asked.add;
+      const held = WebAnswers.all(fields, attribute).filter(function (one) {
+        return one !== role;
+      });
+      const draft = Object.assign({}, fields);
+      draft[attribute] = off || !role ? held : held.concat([role]);
+      if (!off && role) {
+        const ticked = WebAnswers.all(fields, 'authzActions');
+        draft.authzActions = ticked.indexOf(action) >= 0 ? ticked
+          : ticked.concat([action]);
+      }
+      return { key: key, draft: draft, find: null,
+               chosen: before ? before.chosen : '',
+               label: before ? before.label : '' };
+    }
+    const picked = attribute === 'application' ? asked.add : '';
     return { key: key,
              draft: Object.assign({}, fields, { application: picked }),
              find: null, chosen: picked,
              label: row ? String(row.label || '') : '' };
+  }
+
+  /**
+   * Which list a route form's chooser asks (#1760).
+   *
+   * @param attribute - the chooser's attribute
+   * @returns `applications`, `policies` or `roles`
+   */
+  static pepRouteKindOf(attribute: string): string {
+    return attribute === 'authzPolicy' ? 'policies'
+      : (String(attribute).indexOf('authzRole.') === 0 ? 'roles'
+        : 'applications');
   }
 
   // A SINGLE-VALUED FIELD (#461) is one box, `field.<attribute>` with no
@@ -579,6 +632,24 @@ class WebAnswers {
   static fieldSearchPath(kind: string, asked: Json, exclude: string[]): string {
     // A SERVICE ACCOUNT'S PUSH DESTINATION (#602) is found among the realm's
     // secret destinations and nothing else, paged on `destinationsPage`.
+    // A ROUTE'S POLICY (#1760): the repository's search, only what a
+    // route may choose. A ROUTE'S ROLES: the Roles page's own list, its
+    // configured roles paged on `rolesPage` (rule 7: no new operation).
+    if (kind === 'policies' || kind === 'roles') {
+      const wanted = new URLSearchParams();
+      if (asked.query) {
+        wanted.append('q', asked.query);
+      }
+      wanted.append('per', String(kit.FIND_PER_PAGE));
+      wanted.append(kind === 'roles' ? 'rolesPage' : 'page',
+                    String(asked.page || 1));
+      if (kind === 'policies') {
+        wanted.append('routable', 'true');
+      }
+      return (kind === 'roles' ? '/admin-api/roles?'
+                               : '/admin-api/xacml/policies?') +
+        wanted.toString();
+    }
     if (kind === 'destinations') {
       const found = new URLSearchParams();
       if (asked.query) {
@@ -628,6 +699,24 @@ class WebAnswers {
     }
     if (kind === 'destinations') {
       return WebAnswers.destinationSearchFound(asked, answer);
+    }
+    if (kind === 'policies' || kind === 'roles') {
+      const list = kind === 'roles' ? 'shownRoles' : 'policies';
+      const good = !!answer && Array.isArray(answer[list]);
+      const paging = kind === 'roles' ? (good && answer.paging) || {}
+                                      : answer || {};
+      return { kind: kind, which: '', query: asked.query,
+               page: good ? Number(paging.page) || 1 : 1,
+               pages: good ? Number(paging.pages) || 1 : 1,
+               matched: good ? Number(answer.matched) || 0 : 0,
+               rows: !good ? [] : answer[list].map(function (one: Json) {
+                 return { value: String(one.name || ''),
+                          label: String(one.description ||
+                            (kind === 'policies' ? one.policyId || '' : '')),
+                          generated: kind === 'policies'
+                            ? String(one.pepRoute || '') : '' };
+               }),
+               failed: !good };
     }
     const parties = kind === 'parties';
     const people = parties && asked.which !== 'applications';
