@@ -883,6 +883,9 @@ pub struct SignInStack {
     pub sessions: Arc<Sessions>,
     pub signin: Arc<SignIn>,
     pub api: Arc<AuthnApi>,
+    /// The directory as the session sees it (the subject resolver), for
+    /// the families built after this one (the sign-out's, `sts-logout`).
+    pub people: Arc<dyn authn_ports::People>,
 }
 
 /// What the composition root hands [`SignInStack::declare`].
@@ -896,6 +899,11 @@ pub struct RuntimeParts {
     pub persistence: Arc<Persistence>,
     /// The build's version (`version.json`).
     pub version: String,
+    /// The identity register's session door — `sts-oauth`'s
+    /// `SessionTokens`, so a sign-out revokes what its session was issued
+    /// (#1449 in product, RFC 9700's refresh rule always); `None` revokes
+    /// nothing, the identity register not being in the runtime.
+    pub records: Option<Arc<dyn authn_ports::Records>>,
 }
 
 impl SignInStack {
@@ -915,6 +923,7 @@ impl SignInStack {
             settings: parts.settings.clone(),
             mode: parts.mode.clone(),
         });
+        let directory_people: Arc<dyn authn_ports::People> = directory.clone();
         let unconfigured = Arc::new(Unconfigured { env: env.clone() });
         let credentials = Arc::new(Credentials::new(CredentialsDeps {
             env: env.clone(),
@@ -946,7 +955,10 @@ impl SignInStack {
                 gate: unconfigured.clone(),
                 credentials: checks,
                 devices: unconfigured.clone(),
-                records: unconfigured.clone(),
+                records: match &parts.records {
+                    Some(r) => r.clone(),
+                    None => unconfigured.clone(),
+                },
                 audit: unconfigured.clone(),
                 binding: unconfigured.clone(),
                 backchannel: None,
@@ -975,11 +987,13 @@ impl SignInStack {
             csrf_secret: csrf_secret(),
             version: parts.version,
             https: parts.settings.value_of("global.https").as_bool(),
+            sign_out: std::sync::OnceLock::new(),
         });
         SignInStack {
             sessions,
             signin,
             api,
+            people: directory_people,
         }
     }
 

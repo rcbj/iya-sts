@@ -123,6 +123,15 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // The sign-out's sealed result (#444, phase 5): what sts-logout sealed,
+  // opened by Node's own Logout (tests/tools/logout-vectors.js).
+  if (fs.existsSync(path.join(VECTORS, 'logout-rust.json'))) {
+    require('./tools/logout-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('logout-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The registers' role entries (#444, phase 4), which need no other set.
   if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
     registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,
