@@ -56,6 +56,10 @@ const CLIENT = "pqr-client-" + String(Date.now()).slice(-6);
 const BYSTANDER = "pqr-bystander-" + String(Date.now()).slice(-6);
 const ML_DSA_65 = "2.16.840.1.101.3.4.3.18";
 const OCSP_BASIC = "1.3.6.1.5.5.7.48.1.1";
+// RFC 6960 section 4.2.1's OCSPResponseStatus, for a refusal's message.
+const OCSP_STATUS = { 0: "successful", 1: "malformedRequest",
+                      2: "internalError", 3: "tryLater", 5: "sigRequired",
+                      6: "unauthorized" };
 
 let checks = 0;
 function check(what, fn) {
@@ -280,6 +284,32 @@ async function askOcsp(path, authority, serial) {
     body: ocspRequest(authority, serial) });
   assert.strictEqual(r.status, 200, r.buffer.toString("utf8").slice(0, 200));
   assert.ok(/application\/ocsp-response/.test(r.type), r.type);
+  // A RESPONSE WITH NO responseBytes IS A REFUSAL, AND IT SAYS WHICH (RFC
+  // 6960 section 4.2.1). GitHub Actions run 43642810770's cells mode was
+  // answered `unauthorized` (6) here, and the parse below died reading
+  // members such a response does not have, which said nothing about why.
+  // So the status is asserted first, and the authority's certificate is
+  // fetched again, so a refusal says whether the authority this job read
+  // is still the one the service answers for (STS-PKI-0133 is a CertID
+  // naming no certificate of the authority it reached).
+  const top = parseDer(r.buffer);
+  const status = top.children[0].value[0];
+  if (status !== 0 || top.children.length < 2) {
+    const now = await send(realmBase + "/pki/ca/" + path + ".cer");
+    let same = "could not be fetched again (" + now.status + ")";
+    if (now.status === 200) {
+      const held = authorityFacts(now.buffer);
+      same = Buffer.compare(held.publicKey, authority.publicKey) === 0 &&
+             Buffer.compare(held.subjectRaw, authority.subjectRaw) === 0
+        ? "is still the one this job read"
+        : "has been REPLACED since this job read it (another key or name)";
+    }
+    log.debug("Leaving askOcsp(). Refused.");
+    assert.fail("the OCSP responder at " + path + " answered status " +
+                status + " (" + (OCSP_STATUS[status] || "unknown") + ") " +
+                "for serial " + serial + ", with no response; the " +
+                "authority's certificate " + same);
+  }
   log.debug("Leaving askOcsp().");
   return ocspFacts(r.buffer);
 }
