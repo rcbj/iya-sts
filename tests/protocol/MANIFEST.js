@@ -2625,6 +2625,9 @@ const JOBS = [
   // fga_issuance, fga_authzen). Posts two outside test Roots to the client
   // truststore and removes them.
   { file: 'sts_fga_grant_codes.js', browser: false, local: true },
+  // D12 (#444): UMA's PAT refusals and the claims interaction endpoint by
+  // code (uma_protection 0103, 0105-0107; uma_claims 0400, 0407).
+  { file: 'sts_uma_pat_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
