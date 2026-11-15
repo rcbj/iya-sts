@@ -721,6 +721,27 @@ async function build(ROOT) {
   permAct('setBaseUri', ['app-cli', '', 'vectors']);
   permAct('setBaseUri', ['nosuch', 'https://x.example', 'vectors']);
 
+  // ---- the /admin-api/permissions acts (permissionsAction) -----------
+  const permActions = new AdminActions(Object.assign(
+    AdminActions.defaultDeps(), { appPermissions: appPermissions }));
+  [{ action: 'define-permission', name: 'x' },
+   { action: 'grant-permission', permission: 'y' },
+   { action: 'define-permission', resource: 'app-res', name: 'audit',
+     description: 'Read the audit' },
+   { action: 'remove-permission', resource: 'app-res', name: 'nope' },
+   { action: 'grant-permission', client: 'app-cli',
+     permission: 'https://api.example/audit' },
+   { action: 'revoke-permission', client: 'app-cli',
+     permission: 'https://api.example/audit' },
+   { action: 'set-permission-base', resource: 'nosuch', baseUri: 'x' },
+   { action: 'remove-permission', resource: 'app-res', name: 'audit' },
+   { action: 'shout' }].forEach(function (body) {
+    rec.step(steps, 'permissionActions', 'permissionsAction', { body: body },
+      function () {
+        return permActions.permissionsAction(body, { actor: 'vectors' });
+      });
+  });
+
   // ---- a role authorizing a permission (role_permissions.ts, 3bq) -----
   const gate = req('common/issuance_gate');
   gate.checkScopes = rec.fn('gate', 'checkScopes', gate.checkScopes);

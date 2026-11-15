@@ -20,3 +20,5 @@ pub mod group_claims;
 pub mod ownership;
 pub mod app_permissions;
 pub mod role_permissions;
+pub mod operations;
+pub mod settings;

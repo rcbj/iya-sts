@@ -458,3 +458,70 @@ impl AppPermissions {
         with_message(result, message)
     }
 }
+
+/// `PERMISSION_ACTIONS`.
+pub const PERMISSION_ACTIONS: [&str; 5] = [
+    "set-permission-base",
+    "define-permission",
+    "remove-permission",
+    "grant-permission",
+    "revoke-permission",
+];
+
+impl AppPermissions {
+    /// `permissionsAction(body, context)`: `POST /admin-api/permissions/
+    /// {action}`. A code the register put on its refusal wins over this
+    /// door's `STS-ADMIN-0516`.
+    #[tracing::instrument(level = "debug", skip(self, body))]
+    pub fn act(&self, body: &Value, actor: &str) -> Outcome {
+        let action = js::or_empty(body.get("action"));
+        let resource = js::trim(&js::or_empty(body.get("resource"))).to_string();
+        let client = js::trim(&js::or_empty(body.get("client"))).to_string();
+        let refused = |code, text: &str| {
+            Outcome::marked(code, json!({"ok": false, "errors": [text]}))
+        };
+        if ["set-permission-base", "define-permission", "remove-permission"]
+            .contains(&action.as_str())
+            && resource.is_empty()
+        {
+            return refused(codes::STS_ADMIN_0514, "Which application exposes \
+                it? Send `resource` with the identifier exactly as the \
+                registry holds it — this is the application whose API the \
+                permission belongs to, not the one that will ask for it.");
+        }
+        if ["grant-permission", "revoke-permission"].contains(&action.as_str())
+            && client.is_empty()
+        {
+            return refused(codes::STS_ADMIN_0515, "Which application holds \
+                it? Send `client` with the identifier exactly as the registry \
+                holds it — this is the application that will name the \
+                permission in a `scope`, not the one that exposes it.");
+        }
+        let text = |k: &str| js::or_empty(body.get(k));
+        let mut result = match action.as_str() {
+            "set-permission-base" => self.set_base_uri(&resource,
+                &js::unless_null(body.get("baseUri")), actor),
+            "define-permission" => self.define_permission(&resource,
+                &text("name"), &text("description"), actor),
+            "remove-permission" => {
+                self.remove_permission(&resource, &text("name"), actor)
+            }
+            "grant-permission" => {
+                self.grant(&client, &text("permission"), actor)
+            }
+            "revoke-permission" => {
+                self.revoke(&client, &text("permission"), actor)
+            }
+            _ => {
+                return refused(codes::STS_ADMIN_0500, &format!(
+                    "Unknown action \"{action}\". The {} are: {}.",
+                    js::number_word(PERMISSION_ACTIONS.len()),
+                    PERMISSION_ACTIONS.join(", ")))
+            }
+        };
+        if result.refused() && result.code.is_none() {
+            result.code = Some(codes::STS_ADMIN_0516);
+        }
+        result
+    }
+}

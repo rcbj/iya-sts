@@ -301,6 +301,10 @@ fn every_register_answers_as_node_does() {
                     }
                 }))
             }
+            "permissionActions" => Some(got(
+                AppPermissions::new(replay.clone())
+                    .act(&step["input"]["body"], "vectors"),
+            )),
             "rbac" => {
                 let rbac = Rbac::new(
                     Some(replay.clone()),
