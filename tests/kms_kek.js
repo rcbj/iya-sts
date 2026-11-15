@@ -53,6 +53,13 @@
 //      version made (Transit, Cloud KMS, Key Vault) and every data key
 //      re-wrapped at once, without a restart; AWS on demand, behind the same
 //      key id, re-wrapping nothing.
+//   L. (2026-11-14, found by #444's port) an EMPTY ciphertext or plaintext
+//      from AWS KMS, Cloud KMS or Key Vault is refused (STS-KEYS-0103), not
+//      stored or used — an empty Uint8Array is truthy; a Key Vault RSA
+//      modulus answered with a leading zero byte is counted by its bits, in
+//      the handle, the probe and the 3072-bit floor; and a Key Vault key with
+//      no version refuses the start before anything is wrapped
+//      (STS-KEYS-0198).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -187,7 +194,7 @@ function childMain() {
 
   // ------------------------------------------------------------- AWS KMS
   const kms = { key: nodeCrypto.randomBytes(32), spec: 'SYMMETRIC_DEFAULT',
-                calls: [] };
+                calls: [], empty: {} };
   function cmd(name) {
     return function (input) { this.name = name; this.input = input; };
   }
@@ -205,6 +212,11 @@ function childMain() {
         }
         const ctx = Buffer.from(JSON.stringify(c.input.EncryptionContext ||
                                                {}), 'utf8');
+        if (kms.empty[c.name]) {
+          // An EMPTY Uint8Array, as the SDK answers bytes: truthy (section L).
+          return c.name === 'Encrypt' ? { CiphertextBlob: new Uint8Array(0) } :
+                                        { Plaintext: new Uint8Array(0) };
+        }
         if (c.name === 'Encrypt') {
           return { CiphertextBlob: gcm(kms.key, c.input.Plaintext, ctx) };
         }
@@ -233,7 +245,7 @@ function childMain() {
   // does, the additional authenticated data bound.
   const KEY_NAME = 'projects/p/locations/global/keyRings/r/cryptoKeys/dek';
   const gkms = { versions: [nodeCrypto.randomBytes(32)], primary: 1,
-                 purpose: 'ENCRYPT_DECRYPT', calls: [] };
+                 purpose: 'ENCRYPT_DECRYPT', calls: [], empty: {} };
   const fakeGcpKms = {
     KeyManagementServiceClient: function () {
       this.getCryptoKey = async function (r) {
@@ -247,6 +259,10 @@ function childMain() {
       this.encrypt = async function (r) {
         gkms.calls.push({ op: 'encrypt', r: r });
         const v = gkms.primary;
+        if (gkms.empty.encrypt) {
+          return [{ name: r.name + '/cryptoKeyVersions/' + v,
+                    ciphertext: Buffer.alloc(0) }];
+        }
         const blob = gcm(gkms.versions[v - 1], r.plaintext,
                          r.additionalAuthenticatedData);
         return [{ name: r.name + '/cryptoKeyVersions/' + v,
@@ -265,6 +281,9 @@ function childMain() {
       };
       this.decrypt = async function (r) {
         gkms.calls.push({ op: 'decrypt', r: r });
+        if (gkms.empty.decrypt) {
+          return [{ plaintext: Buffer.alloc(0) }];
+        }
         const ct = Buffer.from(r.ciphertext);
         const key = gkms.versions[ct[0] - 1];
         try {
@@ -281,7 +300,12 @@ function childMain() {
   // A fake `@azure/keyvault-keys` (and `@azure/identity`): one key of
   // versions, RSA (wrapKey/unwrapKey with real RSA-OAEP-256) or oct-HSM
   // (A256GCM with AAD), a CryptographyClient per versioned key id.
-  const akv = { type: 'RSA', bits: 3072, versions: [], calls: [] };
+  // `empty` names the operations that answer an empty Uint8Array,
+  // `noVersion` drops the version from getKey(), and `leadingZero` answers
+  // `n` with a leading zero byte, as Key Vault does (section L).
+  const akv = { type: 'RSA', bits: 3072, versions: [], calls: [], empty: {},
+                noVersion: false, leadingZero: false };
+  const NOTHING = new Uint8Array(0);
   function akvVersion() {
     const v = 'v' + nodeCrypto.randomBytes(6).toString('hex');
     if (akv.type === 'oct-HSM') {
@@ -308,25 +332,36 @@ function childMain() {
       this.getKey = async function (name) {
         akv.calls.push({ op: 'getKey', vault: vault, name: name });
         const cur = akv.versions[akv.versions.length - 1];
-        const n = cur.pair ?
+        let n = cur.pair ?
           Buffer.from(cur.pair.publicKey.export({ format: 'jwk' }).n,
                       'base64url') : undefined;
-        return { id: vault + '/keys/' + name + '/' + cur.id, name: name,
+        if (n && akv.leadingZero) {
+          n = Buffer.concat([Buffer.from([0]), n]);
+        }
+        return { id: vault + '/keys/' + name +
+                     (akv.noVersion ? '' : '/' + cur.id), name: name,
                  keyType: akv.type, key: { n: n },
                  keyOperations: akv.type === 'oct-HSM' ?
                    ['encrypt', 'decrypt'] : ['wrapKey', 'unwrapKey'],
-                 properties: { enabled: true, version: cur.id } };
+                 properties: { enabled: true,
+                               version: akv.noVersion ? undefined : cur.id } };
       };
     },
     CryptographyClient: function (kid) {
       const one = akvFind(String(kid).split('/').pop());
       this.wrapKey = async function (alg, key) {
         akv.calls.push({ op: 'wrapKey', alg: alg, kid: kid });
+        if (akv.empty.wrapKey) {
+          return { result: NOTHING };
+        }
         return { result: nodeCrypto.publicEncrypt(
           Object.assign({ key: one.pair.publicKey }, OAEP), key) };
       };
       this.unwrapKey = async function (alg, wrapped) {
         akv.calls.push({ op: 'unwrapKey', alg: alg, kid: kid });
+        if (akv.empty.unwrapKey) {
+          return { result: NOTHING };
+        }
         return { result: nodeCrypto.privateDecrypt(
           Object.assign({ key: one.pair.privateKey }, OAEP), wrapped) };
       };
@@ -334,11 +369,16 @@ function childMain() {
         akv.calls.push({ op: 'encrypt', r: r, kid: kid });
         const blob = gcm(one.secret, r.plaintext,
                          r.additionalAuthenticatedData);
-        return { result: blob.subarray(28), iv: blob.subarray(0, 12),
-                 authenticationTag: blob.subarray(12, 28) };
+        const e = akv.empty.encrypt || {};
+        return { result: e.result ? NOTHING : blob.subarray(28),
+                 iv: e.iv ? NOTHING : blob.subarray(0, 12),
+                 authenticationTag: e.tag ? NOTHING : blob.subarray(12, 28) };
       };
       this.decrypt = async function (r) {
         akv.calls.push({ op: 'decrypt', r: r, kid: kid });
+        if (akv.empty.decrypt) {
+          return { result: NOTHING };
+        }
         return { result: ungcm(one.secret, Buffer.concat([
           Buffer.from(r.iv), Buffer.from(r.authenticationTag),
           Buffer.from(r.ciphertext)]), r.additionalAuthenticatedData) };
@@ -346,6 +386,17 @@ function childMain() {
     }
   };
   const fakeAzureIdentity = { DefaultAzureCredential: function () {} };
+
+  // ------------------------------------------------------- SECRET MANAGER
+  // A fake `@google-cloud/secret-manager` whose one version's payload is an
+  // EMPTY Buffer — truthy, which is what section L asserts is refused.
+  const fakeSecretManager = {
+    SecretManagerServiceClient: function () {
+      this.accessSecretVersion = async function (r) {
+        return [{ name: r.name, payload: { data: Buffer.alloc(0) } }];
+      };
+    }
+  };
 
   // ------------------------------------------------------------- STORE
   const rows = new Map();
@@ -414,6 +465,9 @@ function childMain() {
       }
       if (name === '@azure/identity') {
         return fakeAzureIdentity;
+      }
+      if (name === '@google-cloud/secret-manager') {
+        return fakeSecretManager;
       }
       throw new Error('Cannot find module \'' + name + '\'');
     });
@@ -714,6 +768,152 @@ function childMain() {
     note(/STS-KEYS-0091/.test(iMoved),
          'I3. a wrapped key moved to another realm\'s row is refused by the ' +
          'HSM', iMoved.slice(0, 200));
+
+    // ------------------------------------------------------------ L
+    // THE ANSWER CHECKS AND THE KEY SIZE (2026-11-14, found by #444's port).
+    // Each KMS's handle is asked directly, through `secrets.readKek()`, with
+    // its fake answering what a broken or surprising KMS would.
+    const errorCodes = require(ROOT + '/common/error_codes');
+    const AAD = 'sts dek v1|L|service||minted-rows';
+    const DEK = nodeCrypto.randomBytes(32);
+    // The code a wrap or unwrap was refused with, or '' when it was not.
+    async function refusedWith(fn) {
+      try {
+        await fn();
+      } catch (e) {
+        return errorCodes.codeOf(e) || String((e && e.message) || e);
+      }
+      return '';
+    }
+    useAws();
+    kms.spec = 'SYMMETRIC_DEFAULT';
+    const lAws = await secrets.readKek();
+    const lAwsText = await lAws.wrap(DEK, AAD);
+    kms.empty.Encrypt = true;
+    const lAwsWrap = await refusedWith(function () {
+      return lAws.wrap(DEK, AAD);
+    });
+    kms.empty.Encrypt = false;
+    note(lAwsWrap === 'STS-KEYS-0103',
+         'L1. AWS KMS answering an EMPTY CiphertextBlob is refused, not ' +
+         'stored', lAwsWrap);
+    kms.empty.Decrypt = true;
+    const lAwsUnwrap = await refusedWith(function () {
+      return lAws.unwrap(lAwsText, AAD);
+    });
+    kms.empty.Decrypt = false;
+    note(lAwsUnwrap === 'STS-KEYS-0103',
+         'L2. AWS KMS answering an EMPTY Plaintext is refused, not used as ' +
+         'a data key', lAwsUnwrap);
+
+    process.env.STS_KEYS_KEK_PROVIDER = 'gcp-kms';
+    process.env.STS_KEYS_KEK_REF = KEY_NAME;
+    gkms.purpose = 'ENCRYPT_DECRYPT';
+    const lGcp = await secrets.readKek();
+    const lGcpText = await lGcp.wrap(DEK, AAD);
+    gkms.empty.encrypt = true;
+    const lGcpWrap = await refusedWith(function () {
+      return lGcp.wrap(DEK, AAD);
+    });
+    gkms.empty.encrypt = false;
+    note(lGcpWrap === 'STS-KEYS-0103',
+         'L3. Cloud KMS answering an EMPTY ciphertext (with a version) is ' +
+         'refused, not stored', lGcpWrap);
+    gkms.empty.decrypt = true;
+    const lGcpUnwrap = await refusedWith(function () {
+      return lGcp.unwrap(lGcpText, AAD);
+    });
+    gkms.empty.decrypt = false;
+    note(lGcpUnwrap === 'STS-KEYS-0103',
+         'L4. Cloud KMS answering an EMPTY plaintext is refused, not used ' +
+         'as a data key', lGcpUnwrap);
+
+    process.env.STS_KEYS_KEK_PROVIDER = 'azure-keys';
+    process.env.STS_KEYS_KEK_REF = 'dek';
+    process.env.STS_KEYS_KEK_VAULT = 'https://v.vault.azure.net/';
+    akv.type = 'oct-HSM';
+    akv.versions = [];
+    akvVersion();
+    const lOct = await secrets.readKek();
+    const lOctText = await lOct.wrap(DEK, AAD);
+    const lOctEmpty = [];
+    for (const piece of ['result', 'iv', 'tag']) {
+      akv.empty.encrypt = {};
+      akv.empty.encrypt[piece] = true;
+      lOctEmpty.push(piece + '=' + await refusedWith(function () {
+        return lOct.wrap(DEK, AAD);
+      }));
+    }
+    akv.empty.encrypt = null;
+    note(lOctEmpty.every(function (one) {
+      return /=STS-KEYS-0103$/.test(one);
+    }), 'L5. a Managed HSM answering an EMPTY ciphertext, iv or tag is ' +
+        'refused, not stored', lOctEmpty.join(' '));
+    akv.empty.decrypt = true;
+    const lOctUnwrap = await refusedWith(function () {
+      return lOct.unwrap(lOctText, AAD);
+    });
+    akv.empty.decrypt = false;
+    note(lOctUnwrap === 'STS-KEYS-0103',
+         'L6. a Managed HSM answering an EMPTY plaintext is refused, not ' +
+         'used as a data key', lOctUnwrap);
+
+    akv.type = 'RSA';
+    akv.bits = 3072;
+    akv.versions = [];
+    akvVersion();
+    akv.leadingZero = true;
+    const lRsa = await secrets.readKek();
+    const lProbes = await Promise.all(secrets.PROBES['azure-keys']
+      .secret(secrets.KEK));
+    const lBits = lProbes[0] && lProbes[0].data && lProbes[0].data.bits;
+    note(/\(RSA 3072\)$/.test(lRsa.label) && lBits === 3072,
+         'L7. a 3072-bit Key Vault key whose n carries a leading zero byte ' +
+         'is reported as 3072 bits, by the handle and by the probe',
+         lRsa.label + ' / probe ' + lBits);
+    const lRsaText = await lRsa.wrap(DEK, AAD);
+    akv.empty.wrapKey = true;
+    const lRsaWrap = await refusedWith(function () {
+      return lRsa.wrap(DEK, AAD);
+    });
+    akv.empty.wrapKey = false;
+    akv.empty.unwrapKey = true;
+    const lRsaUnwrap = await refusedWith(function () {
+      return lRsa.unwrap(lRsaText, AAD);
+    });
+    akv.empty.unwrapKey = false;
+    note(lRsaWrap === 'STS-KEYS-0103' && lRsaUnwrap === 'STS-KEYS-0103',
+         'L8. Key Vault answering an EMPTY wrapped or unwrapped key is ' +
+         'refused', lRsaWrap + ' ' + lRsaUnwrap);
+    akv.bits = 3064;
+    akv.versions = [];
+    akvVersion();
+    const lShort = await refusal();
+    note(/STS-KEYS-0102/.test(lShort) && /RSA 3064-bit/.test(lShort),
+         'L9. a 3064-bit key whose n carries a leading zero byte (384 bytes) ' +
+         'is under 3072 bits and refuses the start', lShort);
+    akv.bits = 3072;
+    akv.versions = [];
+    akvVersion();
+    akv.noVersion = true;
+    rows.clear();
+    const lNoVersion = await refusal();
+    const lRows = Array.from(rows.keys());
+    note(/STS-KEYS-0198/.test(lNoVersion) &&
+         !lRows.some(function (k) { return /^dek:/.test(k); }),
+         'L10. a Key Vault key answered with no version refuses the start ' +
+         'before anything is wrapped: no data-key row is written',
+         lNoVersion + ' rows=' + lRows.join(','));
+    akv.noVersion = false;
+    akv.leadingZero = false;
+    process.env.STS_KEYS_KEK_PROVIDER = 'gcp';
+    process.env.STS_KEYS_KEK_REF = 'projects/p/secrets/kek';
+    const lPayload = await refusedWith(function () {
+      return secrets.readKek();
+    });
+    note(lPayload === 'STS-KEYS-0048',
+         'L11. Secret Manager answering an EMPTY payload is refused as no ' +
+         'value, not handed back as the key', lPayload);
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
   }).then(function () {

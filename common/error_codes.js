@@ -3778,6 +3778,13 @@ const CODES = [
       'key-encryption key was to be read from a file rather than a secret ' +
       'store or a key management service.',
     spec: 'ASVS 5.0.0 13.3.1' },
+  { code: 'STS-KEYS-0198',
+    summary: 'The Azure Key Vault or Managed HSM key named as the ' +
+      'key-encryption key (azure-keys) was answered with no key version, ' +
+      'or one that is not letters and digits. A wrapped data key is stored ' +
+      'with the version that wrapped it, so nothing is wrapped and the ' +
+      'service does not start.',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
