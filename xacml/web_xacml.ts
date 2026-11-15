@@ -1107,6 +1107,7 @@ class XacmlPage {
       (json.peps.length
         ? '<p class="sub">' + t.html('consoleXacml.pepPage.openRow') + '</p>'
         : '') +
+      self.wide(t, 'console.nav.xacml-peps',
       '<table><tr><th' + self.tipOf(t, 'consoleXacml.tip.peps.name') +
       '>PEP</th>' +
       self.th(t, 'consoleXacml.th.certificate',
@@ -1122,7 +1123,7 @@ class XacmlPage {
               'consoleXacml.tip.peps.proxy') +
       self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
       '</tr>' + rows +
-      '</table>' +
+      '</table>') +
       kit.note(
         '<p>' + t.html('consoleXacml.peps.cert1') +
         '</p><p>' + t.html('consoleXacml.peps.cert2') +
@@ -1228,7 +1229,7 @@ class XacmlPage {
             t.html('consoleXacml.routeForm.remove') + '</button></form></td>'
           : '') + '</tr>';
     }).join('');
-    return '<table><tr>' +
+    return self.wide(t, 'consoleXacml.proxy.tab.routes', '<table><tr>' +
       self.th(t, 'consoleXacml.proxy.th.id', 'consoleXacml.tip.routes.id') +
       self.th(t, 'consoleXacml.proxy.th.path',
               'consoleXacml.tip.routes.path') +
@@ -1247,7 +1248,7 @@ class XacmlPage {
       (ctx && ctx.write && name
         ? self.th(t, 'consoleXacml.th.actions',
                   'consoleXacml.tip.routes.actions') : '') +
-      '</tr>' + rows + '</table>';
+      '</tr>' + rows + '</table>');
   }
 
   // THE SIGNAL STREAMS' HEALTH (#1760), as the PEP last reported it on a
@@ -1287,7 +1288,7 @@ class XacmlPage {
     const table = streams === null
       ? '<p class="sub">' + t.html('consoleXacml.proxy.signals.noRows') +
         '</p>'
-      : '<table><tr>' +
+      : XacmlPage.wide(t, 'consoleXacml.proxy.signals.label', '<table><tr>' +
         XacmlPage.th(t, 'consoleXacml.proxy.signals.th.serves',
                      'consoleXacml.tip.signals.serves') +
         XacmlPage.th(t, 'consoleXacml.proxy.signals.th.stream',
@@ -1336,7 +1337,7 @@ class XacmlPage {
               : '<strong class="xacml-alert">' +
                 t.html('consoleXacml.proxy.signals.stale') + '</strong>') +
             '</td></tr>';
-        }).join('') + '</table>';
+        }).join('') + '</table>');
     return heading +
       '<p' + (signals.stale ? ' class="xacml-alert"' : '') + '>' +
       t.html('consoleXacml.proxy.signals.summary', {
@@ -1711,7 +1712,8 @@ class XacmlPage {
         '</td><td>' + self.listenerCertificate(t, one) + '</td><td>' +
         actions + '</td></tr>';
     }).join('');
-    const table = '<table><tr>' +
+    const table = self.wide(t, 'consoleXacml.pepPage.tab.listener',
+      '<table><tr>' +
       self.th(t, 'consoleXacml.listeners.th.listener',
               'consoleXacml.tip.listeners.listener') +
       self.th(t, 'consoleXacml.listeners.th.source',
@@ -1728,7 +1730,7 @@ class XacmlPage {
               'consoleXacml.tip.listeners.certificate') +
       self.th(t, 'consoleXacml.th.actions',
               'consoleXacml.tip.listeners.actions') +
-      '</tr>' + body + '</table>';
+      '</tr>' + body + '</table>');
     const defined = (row.listeners || []) as Json[];
     const catalogue = json.listenersCatalogue || {};
     const forms = ctx.write
@@ -1837,17 +1839,17 @@ class XacmlPage {
             { value: 'exact',
               label: t.text('consoleXacml.routeForm.exact') }],
             r.match), when)) +
-        row('<span' + self.tipOf(t, 'consoleXacml.tip.route.methods') + '>' +
-          t.html('consoleXacml.routeForm.methods') + '</span> ' + methods +
-          '<span class="sub">' +
+        row(self.checkGroup(t, listId + '-methods',
+          'consoleXacml.routeForm.methods', 'consoleXacml.tip.route.methods',
+          methods) + '<span class="sub">' +
           t.html('consoleXacml.routeForm.methodsNote') + '</span>')) +
       group('consoleXacml.routeForm.legend.authentication',
         row(self.labelled(t, 'consoleXacml.routeForm.public',
           'consoleXacml.tip.route.public',
           self.yesNo('public', r.public, t), when)) +
-        row('<span' + self.tipOf(t, 'consoleXacml.tip.route.mechanisms') +
-          '>' + t.html('consoleXacml.routeForm.mechanisms') + '</span> ' +
-          mechanisms) +
+        row(self.checkGroup(t, listId + '-mechanisms',
+          'consoleXacml.routeForm.mechanisms',
+          'consoleXacml.tip.route.mechanisms', mechanisms)) +
         row(self.labelled(t, 'consoleXacml.routeForm.forward',
           'consoleXacml.tip.route.forward',
           self.yesNo('forwardCredentials', r.forwardCredentials, t), when)) +
@@ -1885,6 +1887,42 @@ class XacmlPage {
   // ONE FIELD'S LINE: the console's `.formrow`, a label then its control.
   static formRow(html: string): string {
     return '<div class="formrow">' + html + '</div>';
+  }
+
+  // A ROW'S CHECKBOXES UNDER ONE LABEL (Methods, Mechanisms): the label is
+  // the row's, drawn as `.formlabel` (with `.tipword`, the dotted
+  // underline of a label with a tooltip) so it reads like every `<label>`
+  // of a `.formrow` beside it — a bare `<span>` came out larger and not bold —
+  // and the boxes are a `role="group"` named by it, the console's way of
+  // naming a set of boxes (`web_kit.ts`'s `fg-checks`), since a `<label>`
+  // can label one control and a nested `<fieldset>` would draw a second
+  // frame inside the group's own.
+  static checkGroup(t: Json, id: string, labelKey: string, tipKey: string,
+                    boxes: string): string {
+    return '<span class="formlabel tipword" id="' + esc(id) + '-label"' +
+      XacmlPage.tipOf(t, tipKey) + '>' + t.html(labelKey) + '</span>' +
+      '<span role="group" aria-labelledby="' +
+      esc(id) + '-label">' + boxes + '</span>';
+  }
+
+  // A TABLE THAT MAY BE WIDER THAN ITS CARD at phone width, in the console's
+  // own sideways scroller (`kit.wideTable()`, `.wide`): the Configured
+  // Routes table was clipped at 390px. `labelKey` names the region.
+  static wide(t: Json, labelKey: string, html: string): string {
+    return kit.wideTable(t.text(labelKey), html);
+  }
+
+  // A LINK INSIDE A TRANSLATED SENTENCE, through a slot (`web_spiffe.ts`'s
+  // `compose()` argues it): a message's parameters are escaped and a
+  // message may not carry a link, so the message gets a marker and the
+  // link replaces it. The sentence stays whole for a translator.
+  static linkedSentence(t: Json, key: string, param: string, href: string,
+                        labelKey: string): string {
+    const slot = '\u0001' + param + '\u0001';
+    const vars: Json = {};
+    vars[param] = slot;
+    return String(t.html(key, vars)).split(slot).join('<a href="' +
+      esc(href) + '">' + t.html(labelKey) + '</a>');
   }
 
   // A GROUP OF A FORM'S FIELDS under a legend, one field per line.
@@ -2136,7 +2174,8 @@ class XacmlPage {
         t.html('consoleXacml.pepSettings.problem') + ' ' +
         esc(row.settingsProblem) + '</div>'
       : '';
-    const table = '<table><tr>' +
+    const table = self.wide(t, 'consoleXacml.pepPage.tab.settings',
+      '<table><tr>' +
       self.th(t, 'consoleXacml.pepSettings.th.setting',
               'consoleXacml.tip.settings.setting') +
       self.th(t, 'consoleXacml.pepSettings.th.setHere',
@@ -2147,7 +2186,7 @@ class XacmlPage {
               'consoleXacml.tip.settings.default') +
       self.th(t, 'consoleXacml.pepSettings.th.applies',
               'consoleXacml.tip.settings.applies') + '</tr>' + body +
-      '</table>';
+      '</table>');
     const form = ctx.write
       ? '<form method="post" action="/admin/xacml/peps">' +
         self.hidden('action', 'set-pep-settings') +
@@ -2166,7 +2205,7 @@ class XacmlPage {
     const bootstrap = '<h3>' +
       t.html('consoleXacml.pepSettings.bootstrap.heading') + '</h3><p>' +
       t.html('consoleXacml.pepSettings.bootstrap.lead') + '</p>' +
-      '<table><tr>' +
+      self.wide(t, 'consoleXacml.pepSettings.bootstrap.heading', '<table><tr>' +
       self.th(t, 'consoleXacml.pepSettings.th.variable',
               'consoleXacml.tip.settings.variable') +
       self.th(t, 'consoleXacml.pepSettings.th.default',
@@ -2177,7 +2216,7 @@ class XacmlPage {
         return '<tr><td><code>' + esc(one.env) + '</code></td><td><code>' +
           esc(one.default) + '</code></td><td>' +
           (words.reason[one.reason] || esc(one.reason)) + '</td></tr>';
-      }).join('') + '</table>';
+      }).join('') + '</table>');
     return kit.note('<p>' + t.html('consoleXacml.pepSettings.lead') +
                     '</p><p>' + t.html('consoleXacml.pepSettings.lead2') +
                     '</p>', t.text('consoleXacml.pepPage.tab.settings')) +
@@ -2261,7 +2300,7 @@ class XacmlPage {
         '</th><td>' + value + '</td></tr>';
     };
     const state = '<h3>' + t.html('consoleXacml.routePage.stateHeading') +
-      '</h3><table>' +
+      '</h3>' + self.wide(t, 'consoleXacml.routePage.stateHeading', '<table>' +
       line('consoleXacml.routePage.th.usable',
            'consoleXacml.tip.routePage.usable', usable) +
       line('consoleXacml.proxy.th.application',
@@ -2273,12 +2312,15 @@ class XacmlPage {
       line('consoleXacml.routePage.th.upstream',
            'consoleXacml.tip.routePage.upstream',
            '<code>' + esc(proxy.upstream || '') + '</code>' +
-           '<div class="sub">' + t.html('consoleXacml.routePage.upstreamNote') +
-           '</div>') +
-      '</table><h4' + self.tipOf(t, 'consoleXacml.tip.routePage.servedBy') +
+           '<div class="sub">' + self.linkedSentence(t,
+             'consoleXacml.routePage.upstreamNote', 'manifest',
+             self.pepHref(name) + '#' + self.PROXY_MANIFEST_TAB,
+             'consoleXacml.proxy.tab.manifest') + '</div>') +
+      '</table>') + '<h4' +
+      self.tipOf(t, 'consoleXacml.tip.routePage.servedBy') +
       '>' + t.html('consoleXacml.routePage.servedBy') + '</h4>' +
       (served
-        ? '<table><tr>' +
+        ? self.wide(t, 'consoleXacml.routePage.servedBy', '<table><tr>' +
           self.th(t, 'consoleXacml.listeners.th.listener',
                   'consoleXacml.tip.listeners.listener') +
           self.th(t, 'consoleXacml.listeners.th.protocol',
@@ -2287,7 +2329,7 @@ class XacmlPage {
                   'consoleXacml.tip.listeners.address') +
           self.th(t, 'consoleXacml.listeners.th.state',
                   'consoleXacml.tip.listeners.state') + '</tr>' + served +
-          '</table>'
+          '</table>')
         : '<p class="sub">' + t.html('consoleXacml.routePage.noListeners') +
           '</p>');
     if (!ctx.write) {
@@ -2359,9 +2401,10 @@ class XacmlPage {
     return kit.note('<p>' + t.html('consoleXacml.routePage.indexLead') +
                     '</p>') +
       (rows
-        ? '<table><tr><th>PEP</th>' +
+        ? self.wide(t, 'consoleXacml.routePage.th.routes',
+          '<table><tr><th>PEP</th>' +
           self.th(t, 'consoleXacml.routePage.th.routes',
-                  'consoleXacml.tip.routes.id') + '</tr>' + rows + '</table>'
+                  'consoleXacml.tip.routes.id') + '</tr>' + rows + '</table>')
         : '<p class="sub">' + t.html('consoleXacml.routePage.noRoutes') +
           '</p>') +
       '<p><a href="/admin/xacml#xacml-tab-peps">' +
@@ -2455,7 +2498,7 @@ class XacmlPage {
     };
     const overview = kit.note('<p>' + t.html('consoleXacml.pepPage.lead') +
                               '</p>') +
-      '<table>' +
+      self.wide(t, 'consoleXacml.pepPage.tab.overview', '<table>' +
       line(t.html('consoleXacml.pepPage.th.name'), code(row.name),
            'consoleXacml.tip.overview.name') +
       line(t.html('consoleXacml.th.certificate'), self.pepWho(t, row),
@@ -2483,13 +2526,14 @@ class XacmlPage {
            'consoleXacml.tip.peps.notify') +
       line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
            'consoleXacml.tip.peps.actions') +
-      '</table>';
-    const decisions = '<table>' +
+      '</table>');
+    const decisions = self.wide(t, 'consoleXacml.pepPage.tab.decisions',
+      '<table>' +
       line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row),
            'consoleXacml.tip.peps.enforced') +
       line(t.html('consoleXacml.pepPage.th.policies'),
            code(row.policyCount), 'consoleXacml.tip.overview.policies') +
-      '</table>' +
+      '</table>') +
       kit.note('<p>' + t.html('consoleXacml.peps.numbers1') + '</p><p>' +
                t.html('consoleXacml.peps.numbers2') + '</p>',
                t.text('consoleXacml.peps.numbersLabel'));

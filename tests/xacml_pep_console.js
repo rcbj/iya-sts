@@ -33,6 +33,11 @@
 //      links to the PEP page at their anchors.
 //   F. ONE FIELD PER LINE (rcbj): the route page's form and the add form,
 //      each field a `.formrow` of its own, under fieldset legends.
+//   D. THREE DEFECTS on the 8081 demo: the route page's Upstream note
+//      names the Manifest sub-tab and links to it; every table on the PEP
+//      page and the route page scrolls sideways in `.wide` at phone width;
+//      Methods and Mechanisms are `.formlabel` row labels naming a
+//      role="group", drawn like the other `.formrow` labels.
 //   T. THE TRAILS (rcbj): a PEP's page is Admin console › XACML › Remote
 //      PEPs › the PEP, and a route's adds › Reverse proxy › the route, each
 //      tab a crumb linking to that tab, built by the runtime's drawView().
@@ -410,6 +415,72 @@ async function run(t) {
   t.equal(legendsOf(newPanel), 'Matching | Authentication | ' +
           'Authorization | Order',
           'F5. Create a New Route: the same legends');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== D. three defects on the 8081 demo (fc561497d) ===');
+  // -------------------------------------------------------------------------
+  // D1-D2: the route page's Upstream note named the document's old place,
+  // "on the Reverse proxy tab"; it is on that tab's Manifest sub-tab, and
+  // the note links there.
+  const upstream = page.split('<div class="sub">').filter(function (one) {
+    return one.indexOf('<code>upstream</code>') >= 0;
+  })[0] || '';
+  t.check(upstream.indexOf('Reverse proxy tab\'s <a href="' +
+          '/admin/xacml/pep?pep=pep-1#xacml-pep-proxy-manifest">Manifest' +
+          '</a> sub-tab') >= 0 && upstream.indexOf('\u0001') < 0,
+          'D1. the Upstream note names the Manifest sub-tab and links to ' +
+          'it on the PEP\'s page', upstream);
+  // D3-D5: a table wider than a 390px card scrolls sideways in the
+  // console's own `.wide` box (`kit.wideTable()`) instead of being clipped.
+  const bareTables = function (html) {
+    log.debug("Entering bareTables().");
+    const parts = html.split('<table');
+    let bare = 0;
+    for (let i = 1; i < parts.length; i++) {
+      if (!/<div class="wide" tabindex="0" role="region" aria-label="[^"]+">$/
+          .test(parts[i - 1])) {
+        bare++;
+      }
+    }
+    log.debug("Leaving bareTables().");
+    return { tables: parts.length - 1, bare: bare };
+  };
+  const routesTables = bareTables(routesPanel);
+  t.check(routesTables.tables === 1 && routesTables.bare === 0 &&
+          routesPanel.indexOf('aria-label="Configured Routes"><table') >= 0,
+          'D3. the Configured Routes table sits in the scrollable wrapper',
+          JSON.stringify(routesTables));
+  const pageTables = bareTables(page.split('<form')[0]);
+  t.check(pageTables.tables >= 1 && pageTables.bare === 0,
+          'D4. every table on the route page sits in the wrapper',
+          JSON.stringify(pageTables));
+  const listenerTab = XacmlPage.listenersBody(writer,
+    { listenersCatalogue: {},
+      listenerCertificates: { keyAlgorithms: ['ES256'],
+                              defaultKeyAlg: 'ES256' } },
+    { name: 'pep-1', listeners: [], listenerRows: [] });
+  const listenerTables = bareTables(listenerTab);
+  t.check(listenerTables.bare === 0,
+          'D5. the Listener tab\'s table sits in the wrapper',
+          JSON.stringify(listenerTables));
+  // D6-D7: Methods and Mechanisms are row labels like their neighbours'
+  // (`.formlabel`, styled as `.formrow label`), naming a role="group" of
+  // their checkboxes.
+  [['route page', form, 'pep-route-apps-page-orders-api'],
+   ['Create a New Route', newPanel, 'pep-route-apps-new']]
+    .forEach(function (one) {
+      ['methods', 'mechanisms'].forEach(function (field) {
+        const id = one[2] + '-' + field + '-label';
+        const label = field === 'methods' ? 'Methods' : 'Mechanisms';
+        t.check(new RegExp('<div class="formrow"><span class="formlabel ' +
+                           'tipword" id="' + id + '"[^>]*>' + label +
+                           '</span>' +
+                           '<span role="group" aria-labelledby="' + id +
+                           '"><label').test(one[1]),
+                'D6. ' + one[0] + ': ' + label + ' is a row label naming ' +
+                'the group of its boxes', one[1]);
+      });
+    });
 
   // -------------------------------------------------------------------------
   t.log.info('=== T. the trails name the tab each page was opened from ===');

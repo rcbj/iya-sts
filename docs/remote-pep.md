@@ -1213,7 +1213,7 @@ API, though the console no longer has a form for it.
 
 ### A route's own page
 
-**Click a route's id** in the Reverse proxy tab's table to open
+**Click a route's id** in the Configured Routes table to open
 `/admin/xacml/pep/route?pep=<name>&route=<id>`. The trail is *Admin
 console › XACML › Remote PEPs › the PEP › Reverse proxy › the route*: the
 PEP crumb opens the PEP's page and the Reverse proxy crumb its Configured
@@ -1244,7 +1244,9 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   so for that one poll interval, a request on the route may be refused
   while the PEP asks for an identity under the old id.
 * **The upstream is not on the form.** The model has one upstream per PEP,
-  not one per route. Change `upstream` in the configuration document.
+  not one per route. Change `upstream` in the configuration document on
+  the Reverse proxy tab's **Manifest** sub-tab (`#xacml-pep-proxy-manifest`),
+  which the page's note links to.
 * **Remove** asks for a confirmation (a box to tick) and then sends
   `remove-pep-route`. The page lands on the PEP's Configured Routes.
 
@@ -1367,7 +1369,7 @@ listeners are defined on the Listener tab);
 `PEP_HTTPS_CERT`, `PEP_HTTPS_KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA` and
 `PEP_PROXY_UPSTREAM_CA` name files on the PEP's own disk; `PEP_PROXY` says
 whether the proxy's listeners start at all (its configuration's `enabled` is
-the switch set on the Reverse proxy tab); and `PEP_AUTHZEN_CALLERS` is the
+the switch set on the Reverse proxy tab's Manifest sub-tab); and `PEP_AUTHZEN_CALLERS` is the
 operator's own narrowing of the callers the service sends, which the service
 could not set and still narrow anything.
 

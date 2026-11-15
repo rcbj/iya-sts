@@ -4079,7 +4079,11 @@ class AdminConsole {
       'textarea{width:100%;min-height:7rem;font-family:ui-monospace,' +
       'SFMono-Regular,Menlo,monospace}.formrow{display:flex;flex-wrap:wrap;' +
       'gap:8px;align-items:center;margin:.5em 0}.formrow ' +
-      'label{font-size:.78em;font-weight:600;color:#555}' +
+      // `.formlabel` is a row's label that labels a GROUP rather than one
+      // control (a `role="group"`'s name: the PEP route forms' Methods and
+      // Mechanisms), drawn exactly as a row's `<label>` is.
+      'label,.formrow .formlabel{font-size:.78em;font-weight:600;' +
+      'color:#555}' +
 
       // ---------------------------------------------------------------------
       // THE SEARCH PANE UNDER A CHOOSER (chooserPane()). `max-height` with
