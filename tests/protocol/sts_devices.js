@@ -97,6 +97,12 @@
 //      request is refused by the device-compromised rule (STS-DEVICE-0038),
 //      and issued with devices.refuseCompromised off.
 //
+//   7b. (device_enrolment.js 1-2) at the person's own doors: the challenge
+//      a newer one replaced, and one another person's session answers
+//      (STS-DEVICE-0016); a proof over another nonce, of another typ or
+//      for another audience (STS-DEVICE-0017); and in 10, product's
+//      refusal recorded STS-DEVICE-0024.
+//
 // NOT carried (class (d)): the thumbprint arithmetic against node's own
 // export and the entry's stored attributes (devices.js 3a, 3b, 4 — the
 // API answers the thumbprint, asserted in sections 1 and 9, and never the
@@ -416,6 +422,83 @@ async function refusedAs(code, path, payload, what) {
   });
   log.debug("Leaving refusedAs().");
   return r;
+}
+
+// D12 (device_enrolment.js 1-2): the enrolment challenge's and the key
+// proof's refusals at the person's own doors, each by its recorded code.
+async function enrolmentCodes(b) {
+  log.debug("Entering enrolmentCodes().");
+  log.info("=== 7b. the challenge's and the proof's refusals " +
+           "(device_enrolment.js) ===");
+  const challenge = async function () {
+    const r = await b.go("POST", R + "/portal/devices/challenge",
+                         JSON.stringify({ purpose: "key" }),
+                         "application/json");
+    assert.strictEqual(r.status, 200, r.text.slice(0, 200));
+    return r.json;
+  };
+  const prove = function (who, body) {
+    return who.go("POST", R + "/portal/devices/proof", JSON.stringify(body),
+                  "application/json");
+  };
+  const refusedAs = async function (code, what, send) {
+    const before = await codeCount(code);
+    const r = await send();
+    const after = await codesSettle(code, before + 1);
+    check("7b. refused 400, recorded " + code + ": " + what, function () {
+      assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+      assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.text), r.text.slice(0, 300));
+      assert.ok(after > before, code + " " + before + " -> " + after);
+    });
+  };
+  const pair = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const first = await challenge();
+  const second = await challenge();
+  check("7b. one challenge per session and purpose: a new one is another",
+        function () {
+    assert.notStrictEqual(first.challenge, second.challenge);
+  });
+  await refusedAs("STS-DEVICE-0016", "the challenge a newer one replaced",
+                  function () {
+    return prove(b, { challenge: first.challenge,
+      proof: keyProof(pair, first.challenge, first.audience) });
+  });
+  const other = names.usernameFor("dev-other");
+  await registry.ensurePerson(base, other, PASSWORD);
+  const otherSigned = await portalSignIn(other, R + "/portal/devices");
+  await refusedAs("STS-DEVICE-0016", "another person's session answering it",
+                  function () {
+    return prove(otherSigned.browser, { challenge: second.challenge,
+      proof: keyProof(pair, second.challenge, second.audience) });
+  });
+  const proofWith = function (c, header, payload) {
+    return es256(Object.assign({ alg: "ES256", typ: "device-key-proof+jwt",
+                                 jwk: pair.publicKey.export({
+                                   format: "jwk" }) }, header || {}),
+                 Object.assign({ nonce: c.challenge, aud: c.audience,
+                                 iat: Math.floor(Date.now() / 1000) },
+                               payload || {}), pair.privateKey);
+  };
+  let c = await challenge();
+  await refusedAs("STS-DEVICE-0017", "a proof over another nonce",
+                  function () {
+    return prove(b, { challenge: c.challenge,
+                      proof: proofWith(c, null, { nonce: "not-it" }) });
+  });
+  c = await challenge();
+  await refusedAs("STS-DEVICE-0017", "a JWS of another typ (a DPoP proof)",
+                  function () {
+    return prove(b, { challenge: c.challenge,
+                      proof: proofWith(c, { typ: "dpop+jwt" }) });
+  });
+  c = await challenge();
+  await refusedAs("STS-DEVICE-0017", "a proof for another audience",
+                  function () {
+    return prove(b, { challenge: c.challenge,
+                      proof: proofWith(c, null,
+                                       { aud: "https://elsewhere.example" }) });
+  });
+  log.debug("Leaving enrolmentCodes().");
 }
 
 async function registerCodes() {
@@ -824,6 +907,7 @@ async function test() {
                        thumbprint(phone.publicKey.export({ format: "jwk" })));
     assert.strictEqual(replayed.status, 400, replayed.text.slice(0, 200));
   });
+  await enrolmentCodes(b);
 
   log.info("=== 8. EST: the device profile ===");
   const deviceKey = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
@@ -929,6 +1013,11 @@ async function test() {
                                      value: "development" },
              "put this realm back in development mode");
   }
+  const unattested = await codesSettle("STS-DEVICE-0024", 1);
+  check("product refuses a key proof with no attestation, recorded " +
+        "STS-DEVICE-0024", function () {
+    assert.ok(unattested >= 1, "STS-DEVICE-0024 rows: " + unattested);
+  });
   check("product refuses a key proof with no attestation", function () {
     assert.strictEqual(productRefusal.status, 400,
                        productRefusal.text.slice(0, 300));
