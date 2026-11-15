@@ -257,3 +257,64 @@ fn helper_vectors() {
                    q[1].as_bool().unwrap(), "{}", q);
     }
 }
+
+/// The other direction: rows a fresh Rust log wrote under Node's key, and
+/// the events and lines Rust built from them, for `fromRust()` in
+/// `tests/tools/audit-vectors.js` to check with Node's own functions.
+#[test]
+fn write_rust_vectors() {
+    if std::env::var("STS_WRITE_VECTORS").as_deref() != Ok("1") {
+        return;
+    }
+    let Some(v) = vectors() else {
+        return;
+    };
+    let r = ring(&v);
+    let events = [
+        json!({ "action": "authentication", "actor": "zoë",
+                "detail": { "client_id": "app", "password": "p",
+                            "deep": { "token": "t" } } }),
+        json!({ "action": "session.start", "detail": "a sentence" }),
+        json!({ "action": "consent.granted", "summary": "naïve\nline",
+                "errorCode": "STS-AUDIT-0007" }),
+        json!({ "action": "no.such", "category": "other", "outcome": "error",
+                "detail": { "2": 2, "1": 1, "x": [1, null] } }),
+    ];
+    for (i, e) in events.iter().enumerate() {
+        r.clock.fetch_add(1000 + i as i64, Ordering::SeqCst);
+        assert!(r.log.audit(e).is_some());
+    }
+    assert!(r.log.failure("STS-AUDIT-0009", &json!({ "summary": "f" }))
+        .is_some());
+    assert!(r.log.record_directory(&json!({ "action": "user.create",
+        "target": "uid=a,ou=users,dc=x" })).is_some());
+    let rows: Vec<Json> =
+        r.log.local_events().iter().map(AuditRow::to_json).collect();
+    let names = vec!["password".to_string(), "deep".to_string()];
+    let made: Vec<Json> = rows
+        .iter()
+        .map(|row| {
+            let opts = sts_audit::export::event::CanonicalOptions {
+                realm: "acme".into(),
+                origin: String::new(),
+                source: "sts-rust".into(),
+                names: names.iter().cloned().collect(),
+                now: 0,
+            };
+            let event = sts_audit::export::event::canonical(row, &opts);
+            let dest = json!({ "facility": 5, "appName": "rust app" });
+            let syslog = sts_audit::export::event::syslog_line(
+                &event, &dest, "rust-host", 7, 0);
+            json!({ "row": row, "realm": "acme", "origin": "",
+                    "source": "sts-rust", "names": names, "event": event,
+                    "dest": dest, "syslog": syslog })
+        })
+        .collect();
+    let dir = std::env::var("STS_CRYPTO_VECTORS").unwrap();
+    let out = json!({ "kek": v["kek"], "rows": rows, "events": made });
+    std::fs::write(
+        std::path::Path::new(&dir).join("audit-rust.json"),
+        serde_json::to_string_pretty(&out).unwrap(),
+    )
+    .unwrap();
+}
