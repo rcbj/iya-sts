@@ -21,7 +21,7 @@ use crate::attribute::{Attribute, Change};
 use crate::ber::{Reader, Writer};
 use crate::control::Control;
 use crate::dn::Dn;
-use crate::fault::{pass_limit, Fault, Outcome};
+use crate::fault::{advanced, Fault, Outcome};
 use crate::filter::{Filter, JsStr};
 use crate::js;
 
@@ -221,24 +221,17 @@ fn valid_attribute_string(s: &str) -> bool {
         && parts[1..].iter().all(|p| range(p) || token(p))
 }
 
-/// The message-level controls loop: `while (ber.offset < end)`.
+/// The message-level controls loop: `while (ber.offset < end)`, with the
+/// fork's guard (`parse-to-message.js`, and `sasl_bind.js`'s copy).
 fn read_controls(ber: &mut Reader<'_>, out: &mut Vec<Control>) -> Outcome<()> {
     ber.read_sequence(None)?;
     let end = ber.offset() + ber.length();
-    let limit = pass_limit(ber.buffer().len());
-    let mut passes = 0;
     while ber.offset() < end {
-        passes += 1;
-        if passes > limit {
-            return Err(Fault::Stalled);
-        }
         let before = ber.offset();
-        match Control::read(ber)? {
-            Some(c) => out.push(c),
-            // `getControl()` answered null without moving.
-            None if ber.offset() == before => return Err(Fault::Stalled),
-            None => {}
+        if let Some(c) = Control::read(ber)? {
+            out.push(c);
         }
+        advanced(ber.offset(), before, "control")?;
     }
     Ok(())
 }
@@ -354,14 +347,10 @@ impl Message {
                 let object_name = ber.read_string(0x04)?.unwrap_or_default();
                 ber.read_sequence(None)?;
                 let end = ber.offset() + ber.length();
-                let limit = pass_limit(ber.buffer().len());
-                let mut n = 0;
                 while ber.offset() < end {
-                    n += 1;
-                    if n > limit {
-                        return Err(Fault::Stalled);
-                    }
+                    let before = ber.offset();
                     Attribute::read(ber)?;
+                    advanced(ber.offset(), before, "attribute")?;
                 }
                 Dn::parse(&object_name)?;
                 Operation::Response(ClientResponse { protocol_op: 0x64 })
@@ -370,16 +359,10 @@ impl Message {
                 expect_op(ber, 0x73)?;
                 let end = ber.offset() + ber.length();
                 let mut uris = Vec::new();
-                let limit = pass_limit(ber.buffer().len());
                 while ber.offset() < end {
-                    if uris.len() > limit {
-                        return Err(Fault::Stalled);
-                    }
                     let before = ber.offset();
                     let u = ber.read_string(0x04)?;
-                    if u.is_none() && ber.offset() == before {
-                        return Err(Fault::Stalled);
-                    }
+                    advanced(ber.offset(), before, "reference URI")?;
                     uris.push(u);
                 }
                 if uris.iter().any(Option::is_none) {
@@ -470,16 +453,10 @@ impl Message {
         let mut attributes: Vec<Option<String>> = Vec::new();
         ber.read_sequence(None)?;
         let end = ber.offset() + ber.length();
-        let limit = pass_limit(ber.buffer().len());
         while ber.offset() < end {
-            if attributes.len() > limit {
-                return Err(Fault::Stalled);
-            }
             let before = ber.offset();
             let a = ber.read_string(0x04)?;
-            if a.is_none() && ber.offset() == before {
-                return Err(Fault::Stalled);
-            }
+            advanced(ber.offset(), before, "attribute selector")?;
             attributes.push(a);
         }
         // The constructor, in its order.
@@ -520,12 +497,10 @@ impl Message {
         let mut attributes = Vec::new();
         ber.read_sequence(None)?;
         let end = ber.offset() + ber.length();
-        let limit = pass_limit(ber.buffer().len());
         while ber.offset() < end {
-            if attributes.len() > limit {
-                return Err(Fault::Stalled);
-            }
+            let before = ber.offset();
             let mut a = Attribute::read(ber)?;
+            advanced(ber.offset(), before, "attribute")?;
             a.attr_type = a.attr_type.to_lowercase();
             attributes.push(a);
         }
@@ -542,12 +517,11 @@ impl Message {
         let mut changes = Vec::new();
         ber.read_sequence(None)?;
         let end = ber.offset() + ber.length();
-        let limit = pass_limit(ber.buffer().len());
         while ber.offset() < end {
-            if changes.len() > limit {
-                return Err(Fault::Stalled);
-            }
-            changes.push(Change::read(ber)?);
+            let before = ber.offset();
+            let change = Change::read(ber)?;
+            advanced(ber.offset(), before, "change")?;
+            changes.push(change);
         }
         Ok(Operation::Modify(ModifyRequest {
             object: object.filter(|s| !s.is_empty()),
@@ -853,17 +827,10 @@ fn result_from_client(ber: &mut Reader<'_>, op: u8) -> Outcome<()> {
         ber.read_sequence(Some(0xa3))?;
         // Node compares the absolute offset with the sequence's length.
         let end = ber.length();
-        let limit = pass_limit(ber.buffer().len());
-        let mut n = 0;
         while ber.offset() < end {
-            n += 1;
-            if n > limit {
-                return Err(Fault::Stalled);
-            }
             let before = ber.offset();
-            if ber.read_string(0x04)?.is_none() && ber.offset() == before {
-                return Err(Fault::Stalled);
-            }
+            ber.read_string(0x04)?;
+            advanced(ber.offset(), before, "referral")?;
         }
     }
     Ok(())

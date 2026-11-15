@@ -25,7 +25,7 @@
 //! span (rust/DESIGN.md D3, section 4.5).
 
 use crate::ber::{Reader, Writer};
-use crate::fault::{pass_limit, too_deep, Fault, Outcome, MAX_FILTER_DEPTH};
+use crate::fault::{advanced, too_deep, Fault, Outcome, MAX_FILTER_DEPTH};
 use crate::js;
 
 /// A JavaScript value that is a string, `null` or `undefined` — the three
@@ -176,12 +176,13 @@ impl Filter {
             Some(t @ (0xa0 | 0xa1)) => {
                 let end = ber.offset() + ber.length();
                 let mut clauses = Vec::new();
-                let limit = pass_limit(ber.buffer().len());
+                // `parseSet()`, with the fork's guard
+                // (`ber-parsing/index.js`).
                 while ber.offset() < end {
-                    if clauses.len() > limit {
-                        return Err(Fault::Stalled);
-                    }
-                    clauses.push(Filter::parse_ber_at(ber, depth + 1)?);
+                    let before = ber.offset();
+                    let clause = Filter::parse_ber_at(ber, depth + 1)?;
+                    advanced(ber.offset(), before, "filter")?;
+                    clauses.push(clause);
                 }
                 Ok(if t == 0xa0 {
                     Filter::And(clauses)
@@ -267,13 +268,8 @@ impl Filter {
                 let attribute = r.read_string(0x04)?;
                 r.read_sequence(None)?;
                 let end = r.offset() + r.length();
-                let limit = pass_limit(raw.len());
-                let mut passes = 0;
                 while r.offset() < end {
-                    passes += 1;
-                    if passes > limit {
-                        return Err(Fault::Stalled);
-                    }
+                    let before = r.offset();
                     match r.peek() {
                         Some(0x80) => {
                             initial = JsStr::from_opt(r.read_string(0x80)?)
@@ -289,6 +285,8 @@ impl Filter {
                         }
                         None => return Err(Fault::null_read("toString")),
                     }
+                    // The fork's guard (`substring.js`).
+                    advanced(r.offset(), before, "substrings filter")?;
                 }
                 let attribute = attribute_of(attribute)?;
                 Ok(Filter::Substring {
@@ -308,13 +306,8 @@ impl Filter {
                 let mut value = JsStr::Undefined;
                 let mut dn = false;
                 let end = raw.len() as i64;
-                let limit = pass_limit(raw.len());
-                let mut passes = 0;
                 while r.offset() < end {
-                    passes += 1;
-                    if passes > limit {
-                        return Err(Fault::Stalled);
-                    }
+                    let before = r.offset();
                     match r.peek() {
                         Some(0x81) => {
                             rule = JsStr::from_opt(r.read_string(0x81)?)
@@ -333,6 +326,8 @@ impl Filter {
                         }
                         None => return Err(Fault::null_read("toString")),
                     }
+                    // The fork's guard (`extensible.js`).
+                    advanced(r.offset(), before, "extensible filter")?;
                 }
                 Ok(Filter::Extensible {
                     attribute: match attribute {
