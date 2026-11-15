@@ -98,7 +98,9 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         Operation::CreateUser
         | Operation::DisableUserAccount
         | Operation::EnableUserAccount => Some(Handler::UsersAction),
-        Operation::GetGroups => Some(Handler::View),
+        Operation::GetGroups | Operation::GrantGlobalConsent => {
+            Some(Handler::View)
+        }
         Operation::CreateGroup | Operation::AddGroupMember => {
             Some(Handler::GroupsAction)
         }

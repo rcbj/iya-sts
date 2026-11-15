@@ -8,6 +8,7 @@
 //! | Operation | Node | Over |
 //! |---|---|---|
 //! | `getGroups` | `groupsJson()`, `groupsListJson()`, `groupDetailJson()` | the directory's groups ([`super::groups::Groups`]), the identity register |
+//! | `grantGlobalConsent` | `consentAction()`'s `grant-global-consent`, `consent.grantGlobal()` | the application register |
 //!
 //! THE IDENTITY REGISTER (`common/admin_stats.js`'s `users`, persisted as
 //! `admin_stats.users`, `merge: own`) is READ here, never written: who this
@@ -28,6 +29,7 @@
 use std::sync::Arc;
 
 use serde_json::{json, Map, Value as Json};
+use sts_core::errors::{codes, ErrorCode};
 use sts_core::realm;
 use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::{Merge, RealmMap, StoreHandles, StoreSpec};
@@ -187,6 +189,7 @@ impl IdentityRegister {
 
 /// The views.
 pub struct Views {
+    pub apps: Arc<sts_registers::applications::ApplicationRegistry>,
     pub dir: Arc<LiveDir>,
     pub settings: Arc<Settings>,
     pub register: Arc<IdentityRegister>,
@@ -219,6 +222,7 @@ impl Views {
         let setup = asked.setup?;
         let body = match asked.operation_id {
             "getGroups" => self.groups_json(asked, setup),
+            "grantGlobalConsent" => return Some(self.grant_global(asked)),
             _ => return None,
         };
         Some(Answered {
@@ -385,5 +389,88 @@ impl Views {
         out.insert("known".into(), Json::Object(known));
         out.insert("adminGroups".into(), self.admin_groups());
         Json::Object(out)
+    }
+
+    /// `consentAction()`'s `grant-global-consent` and
+    /// `consent.grantGlobal(client, scope, actor)`: the scope held to the
+    /// scope token rule (STS-REG-0018), `oauthGlobalConsent` added to the
+    /// application's entry (the register's own refusals), and the
+    /// sentence saying it is an override. A refusal is
+    /// `refusedBy('STS-ADMIN-0540', result)`: the register's code where it
+    /// has one.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn grant_global(&self, asked: &Asked<'_>) -> Answered {
+        let field = |k: &str| -> String {
+            match asked.body.get(k) {
+                Some(Json::String(s)) => s.trim().to_string(),
+                Some(Json::Null) | None => String::new(),
+                Some(other) => other.to_string().trim().to_string(),
+            }
+        };
+        let who = field("client");
+        let leaf = field("scope");
+        let actor = asked.caller.map(|c| c.name.clone()).unwrap_or_default();
+        let refused = |code: ErrorCode, body: Json| Answered {
+            status: 400,
+            body,
+            code: Some(code),
+        };
+        if let Some(problem) =
+            sts_registers::applications::checks::uris::scope_token_problem(
+                &leaf,
+            )
+        {
+            return refused(
+                codes::STS_REG_0018,
+                json!({ "ok": false, "errors": [problem] }),
+            );
+        }
+        let result = self.apps.update_application(
+            &who,
+            &json!({ "attribute": "oauthGlobalConsent", "mode": "add",
+                     "value": leaf, "actor": actor }),
+        );
+        if result.answer.get("ok") != Some(&Json::Bool(true)) {
+            return refused(
+                result.code.unwrap_or(codes::STS_ADMIN_0540),
+                result.answer,
+            );
+        }
+        let permission = self.apps.for_permission(&leaf);
+        tracing::info!(
+            "consent: \"{}\" is globally consented for the application \
+             \"{}\". Nobody signing in to it will be asked about that scope \
+             again, and nothing is written to anybody's entry — this is an \
+             override rather than a record.",
+            leaf,
+            who
+        );
+        let exposed = permission
+            .map(|p| {
+                format!(
+                    ", which is the permission \"{}\" exposed by \"{}\"",
+                    p["name"].as_str().unwrap_or(""),
+                    p["identifier"].as_str().unwrap_or("")
+                )
+            })
+            .unwrap_or_default();
+        let mut body = result.answer;
+        if let Some(map) = body.as_object_mut() {
+            map.insert(
+                "message".into(),
+                json!(format!(
+                    "Everybody who signs in to \"{who}\" is now treated as \
+                     having consented to <code>{leaf}</code>{exposed}. No \
+                     consent was written onto anybody's entry: this is an \
+                     OVERRIDE, so removing it asks everybody again — \
+                     including the people who would have said yes."
+                )),
+            );
+        }
+        Answered {
+            status: 200,
+            body,
+            code: None,
+        }
     }
 }

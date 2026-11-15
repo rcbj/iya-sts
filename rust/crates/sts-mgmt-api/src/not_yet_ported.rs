@@ -502,7 +502,6 @@ macro_rules! not_yet_ported {
         | Operation::SavePostLoginPolicy
         | Operation::ResetPostLoginPolicy
         | Operation::GetConsent
-        | Operation::GrantGlobalConsent
         | Operation::RevokeGlobalConsent
         | Operation::RevokeConsent
         | Operation::RevokeApplicationConsent

@@ -1770,6 +1770,7 @@ impl AdminStack {
             dpop,
             setup_ports: Arc::new(Setup {
                 views: Arc::new(views::Views {
+                    apps: apps.clone(),
                     dir: dir.clone(),
                     settings: settings.clone(),
                     register: Arc::new(views::IdentityRegister::declare(
