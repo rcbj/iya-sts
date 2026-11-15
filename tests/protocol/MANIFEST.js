@@ -1317,12 +1317,14 @@ const JOBS = [
   // console. The settings job writes the default realm's master for a moment
   // to prove the one row a request can reach at the client truststore, which
   // every listener reads, so it is `exclusive`.
-  { file: 'sts_paranoid_pki_settings.js', browser: false, exclusive: true },
-  { file: 'sts_paranoid_pki_console.js', browser: true },
-  { file: 'sts_paranoid_pki_tls.js', browser: false, exclusive: true },
-  { file: 'sts_paranoid_pki_outbound.js', browser: false },
-  { file: 'sts_paranoid_pki_signers.js', browser: false },
-  { file: 'sts_paranoid_pki_attestation.js', browser: false },
+  { file: 'sts_paranoid_pki_settings.js', browser: false, local: true,
+    exclusive: true },
+  { file: 'sts_paranoid_pki_console.js', browser: true, local: true },
+  { file: 'sts_paranoid_pki_tls.js', browser: false, local: true,
+    exclusive: true },
+  { file: 'sts_paranoid_pki_outbound.js', browser: false, local: true },
+  { file: 'sts_paranoid_pki_signers.js', browser: false, local: true },
+  { file: 'sts_paranoid_pki_attestation.js', browser: false, local: true },
   // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
   // console page's shell, the five operations in the document and the gate,
   // the view and its group chooser, the refusals (a missing group 0530),

@@ -368,7 +368,9 @@ async function sectionsAtoD() {
         "presented: the main port sends a CertificateRequest", function () {
     assert.ok(bare.accepted, why(bare));
     assert.strictEqual(offered.presented, true, JSON.stringify(offered));
-    assert.strictEqual(offered.verified, false, JSON.stringify(offered));
+    // The handshake's own verdict (#37): `verified` also holds revocation.
+    assert.strictEqual(offered.handshakeVerified, false,
+                       JSON.stringify(offered));
   });
 
   log.info("=== B. tls.disableTls12 ===");
@@ -470,14 +472,18 @@ async function sectionE() {
     assert.ok(added && added.ok !== false, "tls/trust/add refused the " +
               "job's Root: " + JSON.stringify(added).slice(0, 300));
     // The anchor reaches the handshake truststore on the node's next pull.
+    // What is asked is the HANDSHAKE's verdict, `handshakeVerified` (#37,
+    // 2026-11-15): `verified` also holds the revocation verdict since then,
+    // which a stack consulting revocation can refuse for this job's leaf.
     let verified = {};
-    for (let i = 0; i < 40 && verified.verified !== true; i += 1) {
+    for (let i = 0; i < 40 && verified.handshakeVerified !== true; i += 1) {
       verified = await presented(own);
-      if (verified.verified !== true) {
+      if (verified.handshakeVerified !== true) {
         await sleep(500);
       }
     }
-    assert.strictEqual(verified.verified, true, JSON.stringify(verified));
+    assert.strictEqual(verified.handshakeVerified, true,
+                       JSON.stringify(verified));
     await mustSet("tls.mainPortRequireClientCertificate", true);
     const none = await probe({});
     const strangers = await probe(stranger());
