@@ -228,7 +228,7 @@ impl EnrollmentMonitor {
         }
         let mut recent = out["recent"].as_array().cloned().unwrap_or_default();
         // A stable sort, newest first, as Array.prototype.sort is.
-        recent.sort_by(|a, b| text_of(b, "at").cmp(&text_of(a, "at")));
+        recent.sort_by_key(|r| std::cmp::Reverse(text_of(r, "at")));
         recent.truncate(RECENT);
         out["recent"] = Json::Array(recent);
         out["startedAt"] = Json::from(self.started_at.as_str());

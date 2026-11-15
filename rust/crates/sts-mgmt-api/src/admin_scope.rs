@@ -19,6 +19,7 @@
 //! rules that look a dataset up in the risk catalogue (`accept-terms` is).
 
 use serde_json::Value as Json;
+use sts_core::errors::{codes, ErrorCode};
 use sts_core::settings::{rows, Settings};
 
 use crate::tables::tables;
@@ -26,6 +27,8 @@ use crate::tables::tables;
 /// `refusalFor()`'s answer: its code and its sentence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refusal {
+    /// STS-ADMIN-0787 for a page or an act, STS-ADMIN-0788 for a setting.
+    pub code: ErrorCode,
     /// `service_page`, `service_action` or `service_setting`.
     pub reason: &'static str,
     pub detail: String,
@@ -221,6 +224,7 @@ pub fn refusal_for(
 ) -> Option<Refusal> {
     if page_is_service(path) {
         return Some(Refusal {
+            code: codes::STS_ADMIN_0787,
             reason: "service_page",
             detail: format!(
                 "{} is about the whole service, which a realm administrator \
@@ -238,6 +242,7 @@ pub fn refusal_for(
     };
     if !read.is_empty() {
         return Some(Refusal {
+            code: codes::STS_ADMIN_0787,
             reason: "service_action",
             detail: read,
             settings: Vec::new(),
@@ -247,6 +252,7 @@ pub fn refusal_for(
     let why = service_action(path, body, realm_id);
     if !why.is_empty() {
         return Some(Refusal {
+            code: codes::STS_ADMIN_0787,
             reason: "service_action",
             detail: why,
             settings: Vec::new(),
@@ -257,6 +263,7 @@ pub fn refusal_for(
         return None;
     }
     Some(Refusal {
+        code: codes::STS_ADMIN_0788,
         reason: "service_setting",
         detail: format!(
             "A realm administrator may not change {}: {} the whole service \

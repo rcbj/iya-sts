@@ -190,6 +190,7 @@ fn acme_endpoints(base: &str) -> Json {
 }
 
 /// `accountRow(account)`.
+#[tracing::instrument(level = "trace", skip_all)]
 pub fn acme_account_row(account: &Json) -> Json {
     let entry_uri = account
         .get("entry")
@@ -376,6 +377,7 @@ pub fn acme_monitor_view(f: &Families, asked: &Asked<'_>) -> Json {
 // ---------------------------------------------------------------------
 
 /// EST's `certificateRow(one)`.
+#[tracing::instrument(level = "trace", skip_all)]
 pub fn est_certificate_row(one: &Json) -> Json {
     let mut row = Map::new();
     for key in ["serialHex", "entry", "entryUri", "profile", "subject"] {
@@ -614,6 +616,7 @@ pub fn est_monitor_view(f: &Families, asked: &Asked<'_>) -> Json {
 // ---------------------------------------------------------------------
 
 /// SCEP's `certificateRow(one)`.
+#[tracing::instrument(level = "trace", skip_all)]
 pub fn scep_certificate_row(one: &Json) -> Json {
     let mut row = Map::new();
     for key in ["serialHex", "entry", "entryUri", "profile", "subject"] {
@@ -886,7 +889,7 @@ fn list_name_of(segment: &str, ca: &str) -> String {
 }
 
 /// A search term as `keyPairListView()` keeps it: trimmed, at most 200.
-fn term_of<'q>(asked: &'q Asked<'_>, name: &str) -> Option<String> {
+fn term_of(asked: &Asked<'_>, name: &str) -> Option<String> {
     let raw = asked.query.get(name)?;
     let text = match raw {
         Json::String(s) => s.trim().to_string(),
@@ -1189,6 +1192,7 @@ pub fn pki_view(a: &Authority, f: &Families, asked: &Asked<'_>) -> Json {
 /// for the page, each `url` the request's realm base and the route. The
 /// SPIFFE socket rows Node adds report its live listeners, which are not
 /// in this runtime, and are left out.
+#[tracing::instrument(level = "trace", skip_all)]
 pub fn with_protocol_endpoints(mut body: Json, asked: &Asked<'_>) -> Json {
     let Some(rows) = t()["protocolEndpoints"]
         .get(asked.operation_id)
