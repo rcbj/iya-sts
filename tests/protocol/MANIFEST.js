@@ -2448,6 +2448,19 @@ const JOBS = [
   // register and on /admin-api/users, and SAML 1.1 on behalf of somebody
   // (wstrust_jwt_claims N, wstrust_fault_codes D, wstrust_saml11 T2).
   { file: 'sts_wstrust_register.js', browser: false, local: true },
+  // D12 (#444): an inbound OpenID Connect relationship against a stand-in
+  // OpenID Provider on the runner (oidc_partner_kit.js) — the code flow's,
+  // the hybrid's and the fragment's refusals by code, discovery, login
+  // initiation, refresh through scheduler/run, self-registration and
+  // Request Objects, WebFinger (federation_oidc_rp 1-8, 9b). Its listener
+  // is dialled at OUTBOUND_TEST_HOST, in a realm with
+  // federation.outboundAllowHttp and outboundSkipTlsVerification on.
+  { file: 'sts_federation_oidc_rp.js', browser: false, local: true },
+  // D12 (#444): this service as a FAPI client of that stand-in — what each
+  // profile forces, DPoP and private_key_jwt as the partner sees them,
+  // JARM, nonces, registrations, refresh, 1-advanced over mutual TLS
+  // (federation_fapi_client, federation_oidc_rp 10).
+  { file: 'sts_federation_fapi_client.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
@@ -2714,6 +2727,9 @@ const LOCAL_HELPERS = [
   // SAML jobs, over oauth_wire_kit.js.
   'wstrust_wire_kit.js',
   'saml_wire_kit.js',
+  // D12 (#444, phase 7): a stand-in OpenID Provider on the runner (plain
+  // http, TLS and mutual TLS) that the federation jobs' realms dial.
+  'oidc_partner_kit.js',
   // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
   // static surface over /authn-api since #571, through `authn_signin.js`;
   // it was a copy of the parent's (listed in HELPERS until then).
