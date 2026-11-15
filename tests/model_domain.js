@@ -168,6 +168,14 @@ function declarations(t) {
       fs.readFileSync(committed, 'utf8') !==
       fs.readFileSync(path.join(rustTree, rel), 'utf8');
   });
+  // sts-registers' SCHEMA tables (#444, phase 4), written by the same
+  // script from the same objects.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-registers',
+    'src', 'generated', 'schemas.rs'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'schemas.rs'),
+      'utf8'),
+  'rust/crates/sts-registers/src/generated/schemas.rs is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   t.check(differ.length === 0, 'every generated Rust file under ' +
     'rust/crates/ is what the model generates ' +
     '(tests/tools/regenerate-model-docs.sh): ' +

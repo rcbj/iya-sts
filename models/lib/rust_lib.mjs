@@ -1670,6 +1670,55 @@ export function renderRustDirectory(tables) {
   return JSON.stringify(bundle, null, 1) + '\n';
 }
 
+// The directory objects' tables, for sts-registers (#444, phase 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the SCHEMA table of every object written by hand — its object
+ * classes, its container and each attribute with its kind — as Rust, for
+ * `rust/crates/sts-registers`. The Node registers read the same table from
+ * `models/generated/<id>.schema.json` (`ModelTables.schema()`); an entry the
+ * Rust register builds is built from these rows, so the two cannot name a
+ * different object class or a different attribute.
+ *
+ * @param objects - the objects `readDirectory()` read
+ * @param schemaOf - model_lib's `schemaOf()`
+ * @returns the Rust source
+ */
+export function renderRustSchemas(objects, schemaOf) {
+  log.debug("Entering renderRustSchemas().");
+  const lines = HEADER.concat([
+    '// GENERATED from models/directory/ (#1390, #444). Do not edit: change',
+    '// the model and run tests/tools/regenerate-model-docs.sh.',
+    '// tests/model_domain.js fails when this differs.', '',
+    '// Every hand-written directory object\'s SCHEMA table, as',
+    '// `models/generated/<id>.schema.json` holds it for the Node service.',
+    '// Included by sts-registers\' schema.rs.', '',
+    'pub static SCHEMAS: &[ObjectSchema] = &[']);
+  objects.filter(function (object) {
+    return object.authored === true;
+  }).forEach(function (object) {
+    const schema = schemaOf(object);
+    lines.push('    ObjectSchema {');
+    lines.push('        id: ' + literal(object.id) + ',');
+    lines.push('        container: ' + literal(object.container || '') + ',');
+    lines.push('        object_classes: &[' + schema.objectClasses
+      .map(function (one) {
+        return literal(one.name);
+      }).join(', ') + '],');
+    lines.push('        attributes: &[');
+    (schema.attributes || []).forEach(function (row) {
+      lines.push('            AttributeRow { name: ' + literal(row.name) +
+        ', kind: ' + literal(row.kind || '') + ' },');
+    });
+    lines.push('        ],');
+    lines.push('    },');
+  });
+  lines.push('];', '');
+  log.debug("Leaving renderRustSchemas().");
+  return lines.join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // The persistence model (#444, phase 3).
 // ---------------------------------------------------------------------------

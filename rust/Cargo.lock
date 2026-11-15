@@ -2828,6 +2828,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-registers"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "sts-core",
+ "sts-model",
+ "sts-xacml",
+ "tracing",
+]
+
+[[package]]
 name = "sts-runtime"
 version = "0.1.0"
 dependencies = [

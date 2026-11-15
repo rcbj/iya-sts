@@ -5485,6 +5485,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./mgmt-api-vectors.js').build(ROOT);
                    } },
+                 // The registers over the directory (#444, phase 4):
+                 // tests/tools/registers-vectors.js.
+                 { file: 'registers-node.json',
+                   build: function () {
+                     return require('./registers-vectors.js').build(ROOT);
+                   } },
                  // The directory's wire layer: tests/tools/ldap-wire-vectors.js.
                  { file: 'ldap-wire-node.json',
                    build: function () {

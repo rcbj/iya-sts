@@ -257,6 +257,9 @@ rust/
     sts-policy/                  the named policies (rule 3cx) and the seven kinds on
                                  Directory > Policies, over ports to the directory and
                                  the registers (phase 4, held to 321 Node cases)
+    sts-registers/               the registers over the directory: roles, the console
+                                 roster, role and application permissions, ownership,
+                                 the groups claim, account state, the user and group acts
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
