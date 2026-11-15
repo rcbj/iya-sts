@@ -31,9 +31,9 @@
 //! (`cryptoFor(latest)`): the version `getKey` named, or the one a rotation
 //! made, so the stored text names the version a later unwrap must ask for.
 //!
-//! TLS is this workspace's reqwest and OpenSSL, so the trust store is the
-//! system's (`SSL_CERT_FILE` replaces it), where Node's is its own bundle
-//! plus `NODE_EXTRA_CA_CERTS`.
+//! TLS is rustls under the reqwest Azure's and Google's libraries share,
+//! trusting the platform's roots (`SSL_CERT_FILE` replaces them), where
+//! Node's is its own bundle plus `NODE_EXTRA_CA_CERTS`.
 
 use std::collections::HashMap;
 use std::fmt;

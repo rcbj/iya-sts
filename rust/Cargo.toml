@@ -137,14 +137,13 @@ aws-sdk-kms = "1.131.0"
 google-cloud-secretmanager-v1 = "2.0.0"
 google-cloud-kms-v1 = "1.17.0"
 google-cloud-auth = "1.19.0"
-# Azure's over this workspace's reqwest and its native TLS (OpenSSL), not
-# the rustls its defaults bring: one TLS stack and one trust store with the
-# rest of the service. `client_certificate` is EnvironmentCredential's
-# AZURE_CLIENT_CERTIFICATE_PATH.
-azure_core = { version = "1.1.0", default-features = false, features = ["reqwest", "reqwest_gzip", "tokio"] }
-azure_identity = { version = "1.0.0", default-features = false, features = ["tokio", "client_certificate"] }
-azure_security_keyvault_secrets = { version = "1.0.1", default-features = false }
-azure_security_keyvault_keys = { version = "1.0.1", default-features = false }
+# `client_certificate` is EnvironmentCredential's AZURE_CLIENT_CERTIFICATE_PATH.
+# Azure's and Google's libraries share reqwest 0.13 over rustls, trusting the
+# platform's roots (SSL_CERT_FILE replaces them).
+azure_core = "1.1.0"
+azure_identity = { version = "1.0.0", features = ["client_certificate"] }
+azure_security_keyvault_secrets = "1.0.1"
+azure_security_keyvault_keys = "1.0.1"
 # azure_core's TokenCredential is an async_trait; the Azure chain implements it.
 async-trait = "0.1"
 
