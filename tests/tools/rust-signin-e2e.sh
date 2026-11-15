@@ -29,6 +29,14 @@
 #      (`GET /authn-api/logout`'s view names the person).
 #   5. The same two sign-ins against Node, for the comparison.
 #
+# AND THE CODE, TOKEN AND DPoP LEG (the `oauth2` slice, phase 5's
+# milestone; tests/tools/rust-console-e2e.js): Node also gives the bootstrap
+# administrator and a third person their first sign-in, and on each
+# runtime headless Chrome opens the UNCHANGED console at /admin and portal
+# at /portal, signs in at the screen each is sent to, and records the
+# token request's answer (a DPoP-bound token, its audience, the refresh
+# token) and the API calls the page then made, with their statuses.
+#
 # Writes <out-dir> (default tests/vectors/rust-signin-e2e, gitignored).
 # Needs google-chrome on the host and NODE_PATH holding `ws`.
 # ---------------------------------------------------------------------------
@@ -51,6 +59,7 @@ SUMMARY="$OUT/summary.txt"
 : > "$SUMMARY"
 FAILED=0
 DRIVER="node $REPO/tests/tools/rust-signin-e2e.js"
+CONSOLE="node $REPO/tests/tools/rust-console-e2e.js"
 
 for img in "$NODE_IMAGE" "$RUST_IMAGE"; do
   label="$(docker image inspect --format \
@@ -76,6 +85,7 @@ trap cleanup EXIT
 
 rand() { openssl rand -hex 24; }
 APP_PW="$(rand)"; OWNER_PW="$(rand)"; SECRET="$(rand)"
+ADMIN_PW="Boot-$(rand)-9q"
 SECRETS="$OUT/secrets"
 mkdir -p "$SECRETS"
 rm -f "$SECRETS/sts-kek"
@@ -122,7 +132,8 @@ printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=product" \
   "STS_SECRETS_ALLOW_LOCAL_SECRETS=true" "STS_CLUSTER_MODE=off" \
   "STS_WORKERS_REQUEST_COUNT=0" "STS_DEBUGGER_ENABLED=off" \
   "STS_CSRF_SECRET=$(rand)" \
-  "ADMIN_API_CLIENT_SECRET=$SECRET" > "$OUT/service.env"
+  "ADMIN_API_CLIENT_SECRET=$SECRET" \
+  "STS_ADMIN_BOOTSTRAP_PASSWORD=$ADMIN_PW" > "$OUT/service.env"
 
 start() {
   local image="$1" what="$2"
@@ -163,9 +174,38 @@ start "$NODE_IMAGE" node-writer
 if $DRIVER setup "$BASE" "$SECRET" "$OUT/people.json" >> "$SUMMARY" 2>&1
 then pass "two people, the second with an authenticator app"
 else fail "the people were made (see summary)"; exit 1; fi
+if $CONSOLE setup "$BASE" "$SECRET" "$ADMIN_PW" "$OUT/console-people.json" \
+     >> "$SUMMARY" 2>&1
+then pass "the bootstrap administrator and e2e.ann signed in once"
+else fail "the console's people (see summary)"; exit 1; fi
 $DRIVER begin "$BASE" "$OUT/pending.json" >> "$SUMMARY" 2>&1
 pass "two sign-ins begun at /oauth2/authorize"
 stop node-writer
+
+# The code, token and DPoP leg: one surface, one person.
+surface() {
+  local label="$1" path="$2" user="$3" pw secret got
+  pw="$(jq -r ".\"$user\".password" "$OUT/console-people.json")"
+  secret="$(jq -r ".\"$user\".secret // \"\"" "$OUT/console-people.json")"
+  got="$OUT/$label-${path#/}.json"
+  if $CONSOLE surface "$BASE" "$path" "$user" "$pw" "$secret" \
+       > "$got" 2>> "$SUMMARY"; then
+    if jq -e '[.calls[] | select(.url == "/oauth2/token" and .status == 200
+               and .answer.token_type == "DPoP")] | length > 0' "$got" \
+         >/dev/null; then
+      pass "$label $path: $user holds a DPoP-bound token for $(jq -r \
+        '[.calls[] | select(.url == "/oauth2/token") | .answer.aud][0]' \
+        "$got") (refresh $(jq -r '[.calls[] | select(.url ==
+        "/oauth2/token") | .answer.refresh][0]' "$got")); the page then \
+        asked: $(jq -r '[.calls[] | select(.url | test("-api/")) |
+        "\(.url) \(.status)"] | unique | join("; ")' "$got")"
+    else
+      fail "$label $path: no DPoP-bound token: $(head -c 2000 "$got")"
+    fi
+  else
+    fail "$label $path: the browser run (see summary)"
+  fi
+}
 
 browse() {
   local who="$1" label="$2" id user pw secret
@@ -201,6 +241,9 @@ sleep 31
 start "$RUST_IMAGE" rust
 browse pwd rust
 browse totp rust
+surface rust /admin admin
+sleep 31
+surface rust /portal e2e.ann
 stop rust
 
 say "== Node reads the sessions Rust set =="
@@ -223,6 +266,9 @@ $DRIVER begin "$BASE" "$OUT/pending.json" >> "$SUMMARY" 2>&1
 sleep 31
 browse pwd node
 browse totp node
+surface node /admin admin
+sleep 31
+surface node /portal e2e.ann
 stop node-reader
 
 say "== $( [ "$FAILED" = 0 ] && echo PASSED || echo FAILED ) =="

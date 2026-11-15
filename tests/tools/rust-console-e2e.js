@@ -10,7 +10,7 @@
 // UNCHANGED admin console and user portal bundles sign in against whichever
 // runtime is listening — the code flow with PKCE S256, `resource`, a
 // DPoP-bound token and the refresh grant — the driver
-// tests/tools/rust-console-e2e.sh runs on the host.
+// tests/tools/rust-signin-e2e.sh runs on the host.
 //
 //   setup  <base> <secret> <admin password> <out>
 //                                  the bootstrap administrator's first
