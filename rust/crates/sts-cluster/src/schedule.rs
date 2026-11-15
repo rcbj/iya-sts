@@ -24,10 +24,10 @@ use chrono::{TimeZone, Utc};
 use croner::parser::{CronParser, Seconds};
 use croner::Cron;
 use indexmap::IndexMap;
-use openssl::hash::{hash, MessageDigest};
 use serde_json::Value as Json;
 use sts_core::errors::codes;
 use sts_core::log::tag;
+use sts_crypto::jws_alg::Hash;
 
 /// The lease the leader holds; only its holder runs cluster jobs.
 pub const LEADER_LEASE: &str = "ops.scheduler";
@@ -223,11 +223,15 @@ impl JobSpec {
         self.nice.unwrap_or(DEFAULT_NICE)
     }
 
-    fn manual_only(&self) -> bool {
+    /// Whether it runs only when asked. A hot path (every tick, every
+    /// job): no span.
+    pub fn manual_only(&self) -> bool {
         matches!(self.schedule, Schedule::ManualOnly)
     }
 
-    fn cron(&self) -> Option<&str> {
+    /// Its cron expression, if it has one. A hot path (every tick, every
+    /// job): no span.
+    pub fn cron(&self) -> Option<&str> {
         match &self.schedule {
             Schedule::Cron(c) => Some(c),
             _ => None,
@@ -400,9 +404,7 @@ pub fn ended_of(row: &Json) -> f64 {
 /// claim one row.
 pub fn run_id_for(job_id: &str, realm_id: &str, slot: i64) -> String {
     let text = format!("{}\n{}\n{}", job_id, realm_id, slot);
-    let digest = hash(MessageDigest::sha256(), text.as_bytes())
-        .map(|d| URL_SAFE_NO_PAD.encode(d))
-        .unwrap_or_default();
+    let digest = URL_SAFE_NO_PAD.encode(Hash::Sha256.digest(text.as_bytes()));
     format!("s-{}", digest.get(..22).unwrap_or(&digest))
 }
 
@@ -412,6 +414,7 @@ pub struct Schedules {
     settings: Arc<dyn SchedulerSettings>,
     /// How many connections the store's pool holds; 0 where there is none.
     store_connections: Option<Arc<dyn Fn() -> f64 + Send + Sync>>,
+    request_workers: Option<Arc<dyn Fn() -> f64 + Send + Sync>>,
 }
 
 impl Schedules {
@@ -420,6 +423,7 @@ impl Schedules {
             jobs: IndexMap::new(),
             settings,
             store_connections: None,
+            request_workers: None,
         }
     }
 
@@ -428,6 +432,17 @@ impl Schedules {
         f: Arc<dyn Fn() -> f64 + Send + Sync>,
     ) -> Schedules {
         self.store_connections = Some(f);
+        self
+    }
+
+    /// The threads a cluster run's body is handed to (#408): Node's protocol
+    /// request workers, the tokio runtime's worker threads here.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn with_request_workers(
+        mut self,
+        f: Arc<dyn Fn() -> f64 + Send + Sync>,
+    ) -> Schedules {
+        self.request_workers = Some(f);
         self
     }
 
@@ -543,9 +558,9 @@ impl Schedules {
     /// How many cluster runs the leader may have going at once
     /// (`maxConcurrentRuns()`, rcbj 2026-11-10): `scheduler.maxConcurrentRuns`
     /// when it is 1 or more (read directly: 0 is a legal value), otherwise
-    /// [`MIN_DEFAULT_RUNS`] — Node's default is the larger of two and one
-    /// fewer than its protocol request workers, and this runtime has no
-    /// request workers to hand a body to (#408), which is Node with none.
+    /// the larger of [`MIN_DEFAULT_RUNS`] and one fewer than the threads a
+    /// body runs on ([`Schedules::with_request_workers`]: Node's protocol
+    /// request workers, the runtime's worker threads here; none is two).
     /// And never every connection the store's pool holds: one is always
     /// left for the requests.
     pub fn max_concurrent_runs(&self) -> f64 {
@@ -553,7 +568,8 @@ impl Schedules {
         let mut n = if setting >= 1.0 {
             setting.floor()
         } else {
-            MIN_DEFAULT_RUNS
+            let workers = self.request_workers.as_ref().map_or(0.0, |f| f());
+            MIN_DEFAULT_RUNS.max(workers - 1.0)
         };
         let pool = self.store_connections.as_ref().map_or(0.0, |f| f());
         if pool > 0.0 {

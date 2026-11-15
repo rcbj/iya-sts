@@ -39,6 +39,21 @@
 //     derived default, every predicate's answer and the whole `/admin/mode`
 //     report.
 //
+//   * the LAYERS a write goes through (phase 3): a secret delivered as a
+//     file over its variable (#254), setOverride() landing in the ambient
+//     realm and refused by the mode there, clearOverride()'s refusals and
+//     the pinned-signer one (#263), a rule reading its companion through
+//     withWriteBatch()'s beside() (#1114), and the management API's base
+//     advertised by a custom listener (#472) — `layers`;
+//   * APPCONFIG FILES, each loaded as the CONFIG_FILE of a child of its own
+//     (`settings-files-node.json`): the shipped `env/*.js` and `env/*.json`
+//     and a set of written ones in every form an operator might use, with
+//     what the module exported, every row's value, source and text, what
+//     config.js wrote to stderr when it refused to start (STS-CORE-0001,
+//     0105, 0108) and the warnings it logged (STS-CORE-0176, the drift
+//     audit). sts-core's `tests/appconfig_vectors.rs` loads each file
+//     through its own evaluator and asks the same.
+//
 // The strings are written once, in a table, and referred to by index:
 // the restart reasons alone would otherwise be most of the file.
 //
@@ -145,7 +160,156 @@ function writeAppconfig() {
                    ';\n');
 }
 
+// ---------------------------------------------------------------------------
+// The appconfig files (phase 3). Each case is a CONFIG_FILE as an operator
+// would set it and the variables beside it; the child loads config.js on it
+// and says what it made of it.
+// ---------------------------------------------------------------------------
+const FILE_CHILD = process.env.STS_PROBE_FILE_CHILD === '1';
+
+const WRITTEN = {
+  'forms-base.json': '\ufeff{ "global": { "port": 9443 }, "list": [1, "a"] }\n',
+  'forms.js': [
+    '#!/usr/bin/env node',
+    '// Every form an operator might write in a file of this service.',
+    "'use strict';",
+    "const base = require('./forms-base.json');",
+    'const shared = { https: true };',
+    'const host = `0.0.0.0`;',
+    'module.exports = Object.assign({}, base, {',
+    "  logLevel: 'warn',",
+    '  global: { ...base.global, ...shared, host: host,',
+    "    domain: process.env.STS_APPCONFIG_PROBE || 'example.org',",
+    '    get trustProxy() { return false; } },',
+    "  ['saml' + '2']: { attributes: [ 'uid', 'mail' ] },",
+    '  oauth2: { refreshIdleSeconds: 2 ** 10, issuer: "\\u00e9t\\u00e9",',
+    '            clientAssertionSkewS: 6e1, breakIdTokenNonce: undefined },',
+    '  tls: { note: { deeper: { ignored: true } } },',
+    "  krb5: { realm: 'EXAMPLE.ORG', clockOffset: -0 }",
+    '});',
+    'module.exports.persistence = { writeDelay: 0.5e4 };',
+    ''
+  ].join('\n'),
+  'exports.js': "logLevel = undefined;\nexports.logLevel = 'warn';\n" +
+    "this.global = { port: '7070' };\nexports.ldap = { autocreateUsers: " +
+    "'yes' };\n",
+  'cycle-a.js': "exports.logLevel = 'warn';\nconst b = require('./cycle-b');" +
+    "\nexports.global = { domain: b.domain };\n",
+  'cycle-b.js': "const a = require('./cycle-a.js');\nmodule.exports = { " +
+    "domain: a.logLevel === 'warn' ? 'cycle.example' : 'wrong' };\n",
+  'index-dir/index.js': "module.exports = { logLevel: 'warn', global: " +
+    "{ domain: 'dir.example' } };\n",
+  'requires-dir.js': "module.exports = require('./index-dir');\n",
+  'replaced.js': "module.exports = { logLevel: 'warn', saml: { issuer: " +
+    "'urn:old' }, wstrust: { issuer: 'urn:old' } };\n",
+  'malformed.js': "module.exports = { logLevel: 'warn', ldap: " +
+    "{ autocreateUsers: 'treu' }, pki: { keyAlgorithm: 'RSA-2048' }, " +
+    "webauthn: { algorithms: 'ES256,NOSUCHALG' }, global: { port: 70000 } " +
+    "};\n",
+  'absolute-uri.js': "module.exports = { logLevel: 'warn', saml2: " +
+    "{ nameIdFormat: ',]' } };\n",
+  'drift.js': "module.exports = { logLevel: 'warn', global: { domain: " +
+    "'drift.example', domian: 'x' }, oauth2: { rfc9700: false }, " +
+    "nosuchgroup: { a: 1 }, toplevelthing: 3 };\n",
+  'theirs.js': "module.exports = { logLevel: 'warn', theirOwn: { x: 1 } };\n",
+  'syntax.js': "module.exports = {\n",
+  'throws.js': "throw new Error('the file refused to load');\n",
+  'throws-value.js': "throw 'a plain string';\n",
+  'missing-require.js': "module.exports = require('./not-here');\n",
+  'not-an-object.js': "module.exports = 'just a string';\n",
+  'empty.js': ''
+};
+
+// `file`: relative to the package root as an operator writes it, or a
+// written file; `env`: the variables beside CONFIG_FILE.
+const FILE_CASES = [
+  { file: './env/local.js' }, { file: './env/test.js' },
+  { file: './env/docker-tests.js' }, { file: './env/npm-tests.js' },
+  { file: './env/defaults.js' }, { file: './env/local.json' },
+  { file: './env/test.json' }, { file: './env/docker-tests.json' },
+  { file: null },
+  { file: './env/local.js', env: { STS_ISSUER: 'urn:old',
+                                   SAML2_ENTITY_ID: 'urn:old' } },
+  { file: './env/local.js', env: { LDAP_AUTOCREATE_USERS: 'treu',
+                                   STS_PORT: ' 99999 ' } },
+  { file: './env/local.js', env: { STS_SAML2_NAME_ID_FORMAT: 'urn:a b' } },
+  { file: './env/does-not-exist.js' },
+  { file: 'some-package-name' }
+].concat(Object.keys(WRITTEN).filter(function (name) {
+  return /\.js$/.test(name) && !/^cycle-b|^index-dir/.test(name);
+}).map(function (name) {
+  return { file: 'WRITTEN/' + name, env: name === 'forms.js' ?
+           { STS_APPCONFIG_PROBE: 'from.env.example' } : {} };
+}));
+
+function fileCases() {
+  const dir = path.join(OUT, 'files');
+  Object.keys(WRITTEN).forEach(function (name) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.writeFileSync(path.join(dir, name), WRITTEN[name]);
+  });
+  const answers = FILE_CASES.map(function (one) {
+    const given = one.file === null ? null :
+      one.file.replace(/^WRITTEN\//, path.join(dir, '/'));
+    const answer = path.join(OUT, 'file-answer.json');
+    try {
+      fs.unlinkSync(answer);
+    } catch (e) {
+      // Nothing to remove: the first case, or a case that wrote nothing.
+    }
+    const env = Object.assign({ PATH: process.env.PATH,
+                                STS_PROBE_FILE_CHILD: '1',
+                                STS_PROBE_ANSWER: answer },
+                              one.env || {});
+    if (given !== null) {
+      env.CONFIG_FILE = given;
+    }
+    const run = childProcess.spawnSync(process.execPath, [__filename, OUT], {
+      env: env, cwd: ROOT, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024
+    });
+    const warnings = String(run.stdout || '').split('\n')
+      .filter(function (line) {
+        return /^\{/.test(line);
+      }).map(function (line) {
+        return JSON.parse(line);
+      }).filter(function (line) {
+        return line.level >= 40;
+      }).map(function (line) {
+        return line.msg;
+      });
+    let loaded = null;
+    if (fs.existsSync(answer)) {
+      loaded = JSON.parse(fs.readFileSync(answer, 'utf8'));
+    }
+    return { file: one.file, given: given, env: one.env || {},
+             status: run.status, stderr: String(run.stderr || ''),
+             warnings: warnings, loaded: loaded };
+  });
+  fs.writeFileSync(path.join(OUT, 'settings-files-node.json'),
+                   JSON.stringify({ root: ROOT, cases: answers }));
+  console.log('wrote ' + path.join(OUT, 'settings-files-node.json') + ': ' +
+              answers.length + ' appconfig files');
+}
+
+if (FILE_CHILD) {
+  // config.js runs every startup check as it loads, and exits on a refusal
+  // with the sentence on stderr — which is what the parent records.
+  const config = require(path.join(ROOT, 'common', 'config.js'));
+  const operator = process.env.CONFIG_FILE ?
+    require(process.env.CONFIG_FILE) : null;
+  fs.writeFileSync(process.env.STS_PROBE_ANSWER, JSON.stringify({
+    configFile: process.env.CONFIG_FILE || null,
+    exports: operator === undefined ? null : operator,
+    baseline: config.SETTINGS.map(function (row) {
+      return [config.sourceOf(row.key), config.value(row.key),
+              config.text(row.key)];
+    })
+  }));
+  return;
+}
+
 if (!CHILD) {
+  fileCases();
   writeAppconfig();
   const run = childProcess.spawnSync(process.execPath, [__filename, OUT], {
     env: { PATH: process.env.PATH, STS_PROBE_CHILD: '1',
@@ -184,9 +348,19 @@ function stub(relative, exports) {
 stub('oauth-oidc/oauth2_bcp.js', { waivers: function () {
   return bcpWaivers;
 } });
+let advertised = '';
 stub('common/listener_map.js', { advertisedBase: function () {
-  return '';
+  return advertised;
 } });
+// The certificate authority, for the pinned-signer refusals: config.js reads
+// it out of `require.cache`, and `pins` is what it answers.
+let pins = [];
+stub('common/pki.js', { pinsBlockingSignersOff: function (realm, processWide) {
+  return pins.map(function (one) {
+    return Object.assign({ realm: processWide ? 'default' : realm }, one);
+  });
+} });
+const errorCodes = require(path.join(ROOT, 'common', 'error_codes.js'));
 
 const config = require(path.join(ROOT, 'common', 'config.js'));
 const mode = require(path.join(ROOT, 'common', 'mode.js'));
@@ -495,6 +669,158 @@ out.notRows = config.REPLACED_SETTINGS.map(function (one) {
           refusal(config.checkWrite(key, 'x'),
                   config.checkWriteCode(key, 'x'))];
 });
+// ---------------------------------------------------------------------------
+// THE LAYERS A WRITE GOES THROUGH (phase 3), as one sequence over one
+// process: a delivered value cannot be taken back, so this runs last, and
+// the Rust half replays the same steps in the same order.
+// ---------------------------------------------------------------------------
+function done(result) {
+  return { ok: !!result.ok, errors: (result.errors || []).map(S),
+           code: errorCodes.codeOf(result) || '',
+           realm: result.realm === undefined ? null : result.realm };
+}
+
+// A rule between two settings that reads its companion through `beside`:
+// an organization name of `needs-display` only beside a display name.
+config.addWriteRule(function (key, parsed, inRealm, beside) {
+  if (key === 'saml.organizationName' && parsed === 'needs-display' &&
+      beside('saml.organizationDisplayName') !== 'present') {
+    return { problem: 'needs a display name beside it', code: 'STS-CORE-0006' };
+  }
+  return null;
+});
+
+const LAYER_STEPS = [
+  { op: 'read', key: 'adminApi.clientSecret' },
+  { op: 'deliver', key: 'adminApi.clientSecret', raw: 'from-file' },
+  { op: 'read', key: 'adminApi.clientSecret' },
+  { op: 'set', key: 'adminApi.clientSecret', raw: 'overridden' },
+  { op: 'read', key: 'adminApi.clientSecret' },
+  { op: 'reset', key: 'adminApi.clientSecret' },
+  { op: 'read', key: 'adminApi.clientSecret' },
+  { op: 'deliver', key: 'no.such.setting', raw: 'x' },
+  { op: 'deliver', key: 'krb5.servicePassword', raw: 'kpw' },
+  { op: 'read', key: 'krb5.servicePassword' },
+  { op: 'reset', key: 'no.such.setting' },
+  { op: 'reset', key: 'saml.organizationName' },
+  { op: 'set', key: 'saml.organizationName', raw: 'Org' },
+  { op: 'read', key: 'saml.organizationName' },
+  { op: 'reset', key: 'saml.organizationName' },
+  { op: 'reset', key: 'saml.organizationName' },
+  { op: 'set', key: 'global.port', raw: 1 },
+  { op: 'set', key: 'global.mode', raw: 'prod' },
+  { op: 'realm', overrides: { 'global.mode': 'product' } },
+  { op: 'set', key: 'saml2.signAssertion', raw: false },
+  { op: 'set', key: 'oauth2.breakIdTokenNonce', raw: 'true' },
+  { op: 'set', key: 'mail.transport', raw: 'capture' },
+  { op: 'set', key: 'saml.organizationName', raw: 'Realm Org' },
+  { op: 'read', key: 'saml.organizationName' },
+  { op: 'set', key: 'oauth2.rfc9700', raw: true },
+  { op: 'read', key: 'oauth2.rfc9700' },
+  { op: 'set', key: 'realms.maxCount', raw: 20 },
+  { op: 'reset', key: 'realms.maxCount' },
+  { op: 'reset', key: 'saml.organizationName' },
+  { op: 'read', key: 'saml.organizationName' },
+  { op: 'reset', key: 'saml.organizationName' },
+  { op: 'reset', key: 'global.mode' },
+  { op: 'realm', overrides: null },
+  { op: 'set', key: 'realms.maxCount', raw: 20 },
+  { op: 'read', key: 'realms.maxCount' },
+  { op: 'reset', key: 'realms.maxCount' },
+  { op: 'set', key: 'saml.organizationName', raw: 'needs-display' },
+  { op: 'batch', values: { 'saml.organizationName': 'needs-display',
+                           'saml.organizationDisplayName': 'present' },
+    key: 'saml.organizationName', raw: 'needs-display' },
+  { op: 'batch', values: { 'saml.organizationName': 'needs-display',
+                           'saml.organizationDisplayName': 'absent' },
+    key: 'saml.organizationName', raw: 'needs-display' },
+  { op: 'batch', values: { 'saml.organizationDisplayName': 'present' },
+    key: 'saml.organizationName', raw: 'needs-display', set: true },
+  { op: 'read', key: 'saml.organizationName' },
+  { op: 'reset', key: 'saml.organizationName' },
+  { op: 'set', key: 'pki.pinnedSigners', raw: true },
+  { op: 'pins', pins: [{ unit: 'oauth2.jwt', kid: 'k1', role: 'active' },
+                       { unit: 'saml2', kid: 'k2', role: 'pending' }] },
+  { op: 'set', key: 'pki.pinnedSigners', raw: 'off' },
+  { op: 'reset', key: 'pki.pinnedSigners' },
+  { op: 'realm', overrides: { 'pki.pinnedSigners': true } },
+  { op: 'reset', key: 'pki.pinnedSigners' },
+  { op: 'realm', overrides: null },
+  { op: 'pins', pins: [] },
+  { op: 'reset', key: 'pki.pinnedSigners' },
+  // The process off, a realm on, a pin live: the realm's reset would leave
+  // it reading the process's false, and is refused.
+  { op: 'set', key: 'pki.pinnedSigners', raw: false },
+  { op: 'pins', pins: [{ unit: 'oauth2.jwt', kid: 'k3', role: 'active' }] },
+  { op: 'realm', overrides: { 'pki.pinnedSigners': true } },
+  { op: 'reset', key: 'pki.pinnedSigners' },
+  { op: 'realm', overrides: null },
+  { op: 'pins', pins: [] },
+  { op: 'reset', key: 'pki.pinnedSigners' },
+  { op: 'base' },
+  { op: 'advertise', base: ' https://edge.example/x// ' },
+  { op: 'base' },
+  { op: 'read', key: 'adminApi.audience' },
+  { op: 'advertise', base: '' },
+  { op: 'base' },
+  { op: 'set', key: 'global.logLevel', raw: 'fatal' },
+  { op: 'read', key: 'global.logLevel' },
+  { op: 'reset', key: 'global.logLevel' }
+];
+
+function layerSequence(m) {
+  baseEnv(m);
+  process.env.ADMIN_API_CLIENT_SECRET = 'from-env';
+  const env = { STS_MODE: m, ADMIN_API_CLIENT_SECRET: 'from-env' };
+  const answers = LAYER_STEPS.map(function (step) {
+    probes += 1;
+    switch (step.op) {
+      case 'read':
+        return [config.sourceOf(step.key), config.value(step.key)];
+      case 'deliver':
+        try {
+          config.setDelivered(step.key, step.raw);
+          return 'ok';
+        } catch (e) {
+          return S(e.message);
+        }
+      case 'set':
+        return [done(config.setOverride(step.key, step.raw)),
+                ambient ? Object.assign({}, ambient.overrides) : null];
+      case 'reset':
+        return [done(config.clearOverride(step.key)),
+                ambient ? Object.assign({}, ambient.overrides) : null];
+      case 'realm':
+        ambient = step.overrides ? { id: 'acme',
+          overrides: Object.assign({}, step.overrides) } : null;
+        return null;
+      case 'batch':
+        return config.withWriteBatch(step.values, function () {
+          if (step.set) {
+            return done(config.setOverride(step.key, step.raw));
+          }
+          return refusal(config.checkOverride(step.key, step.raw),
+                         config.checkOverrideCode(step.key, step.raw));
+        });
+      case 'pins':
+        pins = step.pins;
+        return null;
+      case 'advertise':
+        advertised = step.base;
+        return null;
+      case 'base':
+        return config.managementApiBaseUrl();
+      default:
+        throw new Error('probe: no step ' + step.op);
+    }
+  });
+  ambient = null;
+  return { mode: m, env: env, steps: LAYER_STEPS, answers: answers };
+}
+// The delivered map and the rule stay for the rest of the process: one
+// sequence, in development (the realm step moves the realm to product).
+out.layers = layerSequence('development');
+
 out.keys = config.SETTINGS.map(function (row) {
   return row.key;
 });

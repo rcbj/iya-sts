@@ -5,22 +5,19 @@
 //! enctypes: `kerberos/krb5_primitives.js`.
 //!
 //! Node writes MD4, MD5 and RC4 out by hand because the module was once
-//! bundled into a browser, where Web Crypto has none of them. Here they
-//! come from RustCrypto (`md4`, `md-5`, `rc4`), as rust/DESIGN.md's
-//! Kerberos row says: OpenSSL 3 keeps MD4 and RC4 in its legacy provider,
-//! and a dependency on that provider being loaded is a failure waiting for
-//! a deployment that does not load it. HMAC-MD5 is RFC 2104 written over
-//! `md-5`, the shape of Node's `hmacMd5()`.
-//!
-//! All three are broken and are here only because etype 23
+//! bundled into a browser, where Web Crypto has none of them. Here they,
+//! and the constant-time comparison, are `sts_crypto::krb5`'s (moved there
+//! on 2026-11-14: every cryptographic operation is that crate's, #453), and
+//! the functions below keep this crate's names for them. All three hashes
+//! and ciphers are broken and exist only because etype 23
 //! (arcfour-hmac-md5) still uses them.
 //!
-//! A HOT PATH, as in Node: the byte helpers run once per field of every
-//! message and carry no `tracing::instrument`; the derivations below do.
+//! THE BYTE HELPERS ARE A HOT PATH, as in Node: they run once per field of
+//! every message, so each says so and carries no `tracing::instrument`
+//! (no Entering/Leaving pair, which would drown the log); the
+//! cryptographic calls below do carry one.
 
-use md4::Md4;
-use md5::{Digest, Md5};
-use rc4::{KeyInit, Rc4, StreamCipher};
+use sts_crypto::krb5;
 
 use crate::error::{Krb5Error, Krb5Result};
 
@@ -28,6 +25,7 @@ use crate::error::{Krb5Error, Krb5Result};
 /// surrogate half still encodes (as three bytes); a Rust `str` cannot hold
 /// one, so the standard encoding is the same function on every input it
 /// can be given.
+// A hot path: once per field of every message; no span.
 pub fn utf8(text: &str) -> Vec<u8> {
     text.as_bytes().to_vec()
 }
@@ -37,32 +35,38 @@ pub fn utf8(text: &str) -> Vec<u8> {
 /// overlong form, an encoded surrogate, a code point past U+10FFFF) — the
 /// exact set `std::str::from_utf8` refuses — so a caller can fall back to
 /// another reading rather than put U+FFFD in a principal name.
+// A hot path: once per field of every message; no span.
 pub fn from_utf8(bytes: &[u8]) -> Option<String> {
     std::str::from_utf8(bytes).ok().map(str::to_string)
 }
 
 /// Each byte as the code point of the same number: Node's `decLatin1()`.
+// A hot path: once per field of every message; no span.
 pub fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|b| char::from(*b)).collect()
 }
 
 /// UTF-16 little-endian, the NT hash's input: Node's `utf16le()`, which
 /// walks a JavaScript string's UTF-16 code units.
+// A hot path: once per field of every message; no span.
 pub fn utf16le(text: &str) -> Vec<u8> {
     text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
 }
 
 /// The XOR of the common prefix of two byte strings: Node's `xor()`.
+// A hot path: once per field of every message; no span.
 pub fn xor(a: &[u8], b: &[u8]) -> Vec<u8> {
     a.iter().zip(b).map(|(x, y)| x ^ y).collect()
 }
 
 /// Lowercase hex: Node's `toHex()`.
+// A hot path: once per field of every message; no span.
 pub fn to_hex(bytes: &[u8]) -> String {
     crate::hex::encode(bytes)
 }
 
 /// Node's `fromHex()`: whitespace and colons ignored.
+// A hot path: once per field of every message; no span.
 pub fn from_hex(text: &str) -> Krb5Result<Vec<u8>> {
     let s: Vec<char> = text
         .chars()
@@ -92,14 +96,17 @@ pub fn from_hex(text: &str) -> Krb5Result<Vec<u8>> {
 }
 
 /// Constant-time comparison, false on a length difference: Node's
-/// `equalConstantTime()`. Every checksum verification goes through it.
+/// `equalConstantTime()`, `sts-crypto`'s. Every checksum verification goes
+/// through it.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn equal_constant_time(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && openssl::memcmp::eq(a, b)
+    krb5::equal_constant_time(a, b)
 }
 
 /// RFC 3961 section 5.1's n-fold, to `out_bits` bits: Node's `nfold()`,
 /// with its two refusals, over `sts-crypto`'s n-fold (the one the PRF
 /// uses), so there is one copy of the reference arithmetic.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn nfold(input: &[u8], out_bits: usize) -> Krb5Result<Vec<u8>> {
     let out_len = out_bits >> 3;
     if out_len == 0 {
@@ -114,50 +121,26 @@ pub fn nfold(input: &[u8], out_bits: usize) -> Krb5Result<Vec<u8>> {
 /// MD4 (RFC 1320): the NT hash, etype 23's string-to-key.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn md4(input: &[u8]) -> Vec<u8> {
-    Md4::digest(input).to_vec()
+    krb5::md4(input)
 }
 
 /// MD5 (RFC 1321): under etype 23's HMAC and its checksum.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn md5(input: &[u8]) -> Vec<u8> {
-    Md5::digest(input).to_vec()
+    krb5::md5(input)
 }
 
 /// HMAC-MD5 (RFC 2104), block size 64: Node's `hmacMd5()`.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn hmac_md5(key: &[u8], message: &[u8]) -> Vec<u8> {
-    let k = if key.len() > 64 {
-        md5(key)
-    } else {
-        key.to_vec()
-    };
-    let mut ipad = [0x36u8; 64];
-    let mut opad = [0x5cu8; 64];
-    for (i, b) in k.iter().enumerate() {
-        ipad[i] ^= b;
-        opad[i] ^= b;
-    }
-    let mut inner = ipad.to_vec();
-    inner.extend_from_slice(message);
-    let mut outer = opad.to_vec();
-    outer.extend(md5(&inner));
-    md5(&outer)
+    krb5::hmac_md5(key, message)
 }
 
 /// RC4, etype 23's cipher; the same call encrypts and decrypts. A key
-/// outside RC4's 1–256 bytes is refused (Node's loop would index past an
-/// empty key and produce NaN-driven garbage; nothing here passes one).
+/// outside RC4's 1–256 bytes is refused.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn rc4(key: &[u8], data: &[u8]) -> Krb5Result<Vec<u8>> {
-    let mut cipher = Rc4::new_from_slice(key).map_err(|_| {
-        Krb5Error::new(format!(
-            "krb5: an RC4 key of {} bytes is not usable",
-            key.len()
-        ))
-    })?;
-    let mut out = data.to_vec();
-    cipher.apply_keystream(&mut out);
-    Ok(out)
+    Ok(krb5::rc4(key, data)?)
 }
 
 #[cfg(test)]

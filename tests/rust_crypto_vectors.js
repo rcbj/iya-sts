@@ -53,6 +53,15 @@ function read(name) {
  */
 function run(t) {
   log.debug("Entering run().");
+  // The directory's wire layer (sts-ldap): synchronous, and it needs no
+  // other Rust vector.
+  if (fs.existsSync(path.join(VECTORS, 'ldap-wire-rust.json'))) {
+    require('./tools/ldap-wire-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('ldap-wire-rust.json'),
+      function (/** @type {boolean} */ ok, /** @type {string} */ what) {
+        t.check(ok, what);
+      });
+  }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
     log.debug("Leaving run(). No Kerberos vectors.");
     return runSigned(t);
@@ -761,6 +770,7 @@ module.exports = {
             'algorithm, every XML signature method this service signs ' +
             'with, and every XML Encryption cipher, transport and ' +
             'agreement — and what sts-kerberos made is read by the ' +
-            'Kerberos codec',
+            'Kerberos codec, and what sts-ldap made is answered by ' +
+            'node-ldapjs as by Rust',
   run: run
 };

@@ -127,26 +127,80 @@ function declarations(t) {
     'utf8');
   t.check(fs.readFileSync(path.join(ROOT, 'types', 'api.generated.d.ts'),
     'utf8') === api, 'types/api.generated.d.ts is what the model generates');
-  // THE SAME OBJECTS AS RUST (#444, D15): sts-model's three files are the
-  // model's too, written by the same script, so a model change that is not
-  // regenerated fails here rather than in a Rust build that reads stale
-  // types.
-  ['domain', 'api', 'unions'].forEach(function (name) {
-    const rust = fs.readFileSync(path.join(ROOT, 'models', 'generated',
-      name + '.rs'), 'utf8');
-    t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-model',
-      'src', 'generated', name + '.rs'), 'utf8') === rust,
-    'rust/crates/sts-model/src/generated/' + name + '.rs is what the model ' +
-      'generates (tests/tools/regenerate-model-docs.sh)');
+  // THE SAME OBJECTS AS RUST (#444, D15): sts-model's files, and the
+  // crates the API types are split across (models/lib/rust_lib.mjs,
+  // `planCrates()`), are the model's too, written by the same script, so a
+  // model change that is not regenerated fails here rather than in a Rust
+  // build that reads stale types. The emitter writes them as a tree laid
+  // out as rust/crates/ is; every file in it is compared, and so is the
+  // other way round: a generated file or a generated crate the model no
+  // longer makes (a change to the emitter's `SPLIT`) is stale.
+  const rustTree = path.join(ROOT, 'models', 'generated', 'rust');
+  const crates = path.join(ROOT, 'rust', 'crates');
+  const filesUnder = function (dir) {
+    log.debug("Entering filesUnder(). " + dir);
+    const out = [];
+    const walk = function (rel) {
+      log.debug("Entering walk(). " + rel);
+      fs.readdirSync(path.join(dir, rel), { withFileTypes: true })
+        .forEach(function (one) {
+          const next = rel ? rel + '/' + one.name : one.name;
+          if (one.isDirectory()) {
+            walk(next);
+          } else {
+            out.push(next);
+          }
+        });
+      log.debug("Leaving walk().");
+    };
+    if (fs.existsSync(dir)) {
+      walk('');
+    }
+    log.debug("Leaving filesUnder(). " + out.length);
+    return out.sort();
+  };
+  const generated = filesUnder(rustTree);
+  t.check(generated.length > 3, 'the model writes the Rust tree ' +
+    '(models/generated/rust/)');
+  const differ = generated.filter(function (rel) {
+    const committed = path.join(crates, rel);
+    return !fs.existsSync(committed) ||
+      fs.readFileSync(committed, 'utf8') !==
+      fs.readFileSync(path.join(rustTree, rel), 'utf8');
   });
-  // THE POLICY KINDS' TABLES (#444 phase 4): sts-policy reads the same
-  // rows the seven kinds read, from one file the same script writes.
-  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-policy',
-    'src', 'generated', 'policy_tables.json'), 'utf8') ===
-    fs.readFileSync(path.join(ROOT, 'models', 'generated',
-      'policy_tables.json'), 'utf8'),
-  'rust/crates/sts-policy/src/generated/policy_tables.json is what the ' +
-    'model generates (tests/tools/regenerate-model-docs.sh)');
+  t.check(differ.length === 0, 'every generated Rust file under ' +
+    'rust/crates/ is what the model generates ' +
+    '(tests/tools/regenerate-model-docs.sh): ' +
+    (differ.join(', ') || 'none differ'));
+  const made = new Set(generated);
+  const owned = Array.from(new Set(generated.map(function (rel) {
+    return rel.split('/')[0];
+  })));
+  const stale = [];
+  owned.forEach(function (crate) {
+    filesUnder(path.join(crates, crate, 'src', 'generated'))
+      .forEach(function (rel) {
+        if (!made.has(crate + '/src/generated/' + rel)) {
+          stale.push(crate + '/src/generated/' + rel);
+        }
+      });
+  });
+  fs.readdirSync(crates).filter(function (crate) {
+    return /^sts-model-/.test(crate) && owned.indexOf(crate) < 0;
+  }).forEach(function (crate) {
+    stale.push(crate + '/');
+  });
+  t.check(stale.length === 0, 'no generated Rust file or crate is one the ' +
+    'model no longer makes: ' + (stale.join(', ') || 'none'));
+  // THE PERSISTENCE MODEL AS RUST (#444, phase 3): sts-store's tables and
+  // columns, which its statements are checked against when it builds, are
+  // the model's as well, written by the same script.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-store',
+    'src', 'generated', 'persistence.rs'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'persistence.rs'),
+      'utf8'),
+  'rust/crates/sts-store/src/generated/persistence.rs is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

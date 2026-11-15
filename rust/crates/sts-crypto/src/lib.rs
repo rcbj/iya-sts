@@ -10,6 +10,7 @@
 
 pub mod algorithms;
 pub mod b64;
+pub mod content_hash;
 pub mod cose;
 pub mod der_lite;
 pub mod dkim;
@@ -19,6 +20,7 @@ pub mod jwe;
 pub mod jws;
 pub mod jws_alg;
 pub mod keys;
+pub mod krb5;
 pub mod krb5_prf;
 pub mod pq;
 pub mod pq_x509;
