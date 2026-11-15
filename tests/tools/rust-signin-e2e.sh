@@ -134,6 +134,12 @@ printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=product" \
   "STS_CSRF_SECRET=$(rand)" \
   "ADMIN_API_CLIENT_SECRET=$SECRET" \
   "STS_ADMIN_BOOTSTRAP_PASSWORD=$ADMIN_PW" > "$OUT/service.env"
+# E2E_EXTRA_ENV: further `NAME=value` lines for both runtimes, space-
+# separated (a setting a run is made under, said in its summary).
+for line in ${E2E_EXTRA_ENV:-}; do
+  printf '%s\n' "$line" >> "$OUT/service.env"
+  say "  (with $line)"
+done
 
 start() {
   local image="$1" what="$2"
@@ -245,6 +251,16 @@ say "== Rust on the store Node wrote: the unchanged bundle in Chrome =="
 # The enrolment spent this step's code: the next one is the person's next.
 sleep 31
 start "$RUST_IMAGE" rust
+# The JWKS over the store Node wrote: the default realm's RS256 key is the
+# one the hierarchy certified (bare base64 in the store).
+jwks="$(curl -sk "$BASE/oauth2/jwks")"
+if echo "$jwks" | jq -e '.keys[0].kty == "RSA" and (.keys[0].x5c | length) > 0' \
+     >/dev/null 2>&1; then
+  pass "rust: /oauth2/jwks publishes the certified RS256 key ($(echo "$jwks" |
+    jq -r '.keys | length') keys)"
+else
+  fail "rust: /oauth2/jwks: $(echo "$jwks" | head -c 300)"
+fi
 browse pwd rust
 browse totp rust
 surface rust /admin admin
