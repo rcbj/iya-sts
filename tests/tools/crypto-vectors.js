@@ -5632,6 +5632,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./pki-authority-vectors.js')
                        .build(ROOT, OUT);
+                   } },
+                 // The protocol-independent sign-out (#444, phase 5,
+                 // sts-logout): tests/tools/logout-vectors.js.
+                 { file: 'logout-node.json',
+                   build: function () {
+                     return require('./logout-vectors.js').build(ROOT);
                    } }];
 
 // THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and

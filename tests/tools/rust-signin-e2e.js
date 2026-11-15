@@ -28,6 +28,13 @@
 //                                  `sts_session` cookie the answer set.
 //   honours <base> <cookie>        Node reads the session the cookie names:
 //                                  the sign-out page's view, for the person.
+//   signout <base> <cookie>        headless Chrome holding that cookie on the
+//                                  UNCHANGED sign-out bundle (#444, the
+//                                  logout slice): /logout, the inventory
+//                                  drawn from /authn-api/logout, the Global
+//                                  logout button pressed, the result drawn;
+//                                  prints what the page said and whether the
+//                                  browser still holds the cookie.
 //
 // `ws` is the main checkout's tests/node_modules (NODE_PATH); Chrome is the
 // host's. Every certificate is the runtime's own and is not verified.
@@ -377,6 +384,105 @@ async function browser(base, id, user, password, secret) {
   }
 }
 
+/**
+ * Headless Chrome, as browser() starts it, for the sign-out.
+ */
+async function signout(base, cookie) {
+  const WebSocket = require('ws');
+  const dir = fs.mkdtempSync(require('os').tmpdir() + '/e2e-chrome-');
+  const chrome = childProcess.spawn('google-chrome', ['--headless=new',
+    '--disable-gpu', '--no-sandbox', '--ignore-certificate-errors',
+    '--user-data-dir=' + dir, '--remote-debugging-port=0',
+    '--user-agent=' + UA, 'about:blank'], { stdio: 'ignore' });
+  const sleep = function (ms) {
+    return new Promise(function (r) { setTimeout(r, ms); });
+  };
+  try {
+    let target = null;
+    for (let i = 0; i < 150 && !target; i++) {
+      await sleep(200);
+      try {
+        const port = Number(fs.readFileSync(dir + '/DevToolsActivePort',
+          'utf8').split('\n')[0]);
+        const list = await new Promise(function (res, rej) {
+          require('http').get('http://127.0.0.1:' + port + '/json/list',
+            function (r) {
+              let t = '';
+              r.on('data', function (c) { t += c; });
+              r.on('end', function () { res(JSON.parse(t)); });
+            }).on('error', rej);
+        });
+        target = list.find(function (t) { return t.type === 'page'; });
+      } catch (e) {
+        target = null;
+      }
+    }
+    const ws = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise(function (r) { ws.on('open', r); });
+    let seq = 0;
+    const pending = {};
+    ws.on('message', function (m) {
+      const msg = JSON.parse(m);
+      if (msg.id && pending[msg.id]) {
+        pending[msg.id](msg);
+        delete pending[msg.id];
+      }
+    });
+    const send = function (method, params) {
+      return new Promise(function (r) {
+        seq += 1;
+        pending[seq] = r;
+        ws.send(JSON.stringify({ id: seq, method: method,
+                                 params: params || {} }));
+      });
+    };
+    const evaluate = async function (expr) {
+      const r = await send('Runtime.evaluate',
+        { expression: expr, returnByValue: true, awaitPromise: true });
+      return r.result && r.result.result ? r.result.result.value : undefined;
+    };
+    const waitFor = async function (expr, ms) {
+      for (let i = 0; i < (ms || 15000) / 250; i++) {
+        if (await evaluate(expr)) {
+          return true;
+        }
+        await sleep(250);
+      }
+      return false;
+    };
+    await send('Network.enable');
+    const eq = cookie.indexOf('=');
+    await send('Network.setCookie', { name: cookie.slice(0, eq),
+      value: cookie.slice(eq + 1), url: base + '/', secure: true,
+      httpOnly: true, sameSite: 'Lax' });
+    await send('Page.navigate', { url: base + '/logout' });
+    if (!await waitFor("!!document.querySelector('button.global')")) {
+      throw new Error('the inventory was not drawn: ' +
+        await evaluate('location.href + " " + ' +
+                       'document.body.innerText.slice(0, 400)'));
+    }
+    const inventory = await evaluate('document.body.innerText.slice(0, 600)');
+    await evaluate("(function(){document.querySelector('button.global')" +
+      ".click();return 1;})()");
+    const drawn = await waitFor("/Signed out/.test((document.querySelector" +
+      "('h1')||{}).textContent||'')", 15000);
+    const heading = await evaluate("(document.querySelector('h1')||{})" +
+      ".textContent||''");
+    const cookies = (await send('Network.getAllCookies')).result.cookies;
+    const still = cookies.find(function (c) {
+      return c.name === cookie.slice(0, eq);
+    });
+    console.log(JSON.stringify({ drawn: drawn, heading: heading,
+      location: await evaluate('location.href'),
+      inventory: inventory, cookieKept: !!still,
+      names: cookies.map(function (c) { return c.name; }) }));
+    ws.close();
+  } finally {
+    chrome.kill('SIGKILL');
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function honours(base, cookie) {
   const eq = cookie.indexOf('=');
   const jar = {};
@@ -390,7 +496,7 @@ async function honours(base, cookie) {
 
 const [cmd, ...args] = process.argv.slice(2);
 const run = { setup: setup, begin: beginTwo, browser: browser,
-              honours: honours }[cmd];
+              honours: honours, signout: signout }[cmd];
 run.apply(null, args).catch(function (e) {
   console.error(String(e && e.stack || e));
   process.exit(1);

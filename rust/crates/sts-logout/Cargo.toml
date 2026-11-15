@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-logout"
+version = "0.1.0"
+description = "The protocol-independent sign-out (logout/logout.ts): the one model of what is live per identity across every family, its termination in ending order, /logout and the page's operations behind /authn-api/logout."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-http.workspace = true
+sts-authn.workspace = true
+sts-authn-api.workspace = true
+sts-mgmt-api.workspace = true
+sts-oauth.workspace = true
+axum.workspace = true
+chrono.workspace = true
+flate2.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

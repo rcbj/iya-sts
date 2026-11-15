@@ -288,6 +288,13 @@ rust/
                                  Held to Node by authn-api-vectors.js, and over
                                  the wire by rust-signin-e2e.sh (the unchanged
                                  bundle in Chrome on a store Node wrote)
+    sts-logout/                  the protocol-independent sign-out (phase 5,
+                                 logout/logout.ts): the one model of what is
+                                 live per identity, read from every family's
+                                 owner through a port each, ended in ending
+                                 order; /logout, /logout/signed-out and the
+                                 page's operations behind /authn-api/logout.
+                                 Held to Node by tests/tools/logout-vectors.js
     sts-oauth/                   authorization server and OpenID provider
                                  (phase 5): the resource-server checks, DPoP,
                                  client authentication, /oauth2/authorize with

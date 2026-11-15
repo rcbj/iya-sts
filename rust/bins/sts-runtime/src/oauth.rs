@@ -74,6 +74,8 @@ pub struct OAuthParts {
     pub pending: RealmMap<Json>,
     pub people: Arc<dyn sts_authn::ports::People>,
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
+    /// The token register the stack declared, which sign-out revokes in.
+    pub tokens: Arc<sts_oauth::minted::TokenRegister>,
 }
 
 /// The authorization server, built.
@@ -320,17 +322,9 @@ impl OAuthStack {
             &parts.handles,
             settings.clone(),
         );
-        let revoked = sts_oauth::revocation::RevokedTokens::new(
-            &parts.lifecycle,
-            &parts.handles,
-            settings.clone(),
-        );
-        let register = sts_oauth::minted::TokenRegister::new(
-            &parts.lifecycle,
-            &parts.handles,
-            settings.clone(),
-            revoked,
-        );
+        // The stack's one token register (one declaration per handle):
+        // the session core revokes through the same one at sign-out.
+        let register = parts.tokens.clone();
         let dpop = sts_oauth::dpop_stores::DpopStores::new(
             &parts.lifecycle,
             &parts.handles,

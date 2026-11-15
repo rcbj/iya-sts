@@ -80,3 +80,40 @@ pub trait SignInFacts: Send + Sync {
     /// `stats.recordRefusedAuthentication(row)` (#954).
     fn note_refused(&self, row: &Json);
 }
+
+/// THE SIGN-OUT'S PAGE OPERATIONS (`logout/logout.ts`'s `signOutView()`,
+/// `signOutAct()`, `signOutAccountsView()`, `signOutAccountsAct()`), which
+/// Node's door reaches by a lazy `require()` of the logout module
+/// (`AuthnApi.logout()`): the door here is the binding, the query and the
+/// body, and the logic is the logout crate's (`sts-logout`), built long
+/// after this one (the root `CLAUDE.md`'s 23a against 8-api) — so it is a
+/// late binding, [`crate::door::AuthnApi::set_sign_out`]. Each answers the
+/// status, the JSON, the cookies and headers the act wrote, and the code.
+pub trait SignOutPages: Send + Sync {
+    /// `GET /authn-api/logout`, the query already held to the model.
+    fn view(
+        &self,
+        call: &crate::flow::Call,
+        query: &serde_json::Map<String, Json>,
+    ) -> crate::flow::Answer;
+    /// `POST /authn-api/logout`, bound and its body held to the model.
+    fn act(
+        &self,
+        call: &crate::flow::Call,
+        query: &serde_json::Map<String, Json>,
+        body: &serde_json::Map<String, Json>,
+    ) -> crate::flow::Answer;
+    /// `GET /authn-api/logout/accounts`.
+    fn accounts_view(
+        &self,
+        call: &crate::flow::Call,
+        query: &serde_json::Map<String, Json>,
+    ) -> crate::flow::Answer;
+    /// `POST /authn-api/logout/accounts`.
+    fn accounts_act(
+        &self,
+        call: &crate::flow::Call,
+        query: &serde_json::Map<String, Json>,
+        body: &serde_json::Map<String, Json>,
+    ) -> crate::flow::Answer;
+}

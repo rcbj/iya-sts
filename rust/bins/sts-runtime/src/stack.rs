@@ -655,6 +655,37 @@ impl Stack {
         // THE SIGN-ON SESSION AND THE SIGN-IN SURFACE (#444 phase 5): its
         // stores declared before the store opens, its shells added after
         // the static surfaces', and its jobs on the one scheduler.
+        // THE TOKEN REGISTER AND ITS ONE REVOCATION SET (`admin_stats.tokens`,
+        // `revokedJtis`), declared before the store opens so a 1.x
+        // install's rows are restored, and the session core's revocation
+        // at sign-out over it (`sts_oauth::minted::SessionTokens`): in
+        // product a sign-out revokes the access tokens of its session
+        // (#1449), and RFC 9700's refresh rule always. The OAuth slice's
+        // token endpoint is to issue into this same register (one
+        // declaration per handle).
+        let revoked = sts_oauth::revocation::RevokedTokens::new(
+            &lifecycle,
+            &handles,
+            settings.clone(),
+        );
+        let tokens = sts_oauth::minted::TokenRegister::new(
+            &lifecycle,
+            &handles,
+            settings.clone(),
+            revoked,
+        );
+        let refresh_settings = settings.clone();
+        let records: Arc<dyn sts_authn::ports::Records> =
+            Arc::new(sts_oauth::minted::SessionTokens {
+                inner: None,
+                register: tokens.clone(),
+                revoke_refresh_on_logout: Arc::new(move |_client: &str| {
+                    refresh_settings
+                        .value_of("oauth2.revokeRefreshOnLogout")
+                        .as_bool()
+                }),
+                now_ms: Arc::new(|| chrono::Utc::now().timestamp_millis()),
+            });
         let signin = sts_authn_api::wiring::SignInStack::declare(
             sts_authn_api::wiring::RuntimeParts {
                 settings: settings.clone(),
@@ -665,6 +696,7 @@ impl Stack {
                 directory: directory.clone(),
                 persistence: persistence.clone(),
                 version,
+                records: Some(records),
             },
         );
         scheduler.register(sts_authn::job::session_expiry_job(
@@ -699,10 +731,28 @@ impl Stack {
                         &sts_http::files::WebRoot::from_env().0,
                     ),
                 )),
+                tokens: tokens.clone(),
             });
         let authn_routes = signin
-            .mount(&http, surfaces, settings.clone())
+            .mount(&http, surfaces.clone(), settings.clone())
             .merge(oauth.router(http.clone()));
+        // THE PROTOCOL-INDEPENDENT SIGN-OUT (`common/protocol_stack.ts`'s
+        // 23a, second to last): `/logout`, `/logout/signed-out`, and the
+        // page's operations behind `/authn-api/logout`.
+        let logout = sts_logout::wiring::LogoutStack::build(
+            sts_logout::wiring::LogoutParts {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                registry: registry.clone(),
+                sessions: signin.sessions.clone(),
+                people: signin.people.clone(),
+                tokens: Some(tokens),
+                pending: signin.signin.stores.pending.clone(),
+                http: http.clone(),
+                surfaces,
+            },
+        );
+        let authn_routes = authn_routes.merge(logout.mount(&signin.api));
         let barrier_settings = settings.clone();
         let barrier = ReadBarrier::new(
             Arc::new(PersistencePull(Arc::downgrade(&persistence))),
