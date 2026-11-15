@@ -89,6 +89,10 @@ pub struct AuthnApi {
     pub version: String,
     /// `global.https`, for the step cookie.
     pub https: bool,
+    /// The sign-out's page operations, filled by the logout crate once it
+    /// is built (a late binding: Node reaches the module by a lazy
+    /// `require()`); empty, they are not answered here (Express's 404).
+    pub sign_out: std::sync::OnceLock<Arc<dyn crate::ports::SignOutPages>>,
 }
 
 fn header_of(headers: &HeaderMap, name: &str) -> String {
@@ -198,6 +202,61 @@ fn id_fits(id: &str) -> bool {
 }
 
 impl AuthnApi {
+    /// Fills the sign-out's page operations (once; a second fill is
+    /// ignored and logged).
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn set_sign_out(&self, pages: Arc<dyn crate::ports::SignOutPages>) {
+        if self.sign_out.set(pages).is_err() {
+            tracing::warn!("authn-api: the sign-out was filled twice.");
+        }
+    }
+
+    /// `logoutView()` / `logoutAccountsView()`: the query held to the
+    /// model, then the sign-out's view, with the CSRF token and, for the
+    /// inventory, the person's preferred language.
+    fn logout_view(
+        &self,
+        op: &Operation,
+        query: &str,
+        call: &Call,
+        pages: &Arc<dyn crate::ports::SignOutPages>,
+    ) -> Answer {
+        let schema = query_schema(op);
+        let asked = sts_mgmt_api::request::parse_query(query);
+        let asked = Json::Object(asked.into_iter().collect());
+        let value = match body::check_parsed(&asked, "query", &schema) {
+            Ok(v) => v,
+            Err(p) => {
+                let why = if p.detail.is_empty() {
+                    "The query is refused.".to_string()
+                } else {
+                    p.detail
+                };
+                return refuse(400, &why, codes::STS_LOGOUT_0003);
+            }
+        };
+        let accounts = op.handler == Handler::LogoutAccountsView;
+        let mut seen = if accounts {
+            pages.accounts_view(call, &value)
+        } else {
+            pages.view(call, &value)
+        };
+        if let Some(o) = seen.body.as_object_mut() {
+            o.insert("csrf".into(), json!(self.csrf_of(&call.request)));
+        }
+        if !accounts {
+            let username = text(seen.body.get("view").and_then(|v| v.get("username")));
+            if !username.is_empty() {
+                if let Some(own) =
+                    self.signin.facts.preferred_language_of(&username)
+                {
+                    seen.body["preferredLanguage"] = own;
+                }
+            }
+        }
+        seen
+    }
+
     /// `csrfOf(req)`: the token of the session behind the cookie, or ''.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn csrf_of(&self, request: &Request) -> String {
@@ -850,7 +909,31 @@ impl AuthnApi {
             Handler::LogoutView
             | Handler::LogoutAct
             | Handler::LogoutAccountsView
-            | Handler::LogoutAccountsAct => Outcome::Unported("logout"),
+            | Handler::LogoutAccountsAct => {
+                let Some(pages) = self.sign_out.get() else {
+                    return Outcome::Unported("logout");
+                };
+                if matches!(
+                    op.handler,
+                    Handler::LogoutView | Handler::LogoutAccountsView
+                ) {
+                    return done(self.logout_view(op, query, call, pages));
+                }
+                if let Err(a) = self.bound(arrived, &call.request) {
+                    return done(a);
+                }
+                let body = match self.body_of(arrived, op) {
+                    Ok(b) => b,
+                    Err(a) => return done(a),
+                };
+                let asked = sts_mgmt_api::request::parse_query(query);
+                let asked: Map<String, Json> = asked.into_iter().collect();
+                done(if op.handler == Handler::LogoutAct {
+                    pages.act(call, &asked, &body)
+                } else {
+                    pages.accounts_act(call, &asked, &body)
+                })
+            }
             Handler::Consent => Outcome::Unported("consent"),
         }
     }
