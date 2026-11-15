@@ -116,8 +116,11 @@ function seedRow(stored, names, groups) {
     if (OPERATIONAL.indexOf(name) >= 0) {
       return;
     }
+    // The root entry's `dc` is the base DN's first value (`seed()`'s
+    // `dcValue`), written as `@@DC@@`.
+    const root = stored.dn.toLowerCase() === names.base.toLowerCase();
     const values = stored.attributes[name].map(function (v) {
-      return marked(v, names);
+      return root && name === 'dc' ? '@@DC@@' : marked(v, names);
     });
     if (put.indexOf(name) >= 0) {
       attributes[name] = values;

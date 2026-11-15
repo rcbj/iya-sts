@@ -100,7 +100,16 @@ fn values_of(v: &Json) -> Vec<String> {
 
 // The markers of a seed row's text, replaced.
 fn unmarked(text: &str, base: &str, domain: &str) -> String {
-    text.replace("@@BASE@@", base).replace("@@DOMAIN@@", domain)
+    // `dcValue`: the base DN's first value, `example` where it has none.
+    let dc = base
+        .split(',')
+        .next()
+        .and_then(|rdn| rdn.split('=').nth(1))
+        .filter(|v| !v.is_empty())
+        .unwrap_or("example");
+    text.replace("@@BASE@@", base)
+        .replace("@@DOMAIN@@", domain)
+        .replace("@@DC@@", dc)
 }
 
 // A spec's markers replaced: the base URL, the instant, the random ids.

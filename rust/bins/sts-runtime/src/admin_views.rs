@@ -817,6 +817,23 @@ impl Views {
     }
 }
 
+/// `DIRECTORY_SEARCH_SCAN`: how far a windowed search looks.
+const DIRECTORY_SEARCH_SCAN: usize = 5000;
+
+/// The order a windowed process's pages come in: postgres's `ORDER BY
+/// dn_key` under the database's collation (the image's `en_US.utf8`, ISO
+/// 14651 as glibc implements it), which compares the letters and digits
+/// first, punctuation ignored, and only then the rest. Approximated here
+/// by those two passes over the normalised DN.
+fn store_order(a: &str, b: &str) -> std::cmp::Ordering {
+    let ka = sts_ldap::service_dn::normalize_dn(Some(a));
+    let kb = sts_ldap::service_dn::normalize_dn(Some(b));
+    let alnum = |k: &str| -> String {
+        k.chars().filter(|c| c.is_alphanumeric()).collect()
+    };
+    alnum(&ka).cmp(&alnum(&kb)).then_with(|| ka.cmp(&kb))
+}
+
 /// `MASK` (`ldap/directory_secrets.ts`).
 const MASK: &str = "(set — not returned)";
 
@@ -867,12 +884,25 @@ fn directory_entry_matches(
 }
 
 impl Views {
+    /// `directoryWindow`: the people and devices held as a window over
+    /// the store (`persistence.directoryWindowWanted()`): `postgres-lru`,
+    /// or `auto` on postgres (one cell).
+    fn windowed(&self) -> bool {
+        let chosen = self.settings.value_of("ldap.workerDirectory");
+        let postgres =
+            self.settings.value_of("persistence.mode").as_str() == "postgres";
+        postgres
+            && (chosen.as_str() == "postgres-lru" || chosen.as_str() == "auto")
+    }
+
     /// `ldapDirectoryView(req)`'s JSON (`GET /admin-api/ldap/directory`):
     /// every entry of the realm's directory sorted by DN as
     /// `Intl.Collator` sorts it, filtered by `q` (a substring of the DN, an
     /// attribute's name or a value, case-insensitive) and `origin`, paged,
-    /// each row with its secrets masked. Not the windowed process's
-    /// store-paged answer: this runtime holds the directory in memory.
+    /// each row with its secrets masked. Where Node windows the directory
+    /// (`windowedDirectoryView()`, postgres) the answer is that one's: the
+    /// store's order (`order: key`), and a search that looks at the first
+    /// `DIRECTORY_SEARCH_SCAN` entries and says so (`search`).
     #[tracing::instrument(level = "debug", skip_all)]
     fn directory_entries_json(&self, asked: &Asked<'_>) -> Json {
         let realm_id = realm::current_id();
@@ -886,18 +916,41 @@ impl Views {
             };
             let mut listed: Vec<&sts_store::model::StoredEntry> =
                 t.realms()[r].entries.values().collect();
-            listed.sort_by(|a, b| {
-                sts_registers::js::locale_compare(&a.dn, &b.dn)
-            });
+            let windowed = self.windowed();
+            if windowed {
+                listed.sort_by(|a, b| store_order(&a.dn, &b.dn));
+            } else {
+                listed.sort_by(|a, b| {
+                    sts_registers::js::locale_compare(&a.dn, &b.dn)
+                });
+            }
             let origin_of = |e: &sts_store::model::StoredEntry| -> String {
                 e.origin.clone().unwrap_or_else(|| "unstated".into())
             };
-            let filtered: Vec<&sts_store::model::StoredEntry> = listed
+            let of_origin: Vec<&sts_store::model::StoredEntry> = listed
                 .iter()
                 .filter(|e| {
-                    (wanted_origin.is_empty() || origin_of(e) == wanted_origin)
-                        && (needle.is_empty()
-                            || directory_entry_matches(e, &needle))
+                    wanted_origin.is_empty() || origin_of(e) == wanted_origin
+                })
+                .copied()
+                .collect();
+            // A windowed process searches the first DIRECTORY_SEARCH_SCAN
+            // entries of the store's order and says so (`search`).
+            let (looked, search) = if windowed && !needle.is_empty() {
+                let scanned = of_origin.len().min(DIRECTORY_SEARCH_SCAN);
+                (
+                    &of_origin[..scanned],
+                    json!({ "complete": of_origin.len() < DIRECTORY_SEARCH_SCAN,
+                            "scanned": scanned,
+                            "scanLimit": DIRECTORY_SEARCH_SCAN }),
+                )
+            } else {
+                (&of_origin[..], Json::Null)
+            };
+            let filtered: Vec<&sts_store::model::StoredEntry> = looked
+                .iter()
+                .filter(|e| {
+                    needle.is_empty() || directory_entry_matches(e, &needle)
                 })
                 .copied()
                 .collect();
@@ -937,8 +990,8 @@ impl Views {
                 "perPage": paging.per_page,
                 "firstRow": paging.first_row, "lastRow": paging.last_row,
                 "paging": paging.to_json(),
-                "order": "dn",
-                "search": Json::Null,
+                "order": if windowed { "key" } else { "dn" },
+                "search": search,
                 "entries": shown,
             })
         })

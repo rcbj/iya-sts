@@ -270,10 +270,11 @@ read_seed() {
   curl -sk -H "Authorization: Bearer $token" \
     "$base/realm/$id/admin-api/ldap/directory?per=300" \
     | sed "s#${base#https://}#localhost:PORT#g" > "$dir/raw"
-  # An application's entryUUID is random; a seeded entry's is derived
-  # from the realm and the DN, and is kept.
-  jq -S "$SEED_DEL | .entries |= map(if (.origin == \"seed\" or
-           .origin == \"roles\") then . else
+  # An application's and a role's entryUUID is random; a seeded entry's
+  # is derived from the realm and the DN, and is kept. The rows are keyed
+  # by DN as well as listed, so an order difference is told apart from a
+  # content one.
+  jq -S "$SEED_DEL | .entries |= map(if .origin == \"seed\" then . else
            del(.attributes.entryUUID) end)" "$dir/raw" \
     > "$dir/directory.json" 2>/dev/null || cp "$dir/raw" "$dir/directory.json"
   curl -sk -H "Authorization: Bearer $token" \

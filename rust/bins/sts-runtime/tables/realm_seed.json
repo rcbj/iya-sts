@@ -10,7 +10,7 @@
             "dcObject"
           ],
           "dc": [
-            "seedx"
+            "@@DC@@"
           ],
           "description": [
             "IYA STS directory. Every bind succeeds; nothing here is a real account."
@@ -843,7 +843,7 @@
             "dcObject"
           ],
           "dc": [
-            "seedp"
+            "@@DC@@"
           ],
           "description": [
             "The STS directory. A simple bind is verified against the entry's userPassword."
