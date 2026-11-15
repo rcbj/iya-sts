@@ -47,6 +47,7 @@ use crate::jwt_access_token::{
 };
 use crate::minted::{IssuedUnder, TokenRegister};
 
+pub mod ciba_grant;
 pub mod device;
 pub mod exchange;
 
@@ -268,6 +269,9 @@ pub struct TokenEndpoint {
     /// RFC 8628's device codes; `None` answers the grant as Node does
     /// with the device flow off.
     pub devices: Option<Arc<crate::device_authorization::DeviceCodes>>,
+    /// CIBA's backchannel requests (#131); `None` answers the grant as
+    /// Node does with CIBA off.
+    pub ciba: Option<Arc<crate::ciba::CibaRequests>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -971,6 +975,7 @@ impl TokenEndpoint {
             }
             "refresh_token" => self.refresh_grant(&issuing).await,
             exchange::GRANT => self.token_exchange(&issuing).await,
+            crate::ciba::GRANT_TYPE => self.ciba_grant(&issuing).await,
             crate::device_authorization::GRANT_TYPE => {
                 self.device_grant(&issuing).await
             }

@@ -1074,6 +1074,15 @@ impl OAuthStack {
                     Arc::new(sts_core::time::now_ms_f64),
                 ),
             ),
+            // CIBA's requests, in Node's store (#131): the grant is
+            // redeemed here; the request and its approval are Node's.
+            ciba: Some(sts_oauth::ciba::CibaRequests::declare(
+                &parts.lifecycle,
+                &parts.handles,
+                settings.clone(),
+                Arc::new(ProcessClaims::default()),
+                Arc::new(sts_core::time::now_ms_f64),
+            )),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,

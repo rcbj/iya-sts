@@ -24,7 +24,10 @@
 //              policy: the two exchange questions, over fact sets;
 //   decisions  DelegationPolicy.decide() over a directory described here,
 //              the facts, the verdict and the sentences;
-//   claims     DelegationPolicy.mayActClaimFor(name) over that directory.
+//   claims     DelegationPolicy.mayActClaimFor(name) over that directory;
+//   userCodes  device_authorization.normalize(typed) (RFC 8628 section 6.1);
+//   boundKeys  boundKeyProofRefusal(scope, code, proof) (OpenID Connect Key
+//              Binding section 2).
 //
 // And `checkRust()`: the verdicts and decisions Rust computed over the
 // same inputs (`oauth8-rust.json`), computed again by Node. A builder is a
@@ -301,6 +304,19 @@ const QUESTIONS = [
   { actor: 'web', subject: 'urn:uuid:nobody', source: [], targets: [] }
 ];
 
+const USER_CODES = ['BCDF-GHJK', 'bcdf ghjk', 'b-c-d-f-1-2', '', 'ÄBC'];
+
+const BOUND_KEYS = [
+  [true, 'openid', 'code1', null],
+  [true, 'openid bound_key', 'code1', null],
+  [true, 'openid bound_key', 'code1',
+   { claims: { c_s256: 'nope' } }],
+  [true, 'openid bound_key', 'code1',
+   { claims: { c_s256: require('crypto').createHash('sha256')
+     .update('code1').digest('base64url') } }],
+  [false, 'openid bound_key', 'code1', null]
+];
+
 const CLAIM_NAMES = ['alice', 'bob', 'carol', 'api', 'gateway', 'web',
                      'urn:sts:client:gateway', 'nobody', ''];
 
@@ -458,6 +474,20 @@ async function build(ROOT) {
         out.decisions.push({ mode: modeName, question: question,
                              decision: decisionOf(policy.decide(question)) });
       });
+    });
+    const device = require(path.join(ROOT, 'oauth-oidc',
+                                     'device_authorization'));
+    out.userCodes = USER_CODES.map(function (one) {
+      return { typed: one, normalized: device.normalize(one) };
+    });
+    out.boundKeys = BOUND_KEYS.map(function (row) {
+      const p = Server.prototype.boundKeyProofRefusal.call(
+        { deps: { log: helpers.log },
+          keyBindingOn: function () { return row[0]; } },
+        row[1], row[2], row[3]);
+      return { on: row[0], scope: row[1], code: row[2],
+               claims: row[3] ? row[3].claims : null,
+               refusal: p ? p.code : '', description: p ? p.description : '' };
     });
     const claimsPolicy = new policyModule.DelegationPolicy(
       fakeDeps(ROOT, SETTINGS, 'product'));

@@ -61,7 +61,8 @@ const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
 // above — so a job reaches the grants after them. Both runtimes verify the other's tokens: one store, one key.
 const TOKEN_PATH = new RegExp('^(/realm/[^/]+)?(/[^/]+)?/oauth2/token' +
   '(\\?|$)');
-const NODE_GRANTS = ['urn:openid:params:grant-type:ciba'];
+// CIBA's grant left with `oauth8`; /oauth2/bc-authorize is Node's still.
+const NODE_GRANTS = [];
 // RFC 8693's TOKEN EXCHANGE IS RUST'S since the `oauth8` slice, except an
 // exchange presenting or asking for a type whose verifier is not ported:
 // an RFC 7522 SAML assertion, a Kerberos ticket (#658) and Native SSO's

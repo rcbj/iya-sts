@@ -284,6 +284,29 @@ fn nodes_exchange_types_chains_verdicts_and_decisions() {
                                "question": row["question"],
                                "decision": mine }));
     }
+    for row in node["userCodes"].as_array().unwrap() {
+        assert_eq!(
+            sts_oauth::device_authorization::DeviceCodes::normalize(&text(
+                row, "typed"
+            )),
+            text(row, "normalized"),
+            "{}",
+            row
+        );
+    }
+    for row in node["boundKeys"].as_array().unwrap() {
+        let claims = (!row["claims"].is_null()).then_some(&row["claims"]);
+        let mine = sts_oauth::token_endpoint::device::bound_key_proof_refusal(
+            row["on"] == true,
+            &text(row, "scope"),
+            &text(row, "code"),
+            claims,
+        );
+        let (code, description) =
+            mine.map(|(c, d)| (c.to_string(), d)).unwrap_or_default();
+        assert_eq!(code, text(row, "refusal"), "{}", row);
+        assert_eq!(description, text(row, "description"), "{}", row);
+    }
     let policy = policy_for(&node, "product");
     let mut claims = Vec::new();
     for row in node["claims"].as_array().unwrap() {

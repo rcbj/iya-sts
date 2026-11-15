@@ -102,6 +102,10 @@ pub trait Clients: Send + Sync {
     fn global_consents_of(&self, _client_id: &str) -> Vec<String> {
         Vec::new()
     }
+    /// `applications.cibaOf(clientId).mode`: `poll`, `ping`, `push` or ''.
+    fn ciba_mode_of(&self, _client_id: &str) -> String {
+        String::new()
+    }
     /// `registrationOf(clientId).client_name`: the RFC 7591 registration's
     /// `client_name`, '' for none or a client that was not registered.
     fn registered_client_name(&self, _client_id: &str) -> String {
@@ -278,6 +282,31 @@ pub struct RegisterClients {
 }
 
 impl Clients for RegisterClients {
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn ciba_mode_of(&self, client_id: &str) -> String {
+        let who = client_id.trim();
+        if who.is_empty() {
+            return String::new();
+        }
+        let found = self
+            .registry
+            .for_client_id(who)
+            .or_else(|| self.registry.get(who));
+        let mode = found
+            .map(|f| {
+                values_of(f["fields"].get("oauthBackchannelTokenDeliveryMode"))
+            })
+            .and_then(|v| v.into_iter().next())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if ["poll", "ping", "push"].contains(&mode.as_str()) {
+            mode
+        } else {
+            String::new()
+        }
+    }
+
     #[tracing::instrument(level = "debug", skip(self))]
     fn registered_client_name(&self, client_id: &str) -> String {
         let loaded = self.registry.load(client_id);
