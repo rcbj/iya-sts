@@ -370,7 +370,10 @@ async function browser(base, id, user, password, secret) {
     ws.close();
   } finally {
     chrome.kill('SIGKILL');
-    fs.rmSync(dir, { recursive: true, force: true });
+    // Chrome may still be writing its profile for a moment after the kill.
+    await new Promise(function (r) { setTimeout(r, 1000); });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5,
+                     retryDelay: 500 });
   }
 }
 

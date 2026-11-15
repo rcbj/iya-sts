@@ -572,8 +572,38 @@ impl OAuthStack {
             base,
             request: session_request.clone(),
         };
+        // `/oauth2/authorize` IS AN ARRIVAL PATH (`ARRIVAL_PATHS`): a
+        // browser that arrives with no `sts_session` is given an arrival
+        // session, which the sign-in it is sent to binds its step to.
+        self.sessions.touch_arrival_session(&session_request);
+        let mut arrival = sts_authn::ports::Response::default();
+        if self
+            .sessions
+            .cookie_session(
+                Some(&session_request),
+                sts_authn_api::door::SESSION_COOKIE,
+            )
+            .is_none()
+            && self
+                .sessions
+                .start_arrival_session(
+                    &session_request,
+                    &mut arrival,
+                    "arrival",
+                )
+                .is_none()
+        {
+            tracing::debug!("oauth2: no arrival session was started.");
+        }
         let answer = self.authorize.answer(&ask);
         let mut response = answer.into_response();
+        for line in arrival.cookies {
+            if let Ok(v) = axum::http::HeaderValue::from_str(&line) {
+                response
+                    .headers_mut()
+                    .append(axum::http::header::SET_COOKIE, v);
+            }
+        }
         // What the session core queued on the request (an account set's
         // cookie, #561).
         for line in session_request.accounts.lock().appended.drain(..) {

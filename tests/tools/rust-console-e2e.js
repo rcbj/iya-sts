@@ -287,8 +287,14 @@ async function surface(base, path, user, password, secret) {
         const u = msg.params.response.url;
         if (/\/(oauth2|admin-api|account-api|authn-api)\//.test(u) ||
             /\/\.well-known\//.test(u)) {
+          const h = msg.params.response.headers || {};
           seen.push({ url: u.replace(base, ''),
                       status: msg.params.response.status,
+                      location: h.location || h.Location || undefined,
+                      setCookie: (h['set-cookie'] || h['Set-Cookie'] || '')
+                        .split('\n').map(function (l) {
+                          return l.split('=')[0];
+                        }).filter(Boolean),
                       id: msg.params.requestId });
         }
       }
@@ -339,13 +345,22 @@ async function surface(base, path, user, password, secret) {
       location: await evaluate('location.href'),
       calls: seen.map(function (s) {
         return { url: s.url.split('?')[0], status: s.status,
+                 location: s.location ? String(s.location).split('?')[0] +
+                   (/[?&#]code=/.test(s.location) ? ' (a code)' : '') +
+                   (/error=/.test(s.location) ? ' ' +
+                    /error=[^&]*/.exec(s.location)[0] : '') : undefined,
+                 setCookie: s.setCookie.length ? s.setCookie : undefined,
                  answer: bodies[s.id] };
       }),
+      cookies: (await send('Network.getAllCookies')).result.cookies
+        .map(function (c) { return c.name; }),
       text: await evaluate('document.body.innerText.slice(0, 600)') }));
     ws.close();
   } finally {
     chrome.kill('SIGKILL');
-    fs.rmSync(dir, { recursive: true, force: true });
+    await new Promise(function (r) { setTimeout(r, 1000); });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5,
+                     retryDelay: 500 });
   }
 }
 
