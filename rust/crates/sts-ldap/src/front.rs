@@ -24,10 +24,9 @@
 //!   client, an unknown operation;
 //! * [`Event::Thrown`] — the parser's own `assert` failing, which in Node
 //!   escapes the read handler (and nothing more is read);
-//! * [`Event::Stalled`] — never produced since the `rcbj/node-ldapjs`
-//!   fork stopped looping for ever on a malformed SEQUENCE OF or DN
-//!   (#1784): those are [`Event::Destroy`] now, in Node and here. The
-//!   variant stays only while `sts-runtime`'s listener still matches it.
+//! * no stall: since the `rcbj/node-ldapjs` fork stopped looping for ever
+//!   on a malformed SEQUENCE OF or DN (#1784) those are [`Event::Destroy`],
+//!   in Node and here, and the `Stalled` event is gone.
 //!
 //! Framing is the parser's: bytes are kept until the outer TLV is complete
 //! (a first tag of 0x00 is never complete — the bytes are kept for ever),
@@ -66,8 +65,6 @@ pub enum Event {
     Dispatch(Box<Message>),
     Write(Vec<u8>),
     Destroy,
-    /// Never produced (see the module comment).
-    Stalled,
     Thrown(String),
 }
 

@@ -8,8 +8,8 @@
 //!
 //! Every accepted connection gets one `sts_ldap::Connection` (node-ldapjs'
 //! parser and its own answers, the fork's behaviour byte for byte), and
-//! every read is fed to it: `Write` is sent, `Destroy`, `Stalled` and
-//! `Thrown` close the socket, and `Dispatch` is a request for the
+//! every read is fed to it: `Write` is sent, `Destroy` and `Thrown`
+//! close the socket, and `Dispatch` is a request for the
 //! directory's handlers — **phase 4's**. Until they arrive [`Handlers`] is
 //! the seam and [`NotYet`] answers each request `unwillingToPerform` (53)
 //! with the response its operation takes, an unbind closing the connection
@@ -103,7 +103,7 @@ where
             let (writes, close) = match event {
                 Event::Write(bytes) => (vec![bytes], false),
                 Event::Dispatch(message) => handlers.handle(&message),
-                Event::Destroy | Event::Stalled => (Vec::new(), true),
+                Event::Destroy => (Vec::new(), true),
                 Event::Thrown(why) => {
                     tracing::debug!(
                         "ldap: {}: the parser threw: {}",
