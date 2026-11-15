@@ -47,6 +47,8 @@ pub struct Issue {
     pub message: String,
     /// `invalid_type` with an undefined input.
     pub missing: bool,
+    /// A pattern check's, which does not abort a union branch.
+    pub refinement: bool,
 }
 
 /// A `@body` of the model, by family and id.
@@ -87,6 +89,7 @@ fn invalid_type(path: &[String], expected: &str, got: Option<&Json>) -> Issue {
             received(got)
         ),
         missing: got.is_none(),
+        refinement: false,
     }
 }
 
@@ -95,6 +98,7 @@ fn issue(path: &[String], message: String) -> Issue {
         path: path.to_vec(),
         message,
         missing: false,
+        refinement: false,
     }
 }
 
@@ -154,7 +158,12 @@ fn check_field(
                                 pattern
                             )
                         });
-                    out.push(issue(path, message));
+                    out.push(Issue {
+                        path: path.to_vec(),
+                        message,
+                        missing: false,
+                        refinement: true,
+                    });
                 }
             }
         }
@@ -233,6 +242,7 @@ fn check_field(
                     path: path.to_vec(),
                     message: format!("Invalid input: expected {}", wanted),
                     missing: false,
+                    refinement: false,
                 });
             }
         }
@@ -306,6 +316,14 @@ fn check_field(
     }
 }
 
+/// Whether an issue is a refinement's, which does not abort zod's parse:
+/// a size, a bound, a pattern.
+fn refinement(message: &str) -> bool {
+    message.starts_with("Too small:")
+        || message.starts_with("Too big:")
+        || message.starts_with("Invalid string:")
+}
+
 fn check_object(
     others: &str,
     fields: &[Json],
@@ -335,9 +353,22 @@ fn check_object(
         if empty {
             // `opt()`: a union of `''` and the type; a value neither is is
             // zod's union refusal.
+            //
+            // zod 4's union reports the ONE branch that did not abort: the
+            // `''` literal always aborts on another value, so a value of
+            // the right type that fails only a refinement (`'0'` under a
+            // minimum of 1) is that refinement's issue, and a value of the
+            // wrong type (`'x'`, NaN) aborts both branches and is the
+            // union's own "Invalid input". A type issue aborts; a size or
+            // pattern check does not.
             let mut inner = Vec::new();
             check_field(field, member, &at, query, &mut inner);
-            if !inner.is_empty() {
+            if inner.is_empty() {
+                continue;
+            }
+            if inner.iter().all(|i| i.refinement || refinement(&i.message)) {
+                out.extend(inner);
+            } else {
                 out.push(issue(&at, "Invalid input".to_string()));
             }
             continue;
@@ -398,6 +429,27 @@ impl Body {
             return Err(first);
         }
         let mut out = value.clone();
+        if query {
+            // `z.coerce.number().int()` hands back the NUMBER: a page of
+            // `'2'` is parsed as `2`, and `''` (the `opt()` side of the
+            // union) stays the empty text.
+            if let Json::Object(o) = &mut out {
+                for f in list(&self.spec, "fields") {
+                    if text(f, "json") != "integer" {
+                        continue;
+                    }
+                    let Some(Json::String(s)) = o.get(text(f, "name")) else {
+                        continue;
+                    };
+                    if s.is_empty() {
+                        continue;
+                    }
+                    if let Ok(n) = s.trim().parse::<i64>() {
+                        o.insert(text(f, "name").to_string(), Json::from(n));
+                    }
+                }
+            }
+        }
         if text(&self.spec, "others") == "strip" {
             if let Json::Object(o) = &mut out {
                 let known: Vec<String> = list(&self.spec, "fields")

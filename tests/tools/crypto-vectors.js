@@ -5633,6 +5633,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                      return require('./pki-authority-vectors.js')
                        .build(ROOT, OUT);
                    } },
+                 // Certificate enrollment (#444, phase 6, sts-enroll):
+                 // tests/tools/enroll-vectors.js.
+                 { file: 'enroll-node.json',
+                   build: function () {
+                     return require('./enroll-vectors.js').build(ROOT, OUT);
+                   } },
                  // The protocol-independent sign-out (#444, phase 5,
                  // sts-logout): tests/tools/logout-vectors.js.
                  { file: 'logout-node.json',
