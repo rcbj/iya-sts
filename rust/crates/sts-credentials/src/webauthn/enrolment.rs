@@ -379,6 +379,15 @@ pub trait KeyPorts: Send + Sync {
     fn reads_user_handles(&self) -> bool;
     /// Whether it installed `writeWebauthnUserHandle`.
     fn writes_user_handles(&self) -> bool;
+    /// Whether it installed `webauthnUserHandleOwner` (#474).
+    fn reads_user_handle_owners(&self) -> bool {
+        false
+    }
+    /// `webauthnUserHandleOwner(handle)`: the person whose entry holds the
+    /// handle, in either lane, or ''.
+    fn user_handle_owner(&self, _handle: &str) -> Hook<String> {
+        Ok(String::new())
+    }
     /// `writeWebauthn(name, value)`: one key appended.
     fn write_webauthn(&self, name: &str, value: &str) -> Hook<bool>;
     /// `readWebauthnUserHandle(name, lane)`.
@@ -479,6 +488,91 @@ impl KeyDoors {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn new_user_handle(&self) -> String {
         b64u(&self.d.env.random_bytes(64))
+    }
+
+    /// The attestation half of a registration (`webauthnAttestation.
+    /// assess(registration)`): section 7.1 steps 21-25 over the ports the
+    /// doors were built with.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn assess(
+        &self,
+        registration: &super::ceremony::Registration,
+    ) -> Verdict {
+        Attestation::new(self.d.attestation.as_ref()).assess(registration)
+    }
+
+    /// What the doors reach outside themselves for, for a door of the
+    /// sign-in screen that records through the same ports.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn ports(&self) -> &Arc<dyn KeyPorts> {
+        &self.d.ports
+    }
+
+    /// `ownerOfUserHandle(handle)` (#474): the person whose entry holds a
+    /// handle this service minted, or ''.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn owner_of_user_handle(&self, handle: &str) -> String {
+        if !is_user_handle(&json!(handle))
+            || !self.d.ports.reads_user_handle_owners()
+        {
+            return String::new();
+        }
+        match self.d.ports.user_handle_owner(handle) {
+            Ok(owner) => owner,
+            Err(e) => {
+                tracing::debug!("Caught in owner_of_user_handle(): {}", e);
+                String::new()
+            }
+        }
+    }
+
+    /// `userHandleRefusal(username, key, presented, requireHandle)`:
+    /// WebAuthn Level 3 section 7.2 step 6 — `{ ok }`, or `{ ok: false,
+    /// why }` marked with its code.
+    #[tracing::instrument(level = "debug", skip(self, key, presented))]
+    pub fn user_handle_refusal(
+        &self,
+        username: &str,
+        key: &Json,
+        presented: &str,
+        require_handle: bool,
+    ) -> Verdict {
+        let own = js::string_or(key.get("userHandle"), "");
+        let refuse = |code: ErrorCode, why: &str| {
+            coded(code, json!({ "ok": false, "why": why }))
+        };
+        let mismatch = "the user handle the authenticator returned is not \
+                        the one the key was registered under";
+        if presented.is_empty() {
+            return if require_handle {
+                refuse(
+                    codes::STS_AUTHN_0302,
+                    "the authenticator returned no user handle, so the \
+                     passkey names no account",
+                )
+            } else {
+                Verdict::of(json!({ "ok": true }))
+            };
+        }
+        if !own.is_empty() {
+            return if presented == own {
+                Verdict::of(json!({ "ok": true }))
+            } else {
+                refuse(codes::STS_AUTHN_0303, mismatch)
+            };
+        }
+        if require_handle {
+            return refuse(
+                codes::STS_AUTHN_0304,
+                "this passkey was registered before passkeys could sign in \
+                 without a username",
+            );
+        }
+        if presented == legacy_user_handle(username) {
+            Verdict::of(json!({ "ok": true }))
+        } else {
+            refuse(codes::STS_AUTHN_0303, mismatch)
+        }
     }
 
     /// `userHandleOf(username, { mint, lane })`.
@@ -1059,7 +1153,8 @@ impl KeyDoors {
 
     /// `keyProviderFor(aaguid, attestation)`: MDS where a usable BLOB is
     /// loaded, else the credential-manager table.
-    fn key_provider_for(
+    #[tracing::instrument(level = "debug", skip(self, attestation))]
+    pub fn key_provider_for(
         &self,
         aaguid: &str,
         attestation: &Json,
@@ -1792,7 +1887,8 @@ fn transport_word(t: &str) -> bool {
 }
 
 /// `Credentials.transportsOf(credential)`.
-fn transports_of(credential: &Json) -> Json {
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn transports_of(credential: &Json) -> Json {
     Json::Array(
         credential["response"]["transports"]
             .as_array()
@@ -1809,7 +1905,8 @@ fn transports_of(credential: &Json) -> Json {
 }
 
 /// `Credentials.discoverableOf(credential)`.
-fn discoverable_of(credential: &Json) -> Json {
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn discoverable_of(credential: &Json) -> Json {
     match credential["clientExtensionResults"]["credProps"].get("rk") {
         Some(b @ Json::Bool(_)) => b.clone(),
         _ => Json::Null,
@@ -1817,7 +1914,8 @@ fn discoverable_of(credential: &Json) -> Json {
 }
 
 /// `Credentials.reportedMinPinLength(verdict)`.
-fn reported_min_pin_length(verdict: &Json) -> Json {
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn reported_min_pin_length(verdict: &Json) -> Json {
     match verdict["extensions"].get("minPinLength") {
         Some(Json::Number(n))
             if n.as_f64().is_some_and(|v| {
@@ -1828,4 +1926,50 @@ fn reported_min_pin_length(verdict: &Json) -> Json {
         }
         _ => Json::Null,
     }
+}
+
+/// `Credentials.legacyUserHandle(username)`: the username's bytes,
+/// base64url — the handle of a key registered before #474.
+#[tracing::instrument(level = "trace")]
+pub fn legacy_user_handle(username: &str) -> String {
+    b64u(username.as_bytes())
+}
+
+/// `Credentials.keyName(key)`: its label, or its default name.
+#[tracing::instrument(level = "trace", skip_all)]
+pub fn key_name(key: &Json) -> String {
+    let label = js::trim(&js::string_or(key.get("label"), "")).to_string();
+    let legacy = label.is_empty()
+        || label == "security key"
+        || label == "this device"
+        || (label.starts_with("security key (") && label.ends_with(')'));
+    if legacy {
+        default_key_name(key)
+    } else {
+        label
+    }
+}
+
+/// `Credentials.PQC_NAME_SUFFIX`.
+pub const PQC_NAME_SUFFIX: &str = "+ml-dsa";
+/// `Credentials.PQC_DISPLAY_SUFFIX`.
+pub const PQC_DISPLAY_SUFFIX: &str = " (ML-DSA)";
+
+/// `Credentials.laneUser(username, display, lane)` (#643): `{ name,
+/// displayName }`, the post-quantum lane's suffixed.
+#[tracing::instrument(level = "trace")]
+pub fn lane_user(username: &str, display_name: &str, lane: &str) -> Json {
+    let shown = if display_name.is_empty() {
+        username
+    } else {
+        display_name
+    };
+    if lane != "pqc" {
+        return json!({ "name": username, "displayName": shown });
+    }
+    let room = 64 - PQC_DISPLAY_SUFFIX.chars().count();
+    let cut: String = shown.chars().take(room).collect();
+    json!({ "name": format!("{username}{PQC_NAME_SUFFIX}"),
+            "displayName": format!("{}{}", js::trim(&cut),
+                                   PQC_DISPLAY_SUFFIX) })
 }

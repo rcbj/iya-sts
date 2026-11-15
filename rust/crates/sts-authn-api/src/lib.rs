@@ -20,6 +20,7 @@
 //! | [`router`] | the axum router and the shells (`signInShell()`, the arrival session) |
 //! | [`ports`] | what else the screen asks, and the account sets' narrow port |
 //! | [`wiring`] | the composition root's one call |
+//! | [`passkey_wiring`] | the passkey doors' ports over what the runtime holds |
 //!
 //! THE SESSION IS THE IDENTITY (`authn/CLAUDE.md`): every act that
 //! finishes a sign-in hands the credential it verified, as EVIDENCE, to
@@ -39,6 +40,7 @@ pub mod door;
 pub mod flow;
 pub mod model;
 pub mod operations;
+pub mod passkey_wiring;
 pub mod pending;
 pub mod ports;
 pub mod router;

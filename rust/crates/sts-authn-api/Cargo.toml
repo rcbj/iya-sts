@@ -19,6 +19,7 @@ sts-http.workspace = true
 sts-mgmt-api.workspace = true
 sts-authn.workspace = true
 sts-credentials.workspace = true
+sts-policy.workspace = true
 axum.workspace = true
 chrono.workspace = true
 indexmap.workspace = true

@@ -48,6 +48,11 @@ use sts_credentials::credentials::{
 use sts_credentials::limits::{MemoryBuckets, RateLimiter};
 use sts_credentials::ports::{self as cred_ports, Hook};
 use sts_credentials::session_checks::SessionChecks;
+use sts_credentials::webauthn::ceremonies::Ceremonies;
+use sts_credentials::webauthn::enrolment::{
+    declare_pending_keys, KeyDoors, KeyDoorsDeps,
+};
+use sts_credentials::webauthn::policy::WebauthnPolicy;
 use sts_store::model::StoredEntry;
 use sts_store::persistence::{LiveDirectory, MemoryDirectory, Persistence};
 use sts_store::shadow::EntryLookup;
@@ -58,7 +63,8 @@ use crate::pending::PendingStores;
 use crate::ports::SignInFacts;
 
 /// A setting as Node's `config.value()` answers it.
-fn json_of(value: SettingValue) -> Json {
+#[tracing::instrument(level = "trace", skip_all)]
+pub(crate) fn json_of(value: SettingValue) -> Json {
     match value {
         SettingValue::Text(t) => Json::String(t),
         SettingValue::Int(n) => json!(n),
@@ -75,11 +81,13 @@ pub struct Environment {
 }
 
 impl Environment {
-    fn setting(&self, key: &str) -> Json {
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub(crate) fn setting(&self, key: &str) -> Json {
         json_of(self.settings.value_of(key))
     }
 
-    fn predicate(&self, name: &str) -> bool {
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub(crate) fn predicate(&self, name: &str) -> bool {
         self.mode.predicate(name).unwrap_or(false)
     }
 }
@@ -232,6 +240,55 @@ impl DirectoryPorts {
         self.directory.put(&realm, entry);
         self.persistence.directory_changed(Some(&key));
         Ok(true)
+    }
+
+    /// `personAttributeValues(username, attribute)`.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub(crate) fn person_attribute(
+        &self,
+        name: &str,
+        attribute: &str,
+    ) -> Option<Vec<String>> {
+        self.person(name).and_then(|(_, _, e)| {
+            e.attributes.get(&attribute.to_ascii_lowercase()).cloned()
+        })
+    }
+
+    /// One attribute of a person's entry written, a write marked for the
+    /// next flush.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub(crate) fn write_attribute(
+        &self,
+        name: &str,
+        attribute: &str,
+        values: Option<Vec<String>>,
+    ) -> Hook<bool> {
+        self.write(name, attribute, values)
+    }
+
+    /// `webauthnUserHandleOwner(handle)` (#474): the person whose entry
+    /// holds the handle, in either lane. A walk of the realm's people
+    /// where Node keeps an index (`userHandleIndexes()`).
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub(crate) fn user_handle_owner(&self, handle: &str) -> String {
+        if handle.is_empty() {
+            return String::new();
+        }
+        let (realm, base) = self.realm();
+        let users = format!(",ou=users,{}", base).to_lowercase();
+        self.directory
+            .realm_entries(&realm)
+            .into_iter()
+            .find(|(k, e)| {
+                k.ends_with(&users)
+                    && (first(e, "stsWebauthnUserHandle").as_deref()
+                        == Some(handle)
+                        || (first(e, "stsWebauthnUserHandle").is_some()
+                            && first(e, "stsWebauthnPqcUserHandle").as_deref()
+                                == Some(handle)))
+            })
+            .and_then(|(_, e)| first(&e, "uid"))
+            .unwrap_or_default()
     }
 
     fn entry_by_uuid(&self, subject: &str) -> Option<StoredEntry> {
@@ -476,18 +533,13 @@ impl cred_ports::Keystore for KeystorePort {
 /// nothing configured (the module header lists them).
 pub struct Unconfigured {
     pub env: Arc<Environment>,
+    pub webauthn: Arc<WebauthnPolicy>,
+    pub ceremonies: Arc<Ceremonies>,
 }
 
 impl Unconfigured {
     fn everyone(&self) -> bool {
         self.env.predicate("requiresSecondFactorOfEveryone")
-    }
-
-    fn key_setting(&self, key: &str, fallback: bool) -> bool {
-        match self.env.setting(key) {
-            Json::Bool(b) => b,
-            _ => fallback,
-        }
     }
 }
 
@@ -516,7 +568,14 @@ impl authn_ports::SignInPolicy for Unconfigured {
         None
     }
 
-    fn select_passkey_policy(&self, _username: &str, _application: &Json) {}
+    fn select_passkey_policy(&self, username: &str, application: &Json) {
+        let application = match application {
+            Json::String(a) => a.clone(),
+            Json::Null => String::new(),
+            other => other.to_string(),
+        };
+        self.webauthn.select(username, &application);
+    }
 }
 
 impl authn_ports::Gate for Unconfigured {
@@ -605,11 +664,7 @@ impl cred_ports::Policies for Unconfigured {
     }
 
     fn key_use_allowed(&self, key_use: &str) -> bool {
-        self.key_setting("webauthn.enabled", true)
-            && match key_use {
-                "primary" => self.key_setting("webauthn.primaryAllowed", true),
-                _ => self.key_setting("webauthn.mfaAllowed", true),
-            }
+        self.webauthn.use_allowed(key_use).ok()
     }
 
     fn password_profile_for(&self, _name: &str, _application: &str) -> Json {
@@ -686,19 +741,20 @@ impl cred_ports::Observers for Unconfigured {
 }
 
 impl cred_ports::PasskeyRules for Unconfigured {
-    fn refusal_for(&self, _at: &str, _facts: &Json) -> Option<Json> {
-        None
+    fn refusal_for(&self, at: &str, facts: &Json) -> Option<Json> {
+        self.webauthn.refusal_for(at, facts, None)
     }
 
-    fn recovery_refusal(&self, _ask: &Json) -> Option<Json> {
-        None
+    fn recovery_refusal(&self, ask: &Json) -> Option<Json> {
+        self.webauthn.recovery_refusal(ask)
     }
 
-    fn requires_post_quantum(&self, _at: &str) -> bool {
-        false
+    fn requires_post_quantum(&self, at: &str) -> bool {
+        self.webauthn.requires_post_quantum(at, None)
     }
 
-    fn algorithm_mismatch(&self, _row: &Json) -> Hook<()> {
+    fn algorithm_mismatch(&self, row: &Json) -> Hook<()> {
+        self.ceremonies.algorithm_mismatch(row);
         Ok(())
     }
 
@@ -742,39 +798,35 @@ impl SignInFacts for Facts {
     }
 
     fn key_policy(&self) -> Json {
-        let u = &self.unconfigured;
-        // `usernameless`: the passkey policy's allowUsernameless, on by
-        // default (no named passkey policy is read here yet).
-        json!({ "enabled": u.key_setting("webauthn.enabled", true),
-                "mfaAllowed": u.key_setting("webauthn.mfaAllowed", true),
-                "primaryAllowed": u.key_setting("webauthn.primaryAllowed", true),
-                "usernameless": true })
+        crate::passkey_wiring::key_policy_of(&self.unconfigured.webauthn)
     }
 
     fn key_use_allowed(
         &self,
         key_use: &str,
     ) -> Result<(), (String, ErrorCode)> {
-        if cred_ports::Policies::key_use_allowed(&*self.unconfigured, key_use) {
+        let allowed = self.unconfigured.webauthn.use_allowed(key_use);
+        if allowed.ok() {
             Ok(())
         } else {
             Err((
-                format!(
-                    "This realm does not allow a passkey as {} (webauthn.{}).",
-                    if key_use == "primary" {
-                        "a first factor"
-                    } else {
-                        "a second factor"
-                    },
-                    if key_use == "primary" {
-                        "primaryAllowed"
-                    } else {
-                        "mfaAllowed"
-                    }
-                ),
-                codes::STS_AUTHN_0044,
+                allowed
+                    .value
+                    .get("why")
+                    .and_then(Json::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                allowed.code.unwrap_or(codes::STS_AUTHN_0044),
             ))
         }
+    }
+
+    fn realms_active(&self) -> bool {
+        self.env.registry.list().len() > 1
+    }
+
+    fn credential_changed(&self, facts: &Json) {
+        tracing::info!("caep: a credential changed: {}", facts);
     }
 
     fn gate_session(
@@ -924,7 +976,27 @@ impl SignInStack {
             mode: parts.mode.clone(),
         });
         let directory_people: Arc<dyn authn_ports::People> = directory.clone();
-        let unconfigured = Arc::new(Unconfigured { env: env.clone() });
+        let profiles = Arc::new(crate::passkey_wiring::PasskeyProfiles {
+            directory: parts.directory.clone(),
+            registry: parts.registry.clone(),
+            settings: parts.settings.clone(),
+            mode: parts.mode.clone(),
+        });
+        let webauthn = Arc::new(WebauthnPolicy::new(Arc::new(
+            crate::passkey_wiring::Source {
+                env: env.clone(),
+                profiles,
+                directory: directory.clone(),
+            },
+        )));
+        let ceremonies = Arc::new(Ceremonies::new(Arc::new(
+            crate::passkey_wiring::LogAudit,
+        )));
+        let unconfigured = Arc::new(Unconfigured {
+            env: env.clone(),
+            webauthn: webauthn.clone(),
+            ceremonies: ceremonies.clone(),
+        });
         let credentials = Arc::new(Credentials::new(CredentialsDeps {
             env: env.clone(),
             policies: unconfigured.clone(),
@@ -971,6 +1043,23 @@ impl SignInStack {
             &parts.handles,
         ));
         let limits = Arc::new(RateLimiter::new(env.clone(), buckets()));
+        let keys = Arc::new(KeyDoors::new(KeyDoorsDeps {
+            credentials: credentials.clone(),
+            env: env.clone(),
+            rules: webauthn.clone(),
+            profile: webauthn.clone(),
+            ports: Arc::new(crate::passkey_wiring::KeyStore {
+                directory: directory.clone(),
+                ceremonies: ceremonies.clone(),
+                coordination: Arc::default(),
+            }),
+            attestation: Arc::new(crate::passkey_wiring::AttestationOver {
+                webauthn: webauthn.clone(),
+                env: env.clone(),
+                none: crate::passkey_wiring::NoMetadata,
+            }),
+            pending: declare_pending_keys(&parts.lifecycle, &parts.handles),
+        }));
         let signin = Arc::new(SignIn {
             stores: PendingStores::declare(&parts.lifecycle, &parts.handles),
             sessions: sessions.clone(),
@@ -981,6 +1070,13 @@ impl SignInStack {
                 directory,
                 unconfigured,
             }),
+            keys,
+            webauthn,
+            ceremonies,
+            metadata: Arc::new(crate::passkey_wiring::NoMetadata),
+            post_login: Arc::new(
+                crate::passkey_wiring::LocalPostLogin::default(),
+            ),
         });
         let api = Arc::new(AuthnApi {
             signin: signin.clone(),
