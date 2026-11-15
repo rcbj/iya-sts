@@ -68,9 +68,16 @@ directory to serve. Why this and not the other:
   default and logs `STS-XPEP-0115`. With `PEP_HTTP=true` the API's listener
   serves `/crl/` as it always did and this is not bound.
 
-It is reported as `api-http` with state `listening` and reason `crl-only`, a
-member of the service's closed set, which the Listener tab draws as
-*listening, CRLs only*.
+It is reported as `api-http` with state `listening`, reason `crl-only` and
+**purpose `crl`** (2026-11-15; it was `api`, so the console drew it as the
+*decision API* it does not serve): `EnvKind::Crl` in `listeners.rs`, which
+keeps the purpose when the bind fails too. The Listener tab, the listener's
+page and the Visual picture draw it as *CRL distribution*, *listening, CRLs
+only*. **Backwards compatible both ways**: a service older than this closes
+the purpose to `api`/`proxy` and reads `api`, the reason still saying
+CRLs only; a newer console reads an older PEP's `api` with `crl-only` as
+*CRL distribution* too (`PepPicture.purposeOf()`). `cargo test`'s
+`the_crl_only_listener_is_reported_with_the_purpose_crl`.
 
 **THE NUDGE IS HTTPS ONLY (2026-11-14, rcbj: "Let's assume always HTTPS").**
 `POST /notify` is answered on an HTTPS listener alone; over plain HTTP — the

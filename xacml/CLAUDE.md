@@ -1581,7 +1581,13 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   read as `other`, the certificate's seven members as text without a control
   character, stamped on arrival; absent keeps, `null` clears, a registration
   drops. **No operating-system sentence is kept**: a `REMOTE_PEPS` holder
-  writes it and an administrator reads it.
+  writes it and an administrator reads it. **A reported `purpose` may be
+  `crl`** as well as the two a definition may name (`REPORTED_PURPOSES`,
+  2026-11-15): the PEP's CRL-only plain listener on `PEP_PORT`, which the
+  console drew as the decision API. Every drawing asks
+  `PepPicture.purposeOf()` — the Configured Listeners table, the listener's
+  page and the picture — which reads an older PEP's `api` with the reason
+  `crl-only` the same way; `tests/xacml_pep_console.js` LP.
 * **THE PAGE** answers `listeners` (the definitions as the pull reads them),
   `listenersProblem`, `listenersInUse` and `listenerRows` — every listener,
   the environment's first, joined to its report and, for a defined HTTPS
@@ -1826,7 +1832,13 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   trie (`PepPicture.tree()`, a segment no route stops at a chip, a run of
   them merged) whose rows own both coordinates, so it grows down with the
   routes. Below the console's 56rem breakpoint a stacked drawing is shown
-  instead (`.pep-picture-stacked`). **What each kind draws**: a simple
+  instead (`.pep-picture-stacked`), **laid out 240 wide whatever the tree**
+  (2026-11-15: at 390px its boxes ran past the card): every box ends at one
+  right edge, the step in shrinks for a deep tree so the deepest route keeps
+  140, and its text wraps inside its box (a path breaking before a `/`)
+  rather than being cut; the box's padding is thinner there and, only
+  narrower than a phone, the SVG is scaled to it. `tests/xacml_pep_picture.js`
+  W bounds every box and line. **What each kind draws**: a simple
   route every action of its model with its roles (each a link to
   `/admin/roles?q=`; none is *nobody*); a public route *Public*; an
   existing policy its NAME, linked to the editor, and no roles — reading

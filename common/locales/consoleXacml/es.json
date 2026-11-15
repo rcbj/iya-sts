@@ -490,6 +490,7 @@
   "listeners.source.service": "definida aquí",
   "listeners.purpose.api": "API de decisión",
   "listeners.purpose.proxy": "proxy inverso",
+  "listeners.purpose.crl": "distribución de CRL",
   "listeners.state.listening": "escuchando",
   "listeners.state.waiting": "en espera",
   "listeners.state.failed": "con error",

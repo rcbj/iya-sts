@@ -19,6 +19,12 @@
 //      four, reads "not reported"; an environment plain-HTTP listener with
 //      no report reads as its default, off, labelled as the default; and a
 //      reported `http-off` reads "off (PEP_HTTP=false)".
+//   LP. THE CRL-ONLY LISTENER'S PURPOSE (2026-11-15): `api-http` serving
+//      only `/crl/<name>` (PEP_CRL_HTTP, PEP_HTTP off) was drawn "decision
+//      API". Reported with the purpose `crl`, or by an older PEP as `api`
+//      with the reason `crl-only`, it reads "CRL distribution" in the
+//      Configured Listeners table and on its own page; with PEP_HTTP on it
+//      is the decision API still.
 //   R. THE REVERSE PROXY TAB draws no "Edit route <id>" section per route
 //      (rcbj): each route's id in the table links to its own page, which
 //      holds the one edit form. The add form and the document editor
@@ -1375,6 +1381,69 @@ async function run(t) {
                  { name: 'pep-1', listener: 'pub2' }) === null,
           'LT2. a new listener lands on its page, a save stays there, a ' +
           'removal lands on Configured Listeners, a renew stays put');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== LP. the CRL-only listener\'s purpose ===');
+  // -------------------------------------------------------------------------
+  const purposeCell = function (reported) {
+    log.debug("Entering purposeCell().");
+    const pep = { name: 'pep-1', proxy: null, proxyRoutes: [], listeners: [],
+                  listenersInUse: { at: 'x' },
+                  listenerRows: [envRow('api-http', 'http', 'PEP_HTTP',
+                                        reported)] };
+    const json = { pep: 'pep-1', found: true, applicationChoices: [],
+                   listenersCatalogue: lJson.listenersCatalogue,
+                   listenerCertificates: lJson.listenerCertificates,
+                   peps: [pep] };
+    const tab = XacmlPage.listenersBody(writer, json, pep);
+    const row = (tab.match(/<tr id="pep-listener-api-http">[\s\S]*?<\/tr>/) ||
+                 [''])[0];
+    const cells = row.match(/<td>[\s\S]*?<\/td>/g) || [];
+    const page = XacmlPage.listenerDetail(
+      kit.context({ pep: 'pep-1', listener: 'api-http' }, true), json);
+    log.debug("Leaving purposeCell().");
+    return { cell: (cells[3] || '').replace(/<\/?td>/g, ''), page: page };
+  };
+  const crlNew = purposeCell({ state: 'listening', reason: 'crl-only',
+                               purpose: 'crl', port: 9090 });
+  t.equal(crlNew.cell, 'CRL distribution',
+          'LP1. reported with the purpose crl: "CRL distribution" in the ' +
+          'Configured Listeners table');
+  t.check(crlNew.page.indexOf('>Purpose</th><td>CRL distribution</td>') >= 0,
+          'LP2. and on the listener\'s own page',
+          crlNew.page.slice(crlNew.page.indexOf('Purpose') - 200,
+                            crlNew.page.indexOf('Purpose') + 400));
+  const crlOld = purposeCell({ state: 'listening', reason: 'crl-only',
+                               purpose: 'api', port: 9090 });
+  t.equal(crlOld.cell, 'CRL distribution',
+          'LP3. an older PEP\'s report (purpose api, reason crl-only) reads ' +
+          'the same');
+  const crlFailed = purposeCell({ state: 'failed', reason: 'other',
+                                  purpose: 'crl', port: 9090 });
+  t.equal(crlFailed.cell, 'CRL distribution',
+          'LP4. a CRL listener that failed to bind is still one');
+  const apiOn = purposeCell({ state: 'listening', reason: 'none',
+                              purpose: 'api', port: 9090 });
+  t.equal(apiOn.cell, 'decision API',
+          'LP5. with PEP_HTTP on, the decision API');
+  t.equal(purposeCell(null).cell, 'decision API',
+          'LP6. not reported: what the row says');
+  // The service keeps a reported `crl` (its closed set of REPORTED
+  // purposes), reads anything else as `api`, and defines only the two.
+  const pepListeners = require('../xacml/xacml_pep_listeners');
+  const kept = pepListeners.inUseOf({ at: '2026-11-15T00:00:00Z', listeners: [
+    { id: 'api-http', source: 'environment', protocol: 'http',
+      purpose: 'crl', address: '0.0.0.0', port: 9090, state: 'listening',
+      reason: 'crl-only', renew: 0, certificate: null },
+    { id: 'odd', source: 'service', protocol: 'http', purpose: 'ftp',
+      address: '0.0.0.0', port: 9091, state: 'listening', reason: 'none',
+      renew: 0, certificate: null }] });
+  t.equal(kept.listeners.map(function (one) {
+    return one.id + ':' + one.purpose;
+  }).join(' ') + ' | ' + pepListeners.PURPOSES.join(' '),
+          'api-http:crl odd:api | api proxy',
+          'LP7. the report keeps crl, reads an unknown purpose as api; a ' +
+          'definition is still api or proxy');
 
   // -------------------------------------------------------------------------
   t.log.info('=== TR. the trail names the open tab and sub-tab ===');

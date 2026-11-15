@@ -1531,9 +1531,12 @@ class XacmlPage {
         environment: t.html('consoleXacml.listeners.source.environment'),
         service: t.html('consoleXacml.listeners.source.service')
       },
+      // `crl` is reported, never defined: the CRL-only plain listener
+      // (`PepPicture.purposeOf()`).
       purpose: {
         api: t.html('consoleXacml.listeners.purpose.api'),
-        proxy: t.html('consoleXacml.listeners.purpose.proxy')
+        proxy: t.html('consoleXacml.listeners.purpose.proxy'),
+        crl: t.html('consoleXacml.listeners.purpose.crl')
       },
       state: {
         listening: t.html('consoleXacml.listeners.state.listening'),
@@ -1848,7 +1851,8 @@ class XacmlPage {
                              : '<span class="sub">' +
                                t.html('consoleXacml.listeners.notReported') +
                                '</span>') +
-        '</td><td>' + words.purpose[one.purpose] + '</td><td>' + state +
+        '</td><td>' + words.purpose[PepPicture.purposeOf(one)] +
+        '</td><td>' + state +
         '</td><td>' + self.listenerCertificate(t, one) + '</td></tr>';
     }).join('');
     const table = self.wide(t, 'consoleXacml.listeners.tab.configured',
@@ -1985,7 +1989,8 @@ class XacmlPage {
       line('consoleXacml.listeners.form.protocol',
            'consoleXacml.tip.listener.protocol', https ? 'HTTPS' : 'HTTP') +
       line('consoleXacml.listeners.form.purpose',
-           'consoleXacml.tip.listener.purpose', words.purpose[one.purpose]) +
+           'consoleXacml.tip.listener.purpose',
+           words.purpose[PepPicture.purposeOf(one)]) +
       line('consoleXacml.listeners.form.address',
            'consoleXacml.tip.listener.address',
            code(environment ? said.address : d.address)) +

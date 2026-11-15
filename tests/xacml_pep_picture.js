@@ -23,6 +23,14 @@
 //   N. THE LISTENERS: id, protocol, address:port, purpose, source; off and
 //      not reported dashed; environment and defined told apart; a line from
 //      each reverse-proxy listener to the proxy.
+//      The CRL-only plain listener (PEP_CRL_HTTP, PEP_HTTP off) reads "CRL
+//      distribution", reported as `crl` or, by an older PEP, as `api` with
+//      the reason `crl-only` (2026-11-15).
+//   W. THE STACKED DRAWING FITS A PHONE (2026-11-15: at 390px its boxes ran
+//      past the card): 240 wide whatever the tree, every box inside its
+//      right edge, every line of text inside its box, a deep route's box
+//      no narrower than its minimum, over this fixture and a deeper one
+//      with long names.
 //   A. THE TEXT ALTERNATIVE and the SVG's title and desc; the key.
 //   E. ESCAPING: hostile names in every place a name is drawn; the SVG is
 //      well-formed XML.
@@ -298,6 +306,125 @@ async function run(t) {
           }).length === 1,
           'N3. a line from each of the three reverse-proxy listeners to the ' +
           'proxy, the one that is off dashed', serves.join('\n'));
+
+  // THE CRL-ONLY LISTENER. A PEP reports it with the purpose `crl`; an
+  // older one as `api` with the reason `crl-only`; either is "CRL
+  // distribution", in the box, its title and the text alternative.
+  const crlRow = function (reported) {
+    return Object.assign({}, row, { listenerRows: [
+      Object.assign({}, row.listenerRows[0], { reported: reported })] });
+  };
+  const crlNew = crlRow({ state: 'listening', reason: 'crl-only',
+                          purpose: 'crl', address: '0.0.0.0', port: 9090 });
+  const crlOld = crlRow({ state: 'listening', reason: 'crl-only',
+                          purpose: 'api', address: '0.0.0.0', port: 9090 });
+  const apiOn = crlRow({ state: 'listening', reason: 'none', purpose: 'api',
+                         address: '0.0.0.0', port: 9090 });
+  t.equal([crlNew, crlOld, apiOn].map(function (one) {
+    return PepPicture.purposeOf(one.listenerRows[0]);
+  }).concat([PepPicture.purposeOf(row.listenerRows[2]),
+             PepPicture.purposeOf(row.listenerRows[5])]).join(' '),
+          'crl crl api proxy api',
+          'N4. purposeOf(): crl as reported, crl for an older PEP\'s ' +
+          'crl-only api, else the row\'s');
+  [[crlNew, 'N5. reported crl'], [crlOld, 'N6. an older PEP\'s crl-only']]
+    .forEach(function (one) {
+      [false, true].forEach(function (stack) {
+        const drawnCrl = PepPicture.draw(tr, one[0], links, stack).svg;
+        const words = drawnCrl.replace(/<[^>]*>/g, ' ');
+        t.check(/CRL distribution\s*·\s*environment/.test(words) &&
+                drawnCrl.indexOf('decision API') < 0 &&
+                PepPicture.textAlternative(tr, one[0], links)
+                  .indexOf('CRL distribution, environment') >= 0,
+                one[1] + (stack ? ', stacked' : '') +
+                  ': "CRL distribution", never "decision API"', words);
+      });
+    });
+  t.check(PepPicture.draw(tr, apiOn, links).svg
+            .indexOf('decision API · environment') >= 0,
+          'N7. with PEP_HTTP on, api-http is the decision API');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== W. the stacked drawing fits a phone ===');
+  // -------------------------------------------------------------------------
+  // The bounds, as the drawing states them: 240 wide, an 8 margin, every
+  // box ending by 228 (the proxy's lines run in the gutter right of it),
+  // a box's text inside its 10 padding. A title or bold line is measured
+  // as `wrap()` does (1.12 the metric; `wrapped` marks its lines), a bold
+  // item of a flowed line as `flow()` does.
+  const DelegationMap = require('../admin-ui/web_delegation_map');
+  const deep = JSON.parse(JSON.stringify(row));
+  deep.proxy.upstream = 'https://a-very-long-upstream-host-name.internal.' +
+    'example.test:8443/with/a/path';
+  for (let i = 0; i < 14; i++) {
+    deep.proxy.routes.push({
+      id: 'route-with-a-long-identifier-' + i,
+      // Eight levels, a route on each, so the tree is eight deep.
+      path: ['', 'level-0', 'level-1', 'level-2', 'level-3', 'level-4',
+             'level-5', 'level-6', 'level-7'].slice(0, i % 8 + 2).join('/'),
+      match: i < 8 ? 'prefix' : 'exact',
+      methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      mechanisms: ['oauth2'], application: 'application-' + i,
+      authorization: { kind: 'simple', policy: 'pep-p-' + i,
+        actionModel: 'crud',
+        roles: { read: ['readers-of-a-long-group-name', 'auditors'],
+                 delete: [] } } });
+  }
+  deep.listenerRows = deep.listenerRows.concat([
+    { id: 'a-listener-with-a-very-long-identifier', source: 'service',
+      protocol: 'https', purpose: 'proxy',
+      definition: { address: '2001:db8::1234:5678', port: 65535 },
+      reported: { state: 'failed', reason: 'address-in-use',
+                  address: '2001:db8::1234:5678', port: 65535 } }]);
+  const bounds = function (one) {
+    const out = [];
+    if (one.width !== 240 || !new RegExp('viewBox="0 0 240 ').test(one.svg)) {
+      out.push('width ' + one.width);
+    }
+    one.boxes.forEach(function (box, i) {
+      if (box.x < 8 || box.x + box.w > 228 + 0.01 ||
+          (i > 0 && box.w < 0)) {
+        out.push('box ' + i + ' at ' + box.x + '+' + box.w);
+      }
+      box.lines.forEach(function (items) {
+        items.forEach(function (item) {
+          const size = item.title ? 12 : 11;
+          const raw = DelegationMap.textWidth(item.text, size);
+          const w = item.wrapped && (item.title || item.bold)
+            ? raw * 1.12 : raw + (item.bold ? item.text.length * 0.6 : 0);
+          if (item.dx + w > box.w - 20 + 0.5) {
+            out.push('"' + item.text + '" ends at ' +
+                     Math.round(item.dx + w) + ' in ' + (box.w - 20));
+          }
+        });
+      });
+    });
+    return out;
+  };
+  const deepStacked = PepPicture.draw(tr, deep, links, true);
+  const narrowest = deepStacked.rows.filter(function (one) {
+    return one.kind === 'route';
+  }).reduce(function (n, one) {
+    return Math.min(n, one.w);
+  }, 1e9);
+  const ownStacked = PepPicture.draw(tr, row, links, true);
+  t.check(bounds(ownStacked).length === 0,
+          'W1. this fixture stacked: 240 wide, every box and every line ' +
+          'inside it', bounds(ownStacked).join('\n'));
+  t.check(bounds(deepStacked).length === 0 &&
+          deepStacked.rows.some(function (one) {
+            return one.depth >= 8;
+          }) && narrowest >= 140,
+          'W2. a deeper tree with long names stacked: still 240, the ' +
+          'deepest box ' + narrowest + ' wide (at least 140)',
+          bounds(deepStacked).join('\n'));
+  const wrapped = deepStacked.boxes.filter(function (box) {
+    return box.lines.some(function (items) {
+      return items[0] && items[0].text.indexOf('OPTIONS') >= 0;
+    });
+  });
+  t.check(wrapped.length === 14 && deepStacked.svg.indexOf('DELETE…') < 0,
+          'W3. a long methods line wraps rather than being cut');
 
   // -------------------------------------------------------------------------
   t.log.info('=== A. the text alternative ===');

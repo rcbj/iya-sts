@@ -490,6 +490,7 @@
   "listeners.source.service": "itinakda rito",
   "listeners.purpose.api": "decision API",
   "listeners.purpose.proxy": "reverse proxy",
+  "listeners.purpose.crl": "pamamahagi ng CRL",
   "listeners.state.listening": "nakikinig",
   "listeners.state.waiting": "naghihintay",
   "listeners.state.failed": "nabigo",

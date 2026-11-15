@@ -124,7 +124,7 @@ listener's port is free, so a defined listener can take 9090.
   neither true nor false).
 * **The Listener tab** shows `api-http` and `proxy-http` as *off*, together
   with the switch that turns each on, and `api-http` as *listening, CRLs
-  only* when the CRL point is bound. A listener the PEP has not reported reads
+  only*, with the purpose *CRL distribution*, when the CRL point is bound. A listener the PEP has not reported reads
   *not reported*, never *listening*.
 * **The test stacks turn both switches on explicitly**, and
   `docker-compose-run-tests.yml` explains why: the job reaches the PEP before

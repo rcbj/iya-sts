@@ -140,6 +140,12 @@ const MAX_LISTENERS = 32;
 const MAX_NAMES = 16;
 const PROTOCOLS = ['http', 'https'];
 const PURPOSES = ['api', 'proxy'];
+// What a PEP may REPORT a listener is for: a definition's two, and `crl`,
+// the plain-HTTP CRL-only listener on `PEP_PORT` (`PEP_CRL_HTTP` with
+// `PEP_HTTP` off), which serves `GET /crl/<name>` and nothing else
+// (2026-11-15). Never definable here; an older PEP reports it as `api`
+// with the reason `crl-only`, which `XacmlPage.listenerPurpose()` reads.
+const REPORTED_PURPOSES = ['api', 'proxy', 'crl'];
 // What the PEP can generate with OpenSSL and the `pep-tls` Issuing CA
 // certifies: a subset of `pki.TLS_SERVER_KEY_ALGS`.
 const KEY_ALGS = ['ec-p256', 'ec-p384', 'rsa-2048', 'rsa-3072'];
@@ -692,7 +698,7 @@ class PepListeners {
           source: closed(one.source, SOURCES, 'service') as
             'environment' | 'service',
           protocol: closed(one.protocol, PROTOCOLS, 'http'),
-          purpose: closed(one.purpose, PURPOSES, 'api'),
+          purpose: closed(one.purpose, REPORTED_PURPOSES, 'api'),
           address: address,
           port: port,
           state: closed(one.state, STATES, 'failed'),

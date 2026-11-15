@@ -334,6 +334,13 @@ pub enum EnvKind {
     /// Not bound at all: the proxy off (`proxy-off`), or a plain-HTTP
     /// listener nobody turned on (`http-off`, the default since #1760).
     Off(&'static str),
+    /// THE CRL-ONLY PLAIN LISTENER (`options::crl_listener`): `PEP_PORT`
+    /// with `PEP_HTTP` off and `PEP_CRL_HTTP` on, serving `GET /crl/<name>`
+    /// and nothing else. Reported with the purpose `crl` (2026-11-15), so
+    /// the console labels it "CRL distribution" rather than the decision
+    /// API it does not serve. An older service closes the purpose to its
+    /// own set and reads `api`; the `crl-only` reason still says it there.
+    Crl(Arc<PlainStatus>),
 }
 
 /// One of the two plain-HTTP environment listeners: bound and reported
@@ -638,11 +645,20 @@ impl ListenerSet {
                 }
                 EnvKind::Tls(https) => https.state(),
                 EnvKind::Off(reason) => ("off", *reason, None),
+                EnvKind::Crl(status) => {
+                    let (s, r) = status.get();
+                    (s, r, None)
+                }
+            };
+            let purpose = match (&one.kind, one.proxy) {
+                (EnvKind::Crl(_), _) => "crl",
+                (_, true) => "proxy",
+                _ => "api",
             };
             out.push(json!({
                 "id": one.id, "source": "environment",
                 "protocol": if one.https { "https" } else { "http" },
-                "purpose": if one.proxy { "proxy" } else { "api" },
+                "purpose": purpose,
                 "address": "0.0.0.0", "port": one.port,
                 "state": state, "reason": reason, "renew": 0,
                 "certificate": certificate
@@ -1106,5 +1122,27 @@ mod tests {
         on.environment("api-http", 9090, plain_kind(true, status));
         assert_eq!(on.report()["listeners"][0]["state"], "listening");
         assert_eq!(on.report()["listeners"][0]["reason"], "none");
+        assert_eq!(on.report()["listeners"][0]["purpose"], "api");
+    }
+
+    #[test]
+    fn the_crl_only_listener_is_reported_with_the_purpose_crl() {
+        let listeners = set(refusing(), false);
+        let status = Arc::new(PlainStatus::default());
+        status.set("listening", "crl-only");
+        listeners.environment("api-http", 9090, EnvKind::Crl(status.clone()));
+        listeners.environment("api-https", 9443,
+                              EnvKind::Plain(Arc::new(PlainStatus::default())));
+        let report = listeners.report();
+        assert_eq!(report["listeners"][0]["id"], "api-http");
+        assert_eq!(report["listeners"][0]["purpose"], "crl");
+        assert_eq!(report["listeners"][0]["state"], "listening");
+        assert_eq!(report["listeners"][0]["reason"], "crl-only");
+        assert_eq!(report["listeners"][0]["protocol"], "http");
+        assert_eq!(report["listeners"][1]["purpose"], "api",
+                   "only the CRL-only listener changes purpose");
+        // A CRL listener that failed to bind is still a CRL listener.
+        status.set("failed", "other");
+        assert_eq!(listeners.report()["listeners"][0]["purpose"], "crl");
     }
 }

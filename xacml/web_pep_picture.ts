@@ -51,6 +51,17 @@
 // number of routes and listeners and only as wide as the deepest path. A
 // wide one scrolls inside the console's `.diagram` box, never the page.
 //
+// THE STACKED DRAWING HAS A FIXED WIDTH, `STACKED_W` (2026-11-15, rcbj: at
+// 390px its boxes ran past the card's right edge). It is the one a phone
+// sees, and a phone's card leaves about 250px inside the `.diagram` box at
+// 360px, so the stacked drawing is laid out to 240: every box ends at the
+// same right edge, a route is narrowed by its depth rather than pushed out
+// by it (the step in shrinks for a deep tree, so the deepest box keeps
+// `ROUTE_MIN_W`), and every line of text WRAPS inside its box rather than
+// being cut — a listener's or a route's box is as tall as its lines. Only
+// a single word wider than a whole line is cut, with its `<title>` whole.
+// `tests/xacml_pep_picture.js` W bounds every box and every line.
+//
 // EVERY STRING IS ESCAPED AS IT IS WRITTEN IN (`kit.esc()`), the whole of it
 // in the shape's `<title>` and a shortened copy drawn.
 // ===========================================================================
@@ -85,15 +96,22 @@ const BOX_PAD_Y = 9;
 const PEP_MIN_W = 156;
 const PEP_MAX_W = 236;
 const LISTENER_W_WIDE = 236;
-const LISTENER_W_STACKED = 226;
 const LISTENER_GAP = 10;
 const ROUTE_W_WIDE = 312;
-const ROUTE_W_STACKED = 262;
 const ROUTE_GAP = 10;
 const INDENT_WIDE = 26;
-const INDENT_STACKED = 16;
 const COLUMN_GAP = 56;
 const CHIP_H = 24;
+// THE STACKED DRAWING'S WIDTH, and what lives inside it: the margin, the
+// right edge every box ends at (the gutter for the proxy's lines is to its
+// right), and the narrowest a route's box may become with depth.
+const STACKED_W = 240;
+const STACKED_PAD = 8;
+const STACKED_RIGHT = STACKED_W - STACKED_PAD - 12;
+const STACKED_INDENT_MAX = 12;
+const ROUTE_MIN_W = 140;
+// How much wider bold text is drawn than the metric estimates.
+const BOLD_WIDTH = 1.12;
 
 // THE ACTIONS OF A SIMPLE ROUTE'S MODEL, as `xacml_pep_proxy.ts`'s
 // `ACTION_MODELS` names them: every action is drawn, and one with no role
@@ -273,6 +291,84 @@ class PepPicture {
     return cut + '…';
   }
 
+  // TEXT WRAPPED ONTO LINES `max` wide, broken at spaces; a word wider than
+  // a whole line is cut with an ellipsis (`fit()`), so a line is never
+  // wider than `max`; a path too wide for a line breaks before a `/`
+  // first. The `<title>` holds the whole text. Bold text (600) is drawn
+  // up to about a tenth wider than the metric says, so it is given that
+  // much less room.
+  /**
+   * Wraps a string onto lines of a drawn width.
+   *
+   * @param text - the text
+   * @param size - its font size
+   * @param max - the widest a line may be drawn
+   * @param bold - whether it is drawn bold
+   * @returns the lines, at least one
+   */
+  static wrap(text: string, size: number, max: number,
+              bold?: boolean): string[] {
+    if (bold) {
+      max = Math.floor(max / BOLD_WIDTH);
+    }
+    // The pieces a line may break between: words, and a word too wide for
+    // a line split again before each `/` (a path), each piece knowing
+    // whether a space joins it to the one before.
+    const pieces: Array<{ text: string; space: boolean }> = [];
+    String(text == null ? '' : text).split(' ')
+      .forEach(function (word: string, i: number): void {
+        const parts = PepPicture.width(word, size) > max
+          ? word.split(/(?=\/)/) : [word];
+        parts.forEach(function (part: string, j: number): void {
+          pieces.push({ text: part, space: i > 0 && j === 0 });
+        });
+      });
+    const lines: string[] = [];
+    let line = '';
+    pieces.forEach(function (piece): void {
+      const next = line + (line && piece.space ? ' ' : '') + piece.text;
+      if (!line || PepPicture.width(next, size) <= max) {
+        line = next;
+        return;
+      }
+      lines.push(PepPicture.fit(line, size, max));
+      line = piece.text;
+    });
+    lines.push(PepPicture.fit(line, size, max));
+    return lines;
+  }
+
+  // WHAT A LISTENER IS FOR. A PEP reports `crl` for its CRL-only plain
+  // listener on PEP_PORT (PEP_CRL_HTTP with PEP_HTTP off, 2026-11-15),
+  // which serves `GET /crl/<name>` and not the decision API; a PEP older
+  // than that reports it as `api` with the reason `crl-only`, which is read
+  // the same way, so it is never drawn as the decision API. Every other
+  // listener is what its row says: `proxy` or `api`.
+  /**
+   * Answers a listener's purpose: `api`, `proxy` or `crl`.
+   *
+   * @param one - a row of `listenerRows`
+   * @returns the purpose
+   */
+  static purposeOf(one: Json): string {
+    const said = one && one.reported;
+    if (said && (said.purpose === 'crl' ||
+                 (said.reason === 'crl-only' &&
+                  one.source === 'environment' && one.protocol === 'http'))) {
+      return 'crl';
+    }
+    return one && one.purpose === 'proxy' ? 'proxy' : 'api';
+  }
+
+  // A purpose in words.
+  private static purposeWord(t: Json, one: Json): string {
+    const purpose = PepPicture.purposeOf(one);
+    return purpose === 'crl' ? t.text('consoleXacml.listeners.purpose.crl')
+      : (purpose === 'proxy'
+          ? t.text('consoleXacml.listeners.purpose.proxy')
+          : t.text('consoleXacml.listeners.purpose.api'));
+  }
+
   // WHERE A LISTENER LISTENS, as the PEP reported it, else as defined, else
   // its environment's default port — `XacmlPage.listenerWhere()`'s order.
   /**
@@ -393,20 +489,29 @@ class PepPicture {
 
   // ITEMS FLOWED ONTO LINES `max` wide: an item that does not fit on a line
   // with something on it starts the next one, a step in; one wider than a
-  // whole line is cut.
+  // whole line is cut — to the room of the line it lands on, so an item
+  // that starts a continuation line, a step in, ends inside `max` too.
   private static flow(items: Json[], max: number): Json[][] {
     const lines: Json[][] = [[]];
     let x = 0;
     const gap = PepPicture.width(' ', SUB_SIZE);
+    const measure = function (item: Json, room: number): Json {
+      const text = PepPicture.fit(item.text, SUB_SIZE,
+        room - (item.bold ? String(item.text).length * 0.6 : 0));
+      return { text: text, w: PepPicture.width(text, SUB_SIZE) +
+                 (item.bold ? text.length * 0.6 : 0) };
+    };
     items.forEach(function (item: Json): void {
-      const room = max - (lines.length > 1 ? 12 : 0);
-      const text = PepPicture.fit(item.text, SUB_SIZE, room);
-      const w = PepPicture.width(text, SUB_SIZE) +
-        (item.bold ? text.length * 0.6 : 0);
-      if (x > 0 && x + w > room) {
+      let room = max - (lines.length > 1 ? 12 : 0);
+      let cut = measure(item, room);
+      if (x > 0 && x + cut.w > room) {
         lines.push([]);
         x = 0;
+        room = max - 12;
+        cut = measure(item, room);
       }
+      const text = cut.text;
+      const w = cut.w;
       lines[lines.length - 1].push(Object.assign({}, item,
         { text: text, dx: x + (lines.length > 1 ? 12 : 0) }));
       x += w + gap;
@@ -414,25 +519,37 @@ class PepPicture {
     return lines;
   }
 
-  // A ROUTE'S BOX, measured: its lines, each a list of placed items.
+  // A ROUTE'S BOX, measured: its lines, each a list of placed items, and
+  // `head`, how many of them (id, path, methods) the box's own link holds.
+  // Stacked, those three wrap rather than being cut.
   private static routeLines(t: Json, row: Row, status: Json,
-                            boxW: number): Json[][] {
+                            boxW: number, stacked?: boolean): Json[][] {
     const route = row.route;
     const inner = boxW - 2 * BOX_PAD_X;
     const methods = route.methods || [];
     const isPublic = (route.authorization || {}).kind === 'public';
     const lines: Json[][] = [];
-    lines.push([{ text: PepPicture.fit('#' + (row.position + 1) + '  ' +
-                    route.id, LABEL_SIZE, inner), colour: INK,
-                  title: true, dx: 0 }]);
-    lines.push([{ text: PepPicture.fit(route.path + ' · ' + route.match,
-                    SUB_SIZE, inner), colour: QUIET, dx: 0 }]);
-    lines.push(methods.length
-      ? [{ text: PepPicture.fit(t.text('consolePepPicture.methods',
-             { methods: methods.join(', ') }), SUB_SIZE, inner),
-           colour: INK, dx: 0 }]
-      : [{ text: t.text('consolePepPicture.denyAll'), colour: RED,
-           bold: true, dx: 0 }]);
+    const add = function (text: string, size: number, item: Json): void {
+      (stacked ? PepPicture.wrap(text, size, inner,
+                                !!(item.title || item.bold))
+               : [PepPicture.fit(text, size, inner)])
+        .forEach(function (one: string): void {
+          lines.push([Object.assign({}, item,
+            { text: one, dx: 0, wrapped: !!stacked })]);
+        });
+    };
+    add('#' + (row.position + 1) + '  ' + route.id, LABEL_SIZE,
+        { colour: INK, title: true });
+    add(route.path + ' · ' + route.match, SUB_SIZE, { colour: QUIET });
+    if (methods.length) {
+      add(t.text('consolePepPicture.methods',
+                 { methods: methods.join(', ') }), SUB_SIZE,
+          { colour: INK });
+    } else {
+      add(t.text('consolePepPicture.denyAll'), SUB_SIZE,
+          { colour: RED, bold: true });
+    }
+    (lines as Json).head = lines.length;
     PepPicture.flow(isPublic
       ? [{ text: t.text('consolePepPicture.application'), colour: QUIET },
          { text: t.text('consolePepPicture.noApplication'), colour: QUIET }]
@@ -452,8 +569,8 @@ class PepPicture {
     // does not qualify, or the policy is missing, disabled or withheld.
     if (status && ((!isPublic && status.usable === false) ||
                    status.policyProblem)) {
-      lines.push([{ text: t.text('consolePepPicture.refused'), colour: RED,
-                    bold: true, dx: 0 }]);
+      add(t.text('consolePepPicture.refused'), SUB_SIZE,
+          { colour: RED, bold: true });
     }
     return lines;
   }
@@ -502,9 +619,8 @@ class PepPicture {
   static draw(t: Json, row: Json, links: Links | null,
               stacked?: boolean): Json {
     const esc = PepPicture.esc;
-    const ROUTE_W = stacked ? ROUTE_W_STACKED : ROUTE_W_WIDE;
-    const INDENT = stacked ? INDENT_STACKED : INDENT_WIDE;
-    const LISTENER_W = stacked ? LISTENER_W_STACKED : LISTENER_W_WIDE;
+    // Stacked, every width comes from `STACKED_W` (see the header).
+    const pad = stacked ? STACKED_PAD : PAD;
     // Every id in the drawing carries the layout, so the two drawings of
     // one page (the wide one and the stacked one) never share one.
     const ids = stacked ? 'pps' : 'pp';
@@ -523,17 +639,19 @@ class PepPicture {
     const name = String(row.name || '');
     const host = row.hostname ? String(row.hostname)
       : t.text('consolePepPicture.noHostname');
+    const pepMax = stacked ? Math.min(PEP_MAX_W, STACKED_W - 2 * pad)
+      : PEP_MAX_W;
     const pepLines = [
-      PepPicture.fit(name, LABEL_SIZE, PEP_MAX_W - 54),
+      PepPicture.fit(name, LABEL_SIZE, pepMax - 54),
       PepPicture.fit(t.text('consolePepPicture.pep'), SUB_SIZE,
-                     PEP_MAX_W - 54),
-      PepPicture.fit(host, SUB_SIZE, PEP_MAX_W - 54)];
-    const pepW = Math.min(PEP_MAX_W, Math.max(PEP_MIN_W,
+                     pepMax - 54),
+      PepPicture.fit(host, SUB_SIZE, pepMax - 54)];
+    const pepW = Math.min(pepMax, Math.max(PEP_MIN_W,
       Math.max(PepPicture.width(pepLines[0], LABEL_SIZE),
                PepPicture.width(pepLines[1], SUB_SIZE),
                PepPicture.width(pepLines[2], SUB_SIZE)) + 54));
     const pepH = 72;
-    const pepX = PAD;
+    const pepX = pad;
     const pepY = TOP;
     const pepTitle = t.text('consolePepPicture.pepTitle',
                             { name: name, hostname: host });
@@ -554,12 +672,15 @@ class PepPicture {
     // THE LISTENERS.
     // Stacked, the listeners hang off a trunk below the PEP, one step in;
     // wide, they are the second column.
-    const trunkX = PAD + 20;
-    const stackX = PAD + 30;
+    const trunkX = pepX + 20;
+    const stackX = pepX + 30;
     const listenersTop = stacked ? pepY + pepH + 34 : TOP;
     const lx = stacked ? stackX : pepX + pepW + COLUMN_GAP;
-    const listenerH = PepPicture.boxHeight(4);
+    const LISTENER_W = stacked ? STACKED_RIGHT - lx : LISTENER_W_WIDE;
     const proxyListeners: Json[] = [];
+    // Every box drawn with its lines, for `boxes` on the answer (the test's
+    // bound on the stacked layout).
+    const placed: Json[] = [];
     let ly = listenersTop;
     listeners.forEach(function (one: Json): void {
       const state = PepPicture.stateOf(t, one);
@@ -568,21 +689,28 @@ class PepPicture {
       const inner = LISTENER_W - 2 * BOX_PAD_X;
       const where = PepPicture.where(one) ||
         t.text('consoleXacml.listeners.notReported');
-      const purpose = one.purpose === 'proxy'
-        ? t.text('consoleXacml.listeners.purpose.proxy')
-        : t.text('consoleXacml.listeners.purpose.api');
+      const purpose = PepPicture.purposeWord(t, one);
       const source = env ? t.text('consoleXacml.listeners.source.environment')
         : t.text('consoleXacml.listeners.source.service');
-      const words = [
-        { text: PepPicture.fit(String(one.id), LABEL_SIZE, inner),
-          colour: state.off ? QUIET : INK, title: true, dx: 0 },
-        { text: PepPicture.fit((one.protocol === 'https' ? 'HTTPS' : 'HTTP') +
-            ' · ' + where, SUB_SIZE, inner), colour: INK, dx: 0 },
-        { text: PepPicture.fit(purpose + ' · ' + source, SUB_SIZE, inner),
-          colour: QUIET, dx: 0 },
-        { text: PepPicture.fit(state.word, SUB_SIZE, inner),
-          colour: state.alert ? RED : (state.off ? QUIET : GREEN),
-          bold: state.alert, dx: 0 }];
+      const words: Json[] = [];
+      const add = function (text: string, size: number, item: Json): void {
+        (stacked ? PepPicture.wrap(text, size, inner,
+                                  !!(item.title || item.bold))
+                 : [PepPicture.fit(text, size, inner)])
+          .forEach(function (line: string): void {
+            words.push(Object.assign({}, item,
+              { text: line, dx: 0, wrapped: !!stacked }));
+          });
+      };
+      add(String(one.id), LABEL_SIZE,
+          { colour: state.off ? QUIET : INK, title: true });
+      add((one.protocol === 'https' ? 'HTTPS' : 'HTTP') + ' · ' + where,
+          SUB_SIZE, { colour: INK });
+      add(purpose + ' · ' + source, SUB_SIZE, { colour: QUIET });
+      add(state.word, SUB_SIZE,
+          { colour: state.alert ? RED : (state.off ? QUIET : GREEN),
+            bold: state.alert });
+      const listenerH = PepPicture.boxHeight(words.length);
       const title = t.text('consolePepPicture.listenerTitle', {
         id: one.id, protocol: one.protocol === 'https' ? 'HTTPS' : 'HTTP',
         where: where, purpose: purpose, source: source, state: state.word });
@@ -612,6 +740,10 @@ class PepPicture {
       if (one.purpose === 'proxy') {
         proxyListeners.push({ y: ly + listenerH / 2, off: state.off });
       }
+      placed.push({ x: lx, y: ly, w: LISTENER_W, h: listenerH,
+                    lines: words.map(function (w: Json): Json[] {
+                      return [w];
+                    }) });
       ly += listenerH + LISTENER_GAP;
     });
     if (!listeners.length) {
@@ -625,20 +757,40 @@ class PepPicture {
     const routesTop = stacked ? ly + 30 : TOP;
     const tx = stacked ? stackX : lx + LISTENER_W + COLUMN_GAP + 8;
     const rows = PepPicture.rows(PepPicture.tree(routes));
+    // Wide, a route is ROUTE_W_WIDE and each step in is INDENT_WIDE, so the
+    // column is as wide as the deepest path. Stacked, every box ends at
+    // STACKED_RIGHT: the step in is at most STACKED_INDENT_MAX and shrinks
+    // so the deepest row keeps ROUTE_MIN_W.
+    const deepest = rows.reduce(function (n: number, one: Row): number {
+      return Math.max(n, one.depth);
+    }, 0);
+    const ROUTE_W = stacked ? STACKED_RIGHT - tx : ROUTE_W_WIDE;
+    const INDENT = stacked
+      ? Math.max(4, Math.min(STACKED_INDENT_MAX, Math.floor(
+          (ROUTE_W - ROUTE_MIN_W) / Math.max(1, deepest))))
+      : INDENT_WIDE;
     let ry = routesTop;
     let right = tx + ROUTE_W;
     rows.forEach(function (one: Row): void {
       one.x = tx + one.depth * INDENT;
       one.y = ry;
+      // The box's width: the column's, or stacked what is left of it.
+      const boxW = stacked ? STACKED_RIGHT - one.x : ROUTE_W;
       if (one.kind === 'root') {
         one.lines = [
           [{ text: t.text('consolePepPicture.proxy'), colour: INK,
-             title: true, dx: 0 }],
-          [{ text: PepPicture.fit(proxy
-               ? t.text('consolePepPicture.upstream',
-                        { upstream: proxy.upstream || '' })
-               : t.text('consolePepPicture.noProxy'), SUB_SIZE,
-               ROUTE_W - 2 * BOX_PAD_X), colour: proxy ? INK : QUIET, dx: 0 }]];
+             title: true, dx: 0 }]];
+        const upstream = proxy
+          ? t.text('consolePepPicture.upstream',
+                   { upstream: proxy.upstream || '' })
+          : t.text('consolePepPicture.noProxy');
+        (stacked ? PepPicture.wrap(upstream, SUB_SIZE, boxW - 2 * BOX_PAD_X)
+                 : [PepPicture.fit(upstream, SUB_SIZE,
+                                   boxW - 2 * BOX_PAD_X)])
+          .forEach(function (text: string): void {
+            (one.lines as Json[][]).push([{ text: text,
+              colour: proxy ? INK : QUIET, dx: 0 }]);
+          });
         if (proxy) {
           one.lines.push([{ text: proxy.enabled
               ? t.text('consolePepPicture.enabled', { n: routes.length })
@@ -646,19 +798,20 @@ class PepPicture {
             colour: proxy.enabled ? GREEN : RED, bold: !proxy.enabled,
             dx: 0 }]);
         }
-        one.w = ROUTE_W;
+        one.w = boxW;
         one.h = PepPicture.boxHeight(one.lines.length);
       } else if (one.kind === 'chip') {
-        const text = PepPicture.fit(one.label, SUB_SIZE, ROUTE_W - 90);
-        one.lines = [[{ text: text + '  · ' +
-          t.text('consolePepPicture.noRoute'), colour: QUIET, dx: 0 }]];
-        one.w = Math.min(ROUTE_W, PepPicture.width(one.lines[0][0].text,
+        const suffix = '  · ' + t.text('consolePepPicture.noRoute');
+        const text = PepPicture.fit(one.label, SUB_SIZE,
+          boxW - 2 * BOX_PAD_X - PepPicture.width(suffix, SUB_SIZE));
+        one.lines = [[{ text: text + suffix, colour: QUIET, dx: 0 }]];
+        one.w = Math.min(boxW, PepPicture.width(one.lines[0][0].text,
           SUB_SIZE) + 2 * BOX_PAD_X);
         one.h = CHIP_H;
       } else {
         one.lines = PepPicture.routeLines(t, one, statusOf[one.route.id],
-                                          ROUTE_W);
-        one.w = ROUTE_W;
+                                          boxW, stacked);
+        one.w = boxW;
         one.h = PepPicture.boxHeight(one.lines.length);
       }
       right = Math.max(right, one.x + one.w);
@@ -670,7 +823,7 @@ class PepPicture {
         return;
       }
       const up = rows[one.parent];
-      const px = up.x + 14;
+      const px = up.x + Math.min(14, INDENT / 2);
       edges.push('<path class="pp-branch" d="M' + round(px) + ' ' +
         round(up.y + up.h) + 'V' + round(one.y + one.h / 2) + 'H' +
         round(one.x) + '" fill="none" stroke="' + GREY +
@@ -681,7 +834,8 @@ class PepPicture {
     const root = rows[0];
     // Stacked, the lines leave each listener's right edge for a gutter
     // right of everything and come back to the proxy's right edge.
-    const gutter = Math.max(lx + LISTENER_W, tx + ROUTE_W) + 16;
+    const gutter = stacked ? STACKED_RIGHT + 8
+      : Math.max(lx + LISTENER_W, tx + ROUTE_W) + 16;
     if (stacked && proxyListeners.length) {
       right = Math.max(right, gutter + 4);
     }
@@ -706,6 +860,8 @@ class PepPicture {
         ? ((route.authorization || {}).kind === 'public' ? GREEN : INDIGO)
         : RED : INDIGO;
       if (one.kind === 'chip') {
+        placed.push({ x: one.x, y: one.y, w: one.w, h: one.h,
+                      lines: one.lines });
         parts.push('<g class="pp-chip"><title>' + esc(one.path) +
           '</title><rect x="' + one.x + '" y="' + one.y + '" width="' +
           round(one.w) + '" height="' + one.h + '" rx="11" fill="' + PAPER +
@@ -715,9 +871,12 @@ class PepPicture {
           esc(one.lines[0][0].text) + '</text></g>');
         return;
       }
-      const head = one.lines.slice(0, one.kind === 'root' ? one.lines.length
-                                                          : 3);
-      const rest = one.kind === 'root' ? [] : one.lines.slice(3);
+      const headCount = one.kind === 'root' ? one.lines.length
+        : (one.lines as Json).head;
+      const head = one.lines.slice(0, headCount);
+      const rest = one.lines.slice(headCount);
+      placed.push({ x: one.x, y: one.y, w: one.w, h: one.h,
+                    lines: one.lines });
       const title = one.kind === 'root'
         ? (proxy ? t.text('consolePepPicture.proxyTitle', {
             upstream: proxy.upstream || '', n: routes.length })
@@ -748,7 +907,7 @@ class PepPicture {
           '</g>') +
         PepPicture.linesMarkup(rest.map(function (items: Json[]): Json[] {
           return items;
-        }), one.x, one.y + 3 * LINE_H, !!links));
+        }), one.x, one.y + headCount * LINE_H, !!links));
     });
 
     // THE COLUMNS' HEADINGS.
@@ -757,8 +916,9 @@ class PepPicture {
         'font-weight="600" fill="' + QUIET + '" letter-spacing="0.4">' +
         esc(t.text(key)) + '</text>';
     };
-    const width = Math.ceil(right + PAD);
-    const height = Math.ceil(Math.max(pepY + pepH, ly, ry) + PAD);
+    const width = stacked ? STACKED_W : Math.ceil(right + PAD);
+    const height = Math.ceil(Math.max(pepY + pepH, ly, ry) + pad);
+    placed.unshift({ x: pepX, y: pepY, w: pepW, h: pepH, lines: [] });
     const proxyCount = listeners.filter(function (one: Json): boolean {
       return one.purpose === 'proxy';
     }).length;
@@ -788,7 +948,8 @@ class PepPicture {
       '<g class="pp-edges">' + edges.join('') + '</g>' + parts.join('') +
       '</svg>';
     return { svg: svg, width: width, height: height, rows: rows,
-             listeners: listeners.length, routes: routes.length };
+             listeners: listeners.length, routes: routes.length,
+             boxes: placed };
   }
 
   // A route's whole description, for its box's `<title>`.
@@ -850,9 +1011,7 @@ class PepPicture {
         ' — ' + esc((one.protocol === 'https' ? 'HTTPS' : 'HTTP') + ' ' +
         (PepPicture.where(one) ||
          t.text('consoleXacml.listeners.notReported')) +
-        ', ' + (one.purpose === 'proxy'
-          ? t.text('consoleXacml.listeners.purpose.proxy')
-          : t.text('consoleXacml.listeners.purpose.api')) + ', ' +
+        ', ' + PepPicture.purposeWord(t, one) + ', ' +
         (one.source === 'environment'
           ? t.text('consoleXacml.listeners.source.environment')
           : t.text('consoleXacml.listeners.source.service')) + ', ' +

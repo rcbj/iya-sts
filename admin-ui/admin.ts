@@ -4375,10 +4375,16 @@ class AdminConsole {
       '.diagram svg{display:block;max-width:none}' +
       // THE PEP PICTURE (`xacml/web_pep_picture.ts`) is drawn twice: three
       // columns, and stacked below the console's breakpoint, where three
-      // columns would open on the PEP alone.
+      // columns would open on the PEP alone. The stacked one is laid out
+      // 240 wide to fit a phone's card (2026-11-15: at 390px its boxes ran
+      // past the card's edge), so its box keeps a thinner padding, and only
+      // on a screen narrower than any phone it was laid out for is it scaled
+      // down to the box — the one picture here allowed to be, because there
+      // it is that or a sideways scroll on the device it was drawn for.
       '.pep-picture-stacked{display:none}' +
       '@media (max-width:56rem){.pep-picture-wide{display:none}' +
-      '.pep-picture-stacked{display:block}}' +
+      '.pep-picture-stacked{display:block;padding:6px}' +
+      '.pep-picture-stacked svg{max-width:100%;height:auto}}' +
       // The key. A table like every other, with the shape column sized to the
       // swatches rather than to its heading.
       'table.key td.art{width:5.5rem;text-align:center;vertical-align:middle;' +

@@ -490,6 +490,7 @@
   "listeners.source.service": "在此定義",
   "listeners.purpose.api": "決策 API",
   "listeners.purpose.proxy": "反向代理",
+  "listeners.purpose.crl": "CRL 發佈",
   "listeners.state.listening": "正在監聽",
   "listeners.state.waiting": "等待中",
   "listeners.state.failed": "失敗",

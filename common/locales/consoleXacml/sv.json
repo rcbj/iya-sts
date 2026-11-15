@@ -490,6 +490,7 @@
   "listeners.source.service": "definierad här",
   "listeners.purpose.api": "besluts-API",
   "listeners.purpose.proxy": "omvänd proxy",
+  "listeners.purpose.crl": "CRL-distribution",
   "listeners.state.listening": "lyssnar",
   "listeners.state.waiting": "väntar",
   "listeners.state.failed": "misslyckades",

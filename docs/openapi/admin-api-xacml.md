@@ -4014,7 +4014,7 @@ Scope: `admin:read`.
 | `peps[].listenerRows[].reported.id` | string |  |  |
 | `peps[].listenerRows[].reported.port` | integer |  |  |
 | `peps[].listenerRows[].reported.protocol` | one of `http`, `https` |  |  |
-| `peps[].listenerRows[].reported.purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listenerRows[].reported.purpose` | one of `api`, `proxy`, `crl` |  |  |
 | `peps[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `crl-only`, `other` |  |  |
 | `peps[].listenerRows[].reported.renew` | integer |  |  |
 | `peps[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
@@ -4047,7 +4047,7 @@ Scope: `admin:read`.
 | `peps[].listenersInUse.listeners[].id` | string |  |  |
 | `peps[].listenersInUse.listeners[].port` | integer |  |  |
 | `peps[].listenersInUse.listeners[].protocol` | one of `http`, `https` |  |  |
-| `peps[].listenersInUse.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listenersInUse.listeners[].purpose` | one of `api`, `proxy`, `crl` |  |  |
 | `peps[].listenersInUse.listeners[].reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `crl-only`, `other` |  |  |
 | `peps[].listenersInUse.listeners[].renew` | integer |  |  |
 | `peps[].listenersInUse.listeners[].source` | one of `environment`, `service` |  |  |

@@ -490,6 +490,7 @@
   "listeners.source.service": "defined here",
   "listeners.purpose.api": "decision API",
   "listeners.purpose.proxy": "reverse proxy",
+  "listeners.purpose.crl": "CRL distribution",
   "listeners.state.listening": "listening",
   "listeners.state.waiting": "waiting",
   "listeners.state.failed": "failed",

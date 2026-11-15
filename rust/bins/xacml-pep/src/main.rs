@@ -384,7 +384,7 @@ async fn start(options: Options, info: version::VersionInfo) {
     let crl_only = options::crl_listener(&options);
     listener_set.environment("api-http", options.port,
                              if crl_only {
-                                 EnvKind::Plain(api_http.clone())
+                                 EnvKind::Crl(api_http.clone())
                              } else {
                                  plain_kind(options.http.on, api_http.clone())
                              });
