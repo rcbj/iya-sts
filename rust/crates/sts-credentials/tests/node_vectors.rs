@@ -138,6 +138,16 @@ impl Tape {
     }
 
     fn write(&self, hook: &str, name: &str, value: Json) -> Hook<bool> {
+        self.write_with(hook, name, value, Json::Null)
+    }
+
+    fn write_with(
+        &self,
+        hook: &str,
+        name: &str,
+        value: Json,
+        options: Json,
+    ) -> Hook<bool> {
         let mut st = self.state.lock().unwrap();
         let n = st.mutations.len();
         let outcome = self
@@ -145,9 +155,8 @@ impl Tape {
             .get(n)
             .map(|m| m["outcome"].clone())
             .unwrap_or(json!({ "value": false }));
-        st.mutations
-            .push(json!({ "hook": hook, "name": name, "value": value,
-                                  "outcome": outcome }));
+        st.mutations.push(json!({ "hook": hook, "name": name,
+            "value": value, "options": options, "outcome": outcome }));
         st.gen += 1;
         if let Some(t) = outcome.get("threw") {
             return Err(js::string(t));
@@ -237,8 +246,14 @@ impl CredentialDirectory for Tape {
     fn read_password(&self, name: &str) -> Hook<Option<String>> {
         self.hook("readPassword", name).map(opt_text)
     }
-    fn write_password(&self, name: &str, hash: &str) -> Hook<bool> {
-        self.write("writePassword", name, s(hash))
+    fn write_password(
+        &self,
+        name: &str,
+        hash: &str,
+        history: Option<&[String]>,
+    ) -> Hook<bool> {
+        let options = history.map_or(Json::Null, |h| json!({ "history": h }));
+        self.write_with("writePassword", name, s(hash), options)
     }
     fn read_password_reset(&self, name: &str) -> Hook<bool> {
         self.hook("readPasswordReset", name).map(|v| js::truthy(&v))
@@ -334,8 +349,26 @@ impl Policies for Tape {
     fn key_use_allowed(&self, key_use: &str) -> bool {
         self.ask(vec![s("policy.keyUse"), s(key_use)]) == json!(true)
     }
-    fn password_profile_for(&self, name: &str) -> Json {
-        self.ask(vec![s("policy.passwordProfile"), s(name)])
+    fn password_profile_for(&self, name: &str, application: &str) -> Json {
+        self.ask(vec![s("policy.passwordProfile"), s(name), s(application)])
+    }
+    fn password_problems(&self, password: &str, profile: &Json) -> Vec<String> {
+        self.ask(vec![s("policy.problems"), s(password), profile.clone()])
+            .as_array()
+            .map(|l| l.iter().map(js::string).collect())
+            .unwrap_or_default()
+    }
+    fn password_history_value(&self, hash: &str) -> String {
+        js::string_or_empty(Some(
+            &self.ask(vec![s("policy.historyValue"), s(hash)]),
+        ))
+    }
+    fn breach_screening(&self) -> bool {
+        self.ask(vec![s("breach.enabled")]) == json!(true)
+    }
+    fn breach_verdict(&self, password: &str) -> Option<bool> {
+        let v = self.ask(vec![s("breach.verdict"), s(password)]);
+        v.get("breached").map(|b| b == &json!(true))
     }
     fn password_hash_spec(&self, profile: &Json) -> Json {
         self.ask(vec![s("policy.hashSpec"), profile.clone()])
@@ -351,6 +384,9 @@ impl ServiceAccounts for Tape {
     }
     fn exempt_from_second_factor(&self, name: &str) -> bool {
         self.ask(vec![s("svc.exempt"), s(name)]) == json!(true)
+    }
+    fn rotates_through_destination(&self, name: &str) -> bool {
+        self.ask(vec![s("svc.rotates"), s(name)]) == json!(true)
     }
     fn previous_password_hash(&self, name: &str) -> Hook<Option<String>> {
         Ok(opt_text(self.ask(vec![s("svc.previous"), s(name)])))
@@ -730,6 +766,9 @@ fn step(
         "beginBackupCodes" => v(c.begin_backup_codes(&t(0), None, None)),
         "confirmBackupCodes" => v(c.confirm_backup_codes(&t(0), &t(1))),
         "verifyBackupCode" => v(c.verify_backup_code(&t(0), &t(1))),
+        "setPassword" => r(c.set_password(&t(0), &t(1), &a(2))),
+        "preparePassword" => r(c.prepare_password(&t(0), &t(1), &a(2))),
+        "passwordProblem" => ok(json!(c.password_problem(&t(0), &t(1), &t(2)))),
         other => (
             Json::Null,
             String::new(),

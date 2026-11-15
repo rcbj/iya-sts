@@ -63,6 +63,9 @@ function seeded(seed) {
   };
 }
 
+// The instant a `pwdHistory` value is stamped with, held still.
+const NOW_DATE = new Date(1767225600000);
+
 async function build(ROOT) {
   delete process.env.CONFIG_FILE;
   const req = function (rel) {
@@ -166,11 +169,22 @@ async function build(ROOT) {
       return { ok: rec(['policy.keyUse', use], off.indexOf(use) < 0) };
     }
   };
+  const realPasswordPolicy = req('common/password_policy');
   const fakePasswordPolicy = {
-    profileFor: function (name) {
-      return rec(['policy.passwordProfile', String(name)],
+    profileFor: function (name, application) {
+      return rec(['policy.passwordProfile', String(name),
+                  String(application || '')],
                  policy().passwordProfile || { name: 'default' });
     },
+    problemsWith: function (password, profile) {
+      return rec(['policy.problems', String(password), clone(profile)],
+                 realPasswordPolicy.problemsWith(password, profile));
+    },
+    historyValue: function (hash) {
+      return rec(['policy.historyValue', String(hash)],
+                 realPasswordPolicy.historyValue(hash, NOW_DATE));
+    },
+    hashOfHistoryValue: realPasswordPolicy.hashOfHistoryValue,
     hashSpec: function (profile) {
       const spec = policy().hashSpec ||
         { algorithm: 'scrypt', logN: 15, r: 8, p: 1 };
@@ -359,7 +373,7 @@ async function build(ROOT) {
       if (MUTATIONS) {
         MUTATIONS.push({ hook: hook, name: String(name),
                          value: value === undefined ? null : value,
-                         outcome: outcome });
+                         options: clone(arguments[2]), outcome: outcome });
       }
       GEN += 1;
       if (outcome.threw) {
@@ -373,6 +387,19 @@ async function build(ROOT) {
   // -------------------------------------------------------------------------
   // A RECORDED RUN: `fn` under a case, its tape collected.
   // -------------------------------------------------------------------------
+  const breached = req('common/breached_passwords');
+  breached.enabled = function () {
+    return rec(['breach.enabled'], !!(CASE && CASE.breach));
+  };
+  breached.verdictOf = function (password) {
+    const held = (CASE && CASE.breach) || {};
+    const out = Object.prototype.hasOwnProperty.call(held, password)
+      ? { breached: !!held[password] } : null;
+    return rec(['breach.verdict', String(password)], out);
+  };
+  credentials.rotatesThroughDestination = function (name) {
+    return rec(['svc.rotates', String(name)], !!(svc()[name] || {}).rotates);
+  };
   const realNow = Date.now;
   const recorded = function (spec, fn) {
     CASE = spec;
@@ -783,6 +810,43 @@ async function build(ROOT) {
   [{ method: 'keysOf', args: ['alice'] },
    { method: 'secondFactorDemand', args: ['alice'] },
    { method: 'passwordOnlyDoors', args: ['bob'] }]);
+  // Setting a password: the policy, the breach screen, the history.
+  const history = [realPasswordPolicy.historyValue(hashOf('an old one 12'),
+                                                   NOW_DATE)];
+  scenario('a password set, and each refusal', {
+    passwordProfile: undefined,
+    breach: { 'p4ssw0rd-breached': true, 'Fine and new 77!': false },
+    serviceAccounts: { 'svc-rot': { rotates: true } },
+    policy: { passwordProfile: { name: 'strict', minLength: 12,
+                                 history: 2 } },
+    entries: { alice: { password: stored, history: history },
+               'svc-rot': {}, ghost: { refuses: ['writePassword'] },
+               boom: { throws: ['writePassword'] } } },
+  [{ method: 'setPassword', args: ['', 'x'] },
+   { method: 'setPassword', args: ['alice', ''] },
+   { method: 'setPassword', args: ['alice', 'short'] },
+   { method: 'setPassword', args: ['alice', 'p4ssw0rd-breached'] },
+   { method: 'setPassword', args: ['alice', PASSWORD + 'xx',
+                                   { generated: true }] },
+   { method: 'setPassword', args: ['alice', 'an old one 12'] },
+   { method: 'setPassword', args: ['alice', PASSWORD] },
+   { method: 'setPassword', args: ['alice', 'Fine and new 77!',
+                                   { via: 'portal' }] },
+   { method: 'setPassword', args: ['alice', 'Not screened 99!',
+                                   { via: 'scim' }] },
+   { method: 'setPassword', args: ['svc-rot', 'Rotating one 1234'] },
+   { method: 'setPassword', args: ['ghost', 'Rotating one 1234'] },
+   { method: 'setPassword', args: ['boom', 'Rotating one 1234'] },
+   { method: 'passwordProblem', args: ['short', 'alice'] },
+   { method: 'passwordProblem', args: ['long enough, this', 'alice'] }]);
+  scenario('a password set in development', {
+    mode: { verifiesCredentials: false },
+    policy: { passwordProfile: { name: 'default', minLength: 12,
+                                 history: 3 } },
+    entries: { alice: { password: stored } } },
+  [{ method: 'setPassword', args: ['alice', 'x'] },
+   { method: 'passwordProblem', args: ['x', 'alice'] }]);
+
   // App passwords.
   scenario('app passwords: made, used, refused, revoked', {
     entries: { alice: { password: stored, totp: totpEnrolled },

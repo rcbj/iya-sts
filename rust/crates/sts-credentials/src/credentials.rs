@@ -794,7 +794,7 @@ impl Credentials {
         if !is_hashed_secret(stored) {
             return None;
         }
-        let profile = self.d.policies.password_profile_for(name);
+        let profile = self.d.policies.password_profile_for(name, "");
         let spec = self.d.policies.password_hash_spec(&profile);
         let ask = hash_ask(&spec);
         if stored_secret_matches_spec(stored, &ask)
@@ -823,7 +823,10 @@ impl Credentials {
             return false;
         };
         let hash = match hash_password(password, &hash_ask(&spec)) {
-            Ok(h) => h,
+            Ok(h) => {
+                self.d.observers.hashed(&h, password);
+                h
+            }
             Err(e) => {
                 tracing::warn!(
                     "{}credentials: the password hash for {} could not be \
@@ -857,7 +860,7 @@ impl Credentials {
                 return false;
             }
         }
-        match directory.write_password(name, &hash) {
+        match directory.write_password(name, &hash, None) {
             Ok(true) => {}
             Ok(false) => {
                 tracing::warn!(
@@ -954,6 +957,296 @@ impl Credentials {
         }
         self.note_refusal(username, opts, &answer);
         answer
+    }
+
+    // -----------------------------------------------------------------------
+    // Setting a password: the policy, the breach screen, the history.
+    // -----------------------------------------------------------------------
+
+    /// `passwordProblem(password, username, application)`: the sentence a
+    /// refusal by the password policy carries, empty where it passes or
+    /// nothing is enforced.
+    #[tracing::instrument(level = "debug", skip(self, password))]
+    pub fn password_problem(
+        &self,
+        password: &str,
+        username: &str,
+        application: &str,
+    ) -> String {
+        if !self.d.env.predicate("verifiesCredentials") {
+            return String::new();
+        }
+        let profile =
+            self.d.policies.password_profile_for(username, application);
+        let problems = self.d.policies.password_problems(password, &profile);
+        if problems.is_empty() {
+            return String::new();
+        }
+        format!(
+            "That password does not meet this realm's password policy, which \
+             asks for {}. The rules are on /admin/policies (profile \"{}\").",
+            problems.join(", "),
+            js::string_or_empty(profile.get("name"))
+        )
+    }
+
+    fn reused_password(
+        password: &str,
+        current: &str,
+        history: &[String],
+        depth: usize,
+    ) -> bool {
+        std::iter::once(current.to_string())
+            .chain(history.iter().take(depth).cloned())
+            .filter(|one| !one.is_empty())
+            .any(|stored| {
+                if is_hashed_secret(&stored) {
+                    verify_secret(password, &stored)
+                } else {
+                    constant_time_equals(password.as_bytes(), stored.as_bytes())
+                }
+            })
+    }
+
+    /// `passwordPolicy.hashOfHistoryValue(value)`: the hash in a stored
+    /// `pwdHistory` value — everything after its third `#`.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn hash_of_history_value(value: &str) -> String {
+        let parts: Vec<&str> = value.split('#').collect();
+        if parts.len() < 4 {
+            String::new()
+        } else {
+            parts[3..].join("#")
+        }
+    }
+
+    /// `preparePassword(username, password, opts)`: everything setting a
+    /// password checks before anything is written — a password at all, a
+    /// service account that rotates through its destination
+    /// (STS-SVCACCT-0013), the policy (0056), the breach screen (0222), the
+    /// history (0057) — and the hash and the new `pwdHistory`. `opts` is
+    /// Node's: `application`, `generated`, `via`, `current`, `history`,
+    /// `rotation`, `hashOfThisPassword`.
+    #[tracing::instrument(level = "debug", skip(self, password, opts))]
+    pub fn prepare_password(
+        &self,
+        username: &str,
+        password: &str,
+        opts: &Json,
+    ) -> Result<Verdict, String> {
+        let name = trimmed(username);
+        if password.is_empty() {
+            return Ok(errors(
+                codes::STS_AUTHN_0055,
+                format!(
+                    "Give a password. To take one away, remove the \
+                     {PASSWORD_ATTRIBUTE} attribute from the entry."
+                ),
+            ));
+        }
+        if !js::truthy_opt(opts.get("rotation"))
+            && self.d.service_accounts.rotates_through_destination(&name)
+        {
+            return Ok(coded(
+                codes::STS_SVCACCT_0013,
+                json!({ "ok": false, "reason": "service-account-rotates",
+                    "errors": [format!(
+                        "{name} is a service account whose password rotates \
+                         through its push destination, so it cannot be set \
+                         by hand: the destination is where its consumers \
+                         read it. Use Rotate now on its page, or POST \
+                         /admin-api/users/rotate-password.")] }),
+            ));
+        }
+        let application = js::string_or(opts.get("application"), "");
+        let profile = self.d.policies.password_profile_for(&name, &application);
+        let enforced = self.d.env.predicate("verifiesCredentials");
+        let generated = js::truthy_opt(opts.get("generated"));
+        if enforced {
+            let problems =
+                self.d.policies.password_problems(password, &profile);
+            if !problems.is_empty() {
+                let said = self.password_problem(password, &name, &application);
+                return Ok(coded(
+                    codes::STS_AUTHN_0056,
+                    json!({ "ok": false, "reason": "password-policy",
+                            "problems": problems, "errors": [said] }),
+                ));
+            }
+        }
+        if enforced && !generated && self.d.policies.breach_screening() {
+            match self.d.policies.breach_verdict(password) {
+                Some(true) => {
+                    return Ok(coded(
+                        codes::STS_AUTHN_0222,
+                        json!({ "ok": false, "reason": "breached",
+                            "errors": ["That password has appeared in a data \
+                                        breach, so people trying stolen \
+                                        passwords will try it. Choose a \
+                                        different one."] }),
+                    ));
+                }
+                Some(false) => {}
+                None => tracing::warn!(
+                    "{}credentials: a password was set through {} without \
+                     being screened against Pwned Passwords.",
+                    tag(codes::STS_AUTHN_0223),
+                    js::string_or(
+                        opts.get("via"),
+                        "a door that did not say which"
+                    )
+                ),
+            }
+        }
+        let current = match opts.get("current") {
+            Some(c) => js::string_or(Some(c), ""),
+            None => match &self.d.directory {
+                Some(d) => d.read_password(&name)?.unwrap_or_default(),
+                None => String::new(),
+            },
+        };
+        let stored_history: Vec<String> = match opts.get("history") {
+            Some(Json::Array(l)) => l.iter().map(js::string).collect(),
+            _ => match &self.d.directory {
+                Some(d) => d.read_password_history(&name)?,
+                None => Vec::new(),
+            },
+        };
+        let remembered: Vec<String> = stored_history
+            .iter()
+            .map(|v| Credentials::hash_of_history_value(v))
+            .filter(|h| !h.is_empty())
+            .collect();
+        let depth = js::number_opt(profile.get("history"));
+        if enforced
+            && depth > 0.0
+            && !generated
+            && Credentials::reused_password(
+                password,
+                &current,
+                &remembered,
+                depth as usize,
+            )
+        {
+            return Ok(coded(
+                codes::STS_AUTHN_0057,
+                json!({ "ok": false, "reason": "password-history",
+                    "errors": [format!(
+                        "That password has been used for this account \
+                         recently. This realm's password policy refuses the \
+                         current password and the {} before it (profile \
+                         \"{}\"). Choose one you have not used here.",
+                        js::number_text(depth),
+                        js::string_or_empty(profile.get("name")))] }),
+            ));
+        }
+        let mut history: Vec<String> = Vec::new();
+        if !current.is_empty() && is_hashed_secret(&current) {
+            history.push(self.d.policies.password_history_value(&current));
+        }
+        history.extend(stored_history);
+        let keep = if depth.is_nan() || depth < 0.0 {
+            0
+        } else {
+            depth as usize
+        };
+        history.truncate(keep);
+        let spec = self.d.policies.password_hash_spec(&profile);
+        let ask = hash_ask(&spec);
+        let given = js::string_or(opts.get("hashOfThisPassword"), "");
+        let hash = if is_hashed_secret(&given)
+            && stored_secret_matches_spec(&given, &ask)
+        {
+            given
+        } else {
+            let made =
+                hash_password(password, &ask).map_err(|e| e.to_string())?;
+            self.d.observers.hashed(&made, password);
+            made
+        };
+        Ok(Verdict::of(
+            json!({ "ok": true, "hash": hash, "history": history,
+            "profile": js::string_or_empty(profile.get("name")) }),
+        ))
+    }
+
+    /// `setPassword(username, password, opts)`: prepared, written with the
+    /// new `pwdHistory`, and observed. The service-account rotation's
+    /// bookkeeping (`opts.rotation`) is the service-account slice's.
+    #[tracing::instrument(level = "debug", skip(self, password, opts))]
+    pub fn set_password(
+        &self,
+        username: &str,
+        password: &str,
+        opts: &Json,
+    ) -> Result<Verdict, String> {
+        let name = trimmed(username);
+        if name.is_empty() {
+            return Ok(errors(
+                codes::STS_AUTHN_0058,
+                "Name the person whose password to set.".to_string(),
+            ));
+        }
+        let Some(directory) = self.d.directory.clone() else {
+            if password.is_empty() {
+                return Ok(errors(
+                    codes::STS_AUTHN_0055,
+                    format!(
+                        "Give a password. To take one away, remove the \
+                         {PASSWORD_ATTRIBUTE} attribute from the entry."
+                    ),
+                ));
+            }
+            return Ok(errors(
+                codes::STS_AUTHN_0059,
+                "No credential store is installed in this process, so a \
+                 password cannot be set."
+                    .to_string(),
+            ));
+        };
+        let prepared = self.prepare_password(&name, password, opts)?;
+        if !prepared.ok() {
+            return Ok(prepared);
+        }
+        let hash = js::string(&prepared.value["hash"]);
+        let history: Vec<String> = prepared.value["history"]
+            .as_array()
+            .map(|l| l.iter().map(js::string).collect())
+            .unwrap_or_default();
+        match directory.write_password(&name, &hash, Some(&history)) {
+            Err(e) => {
+                tracing::error!(
+                    "{}credentials: writing the password for {} threw: {}",
+                    tag(codes::STS_AUTHN_0060),
+                    name,
+                    e
+                );
+                return Ok(errors(
+                    codes::STS_AUTHN_0060,
+                    format!("The credential store refused the write: {e}"),
+                ));
+            }
+            Ok(false) => {
+                return Ok(errors(
+                    codes::STS_AUTHN_0061,
+                    format!(
+                        "There is nobody called \"{name}\" in this realm's \
+                         directory. In product mode every referenced object \
+                         must be created ahead of time."
+                    ),
+                ))
+            }
+            Ok(true) => {}
+        }
+        tracing::info!(
+            "credentials: a password was set for {}. It is stored as a hash \
+             and CANNOT BE READ BACK.",
+            name
+        );
+        self.notify_password(&name, password, "set", Some(&hash), None);
+        Ok(Verdict::of(json!({ "ok": true, "username": name,
+            "message": format!("The password for {name} is set. It is stored \
+                                as a hash and cannot be shown again.") })))
     }
 
     // -----------------------------------------------------------------------

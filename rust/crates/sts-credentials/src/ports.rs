@@ -47,8 +47,14 @@ pub type Hook<T> = Result<T, String>;
 pub trait CredentialDirectory: Send + Sync {
     /// `readPassword(name)`: the stored `userPassword`, or none.
     fn read_password(&self, name: &str) -> Hook<Option<String>>;
-    /// `writePassword(name, hash)`.
-    fn write_password(&self, name: &str, hash: &str) -> Hook<bool>;
+    /// `writePassword(name, hash, { history })`: the new `pwdHistory`
+    /// written with it where a password is SET (none at a hash upgrade).
+    fn write_password(
+        &self,
+        name: &str,
+        hash: &str,
+        history: Option<&[String]>,
+    ) -> Hook<bool>;
     /// `readPasswordReset(name)`: `pwdReset`.
     fn read_password_reset(&self, name: &str) -> Hook<bool>;
     /// `readPasswordHistory(name)`: the previous hashes, newest first.
@@ -106,10 +112,21 @@ pub trait Policies: Send + Sync {
     fn require_second_factor_for_administrators(&self) -> String;
     /// `webauthnPolicy.useAllowed(use).ok`.
     fn key_use_allowed(&self, key_use: &str) -> bool;
-    /// `passwordPolicy.profileFor(name)`.
-    fn password_profile_for(&self, name: &str) -> Json;
+    /// `passwordPolicy.profileFor(name, application)`.
+    fn password_profile_for(&self, name: &str, application: &str) -> Json;
     /// `passwordPolicy.hashSpec(profile)`: the spec a new hash is made at.
     fn password_hash_spec(&self, profile: &Json) -> Json;
+    /// `passwordPolicy.problemsWith(password, profile)`.
+    fn password_problems(&self, password: &str, profile: &Json) -> Vec<String>;
+    /// `passwordPolicy.historyValue(hash)`: a `pwdHistory` value stamped
+    /// now (RFC draft-behera-ldap-password-policy's form).
+    fn password_history_value(&self, hash: &str) -> String;
+    /// `breached_passwords.enabled()`: whether a new password is screened
+    /// against Pwned Passwords.
+    fn breach_screening(&self) -> bool;
+    /// `breached_passwords.verdictOf(password)`: `Some(breached)`, or none
+    /// where it was not screened in time.
+    fn breach_verdict(&self, password: &str) -> Option<bool>;
 }
 
 /// The service-account register and its policy (`service_accounts.ts`,
@@ -121,6 +138,9 @@ pub trait ServiceAccounts: Send + Sync {
     fn refuses_door(&self, name: &str, door: &str) -> bool;
     /// `exemptFromSecondFactor(profileFor(name))`.
     fn exempt_from_second_factor(&self, name: &str) -> bool;
+    /// `rotatesThroughDestination(name)`: a service account whose password
+    /// rotates through its push destination, never set by hand.
+    fn rotates_through_destination(&self, name: &str) -> bool;
     /// `previousPassword(name).hash`: inside a rotation's overlap.
     fn previous_password_hash(&self, name: &str) -> Hook<Option<String>>;
 }
@@ -142,4 +162,7 @@ pub trait Observers: Send + Sync {
     fn password(&self, name: &str, password: &str, facts: &Json);
     /// `recordFailure(username, via, code)`.
     fn failure(&self, username: &str, via: &str, code: &str);
+    /// A hash this crate made of a password, for a caller that keeps a
+    /// record of what it stored; production observes nothing.
+    fn hashed(&self, _hash: &str, _plaintext: &str) {}
 }
