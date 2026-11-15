@@ -422,7 +422,440 @@ async function build(ROOT) {
   return { coseAlgs: webauthn.COSE_ALGS,
            insecure: webauthn.INSECURE_COSE_ALGS,
            registrations: registrations, assertions: assertions,
-           reverse: reverse };
+           reverse: reverse,
+           trust: await buildTrust(ROOT, kit, anchors) };
+}
+
+// ---------------------------------------------------------------------------
+// THE TRUST HALF (#444 phase 5, webauthn): `assess()` over a registration,
+// its dependencies answered from the case and every question recorded —
+// the attestation settings, the clock, the FIDO Metadata Service as rows of
+// an MDS3 BLOB SIGNED HERE (`pki.verifyFidoMdsBlob()` against a root made
+// here, then `RiskDatasets.mdsRowsOf()`), Google's Android status list as
+// `RiskDatasets.androidStatusRowsOf()`'s rows of a list made here, and
+// revocation as the case says. The path to the anchors is the real one
+// (`CertificateTrust.path()`, the baseline while paranoid PKI mode is off).
+// ---------------------------------------------------------------------------
+async function buildTrust(ROOT, kit, anchors) {
+  const req = function (rel) {
+    return require(path.join(ROOT, rel));
+  };
+  const webauthn = req('authn/webauthn');
+  const pki = req('common/pki');
+  const errorCodes = req('common/error_codes');
+  const RiskDatasets = req('risk/risk_datasets').RiskDatasets;
+  const Attestation = req('authn/webauthn_attestation').WebauthnAttestation;
+  const Revocation = req('common/attestation_revocation')
+    .AttestationRevocation;
+  const NOW = Date.now();
+  let CASE = null;
+  let CALLS = null;
+  const SETTINGS = {
+    configured: 'verify-if-present', policy: 'verify-if-present',
+    trustAnchorsPem: '', allowedAaguids: [], minCertificationLevel: 'none',
+    requireFips: false, allowSafetynet: false, androidSoftwareKeys: false,
+    enterpriseSerialAttribute: '', attestationAlgorithms: [],
+    conveyance: 'direct', enterpriseRpIds: [], demandsTrust: false
+  };
+  const settingsOf = function (over) {
+    const out = Object.assign({}, SETTINGS, over || {});
+    out.demandsTrust = out.policy === 'require-trusted' ||
+      out.allowedAaguids.length > 0 || out.minCertificationLevel !== 'none' ||
+      out.requireFips || !!out.enterpriseSerialAttribute ||
+      out.attestationAlgorithms.length > 0;
+    return out;
+  };
+  // The MDS BLOB: a root and a signing certificate made here, a payload of
+  // entries the cases name.
+  const mdsRoot = await kit.root('Synthetic FIDO MDS', 'rsa');
+  const signer = await kit.keyPair('rsa');
+  const mdsLeaf = await kit.certificate({
+    subject: [['2.5.4.3', 'Synthetic MDS Signer']],
+    publicKey: signer.crypto.publicKey, issuer: mdsRoot, ca: false });
+  const blobOf = function (entries) {
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT',
+      x5c: [mdsLeaf.der.toString('base64')] })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({ legalHeader: 'synthetic',
+      no: 42, nextUpdate: '2099-01-01', entries: entries }))
+      .toString('base64url');
+    const sig = nodeCrypto.sign('sha256', Buffer.from(header + '.' + payload),
+                                signer.privateKey).toString('base64url');
+    return header + '.' + payload + '.' + sig;
+  };
+  const metadataOf = async function (spec) {
+    const verdict = await pki.verifyFidoMdsBlob(spec.token,
+      { anchorsPem: spec.anchorsPem, now: NOW });
+    const rows = {};
+    if (verdict.ok) {
+      (verdict.payload.entries || []).forEach(function (entry) {
+        RiskDatasets.mdsRowsOf(entry).forEach(function (row) {
+          rows[row.keyKind + '\u0000' + row.key] = row;
+        });
+      });
+    }
+    return {
+      lookupAuthenticatorBy: async function (kind, key) {
+        const wanted = String(key || '').toLowerCase();
+        CALLS.push(['metadata', kind, wanted]);
+        if (CASE.metadataThrows) {
+          throw new Error('the risk store is unreachable');
+        }
+        if (kind === 'aaguid' && (!wanted || /^[0-]+$/.test(wanted))) {
+          return null;
+        }
+        if (!verdict.ok || ['aaguid', 'aaid', 'acki'].indexOf(kind) < 0) {
+          return null;
+        }
+        const row = rows[kind + '\u0000' + wanted];
+        return row ? { model: Object.assign({}, row),
+                       version: String(verdict.payload.no) } : null;
+      }
+    };
+  };
+  const androidOf = function () {
+    return new Revocation(Object.assign(Revocation.defaultDeps(), {
+      now: function () {
+        return NOW;
+      },
+      mode: function () {
+        return { refusesUncheckedAttestationRevocation: function () {
+          return !!CASE.refusesUnchecked;
+        } };
+      },
+      datasets: function () {
+        return { lookupAttestationSerials: async function (serials) {
+          CALLS.push(['android', serials]);
+          const list = CASE.androidList;
+          if (list === 'throws') {
+            throw new Error('the risk store is unreachable');
+          }
+          if (!list) {
+            return { checked: false, version: '', hits: [],
+                     why: 'no Android attestation status list is loaded' };
+          }
+          const rows = {};
+          (RiskDatasets.androidStatusRowsOf(list.list) || [])
+            .forEach(function (row) {
+              rows[row.key] = row;
+            });
+          const hits = [];
+          (serials || []).forEach(function (one) {
+            const key = RiskDatasets.androidSerialKey(one);
+            const row = key ? rows[key] : null;
+            if (row) {
+              const report = (row.statusReports || [])[0] || {};
+              hits.push({ serial: key, status: String(row.latestStatus || ''),
+                          reason: String(report.reason || ''),
+                          compromised: !!row.compromised });
+            }
+          });
+          return { checked: true, version: list.version, hits: hits,
+                   why: '' };
+        } };
+      }
+    }));
+  };
+  const cases = [];
+  const assess = async function (name, c, made, spec) {
+    const deps = Attestation.defaultDeps();
+    deps.now = function () {
+      return NOW;
+    };
+    deps.policy = Object.assign(Object.create(deps.policy), {
+      attestationSettings: function () {
+        return settingsOf(spec.settings);
+      },
+      insecureAlgorithmsAllowed: function () {
+        return false;
+      }
+    });
+    const metadata = spec.metadata ? await metadataOf(spec.metadata)
+                                   : await metadataOf({ token: 'x.y.z',
+                                                        anchorsPem: '' });
+    deps.metadata = function () {
+      return metadata;
+    };
+    deps.revocation = function () {
+      return { verdictFor: async function (s) {
+        CALLS.push(['revocation', s.leaf, s.chain]);
+        return CASE.revocation || { refused: false, status: 'good' };
+      } };
+    };
+    const android = androidOf();
+    deps.androidRevocation = function () {
+      return android;
+    };
+    const attestation = new Attestation(deps);
+    const input = c.input(made);
+    CASE = spec;
+    CALLS = [];
+    const verdict = webauthn.verifyRegistration(input);
+    const answer = await attestation.assess(verdict);
+    cases.push({ name: name, input: input, now: NOW,
+                 settings: settingsOf(spec.settings),
+                 metadata: spec.metadata || null,
+                 androidList: spec.androidList || null,
+                 refusesUnchecked: !!spec.refusesUnchecked,
+                 metadataThrows: !!spec.metadataThrows,
+                 revocation: spec.revocation || null,
+                 answer: { value: JSON.parse(JSON.stringify(answer)),
+                           code: errorCodes.codeOf(answer) || '' },
+                 calls: JSON.parse(JSON.stringify(CALLS)) });
+  };
+  const ceremony = function (o) {
+    return kit.ceremony(Object.assign({ alg: -7 }, o || {}));
+  };
+  const vendorPem = anchors.vendor.pem;
+  // The policy off, and verify-if-present over every kind of statement.
+  let c = await ceremony();
+  await assess('policy off', c, kit.none(),
+               { settings: { configured: 'off', policy: 'off' } });
+  c = await ceremony();
+  await assess('none, verify-if-present', c, kit.none(), {});
+  c = await ceremony();
+  await assess('packed self', c, kit.packedSelf(c), {});
+  c = await ceremony();
+  await assess('packed basic, no anchor', c,
+               await kit.packed(c, anchors.vendor), {});
+  c = await ceremony();
+  await assess('packed basic, the vendor anchored', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { trustAnchorsPem: vendorPem } });
+  c = await ceremony();
+  await assess('packed basic, another anchor', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { trustAnchorsPem: anchors.u2f.pem } });
+  c = await ceremony();
+  await assess('a refused statement', c,
+               await kit.packed(c, anchors.vendor, 'signature'), {});
+  // require-trusted.
+  for (const row of [['none', function () {
+    return kit.none();
+  }], ['self', function (cc) {
+    return kit.packedSelf(cc);
+  }], ['basic', function (cc) {
+    return kit.packed(cc, anchors.vendor);
+  }]]) {
+    c = await ceremony();
+    await assess('require-trusted, ' + row[0], c, await row[1](c),
+                 { settings: { policy: 'require-trusted' } });
+  }
+  c = await ceremony();
+  await assess('require-trusted, anchored', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { policy: 'require-trusted',
+                             trustAnchorsPem: vendorPem } });
+  // The FIDO Metadata Service.
+  const mdsEntry = function (aaguid, root, reports, extra) {
+    const id = Buffer.from(aaguid).toString('hex');
+    return Object.assign({
+      aaguid: id.slice(0, 8) + '-' + id.slice(8, 12) + '-' +
+              id.slice(12, 16) + '-' + id.slice(16, 20) + '-' + id.slice(20),
+      metadataStatement: { description: 'Synthetic Key ' + id.slice(0, 4),
+        protocolFamily: 'fido2', icon: 'data:image/png;base64,AAAA',
+        attestationRootCertificates: root ? [root.der.toString('base64')]
+                                          : [] },
+      statusReports: reports }, extra || {});
+  };
+  const certified = [{ status: 'FIDO_CERTIFIED_L1',
+                       effectiveDate: '2023-01-01' },
+                     { status: 'FIDO_CERTIFIED_L2',
+                       effectiveDate: '2024-06-01' },
+                     { status: 'FIPS140_CERTIFIED_L2',
+                       effectiveDate: '2024-07-01' }];
+  const listed = await ceremony();
+  const listedOther = await ceremony();
+  const listedBad = await ceremony();
+  const listedRevoked = await ceremony();
+  const u2f = await ceremony({ aaguid: Buffer.alloc(16) });
+  const u2fMade = await kit.fidoU2f(u2f, anchors.u2f);
+  const entries = [
+    mdsEntry(listed.aaguid, anchors.vendor, certified),
+    mdsEntry(listedOther.aaguid, anchors.vendor,
+             [{ status: 'NOT_FIDO_CERTIFIED', effectiveDate: '2024-01-01' }]),
+    mdsEntry(listedBad.aaguid, anchors.u2f, certified),
+    mdsEntry(listedRevoked.aaguid, anchors.vendor,
+             [{ status: 'FIDO_CERTIFIED_L1', effectiveDate: '2022-01-01' },
+              { status: 'USER_VERIFICATION_BYPASS',
+                effectiveDate: '2023-01-01' },
+              { status: 'UPDATE_AVAILABLE', effectiveDate: '2024-01-01' }]),
+    { attestationCertificateKeyIdentifiers:
+        [pki.attestationKeyIdentifier(u2fMade.attStmt.x5c[0])],
+      metadataStatement: { description: 'Synthetic U2F Key',
+        attestationRootCertificates: [anchors.u2f.der.toString('base64')] },
+      statusReports: [{ status: 'FIDO_CERTIFIED',
+                        effectiveDate: '2020-01-01T00:00:00Z' }] }];
+  const metadata = { token: blobOf(entries), anchorsPem: mdsRoot.pem };
+  await assess('MDS lists the model, its roots', listed,
+               await kit.packed(listed, anchors.vendor), { metadata: metadata });
+  await assess('MDS lists the model, another root', listedBad,
+               await kit.packed(listedBad, anchors.vendor),
+               { metadata: metadata });
+  await assess('MDS reports the model compromised', listedRevoked,
+               await kit.packed(listedRevoked, anchors.vendor),
+               { metadata: metadata });
+  await assess('MDS by key identifier (fido-u2f)', u2f, u2fMade,
+               { metadata: metadata });
+  await assess('a BLOB that does not verify', listed,
+               await kit.packed(listed, anchors.vendor),
+               { metadata: { token: metadata.token,
+                             anchorsPem: anchors.u2f.pem } });
+  await assess('the metadata service throws', listed,
+               await kit.packed(listed, anchors.vendor),
+               { metadata: metadata, metadataThrows: true });
+  // What demands trust: the AAGUID list, the level, FIPS.
+  await assess('an AAGUID list naming it', listed,
+               await kit.packed(listed, anchors.vendor),
+               { metadata: metadata, settings: { allowedAaguids:
+                 [Buffer.from(listed.aaguid).toString('hex')] } });
+  await assess('an AAGUID list not naming it', listed,
+               await kit.packed(listed, anchors.vendor),
+               { metadata: metadata,
+                 settings: { allowedAaguids: ['00'.repeat(15) + 'ab'] } });
+  for (const level of ['L2', 'L3']) {
+    await assess('at least ' + level, listed,
+                 await kit.packed(listed, anchors.vendor),
+                 { metadata: metadata,
+                   settings: { minCertificationLevel: level } });
+  }
+  await assess('a level, the model not certified', listedOther,
+               await kit.packed(listedOther, anchors.vendor),
+               { metadata: metadata,
+                 settings: { minCertificationLevel: 'L1' } });
+  c = await ceremony();
+  await assess('a level, the model not listed', c,
+               await kit.packed(c, anchors.vendor),
+               { metadata: metadata,
+                 settings: { minCertificationLevel: 'L1',
+                             trustAnchorsPem: vendorPem } });
+  await assess('FIPS held', listed, await kit.packed(listed, anchors.vendor),
+               { metadata: metadata, settings: { requireFips: true } });
+  await assess('FIPS not held', listedOther,
+               await kit.packed(listedOther, anchors.vendor),
+               { metadata: metadata, settings: { requireFips: true } });
+  await assess('the U2F key certified at L1', u2f, u2fMade,
+               { metadata: metadata,
+                 settings: { minCertificationLevel: 'L1' } });
+  // Revocation.
+  c = await ceremony();
+  await assess('a revoked certificate', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { trustAnchorsPem: vendorPem },
+                 revocation: { refused: true, status: 'revoked',
+                               why: 'serial 01 is on the CRL' } });
+  c = await ceremony();
+  await assess('revocation unknown, no distribution point', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { trustAnchorsPem: vendorPem },
+                 revocation: { refused: true, status: 'unknown',
+                               why: 'no distribution point',
+                               unknown: [{ kind: 'no-distribution-point',
+                                           refusable: true }] } });
+  c = await ceremony();
+  await assess('revocation unknown, a list that failed', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { trustAnchorsPem: vendorPem },
+                 revocation: { refused: true, status: 'unknown',
+                               why: 'the CRL could not be fetched',
+                               unknown: [{ kind: 'unreachable',
+                                           refusable: true }] } });
+  // android-key and Google's status list.
+  const androidCase = async function (name, spec, settings) {
+    const cc = await ceremony();
+    const made = await kit.androidKey(cc, anchors.android);
+    const serial = pki.certificateSerialHex(made.leaf.der);
+    const list = typeof spec.list === 'function' ? spec.list(serial)
+                                                 : spec.list;
+    await assess(name, cc, made, Object.assign({ androidList: list,
+      settings: Object.assign({ trustAnchorsPem: anchors.android.pem },
+                              settings || {}) }, spec.extra || {}));
+  };
+  const listOf = function (entries) {
+    return { version: '2026-11-14', list: { entries: entries } };
+  };
+  await androidCase('android-key, the list says nothing', {
+    list: listOf({ 'ff00': { status: 'REVOKED', reason: 'KEY_COMPROMISE' } })
+  });
+  await androidCase('android-key, the leaf revoked', {
+    list: function (serial) {
+      const e = {};
+      e['0x' + serial.toUpperCase()] = { status: 'REVOKED',
+                                          reason: 'KEY_COMPROMISE' };
+      return listOf(e);
+    } });
+  await androidCase('android-key, the leaf suspended', {
+    list: function (serial) {
+      const e = {};
+      e[serial] = { status: 'SUSPENDED', comment: 'held' };
+      return listOf(e);
+    } });
+  await androidCase('android-key, no list', { list: null });
+  await androidCase('android-key, no list, unchecked refused', {
+    list: null, extra: { refusesUnchecked: true } });
+  await androidCase('android-key, the list throws', { list: 'throws' });
+  await androidCase('android-key, revoked, require-trusted', {
+    list: function (serial) {
+      const e = {};
+      e[serial] = { status: 'REVOKED' };
+      return listOf(e);
+    } }, { policy: 'require-trusted' });
+  // SafetyNet, Apple, TPM, compound.
+  c = await ceremony();
+  await assess('android-safetynet, not allowed', c,
+               await kit.safetynet(c, anchors.google),
+               { settings: { trustAnchorsPem: anchors.google.pem } });
+  c = await ceremony();
+  await assess('android-safetynet, allowed', c,
+               await kit.safetynet(c, anchors.google),
+               { settings: { trustAnchorsPem: anchors.google.pem,
+                             allowSafetynet: true } });
+  c = await ceremony();
+  await assess('apple, anchored', c, await kit.apple(c, anchors.apple),
+               { settings: { trustAnchorsPem: anchors.apple.pem } });
+  c = await ceremony();
+  await assess('tpm, anchored', c, await kit.tpm(c, anchors.tpm),
+               { settings: { trustAnchorsPem: anchors.tpm.pem } });
+  c = await ceremony();
+  await assess('compound, the apple member anchored', c,
+               { fmt: 'compound', attStmt: [
+                 { fmt: 'packed',
+                   attStmt: (await kit.packed(c, anchors.vendor)).attStmt },
+                 { fmt: 'apple',
+                   attStmt: (await kit.apple(c, anchors.apple)).attStmt }] },
+               { settings: { trustAnchorsPem: anchors.apple.pem } });
+  c = await ceremony();
+  await assess('compound, nothing anchored, require-trusted', c,
+               { fmt: 'compound', attStmt: [
+                 { fmt: 'none', attStmt: {} },
+                 { fmt: 'packed', attStmt: kit.packedSelf(c).attStmt }] },
+               { settings: { policy: 'require-trusted' } });
+  // Enterprise attestation (#1114) and the device serial (#532).
+  for (const row of [['subject', { subject: 'SN-0042' }],
+                     ['yubico', { yubico: 12345678 }]]) {
+    c = await ceremony();
+    const rpHash = 'localhost';
+    await assess('enterprise, a ' + row[0] + ' serial', c,
+                 await kit.packed(c, anchors.vendor, undefined, undefined,
+                                  row[1]),
+                 { settings: { trustAnchorsPem: vendorPem,
+                               conveyance: 'enterprise',
+                               enterpriseRpIds: [rpHash],
+                               enterpriseSerialAttribute: 'serialNumber' } });
+  }
+  c = await ceremony();
+  await assess('enterprise, the RP ID not listed', c,
+               await kit.packed(c, anchors.vendor, undefined, undefined,
+                                { subject: 'SN-0042' }),
+               { settings: { trustAnchorsPem: vendorPem,
+                             conveyance: 'enterprise',
+                             enterpriseRpIds: ['example.org'] } });
+  c = await ceremony();
+  await assess('attestation algorithms demanded', c,
+               await kit.packed(c, anchors.vendor),
+               { settings: { trustAnchorsPem: vendorPem,
+                             attestationAlgorithms: ['ML-DSA-65'] } });
+  return { cases: cases, blob: { token: metadata.token,
+                                 anchorsPem: metadata.anchorsPem } };
 }
 
 /**
