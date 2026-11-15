@@ -195,6 +195,7 @@ pub fn credential_context(
 
 impl Context {
     /// The event's `context` member.
+    // A hot path: every authentication event; no span.
     pub fn json(&self, credential: Object) -> Value {
         json!({
             "address": self.address,

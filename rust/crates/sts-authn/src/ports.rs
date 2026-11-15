@@ -44,11 +44,13 @@ pub struct Response {
 
 impl Response {
     /// `res.set('Set-Cookie', line)`: one cookie per response.
+    // A hot path: every sign-in writes one; no span.
     pub fn set_cookie(&mut self, line: String) {
         self.cookies = vec![line];
     }
 
     /// `res.append('Set-Cookie', line)`.
+    // A hot path: every sign-out writes one; no span.
     pub fn append_cookie(&mut self, line: String) {
         self.cookies.push(line);
     }

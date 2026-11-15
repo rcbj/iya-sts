@@ -169,6 +169,7 @@ impl Sessions {
     }
 
     /// The store, as every protocol family reads it.
+    // A hot path: a borrow, on every session read; no span.
     pub fn store(&self) -> &RealmMap<Value> {
         &self.store
     }
