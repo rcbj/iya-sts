@@ -43,6 +43,7 @@ and the nudge.
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
+| `xacml_pep_listeners.ts` | **A remote PEP's listeners (#1760)**: the environment's four, the ones defined on its page (`xacmlPepListeners`), their validation, the pull's section and the reading of what the PEP reports (`xacmlPepListenersInUse`). A LIBRARY. See *A remote PEP's listeners* below. |
 | `xacml_pep_http.ts` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
 | `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
@@ -1380,9 +1381,10 @@ alone and `found`. Its trail leads back to `/admin/xacml#xacml-tab-peps` (the
 row's `upTo`, which the runtime reads so a drill-down whose list is another
 page's tab has that page's crumb and nav). Six tabs: Overview (identity,
 registration, version, state, notify URL, the two row actions), Decisions,
-Settings, Listener certificate (with the issue control, which left the
-table), Reverse proxy (the whole section that was on the tab, moved) and
-Signal streams. The table keeps a Reverse proxy column: the route count, off,
+Settings, Listener (every listener, below; it was Listener certificate, with
+the issue control that left the table, which it still carries), Reverse proxy
+(the whole section that was on the tab, moved, with the route forms below)
+and Signal streams (a table, one row per stream, below). The table keeps a Reverse proxy column: the route count, off,
 or an unusable route.
 
 **THE SETTINGS** (`xacml_pep_settings.ts`): every setting the container read
@@ -1421,6 +1423,89 @@ a heartbeat keep it, as they keep the proxy.
 
 `tests/xacml_pep_proxy.js` S holds all of it; `cargo test -p xacml-pep` the
 PEP's half.
+
+## A remote PEP's listeners (#1760)
+
+rcbj (2026-11-14): the Listener tab "modelled after Server configuration →
+Listeners", the HTTPS listener that exists as the default, and "an arbitrary
+# of listeners (HTTP, HTTPS)". `xacml_pep_listeners.ts`.
+
+* **THE ENVIRONMENT'S FOUR ARE THE BUILT-IN ROWS** (`BOOTSTRAP`: `api-http`,
+  `api-https`, `proxy-http`, `proxy-https`, with the variables that bind
+  them): what lets the PEP connect first, so read-only, and their ids are
+  reserved. Their HTTPS pair is still `issue-pep-certificate`'s.
+* **THE DEFINED ONES ARE ONE ATTRIBUTE**, `xacmlPepListeners` (OID 756), a
+  JSON array validated WHOLE on every write: `STS-XACML-0243` (shape, a
+  stray member, more than 32), `0244` (id, reserved, twice), `0245`
+  (protocol, purpose), `0246` (address, port), `0247` (an address and port
+  another holds — a wildcard overlaps every address — including the
+  environment's as the PEP last REPORTED them, or the container's defaults
+  where it reported none), `0248` (certificate names on plain HTTP, more
+  than 16, a name a certificate cannot carry, a key outside `ec-p256`,
+  `ec-p384`, `rsa-2048`, `rsa-3072`), `0249` (product), `0250` (an unknown
+  or environment id; renewing plain HTTP), `0251` (the directory refused).
+  `set-pep-listener` adds or replaces by id (an edit keeps `renew`),
+  `remove-pep-listener` removes, `renew-pep-listener-certificate` moves
+  `renew`. A registration and a heartbeat keep the attribute.
+* **THE PULL CARRIES THEM** as `listeners` on `GET /xacml/pep/settings`,
+  under the settings' token, only when there are some (so a PEP with none
+  pulls the body it always did). A stored list is read again WITHOUT the
+  environment clash — the report can move after the write, and the PEP
+  refuses a clash by failing to bind — and one that does not validate sends
+  none (`STS-XACML-0252`).
+* **THE KEY NEVER COMES HERE.** `POST /xacml/pep/listener-certificate`
+  (`pepAccess()` WRITE, the heartbeat's gate) takes `{ listener, csr }`;
+  `xacml_pep_tls.ts`'s `issueForListener()` reads the request through
+  `cert_enrollment.ts`'s `parseCsr()` (the proof of possession verified),
+  and issues from `pep-tls` through `pki.issueTlsServerKeyPair()`, which
+  since #1760 takes a `publicKeyPem` and then generates and returns no key.
+  The names are the PEP's derived ones and the definition's, never the
+  request's; the slot is `<pep>/<id>`. The same key asked again, with the
+  same names and a third of its life left, is answered the certificate held
+  (`issued: false`); otherwise a new one supersedes it. `STS-XACML-0253`
+  (no such HTTPS listener of this PEP), `0254` (the request), `0255` (the
+  issue). The answer is `no-store` and audited as
+  `xacml.pep.listener.certificate`.
+* **WHAT THE PEP REPORTS** arrives on the heartbeat as `listeners` and is
+  kept in `xacmlPepListenersInUse` (OID 757) by `inUseOf()`, the signal
+  health's rule: the closed sets (`source`, `protocol`, `purpose`, `state`
+  listening/waiting/failed/off, `reason` from ten), a reason that is not one
+  read as `other`, the certificate's seven members as text without a control
+  character, stamped on arrival; absent keeps, `null` clears, a registration
+  drops. **No operating-system sentence is kept**: a `REMOTE_PEPS` holder
+  writes it and an administrator reads it.
+* **THE PAGE** answers `listeners` (the definitions as the pull reads them),
+  `listenersProblem`, `listenersInUse` and `listenerRows` — every listener,
+  the environment's first, joined to its report and, for a defined HTTPS
+  one, the certificate the realm issued it — and `listenersCatalogue`.
+* **PRODUCT MODE REFUSES A PLAIN-HTTP PROXY LISTENER** unless
+  `xacml.pepPlainHttpProxyListeners` is on (`STS-XACML-0249`): the question
+  is `mode.servesProxyBrowsersInTheClear()`, the proxy's public base URL's,
+  and the setting is the administrator saying TLS ends in front of it.
+  `xacml-pep/CLAUDE.md` argues why the environment's `PEP_PROXY_PORT` is
+  not held to it.
+
+### The routes one at a time, and the streams one per row
+
+* **`set-pep-route`, `remove-pep-route`, `set-pep-route-application`**
+  (`xacml_admin.ts`'s `withRoute()`) build the whole document from the
+  stored one and hand it to the same `validate()` and `resolutionProblem()`
+  as `set-pep-proxy` — one validator. `set-pep-route` takes `route` (an
+  object) or the form's members (`routeAction` is the route's `action`,
+  since `action` is the API's), replaces a route of the same id where it
+  stands keeping its `identity`, and inserts at `position`. A missing route
+  object, a missing application or a position outside the list is
+  `STS-XACML-0256`. The page carries `applicationChoices` for the chooser.
+* **A PEP REPORTS ONE ROW PER STREAM** inside `signals` as `streams` on its
+  heartbeat (never on its `GET /`, which answers anybody): the client id,
+  the transmitter's stream id, running, healthy, the AGES of its start,
+  last poll and last success, and its counters. `signalsOf()` keeps them,
+  the two ids held to a charset, and turns the ages into times by the
+  arrival, ignoring any time the PEP sends. `pepsJson()` joins each to the
+  routes and applications whose resolved client it is, and answers a client
+  this PEP's routes do not name as empty rather than echoing it.
+
+`tests/xacml_pep_proxy.js` L, R and T hold it.
 
 ## What the console page is NOT
 

@@ -916,9 +916,93 @@ the trail leading back to the tab. Its tabs:
 | Overview | what it registered as — its certificate subject, directory identity and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging and Forget |
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
-| Listener certificate | what this realm issued it, and Issue or Reissue |
-| Reverse proxy | its routes, each route's application and identity mode, the configuration document and Clear |
-| Signal streams | its CAEP/RISC stream health |
+| Listener | every listener it has — the four its environment binds, read-only, and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source; the forms that define, edit, remove and renew them; and the environment's HTTPS pair with Issue or Reissue (below) |
+| Reverse proxy | its routes as a table, each with its application linked; a form to add a route, one to edit each, one to map an application to a route, each route's identity mode, the whole configuration document and Clear (below) |
+| Signal streams | its CAEP/RISC stream health: the totals, then a table with one row per stream (below) |
+
+### Its listeners
+
+The **Listener** tab is modelled on Server configuration → Listeners. Its
+table has one row per listener the PEP has:
+
+* **The four its environment binds** — `api-http` (`PEP_PORT`), `api-https`
+  (`PEP_HTTPS_PORT`), `proxy-http` (`PEP_PROXY_PORT`) and `proxy-https`
+  (`PEP_PROXY_HTTPS_PORT`). They are what lets the PEP reach this service
+  before it has pulled anything, so they are shown read-only and only its
+  environment changes them. The two HTTPS ones serve the pair on the PEP's
+  own mount, which **Issue certificate** at the bottom of the tab issues
+  (*An HTTPS listener, certified by the realm it registered to*, above).
+* **Any number defined here** (up to 32), each HTTP or HTTPS, for the
+  decision API (`api`: `/protected`, `GET /` and the AuthZEN endpoints) or
+  the reverse proxy (`proxy`), on an address and port of its choosing. They
+  are kept on the PEP's entry (`xacmlPepListeners`), sent on the settings
+  pull, and **bound, rebound and unbound while the PEP runs** — no restart.
+
+For each, the PEP reports on its heartbeat whether it is `listening`,
+`waiting` (an HTTPS listener with no certificate yet), `failed` or `off`, and
+why — the address in use, a port it may not bind, an address that is not its
+own, a refused certificate request, the proxy switched off — and the
+certificate it serves: its subject, names, issuer, validity, serial and
+SHA-256 fingerprint. A PEP older than this reports none, and the tab says so.
+
+**An HTTPS listener defined here gets its certificate without its key ever
+leaving the PEP.** The PEP generates the key (`ec-p256` unless the definition
+names `ec-p384`, `rsa-2048` or `rsa-3072`), sends a PKCS #10 request to
+`POST /xacml/pep/listener-certificate` over its mutual TLS, and is answered
+the certificate from the realm's **Remote PEP listeners** Issuing CA and its
+chain. The certificate names the PEP, its notify host and the definition's
+DNS names and IP addresses — never what the request asks for. **Renew the
+certificate** makes the PEP generate a new key and ask again on its next
+pull; changing the names does the same, and so does a certificate with a
+third of its life left.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"remote-pep-1","id":"public-https","protocol":"https","purpose":"proxy","port":8443,"dnsNames":["app.example.test"]}' \
+  https://localhost:8081/realm/acme/admin-api/xacml/set-pep-listener
+```
+
+`remove-pep-listener` and `renew-pep-listener-certificate` take `name` and
+`listener`. A definition is checked on save: the id (not one of the four),
+`http` or `https`, `api` or `proxy`, an IP address and a port from 1 to
+65535, no address and port another listener holds — the environment's as the
+PEP last reported them — and, for HTTPS, at most 16 names of each kind and a
+key it can generate. **In product mode a plain-HTTP reverse-proxy listener is
+refused** (`STS-XACML-0249`) unless `xacml.pepPlainHttpProxyListeners` is on:
+a browser signs in through the proxy and carries its session cookie there, so
+in the clear it is right only behind something that terminates TLS.
+
+* **An older PEP** never reads the definitions and binds only its
+  environment's four.
+* **A newer PEP talking to an older service** gets no definitions and binds
+  only its environment's four.
+* **A port that will not bind** is reported `failed` and tried again after
+  the next pull (`STS-XPEP-0103`); the others are unaffected.
+
+### Its routes, one at a time
+
+Beside the configuration document, the **Reverse proxy** tab has a form to
+add a route — its path, prefix or exact, its methods, public or the
+mechanisms it accepts, its application (a chooser of the realm's
+applications), the XACML resource and action, whether credentials are
+forwarded, whether CAEP/RISC signals end its sessions, and where it goes in
+the list — and the same form, filled, to edit each route. **Map an
+application to a route** binds a route to an application of the registry.
+Every form saves the whole document through the same checks as the editor,
+so a route a form can save is a route the document could hold, and the
+reverse. The operations are `set-pep-route`, `remove-pep-route` and
+`set-pep-route-application`.
+
+### Its signal streams
+
+The **Signal streams** tab gives the totals, then a table with one row per
+CAEP/RISC stream: the application and routes it serves (linked), its stream
+id, whether it runs, when it started, last polled and last succeeded, its
+failures in a row, its polls, the SETs it accepted and refused, the sessions
+it ended, and healthy or stale. The times are worked out from the ages the
+PEP reports and when the report arrived. A PEP older than the per-stream
+report gives the totals only, and one that reports nothing is *not
+reported*.
 
 ### The settings this service sets for it
 
@@ -960,8 +1044,9 @@ session store keeps the bounds it was built with.
 **What stays in the environment, and why**: `PEP_PDP_URL`, `PEP_NAME`,
 `PEP_TLS_CERT`, `PEP_TLS_KEY`, `PEP_TLS_CA` and `PEP_TLS_INSECURE` are needed
 to reach and authenticate to the service before the first pull; `PEP_PORT`,
-`PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are ports the
-PEP binds, and a listening socket is not rebound while it serves;
+`PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are the ports
+of the four listeners that let the PEP connect first (further listeners are
+defined on the Listener tab);
 `PEP_HTTPS_CERT`, `PEP_HTTPS_KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA` and
 `PEP_PROXY_UPSTREAM_CA` name files on the PEP's own disk; `PEP_PROXY` says
 whether the proxy's listeners start at all (its configuration's `enabled` is

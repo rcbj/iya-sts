@@ -3750,6 +3750,126 @@ async function itTakesItsSettingsFromTheService() {
   log.debug("Leaving itTakesItsSettingsFromTheService().");
 }
 
+// ---------------------------------------------------------------------------
+// SECTION 10a (#1760): THE LISTENERS THE SERVICE DEFINES. One HTTP and one
+// HTTPS API listener are defined on the PEP's page through /admin-api; the
+// PEP binds them on its next poll and reports them on its next heartbeat,
+// the HTTPS one with the certificate this realm issued over the key the PEP
+// generated; a renewal serves a new serial; removing them unbinds them. Where
+// this job shares the PEP's network (a launcher's stack) it dials the new
+// ports too; where it reaches the PEP through published ports only the
+// report is asserted, since a port defined at run time is not published.
+// ---------------------------------------------------------------------------
+async function itBindsTheListenersTheServiceDefines() {
+  log.debug("Entering itBindsTheListenersTheServiceDefines().");
+  const host = new URL(pep.url).hostname;
+  const dialable = pep.mode === "provided";
+  const rowOf = async function () {
+    const r = await get(api("/xacml/peps?pep=" +
+                            encodeURIComponent(PEP_NAME)));
+    return (r.body && r.body.peps && r.body.peps[0]) || null;
+  };
+  const listenerOf = function (row, id) {
+    return ((row && row.listenerRows) || []).filter(function (one) {
+      return one.id === id;
+    })[0] || null;
+  };
+  await until("the PEP to report its environment's listeners",
+              async function () {
+    const row = await rowOf();
+    const env = listenerOf(row, "api-http");
+    return { ok: !!env && !!env.reported &&
+                 env.reported.state === "listening",
+             note: JSON.stringify(row && row.listenerRows).slice(0, 300) };
+  });
+  const clash = await postJson(api("/xacml/set-pep-listener"),
+    { name: PEP_NAME, id: "clash", protocol: "http", purpose: "api",
+      port: 9090 });
+  check("a listener on the environment's API port is refused", function () {
+    assert.ok(clash.status === 400 && clash.body && clash.body.ok === false,
+      "port 9090 is api-http's; it answered " + clash.status + " " +
+      String(clash.text).slice(0, 300));
+  });
+  await act("set-pep-listener", { name: PEP_NAME, id: "probe-http",
+    protocol: "http", purpose: "api", port: 9191 },
+    "defined an HTTP API listener");
+  await act("set-pep-listener", { name: PEP_NAME, id: "probe-https",
+    protocol: "https", purpose: "api", port: 9445,
+    dnsNames: [/^[0-9.]+$/.test(host) ? "localhost" : host] },
+    "defined an HTTPS API listener");
+  let first = null;
+  await until("the PEP to bind both and report the HTTPS certificate",
+              async function () {
+    const row = await rowOf();
+    const plain = listenerOf(row, "probe-http");
+    const tls = listenerOf(row, "probe-https");
+    const ok = plain && plain.reported &&
+      plain.reported.state === "listening" && tls && tls.reported &&
+      tls.reported.state === "listening" && tls.reported.certificate &&
+      tls.issued &&
+      tls.issued.serialHex.toLowerCase().replace(/^0+/, "") ===
+        String(tls.reported.certificate.serialHex).toLowerCase()
+          .replace(/^0+/, "");
+    if (ok) {
+      first = tls.issued.serialHex;
+    }
+    return { ok: !!ok, note: JSON.stringify([plain, tls]).slice(0, 500) +
+             pepLog() };
+  });
+  checks += 1;
+  if (dialable) {
+    const r = await fetchJson("http://" + host + ":9191/healthcheck");
+    check("the defined HTTP listener answers", function () {
+      assert.strictEqual(r.status, 200, "GET /healthcheck on 9191 said " +
+                         r.status);
+    });
+  }
+  await act("renew-pep-listener-certificate",
+            { name: PEP_NAME, listener: "probe-https" },
+            "asked for a new certificate");
+  await until("the PEP to serve a new certificate on the same listener",
+              async function () {
+    const tls = listenerOf(await rowOf(), "probe-https");
+    return { ok: !!tls && !!tls.issued && tls.issued.serialHex !== first &&
+                 tls.reported && tls.reported.renew === 1 &&
+                 tls.reported.state === "listening",
+             note: JSON.stringify(tls).slice(0, 400) };
+  });
+  checks += 1;
+  await act("remove-pep-listener", { name: PEP_NAME, listener: "probe-http" },
+            "removed the HTTP listener");
+  await act("remove-pep-listener", { name: PEP_NAME, listener: "probe-https" },
+            "removed the HTTPS listener");
+  await until("the PEP to unbind them", async function () {
+    const row = await rowOf();
+    const left = ((row && row.listenersInUse &&
+                   row.listenersInUse.listeners) || [])
+      .filter(function (one) {
+        return one.source === "service";
+      });
+    return { ok: !!row && row.listenerRows.length === 4 && !left.length,
+             note: JSON.stringify(left) };
+  });
+  checks += 1;
+  if (dialable) {
+    let gone = 0;
+    try {
+      gone = (await fetchJson("http://" + host + ":9191/healthcheck")).status;
+    } catch (e) {
+      // A refused connection is the answer this waits for.
+      log.debug("Caught in itBindsTheListenersTheServiceDefines(): " +
+                ((e && e.message) || e));
+      gone = 0;
+    }
+    check("the removed listener no longer answers", function () {
+      assert.strictEqual(gone, 0, "9191 still answered " + gone);
+    });
+  }
+  log.info("[listeners] OK — the PEP bound, renewed and unbound the " +
+           "listeners the service defined, without a restart.");
+  log.debug("Leaving itBindsTheListenersTheServiceDefines().");
+}
+
 async function itProxiesAnApplication() {
   log.debug("Entering itProxiesAnApplication().");
   log.info("=== The container as a reverse proxy in front of an " +
@@ -4625,7 +4745,10 @@ async function theProxyHoldsASession() {
   const signalHere = ((await pepOverview()).proxy || {}).signals;
   check("the PDP's row carries the proxy's CAEP/RISC stream health, " +
         "counts and ages only", function () {
-    const held = signalRow.signals;
+    // ONE ROW PER STREAM (#1760) rides beside the counts and is checked
+    // below; the counts are held to their members as before.
+    const held = Object.assign({}, signalRow.signals);
+    delete held.streams;
     assert.strictEqual(Object.keys(held).sort().join(","), SIGNAL_MEMBERS,
       "the row's signals should hold exactly these members; it holds " +
       JSON.stringify(held));
@@ -4648,6 +4771,26 @@ async function theProxyHoldsASession() {
               signalHere.staleAfterMs === held.staleAfterMs &&
               signalHere.pollIntervalMs === held.pollIntervalMs,
       "and it agrees with the PEP's own GET /: " + JSON.stringify(signalHere));
+  });
+  check("the row has one stream per receiver, each naming the application " +
+        "it serves, and GET / names none", function () {
+    const streams = signalRow.signals.streams;
+    assert.ok(Array.isArray(streams) &&
+              streams.length === signalRow.signals.receivers,
+      "a row per receiver: " + JSON.stringify(streams));
+    streams.forEach(function (one) {
+      assert.ok(one.streamId && one.running === true &&
+                !isNaN(Date.parse(one.lastSuccessAt)) &&
+                one.applications.length >= 1 && one.routes.length >= 1,
+        "each stream names its stream id, its last success and the " +
+        "applications and routes it serves: " + JSON.stringify(one));
+      assert.ok(!/https?:|Error/i.test(JSON.stringify(one)),
+        "and no URL or error text: " + JSON.stringify(one));
+    });
+    assert.ok(signalHere && signalHere.streams === undefined &&
+              !/clientId/.test(JSON.stringify(signalHere)),
+      "GET / answers anybody, so it carries no stream row: " +
+      JSON.stringify(signalHere));
   });
 
   // THE FALLBACK (`signals: false`): no poll stream; the PEP asks
@@ -5067,6 +5210,7 @@ async function test() {
       // good: the proxy pulls its configuration and validates credentials
       // at the service, so it needs the seam section 9 cuts.
       await itTakesItsSettingsFromTheService();
+      await itBindsTheListenersTheServiceDefines();
       await itProxiesAnApplication();
       await itKeepsEnforcingWhenThePdpIsGone();
     } finally {

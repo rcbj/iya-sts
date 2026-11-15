@@ -431,6 +431,7 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
 | `xacml.pepRequireCertificate` | `STS_XACML_PEP_REQUIRE_CERTIFICATE` | `true` | yes | Whether a PEP registration needs a client certificate. When off, a registration without one is marked unauthenticated. |
+| `xacml.pepPlainHttpProxyListeners` | `STS_XACML_PEP_PLAIN_HTTP_PROXY_LISTENERS` | `false` | yes | In product mode, whether a listener defined on a remote PEP's page may serve its reverse proxy over plain HTTP. Turn it on only where something in front of the PEP terminates TLS. Development allows it regardless. |
 | `xacml.pipMaxPerWindow` | `STS_XACML_PIP_MAX_PER_WINDOW` | `600` | yes | `POST /xacml/pip` queries allowed per PEP and per address in one `security.rateLimitWindowS` window. |
 | `xacml.pipMaxDesignators` | `STS_XACML_PIP_MAX_DESIGNATORS` | `50` | yes | The most attribute designators one PIP query may name. |
 | `xacml.maxPeps` | `STS_XACML_MAX_PEPS` | `50` | yes | How many entries `ou=peps` may hold. A registration past the limit is refused. |

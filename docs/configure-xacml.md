@@ -472,6 +472,7 @@ api xacml/forget-pep  '{"name":"remote-pep-1"}'
 |---|---|---|
 | `xacml.pepRequireCertificate` | `true` | Off lets a PEP register without a certificate; its row is marked unauthenticated. The pull still needs the role. |
 | `xacml.maxPeps` | `50` | How many PEPs `ou=peps` may hold. |
+| `xacml.pepPlainHttpProxyListeners` | `false` | On lets a product realm define a plain-HTTP reverse-proxy listener on a PEP's page, for a PEP behind something that terminates TLS. |
 | `xacml.pepStaleAfterS` | `300` | When the console calls a PEP stale. |
 | `xacml.pepNotify` | `true` | Off stops nudging; PEPs converge on their poll. |
 | `xacml.pepNotifyAllowedHosts` | *(empty: any)* | Hosts a nudge may go to. |

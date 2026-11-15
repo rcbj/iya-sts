@@ -51,6 +51,7 @@ shim) are in git history.
 | `rp_session.rs` | The session mechanism's sign-ins in flight (the library's `Transaction`) and proxy sessions, in memory and bounded. |
 | `rp_set.rs` | The session mechanism's relying parties: one `oidc-caep-risc` `RelyingParty` per client, and its CAEP/RISC `SignalsReceiver`, built from the pull and rebuilt when it changes (D5). |
 | `identity.rs` | How the identity reaches the application (D11): claim values as headers, the `jwt` mode's token cache, the `saml` mode's cookie jar. Pure. |
+| `listeners.rs` | **Every listener, and the ones the service defines (#1760)**: the definitions read again, bound, rebound and unbound after each pull, an HTTPS one's key generated here and its certificate asked for, and the report on the heartbeat. See *THE LISTENERS THE SERVICE DEFINES*. |
 | `main.rs` | Start-up, the backoff timers, the fault handler, `--stamp`, `--healthcheck`. |
 
 ## The tests, and which half each guards
@@ -1426,7 +1427,9 @@ contained and throttled as before. **0035–0046 are the AuthZEN edge PDP's**
 **0055–0059 the forward of a fine-grained authorization evaluation and the
 catalogue's `fgaApplications`** (#564, P7); a request it refuses under the mapping contract is logged with the
 `STS-AUTHZEN-*` code the service gives the same request. **0060–0092 are the
-reverse proxy's** (#1760), listed in *THE REVERSE PROXY*.
+reverse proxy's** (#1760), listed in *THE REVERSE PROXY*. **0103–0105 are the
+defined listeners'** (#1760): a refused bind, a certificate not obtained, a
+definition left out.
 
 
 ## THE HTTPS LISTENER (2026-09-13)
@@ -1479,9 +1482,9 @@ can report a new mtime for identical bytes, and a copy can keep an old one.
   need the chain checked for the `pep-tls` Issuing CA. That is a change to
   `xacml/xacml_pep_http.ts`'s verification, argued there if it is made, not a
   consequence of this listener existing.
-* **Nothing reports the served certificate back to the PDP.** The row on
-  `/admin/xacml/peps` shows what the realm ISSUED; `GET /` here shows what is
-  SERVED. The heartbeat could carry the second, and does not yet.
+* ~~Nothing reports the served certificate back to the PDP~~ — since #1760
+  the heartbeat's `listeners` carries every listener's served certificate,
+  and the PEP's page shows it beside what the realm issued.
 
 ### The one handler
 
@@ -1497,3 +1500,91 @@ unreadable or refused), `-0031` (the port would not bind), `-0032` (the served
 certificate is outside its validity). The PDP side is `STS-XACML-0071` (the PEP
 is not registered in this realm) and `-0072` (the issue failed), and the
 certificate authority's are `STS-PKI-0165` to `-0167`.
+
+
+## THE LISTENERS THE SERVICE DEFINES (#1760)
+
+rcbj (2026-11-14): the Listener tab "modelled after the Server
+configuration->Listeners", the HTTPS listener there now as the default, and
+"the ability to define an arbitrary # of listeners (HTTP, HTTPS)".
+`listeners.rs`; the service's half is `xacml/xacml_pep_listeners.ts`.
+
+* **THE ENVIRONMENT'S FOUR STAY EXACTLY AS THEY WERE.** `PEP_PORT`,
+  `PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are what let
+  this process reach the service before it has pulled anything, so they are
+  bootstrap: bound at start from the environment, never by the service, and
+  reported under the reserved ids `api-http`, `api-https`, `proxy-http`,
+  `proxy-https`. The proxy's plain listener is bound in `main.rs` now (it
+  was `proxy::serve_http()`), so its result can be reported; the accept loop
+  is `proxy::serve_on()` as before.
+* **THE DEFINED ONES ARRIVE ON THE SETTINGS PULL** as `listeners` and are read
+  again by the service's rules (`parse()`: the id, the closed sets, an IP
+  address, a port, the names, a key this process can generate, no two on one
+  address and port); one that fails is LEFT OUT and named (`STS-XPEP-0105`),
+  the others are bound. A failed pull keeps what is held; an older
+  service's 404 is no definitions, so only the four.
+* **BOUND, REBOUND AND UNBOUND WHILE IT RUNS** (`ListenerSet::reconcile()`,
+  after the start's pull and after every poll, one at a time): a removed
+  listener's accept loop is aborted, which drops the socket and frees the
+  port — a connection already open finishes; a changed protocol, purpose,
+  address or port is unbound and bound again; a refused bind is `failed`
+  with its reason (`STS-XPEP-0103`, once per sentence) and tried again after
+  the next pull. **This reverses the settings' rule that a bound port is
+  bootstrap** — for these listeners only: nothing depends on them to connect,
+  so rebinding one costs its own clients a reconnect and nothing else.
+* **AN HTTPS LISTENER'S KEY IS GENERATED HERE AND NEVER LEAVES.** The key
+  (`ec-p256`, `ec-p384`, `rsa-2048` or `rsa-3072`, as the definition says) is
+  made with OpenSSL, a PKCS #10 request over it is signed with it, and
+  `POST /xacml/pep/listener-certificate` — over this PEP's mutual TLS, the
+  heartbeat's gate — answers the certificate from the realm's `pep-tls`
+  Issuing CA and its chain. `HttpsListener::install()` checks the pair WHOLE
+  as a pair read from disk is, so a chain that is not for this key is
+  refused and a pair already served is kept. Nothing is written to disk.
+  A new key is made when the definition's names, key or `renew` change, or
+  when a third of the certificate's life is left; until a certificate
+  arrives the listener waits UNBOUND (`STS-XPEP-0104`), as the environment's
+  waits for its files. A process that restarts makes a new key, and the
+  service supersedes the old certificate when it issues the new one.
+* **WHAT EACH IS DOING GOES ON THE HEARTBEAT** (`report()`, as `listeners`):
+  every listener, the environment's first, with its state (`listening`,
+  `waiting`, `failed`, `off`), a reason from a closed set (`bind_reason()`
+  turns an `io::Error` into one; the sentence goes to the log, never the
+  report) and the certificate it serves. An older service ignores the
+  member. **`GET /` does not carry it**: it answers whoever reaches the
+  container.
+* **A PROXY LISTENER WITH THE PROXY OFF** (`PEP_PROXY=false`) is not bound
+  and is reported `off` / `proxy-off`.
+* **THE SIGNAL STREAMS, ONE ROW EACH, ON THE HEARTBEAT ONLY**
+  (`RpSet::streams_json()`): a row names the client the stream serves, which
+  `GET /`'s `proxy.signals` promises never to do, so it rides in `signals`
+  on the heartbeat over mutual TLS and the counts on `GET /` are unchanged.
+  The times are AGES; the service turns them into times by the arrival.
+
+### Why the environment's plain proxy listener is not held to product mode
+
+The service refuses a DEFINED plain-HTTP proxy listener in product unless
+`xacml.pepPlainHttpProxyListeners` is on (`xacml/CLAUDE.md`), because that
+listener is the service's decision. `PEP_PROXY_PORT` is the operator's: it is
+set in this container's environment by whoever deploys it, before this
+process has asked the service anything, and it is in front of whatever the
+deployment puts in front of it. That is the same explicit, named statement
+the setting is — made where the operator makes deployment decisions — and
+refusing it here would mean a PEP that cannot learn its realm's mode before
+it binds would have to guess. The product deployment's answer is the one
+the setting's description gives: leave `PEP_PROXY_PORT` behind something
+that terminates TLS, or serve the proxy on `PEP_PROXY_HTTPS_PORT` only.
+
+### Backwards compatibility
+
+* **An older PEP** never reads `listeners`, sends no `listeners` on its
+  heartbeat (its page says it does not report them) and binds its four.
+* **This PEP against an older service** pulls no definitions (a 404 or a
+  body without the member) and binds its four; the older service ignores
+  the heartbeat's `listeners` and `signals.streams`.
+
+`cargo test -p xacml-pep` holds it: `listeners::tests` binds and unbinds at
+run time, moves a listener, refuses a bind on a held port and binds it once
+freed, leaves a proxy listener off with no proxy, serves an HTTPS listener
+the certificate a test CA issued over the key generated here, renews it to a
+new serial on the same socket, and leaves one whose request is refused
+waiting unbound.
