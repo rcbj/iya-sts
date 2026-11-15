@@ -53,8 +53,8 @@ pub(crate) fn number_text(n: &serde_json::Number) -> String {
 }
 
 /// `String(value)`: `null` is `"null"`, an array its members joined with
-/// commas (a `null` member empty), an object `[object Object]`. A hot
-/// path: no span.
+/// commas (a `null` member empty), an object `[object Object]`. A hot path
+///: no span.
 pub(crate) fn text_of(value: &Json) -> String {
     match value {
         Json::Null => "null".to_string(),
@@ -167,9 +167,7 @@ pub(crate) fn entries_of(value: &Json) -> Vec<(String, Json)> {
 /// `new Date(at).toISOString()`. A hot path: no span.
 pub(crate) fn iso(at: i64) -> String {
     match chrono::DateTime::<chrono::Utc>::from_timestamp_millis(at) {
-        Some(when) => {
-            when.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
-        }
+        Some(when) => when.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string(),
         None => String::new(),
     }
 }
@@ -182,8 +180,10 @@ mod tests {
     fn javascript_semantics() {
         assert_eq!(len16("é😀"), 3);
         assert_eq!(head16("ab😀c", 3), "ab");
-        assert_eq!(text_of(&serde_json::json!([1, "two", null, [3, 4]])),
-                   "1,two,,3,4");
+        assert_eq!(
+            text_of(&serde_json::json!([1, "two", null, [3, 4]])),
+            "1,two,,3,4"
+        );
         assert_eq!(parse_int(" 12abc"), Some(12));
         assert_eq!(parse_int("abc"), None);
         let map = serde_json::json!({"b": 1, "2": 2, "1": 1, "01": 0});

@@ -79,7 +79,12 @@ impl Outbound {
         mode: Arc<Mode>,
         ca_files: Arc<dyn CaFiles>,
     ) -> Outbound {
-        Outbound { settings, mode, ca_files, announced: Mutex::new(HashSet::new()) }
+        Outbound {
+            settings,
+            mode,
+            ca_files,
+            announced: Mutex::new(HashSet::new()),
+        }
     }
 
     /// `httpVerdict(FAMILY, hostname)`: may this http:// URL be dialled?

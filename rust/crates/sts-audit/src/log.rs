@@ -53,8 +53,15 @@ const MAX_DETAIL_LENGTH: usize = 200;
 const MAX_SUMMARY_LENGTH: usize = 400;
 const MAX_ACTION_LENGTH: usize = 60;
 const QUIET_WHEN_OK: &[&str] = &["/healthcheck"];
-const REDACTED_CAPABILITIES: &[&str] =
-    &["authn", "mfa", "state", "response_code", "change", "t", "consent"];
+const REDACTED_CAPABILITIES: &[&str] = &[
+    "authn",
+    "mfa",
+    "state",
+    "response_code",
+    "change",
+    "t",
+    "consent",
+];
 const REDACTED_QUERY_KEYS: &[&str] = &[
     "code",
     "id_token_hint",
@@ -360,13 +367,12 @@ pub fn redacted_path(path: &str) -> String {
 pub fn redacted_query(query: &Map<String, Json>) -> Map<String, Json> {
     let mut out = Map::new();
     for key in js::keys_of(query) {
-        let value = if REDACTED_CAPABILITIES
-            .contains(&key.to_lowercase().as_str())
-        {
-            Json::from("(redacted)")
-        } else {
-            query.get(&key).cloned().unwrap_or(Json::Null)
-        };
+        let value =
+            if REDACTED_CAPABILITIES.contains(&key.to_lowercase().as_str()) {
+                Json::from("(redacted)")
+            } else {
+                query.get(&key).cloned().unwrap_or(Json::Null)
+            };
         out.insert(key, value);
     }
     out
@@ -505,7 +511,10 @@ impl AuditLog {
     }
 
     fn protocol_calls_recorded(&self) -> bool {
-        self.ports.settings.value(keys::AUDIT_PROTOCOL_CALLS).as_bool()
+        self.ports
+            .settings
+            .value(keys::AUDIT_PROTOCOL_CALLS)
+            .as_bool()
     }
 
     fn cap(&self) -> usize {
@@ -527,8 +536,7 @@ impl AuditLog {
     }
 
     fn next_seq(&self, ring: &mut RealmRing) -> i64 {
-        if let Some(n) = self.ports.seq.as_ref().and_then(|s| s.next("audit"))
-        {
+        if let Some(n) = self.ports.seq.as_ref().and_then(|s| s.next("audit")) {
             return n;
         }
         ring.nums.seq += 1;
@@ -783,11 +791,8 @@ impl AuditLog {
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn record_http(&self, x: &HttpExchange) -> Option<AuditRow> {
         let bare = x.original_url.split('?').next().unwrap_or("");
-        let path = redacted_path(if x.original_url.is_empty() {
-            "/"
-        } else {
-            bare
-        });
+        let path =
+            redacted_path(if x.original_url.is_empty() { "/" } else { bare });
         if quiet_when_ok(&x.method, &path, &x.status.to_string()) {
             return None;
         }
@@ -832,8 +837,7 @@ impl AuditLog {
         } else {
             status_outcome
         };
-        let mut summary =
-            format!("{} {} → {}", x.method, path, x.status);
+        let mut summary = format!("{} {} → {}", x.method, path, x.status);
         if !posted.is_empty() {
             summary.push_str(&format!(" ({})", posted));
         }
@@ -1102,8 +1106,7 @@ impl AuditLog {
                 != nums.head_mac
             {
                 "altered"
-            } else if newest.and_then(|r| r.mac.as_ref()) != Some(&nums.head)
-            {
+            } else if newest.and_then(|r| r.mac.as_ref()) != Some(&nums.head) {
                 "truncated"
             } else {
                 "intact"

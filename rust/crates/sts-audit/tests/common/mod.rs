@@ -15,8 +15,7 @@ use sts_audit::log::{Clock, KeyedDigest};
 pub fn vectors() -> Option<Json> {
     let dir = std::env::var("STS_CRYPTO_VECTORS").ok()?;
     let dir = std::path::Path::new(&dir);
-    if let Ok(text) = std::fs::read_to_string(dir.join("auditmail-node.json"))
-    {
+    if let Ok(text) = std::fs::read_to_string(dir.join("auditmail-node.json")) {
         let all: Json = serde_json::from_str(&text).unwrap();
         return Some(all["audit"].clone());
     }
@@ -36,9 +35,9 @@ pub fn norm(v: &Json) -> Json {
             }
         }
         Json::Array(a) => Json::Array(a.iter().map(norm).collect()),
-        Json::Object(m) => Json::Object(
-            m.iter().map(|(k, v)| (k.clone(), norm(v))).collect(),
-        ),
+        Json::Object(m) => {
+            Json::Object(m.iter().map(|(k, v)| (k.clone(), norm(v))).collect())
+        }
         other => other.clone(),
     }
 }
@@ -63,4 +62,3 @@ impl KeyedDigest for Keys {
         self.0.keyed_digest(label, text)
     }
 }
-

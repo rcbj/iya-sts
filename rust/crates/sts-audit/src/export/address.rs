@@ -37,7 +37,9 @@ pub fn is_loopback_host(host: &str) -> bool {
     parts.len() == 4
         && parts[0] == "127"
         && parts.iter().all(|p| {
-            !p.is_empty() && p.len() <= 3 && p.bytes().all(|b| b.is_ascii_digit())
+            !p.is_empty()
+                && p.len() <= 3
+                && p.bytes().all(|b| b.is_ascii_digit())
         })
 }
 
@@ -191,7 +193,8 @@ pub fn is_private(host: &str) -> bool {
         return is_private(&mapped);
     }
     let all_zero = bytes.iter().all(|b| *b == 0);
-    let looped = !all_zero && bytes[15] == 1 && bytes[..15].iter().all(|b| *b == 0);
+    let looped =
+        !all_zero && bytes[15] == 1 && bytes[..15].iter().all(|b| *b == 0);
     let ula = (bytes[0] & 0xfe) == 0xfc;
     let link = bytes[0] == 0xfe && (bytes[1] & 0xc0) == 0x80;
     all_zero || looped || ula || link

@@ -83,7 +83,10 @@ pub trait AuditSink: Send + Sync {
 
 impl AuditSink for AuditLog {
     fn local_events(&self) -> Vec<Json> {
-        AuditLog::local_events(self).iter().map(|r| r.to_json()).collect()
+        AuditLog::local_events(self)
+            .iter()
+            .map(|r| r.to_json())
+            .collect()
     }
 
     fn audit(&self, event: &Json) {
@@ -286,7 +289,7 @@ impl Default for Cursor {
 
 impl Cursor {
     fn has_ack(&self) -> bool {
-        !(self.ack_id.is_null() || self.ack_id == Json::from(""))
+        !(self.ack_id.is_null() || self.ack_id == "")
     }
 }
 
@@ -307,7 +310,10 @@ impl ActResult {
     }
 
     fn ok(json: Json) -> ActResult {
-        ActResult { json, code: String::new() }
+        ActResult {
+            json,
+            code: String::new(),
+        }
     }
 }
 
@@ -357,13 +363,21 @@ struct Polled {
 
 impl Polled {
     fn is(kind: &'static str) -> Polled {
-        Polled { kind, code: String::new(), why: String::new(),
-                 retry_after_ms: 0.0 }
+        Polled {
+            kind,
+            code: String::new(),
+            why: String::new(),
+            retry_after_ms: 0.0,
+        }
     }
 
     fn failed(code: &str, why: &str, retry_after_ms: f64) -> Polled {
-        Polled { kind: "failed", code: code.to_string(), why: why.to_string(),
-                 retry_after_ms }
+        Polled {
+            kind: "failed",
+            code: code.to_string(),
+            why: why.to_string(),
+            retry_after_ms,
+        }
     }
 }
 
@@ -577,9 +591,7 @@ impl AuditExport {
             .as_ref()
             .and_then(|r| r.get(realm_id).or_else(|| r.get("default")));
         let why = match realm {
-            Some(realm) => {
-                sts_core::realm::run_sync(realm, || self.off_here())
-            }
+            Some(realm) => sts_core::realm::run_sync(realm, || self.off_here()),
             None => self.off_here(),
         };
         if !why.is_empty() && self.ports.mode.warns_without_audit_destination()
@@ -605,7 +617,12 @@ impl AuditExport {
     /// `offHere()`: the off reason in the ambient realm.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn off_here(&self) -> String {
-        if !self.ports.settings.value(keys::AUDIT_EXPORT_ENABLED).as_bool() {
+        if !self
+            .ports
+            .settings
+            .value(keys::AUDIT_EXPORT_ENABLED)
+            .as_bool()
+        {
             return "Audit export is off.".to_string();
         }
         let enabled = self
@@ -710,8 +727,13 @@ impl AuditExport {
                     return;
                 }
                 "failed" => {
-                    self.hold(&mut cursor, id, &polled.code, &polled.why,
-                              polled.retry_after_ms);
+                    self.hold(
+                        &mut cursor,
+                        id,
+                        &polled.code,
+                        &polled.why,
+                        polled.retry_after_ms,
+                    );
                     cursor.next_seq = if cursor.in_flight_seq != 0 {
                         Some(cursor.in_flight_seq)
                     } else {
@@ -740,8 +762,7 @@ impl AuditExport {
             }
         }
         if !cursor.primed {
-            cursor.seq =
-                rows.first().map(|r| Self::seq_of(r) - 1).unwrap_or(0);
+            cursor.seq = rows.first().map(|r| Self::seq_of(r) - 1).unwrap_or(0);
             cursor.primed = true;
             cursor.origin = self.origin_id();
         } else if let Some(next) = cursor.next_seq {
@@ -829,12 +850,13 @@ impl AuditExport {
                 cursor.seq = seq;
                 cursor.failed_permanent += 1;
                 cursor.last_disposition = "failed".to_string();
-                let code = first_or(result.code.clone(),
-                                    codes::STS_AUDIT_0015.as_str());
+                let code = first_or(
+                    result.code.clone(),
+                    codes::STS_AUDIT_0015.as_str(),
+                );
                 self.note_delivery(
                     &code,
-                    &format!("Destination {} rejected event {}.", id,
-                             event_id),
+                    &format!("Destination {} rejected event {}.", id, event_id),
                     json!({ "destinationId": id, "eventId": event_id }),
                 );
                 offered += 1;
@@ -852,8 +874,13 @@ impl AuditExport {
                 offered += 1;
                 continue;
             }
-            self.hold(&mut cursor, id, &result.code, &result.why,
-                      result.retry_after_ms);
+            self.hold(
+                &mut cursor,
+                id,
+                &result.code,
+                &result.why,
+                result.retry_after_ms,
+            );
             break;
         }
         if !dropped.is_empty() {
@@ -892,14 +919,20 @@ impl AuditExport {
             .map(Self::seq_of);
     }
 
-    fn hold(&self, cursor: &mut Cursor, id: &str, code: &str, why: &str,
-            retry_after_ms: f64) {
+    fn hold(
+        &self,
+        cursor: &mut Cursor,
+        id: &str,
+        code: &str,
+        why: &str,
+        retry_after_ms: f64,
+    ) {
         let initial = self.int(keys::AUDIT_EXPORT_RETRY_INITIAL_MS);
         let max = self.int(keys::AUDIT_EXPORT_RETRY_MAX_MS);
         if cursor.failing_since == 0 {
             cursor.failing_since = self.now();
-            let code = first_or(code.to_string(),
-                                codes::STS_AUDIT_0007.as_str());
+            let code =
+                first_or(code.to_string(), codes::STS_AUDIT_0007.as_str());
             self.note_delivery(
                 &code,
                 &format!("Audit export destination {} is failing.", id),
@@ -907,7 +940,11 @@ impl AuditExport {
             );
         }
         cursor.retries += 1;
-        let base = if cursor.retry_ms != 0 { cursor.retry_ms } else { initial };
+        let base = if cursor.retry_ms != 0 {
+            cursor.retry_ms
+        } else {
+            initial
+        };
         let wait = if retry_after_ms > 0.0 {
             retry_after_ms as i64
         } else {
@@ -953,7 +990,11 @@ impl AuditExport {
         ]
         .iter()
         .any(|c| c.as_str() == code);
-        let code = if known { code } else { codes::STS_AUDIT_0007.as_str() };
+        let code = if known {
+            code
+        } else {
+            codes::STS_AUDIT_0007.as_str()
+        };
         let mut d = Map::new();
         d.insert("exportSkip".into(), Json::Bool(true));
         if let Json::Object(m) = &detail {
@@ -962,14 +1003,17 @@ impl AuditExport {
             }
         }
         let target = detail.get("destinationId").cloned();
-        self.ports.audit.failure(code, &json!({
-            "action": "service.failure",
-            "outcome": "error",
-            "summarised": true,
-            "summary": summary,
-            "target": target.unwrap_or(Json::Null),
-            "detail": d,
-        }));
+        self.ports.audit.failure(
+            code,
+            &json!({
+                "action": "service.failure",
+                "outcome": "error",
+                "summarised": true,
+                "summary": summary,
+                "target": target.unwrap_or(Json::Null),
+                "detail": d,
+            }),
+        );
     }
 
     fn note_latency(cursor: &mut Cursor, ms: i64) {
@@ -992,22 +1036,27 @@ impl AuditExport {
             configured.as_str(),
             &text_of(dest.get("excludeAttributes")),
         );
-        event::canonical(row, &CanonicalOptions {
-            realm: sts_core::realm::current_id(),
-            origin: self.origin_id(),
-            source: self.ports.user_agent.clone(),
-            names,
-            now: self.now(),
-        })
+        event::canonical(
+            row,
+            &CanonicalOptions {
+                realm: sts_core::realm::current_id(),
+                origin: self.origin_id(),
+                source: self.ports.user_agent.clone(),
+                names,
+                now: self.now(),
+            },
+        )
     }
 
-    async fn offer_event(&self, dest: &Json, event: &Json, pipe: &mut Pipe)
-        -> SendResult {
+    async fn offer_event(
+        &self,
+        dest: &Json,
+        event: &Json,
+        pipe: &mut Pipe,
+    ) -> SendResult {
         match dest.get("type").and_then(Json::as_str).unwrap_or("") {
             "file" => self.send_file(dest, event),
-            "syslog" | "logrhythm" => {
-                self.send_syslog(dest, event, pipe).await
-            }
+            "syslog" | "logrhythm" => self.send_syslog(dest, event, pipe).await,
             "webhook" | "splunk" => self.send_http(dest, event).await,
             _ => SendResult::failed(
                 "pause",
@@ -1042,8 +1091,12 @@ impl AuditExport {
         }
     }
 
-    fn append_line(&self, dest: &Json, event: &Json, path: &str)
-        -> Result<(), String> {
+    fn append_line(
+        &self,
+        dest: &Json,
+        event: &Json,
+        path: &str,
+    ) -> Result<(), String> {
         let key = Self::file_key(&text_of(dest.get("id")));
         let mode = event::parse_mode(dest.get("mode")).max(0) as u32;
         let mut files = self.files();
@@ -1052,7 +1105,13 @@ impl AuditExport {
         }
         if !files.contains_key(&key) {
             let file = self.ports.files.open_append(path, mode)?;
-            files.insert(key.clone(), Held { path: path.to_string(), file });
+            files.insert(
+                key.clone(),
+                Held {
+                    path: path.to_string(),
+                    file,
+                },
+            );
         }
         let rotate = event::js_number(dest.get("rotateBytes"));
         let rotate = if rotate.is_finite() { rotate as i64 } else { 0 };
@@ -1085,10 +1144,13 @@ impl AuditExport {
         self.files().clear();
     }
 
-    async fn send_syslog(&self, dest: &Json, event: &Json, pipe: &mut Pipe)
-        -> SendResult {
-        let screened =
-            self.screen_host(&text_of(dest.get("host")), true).await;
+    async fn send_syslog(
+        &self,
+        dest: &Json,
+        event: &Json,
+        pipe: &mut Pipe,
+    ) -> SendResult {
+        let screened = self.screen_host(&text_of(dest.get("host")), true).await;
         if !screened.ok {
             return SendResult::failed(
                 "pause",
@@ -1135,9 +1197,15 @@ impl AuditExport {
         }
     }
 
-    async fn send_framed(&self, dest: &Json, message: &str, ip: &str,
-                         port: u16, transport: &str, pipe: &mut Pipe)
-        -> Result<(), SendError> {
+    async fn send_framed(
+        &self,
+        dest: &Json,
+        message: &str,
+        ip: &str,
+        port: u16,
+        transport: &str,
+        pipe: &mut Pipe,
+    ) -> Result<(), SendError> {
         let key = format!("{}:{}:{}", transport, ip, port);
         let timeout = self.timeout();
         if pipe.as_ref().is_none_or(|(k, _)| *k != key) {
@@ -1172,8 +1240,14 @@ impl AuditExport {
             let opened = self
                 .ports
                 .syslog
-                .open(transport, ip, port, servername.as_deref(),
-                      policy.as_ref(), timeout)
+                .open(
+                    transport,
+                    ip,
+                    port,
+                    servername.as_deref(),
+                    policy.as_ref(),
+                    timeout,
+                )
                 .await?;
             *pipe = Some((key, opened));
         }
@@ -1214,8 +1288,10 @@ impl AuditExport {
         let url = match (&screened.url, screened.ok) {
             (Some(url), true) => url.clone(),
             _ => {
-                let code = first_or(screened.code.clone(),
-                                    codes::STS_AUDIT_0005.as_str());
+                let code = first_or(
+                    screened.code.clone(),
+                    codes::STS_AUDIT_0005.as_str(),
+                );
                 return SendResult::failed("pause", &code, &screened.why);
             }
         };
@@ -1262,8 +1338,13 @@ impl AuditExport {
                 content_type =
                     or_text(dest.get("contentType"), "application/json");
             }
-            let skip = ["host", "content-length", "transfer-encoding",
-                        "content-type", "user-agent"];
+            let skip = [
+                "host",
+                "content-length",
+                "transfer-encoding",
+                "content-type",
+                "user-agent",
+            ];
             if let Some(Json::Object(plain)) = dest.get("headers") {
                 for name in js::keys_of(plain) {
                     if skip.contains(&name.to_lowercase().as_str()) {
@@ -1283,8 +1364,9 @@ impl AuditExport {
             }
         }
         headers.insert("Content-Type".into(), Json::from(content_type));
-        let posted =
-            self.post_http(&url, headers, body, &screened.addresses).await;
+        let posted = self
+            .post_http(&url, headers, body, &screened.addresses)
+            .await;
         if !posted.ok
             && posted.status == 0
             && posted.code == codes::STS_CORE_0104.as_str()
@@ -1318,8 +1400,10 @@ impl AuditExport {
         let url = match (&screened.url, screened.ok) {
             (Some(url), true) => url.clone(),
             _ => {
-                let code = first_or(screened.code.clone(),
-                                    codes::STS_AUDIT_0005.as_str());
+                let code = first_or(
+                    screened.code.clone(),
+                    codes::STS_AUDIT_0005.as_str(),
+                );
                 return Polled::failed(&code, &screened.why, 0.0);
             }
         };
@@ -1337,8 +1421,9 @@ impl AuditExport {
             Json::from(cursor.ack_channel.clone()),
         );
         let body = json!({ "acks": [cursor.ack_id.clone()] }).to_string();
-        let posted =
-            self.post_http(&url, headers, body, &screened.addresses).await;
+        let posted = self
+            .post_http(&url, headers, body, &screened.addresses)
+            .await;
         if !posted.ok && posted.status == 0 {
             let code =
                 first_or(posted.code.clone(), codes::STS_AUDIT_0007.as_str());
@@ -1360,8 +1445,13 @@ impl AuditExport {
         }
     }
 
-    async fn post_http(&self, target: &url::Url, headers: Map<String, Json>,
-                       body: String, addresses: &[String]) -> Posted {
+    async fn post_http(
+        &self,
+        target: &url::Url,
+        headers: Map<String, Json>,
+        body: String,
+        addresses: &[String],
+    ) -> Posted {
         let secure = target.scheme() == "https";
         let hostname = target.host_str().unwrap_or("").to_string();
         let refused = |code: String, why: String| Posted {
@@ -1377,8 +1467,10 @@ impl AuditExport {
             let verdict = self.ports.outbound.http_verdict(&hostname);
             if !verdict.ok {
                 return refused(
-                    first_or(verdict.error_code,
-                             codes::STS_AUDIT_0005.as_str()),
+                    first_or(
+                        verdict.error_code,
+                        codes::STS_AUDIT_0005.as_str(),
+                    ),
                     first_or(verdict.why, "plain http is refused"),
                 );
             }
@@ -1386,8 +1478,10 @@ impl AuditExport {
             let policy = self.ports.outbound.tls_verdict(&hostname);
             if !policy.ok {
                 return refused(
-                    first_or(policy.error_code.clone(),
-                             codes::STS_AUDIT_0007.as_str()),
+                    first_or(
+                        policy.error_code.clone(),
+                        codes::STS_AUDIT_0007.as_str(),
+                    ),
                     first_or(policy.why.clone(), "TLS was refused"),
                 );
             }
@@ -1492,13 +1586,11 @@ impl AuditExport {
         if !roots.is_empty() {
             let under = roots.iter().any(|root| {
                 let base = resolve(root);
-                resolved == base
-                    || resolved.starts_with(&format!("{}/", base))
+                resolved == base || resolved.starts_with(&format!("{}/", base))
             });
             if !under {
                 return Err(
-                    "The path is outside the allowed filesystem roots."
-                        .into(),
+                    "The path is outside the allowed filesystem roots.".into(),
                 );
             }
         }
@@ -1512,7 +1604,9 @@ impl AuditExport {
         let bare = address::bare_host(host);
         if bare.is_empty()
             || js::len16(&bare) > 255
-            || bare.chars().any(|c| c.is_whitespace() || "@/\\".contains(c))
+            || bare
+                .chars()
+                .any(|c| c.is_whitespace() || "@/\\".contains(c))
         {
             return Screened::refused(
                 codes::STS_AUDIT_0001.as_str(),
@@ -1537,8 +1631,11 @@ impl AuditExport {
         let (addresses, looked) = match self.ports.dns.lookup(&bare).await {
             Ok(found) => (found, true),
             Err(e) => {
-                tracing::debug!("audit export: {} did not resolve: {}", bare,
-                                e);
+                tracing::debug!(
+                    "audit export: {} did not resolve: {}",
+                    bare,
+                    e
+                );
                 if at_send {
                     return unresolved();
                 }
@@ -1560,8 +1657,11 @@ impl AuditExport {
                 true,
             );
         }
-        let addresses =
-            if addresses.is_empty() { vec![bare] } else { addresses };
+        let addresses = if addresses.is_empty() {
+            vec![bare]
+        } else {
+            addresses
+        };
         Screened {
             json: json!({ "ok": true, "addresses": addresses }),
             ok: true,
@@ -1600,8 +1700,10 @@ impl AuditExport {
         if url.scheme() == "http" {
             let verdict = self.ports.outbound.http_verdict(&hostname);
             if !verdict.ok {
-                let code = first_or(verdict.error_code,
-                                    codes::STS_AUDIT_0005.as_str());
+                let code = first_or(
+                    verdict.error_code,
+                    codes::STS_AUDIT_0005.as_str(),
+                );
                 return Screened::refused(
                     &code,
                     "Plain http is not allowed for this destination.",
@@ -1624,17 +1726,20 @@ impl AuditExport {
         }
     }
 
-    fn address_denied(&self, host: &str, addresses: Option<&Vec<String>>,
-                      at_send: bool) -> String {
+    fn address_denied(
+        &self,
+        host: &str,
+        addresses: Option<&Vec<String>>,
+        at_send: bool,
+    ) -> String {
         let answers: Vec<String> = addresses.cloned().unwrap_or_default();
         if address::is_metadata(host)
             || answers.iter().any(|a| address::is_metadata(a))
         {
             return "Cloud metadata addresses are refused.".into();
         }
-        let private = |h: &str| {
-            address::is_loopback_host(h) || address::is_private(h)
-        };
+        let private =
+            |h: &str| address::is_loopback_host(h) || address::is_private(h);
         if !private(host) && !answers.iter().any(|a| private(a)) {
             return String::new();
         }
@@ -1874,11 +1979,13 @@ impl AuditExport {
         Json::Object(copy)
     }
 
-    async fn prepare(&self, body: &Json, existing: Option<&Json>)
-        -> Result<Json, ActResult> {
-        let refuse = |why: &str| {
-            ActResult::refusal(codes::STS_AUDIT_0001.as_str(), why)
-        };
+    async fn prepare(
+        &self,
+        body: &Json,
+        existing: Option<&Json>,
+    ) -> Result<Json, ActResult> {
+        let refuse =
+            |why: &str| ActResult::refusal(codes::STS_AUDIT_0001.as_str(), why);
         let id = match existing {
             Some(e) => text_of(e.get("id")),
             None => Self::id_of(body),
@@ -1908,8 +2015,12 @@ impl AuditExport {
                 "The type must be syslog, file, webhook, splunk or logrhythm.",
             ));
         }
-        let name = text_of(Some(&picked(body, existing, "name",
-                                        Json::from(id.clone()))));
+        let name = text_of(Some(&picked(
+            body,
+            existing,
+            "name",
+            Json::from(id.clone()),
+        )));
         if name.trim().is_empty() || js::len16(&name) > 128 {
             return Err(refuse(
                 "The destination needs a name of at most 128 characters.",
@@ -1919,9 +2030,12 @@ impl AuditExport {
             Some(v) => js::truthy(Some(v)),
             None => existing.is_none_or(|e| js::truthy(e.get("enabled"))),
         };
-        let excluded = text_of(Some(&picked(body, existing,
-                                            "excludeAttributes",
-                                            Json::from(""))));
+        let excluded = text_of(Some(&picked(
+            body,
+            existing,
+            "excludeAttributes",
+            Json::from(""),
+        )));
         if js::len16(&excluded) > 1000 {
             return Err(refuse("The excluded attributes are too long."));
         }
@@ -1935,14 +2049,16 @@ impl AuditExport {
         Ok(Json::Object(dest))
     }
 
-    async fn fill_typed(&self, dest: &mut Map<String, Json>, body: &Json,
-                        existing: Option<&Json>) -> Result<(), ActResult> {
-        let refuse = |why: &str| {
-            ActResult::refusal(codes::STS_AUDIT_0001.as_str(), why)
-        };
-        let pick = |key: &str, fallback: Json| {
-            picked(body, existing, key, fallback)
-        };
+    async fn fill_typed(
+        &self,
+        dest: &mut Map<String, Json>,
+        body: &Json,
+        existing: Option<&Json>,
+    ) -> Result<(), ActResult> {
+        let refuse =
+            |why: &str| ActResult::refusal(codes::STS_AUDIT_0001.as_str(), why);
+        let pick =
+            |key: &str, fallback: Json| picked(body, existing, key, fallback);
         let kind = text_of(dest.get("type"));
         match kind.as_str() {
             "syslog" | "logrhythm" => {
@@ -1962,8 +2078,7 @@ impl AuditExport {
                 if js::len16(&text_of(dest.get("appName"))) > 48 {
                     return Err(refuse("The application name is too long."));
                 }
-                let transport =
-                    dest.get("transport").and_then(Json::as_str);
+                let transport = dest.get("transport").and_then(Json::as_str);
                 if !matches!(transport, Some("udp" | "tcp" | "tls")) {
                     return Err(refuse(
                         "The transport must be udp, tcp or tls.",
@@ -1979,22 +2094,26 @@ impl AuditExport {
                     ));
                 }
                 let facility = event::js_number(dest.get("facility"));
-                if !facility.is_finite() || !(0.0..=23.0).contains(&facility)
-                {
+                if !facility.is_finite() || !(0.0..=23.0).contains(&facility) {
                     return Err(refuse("The facility must be from 0 to 23."));
                 }
                 dest.insert("facility".into(), event::js_num(facility));
                 let port = event::js_number(dest.get("port"));
-                let port =
-                    if port.is_finite() && port != 0.0 { port } else { 0.0 };
+                let port = if port.is_finite() && port != 0.0 {
+                    port
+                } else {
+                    0.0
+                };
                 if port != 0.0 && !(1.0..=65535.0).contains(&port) {
                     return Err(refuse("The port must be from 1 to 65535."));
                 }
                 dest.insert("port".into(), event::js_num(port));
                 let screened = self.screen_host(&host, false).await;
                 if !screened.ok {
-                    return Err(ActResult::refusal(&screened.code,
-                                                  &screened.why));
+                    return Err(ActResult::refusal(
+                        &screened.code,
+                        &screened.why,
+                    ));
                 }
             }
             "file" => {
@@ -2003,8 +2122,8 @@ impl AuditExport {
                     return Err(refuse("The path is too long."));
                 }
                 dest.insert("mode".into(), pick("mode", Json::from("")));
-                let rotate = event::js_number(Some(&pick("rotateBytes",
-                                                         Json::from(0))));
+                let rotate =
+                    event::js_number(Some(&pick("rotateBytes", Json::from(0))));
                 let rotate = if rotate.is_finite() { rotate } else { 0.0 };
                 dest.insert("rotateBytes".into(), event::js_num(rotate));
                 if event::parse_mode(dest.get("mode")) < 0 {
@@ -2047,8 +2166,10 @@ impl AuditExport {
                 let url = text_of(dest.get("url"));
                 let screened = self.screen_url(&url, false).await;
                 if !screened.ok {
-                    return Err(ActResult::refusal(&screened.code,
-                                                  &screened.why));
+                    return Err(ActResult::refusal(
+                        &screened.code,
+                        &screened.why,
+                    ));
                 }
             }
             "splunk" => {
@@ -2057,10 +2178,14 @@ impl AuditExport {
                     return Err(refuse("The collector URL is too long."));
                 }
                 dest.insert("index".into(), pick("index", Json::from("")));
-                dest.insert("sourcetype".into(),
-                            pick("sourcetype", Json::from("iya:audit")));
-                dest.insert("source".into(),
-                            pick("source", Json::from("iya-sts")));
+                dest.insert(
+                    "sourcetype".into(),
+                    pick("sourcetype", Json::from("iya:audit")),
+                );
+                dest.insert(
+                    "source".into(),
+                    pick("source", Json::from("iya-sts")),
+                );
                 let ack = match body.get("ack") {
                     Some(v) => js::truthy(Some(v)),
                     None => js::truthy(existing.and_then(|e| e.get("ack"))),
@@ -2074,8 +2199,10 @@ impl AuditExport {
                 let url = text_of(dest.get("url"));
                 let screened = self.screen_url(&url, false).await;
                 if !screened.ok {
-                    return Err(ActResult::refusal(&screened.code,
-                                                  &screened.why));
+                    return Err(ActResult::refusal(
+                        &screened.code,
+                        &screened.why,
+                    ));
                 }
             }
             _ => {}
@@ -2083,8 +2210,12 @@ impl AuditExport {
         Ok(())
     }
 
-    fn take_secret(&self, body: &Json, existing: Option<&Json>, key: &str)
-        -> Result<Json, ActResult> {
+    fn take_secret(
+        &self,
+        body: &Json,
+        existing: Option<&Json>,
+        key: &str,
+    ) -> Result<Json, ActResult> {
         let submitted = body.get(key);
         let empty = match submitted {
             None => true,
@@ -2107,8 +2238,12 @@ impl AuditExport {
         self.seal_box(&text).ok_or_else(sealing_refused)
     }
 
-    fn take_headers(&self, body: &Json, existing: Option<&Json>,
-                    secret: bool) -> Result<Json, ActResult> {
+    fn take_headers(
+        &self,
+        body: &Json,
+        existing: Option<&Json>,
+        secret: bool,
+    ) -> Result<Json, ActResult> {
         let key = if secret { "secretHeaders" } else { "headers" };
         let prior = existing
             .and_then(|e| e.get(key))
@@ -2149,8 +2284,10 @@ impl AuditExport {
         Ok(Json::Object(merged))
     }
 
-    fn seal_sensitive(&self, dest: &mut Map<String, Json>)
-        -> Result<(), ActResult> {
+    fn seal_sensitive(
+        &self,
+        dest: &mut Map<String, Json>,
+    ) -> Result<(), ActResult> {
         let mut plain = dest
             .get("headers")
             .and_then(Json::as_object)
@@ -2234,9 +2371,9 @@ impl AuditExport {
             }
             destinations.push(one);
         }
-        destinations
-            .sort_by(|a, b| text_of(a.get("id")).cmp(&text_of(b.get("id"))));
-        let n = |d: &Json, k: &str| d.get(k).and_then(Json::as_i64).unwrap_or(0);
+        destinations.sort_by_key(|d| text_of(d.get("id")));
+        let n =
+            |d: &Json, k: &str| d.get(k).and_then(Json::as_i64).unwrap_or(0);
         let (mut delivered, mut awaiting, mut retrying) = (0, 0, 0);
         let (mut failed, mut dropped) = (0, 0);
         let (mut latency_total, mut latency_count) = (0i64, 0i64);

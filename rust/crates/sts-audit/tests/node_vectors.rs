@@ -61,14 +61,17 @@ pub struct Ring {
 pub fn ring(v: &Json) -> Ring {
     let settings = Arc::new(Settings::new(Json::Null, HashMap::new()));
     let clock = Arc::new(AtomicI64::new(v["t0"].as_i64().unwrap()));
-    let keys = sts_store::keystore::DataKeys::ephemeral(
-        v["kek"].as_str().unwrap(),
-    )
-    .unwrap();
+    let keys =
+        sts_store::keystore::DataKeys::ephemeral(v["kek"].as_str().unwrap())
+            .unwrap();
     let mut ports = AuditPorts::local(settings.clone());
     ports.clock = Arc::new(Frozen(clock.clone()));
     ports.digest = Some(Arc::new(Keys(keys)));
-    Ring { log: AuditLog::new(ports), settings, clock }
+    Ring {
+        log: AuditLog::new(ports),
+        settings,
+        clock,
+    }
 }
 
 fn text(v: &Json) -> String {
@@ -104,7 +107,8 @@ fn exchange(step: &Json) -> HttpExchange {
 }
 
 fn step(r: &Ring, s: &Json) -> Json {
-    let row = |x: Option<AuditRow>| x.map(|r| r.to_json()).unwrap_or(Json::Null);
+    let row =
+        |x: Option<AuditRow>| x.map(|r| r.to_json()).unwrap_or(Json::Null);
     match s["op"].as_str().unwrap() {
         "set" => {
             r.settings
@@ -121,9 +125,11 @@ fn step(r: &Ring, s: &Json) -> Json {
             row(r.log.failure(s["code"].as_str().unwrap(), &s["event"]))
         }
         "directory" => row(r.log.record_directory(&s["event"])),
-        "source" => AuditLog::with_source(s["address"].as_str().unwrap(), || {
-            step(r, &s["then"])
-        }),
+        "source" => {
+            AuditLog::with_source(s["address"].as_str().unwrap(), || {
+                step(r, &s["then"])
+            })
+        }
         "http" => {
             let mut x = exchange(s);
             if s["reserve"].as_bool() == Some(true) {
@@ -178,12 +184,18 @@ fn ring_vectors() {
     let list: Vec<Json> = r.log.list().iter().map(AuditRow::to_json).collect();
     same("list()", &Json::from(list), &ring_v["list"]);
     same("summary()", &r.log.summary(), &ring_v["summary"]);
-    same("verifyIntegrity()", &r.log.verify_integrity(None),
-         &ring_v["integrity"]);
+    same(
+        "verifyIntegrity()",
+        &r.log.verify_integrity(None),
+        &ring_v["integrity"],
+    );
     for t in ring_v["tampered"].as_array().unwrap() {
         let held = rows_of(&t["held"]);
-        same(&format!("verifyIntegrity({})", t["name"]),
-             &r.log.verify_integrity(Some(&held)), &t["verdict"]);
+        same(
+            &format!("verifyIntegrity({})", t["name"]),
+            &r.log.verify_integrity(Some(&held)),
+            &t["verdict"],
+        );
     }
     for a in ring_v["attempts"].as_array().unwrap() {
         let seqs: Vec<i64> = r
@@ -192,8 +204,11 @@ fn ring_vectors() {
             .iter()
             .map(|row| row.seq)
             .collect();
-        same(&format!("authenticationEventsFor({})", a["names"]),
-             &json!(seqs), &a["seqs"]);
+        same(
+            &format!("authenticationEventsFor({})", a["names"]),
+            &json!(seqs),
+            &a["seqs"],
+        );
     }
     for p in ring_v["person"].as_array().unwrap() {
         let seqs: Vec<i64> = r
@@ -205,8 +220,11 @@ fn ring_vectors() {
             .iter()
             .map(|row| row.seq)
             .collect();
-        same(&format!("authenticationEventsForPerson({})", p["names"]),
-             &json!(seqs), &p["seqs"]);
+        same(
+            &format!("authenticationEventsForPerson({})", p["names"]),
+            &json!(seqs),
+            &p["seqs"],
+        );
     }
     let mode = Mode::new(r.settings.clone());
     let ports: Arc<dyn ViewPorts> = Arc::new(NoUsers);
@@ -226,35 +244,54 @@ fn helper_vectors() {
     use sts_audit::log::*;
     let h = &v["helpers"];
     for p in h["redactedPath"].as_array().unwrap() {
-        assert_eq!(redacted_path(p[0].as_str().unwrap()), text(&p[1]), "{}",
-                   p[0]);
+        assert_eq!(
+            redacted_path(p[0].as_str().unwrap()),
+            text(&p[1]),
+            "{}",
+            p[0]
+        );
     }
     for q in h["redactedQuery"].as_array().unwrap() {
         let got = redacted_query(q[0].as_object().unwrap());
         same("redactedQuery", &Json::Object(got), &q[1]);
     }
-    let containers = |c: &Json| {
-        (text(&c["users"]), text(&c["groups"]))
-    };
+    let containers = |c: &Json| (text(&c["users"]), text(&c["groups"]));
     for o in h["objectKindOf"].as_array().unwrap() {
         let (u, g) = containers(&o[1]);
-        assert_eq!(object_kind_of(o[0].as_str().unwrap(), &u, &g),
-                   text(&o[2]), "{}", o);
+        assert_eq!(
+            object_kind_of(o[0].as_str().unwrap(), &u, &g),
+            text(&o[2]),
+            "{}",
+            o
+        );
     }
     for o in h["directoryActionFor"].as_array().unwrap() {
         let (u, g) = containers(&o[2]);
-        assert_eq!(directory_action_for(o[0].as_str().unwrap(),
-                                        o[1].as_str().unwrap(), &u, &g),
-                   text(&o[3]));
+        assert_eq!(
+            directory_action_for(
+                o[0].as_str().unwrap(),
+                o[1].as_str().unwrap(),
+                &u,
+                &g
+            ),
+            text(&o[3])
+        );
     }
     for q in h["quietWhenOk"].as_array().unwrap() {
         let s = match &q[0][2] {
             Json::String(s) => s.clone(),
             other => other.to_string(),
         };
-        assert_eq!(quiet_when_ok(q[0][0].as_str().unwrap(),
-                                 q[0][1].as_str().unwrap(), &s),
-                   q[1].as_bool().unwrap(), "{}", q);
+        assert_eq!(
+            quiet_when_ok(
+                q[0][0].as_str().unwrap(),
+                q[0][1].as_str().unwrap(),
+                &s
+            ),
+            q[1].as_bool().unwrap(),
+            "{}",
+            q
+        );
     }
 }
 
@@ -284,10 +321,15 @@ fn write_rust_vectors() {
         r.clock.fetch_add(1000 + i as i64, Ordering::SeqCst);
         assert!(r.log.audit(e).is_some());
     }
-    assert!(r.log.failure("STS-AUDIT-0009", &json!({ "summary": "f" }))
+    assert!(r
+        .log
+        .failure("STS-AUDIT-0009", &json!({ "summary": "f" }))
         .is_some());
-    assert!(r.log.record_directory(&json!({ "action": "user.create",
-        "target": "uid=a,ou=users,dc=x" })).is_some());
+    assert!(r
+        .log
+        .record_directory(&json!({ "action": "user.create",
+        "target": "uid=a,ou=users,dc=x" }))
+        .is_some());
     let rows: Vec<Json> =
         r.log.local_events().iter().map(AuditRow::to_json).collect();
     let names = vec!["password".to_string(), "deep".to_string()];
@@ -304,7 +346,12 @@ fn write_rust_vectors() {
             let event = sts_audit::export::event::canonical(row, &opts);
             let dest = json!({ "facility": 5, "appName": "rust app" });
             let syslog = sts_audit::export::event::syslog_line(
-                &event, &dest, "rust-host", 7, 0);
+                &event,
+                &dest,
+                "rust-host",
+                7,
+                0,
+            );
             json!({ "row": row, "realm": "acme", "origin": "",
                     "source": "sts-rust", "names": names, "event": event,
                     "dest": dest, "syslog": syslog })

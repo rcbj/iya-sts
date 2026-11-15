@@ -112,12 +112,14 @@ pub(crate) fn js_num(f: f64) -> Json {
     if f.is_finite() && f.fract() == 0.0 && f.abs() < 9.007e15 {
         Json::from(f as i64)
     } else {
-        serde_json::Number::from_f64(f).map(Json::Number).unwrap_or(Json::Null)
+        serde_json::Number::from_f64(f)
+            .map(Json::Number)
+            .unwrap_or(Json::Null)
     }
 }
 
-/// `Number(value)`: `None` (absent) is `NaN`, `null` and `''` are 0. A hot
-/// path: no span.
+/// `Number(value)`: `None` (absent) is `NaN`, `null` and `''` are 0.
+/// A hot path: no span.
 pub(crate) fn js_number(value: Option<&Json>) -> f64 {
     match value {
         None => f64::NAN,
@@ -135,10 +137,9 @@ pub(crate) fn js_number(value: Option<&Json>) -> f64 {
             if t.is_empty() {
                 return 0.0;
             }
-            let numeric = t
-                .trim_start_matches(['+', '-'])
-                .chars()
-                .all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-'));
+            let numeric = t.trim_start_matches(['+', '-']).chars().all(|c| {
+                c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-')
+            });
             if !numeric {
                 return f64::NAN;
             }
@@ -185,7 +186,10 @@ pub fn redact_names(configured: &str, extra: &str) -> HashSet<String> {
 }
 
 fn member_text(row: &Json, key: &str) -> String {
-    row.get(key).and_then(Json::as_str).unwrap_or("").to_string()
+    row.get(key)
+        .and_then(Json::as_str)
+        .unwrap_or("")
+        .to_string()
 }
 
 /// What `canonical()` is handed beside the row.
@@ -233,7 +237,10 @@ pub fn canonical(row: &Json, opts: &CanonicalOptions) -> Json {
         Json::from("")
     };
     let mut out = Map::new();
-    out.insert("id".into(), Json::from(format!("{}:{}", id_origin, seq_text)));
+    out.insert(
+        "id".into(),
+        Json::from(format!("{}:{}", id_origin, seq_text)),
+    );
     if let Some(seq) = sequence {
         out.insert("seq".into(), seq);
     }
@@ -345,7 +352,10 @@ pub fn host_token(hostname: &str) -> String {
 /// `sdEscape()`: RFC 5424's three escapes.
 #[tracing::instrument(level = "debug")]
 pub fn sd_escape(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"").replace(']', "\\]")
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace(']', "\\]")
 }
 
 /// `structuredData()`: the `iyaAudit` element (a local name, not an IANA
@@ -356,7 +366,11 @@ pub fn structured_data(event: &Json) -> String {
         ["id", "realm", "origin", "seq", "category", "outcome"]
             .iter()
             .map(|k| {
-                format!("{}=\"{}\"", k, sd_escape(&js::text_or_empty(event.get(*k))))
+                format!(
+                    "{}=\"{}\"",
+                    k,
+                    sd_escape(&js::text_or_empty(event.get(*k)))
+                )
             })
             .collect();
     format!("[iyaAudit {}]", parts.join(" "))
@@ -394,11 +408,20 @@ pub fn syslog_line(
     } else {
         token("iya-sts", 48)
     };
-    let msgid = token(&js::text_if_truthy(event.get("action")).replace(' ', "_"), 32);
+    let msgid = token(
+        &js::text_if_truthy(event.get("action")).replace(' ', "_"),
+        32,
+    );
     let sd = structured_data(event);
     let mut msg: String = js::text_if_truthy(event.get("message"))
         .chars()
-        .map(|c| if c == '\0' || c == '\r' || c == '\n' { ' ' } else { c })
+        .map(|c| {
+            if c == '\0' || c == '\r' || c == '\n' {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect();
     if msg.chars().any(|c| (c as u32) > 0x7f) {
         msg = format!("\u{feff}{}", msg);
@@ -518,15 +541,16 @@ pub fn classify_http(posted: &Posted, want_ack: bool) -> SendResult {
             posted.code.clone()
         }
     };
-    let result = |kind: &str, code: String, why: String, retry: f64| SendResult {
-        ok: false,
-        kind: kind.to_string(),
-        disposition: "failed".to_string(),
-        code,
-        why,
-        retry_after_ms: retry,
-        ack_id: Json::Null,
-    };
+    let result =
+        |kind: &str, code: String, why: String, retry: f64| SendResult {
+            ok: false,
+            kind: kind.to_string(),
+            disposition: "failed".to_string(),
+            code,
+            why,
+            retry_after_ms: retry,
+            ack_id: Json::Null,
+        };
     if posted.code == codes::STS_AUDIT_0014.as_str()
         || (300..400).contains(&status)
     {
@@ -551,8 +575,10 @@ pub fn classify_http(posted: &Posted, want_ack: bool) -> SendResult {
             return result(
                 "pause",
                 codes::STS_AUDIT_0007.as_str().into(),
-                format!("the collector answered code {}",
-                        js::text_or_empty(collector)),
+                format!(
+                    "the collector answered code {}",
+                    js::text_or_empty(collector)
+                ),
                 0.0,
             );
         }
@@ -595,7 +621,12 @@ pub fn classify_http(posted: &Posted, want_ack: bool) -> SendResult {
             posted.retry_after_ms,
         );
     }
-    result("pause", code_or(codes::STS_AUDIT_0007.as_str()), or(&answered), 0.0)
+    result(
+        "pause",
+        code_or(codes::STS_AUDIT_0007.as_str()),
+        or(&answered),
+        0.0,
+    )
 }
 
 /// `transportOf()`: `udp` and `tls` as stored, anything else TCP.

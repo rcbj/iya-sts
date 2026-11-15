@@ -29,8 +29,8 @@ use common::{norm, same, vectors, Frozen};
 use serde_json::{json, Map, Value as Json};
 use sts_audit::export::outbound::{NoCaFiles, Outbound, TlsPolicy};
 use sts_audit::export::transport::{
-    AppendFile, Files, HttpAnswer, HttpRequest, HttpTransport,
-    RealTransports, Resolver, SendError, SyslogPipe, SyslogTransport,
+    AppendFile, Files, HttpAnswer, HttpRequest, HttpTransport, RealTransports,
+    Resolver, SendError, SyslogPipe, SyslogTransport,
 };
 use sts_audit::export::{
     event, AuditExport, AuditSink, ExportPorts, MemoryMaps, NoSealing,
@@ -132,8 +132,11 @@ impl HttpTransport for Http {
                         .collect()
                 })
                 .unwrap_or_default();
-            let mut answer = HttpAnswer { status, headers,
-                                          ..HttpAnswer::default() };
+            let mut answer = HttpAnswer {
+                status,
+                headers,
+                ..HttpAnswer::default()
+            };
             if (300..400).contains(&status) {
                 return Ok(answer);
             }
@@ -194,8 +197,10 @@ impl SyslogTransport for Syslog {
             if let Some(t) = tls {
                 record["rejectUnauthorized"] = json!(t.reject_unauthorized);
             }
-            Ok(Box::new(Pipe { sent: self.sent.clone(), record })
-                as Box<dyn SyslogPipe>)
+            Ok(Box::new(Pipe {
+                sent: self.sent.clone(),
+                record,
+            }) as Box<dyn SyslogPipe>)
         })
     }
     fn send_udp<'a>(
@@ -206,7 +211,10 @@ impl SyslogTransport for Syslog {
         _timeout_ms: u64,
     ) -> BoxFuture<'a, Result<(), SendError>> {
         Box::pin(async move {
-            self.sent.lock().unwrap().push(json!({ "kind": "udp", "host": ip,
+            self.sent
+                .lock()
+                .unwrap()
+                .push(json!({ "kind": "udp", "host": ip,
                 "port": port, "bytes": String::from_utf8_lossy(message) }));
             Ok(())
         })
@@ -216,8 +224,11 @@ impl SyslogTransport for Syslog {
 struct RealFiles;
 
 impl Files for RealFiles {
-    fn open_append(&self, path: &str, mode: u32)
-        -> Result<Box<dyn AppendFile>, String> {
+    fn open_append(
+        &self,
+        path: &str,
+        mode: u32,
+    ) -> Result<Box<dyn AppendFile>, String> {
         RealTransports.open_append(path, mode)
     }
     fn exists(&self, path: &str) -> bool {
@@ -257,8 +268,8 @@ fn files_of(dir: &str) -> Json {
             .iter()
             .map(|n| {
                 let p = format!("{}/{}", dir, n);
-                let mode = std::fs::metadata(&p).unwrap().permissions().mode()
-                    & 0o777;
+                let mode =
+                    std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
                 json!({ "name": n, "mode": mode,
                         "text": std::fs::read_to_string(&p).unwrap() })
             })
@@ -293,11 +304,11 @@ async fn export_vectors() {
     };
     let e = &v["export"];
     let node_work = e["work"].as_str().unwrap().to_string();
-    let base = std::fs::canonicalize(std::env::var("STS_CRYPTO_VECTORS")
-        .unwrap())
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
+    let base =
+        std::fs::canonicalize(std::env::var("STS_CRYPTO_VECTORS").unwrap())
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
     let work = format!("{}/audit-export-rust", base);
     std::fs::remove_dir_all(&work).ok();
     std::fs::create_dir_all(&work).unwrap();
@@ -311,20 +322,28 @@ async fn export_vectors() {
         let clock = Arc::new(AtomicI64::new(v["t0"].as_i64().unwrap()));
         let sent: Sent = Arc::new(Mutex::new(Vec::new()));
         let queue = Arc::new(Mutex::new(VecDeque::new()));
-        let book = Arc::new(Book { held: Mutex::new(Vec::new()),
-                                   recorded: Mutex::new(Vec::new()) });
+        let book = Arc::new(Book {
+            held: Mutex::new(Vec::new()),
+            recorded: Mutex::new(Vec::new()),
+        });
         let uuid = Arc::new(AtomicU64::new(0));
         let next_uuid = uuid.clone();
         let exporter = AuditExport::new(ExportPorts {
             settings: settings.clone(),
             mode: mode.clone(),
-            outbound: Arc::new(Outbound::new(settings.clone(), mode.clone(),
-                                             Arc::new(NoCaFiles))),
+            outbound: Arc::new(Outbound::new(
+                settings.clone(),
+                mode.clone(),
+                Arc::new(NoCaFiles),
+            )),
             clock: Arc::new(Frozen(clock.clone())),
             audit: book.clone(),
             maps: Arc::new(MemoryMaps::default()),
             dns: Arc::new(Dns(e["dns"].as_object().unwrap().clone())),
-            http: Arc::new(Http { sent: sent.clone(), queue: queue.clone() }),
+            http: Arc::new(Http {
+                sent: sent.clone(),
+                queue: queue.clone(),
+            }),
             syslog: Arc::new(Syslog { sent: sent.clone() }),
             files: Arc::new(RealFiles),
             secrets: Arc::new(NoSealing),
@@ -350,14 +369,27 @@ async fn export_vectors() {
             match step["do"].as_str().unwrap() {
                 "act" => {
                     let got = exporter.act(&step["body"]).await;
-                    same(&format!("{} result", what), &got.json,
-                         &want["result"]);
-                    assert_eq!(got.code, want["code"].as_str().unwrap(),
-                               "{} code", what);
-                    same(&format!("{} recorded", what),
-                         &take(&book.recorded), &want["recorded"]);
-                    same(&format!("{} sent", what), &take(&sent),
-                         &want["sent"]);
+                    same(
+                        &format!("{} result", what),
+                        &got.json,
+                        &want["result"],
+                    );
+                    assert_eq!(
+                        got.code,
+                        want["code"].as_str().unwrap(),
+                        "{} code",
+                        what
+                    );
+                    same(
+                        &format!("{} recorded", what),
+                        &take(&book.recorded),
+                        &want["recorded"],
+                    );
+                    same(
+                        &format!("{} sent", what),
+                        &take(&sent),
+                        &want["sent"],
+                    );
                 }
                 "ring" => {
                     *book.held.lock().unwrap() =
@@ -368,12 +400,15 @@ async fn export_vectors() {
                         queue.lock().unwrap().push_back(one.clone());
                     }
                 }
-                "now" => clock.store(step["at"].as_i64().unwrap(),
-                                     Ordering::SeqCst),
+                "now" => {
+                    clock.store(step["at"].as_i64().unwrap(), Ordering::SeqCst)
+                }
                 "set" => {
                     settings
-                        .set_override(step["key"].as_str().unwrap(),
-                                      step["value"].clone())
+                        .set_override(
+                            step["key"].as_str().unwrap(),
+                            step["value"].clone(),
+                        )
                         .unwrap();
                 }
                 "tick" => {
@@ -392,24 +427,38 @@ async fn export_vectors() {
                             .filter(|s| s["kind"] == json!("udp"))
                             .collect();
                         assert_eq!(udp.len(), 4, "Rust transmits UDP");
-                        assert!(want["recorded"].to_string()
-                                    .contains("setTimeout is not a function")
+                        assert!(
+                            want["recorded"]
+                                .to_string()
+                                .contains("setTimeout is not a function")
                                 || want["cursors"]["udp"]["lastFailure"]
                                     .as_str()
                                     .unwrap_or("")
                                     .contains("setTimeout"),
-                                "Node's UDP defect is as pinned");
+                            "Node's UDP defect is as pinned"
+                        );
                         (without_udp(&got), without_udp(&want))
                     } else {
                         (got, want.clone())
                     };
                     same(&format!("{} ran", what), &g["ran"], &w["ran"]);
-                    assert_eq!(sorted(&g["sent"]), sorted(&w["sent"]),
-                               "{} sent", what);
-                    assert_eq!(sorted(&g["recorded"]), sorted(&w["recorded"]),
-                               "{} recorded", what);
-                    same(&format!("{} cursors", what), &g["cursors"],
-                         &w["cursors"]);
+                    assert_eq!(
+                        sorted(&g["sent"]),
+                        sorted(&w["sent"]),
+                        "{} sent",
+                        what
+                    );
+                    assert_eq!(
+                        sorted(&g["recorded"]),
+                        sorted(&w["recorded"]),
+                        "{} recorded",
+                        what
+                    );
+                    same(
+                        &format!("{} cursors", what),
+                        &g["cursors"],
+                        &w["cursors"],
+                    );
                 }
                 "view" => {
                     let got = exporter.view();
@@ -423,19 +472,24 @@ async fn export_vectors() {
                 // A rotated name carries the instant of the rotation:
                 // Node's `new Date()`, the wall clock (the frozen clock is
                 // `Date.now()` only), so the stamp is masked on both sides.
-                "files" => same(&what, &stamped(&files_of(&work)),
-                                &stamped(&want)),
+                "files" => {
+                    same(&what, &stamped(&files_of(&work)), &stamped(&want))
+                }
                 "screenHost" => {
                     let got = exporter
-                        .screen_host(step["host"].as_str().unwrap(),
-                                     step["atSend"].as_bool().unwrap())
+                        .screen_host(
+                            step["host"].as_str().unwrap(),
+                            step["atSend"].as_bool().unwrap(),
+                        )
                         .await;
                     same(&what, &got.json, &want);
                 }
                 "screenUrl" => {
                     let got = exporter
-                        .screen_url(step["url"].as_str().unwrap(),
-                                    step["atSend"].as_bool().unwrap())
+                        .screen_url(
+                            step["url"].as_str().unwrap(),
+                            step["atSend"].as_bool().unwrap(),
+                        )
                         .await;
                     same(&what, &got.json, &want);
                 }
@@ -495,21 +549,32 @@ fn export_statics() {
     };
     let s = &v["export"]["statics"];
     for one in s["ackUrl"].as_array().unwrap() {
-        assert_eq!(event::ack_url(one[0].as_str().unwrap()).unwrap(),
-                   one[1].as_str().unwrap());
+        assert_eq!(
+            event::ack_url(one[0].as_str().unwrap()).unwrap(),
+            one[1].as_str().unwrap()
+        );
     }
     let now = v["t0"].as_i64().unwrap();
     for one in s["retryAfter"].as_array().unwrap() {
-        same(&format!("retryAfter {}", one[0]),
-             &json!(event::retry_after(one[0].as_str(), now)), &one[1]);
+        same(
+            &format!("retryAfter {}", one[0]),
+            &json!(event::retry_after(one[0].as_str(), now)),
+            &one[1],
+        );
     }
     for one in s["parseMode"].as_array().unwrap() {
-        assert_eq!(json!(event::parse_mode(Some(&one[0]))), one[1],
-                   "parseMode {}", one[0]);
+        assert_eq!(
+            json!(event::parse_mode(Some(&one[0]))),
+            one[1],
+            "parseMode {}",
+            one[0]
+        );
     }
     for one in s["safeWhy"].as_array().unwrap() {
-        assert_eq!(event::safe_why(one[0].as_str().unwrap()),
-                   one[1].as_str().unwrap());
+        assert_eq!(
+            event::safe_why(one[0].as_str().unwrap()),
+            one[1].as_str().unwrap()
+        );
     }
     for one in s["classify"].as_array().unwrap() {
         let p = &one[0];
@@ -522,8 +587,11 @@ fn export_statics() {
             json: p["json"].clone(),
         };
         let got = event::classify_http(&posted, one[1].as_bool().unwrap());
-        same(&format!("classify {}", one[0]),
-             &serde_json::to_value(&got).unwrap(), &one[2]);
+        same(
+            &format!("classify {}", one[0]),
+            &serde_json::to_value(&got).unwrap(),
+            &one[2],
+        );
     }
     let names = s["names"]
         .as_array()
@@ -542,21 +610,29 @@ fn export_statics() {
     for (row, want) in rows.iter().zip(s["events"].as_array().unwrap()) {
         let got = event::canonical(row, &opts);
         same("canonical", &got, want);
-        assert_eq!(got.to_string(), want.to_string(),
-                   "canonical, byte for byte");
+        assert_eq!(
+            got.to_string(),
+            want.to_string(),
+            "canonical, byte for byte"
+        );
     }
     let events = s["events"].as_array().unwrap();
     for (event_v, want) in events.iter().zip(s["template"].as_array().unwrap())
     {
-        assert_eq!(event::fill_template("{id}|{message}|{x}|{{realm}}",
-                                        event_v),
-                   want.as_str().unwrap());
+        assert_eq!(
+            event::fill_template("{id}|{message}|{x}|{{realm}}", event_v),
+            want.as_str().unwrap()
+        );
     }
     let host = v["hostname"].as_str().unwrap();
     let pid = v["pid"].as_u64().unwrap() as u32;
     for (event_v, one) in events.iter().zip(s["syslog"].as_array().unwrap()) {
-        assert_eq!(event::syslog_line(event_v, &one[0], host, pid, now),
-                   one[1].as_str().unwrap(), "syslog {}", one[0]);
+        assert_eq!(
+            event::syslog_line(event_v, &one[0], host, pid, now),
+            one[1].as_str().unwrap(),
+            "syslog {}",
+            one[0]
+        );
     }
     for one in s["sdEscape"].as_array().unwrap() {
         let text = sts_audit_text(&one[0]);
@@ -565,13 +641,25 @@ fn export_statics() {
     use sts_audit::export::address;
     for one in s["hosts"].as_array().unwrap() {
         let h = one[0].as_str().unwrap();
-        assert_eq!(address::is_private(h), one[1].as_bool().unwrap(),
-                   "isPrivate {}", h);
-        assert_eq!(address::is_metadata(h), one[2].as_bool().unwrap(),
-                   "isMetadata {}", h);
+        assert_eq!(
+            address::is_private(h),
+            one[1].as_bool().unwrap(),
+            "isPrivate {}",
+            h
+        );
+        assert_eq!(
+            address::is_metadata(h),
+            one[2].as_bool().unwrap(),
+            "isMetadata {}",
+            h
+        );
         let bare = address::bare_host(h);
-        assert_eq!(address::is_ip(&bare), one[3].as_bool().unwrap(),
-                   "isIp {}", h);
+        assert_eq!(
+            address::is_ip(&bare),
+            one[3].as_bool().unwrap(),
+            "isIp {}",
+            h
+        );
         assert_eq!(bare, one[4].as_str().unwrap());
     }
     for one in s["transport"].as_array().unwrap() {
@@ -583,8 +671,8 @@ fn export_statics() {
 }
 
 fn stamped(v: &Json) -> Json {
-    let re = regex::Regex::new(r"\.\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z")
-        .unwrap();
+    let re =
+        regex::Regex::new(r"\.\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z").unwrap();
     serde_json::from_str(&re.replace_all(&v.to_string(), ".STAMP")).unwrap()
 }
 

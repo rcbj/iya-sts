@@ -38,7 +38,10 @@ pub struct SendError {
 impl SendError {
     #[tracing::instrument(level = "debug")]
     pub fn plain(why: &str) -> SendError {
-        SendError { code: None, why: why.to_string() }
+        SendError {
+            code: None,
+            why: why.to_string(),
+        }
     }
 }
 
@@ -129,8 +132,11 @@ pub trait AppendFile: Send {
 
 /// `fs.promises`, as the file destination uses it.
 pub trait Files: Send + Sync {
-    fn open_append(&self, path: &str, mode: u32)
-        -> Result<Box<dyn AppendFile>, String>;
+    fn open_append(
+        &self,
+        path: &str,
+        mode: u32,
+    ) -> Result<Box<dyn AppendFile>, String>;
     fn exists(&self, path: &str) -> bool;
     fn rename(&self, from: &str, to: &str) -> Result<(), String>;
 }
@@ -178,10 +184,11 @@ async fn real_post(request: &HttpRequest) -> Result<HttpAnswer, String> {
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_millis(request.timeout_ms));
     if let Some(ip) = &request.pinned {
-        let addr: std::net::IpAddr = ip.parse().map_err(|_| {
-            "the checked address is not an address".to_string()
-        })?;
-        builder = builder.resolve(&request.hostname, SocketAddr::new(addr, port));
+        let addr: std::net::IpAddr = ip
+            .parse()
+            .map_err(|_| "the checked address is not an address".to_string())?;
+        builder =
+            builder.resolve(&request.hostname, SocketAddr::new(addr, port));
     }
     if let Some(tls) = &request.tls {
         builder = builder.danger_accept_invalid_certs(!tls.reject_unauthorized);
@@ -209,11 +216,18 @@ async fn real_post(request: &HttpRequest) -> Result<HttpAnswer, String> {
         .headers()
         .iter()
         .map(|(k, v)| {
-            (k.as_str().to_lowercase(), v.to_str().unwrap_or("").to_string())
+            (
+                k.as_str().to_lowercase(),
+                v.to_str().unwrap_or("").to_string(),
+            )
         })
         .collect();
     if (300..400).contains(&status) {
-        return Ok(HttpAnswer { status, headers, ..HttpAnswer::default() });
+        return Ok(HttpAnswer {
+            status,
+            headers,
+            ..HttpAnswer::default()
+        });
     }
     let mut body = Vec::new();
     let mut overflow = false;
@@ -227,7 +241,12 @@ async fn real_post(request: &HttpRequest) -> Result<HttpAnswer, String> {
     if overflow {
         body.clear();
     }
-    Ok(HttpAnswer { status, headers, body, overflow })
+    Ok(HttpAnswer {
+        status,
+        headers,
+        body,
+        overflow,
+    })
 }
 
 struct TcpPipe(Option<tokio::net::TcpStream>);
@@ -277,9 +296,8 @@ impl SyslogTransport for RealTransports {
                     "the TLS syslog transport is not wired in this runtime",
                 ));
             }
-            let addr: std::net::IpAddr = ip
-                .parse()
-                .map_err(|_| SendError::plain("not an address"))?;
+            let addr: std::net::IpAddr =
+                ip.parse().map_err(|_| SendError::plain("not an address"))?;
             match tokio::time::timeout(
                 Duration::from_millis(timeout_ms),
                 tokio::net::TcpStream::connect(SocketAddr::new(addr, port)),
@@ -303,10 +321,13 @@ impl SyslogTransport for RealTransports {
         timeout_ms: u64,
     ) -> BoxFuture<'a, Result<(), SendError>> {
         Box::pin(async move {
-            let addr: std::net::IpAddr = ip
-                .parse()
-                .map_err(|_| SendError::plain("not an address"))?;
-            let local = if addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
+            let addr: std::net::IpAddr =
+                ip.parse().map_err(|_| SendError::plain("not an address"))?;
+            let local = if addr.is_ipv6() {
+                "[::]:0"
+            } else {
+                "0.0.0.0:0"
+            };
             let socket = tokio::net::UdpSocket::bind(local)
                 .await
                 .map_err(|e| SendError::plain(&e.to_string()))?;
@@ -328,7 +349,10 @@ struct StdAppend(std::fs::File);
 
 impl AppendFile for StdAppend {
     fn size(&mut self) -> Result<u64, String> {
-        self.0.metadata().map(|m| m.len()).map_err(|e| e.to_string())
+        self.0
+            .metadata()
+            .map(|m| m.len())
+            .map_err(|e| e.to_string())
     }
 
     fn append(&mut self, bytes: &[u8]) -> Result<(), String> {
