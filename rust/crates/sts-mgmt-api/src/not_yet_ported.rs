@@ -302,21 +302,7 @@ macro_rules! not_yet_ported {
         | Operation::RemoveAuthorizationServerMember
         | Operation::ResetAuthorizationServerMember
         | Operation::DeleteAuthorizationServer
-        | Operation::GetApplications
         | Operation::GetNewApplicationForm
-        | Operation::CreateApplication
-        | Operation::SetApplicationAttribute
-        | Operation::AddApplicationValue
-        | Operation::RemoveApplicationValue
-        | Operation::UpdateApplicationFields
-        | Operation::ConfirmApplicationReturnAddress
-        | Operation::DiscardApplicationReturnAddress
-        | Operation::AddApplicationOwner
-        | Operation::RemoveApplicationOwner
-        | Operation::RegenerateApplicationClientSecret
-        | Operation::RotateApplicationClientSecret
-        | Operation::AddApplicationClientSecret
-        | Operation::RemoveApplicationClientSecret
         | Operation::RevealApplicationSecret
         | Operation::GenerateApplicationDidKey
         | Operation::SignApplicationDomainLinkage
@@ -348,7 +334,6 @@ macro_rules! not_yet_ported {
         | Operation::LoadProtectedResourceMetadata
         | Operation::ExportApplicationLdif
         | Operation::ImportApplicationLdif
-        | Operation::DeleteApplication
         | Operation::GetXacml
         | Operation::GetXacmlPolicies
         | Operation::GetXacmlEditor

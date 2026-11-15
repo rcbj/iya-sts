@@ -347,6 +347,7 @@ fn run_step(
     ports: &dyn ActionPorts,
     op: &str,
     a: &[Value],
+    node_settings: &Value,
 ) -> Option<(Value, Option<ErrorCode>)> {
     let marked = |m: sts_registers::outcome::Outcome| Some((m.answer, m.code));
     let plain = |v: Value| Some((v, None));
@@ -428,6 +429,12 @@ fn run_step(
             });
             marked(reg.applications_action(&a[0], protocols, "vector-admin", ports))
         }
+        "listJson" => plain(reg.applications_list_json(
+            a[0].as_object().unwrap(),
+            // The page's settings block is sts-mgmt-api's, and is proved
+            // there; Node's is handed in.
+            node_settings.clone(),
+        )),
         "rename" => {
             let mut d = dir.lock().unwrap();
             let base = d.realms()[0].base.clone();
@@ -498,7 +505,14 @@ fn the_application_register_answers_as_node_does() {
             .map(|h| (s(h), false))
             .collect();
         effects.take();
-        let Some((answer, code)) = run_step(&reg, &dir, &ports, &op, &args)
+        let Some((answer, code)) = run_step(
+            &reg,
+            &dir,
+            &ports,
+            &op,
+            &args,
+            &step["answer"]["settings"],
+        )
         else {
             continue;
         };

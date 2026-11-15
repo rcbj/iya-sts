@@ -842,10 +842,9 @@ function checkRust(t, v) {
     Object.keys(row.attributes).forEach(function (name) {
       attributes[name.toLowerCase()] = row.attributes[name].slice(0);
     });
-    const stored = { dn: dn, attributes: attributes,
-                     origin: row.origin || 'application',
-                     createdAt: row.createdAt, modifiedAt: row.modifiedAt };
-    ldap.entries.set(ldap.normalizeDn(dn), stored);
+    // Adopted as the store's restore adopts a row: the directory's clock
+    // moves, so the register reads it afresh.
+    ldap.adoptEntry(dn, attributes, row.origin || 'application');
     const view = applications.get(row.identifier);
     t.check(!!view, 'applications: Node finds the entry Rust wrote for "' +
                     row.identifier + '"');
@@ -865,7 +864,7 @@ function checkRust(t, v) {
     same('counters', [view.authentications, view.sessions, view.users],
          [row.view.authentications, row.view.sessions, row.view.users]);
     same('fields', view.fields, row.view.fields);
-    ldap.entries.delete(ldap.normalizeDn(dn));
+    applications.deleteApplication(row.identifier);
     read++;
   });
   t.check(read > 0, 'applications: Rust wrote ' + read + ' entr(y/ies) ' +

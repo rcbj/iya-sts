@@ -549,6 +549,17 @@ fn unknown_action(
         Some(Handler::RealmsAction) => {
             setup(services, &realm_id).realms_action(action, body)
         }
+        Some(Handler::ApplicationsAction) => {
+            match crate::applications::action(
+                &setup(services, &realm_id),
+                action,
+                body,
+                None,
+            ) {
+                Some(a) => a,
+                None => return express_404(method, &path),
+            }
+        }
         _ => {
             tracing::info!(
                 "admin-api: {} {} is not ported to this runtime yet.",
@@ -570,7 +581,7 @@ fn run(
     headers: &HeaderMap,
     body: &Json,
     root: &str,
-    _caller: Option<&Caller>,
+    caller: Option<&Caller>,
 ) -> Response {
     let table_row = tables::row(row.id);
     if *method == Method::GET {
@@ -680,6 +691,25 @@ fn run(
         Handler::Realms => s.realms_json(root, query),
         Handler::RealmsAction => s.realms_action(&action, body),
         Handler::Status => s.status_json(),
+        Handler::Applications => match crate::applications::list(&s, query) {
+            Some(a) => a,
+            None => {
+                tracing::info!(
+                    "admin-api: {} {}?application= ({}) is not ported to \
+                     this runtime yet.",
+                    method,
+                    row.path,
+                    row.id
+                );
+                return express_404(method, row.path);
+            }
+        },
+        Handler::ApplicationsAction => {
+            match crate::applications::action(&s, &action, body, caller) {
+                Some(a) => a,
+                None => return express_404(method, row.path),
+            }
+        }
     };
     send(method, row.path, Some(row), answered)
 }
