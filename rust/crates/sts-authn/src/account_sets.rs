@@ -839,6 +839,8 @@ pub fn encode_uri_component(text: &str) -> String {
 }
 
 /// `decodeURIComponent()`; `None` where JavaScript throws `URIError`.
+// A hot path: asked on every session read or sign-in; the door's
+// span covers it, no span of its own.
 pub(crate) fn decode_uri_component(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());

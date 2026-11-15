@@ -190,6 +190,8 @@ impl Sessions {
     /// the one its cookie names; `None` with the request marked unread
     /// where reading it failed (a Cookie header that does not parse is
     /// one, as in Node: `cookiesOf()` throws inside the read).
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn account_set_of(
         &self,
         request: Option<&Request>,
@@ -214,6 +216,8 @@ impl Sessions {
     }
 
     /// `accountEligible(session)`: a browser's own authenticated sign-in.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn account_eligible(session: &Value) -> bool {
         js::truthy(session.get("user"))
             && session.get("chosen") != Some(&Value::Bool(false))
@@ -224,6 +228,8 @@ impl Sessions {
 
     /// `accountSessionRead(sid).session`: the full map is the store here
     /// (no session window), so a read never fails.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn account_session_read(&self, sid: &str) -> Option<Value> {
         if sid.is_empty() {
             None
@@ -233,6 +239,8 @@ impl Sessions {
     }
 
     /// `accountSessionLive(sid)`: held, eligible, neither clock run out.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn account_session_live(&self, sid: &str) -> bool {
         self.account_session_read(sid).is_some_and(|s| {
             Self::account_eligible(&s)
@@ -330,6 +338,8 @@ impl Sessions {
 
     /// `resolveAccount(req, create)`: which session a request acts as, in
     /// the plan's order — a ticket, a hint, the only live session, nobody.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn resolve_account(
         &self,
         request: Option<&Request>,
@@ -712,6 +722,8 @@ impl Sessions {
 
     /// `liveAccountCount(row, defaultFound)`: the set's live sessions, and
     /// the default cookie's where it is live and not in the set yet.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn live_account_count(
         &self,
         row: Option<&Object>,
@@ -742,6 +754,8 @@ impl Sessions {
     /// `accountSessionFor(row, username)`: the live session of this
     /// person in the browser's set, which a second sign-in as them
     /// re-authenticates.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn account_session_for(
         &self,
         row: Option<&Object>,
@@ -767,6 +781,8 @@ impl Sessions {
     /// ended members moved to remembered, the handle rotated and the set's
     /// cookie APPENDED; `res.locals` then names the session and the set.
     /// `session` is the row in hand, stamped here.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn enrol_in_account_set(
         &self,
         request: Option<&Request>,
@@ -853,6 +869,8 @@ impl Sessions {
 
     /// `accountSessionEnded(session)`: a session that ended, however,
     /// moves to its set's remembered accounts, found by the stamped id.
+    // A hot path: asked on every session read or sign-in; the door's
+    // span covers it, no span of its own.
     pub(super) fn account_session_ended(&self, session: Option<&Value>) {
         let Some(s) = session else {
             return;
