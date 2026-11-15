@@ -1041,7 +1041,9 @@ class XacmlPage {
     };
   }
 
-  static proxyRoutesTable(t: Json, proxy: Json, resolution: Json[]): string {
+  static proxyRoutesTable(t: Json, proxy: Json, resolution: Json[],
+                          ctx?: Json, name?: string): string {
+    const self = this;
     const statusOf: Json = {};
     (resolution || []).forEach(function (one: Json) {
       statusOf[one.route] = one;
@@ -1067,12 +1069,14 @@ class XacmlPage {
         (route.methods.length ? esc(route.methods.join(', '))
                               : t.html('consoleXacml.proxy.any')) +
         '</td><td>' + (route.public ? t.html('consoleXacml.proxy.public')
-          : esc(route.mechanisms.join(', ')) +
-            // THE APPLICATION IT FRONTS (D10), linked; what each mechanism
-            // needs is read off that entry by the pull.
-            '<div class="sub"><a href="/admin/applications?application=' +
+          : esc(route.mechanisms.join(', '))) + '</td><td>' +
+        (route.public ? '<span class="sub">' +
+                        t.html('consoleXacml.proxy.noApplication') + '</span>'
+          // THE APPLICATION IT FRONTS (D10), linked; what each mechanism
+          // needs is read off that entry by the pull.
+          : '<a href="/admin/applications?application=' +
             encodeURIComponent(route.application) + '"><code>' +
-            esc(route.application) + '</code></a></div>' +
+            esc(route.application) + '</code></a>' +
             (status && !status.usable
               ? '<div class="sub xacml-alert">' +
                 t.html('consoleXacml.proxy.unusable') + ' ' +
@@ -1083,16 +1087,26 @@ class XacmlPage {
                         : t.html('consoleXacml.proxy.noHeaders')) +
         '</td><td>' + (route.forwardCredentials
           ? t.html('consoleXacml.proxy.yes')
-          : t.html('consoleXacml.proxy.no')) + '</td></tr>';
+          : t.html('consoleXacml.proxy.no')) + '</td>' +
+        (ctx && ctx.write && name
+          ? '<td><form method="post" action="/admin/xacml/peps" ' +
+            'class="inline">' + self.hidden('action', 'remove-pep-route') +
+            self.hidden('name', name) + self.hidden('route', route.id) +
+            '<button type="submit">' +
+            t.html('consoleXacml.routeForm.remove') + '</button></form></td>'
+          : '') + '</tr>';
     }).join('');
     return '<table><tr><th>' + t.html('consoleXacml.proxy.th.id') +
       '</th><th>' + t.html('consoleXacml.proxy.th.path') + '</th><th>' +
       t.html('consoleXacml.proxy.th.methods') + '</th><th>' +
       t.html('consoleXacml.proxy.th.mechanisms') + '</th><th>' +
+      t.html('consoleXacml.proxy.th.application') + '</th><th>' +
       t.html('consoleXacml.proxy.th.decision') + '</th><th>' +
       t.html('consoleXacml.proxy.th.headers') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.forward') + '</th></tr>' + rows +
-      '</table>';
+      t.html('consoleXacml.proxy.th.forward') + '</th>' +
+      (ctx && ctx.write && name
+        ? '<th>' + t.html('consoleXacml.th.actions') + '</th>' : '') +
+      '</tr>' + rows + '</table>';
   }
 
   // ONE ROUTE'S IDENTITY, AS A FORM (D11): the mode, and for mode headers
@@ -1153,10 +1167,16 @@ class XacmlPage {
   }
 
   // THE SIGNAL STREAMS' HEALTH (#1760), as the PEP last reported it on a
-  // heartbeat: counts and ages only, which is all the row holds. A PEP that
-  // never sent it (one older than this service, or one with no proxy) is
-  // "not reported" rather than zero, because zero streams and an unknown
-  // number of streams want different fixes.
+  // heartbeat. A PEP that never sent it (one older than this service, or
+  // one with no proxy) is "not reported" rather than zero, because zero
+  // streams and an unknown number of streams want different fixes.
+  //
+  // ONE ROW PER STREAM (rcbj: "organize information in a table"): the
+  // application and routes it serves, its stream id, whether it runs, when
+  // it started, last polled and last succeeded, its failures in a row and
+  // its counters, and healthy or stale. The summary above the table is the
+  // whole proxy's; a PEP that reports the summary and no rows (older than
+  // the rows) says so.
   static signalsPanel(t: Json, signals: Json): string {
     const heading = '<h4>' + t.html('consoleXacml.proxy.signals.label') +
       '</h4>';
@@ -1173,6 +1193,55 @@ class XacmlPage {
         '</p>' + reported;
     }
     const library = signals.librarySessions || {};
+    const when = function (at: unknown): string {
+      return at ? '<code>' + esc(String(at)) + '</code>'
+        : '<span class="sub">' + t.html('consoleXacml.proxy.signals.never') +
+          '</span>';
+    };
+    const streams: Json[] | null = Array.isArray(signals.streams)
+      ? signals.streams : null;
+    const table = streams === null
+      ? '<p class="sub">' + t.html('consoleXacml.proxy.signals.noRows') +
+        '</p>'
+      : '<table><tr><th>' +
+        t.html('consoleXacml.proxy.signals.th.serves') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.stream') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.running') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.started') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.lastPoll') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.lastSuccess') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.failures') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.polls') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.sets') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.ended') + '</th><th>' +
+        t.html('consoleXacml.proxy.signals.th.health') + '</th></tr>' +
+        streams.map(function (one: Json) {
+          const apps = (one.applications || []).map(function (id: string) {
+            return '<a href="/admin/applications?application=' +
+              encodeURIComponent(id) + '"><code>' + esc(id) + '</code></a>';
+          }).join(', ');
+          return '<tr><td>' + (apps || '<span class="sub">' +
+              t.html('consoleXacml.proxy.signals.unknownClient') + '</span>') +
+            ((one.routes || []).length
+              ? '<div class="sub">' + t.html('consoleXacml.proxy.signals.routes',
+                  { routes: one.routes.join(', ') }) + '</div>' : '') +
+            '</td><td>' + (one.streamId ? '<code>' + esc(one.streamId) +
+                           '</code>' : '<span class="sub">—</span>') +
+            '</td><td>' + (one.running ? t.html('consoleXacml.proxy.yes')
+                                       : t.html('consoleXacml.proxy.no')) +
+            '</td><td>' + when(one.startedAt) + '</td><td>' +
+            when(one.lastPollAt) + '</td><td>' + when(one.lastSuccessAt) +
+            '</td><td>' + esc(String(one.consecutiveFailures)) + '</td><td>' +
+            t.html('consoleXacml.proxy.signals.pollCounts', {
+              polls: one.polls, failed: one.failedPolls }) + '</td><td>' +
+            t.html('consoleXacml.proxy.signals.setCounts', {
+              accepted: one.setsAccepted, refused: one.setsRefused }) +
+            '</td><td>' + esc(String(one.sessionsEnded)) + '</td><td>' +
+            (one.healthy ? t.html('consoleXacml.proxy.signals.healthy')
+              : '<strong class="xacml-alert">' +
+                t.html('consoleXacml.proxy.signals.stale') + '</strong>') +
+            '</td></tr>';
+        }).join('') + '</table>';
     return heading +
       '<p' + (signals.stale ? ' class="xacml-alert"' : '') + '>' +
       t.html('consoleXacml.proxy.signals.summary', {
@@ -1192,8 +1261,8 @@ class XacmlPage {
       '</div><div class="sub">' +
       t.html('consoleXacml.proxy.signals.sets', {
         accepted: signals.setsAccepted, refused: signals.setsRefused,
-        ended: signals.sessionsEnded }) +
-      '</div><div class="sub">' +
+        ended: signals.sessionsEnded }) + '</div>' + table +
+      '<div class="sub">' +
       t.html('consoleXacml.proxy.signals.library', {
         held: library.held, max: library.max, ttlSec: library.ttlSec,
         evicted: library.evicted, expired: library.expired }) +
@@ -1213,7 +1282,7 @@ class XacmlPage {
         (proxy.enabled ? t.html('consoleXacml.proxy.enabled')
                        : '<strong>' + t.html('consoleXacml.proxy.disabled') +
                          '</strong>') + '</p>' +
-        self.proxyRoutesTable(t, proxy, row.proxyRoutes)
+        self.proxyRoutesTable(t, proxy, row.proxyRoutes, ctx, row.name)
       : '<p>' + t.html('consoleXacml.proxy.none') + '</p>';
     const problem = row.proxyProblem
       ? '<div class="sub xacml-alert">' +
@@ -1247,10 +1316,378 @@ class XacmlPage {
           return self.identityForm(t, row.name, route);
         }).join('')
       : '';
+    // THE ROUTES ONE AT A TIME (#1760): add, edit and map an application,
+    // beside the document editor — both write the same stored document.
+    const json = ctx.json || {};
+    const routeForms = ctx.write && proxy
+      ? '<h3>' + t.html('consoleXacml.routeForm.heading') + '</h3>' +
+        '<p class="sub">' + t.html('consoleXacml.routeForm.lead') + '</p>' +
+        self.routeForm(t, json, row.name, null, proxy.routes.length) +
+        proxy.routes.map(function (route: Json) {
+          return '<details><summary>' +
+            t.html('consoleXacml.routeForm.editHeading', { route: route.id }) +
+            '</summary>' + self.routeForm(t, json, row.name, route,
+                                          proxy.routes.length) + '</details>';
+        }).join('') + self.mapApplicationForm(t, json, row.name, proxy)
+      : '';
     return kit.note('<p>' + t.html('consoleXacml.proxy.p1') + '</p>',
                     t.text('consoleXacml.proxy.label')) +
       '<h3>' + t.html('consoleXacml.proxy.heading', { name: row.name }) +
-      '</h3>' + state + problem + identities + editor;
+      '</h3>' + state + problem + routeForms + identities +
+      '<h3>' + t.html('consoleXacml.proxy.documentHeading') + '</h3>' +
+      editor;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE LISTENER TAB (#1760, rcbj: "Model this tab after the Server
+  // configuration->Listeners"). That page's shape: the built-in listeners
+  // first, read-only and named by the setting that binds them, then the
+  // ones an administrator defines with what each is doing, then the forms.
+  // Here the built-in four are the PEP's environment's, and what each is
+  // doing is what the PEP last reported on its heartbeat, which is the only
+  // place this service can learn it — so a PEP that does not report says
+  // so rather than being drawn as listening.
+  // ---------------------------------------------------------------------------
+  static listenerWords(t: Json): Json {
+    return {
+      source: {
+        environment: t.html('consoleXacml.listeners.source.environment'),
+        service: t.html('consoleXacml.listeners.source.service')
+      },
+      purpose: {
+        api: t.html('consoleXacml.listeners.purpose.api'),
+        proxy: t.html('consoleXacml.listeners.purpose.proxy')
+      },
+      state: {
+        listening: t.html('consoleXacml.listeners.state.listening'),
+        waiting: t.html('consoleXacml.listeners.state.waiting'),
+        failed: t.html('consoleXacml.listeners.state.failed'),
+        off: t.html('consoleXacml.listeners.state.off')
+      },
+      reason: {
+        none: '',
+        'address-in-use': t.html('consoleXacml.listeners.reason.addressInUse'),
+        'permission-denied':
+          t.html('consoleXacml.listeners.reason.permissionDenied'),
+        'address-unavailable':
+          t.html('consoleXacml.listeners.reason.addressUnavailable'),
+        'no-certificate': t.html('consoleXacml.listeners.reason.noCertificate'),
+        'certificate-refused':
+          t.html('consoleXacml.listeners.reason.certificateRefused'),
+        'certificate-request-refused':
+          t.html('consoleXacml.listeners.reason.certificateRequestRefused'),
+        'proxy-off': t.html('consoleXacml.listeners.reason.proxyOff'),
+        'not-configured': t.html('consoleXacml.listeners.reason.notConfigured'),
+        other: t.html('consoleXacml.listeners.reason.other')
+      }
+    };
+  }
+
+  // The certificate a listener serves, as the PEP reported it, and the one
+  // this realm issued a defined HTTPS listener.
+  static listenerCertificate(t: Json, one: Json): string {
+    const served = one.reported && one.reported.certificate;
+    const issued = one.issued;
+    if (one.protocol !== 'https') {
+      return '<span class="sub">' +
+        t.html('consoleXacml.listeners.plainHttp') + '</span>';
+    }
+    const line = function (label: string, value: string): string {
+      return value ? '<div class="sub">' + label + ' <code>' + esc(value) +
+        '</code></div>' : '';
+    };
+    return (served
+      ? line(t.html('consoleXacml.listeners.cert.subject'), served.subject) +
+        line(t.html('consoleXacml.listeners.cert.names'),
+             served.subjectAltName) +
+        line(t.html('consoleXacml.listeners.cert.issuer'), served.issuer) +
+        line(t.html('consoleXacml.listeners.cert.valid'),
+             served.validFrom && served.validTo
+               ? served.validFrom + ' – ' + served.validTo : '') +
+        line(t.html('consoleXacml.listeners.cert.serial'), served.serialHex) +
+        line(t.html('consoleXacml.listeners.cert.fingerprint'),
+             served.fingerprint256)
+      : '<span class="sub">' +
+        t.html('consoleXacml.listeners.cert.notServed') + '</span>') +
+      (issued
+        ? '<div class="sub">' + t.html('consoleXacml.listeners.cert.issued', {
+            serial: issued.serialHex, at: issued.notAfter }) +
+          (issued.expired
+            ? ' <strong>' + t.html('consoleXacml.pep.expired') + '</strong>'
+            : '') + '</div>'
+        : '');
+  }
+
+  // One listener's form: a new one, or a defined one to edit (its id fixed).
+  static listenerForm(t: Json, json: Json, name: string,
+                      one: Json | null): string {
+    const self = this;
+    const catalogue = json.listenersCatalogue || { keyAlgorithms: [],
+                                                   defaultKeyAlg: '' };
+    const d = one || { id: '', protocol: 'https', purpose: 'proxy',
+                       address: '0.0.0.0', port: '', dnsNames: [],
+                       ipAddresses: [], keyAlg: catalogue.defaultKeyAlg };
+    const labels: Json = {
+      http: 'HTTP', https: 'HTTPS',
+      api: t.text('consoleXacml.listeners.purpose.api'),
+      proxy: t.text('consoleXacml.listeners.purpose.proxy')
+    };
+    const options = function (values: string[]): Json[] {
+      return values.map(function (v) {
+        return { value: v, label: labels[v] || v };
+      });
+    };
+    return '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-listener') + self.hidden('name', name) +
+      (one ? self.hidden('id', d.id)
+        : '<label>' + t.html('consoleXacml.listeners.form.id') + ' ' +
+          '<input type="text" name="id" size="20" maxlength="64" ' +
+          'required></label> ') +
+      '<label>' + t.html('consoleXacml.listeners.form.protocol') + ' ' +
+      self.select('protocol', options(['http', 'https']), d.protocol) +
+      '</label> <label>' + t.html('consoleXacml.listeners.form.purpose') +
+      ' ' + self.select('purpose', options(['api', 'proxy']), d.purpose) +
+      '</label> <label>' + t.html('consoleXacml.listeners.form.address') +
+      ' <input type="text" name="address" size="16" maxlength="64" value="' +
+      esc(d.address) + '"></label> <label>' +
+      t.html('consoleXacml.listeners.form.port') +
+      ' <input type="number" name="port" min="1" max="65535" required ' +
+      'value="' + esc(d.port) + '"></label>' +
+      '<div class="sub">' + t.html('consoleXacml.listeners.form.httpsOnly') +
+      '</div><label>' + t.html('consoleXacml.listeners.form.dnsNames') +
+      ' <input type="text" name="dnsNames" size="40" value="' +
+      esc((d.dnsNames || []).join(', ')) + '"></label> <label>' +
+      t.html('consoleXacml.listeners.form.ipAddresses') +
+      ' <input type="text" name="ipAddresses" size="24" value="' +
+      esc((d.ipAddresses || []).join(', ')) + '"></label> <label>' +
+      t.html('consoleXacml.listeners.form.keyAlg') + ' ' +
+      self.select('keyAlg', (catalogue.keyAlgorithms || [])
+        .map(function (v: string) {
+          return { value: v, label: v };
+        }), d.keyAlg || catalogue.defaultKeyAlg) + '</label> ' +
+      '<button type="submit">' + (one
+        ? t.html('consoleXacml.listeners.form.update')
+        : t.html('consoleXacml.listeners.form.add')) + '</button></form>';
+  }
+
+  /**
+   * Draws a remote PEP's Listener tab (#1760): every listener it has —
+   * the environment's four, read-only, and the ones defined here — with its
+   * protocol, address, purpose, state, certificate and source, the issue
+   * control of the environment's pair, and the forms that define, edit,
+   * remove and renew the others.
+   *
+   * @param ctx - the render context
+   * @param json - `pepsJson(name)`'s answer
+   * @param row - the PEP's row
+   * @returns the tab's HTML
+   */
+  static listenersBody(ctx: Json, json: Json, row: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const words = self.listenerWords(t);
+    const rows: Json[] = row.listenerRows || [];
+    const reported = !!row.listenersInUse;
+    const body = rows.map(function (one: Json) {
+      const said = one.reported;
+      const where = said && said.port
+        ? (said.address || '0.0.0.0') + ':' + said.port
+        : (one.definition
+            ? one.definition.address + ':' + one.definition.port
+            : '');
+      const state = said
+        ? (said.state === 'listening' ? words.state.listening
+            : '<strong class="xacml-alert">' +
+              (words.state[said.state] || esc(said.state)) + '</strong>') +
+          (said.reason && said.reason !== 'none'
+            ? '<div class="sub">' + (words.reason[said.reason] ||
+                                     esc(said.reason)) + '</div>' : '') +
+          (one.definition && one.protocol === 'https' &&
+           said.renew !== one.definition.renew
+            ? '<div class="sub">' +
+              t.html('consoleXacml.listeners.renewPending') + '</div>' : '')
+        : '<span class="sub">' + t.html('consoleXacml.listeners.notReported') +
+          '</span>';
+      const actions = one.source === 'environment'
+        ? '<span class="sub">' + t.html('consoleXacml.listeners.envOnly',
+            { env: one.env }) + '</span>'
+        : (ctx.write
+            ? '<form method="post" action="/admin/xacml/peps" ' +
+              'class="inline">' + self.hidden('action', 'remove-pep-listener') +
+              self.hidden('name', row.name) +
+              self.hidden('listener', one.id) + '<button type="submit">' +
+              t.html('consoleXacml.listeners.remove') + '</button></form>' +
+              (one.protocol === 'https'
+                ? ' <form method="post" action="/admin/xacml/peps" ' +
+                  'class="inline">' +
+                  self.hidden('action', 'renew-pep-listener-certificate') +
+                  self.hidden('name', row.name) +
+                  self.hidden('listener', one.id) + '<button type="submit">' +
+                  t.html('consoleXacml.listeners.renew') + '</button></form>'
+                : '')
+            : '<span class="sub">' + t.html('consoleXacml.readOnly') +
+              '</span>');
+      return '<tr id="pep-listener-' + esc(one.id) + '"><th><code>' +
+        esc(one.id) + '</code></th><td>' + words.source[one.source] +
+        (one.source === 'environment'
+          ? '<div class="sub">' + t.html('consoleXacml.listeners.defaultPort',
+              { env: one.env, port: one.defaultPort }) + '</div>' : '') +
+        '</td><td>' + (one.protocol === 'https' ? 'HTTPS' : 'HTTP') +
+        '</td><td>' + (where ? '<code>' + esc(where) + '</code>'
+                             : '<span class="sub">' +
+                               t.html('consoleXacml.listeners.notReported') +
+                               '</span>') +
+        '</td><td>' + words.purpose[one.purpose] + '</td><td>' + state +
+        '</td><td>' + self.listenerCertificate(t, one) + '</td><td>' +
+        actions + '</td></tr>';
+    }).join('');
+    const table = '<table><tr><th>' +
+      t.html('consoleXacml.listeners.th.listener') + '</th><th>' +
+      t.html('consoleXacml.listeners.th.source') + '</th><th>' +
+      t.html('consoleXacml.listeners.th.protocol') + '</th><th>' +
+      t.html('consoleXacml.listeners.th.address') + '</th><th>' +
+      t.html('consoleXacml.listeners.th.purpose') + '</th><th>' +
+      t.html('consoleXacml.listeners.th.state') + '</th><th>' +
+      t.html('consoleXacml.listeners.th.certificate') + '</th><th>' +
+      t.html('consoleXacml.th.actions') + '</th></tr>' + body + '</table>';
+    const defined = (row.listeners || []) as Json[];
+    const catalogue = json.listenersCatalogue || {};
+    const forms = ctx.write
+      ? '<h3>' + t.html('consoleXacml.listeners.addHeading') + '</h3>' +
+        (catalogue.plainHttpProxyAllowed === false
+          ? '<p class="sub">' +
+            t.html('consoleXacml.listeners.plainProxyRefused') + '</p>' : '') +
+        self.listenerForm(t, json, row.name, null) +
+        defined.map(function (one: Json) {
+          return '<details><summary>' +
+            t.html('consoleXacml.listeners.editHeading', { id: one.id }) +
+            '</summary>' + self.listenerForm(t, json, row.name, one) +
+            '</details>';
+        }).join('')
+      : '';
+    return kit.note('<p>' + t.html('consoleXacml.listeners.lead') +
+                    '</p><p>' + t.html('consoleXacml.listeners.lead2') +
+                    '</p>', t.text('consoleXacml.pepPage.tab.listener')) +
+      (reported ? ''
+        : '<p class="sub">' + t.html('consoleXacml.listeners.olderPep') +
+          '</p>') +
+      (row.listenersProblem
+        ? '<div class="sub xacml-alert">' +
+          t.html('consoleXacml.listeners.problem') + ' ' +
+          esc(row.listenersProblem) + '</div>' : '') +
+      table + forms +
+      '<h3>' + t.html('consoleXacml.listeners.envPairHeading') + '</h3>' +
+      '<p>' + t.html('consoleXacml.listeners.envPairLead') + '</p>' +
+      self.pepListener(ctx, json, row, true) +
+      kit.note('<p>' + t.html('consoleXacml.peps.cert1') + '</p><p>' +
+               t.html('consoleXacml.peps.cert2') + '</p>',
+               t.text('consoleXacml.peps.certLabel'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ROUTE FORMS (#1760, rcbj: "ability to add paths / routes / Methods /
+  // etc" and "Map an application object to a path"). Each posts one route
+  // action, which the service turns into the WHOLE document and validates
+  // with the document editor's own checks — one validator, never two.
+  // ---------------------------------------------------------------------------
+  static routeForm(t: Json, json: Json, name: string, route: Json | null,
+                   count: number): string {
+    const self = this;
+    const r = route || { id: '', path: '/', match: 'prefix', methods: [],
+                         public: false, mechanisms: ['session'],
+                         application: '', resource: '', action: '',
+                         forwardCredentials: false, signals: true };
+    const box = function (field: string, value: string,
+                          on: boolean): string {
+      return '<label><input type="checkbox" name="' + field + '" value="' +
+        esc(value) + '"' + (on ? ' checked' : '') + '> ' + esc(value) +
+        '</label> ';
+    };
+    const methods = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE',
+                     'OPTIONS'].map(function (m) {
+      return box('methods', m, (r.methods || []).indexOf(m) >= 0);
+    }).join('');
+    const mechanisms = ['session', 'oauth2', 'saml2', 'basic']
+      .map(function (m) {
+        return box('mechanisms', m, (r.mechanisms || []).indexOf(m) >= 0);
+      }).join('');
+    const listId = 'pep-route-apps-' + (route ? route.id : 'new');
+    return '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+      (route ? self.hidden('id', r.id)
+        : '<label>' + t.html('consoleXacml.routeForm.id') + ' <input ' +
+          'type="text" name="id" size="16" maxlength="64" required>' +
+          '</label> ') +
+      '<label>' + t.html('consoleXacml.routeForm.path') + ' <input ' +
+      'type="text" name="path" size="28" required value="' + esc(r.path) +
+      '"></label> <label>' + t.html('consoleXacml.routeForm.match') + ' ' +
+      self.select('match', [
+        { value: 'prefix', label: t.text('consoleXacml.routeForm.prefix') },
+        { value: 'exact', label: t.text('consoleXacml.routeForm.exact') }],
+        r.match) + '</label>' +
+      '<div>' + t.html('consoleXacml.routeForm.methods') + ' ' + methods +
+      '<span class="sub">' + t.html('consoleXacml.routeForm.methodsNote') +
+      '</span></div><div><label>' +
+      t.html('consoleXacml.routeForm.public') + ' ' +
+      self.yesNo('public', r.public, t) + '</label> ' +
+      t.html('consoleXacml.routeForm.mechanisms') + ' ' + mechanisms +
+      '</div><div><label>' + t.html('consoleXacml.routeForm.application') +
+      ' <input type="text" name="application" size="24" list="' + listId +
+      '" value="' + esc(r.application) + '"></label>' +
+      self.applicationList(json, listId) + ' <label>' +
+      t.html('consoleXacml.routeForm.resource') + ' <input type="text" ' +
+      'name="resource" size="20" value="' + esc(r.resource) + '"></label> ' +
+      '<label>' + t.html('consoleXacml.routeForm.action') + ' <input ' +
+      'type="text" name="routeAction" size="12" value="' + esc(r.action) +
+      '"></label></div><div><label>' +
+      t.html('consoleXacml.routeForm.forward') + ' ' +
+      self.yesNo('forwardCredentials', r.forwardCredentials, t) +
+      '</label> <label>' + t.html('consoleXacml.routeForm.signals') + ' ' +
+      self.yesNo('signals', r.signals !== false, t) + '</label> <label>' +
+      t.html('consoleXacml.routeForm.position') + ' <input type="number" ' +
+      'name="position" min="0" max="' + count + '" placeholder="' +
+      (route ? '' : String(count)) + '"></label></div>' +
+      '<button type="submit">' + (route
+        ? t.html('consoleXacml.routeForm.update')
+        : t.html('consoleXacml.routeForm.add')) + '</button></form>';
+  }
+
+  // The realm's applications as a datalist: the chooser SUGGESTS, and the
+  // save resolves what was typed (D10), refusing one that does not qualify.
+  static applicationList(json: Json, id: string): string {
+    return '<datalist id="' + esc(id) + '">' +
+      (json.applicationChoices || []).map(function (one: Json) {
+        return '<option value="' + esc(one.identifier) + '">' +
+          esc(one.name && one.name !== one.identifier
+            ? one.name + ' — ' + one.identifier : one.identifier) +
+          '</option>';
+      }).join('') + '</datalist>';
+  }
+
+  // Map an application to a route of the list.
+  static mapApplicationForm(t: Json, json: Json, name: string,
+                            proxy: Json): string {
+    const self = this;
+    const routes = (proxy.routes || []).filter(function (one: Json) {
+      return !one.public;
+    });
+    if (!routes.length) {
+      return '';
+    }
+    return '<h4>' + t.html('consoleXacml.routeForm.mapHeading') + '</h4>' +
+      '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-route-application') +
+      self.hidden('name', name) + '<label>' +
+      t.html('consoleXacml.routeForm.route') + ' ' +
+      self.select('route', routes.map(function (one: Json) {
+        return { value: one.id, label: one.id + ' (' + one.path + ')' };
+      }), routes[0].id) + '</label> <label>' +
+      t.html('consoleXacml.routeForm.application') + ' <input type="text" ' +
+      'name="application" size="24" required list="pep-route-apps-map">' +
+      '</label>' + self.applicationList(json, 'pep-route-apps-map') +
+      ' <button type="submit">' + t.html('consoleXacml.routeForm.map') +
+      '</button><div class="sub">' + t.html('consoleXacml.routeForm.mapNote') +
+      '</div></form>';
   }
 
   // Each managed setting's label, by its own key so the catalogs' check
@@ -1505,10 +1942,7 @@ class XacmlPage {
       kit.note('<p>' + t.html('consoleXacml.peps.numbers1') + '</p><p>' +
                t.html('consoleXacml.peps.numbers2') + '</p>',
                t.text('consoleXacml.peps.numbersLabel'));
-    const listener = self.pepListener(ctx, json, row, true) +
-      kit.note('<p>' + t.html('consoleXacml.peps.cert1') + '</p><p>' +
-               t.html('consoleXacml.peps.cert2') + '</p>',
-               t.text('consoleXacml.peps.certLabel'));
+    const listener = self.listenersBody(ctx, json, row);
     return kit.tabbedPanels('xacml-pep-pages', [
       { id: 'xacml-pep-tab-overview',
         label: t.text('consoleXacml.pepPage.tab.overview'), html: overview },
@@ -1523,7 +1957,8 @@ class XacmlPage {
         html: listener },
       { id: 'xacml-pep-tab-proxy',
         label: t.text('consoleXacml.pepPage.tab.proxy'),
-        html: self.proxySection(ctx, row) },
+        html: self.proxySection(Object.assign({}, ctx, { json: json }),
+                                row) },
       { id: 'xacml-pep-tab-signals',
         label: t.text('consoleXacml.pepPage.tab.signals'),
         html: self.signalsPanel(t, row.signals) }
