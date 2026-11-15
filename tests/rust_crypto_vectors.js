@@ -123,6 +123,16 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // Certificate enrollment's (#444, phase 6): the CertReps sts-enroll
+  // signed, read by the SCEP client code a device test uses, and its
+  // certs-only bytes (tests/tools/enroll-vectors.js).
+  if (fs.existsSync(path.join(VECTORS, 'enroll-rust.json'))) {
+    require('./tools/enroll-vectors.js').checkRust(
+      path.join(__dirname, '..'), path.join(VECTORS, 'enroll-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The sign-out's sealed result (#444, phase 5): what sts-logout sealed,
   // opened by Node's own Logout (tests/tools/logout-vectors.js).
   if (fs.existsSync(path.join(VECTORS, 'logout-rust.json'))) {

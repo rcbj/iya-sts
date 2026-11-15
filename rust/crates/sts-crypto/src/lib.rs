@@ -22,6 +22,7 @@ pub mod jws_alg;
 pub mod keys;
 pub mod krb5;
 pub mod krb5_prf;
+pub mod pkcs7;
 pub mod pq;
 pub mod pq_x509;
 pub mod random;

@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-enroll"
+version = "0.1.0"
+description = "Certificate enrollment (#444 phase 6): common/cert_enrollment.ts's core and the three families over it — ACME (RFC 8555), EST (RFC 7030) and SCEP (RFC 8894) — issuing through sts-pki's authority."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-pki.workspace = true
+sts-store.workspace = true
+sts-http.workspace = true
+sts-tls.workspace = true
+sts-cluster.workspace = true
+sts-credentials.workspace = true
+axum.workspace = true
+base64.workspace = true
+chrono.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true
