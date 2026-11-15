@@ -25,7 +25,7 @@ use openssl::sha::sha1;
 use serde_json::{json, Value as Json};
 use sts_core::errors::{codes, ErrorCode};
 
-use super::catalog::{scope_id, SERVICE_SCOPE};
+use super::catalog::scope_id;
 use super::crl::{extension, spki_bits, status_signature_alg};
 use super::hierarchy::{certificate_instant, ms_of, Authority};
 use crate::der::{self, Element};
@@ -180,11 +180,11 @@ impl Authority {
         request: &[u8],
         now: DateTime<Utc>,
     ) -> OcspAnswer {
-        let id = if ca == "root" {
-            SERVICE_SCOPE.to_string()
-        } else {
-            scope_id(scope)
-        };
+        // THE ROOT IS FOUND FROM ANY SCOPE, its list read from the scope
+        // asked (`authorityFor()` and `listFor()` as Node has them): only
+        // `service/root` names the Root's own list — `default/root` signs
+        // an empty one, which is Node's answer too.
+        let id = scope_id(scope);
         let Some(tier) = self.tier_for(&id, ca) else {
             return refused(6, "unauthorized", codes::STS_PKI_0065);
         };

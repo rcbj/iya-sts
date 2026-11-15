@@ -565,12 +565,14 @@ pub type PkiMerge =
 
 impl KeySets {
     /// `pkiAll()`: the scopes holding a hierarchy.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn pki_scopes(&self) -> Vec<String> {
         self.hierarchies().keys().cloned().collect()
     }
 
     /// `pkiFor()` by the scope's own id (`*service`, `*process`, a realm,
     /// `default`), as the row key spells it.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub fn pki_row_exact(&self, scope: &str) -> Option<Json> {
         let cipher = self.hierarchies().get(scope).cloned()?;
         match self.open_row(&format!("{}{}", PKI_ROW_PREFIX, scope), &cipher) {
@@ -586,6 +588,7 @@ impl KeySets {
     /// hierarchy, which Node reads back as none. Answers the row the store
     /// holds afterwards (theirs merged in, where another writer was there
     /// first), which is then the one held here.
+    #[tracing::instrument(level = "debug", skip(self, row, merge))]
     pub async fn write_pki(
         &self,
         scope: &str,

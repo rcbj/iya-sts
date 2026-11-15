@@ -244,11 +244,11 @@ impl Authority {
         ca: &str,
         now: DateTime<Utc>,
     ) -> Result<Crl, Refusal> {
-        let id = if ca == "root" {
-            super::catalog::SERVICE_SCOPE.to_string()
-        } else {
-            scope_id(scope)
-        };
+        // THE ROOT IS FOUND FROM ANY SCOPE, its list read from the scope
+        // asked (`authorityFor()` and `listFor()` as Node has them): only
+        // `service/root` names the Root's own list — `default/root` signs
+        // an empty one, which is Node's answer too.
+        let id = scope_id(scope);
         let Some(tier) = self.tier_for(&id, ca) else {
             return Err(Refusal::new(
                 codes::STS_PKI_0055,
