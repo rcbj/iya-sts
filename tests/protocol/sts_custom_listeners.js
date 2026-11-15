@@ -53,6 +53,9 @@
 // four free ports the job can reach on the service's host,
 // `STS_TEST_CUSTOM_LISTENER_PORTS` (default 8095,8096,8097,8098).
 //
+// In the `cells` mode every custom listener is refused (STS-CORE-0148), and
+// that refusal is all this job asserts there.
+//
 // OWNED HERE (local: true): this repository's own management API.
 // ---------------------------------------------------------------------------
 
@@ -508,8 +511,26 @@ async function freeThePorts() {
   log.debug("Leaving freeThePorts().");
 }
 
+// The cells mode refuses every custom listener (STS-CORE-0148, see
+// sts_realm_listener.js); there the refusal is what is asserted.
+function cellsMode() {
+  log.debug("Entering cellsMode().");
+  const a = String(process.env.STS_TEST_CELL_A_URL || "").trim();
+  const b = String(process.env.STS_TEST_CELL_B_URL || "").trim();
+  log.debug("Leaving cellsMode(). " + !!(a && b));
+  return !!(a && b);
+}
+
 async function test() {
   log.debug("Entering test().");
+  if (cellsMode()) {
+    await refused("", "set-listeners", [adm()], "STS-CORE-0148",
+                  "in the cells mode a custom listener is refused");
+    log.info("Test completed successfully (the cells mode). " + checks +
+             " check(s) passed.");
+    log.debug("Leaving test(). The cells mode.");
+    return;
+  }
   await freeThePorts();
   for (const id of [A, B]) {
     await ok(base + "/admin-api/realms/create", { id: id,
