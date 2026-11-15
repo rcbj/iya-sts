@@ -38,6 +38,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 #[path = "admin_bootstrap.rs"]
 mod bootstrap;
+
+pub use bootstrap::ConsoleClaim;
 #[path = "admin_groups.rs"]
 mod groups;
 #[path = "admin_views.rs"]
@@ -1748,6 +1750,32 @@ impl AdminStack {
             StoreSpec::persisted("ssf_receivers.announcements"),
         );
         let store = parts.persistence.status();
+        let seeder = Arc::new(bootstrap::Seeder {
+            dir: dir.clone(),
+            settings: settings.clone(),
+            mode: mode.clone(),
+            registry: parts.registry.clone(),
+            roster: roster.clone(),
+            credentials: parts.credentials.clone(),
+        });
+        // The claim the console's sign-in makes, over the registers'
+        // directory (refilled where it has not been yet: no request here
+        // has run since the start).
+        let claimer = seeder.clone();
+        parts
+            .oauth
+            .console_claim
+            .install(Box::new(move |who, amr, how| {
+                let realm_id = realm::current_id();
+                let filled = claimer.dir.with(|t| {
+                    LiveDir::realm_index(t, &realm_id)
+                        .is_some_and(|r| !t.realms()[r].entries.is_empty())
+                });
+                if !filled {
+                    claimer.dir.reload();
+                }
+                claimer.note_console_sign_in(who, amr, how);
+            }));
         let families =
             Arc::new(crate::admin_families::AdminFamilies::default());
         families.set_apps(apps.clone());
@@ -1778,14 +1806,7 @@ impl AdminStack {
             access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
             dpop,
             setup_ports: Arc::new(Setup {
-                seeder: Arc::new(bootstrap::Seeder {
-                    dir: dir.clone(),
-                    settings: settings.clone(),
-                    mode: mode.clone(),
-                    registry: parts.registry.clone(),
-                    roster: roster.clone(),
-                    credentials: parts.credentials.clone(),
-                }),
+                seeder: seeder.clone(),
                 views: Arc::new(views::Views {
                     mode: mode.clone(),
                     roster: roster.clone(),

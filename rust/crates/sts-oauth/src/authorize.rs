@@ -250,6 +250,20 @@ pub trait GatedScopes: Send + Sync {
         client_id: &str,
         grant: &str,
     ) -> Json;
+    /// `rolePermissions.noteConsoleSignIn(person, {clientId, amr,
+    /// signInAuthority})`: THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#446),
+    /// made when the console's own client asks for a code, before the
+    /// narrowing that reads the roster it changes. A no-op by default.
+    fn note_console_sign_in(
+        &self,
+        username: &str,
+        authenticated: bool,
+        client_id: &str,
+        amr: &[String],
+        authority: &str,
+    ) {
+        let _ = (username, authenticated, client_id, amr, authority);
+    }
 }
 
 /// No scope is gated by role.
@@ -2437,6 +2451,21 @@ impl AuthorizationEndpoint {
         if let Some(r) = self.scopes.refusal(&scope, &client_id) {
             return back(r.code, "invalid_scope", &r.description);
         }
+        // Node asks it inside `asksForGated(scope)`, which the console's
+        // admin scopes always are; the port says whether it is the console.
+        let authority = session
+            .get("events")
+            .and_then(Json::as_array)
+            .and_then(|e| e.last())
+            .map(|e| s(e.get("authority").and_then(|a| a.get("kind"))))
+            .unwrap_or_default();
+        self.gated.note_console_sign_in(
+            &username,
+            signed_in,
+            &client_id,
+            view.methods.as_deref().unwrap_or(&[]),
+            &authority,
+        );
         if self.gated.asks_for_gated(&scope) {
             let narrowed = self.gated.narrow(
                 &scope,

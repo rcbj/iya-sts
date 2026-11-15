@@ -369,3 +369,106 @@ impl Seeder {
         }
     }
 }
+
+/// The console client's id (`CONSOLE_CLIENT_ID`).
+const CONSOLE_CLIENT_ID: &str = "sts-admin-console";
+
+/// What the authorization endpoint hands the claim.
+type Claimer = dyn Fn(&str, &[String], &str) + Send + Sync;
+
+/// THE BOOTSTRAP ADMINISTRATOR'S CLAIM AT THE AUTHORIZATION ENDPOINT
+/// (`role_permissions.ts`'s and `admin_rbac.ts`'s `noteConsoleSignIn()`):
+/// the port the authorization endpoint asks, made before the admin API
+/// exists and handed its claim when it is built. No scope is gated by role
+/// in this runtime yet, so the narrowing answers what it was asked.
+#[derive(Default)]
+pub struct ConsoleClaim {
+    claim: std::sync::OnceLock<Box<Claimer>>,
+}
+
+impl ConsoleClaim {
+    /// The claim, once the admin API is built.
+    #[tracing::instrument(level = "debug", skip_all)]
+    pub fn install(&self, claim: Box<Claimer>) {
+        if self.claim.set(claim).is_err() {
+            tracing::debug!("admin: the console claim was installed already.");
+        }
+    }
+}
+
+impl sts_oauth::authorize::GatedScopes for ConsoleClaim {
+    fn asks_for_gated(&self, _scope: &str) -> bool {
+        false
+    }
+    fn narrow(&self, scope: &str, _: &str, _: bool, _: &str, _: &str) -> Json {
+        json!({ "scope": scope, "emptied": false, "why": "" })
+    }
+    fn note_console_sign_in(
+        &self,
+        username: &str,
+        authenticated: bool,
+        client_id: &str,
+        amr: &[String],
+        authority: &str,
+    ) {
+        if client_id != CONSOLE_CLIENT_ID
+            || !authenticated
+            || username.trim().is_empty()
+        {
+            return;
+        }
+        if let Some(claim) = self.claim.get() {
+            claim(username.trim(), amr, authority);
+        }
+    }
+}
+
+impl Seeder {
+    /// `noteConsoleSignIn(username, session)` in the AMBIENT realm (the
+    /// one the sign-in came from): the bootstrap administrator closes the
+    /// window by signing in to the console — in product, only with a
+    /// password verified here (`passwordSignIn()`: a local authority, `pwd`
+    /// and no `federated`). True when this call closed it.
+    #[tracing::instrument(level = "debug", skip(self, amr))]
+    pub fn note_console_sign_in(
+        &self,
+        username: &str,
+        amr: &[String],
+        authority: &str,
+    ) -> bool {
+        let wanted = bootstrap_name(&self.settings, &self.mode);
+        if wanted.is_empty() || username.to_lowercase() != wanted.to_lowercase()
+        {
+            return false;
+        }
+        let realm_id = realm::current_id();
+        let opens =
+            self.mode.predicate("opensConsoleToAnyone").unwrap_or(false);
+        let password = authority == "local"
+            && amr.iter().any(|m| m == "pwd")
+            && !amr.iter().any(|m| m == "federated");
+        if !opens && !password {
+            tracing::debug!(
+                "A sign-in as the bootstrap administrator that is not a \
+                 password verified here claims nothing in product mode."
+            );
+            return false;
+        }
+        let Some((_, true, claimed)) = self.flags(&realm_id, &wanted) else {
+            return false;
+        };
+        if !claimed.is_empty() {
+            return false;
+        }
+        let now = chrono::Utc::now().format("%Y%m%d%H%M%SZ").to_string();
+        self.write_flag(&realm_id, &wanted, "stsConsoleClaimedAt", &now);
+        tracing::info!(
+            "admin_rbac: the bootstrap administrator \"{}\" of the \"{}\" \
+             realm signed in to the console. That realm's roster is enforced \
+             from now on: only members of its two role groups may use it.",
+            username,
+            realm_id
+        );
+        true
+    }
+}
