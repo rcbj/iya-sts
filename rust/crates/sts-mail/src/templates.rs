@@ -72,6 +72,7 @@ impl Parts {
     }
 
     /// The parts of a built-in template.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn of(spec: &TemplateSpec) -> Parts {
         Parts {
             subject: spec.subject.clone(),
@@ -204,26 +205,31 @@ fn has_mailto(text: &str) -> bool {
 
 impl Templates {
     /// The one table.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn get() -> Option<&'static Templates> {
         TEMPLATES.as_ref()
     }
 
     /// `LAYOUT_ID`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn layout_id(&self) -> &str {
         &self.table.layout_id
     }
 
     /// `BUILT_IN`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn all(&self) -> &[TemplateSpec] {
         &self.table.built_in
     }
 
     /// `CATEGORIES`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn categories(&self) -> &[Category] {
         &self.table.categories
     }
 
     /// `COMMON`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn common(&self) -> &[String] {
         &self.table.common
     }

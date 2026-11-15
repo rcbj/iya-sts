@@ -42,6 +42,7 @@ pub struct SendError {
 
 impl SendError {
     /// `sendError(message, code, retry)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(message: impl Into<String>, code: ErrorCode, retry: bool) -> Self {
         SendError {
             message: message.into(),
@@ -243,6 +244,8 @@ pub fn classify_cloud(e: &CloudFailure, who: &str) -> SendError {
         || e.status == 429
         || e.status >= 500
         || words.iter().any(|w| hay.contains(w));
+    // `String(e.message || e)`: an error with no message is its name.
+    let said = if e.message.is_empty() { &e.name } else { &e.message };
     let why = format!(
         "{} refused the message: {}{}",
         who,
@@ -251,7 +254,7 @@ pub fn classify_cloud(e: &CloudFailure, who: &str) -> SendError {
         } else {
             format!("{}: ", e.name)
         },
-        e.message
+        said
     );
     SendError::new(
         why,
@@ -323,6 +326,7 @@ pub struct Smtp {
 impl Smtp {
     /// From the session, the DKIM configuration, the clock the signature's
     /// `t=` is read from and the boundary source.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(
         relay: Arc<dyn SmtpRelay>,
         dkim: Option<Dkim>,
@@ -678,6 +682,7 @@ pub struct CloudTransport {
 
 impl CloudTransport {
     /// From the client and the realm's settings.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(
         cloud: Cloud,
         client: Arc<dyn CloudMail>,

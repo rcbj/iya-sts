@@ -810,3 +810,201 @@ async fn uses(w: &World, v: &Json, failures: &mut Vec<String>) -> usize {
     }
     checked
 }
+
+// ---------------------------------------------------------------------------
+// THE TRANSPORTS: addressProblem(), the two classifiers, build()'s
+// refusals and logins, and what each cloud provider is handed.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_transports_are_nodes() {
+    let Some(v) = vectors() else {
+        return;
+    };
+    let t = &v["transports"];
+    let mut checked = 0;
+    for one in t["addresses"].as_array().unwrap() {
+        assert_eq!(address_problem(s(&one[0])), s(&one[1]), "{}", one[0]);
+        checked += 1;
+    }
+    let coded = |e: SendError| serde_json::json!({ "code": e.code.as_str(),
+        "retry": e.retry, "message": e.message });
+    for one in t["smtp"].as_array().unwrap() {
+        let e = &one[0];
+        let f = SmtpFailure {
+            code: s(&e["code"]).into(),
+            response_code: e["responseCode"].as_u64().unwrap_or(0) as u16,
+            response: s(&e["response"]).into(),
+            message: if s(&e["message"]).is_empty() { "x".into() }
+                     else { s(&e["message"]).into() },
+        };
+        assert_eq!(coded(classify_smtp(&f)), one[1], "{}", e);
+        checked += 1;
+    }
+    for one in t["cloud"].as_array().unwrap() {
+        let e = &one[0];
+        let status = e["$metadata"]["httpStatusCode"].as_i64()
+            .or(e["statusCode"].as_i64()).or(e["code"].as_i64()).unwrap_or(0);
+        let f = CloudFailure {
+            name: if s(&e["name"]).is_empty() { "Error".into() }
+                  else { s(&e["name"]).into() },
+            message: s(&e["message"]).into(),
+            status,
+            retryable: !e["$retryable"].is_null() || e["retryable"] == true,
+        };
+        assert_eq!(coded(classify_cloud(&f, "SES")), one[1], "{}", e);
+        checked += 1;
+    }
+    eprintln!("transports: {} checks", checked);
+}
+
+struct CaseSecrets(Json);
+
+impl MailSecrets for CaseSecrets {
+    fn read(&self, which: Secret) -> BoxFuture<'_, Option<String>> {
+        let key = match which {
+            Secret::SmtpPassword => "password",
+            Secret::DkimKey => "dkim",
+            Secret::AcsConnectionString => "acs",
+            Secret::GmailKey => "gmail",
+        };
+        let out = self.0[key].as_str().map(str::to_string);
+        Box::pin(async move { out })
+    }
+}
+
+struct Clouds(Arc<Mutex<Vec<Json>>>, Json);
+
+struct CloudClient(Cloud, Arc<Mutex<Vec<Json>>>, Json);
+
+impl CloudMail for CloudClient {
+    fn send<'a>(&'a self, request: &'a Json)
+        -> BoxFuture<'a, Result<Json, CloudFailure>> {
+        self.1.lock().unwrap().push(request.clone());
+        let out = match self.0 {
+            Cloud::Ses => serde_json::json!({ "MessageId": "ses-1" }),
+            Cloud::Acs => self.2.clone(),
+            Cloud::Gmail => serde_json::json!({ "data": { "id": "g-1" } }),
+        };
+        Box::pin(async move { Ok(out) })
+    }
+}
+
+impl CloudFactory for Clouds {
+    fn client(&self, cloud: Cloud, _: &Json, _: Option<&str>)
+        -> Result<Arc<dyn CloudMail>, SendError> {
+        Ok(Arc::new(CloudClient(cloud, self.0.clone(), self.1.clone())))
+    }
+}
+
+struct AnyFile;
+
+impl FileReader for AnyFile {
+    fn read(&self, path: &str) -> Result<String, String> {
+        Ok(format!("file {}", path))
+    }
+}
+
+fn auth_json(auth: &Option<SmtpAuth>) -> Json {
+    match auth {
+        None => Json::Null,
+        Some(SmtpAuth::Password { user, pass, method }) =>
+            serde_json::json!({ "user": user, "pass": pass, "method": method }),
+        Some(SmtpAuth::OAuth2 { user, access_token, refresh }) => {
+            let mut out = serde_json::json!({ "type": "OAuth2", "user": user });
+            if refresh.is_object() {
+                for k in ["clientId", "clientSecret", "refreshToken",
+                          "accessUrl"] {
+                    out[k] = refresh[k].clone();
+                }
+            } else {
+                out["accessToken"] = serde_json::json!(access_token);
+            }
+            out
+        }
+    }
+}
+
+#[tokio::test]
+async fn every_build_is_nodes() {
+    let Some(v) = vectors() else {
+        return;
+    };
+    use base64::Engine;
+    let b = &v["builds"];
+    let m = &b["message"];
+    let message = OutMessage { from: s(&m["from"]).into(),
+        from_name: s(&m["fromName"]).into(), to: s(&m["to"]).into(),
+        subject: s(&m["subject"]).into(), text: s(&m["text"]).into(),
+        html: s(&m["html"]).into(), message_id: s(&m["messageId"]).into(),
+        date_ms: m["date"].as_i64().unwrap(), lang: s(&m["lang"]).into() };
+    let re = regex::Regex::new(r#"boundary="--_NmP-([0-9a-f]{16})-Part_1""#)
+        .unwrap();
+    let mut checked = 0;
+    for one in b["cases"].as_array().unwrap() {
+        let name = s(&one["name"]);
+        let calls = one["calls"].as_array().unwrap();
+        // The boundary nodemailer drew for the raw message a provider took.
+        let boundary = calls.iter().find_map(|c| {
+            let raw = c["input"]["Content"]["Raw"]["Data"].as_str()
+                .map(|d| base64::engine::general_purpose::STANDARD.decode(d))
+                .or_else(|| c["input"]["requestBody"]["raw"].as_str().map(|d|
+                    base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .decode(d)))?.ok()?;
+            let text = String::from_utf8_lossy(&raw).to_string();
+            re.captures(&text).map(|c| c[1].to_string())
+        }).unwrap_or_else(|| "0000000000000000".into());
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let relays = Arc::new(Relays(Arc::new(Relay::default()),
+                                     Mutex::new(Vec::new())));
+        let builder = Builder {
+            secrets: Arc::new(CaseSecrets(one["secrets"].clone())),
+            relays: relays.clone(),
+            clouds: Arc::new(Clouds(requests.clone(), serde_json::json!({
+                "status": "Succeeded", "id": "acs-1" }))),
+            files: Arc::new(AnyFile),
+            clock: Arc::new(|| 1763100000000),
+            boundary: Arc::new(move || boundary.clone()),
+        };
+        let answer = match builder.build(&one["cfg"]).await {
+            Ok(made) => {
+                let mut a = serde_json::json!({ "ok": true,
+                                                "name": made.name() });
+                if made.name() != "smtp" && made.name() != "capture" {
+                    let sent = made.send(&message).await.unwrap();
+                    a["sent"] = serde_json::json!({
+                        "providerId": sent.provider_id });
+                }
+                a
+            }
+            Err(e) => serde_json::json!({ "ok": false, "code": e.code.as_str(),
+                "message": e.message, "retry": e.retry }),
+        };
+        assert_eq!(answer, one["answer"], "build {}", name);
+        let sent: Vec<Json> = requests.lock().unwrap().clone();
+        let node_inputs: Vec<Json> = calls.iter()
+            .filter(|c| matches!(s(&c["kind"]), "ses" | "acs" | "gmail"))
+            .map(|c| c["input"].clone()).collect();
+        assert_eq!(Json::Array(sent), Json::Array(node_inputs),
+                   "requests of {}", name);
+        let opened = relays.1.lock().unwrap().clone();
+        let node_auth: Vec<Json> = calls.iter()
+            .filter(|c| s(&c["kind"]) == "smtp")
+            .map(|c| c["auth"].clone()).collect();
+        let rust_auth: Vec<Json> = opened.iter().map(|o| auth_json(&o.auth))
+            .collect();
+        assert_eq!(Json::Array(rust_auth), Json::Array(node_auth),
+                   "auth of {}", name);
+        checked += 1;
+    }
+    // Azure ending the send as Failed.
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let acs = CloudTransport::new(Cloud::Acs, Arc::new(CloudClient(Cloud::Acs,
+        requests, serde_json::json!({ "status": "Failed",
+            "error": { "code": "Denied", "message": "no sender" } }))),
+        &Json::Null, Arc::new(|| "0".repeat(16)));
+    let e = acs.send(&message).await.unwrap_err();
+    assert_eq!(serde_json::json!({ "code": e.code.as_str(),
+        "message": e.message, "retry": e.retry }), b["acsFailed"]);
+    eprintln!("builds: {} checks", checked + 1);
+}

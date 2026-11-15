@@ -89,6 +89,7 @@ impl UseResult {
 
 impl MailUses {
     /// Over the channel, the settings and the clock.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(
         mail: Arc<Mail>,
         settings: Arc<Settings>,

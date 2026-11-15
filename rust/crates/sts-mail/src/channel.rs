@@ -390,6 +390,7 @@ pub struct Mail {
 
 impl Mail {
     /// From its dependencies.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(deps: MailDeps) -> Mail {
         Mail {
             deps,

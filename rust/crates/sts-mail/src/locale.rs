@@ -157,6 +157,7 @@ pub struct Catalogs {
 
 impl Catalogs {
     /// From `catalogs.json`'s rows and its source tag.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(tags: &[String], source: &str) -> Catalogs {
         Catalogs {
             source: source.to_string(),

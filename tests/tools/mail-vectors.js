@@ -328,6 +328,174 @@ function transportsPart(MT, errorCodes) {
 }
 
 /**
+ * The transports' builds and the cloud transports' requests: build() over
+ * scripted secrets, nodemailer and the SDKs replaced by recorders.
+ *
+ * @param {any} MT - mail_transports
+ * @param {any} errorCodes - error_codes
+ * @param {any} secrets - secrets.js
+ * @param {any} keys - the DKIM keys
+ * @returns {Promise<any>} the builds and the requests
+ */
+async function buildsPart(MT, errorCodes, secrets, keys) {
+  log.debug("Entering buildsPart().");
+  const calls = [];
+  let acsStatus = { status: 'Succeeded', id: 'acs-1' };
+  const sdks = {
+    nodemailer: { createTransport: function (opts) {
+      calls.push({ kind: 'smtp', auth: opts.auth || null,
+                   cert: !!(opts.tls && opts.tls.cert) });
+      return { sendMail: function () {
+        return Promise.resolve({ messageId: '<m@x>', response: '250',
+                                 rejected: [] });
+      }, close: function () {} };
+    } },
+    '@aws-sdk/client-sesv2': {
+      SESv2Client: function (opts) {
+        this.send = function (cmd) {
+          const input = JSON.parse(JSON.stringify(cmd.input));
+          input.Content.Raw.Data =
+            Buffer.from(cmd.input.Content.Raw.Data).toString('base64');
+          calls.push({ kind: 'ses', opts: opts, input: input });
+          return Promise.resolve({ MessageId: 'ses-1' });
+        };
+      },
+      SendEmailCommand: function (input) {
+        this.input = input;
+      }
+    },
+    '@azure/identity': { DefaultAzureCredential: function () {} },
+    '@azure/communication-email': {
+      EmailClient: function (a, b) {
+        const args = [typeof a, b ? 'credential' : 'none'];
+        this.beginSend = function (msg) {
+          calls.push({ kind: 'acs', args: args, input: msg });
+          return Promise.resolve({ pollUntilDone: function () {
+            return Promise.resolve(acsStatus);
+          } });
+        };
+      }
+    },
+    '@googleapis/gmail': {
+      auth: { JWT: function (o) {
+        calls.push({ kind: 'gmail-auth', email: o.email, scopes: o.scopes,
+                     subject: o.subject });
+      } },
+      gmail: function () {
+        return { users: { messages: { send: function (req) {
+          calls.push({ kind: 'gmail', input: req });
+          return Promise.resolve({ data: { id: 'g-1' } });
+        } } } };
+      }
+    }
+  };
+  const base = { setting: 'smtp', transport: 'smtp',
+    smtpHost: 'smtp.example.com', smtpPort: 465, smtpTls: 'implicit',
+    smtpServerName: 'mx.example.com', smtpAuth: 'none', smtpUser: 'u',
+    smtpCaFile: '', smtpClientCertFile: '', smtpClientKeyFile: '',
+    dkimDomain: '', dkimSelector: '', dkimAlgorithm: 'rsa-sha256',
+    sesRegion: '', sesConfigurationSet: '', acsAuth: 'managed-identity',
+    acsEndpoint: '', gmailSender: 'sender@example.com',
+    from: 'no-reply@example.com', timeoutMs: 30000 };
+  const gmailKey = JSON.stringify({ client_email: 'sa@example.iam',
+                                    private_key: 'k' });
+  const cases = [
+    ['unknown', { transport: 'nope', setting: 'nope' }, {}],
+    ['off', { transport: 'off', setting: 'off' }, {}],
+    ['capture', { transport: 'capture' }, {}],
+    ['smtp no host', { smtpHost: '' }, {}],
+    ['smtp login no secret', { smtpAuth: 'login' }, {}],
+    ['smtp login', { smtpAuth: 'login' }, { password: 'pw' }],
+    ['smtp plain', { smtpAuth: 'plain' }, { password: 'pw' }],
+    ['smtp xoauth2 token', { smtpAuth: 'xoauth2' }, { password: 'tok' }],
+    ['smtp xoauth2 refresh', { smtpAuth: 'xoauth2' },
+     { password: '{"clientId":"c","clientSecret":"s","refreshToken":"r",' +
+                 '"accessUrl":"https://o/t"}' }],
+    ['smtp cert without key', { smtpClientCertFile: '/c.pem' }, {}],
+    ['smtp dkim no key', { dkimDomain: 'example.com', dkimSelector: 's' },
+     {}],
+    ['smtp dkim no selector', { dkimDomain: 'example.com' },
+     { dkim: keys.rsa.privateKeyPem }],
+    ['smtp dkim ok', { dkimDomain: 'example.com', dkimSelector: 's' },
+     { dkim: keys.rsa.privateKeyPem }],
+    ['ses', { transport: 'ses', sesRegion: 'eu-west-1',
+              sesConfigurationSet: 'cs' }, {}],
+    ['ses no set', { transport: 'ses' }, {}],
+    ['acs no secret', { transport: 'acs', acsAuth: 'connection-string' }, {}],
+    ['acs connection', { transport: 'acs', acsAuth: 'connection-string' },
+     { acs: 'endpoint=https://a/;accesskey=k' }],
+    ['acs no endpoint', { transport: 'acs' }, {}],
+    ['acs identity', { transport: 'acs', acsEndpoint: 'https://a.example/' },
+     {}],
+    ['gmail no key', { transport: 'gmail' }, {}],
+    ['gmail bad key', { transport: 'gmail' }, { gmail: 'not json' }],
+    ['gmail partial key', { transport: 'gmail' },
+     { gmail: '{"client_email":"x"}' }],
+    ['gmail', { transport: 'gmail' }, { gmail: gmailKey }]
+  ];
+  const message = { from: 'no-reply@example.com', fromName: 'IYA',
+    to: 'ann@example.com', subject: 'Héllo', text: 'Text é\n',
+    html: '<p>HTML</p>', messageId: '<id1@example.com>',
+    date: new Date(T0), lang: 'fr' };
+  const out = [];
+  for (const one of cases) {
+    const held = one[2];
+    const t = new MT.MailTransports(Object.assign(
+      MT.MailTransports.defaultDeps(), {
+        load: function (name) {
+          return sdks[name] || require(name);
+        },
+        readSecret: function (spec) {
+          const map = new Map([[secrets.MAIL_SMTP_PASSWORD, held.password],
+            [secrets.MAIL_DKIM_KEY, held.dkim],
+            [secrets.MAIL_ACS_CONNECTION_STRING, held.acs],
+            [secrets.MAIL_GMAIL_KEY, held.gmail]]);
+          return Promise.resolve(map.get(spec) || null);
+        },
+        readFile: function (p) {
+          return 'file ' + p;
+        }
+      }));
+    const cfg = Object.assign({}, base, one[1]);
+    const before = calls.length;
+    let answer = null;
+    try {
+      const made = await t.build(cfg);
+      answer = { ok: true, name: made.name };
+      if (made.name !== 'smtp' && made.name !== 'capture') {
+        const sent = await made.send(message);
+        answer.sent = sent;
+      }
+    } catch (e) {
+      answer = { ok: false, code: errorCodes.codeOf(e), message: e.message,
+                 retry: e.retry };
+    }
+    out.push({ name: one[0], cfg: cfg, secrets: held, answer: answer,
+               calls: calls.slice(before) });
+  }
+  acsStatus = { status: 'Failed', error: { code: 'Denied',
+                                           message: 'no sender' } };
+  const t = new MT.MailTransports(Object.assign(
+    MT.MailTransports.defaultDeps(), { load: function (name) {
+      return sdks[name] || require(name);
+    }, readSecret: function () {
+      return Promise.resolve(null);
+    } }));
+  const acs = await t.build(Object.assign({}, base, { transport: 'acs',
+    acsEndpoint: 'https://a.example/' }));
+  let failed = null;
+  try {
+    await acs.send(message);
+  } catch (e) {
+    failed = { code: errorCodes.codeOf(e), message: e.message,
+               retry: e.retry };
+  }
+  log.debug("Leaving buildsPart().");
+  return { message: Object.assign({}, message, { date: T0 }), cases: out,
+           acsFailed: failed };
+}
+
+/**
  * The child: every part, written to the answer file.
  *
  * @param {string} root - the repository root
@@ -359,6 +527,7 @@ async function child(root, answer) {
   const keys = { rsa: pem(rsa), ed25519: pem(ed) };
   const out = { t0: T0, keys: keys, templates: templatesPart(T),
                 transports: transportsPart(MT, errorCodes) };
+  out.builds = await buildsPart(MT, errorCodes, secrets, keys);
   // THE DIRECTORY: one person per language, and the refusal cases.
   const entries = {};
   PEOPLE.forEach(function (p) {
