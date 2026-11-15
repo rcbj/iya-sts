@@ -20,8 +20,8 @@
 //   P. the protection API: no PAT (STS-UMA-0100), one that does not verify
 //      (0101), a client-credentials token without uma_protection or the
 //      /uma audience (0102, the check met first); a registration that is
-//      not an object (0110), with no resource_scopes (0111), past uma.maxResourceScopes
-//      (0112), an icon_uri that is not https (0113); a resource this
+//      not an object (0110), with no resource_scopes (0111), past
+//      uma.maxResourceScopes (0112), an icon_uri that is not https (0113); a resource this
 //      server did not register (0114); a method the endpoint does not take
 //      (0115); past uma.maxResourcesPerOwner (0116); a permission request
 //      that is not an object or array (0117), naming an unregistered
@@ -42,8 +42,8 @@
 // 0211-0214 are policies that do not evaluate or obligations, which the
 // owner's document editor refuses first; 0104 (the token endpoint refuses
 // uma_protection to a client not declared for UMA, 400, so no such PAT
-// reaches the protection API — P4 runs only if one is issued). Owed: 0103 (a PAT audienced to
-// /uma without uma_protection), 0105-0107, 0202 (a ticket spent on an RPT:
+// reaches the protection API — P4 runs only if one is issued). Owed: 0103
+// (a PAT audienced to /uma without uma_protection), 0105-0107, 0202 (a ticket spent on an RPT:
 // the claims interaction `sts_uma.js` walks).
 //
 // OWNED HERE (local: true): UMA is ours.
