@@ -246,11 +246,12 @@ impl Control {
                         let mut keys = None;
                         if is_truthy(r.read_sequence(Some(0x30))?) {
                             let mut list = Vec::new();
-                            let limit = crate::fault::pass_limit(v.len());
+                            // No guard, in Node or here, and none needed:
+                            // a truthy `readSequence(0x30)` has consumed a
+                            // tag and a length, so every pass advances, and
+                            // a short read below leaves a byte that is not
+                            // 0x30 (a throw) or nothing (null, the end).
                             while is_truthy(r.read_sequence(Some(0x30))?) {
-                                if list.len() > limit {
-                                    return Err(Fault::Stalled);
-                                }
                                 let attribute_type = r.read_string(0x04)?;
                                 let mut ordering_rule = None;
                                 if r.peek() == Some(0x80) {

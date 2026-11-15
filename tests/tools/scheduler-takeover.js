@@ -32,8 +32,9 @@
 //   3. every slot of the session-expiry job is still one succeeded run — the
 //      crash cost the job nothing and doubled nothing;
 //   4. a run the dead node had left `running` (the crash can land inside
-//      one, rarely) was taken over — `abandoned` beside it — once its claim
-//      lapsed, which it waits for only when there is one.
+//      one, rarely) was taken over — `abandoned` beside it — or, its slot
+//      having passed, abandoned in place, once its claim lapsed, which it
+//      waits for only when there is one. The run is asked for by its id.
 //
 // The fence itself — the dead node's late result refused — needs a node that
 // wakes, and a crashed container does not; `tests/scheduler_cluster.js` C
@@ -130,6 +131,48 @@ async function report(base, job) {
   }
   log.debug('Leaving report().');
   return r.json;
+}
+
+// One run by its id: `GET /admin-api/scheduler?run=`, which answers the run
+// from the node's own rows or, failing that, from one by-id read of the
+// store per realm (`Scheduler.findRun()`). Null when it is not found.
+async function runById(base, runId) {
+  log.debug('Entering runById(). ' + runId);
+  const r = await patiently(base + '/admin-api/scheduler?run=' +
+                            encodeURIComponent(runId));
+  if (r.status !== 200 || !r.json) {
+    log.debug('Leaving runById(). Refused.');
+    throw new Error('GET /admin-api/scheduler?run= answered ' + r.status +
+                    ' ' + r.text.slice(0, 300));
+  }
+  log.debug('Leaving runById(). ' + !!r.json.found);
+  return r.json.found ? r.json.detail || null : null;
+}
+
+// STEP 4's QUESTION, apart from the requests that answer it, so that
+// `tests/scheduler.js` can hold it: has the run `runId` a dead node left
+// running been settled? Either the run ITSELF is `abandoned` (its slot had
+// passed: STS-SCHED-0011, abandoned in place), or a run among `runs` — the
+// job's report, which holds its current slot and the nineteen before it —
+// records `abandonedOf` it (the current slot's row taken over).
+/**
+ * Answers whether a dead node's running run has been settled.
+ *
+ * @param runId - the run the dead node left running
+ * @param detail - that run as `?run=` answered it, or null
+ * @param runs - the job's runs from its filtered report
+ * @returns true when it was abandoned in place or taken over
+ */
+function runSettled(runId, detail, runs) {
+  log.debug('Entering runSettled(). ' + runId);
+  const inPlace = !!(detail && String(detail.runId) === String(runId) &&
+                     detail.state === 'abandoned');
+  const takenOver = (runs || []).some(function (x) {
+    return x.abandonedOf === runId ||
+           (x.runId === runId && x.state === 'abandoned');
+  });
+  log.debug('Leaving runSettled(). ' + inPlace + ' ' + takenOver);
+  return inPlace || takenOver;
 }
 
 // Waits on a CONDITION, polled, for at most `limitMs`.
@@ -265,12 +308,24 @@ async function after(base, stopped) {
   // Only the first was looked for, so a crash inside attribute-sources.refresh
   // — longer since #704 sliced it — waited the whole bound for a run that
   // is never made.
+  //
+  // AND THE RUN ITSELF IS ASKED FOR BY ID (2026-11-14, GitHub Actions run
+  // 43642810770). node-a left `ssf.internal-poll` (every second, the default
+  // 600 s timeout) running; node-b abandoned it in place at 00:41:02, inside
+  // the bound, and this wait ran out at 675000 ms anyway. A job-filtered
+  // report holds that job's last twenty slots by id beside a twenty-row
+  // newest window (#1764), and a row about six hundred slots back is in
+  // neither. `?run=` reads exactly that row (`Scheduler.findRun()`: the
+  // node's rows, then one by-id read per realm — no scan), so the window is
+  // not widened and step 4 still asks the same thing: that the dead node's
+  // run was settled, once its claim lapsed, within the bound.
   await until('the dead node\'s run to be taken over', async function () {
+    const detail = await runById(base, one.runId);
+    if (runSettled(one.runId, detail, [])) {
+      return true;
+    }
     const r = await report(base, one.jobId);
-    return (r.runs || []).some(function (x) {
-      return x.abandonedOf === one.runId ||
-             (x.runId === one.runId && x.state === 'abandoned');
-    });
+    return runSettled(one.runId, detail, r.runs || []);
   }, timeoutMs + 3 * tickS * 1000 + 30000);
   log.info('  ✓ 4. the run ' + stopped + ' left running was taken over, or ' +
            'its passed slot abandoned in place.');
@@ -292,6 +347,12 @@ async function main() {
   log.debug('Leaving main().');
 }
 
-main().catch(function (e) {
-  fail((e && e.message) || String(e));
-});
+// Run as the launcher runs it; required (by `tests/scheduler.js`), it only
+// lends `runSettled()`.
+if (require.main === module) {
+  main().catch(function (e) {
+    fail((e && e.message) || String(e));
+  });
+}
+
+module.exports = { runSettled: runSettled };

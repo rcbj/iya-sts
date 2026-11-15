@@ -246,13 +246,27 @@ rust/
                                  read from the TypeScript build's tree at
                                  STS_WEB_ROOT, /web), held to Node by
                                  tests/tools/http-differential.js
-    sts-directory/               the embedded directory model and the LDAP server
+    sts-directory/               the embedded directory's model and operations
+                                 (phase 4): per-realm trees, the generated
+                                 schema and name lists, add/modify/delete/
+                                 modify DN/compare/search with Node's
+                                 refusals, entryUUID and the subject, an entry
+                                 as its domain concept; the wire is sts-ldap,
+                                 the store sts-store's StoredEntry and driver.
+                                 Held to Node by tests/tools/directory-vectors.js
+    sts-policy/                  the named policies (rule 3cx) and the seven kinds on
+                                 Directory > Policies, over ports to the directory and
+                                 the registers (phase 4, held to 321 Node cases)
+    sts-registers/               the registers over the directory: roles, the console
+                                 roster, role and application permissions, ownership,
+                                 the groups claim, account state, the user and group acts
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/
     sts-xacml/                   the engine: no I/O; shared by the runtime and the PEP
     sts-enrollment/              ACME, EST, SCEP over one CertEnrollment core
+    sts-audit/                   the audit log, GET /admin-api/audit, the audit export (#641)
     sts-risk/  sts-attribute-sources/  sts-mail/  sts-cells/
     sts-authzen/  sts-uma/
     sts-report/                  /report-api: its sources, query, jobs and formats
@@ -470,6 +484,22 @@ contract to hold the Rust to. It does not shorten the engine's port.
    `setTruststore`, …) are in-process callbacks. They become constructor
    arguments (section 4.2).
 
+### 5.1a `sts-mgmt-api`: the framework, ported (phase 4)
+
+**The model routes, not a table in code.** `models/lib/rust_lib.mjs` writes
+the two documents' 700 operations as an `Operation` enum, and `routing.rs`
+is an exhaustive `match` over it whose last arm names the operations not yet
+ported (`not_yet_ported.rs`), so an operation the model adds does not compile
+until it is routed or listed. What `admin_api.ts` keeps beside the model — a
+row's `mirrors`, tag, console twin, the `:action` routes and the document's
+frame — is exported by `tests/tools/export-admin-api-tables.js`, and
+`build.rs` refuses a row the model does not have, or the reverse. The gate,
+the request checks (ajv's words, with the `jsonschema` crate's verdict), the
+closed-model answer check (#1353) and the setup operations are ported; the
+registers outside `sts-core` are ports (`GatePorts`, `AccessPolicy`,
+`SetupPorts`, `KeySource`). `mgmt-api-node.json` is the proof: 60 requests
+answered byte for byte as Node answers them, both ways.
+
 ### 5.2 The decisions
 
 1. **The console calls `/admin-api` with the signed-in operator's access
@@ -609,7 +639,7 @@ writes them into a gitignored directory or `STS_CRYPTO_VECTORS`).
 | TLS (listeners) / TLS (outbound) | `openssl` + `tokio-openssl` / `rustls` | Section 6 |
 | Postgres | `sqlx` (with `PgListener` for `LISTEN`/`NOTIFY`) | Compile-time checked queries against `postgres/schema.sql` |
 | The operators' SQL databases (attribute sources) | `sqlx` (Postgres, MySQL), `tiberius` (SQL Server), `oracle` (Oracle, through ODPI-C) | Today's `knex` drivers, one for one |
-| LDAP server | `sts-ldap` (its own codec; `ldap3_proto` a dev-dependency only) | **Ported from node-ldapjs, not taken from `ldap3_proto`** (2026-11-14): the D11 compatible upgrade needs node-ldapjs's bytes and verdicts, and measured on `ldap-wire-node.json` the two differ in 397 cases (`sts-ldap/tests/ldap3_compare.rs`). The fork's options (`routeAnonymousBinds`, `encodeErrorMessage`, `saslMechanisms`) are `sts-ldap::front`'s behaviour. Where node-ldapjs loops for ever on a client's bytes, `sts-ldap` closes the connection (`Fault::Stalled`) |
+| LDAP server | `sts-ldap` (its own codec; `ldap3_proto` a dev-dependency only) | **Ported from node-ldapjs, not taken from `ldap3_proto`** (2026-11-14): the D11 compatible upgrade needs node-ldapjs's bytes and verdicts, and measured on `ldap-wire-node.json` the two differ in 397 cases (`sts-ldap/tests/ldap3_compare.rs`). The fork's options (`routeAnonymousBinds`, `encodeErrorMessage`, `saslMechanisms`) are `sts-ldap::front`'s behaviour. Where node-ldapjs looped for ever on a client's bytes, the fork now throws and destroys the connection (#1784), and `sts-ldap` does the same (`fault::advanced`) |
 | gRPC (SPIFFE) | `tonic`, `prost`, built from the vendored `spiffe/protos/` | The standard; serves Unix sockets and TCP |
 | XML | `quick-xml`, under `sts-xml` | The tokenizer only; the DOM and C14N are ours (`sts-xml`), because C14N has to match `xmldsig.js` byte for byte and libxml2's `xmlC14NExecute` does not reproduce its departures. No C library, no `unsafe`. **Every DOCTYPE is refused** — stricter than xmldom, which accepts one and resolves none of its entities; `common/validation.js` names that refusal as the one a parser that could resolve them must make |
 | ASN.1, X.509, CMS | RustCrypto `der`, `x509-cert`, `cms`, `x509-ocsp`; `rasn` for Kerberos | |

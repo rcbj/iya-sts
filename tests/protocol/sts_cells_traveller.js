@@ -189,8 +189,17 @@ async function theRestart(cells, realm) {
   check("and no session was started at cell A", function () {
     // A name is read without the `__Host-` / `__Secure-` prefix product
     // mode puts on every `sts_` cookie (common/cookie_wire.ts).
+    //
+    // NOR IS `sts_signin_step` A SESSION (#1487). In product the screen's
+    // own view (`GET /authn-api/pending/{id}`, which `postScreen()` reads
+    // before it posts) leaves the step's id in that short-lived cookie for
+    // the Kerberos button and the federation links, which carry no header
+    // (common/step_address.ts). It names cell A's pending sign-in and no
+    // person, so it is not what this check is about; anything else is.
     assert.deepStrictEqual(posted.set.map(function (n) {
       return n.replace(/^__(Host|Secure)-/, "");
+    }).filter(function (n) {
+      return n !== "sts_signin_step";
     }), ["sts_cell"],
       "the restart set " + JSON.stringify(posted.set));
   });

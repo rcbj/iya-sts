@@ -216,7 +216,7 @@ function resolve() {
     log.debug("Leaving resolve(). Auto: off.");
     return { mode: 'off',
              why: 'cluster.mode is auto, which is off outside product mode ' +
-                  'on a postgres store' };
+                  'on a database store' };
   }
   if (!storeModes.isDatabase(store)) {
     log.debug("Leaving resolve(). Refused: no database store.");

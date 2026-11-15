@@ -191,7 +191,6 @@ crates/sts-cluster/src/scheduler/history.rs history_plan
 crates/sts-cluster/src/scheduler/history.rs purge_history
 crates/sts-cluster/src/scheduler/history.rs register_history_job
 crates/sts-cluster/src/scheduler/history.rs to_json
-crates/sts-cluster/src/scheduler/report.rs find_run
 crates/sts-cluster/src/scheduler/report.rs iso
 crates/sts-cluster/src/scheduler/report.rs recent_runs
 crates/sts-cluster/src/scheduler/report.rs run_view
@@ -706,9 +705,6 @@ crates/sts-http/src/csp.rs framed_content_security_policy
 crates/sts-http/src/csp.rs not_a_page_policy
 crates/sts-http/src/csp.rs not_a_page_type
 crates/sts-http/src/lib.rs not_found
-crates/sts-mgmt-api/src/gate.rs check
-crates/sts-mgmt-api/src/gate.rs presented_token_of
-crates/sts-mgmt-api/src/gate.rs wanted_audiences
 crates/sts-oauth/src/dpop.rs ath_of
 crates/sts-oauth/src/dpop.rs normalize_htu
 crates/sts-oauth/src/dpop.rs signing_algs

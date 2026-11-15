@@ -21,7 +21,7 @@
 //! entry — and carry no span (rust/DESIGN.md D3, section 4.5).
 
 use crate::ber::{Reader, Writer};
-use crate::fault::{pass_limit, Fault, Outcome};
+use crate::fault::{advanced, Fault, Outcome};
 use crate::js;
 
 /// An attribute: a type and its values' bytes.
@@ -76,16 +76,13 @@ impl Attribute {
         if ber.peek() == Some(0x31) && ber.read_sequence(Some(0x31))?.is_some()
         {
             let end = ber.offset() + ber.length();
-            let limit = pass_limit(ber.buffer().len());
             while ber.offset() < end {
-                if buffers.len() > limit {
-                    return Err(Fault::Stalled);
-                }
-                match ber.read_bytes(0x04)? {
-                    Some(b) => buffers.push(b),
-                    // `readString` answered null without moving: Node
-                    // reads the same bytes again for ever.
-                    None => return Err(Fault::Stalled),
+                let before = ber.offset();
+                let value = ber.read_bytes(0x04)?;
+                // The fork's guard: a `null` read does not move.
+                advanced(ber.offset(), before, "attribute value")?;
+                if let Some(b) = value {
+                    buffers.push(b);
                 }
             }
         }

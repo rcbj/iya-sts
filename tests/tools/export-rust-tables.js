@@ -191,7 +191,46 @@ function algorithmRegistry() {
   };
 }
 
+// THE AUDIT LOG'S VOCABULARY (#444, phase 4): `common/audit.js`'s
+// CATEGORIES, ACTIONS and OUTCOMES, which `sts-audit::vocabulary` reads —
+// the console's filters, the API's `categories` and `actions`, and the
+// category an action is filed under all come from them.
+const AUDIT_DATA = path.join(ROOT, 'rust', 'crates', 'sts-audit', 'tables');
+
+function auditVocabulary() {
+  const audit = require(path.join(ROOT, 'common', 'audit.js'));
+  return JSON.parse(JSON.stringify({
+    categories: audit.CATEGORIES,
+    actions: audit.ACTIONS,
+    outcomes: audit.OUTCOMES
+  }));
+}
+
+// THE MAIL CHANNEL'S MESSAGES (#444, phase 4): `common/mail_templates.ts`'s
+// built-in English templates and categories, every translation file under
+// `common/mail_locales/` as the module reads it, and the catalog tags the
+// language chain is worked out against (`common/locales/catalogs.json`) —
+// what `sts-mail::templates` renders from.
+const MAIL_DATA = path.join(ROOT, 'rust', 'crates', 'sts-mail', 'tables');
+
+function mailTemplates() {
+  const templates = require(path.join(ROOT, 'common', 'mail_templates'));
+  const catalogs = require(path.join(ROOT, 'common', 'locales',
+                                     'catalogs.json'));
+  return JSON.parse(JSON.stringify({
+    layoutId: templates.LAYOUT_ID,
+    common: templates.COMMON,
+    categories: templates.CATEGORIES,
+    builtIn: templates.BUILT_IN,
+    locales: templates.localeFiles(),
+    source: catalogs.source,
+    catalogs: catalogs.catalogs
+  }));
+}
+
 const EXPORTS = [
+  { file: 'mail_templates.json', dir: MAIL_DATA, build: mailTemplates },
+  { file: 'audit_vocabulary.json', dir: AUDIT_DATA, build: auditVocabulary },
   { file: 'error_codes.json', build: errorCodes },
   { file: 'settings.json', build: settings },
   { file: 'mode.json', build: modeTable },

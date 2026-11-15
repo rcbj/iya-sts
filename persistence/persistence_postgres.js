@@ -6354,6 +6354,14 @@ function create(options) {
         throw last;
       };
       const transactionBody = function (client) {
+        // A DEADLOCK RETRY RUNS THIS BODY AGAIN (`retryingConflicts()`)
+        // without coming back through `attempt()`, so what a rolled-back
+        // attempt decided is forgotten here, on both engines (2026-11-14).
+        // `pendingLost` always was; `outcomes` was not, and an outcome the
+        // rolled-back attempt read from an older row was applied to the live
+        // directory and the shadow after the attempt that committed.
+        outcomes.length = 0;
+        pendingLost.length = 0;
         if (directoryStore) {
           // MARIADB'S FLUSH (#677): the same locks, merge, writes, claims and
           // change rows, and the key rows and counts this engine keeps in

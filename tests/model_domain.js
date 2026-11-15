@@ -168,6 +168,14 @@ function declarations(t) {
       fs.readFileSync(committed, 'utf8') !==
       fs.readFileSync(path.join(rustTree, rel), 'utf8');
   });
+  // sts-registers' SCHEMA tables (#444, phase 4), written by the same
+  // script from the same objects.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-registers',
+    'src', 'generated', 'schemas.rs'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'schemas.rs'),
+      'utf8'),
+  'rust/crates/sts-registers/src/generated/schemas.rs is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   t.check(differ.length === 0, 'every generated Rust file under ' +
     'rust/crates/ is what the model generates ' +
     '(tests/tools/regenerate-model-docs.sh): ' +
@@ -201,6 +209,19 @@ function declarations(t) {
       'utf8'),
   'rust/crates/sts-store/src/generated/persistence.rs is what the model ' +
     'generates (tests/tools/regenerate-model-docs.sh)');
+  // sts-mgmt-api's copy (#444, phase 4): the operation enum its router is
+  // an exhaustive match over, and the documents it validates against.
+  [['mgmt_operations.rs', 'operations.rs'],
+   ['openapi.management.json', 'openapi.management.json'],
+   ['openapi.console.json', 'openapi.console.json'],
+   ['openapi.every.json', 'openapi.every.json']].forEach(function (pair) {
+    const built = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      pair[0]), 'utf8');
+    t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-mgmt-api',
+      'src', 'generated', pair[1]), 'utf8') === built,
+    'rust/crates/sts-mgmt-api/src/generated/' + pair[1] + ' is what the ' +
+      'model generates (tests/tools/regenerate-model-docs.sh)');
+  });
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

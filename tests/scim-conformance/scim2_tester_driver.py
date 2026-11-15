@@ -22,8 +22,11 @@ Arguments come from the environment so no token is on a command line:
                   "1" in product mode: Users are created with a name, as
                   the realm's attribute policy requires (the fourth
                   adaptation, below).
+  SCIM_HOME_CELL  in a service deployed as cells, the id of the cell the
+                  job addresses: every homeCell the harness sends (the
+                  fifth adaptation, below). Unset elsewhere.
 
-It adapts what scim2-tester SENDS in four places, each argued where it is
+It adapts what scim2-tester SENDS in five places, each argued where it is
 made below, and never what it checks.
 """
 
@@ -84,9 +87,48 @@ def real_link(link):
     return link
 
 
+# THE FIFTH, for this service's own extension's `homeCell` (#98), and only
+# in a service deployed as cells: the harness fills the write-only string
+# with a uuid4(), and a cell id this service does not have is refused 400
+# invalidValue (STS-CELL-0140) at a create, and a different one 400
+# mutability (STS-CELL-0145) at a PUT or PATCH -- both RFC 7644 section 3.12
+# errors, as they should be. GitHub Actions run 43642810770's cells mode
+# stopped nine User checks there, the create, list and query checks among
+# them. The only valid values are the cell ids, which no document a client
+# reads names (a cell is a routing fact), so a harness cannot learn one. The
+# job names the cell it addresses, which is also the realm's default home,
+# so the person is homed where an absent homeCell would have put them, and
+# every check behind the create runs. A single-cell service ignores
+# homeCell and the job sets nothing.
+HOME_CELL = os.environ.get("SCIM_HOME_CELL", "")
+
+
+def is_home_cell(text):
+    return text.lower().replace("_", "").endswith("homecell")
+
+
+def real_home(value):
+    """Put the job's cell into a homeCell this value carries: on the value
+    itself (the extension object) or one level down (a User holding it)."""
+    if not HOME_CELL or value is None:
+        return value
+    for holder in [value] + [getattr(value, f, None) for f in
+                             list(getattr(type(value), "model_fields", {})
+                                  or {})]:
+        for field in list(getattr(type(holder), "model_fields", {}) or {}):
+            if (is_home_cell(field) and
+                    getattr(holder, field, None) is not None):
+                setattr(holder, field, HOME_CELL)
+    return value
+
+
 def generate_named_value(context, path, mutability=None, required=None):
     value = _generate(context, path, mutability=mutability, required=required)
     text = str(path)
+    if HOME_CELL and is_home_cell(text) and isinstance(value, str):
+        return HOME_CELL
+    if HOME_CELL and hasattr(type(value), "model_fields"):
+        return real_home(value)
     if text.endswith("userName") and isinstance(value, str):
         return "s2t-" + value
     if text.endswith("members") and isinstance(value, list):
@@ -135,6 +177,25 @@ def fill_with_policy_names(context, obj, paths=None, mutability=None,
 
 if os.environ.get("SCIM_POLICY_NAMES") == "1":
     filling.fill_with_random_values = fill_with_policy_names
+
+# The fifth adaptation's half for a resource filled whole: whatever filled
+# it, its homeCell is the job's cell.
+_filled = filling.fill_with_random_values
+
+
+def fill_with_home_cell(context, obj, paths=None, mutability=None,
+                        required=None):
+    return real_home(_filled(context, obj, paths=paths,
+                             mutability=mutability, required=required))
+
+
+if HOME_CELL:
+    filling.fill_with_random_values = fill_with_home_cell
+    for _name, _module in list(sys.modules.items()):
+        if (_name.startswith("scim2_tester") and
+                getattr(_module, "fill_with_random_values", None) in
+                (_fill, _filled)):
+            _module.fill_with_random_values = fill_with_home_cell
 
 # Every module that imported the function by name holds its own reference,
 # so each is pointed at the wrapper, not only `filling`.

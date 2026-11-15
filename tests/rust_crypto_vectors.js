@@ -45,14 +45,48 @@ function read(name) {
 }
 
 /**
- * The Kerberos codec's checks first (they need no other Rust vector), then
- * the signing and encryption ones.
+ * The audit log's and the mail channel's checks, then the Kerberos codec's
+ * (none needs another Rust vector), then the signing and encryption ones.
  *
  * @param {any} t - the runner's check collector
  * @returns {Promise<void>|undefined} when the asynchronous checks are done
  */
 function run(t) {
   log.debug("Entering run().");
+  log.debug("Leaving run(). The audit and mail checks are asynchronous.");
+  // The audit log's and the mail channel's (#444, phase 4) first: each
+  // half checks only what Rust wrote (tests/tools/auditmail-vectors.js).
+  return require('./tools/auditmail-vectors.js').fromRust(t, VECTORS)
+    .then(function () {
+      return runKerberos(t);
+    });
+}
+
+/**
+ * The Kerberos codec's checks, then the rest.
+ *
+ * @param {any} t - the runner's check collector
+ * @returns {Promise<void>|undefined} when the asynchronous checks are done
+ */
+function runKerberos(t) {
+  log.debug("Entering runKerberos().");
+  // The named policies' (#444 phase 4), which need no key and so no other
+  // set: `tests/tools/policy-vectors.js` holds what the sts-policy crate
+  // answered to Node's answers, and its generated passwords to Node's
+  // password policy.
+  if (fs.existsSync(path.join(VECTORS, 'policy-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'policy-node.json'))) {
+    require('./tools/policy-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('policy-rust.json'),
+      read('policy-node.json'), function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
+  // The registers' role entries (#444, phase 4), which need no other set.
+  if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
+    registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,
+      'registers-rust.json'), 'utf8')));
+  }
   // The directory's wire layer (sts-ldap): synchronous, and it needs no
   // other Rust vector.
   if (fs.existsSync(path.join(VECTORS, 'ldap-wire-rust.json'))) {
@@ -62,15 +96,81 @@ function run(t) {
         t.check(ok, what);
       });
   }
+  // The management API (sts-mgmt-api, #444 phase 4): synchronous, and it
+  // needs no other Rust vector.
+  if (fs.existsSync(path.join(VECTORS, 'mgmt-api-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'mgmt-api-node.json'))) {
+    require('./tools/mgmt-api-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('mgmt-api-rust.json'),
+      read('mgmt-api-node.json'),
+      function (/** @type {boolean} */ ok, /** @type {string} */ what,
+                /** @type {string} */ detail) {
+        t.check(ok, what, detail);
+      });
+  }
+  // The directory's model and operations (sts-directory): what it ended
+  // with, read by Node's DomainMap. Synchronous too.
+  if (fs.existsSync(path.join(VECTORS, 'directory-rust.json'))) {
+    require('./tools/directory-vectors.js').checkRust(t,
+      read('directory-rust.json'));
+  }
   if (!fs.existsSync(path.join(VECTORS, 'krb5-codec-rust.json'))) {
-    log.debug("Leaving run(). No Kerberos vectors.");
+    log.debug("Leaving runKerberos(). No Kerberos vectors.");
     return runSigned(t);
   }
-  log.debug("Leaving run(). The Kerberos checks are asynchronous.");
+  log.debug("Leaving runKerberos(). The Kerberos checks are " +
+            "asynchronous.");
   return krb5CodecFromRust(t, read('krb5-codec-rust.json'))
     .then(function () {
       return runSigned(t);
     });
+}
+
+/**
+ * THE ROLE ENTRIES `sts-registers` WROTE (#444, phase 4), read back by
+ * Node's own role register: each entry is handed to `common/roles.js` as
+ * the whole of `ou=roles`, and Node's row for it must be the row Rust read
+ * from it — so an entry the Rust runtime writes is one the Node service
+ * (and an upgrade's either side) reads the same.
+ *
+ * @param {any} t - the runner's check collector
+ * @param {any} v - registers-rust.json
+ */
+function registersFromRust(t, v) {
+  log.debug("Entering registersFromRust().");
+  const roles = require('../common/roles');
+  const before = roles.directoryInstalled();
+  try {
+    (v.roles || []).forEach(function (one) {
+      roles.setDirectory({
+        allRoles: function () {
+          return [one.entry];
+        },
+        writeRole: function () {
+          return true;
+        },
+        deleteRole: function () {
+          return false;
+        },
+        resolveOwner: function () {
+          return { kind: '', dn: '', name: '' };
+        },
+        groupsOfUser: function () {
+          return [];
+        },
+        ensureGroup: function () {
+          return { ok: true };
+        }
+      });
+      const row = roles.read(one.entry.name);
+      t.check(JSON.stringify(row) === JSON.stringify(one.row),
+              'the role entry sts-registers wrote for "' + one.entry.name +
+              '" reads back in Node as Rust read it');
+    });
+  } finally {
+    roles.setDirectory(before);
+  }
+  log.debug("Leaving registersFromRust().");
 }
 
 /**
@@ -771,6 +871,7 @@ module.exports = {
             'with, and every XML Encryption cipher, transport and ' +
             'agreement — and what sts-kerberos made is read by the ' +
             'Kerberos codec, and what sts-ldap made is answered by ' +
-            'node-ldapjs as by Rust',
+            'node-ldapjs as by Rust, and what sts-directory ended with ' +
+            'is read by Node\'s DomainMap',
   run: run
 };

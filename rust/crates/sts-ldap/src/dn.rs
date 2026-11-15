@@ -19,8 +19,9 @@
 //!   NOT `\` or `=`, so `cn=back\\slash` prints as `cn=back\slash`;
 //! * compares names and values case-sensitively, and a `#…` value equal
 //!   to nothing (it is an object, compared by identity);
-//! * never finishes on a hex value followed by a space and anything but
-//!   `+ , ;` (`cn=#4142 x`): that is [`Fault::Stalled`] here.
+//! * skips spaces between a `#…` value (which ends at a space) and the
+//!   separator, and throws on anything else there (`cn=#4142 x`): the
+//!   `rcbj/node-ldapjs` fork's fix (#1784) of a loop that never finished.
 //!
 //! Its functions are a hot path — every DN of every request — and carry
 //! no span (rust/DESIGN.md D3, section 4.5).
@@ -503,18 +504,36 @@ impl Dn {
                 rdns.push(rdn);
                 break;
             }
-            match p.at(pos) {
-                Some(0x2b) => {
-                    pos += 1;
-                    continue 'rdns;
+            // The fork's inner loop (`iya-sts:` in `parse-string/index.js`):
+            // a separator, a space before one, or a throw. `pos < length`
+            // holds on every pass, so a byte is always there.
+            loop {
+                match p.at(pos) {
+                    Some(0x2b) => {
+                        pos += 1;
+                        continue 'rdns;
+                    }
+                    Some(0x2c | 0x3b) => {
+                        rdns.push(std::mem::take(&mut rdn));
+                        pos += 1;
+                        continue 'rdns;
+                    }
+                    Some(0x20) => {
+                        pos += 1;
+                        if pos == length {
+                            rdns.push(std::mem::take(&mut rdn));
+                            break 'rdns;
+                        }
+                    }
+                    // `String.fromCharCode()` of the byte: Latin-1.
+                    c => {
+                        return Err(Fault::thrown(format!(
+                            "unexpected character after attribute value at \
+                             position {pos}: {}",
+                            char::from(c.unwrap_or(0))
+                        )))
+                    }
                 }
-                Some(0x2c | 0x3b) => {
-                    rdns.push(std::mem::take(&mut rdn));
-                    pos += 1;
-                    continue 'rdns;
-                }
-                // Node's inner loop has no way out for any other byte.
-                _ => return Err(Fault::Stalled),
             }
         }
         let rdns = rdns
@@ -600,6 +619,19 @@ mod tests {
             Dn::parse("1=a+cn=b+0=c").unwrap().to_text(),
             "0=c+1=a+cn=b"
         );
-        assert_eq!(Dn::parse("cn=#4142 ,o=x"), Err(Fault::Stalled));
+        assert_eq!(
+            Dn::parse("cn=#4142 ,o=x").unwrap().to_text(),
+            "cn=#4142,o=x"
+        );
+        assert_eq!(
+            Dn::parse("cn=#4142  ").unwrap().to_text(),
+            Dn::parse("cn=#4142").unwrap().to_text()
+        );
+        assert_eq!(
+            Dn::parse("cn=#4142 x"),
+            Err(Fault::thrown(
+                "unexpected character after attribute value at position 9: x"
+            ))
+        );
     }
 }

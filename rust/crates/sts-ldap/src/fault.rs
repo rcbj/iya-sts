@@ -1,8 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
-//! What a decoder or encoder gives up with: node-ldapjs's exception, or
-//! the loop it never leaves.
+//! What a decoder or encoder gives up with: node-ldapjs's exception.
 //!
 //! node-ldapjs throws (an `Error`, a `TypeError` from reading a property
 //! of `null`, an `InvalidAsn1Error`), and the server's answer to a thrown
@@ -11,12 +10,13 @@
 //! a [`Fault::Thrown`] carries V8's sentence, ported where the vectors
 //! show it.
 //!
-//! Several of its loops read a field, find it short, return `null` without
-//! advancing, and read it again forever — on Node that wedges the event
-//! loop, and with it every connection of every protocol the process
-//! serves. Rust never loops: it reports [`Fault::Stalled`] where Node
-//! would hang, and the front treats it as a destroyed connection. That
-//! difference is deliberate; `tests/node_vectors.rs` pins every case.
+//! Every SEQUENCE OF it reads is a `while (ber.offset < end)` loop over a
+//! length the peer sent, and a read that cannot be satisfied answers
+//! `null` without moving. Until the `rcbj/node-ldapjs` fork's fix (#1784)
+//! such a loop read the same bytes for ever, which wedged the whole Node
+//! process, and this crate answered a `Stalled` fault there instead. The
+//! fork now throws when an iteration does not advance — [`advanced`] —
+//! so Rust and Node agree again: the connection is destroyed.
 //!
 //! Its functions are a hot path — every refusal of every decode — and
 //! carry no span (rust/DESIGN.md D3, section 4.5).
@@ -28,8 +28,6 @@ use std::fmt;
 pub enum Fault {
     /// What node-ldapjs throws, with its message.
     Thrown(String),
-    /// Where node-ldapjs loops without end.
-    Stalled,
 }
 
 impl Fault {
@@ -52,11 +50,10 @@ impl Fault {
         ))
     }
 
-    /// The message, or `"stalled"`.
+    /// The message.
     pub fn message(&self) -> &str {
         match self {
             Fault::Thrown(m) => m,
-            Fault::Stalled => "stalled",
         }
     }
 }
@@ -72,13 +69,17 @@ impl std::error::Error for Fault {}
 /// What a decoder answers.
 pub type Outcome<T> = Result<T, Fault>;
 
-/// How many passes a loop that must consume input may make over a buffer
-/// of `size` bytes before it is taken to be Node's endless one. Every pass
-/// of a loop that ends reads at least one byte, so a bounded buffer cannot
-/// need more than this; a pass that reads nothing, or a field length that
-/// sends the offset backwards into a cycle, can.
-pub fn pass_limit(size: usize) -> usize {
-    size.saturating_mul(4).saturating_add(64)
+/// The fork's guard on a SEQUENCE OF loop (`iya-sts:` in
+/// `node-ldapjs/packages/*`): an iteration that left the offset at or
+/// before `before` is malformed BER, `Error('malformed <what> at offset
+/// <before>')`. Every such loop calls this after its read, as Node does.
+pub fn advanced(after: i64, before: i64, what: &str) -> Outcome<()> {
+    if after <= before {
+        return Err(Fault::thrown(format!(
+            "malformed {what} at offset {before}"
+        )));
+    }
+    Ok(())
 }
 
 /// How deep a filter may nest before Rust refuses it. Node recurses until

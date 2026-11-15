@@ -9100,6 +9100,53 @@ hand-over still holds; what changed is the storage and the lifecycle.
   TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
   nothing under is `STS-PKI-0224`.
 
+## 3de. `signature_policy.ts`: which algorithm a realm signs with and accepts (#1368)
+
+**One question had three answers.** `crypto.js` refused a post-quantum JWS in
+`prepareVerification()` and nowhere else, `helpers.js` applied the lists in
+`signJwtAs()` and not `signJwt()`, and each publisher narrowed its own list. So
+every door now asks `SignaturePolicy`, and each surface has one chokepoint:
+
+| Surface | Accept | Sign |
+|---|---|---|
+| `jose` | `refuseUnacceptableJws()`, from `prepareVerification()` and `jwsSignatureValid()` | `signatureRefusal()`, from `signJwt()`, `signJwtAs()` and their twins |
+| `httpsig` | `httpsigVerifyOne()` | `signHttpMessage()` |
+| `cose` | `refuseUnacceptableCose()`, from `coseSign1Verify()` and its twin | `coseSpecToSign()` |
+| `xml` | `xmlAlgorithmVerdict()` | `signXml()`, `signQueryString()` |
+| `di` | `VcDataIntegrity.verifyBytes()`, and `verifyLdpVc()` for bbs-2023 | `VcDataIntegrity.signBytes()`, and the `ldp_vc` issuer for bbs-2023 |
+| `x509` | `pathRuleProblem()`, whose `unaccepted-signature` has a row in `certificate_trust.ts`'s tables | none: `pki.*` settings choose, and a running hierarchy depends on them |
+
+**Four things a reader would otherwise "fix":**
+
+* **`signJws()` IS NOT A CHOKEPOINT.** The DID, status-list and trust-list signers
+  sign with keys their own documents publish, and a refusal that low would move
+  what they do by default. A signer asks where it CHOOSES its algorithm.
+* **`verifyCoseSignature()` IS NOT ONE EITHER.** Passkeys and attestation statements
+  go through it and sign no Sig_structure, and WebAuthn keeps its own two lists.
+  `coseSign1Sign()` and `coseSign1Verify()` are the door, for mdoc and the CWTs.
+* **THE FAMILY SWITCHES STAY NARROW.** `keys.postQuantumSigning` covers JOSE and
+  JWS-named HTTP signatures, as its row says; widened to every surface, a realm with
+  it off would refuse its own post-quantum CA. `keys.eddsaSigning` is JOSE signing
+  only.
+* **AN EMPTY LIST MEANS TODAY, NOT THE REGISTRY'S ORDER.** Post-quantum signing is on
+  by default, so preference order as the default would move every signature to
+  ML-DSA and reorder discovery. `crypto_impl/CLAUDE.md` has the two orders.
+
+**What is published reads the same answers**, through `helpers.narrowSigningAlgs()`
+and `narrowAcceptedLists()`. With nothing configured they leave a document alone,
+which is what keeps certified output still. `tests/signature_policy_metadata.js`
+holds that against pins **taken from HTTP output captured before they existed**, so
+it cannot be satisfied by the new code agreeing with itself. A pin moving is a
+certification question.
+
+**SAML's `alg:SigningMethod` says what this realm can VERIFY**, not what it signs
+with: section 2.4 of the profile. It is the one deliberate change to a default,
+rcbj's decision.
+
+**A guard to know about**: `tests/jose_certificate_header.js` reads three lines
+above a signing call for its `certificate-header: none` comment, so code put between
+the two fails it. That happened twice on #1368. Put it above the comment.
+
 ## 3dd. `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` SECTION 18: PARANOID PKI MODE (#1360, 2026-11-06)
 
 **Every X.509 certificate this service relies on goes through one door with a
@@ -13273,7 +13320,7 @@ SCIM client across cells*):
 | Module | What it is |
 |---|---|
 | `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |
-| `cell_channel.ts` | Mutual TLS 1.3 on `cells.port`, in the front process; both sides present a short-lived leaf from the process branch's `cell` Issuing CA (`pki.js`), and a peer is a cell only when its chain verifies to the Root AND its issuer is that CA AND its `urn:sts:cell:` name is a peer. JSON operations modules register (`registerOp()` / `call()`), and the relay of a whole request (`relay()`). A relayed request is served by the public app as the client's own: the client's address, TLS fingerprint and certificate travel in `x-sts-cell-*` headers the sender strips from the client and the receiver reads only from a peer, and the socket is shimmed as a request worker's is — the peer cell's leaf is never read as the caller's certificate. One hop. A cell that cannot be reached is answered 503 (D6, fail-closed). |
+| `cell_channel.ts` | Mutual TLS 1.3 on `cells.port`, in the front process; both sides present a short-lived leaf from the process branch's `cell` Issuing CA (`pki.js`), and a peer is a cell only when its chain verifies to the Root AND its issuer is that CA AND its `urn:sts:cell:` name is a peer. JSON operations modules register (`registerOp()` / `call()`), and the relay of a whole request (`relay()`). A relayed request is served by the public app as the client's own: the client's address, TLS fingerprint and certificate travel in `x-sts-cell-*` headers the sender strips from the client and the receiver reads only from a peer, and the socket is shimmed as a request worker's is — the peer cell's leaf is never read as the caller's certificate. One hop. A cell that cannot be reached is answered 503 (D6, fail-closed). **The listener asks its own leaf on every handshake (SNICallback, 2026-11-14)**: a leaf from a branch this process no longer holds is minted again before the handshake answers, and while a replaced Root's process branch has not arrived the leaf held is kept, by the handshake and by `ensureLeaf()` alike, because minting goes through `issueUnder()`, which repairs a stale branch, and the `pki.build` claim is per cell. `tests/cell_channel_hierarchy.js`. |
 | `cell_locator.ts` | Twelve base64url characters appended to an artifact — 72 bits of an HMAC of the minting cell under the service key — and read back by trying each cell's tag (D10). No separator, so no validation pattern changes; nothing readable names a cell. |
 | `cell_routing.ts` | Where a person is homed: resident here (and not a projection), or the global routing index by keyed digest. `claimName()` is the creation's first step. |
 | `cell_placement.ts` | The placement table `ROWS` — a row per route prefix, `local`, `affinity`, `selector`, `artifact`, `bearer` or `handler`, each with its reason — the `sts_cell` affinity cookie that pins a browser (per realm, keyed tags), the edge middleware `app.js` runs above the request pool before any body is read, and the helpers a handler calls with the parsed body (`relayIfElsewhere()`, `relayToHome()`). On a browser row the pin wins over an artifact's tag. `tests/cell_placement.js` holds every route to a row and every handler row to a module that asks. |

@@ -36,11 +36,11 @@
 //! piece is written here, ported from the JavaScript; `ldap3_proto` is a
 //! dev-dependency only, for that comparison.
 //!
-//! Where node-ldapjs NEVER RETURNS — a read that loops for ever on bytes
-//! a client chose, which on Node stops the whole process — this crate
-//! answers [`fault::Fault::Stalled`] and the connection is closed. That is
-//! the one deliberate difference in behaviour, and `tests/node_vectors.rs`
-//! pins it case by case.
+//! Where node-ldapjs NEVER RETURNED — a SEQUENCE OF read that looped for
+//! ever on bytes a client chose, which on Node stopped the whole process —
+//! this crate used to close the connection instead. The `rcbj/node-ldapjs`
+//! fork now throws there too (#1784), so the two agree and
+//! `tests/node_vectors.rs` holds every case to Node's answer.
 
 #![forbid(unsafe_code)]
 

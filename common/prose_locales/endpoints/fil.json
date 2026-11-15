@@ -531,6 +531,10 @@
     "en": "cd6aeb9c9e8ebf8a",
     "text": "Ang stylesheet ng console"
   },
+  "endpoints.route./admin/geo-outlines.json.name": {
+    "en": "54575728e7ed9de1",
+    "text": "Ang mga balangkas ng bansa sa mapa ng console"
+  },
   "endpoints.route./portal.name": {
     "en": "5212610fe0e7c89a",
     "text": "Ang sariling account ng isang tao"

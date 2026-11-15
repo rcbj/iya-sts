@@ -20,6 +20,9 @@
 #     models/lib/rust_lib.mjs's planCrates(): each one's Cargo.toml,
 #     src/lib.rs and src/generated/api.rs)
 #   rust/crates/sts-store/src/generated/persistence.rs
+#   rust/crates/sts-mgmt-api/src/generated/operations.rs and the two
+#     documents /admin-api serves (openapi.{management,console,every}.json)
+#   rust/crates/sts-registers/src/generated/schemas.rs
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #
@@ -55,6 +58,8 @@ docker run --rm --label com.docker.compose.project=none \
      chown -R $(id -u):$(id -g) /out/rust/\${crate} || exit 1; \
    done && \
    cp models/generated/persistence.rs /out/rust-store/ && \
+   cp models/generated/schemas.rs \
+     /out/rust/sts-registers/src/generated/ && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
@@ -63,4 +68,19 @@ docker run --rm --label com.docker.compose.project=none \
      /out/types/domain.generated.d.ts \
      /out/types/api.generated.d.ts \
      /out/common/domain_classes.ts \
-     /out/rust-store/persistence.rs"
+     /out/rust-store/persistence.rs \
+     /out/rust/sts-registers/src/generated/schemas.rs"
+# sts-mgmt-api's copy (#444, phase 4): the operation enum it routes by and the
+# two documents /admin-api serves and validates against, as the image's model
+# build wrote them.
+mkdir -p rust/crates/sts-mgmt-api/src/generated
+docker run --rm --label com.docker.compose.project=none \
+  -v "${PWD}/rust/crates/sts-mgmt-api/src/generated:/out/mgmt" \
+  "${TAG}" bash -c \
+  "cp models/generated/mgmt_operations.rs /out/mgmt/operations.rs && \
+   cp models/generated/openapi.management.json \
+     models/generated/openapi.console.json \
+     models/generated/openapi.every.json /out/mgmt/ && \
+   chown $(id -u):$(id -g) /out/mgmt/operations.rs \
+     /out/mgmt/openapi.management.json /out/mgmt/openapi.console.json \
+     /out/mgmt/openapi.every.json"

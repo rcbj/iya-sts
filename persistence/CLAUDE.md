@@ -282,7 +282,25 @@ cannot have. A key new
 at the lock is "insert or nothing", and one another flush took meanwhile is
 locked and judged. `retryableConflict()` reads `dialect.isRetryable()`, so an
 InnoDB deadlock is run again. A value longer than its MariaDB column is
-refused (STS-STORE-0120), since INSERT IGNORE would truncate it. The expiry
+refused (STS-STORE-0120), since INSERT IGNORE would truncate it.
+**A WRITE NAMES ITS KEYS BY COLUMN EQUALITIES ON MARIADB, NEVER BY A ROW
+CONSTRUCTOR (2026-11-14).** Knex spells `whereIn(['a', 'b'], tuples)` as
+`(a, b) IN ((?, ?), …)`, and MariaDB 11.8 plans a single-table DELETE or
+UPDATE whose WHERE is that with ONE tuple as a FULL TABLE SCAN (EXPLAIN
+`type ALL`, `possible_keys NULL`) though the tuple is the whole primary key;
+the SELECT of the same predicate is `const`. A scanning write at READ
+COMMITTED waits on every row another transaction holds, so every flush that
+removed one session, one key's index rows or one claim queued behind, and
+deadlocked with, every other flush in flight: GitHub Actions run 43642810770's
+mariadb mode retried 3719 transactions and 104 minted flushes ran out of
+retries (STS-STORE-0021, their requests 503 under STS-STORE-0066). Eight
+connections each running 150 flush-shaped transactions on MariaDB 11.8
+deadlocked 796 times with the row constructor and none with equalities.
+`dialect.whereKeys()` (`sql_dialect.js`) writes `(a = ? AND b = ?) OR …` on
+MariaDB and keeps the row constructor on PostgreSQL, whose text is unchanged;
+an empty list stays Knex's `1 = 0`. The flush's three DELETEs,
+`releaseClaims()` and the risk engine's stalled-import UPDATE use it; a new
+key-named write on MariaDB owes it. `tests/mariadb_deadlock_retry.js`. The expiry
 purge's batch is `DELETE … LIMIT n`. **Held whole on MariaDB**: every
 on-demand store, and every session — the driver says `lendsNoBridge`, and
 `authn/session_window.ts` turns the window off for it (`on` is refused),
@@ -315,7 +333,12 @@ stored and asked as `#` + SHA-256. `dek_keys` is never NULL here, so
 `indexSealed()` has nothing to do. An empty store starts at zero counts and
 every MariaDB writer of the table is this library; a table loaded any other
 way is not supported (no backfill). InnoDB's deadlock and lock-wait timeout
-are retried like PostgreSQL's (`retryableConflict()`). The driver's flush
+are retried like PostgreSQL's (`retryableConflict()`). **A retry runs `saveDirectory()`'s
+body again without coming back through `attempt()`, so the body forgets what
+the rolled-back attempt decided** — `pendingLost` always, and since 2026-11-14
+`outcomes` too, on both engines: an outcome read from the older row the failed
+attempt locked was otherwise applied to the live directory and the shadow
+after the attempt that committed. The driver's flush
 also needs `recordChanges()` in MariaDB's text, which is the small-tables
 family's. `tests/directory_portable.js` (A static, C against MariaDB 11.8, D
 the driver's doors) holds it.
@@ -1660,12 +1683,18 @@ the list merge, the session rank).
 
 ### What still does not coordinate
 
-* **The sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's
-  four are bound per process. Coordination is about state.
-* **The replay caches and DPoP `jti` sets CONVERGE rather than synchronise, and
-  that is a security statement.** Between a write in one process and its arrival
-  in another there is a window the size of `persistence.pollInterval` in which a
-  proof one process refused is accepted by another. Sticky sessions close it;
+* **The sockets.** The KDC, both LDAP listeners, the main port and SPIFFE's
+  sockets are bound per process (the two TLS ports were deleted on
+  2026-09-16). Coordination is about state.
+* ~~**The replay caches and DPoP `jti` sets CONVERGE rather than synchronise,
+  and that is a security statement.**~~ **Nothing is left on this line since
+  #46: every single-use value is spent through `cluster/cluster_claims.js`'s
+  atomic claim on a database store**, the Kerberos acceptor's replay cache
+  included (`kerberos.replay-cache`, `kerberos/krb5_service.js`; a replay seen
+  by another node is `KRB_AP_ERR_REPEAT`, `STS-KRB-0116`). The history: between
+  a write in one process and its arrival in another there was a window the size
+  of `persistence.pollInterval` in which a proof one process refused was
+  accepted by another. Sticky sessions close it;
   nothing here does. **The RFC 7523 / RFC 7522 used-assertion history left this
   list on 2026-09-13**: it was three journalled caches and a replay to a second
   worker inside that window was accepted, and it is a table claimed with one
@@ -1673,10 +1702,14 @@ the list merge, the session rank).
   real server: twenty-five concurrent claims of one assertion, one accepted.
   What is left here is the Kerberos acceptor's replay cache and SCIM's Digest
   and HOBA state. **SCIM's Digest and HOBA state left it too on 2026-09-14
-  (#46 section 5)** — `scim/CLAUDE.md`, *Several nodes*. **The DPoP `jti` set left the list on 2026-09-14 (#46)**, with
+  (#46 section 5)** — `scim/CLAUDE.md`, *Several nodes*. **The DPoP `jti` set
+  left the list on 2026-09-14 (#46)**, with
   the authorization code, the PAR `request_uri` and the rotated refresh token:
-  each is spent through `cluster/cluster_claims.js` on a postgres store —
-  `oauth-oidc/CLAUDE.md`, *Several nodes*.
+  each is spent through `cluster/cluster_claims.js` on a database store —
+  `oauth-oidc/CLAUDE.md`, *Several nodes*. **The Kerberos acceptor's replay
+  cache left it in the same change (#46, merged 2026-09-15,
+  `kerberos.replay-cache`)** —
+  `kerberos/CLAUDE.md`.
 * ~~**A realm's signing keys are not adopted mid-life.**~~ **Reversed
   2026-09-14 (#46 section 1)** wherever the store arbitrates (`cluster.mode`
   not `off`): `applyKeysChange()` hands every `keys` change to
@@ -4180,6 +4213,17 @@ per cell. In multi-cell mode the scheduler claims those runs under
 `scheduler.run.global` (`tiers.GLOBAL_RUN_SCOPE`), and the tiered driver keeps
 that scope in the global database (`claimTierOf()`); `purgeClaims()` runs on
 both. A new job that writes global state belongs on that list.
+
+**AND `pki.js`'s BUILD CLAIM IS THE GLOBAL TIER'S TOO (2026-11-14)**
+(`tiers.PKI_BUILD_SCOPE`, `pki.build`). Every certificate authority row is
+`sts_keys`, a global table, so the builders `oneBuildInTheCluster()` must
+exclude are every cell's. Kept in the cell's database it excluded one cell's
+processes only, two cells each built a branch of one realm, and the row's
+first-writer-wins merge was the only arbiter: GitHub Actions run 43642810770's
+`cells` mode published two Intermediates, two JOSE and two XML Signing CAs of
+one name in three realms (`sts_pki_distribution_points`). A new claim scope
+that guards a write to a global table belongs in `GLOBAL_CLAIM_SCOPES`.
+`tests/cell_tiers.js` (`pkiBuildClaim()`).
 
 **SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
 key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives

@@ -1557,6 +1557,169 @@ function renderUnions(unions) {
 }
 
 // ---------------------------------------------------------------------------
+// THE MANAGEMENT API'S OPERATIONS AS A RUST ENUM (#444, phase 4, the
+// `mgmtapi` slice). `sts-mgmt-api` routes by it: its handler table is an
+// exhaustive `match` over every variant, so an operation the model adds
+// does not compile until it is routed or listed as not yet ported, and a
+// route can only name an operation the model has.
+// ---------------------------------------------------------------------------
+/**
+ * Every operation of the Management API OpenAPI document and the Admin
+ * Console API OpenAPI document, as `sts-mgmt-api`'s `Operation` enum and
+ * its table, in each document's path order.
+ *
+ * @param served - the documents, by name
+ * @returns the text of `rust/crates/sts-mgmt-api/src/generated/operations.rs`
+ */
+export function renderRustManagementOperations(served) {
+  log.debug("Entering renderRustManagementOperations().");
+  const rows = [];
+  ['management', 'console'].forEach(function (name) {
+    const document = served[name];
+    if (!document) {
+      log.debug("Leaving renderRustManagementOperations(). No " + name +
+                " document.");
+      throw new Error('The model has no ' + name + ' document.');
+    }
+    Object.keys(document.paths || {}).forEach(function (path) {
+      Object.keys(document.paths[path]).forEach(function (method) {
+        const operation = document.paths[path][method];
+        if (!operation || typeof operation !== 'object' ||
+            !operation.operationId) {
+          return;
+        }
+        rows.push({ kind: name, method: method.toUpperCase(), path: path,
+                    id: operation.operationId,
+                    variant: pascal(operation.operationId) });
+      });
+    });
+  });
+  const variants = distinct(rows.map(function (one) {
+    return one.variant;
+  }));
+  const lines = HEADER.concat([
+    '// GENERATED from models/api/ (#1390, #444). Do not edit: change the',
+    '// model and run tests/tools/regenerate-model-docs.sh.',
+    '// tests/model_domain.js fails when this differs.', '',
+    '// Every operation of the two documents /admin-api serves, in each',
+    '// document\'s path order. Included by sts-mgmt-api\'s operations.rs.', '',
+    '/// One operation of the Management API or Admin Console API OpenAPI',
+    '/// document, by its operationId.',
+    '#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]',
+    'pub enum Operation {']);
+  rows.forEach(function (one, index) {
+    lines.push('    /// `' + one.method + ' ' + one.path + '`');
+    lines.push('    ' + variants[index] + ',');
+  });
+  lines.push('}', '', '/// The table: one row per operation.',
+    'pub const OPERATIONS: &[OperationRow] = &[');
+  rows.forEach(function (one, index) {
+    lines.push('    OperationRow { operation: Operation::' + variants[index] +
+      ', id: ' + literal(one.id) + ', method: ' + literal(one.method) +
+      ', path: ' + literal(one.path) + ', kind: Kind::' +
+      (one.kind === 'console' ? 'Console' : 'Management') + ' },');
+  });
+  lines.push('];', '');
+  log.debug("Leaving renderRustManagementOperations(). " + rows.length +
+            " operation(s).");
+  return lines.join('\n');
+}
+
+// THE DIRECTORY'S OWN TABLES, FOR `sts-directory` (#444, phase 4).
+//
+// `ldap/ldap_server.js` and `common/domain_map.ts` read seven generated
+// tables: the name lists (`directory.names.json`), the facts and links
+// (`directory.facts.json`, `directory.links.json`), every authored object's
+// `<id>.schema.json` and `<id>.fields.json`, and the concepts
+// (`domain.json`). The Rust directory reads the SAME tables, bundled into one
+// file so the crate carries one include and one drift check: each member is
+// exactly what the build writes to the file it is named after, and nothing
+// is derived here. Committed as
+// `rust/crates/sts-directory/src/generated/directory.json` by
+// tests/tools/regenerate-model-docs.sh and held there by tests/model_domain.js.
+// ---------------------------------------------------------------------------
+
+/**
+ * The directory's generated tables, bundled for the Rust directory.
+ *
+ * @param tables - `{ names, facts, links, concepts, schemas, fields }`, each
+ *   what generate.mjs writes: `schemas` and `fields` by object id
+ * @returns the text of `rust/crates/sts-directory/src/generated/
+ *   directory.json`
+ */
+export function renderRustDirectory(tables) {
+  log.debug("Entering renderRustDirectory().");
+  const sorted = function (byId) {
+    const out = {};
+    Object.keys(byId || {}).sort().forEach(function (id) {
+      out[id] = byId[id];
+    });
+    return out;
+  };
+  const bundle = {
+    generated: 'models/ (#1390, #444). Do not edit: change the model and ' +
+      'run tests/tools/regenerate-model-docs.sh.',
+    names: tables.names,
+    facts: tables.facts,
+    links: tables.links,
+    schemas: sorted(tables.schemas),
+    fields: sorted(tables.fields),
+    concepts: tables.concepts
+  };
+  log.debug("Leaving renderRustDirectory().");
+  return JSON.stringify(bundle, null, 1) + '\n';
+}
+
+// The directory objects' tables, for sts-registers (#444, phase 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the SCHEMA table of every object written by hand — its object
+ * classes, its container and each attribute with its kind — as Rust, for
+ * `rust/crates/sts-registers`. The Node registers read the same table from
+ * `models/generated/<id>.schema.json` (`ModelTables.schema()`); an entry the
+ * Rust register builds is built from these rows, so the two cannot name a
+ * different object class or a different attribute.
+ *
+ * @param objects - the objects `readDirectory()` read
+ * @param schemaOf - model_lib's `schemaOf()`
+ * @returns the Rust source
+ */
+export function renderRustSchemas(objects, schemaOf) {
+  log.debug("Entering renderRustSchemas().");
+  const lines = HEADER.concat([
+    '// GENERATED from models/directory/ (#1390, #444). Do not edit: change',
+    '// the model and run tests/tools/regenerate-model-docs.sh.',
+    '// tests/model_domain.js fails when this differs.', '',
+    '// Every hand-written directory object\'s SCHEMA table, as',
+    '// `models/generated/<id>.schema.json` holds it for the Node service.',
+    '// Included by sts-registers\' schema.rs.', '',
+    'pub static SCHEMAS: &[ObjectSchema] = &[']);
+  objects.filter(function (object) {
+    return object.authored === true;
+  }).forEach(function (object) {
+    const schema = schemaOf(object);
+    lines.push('    ObjectSchema {');
+    lines.push('        id: ' + literal(object.id) + ',');
+    lines.push('        container: ' + literal(object.container || '') + ',');
+    lines.push('        object_classes: &[' + schema.objectClasses
+      .map(function (one) {
+        return literal(one.name);
+      }).join(', ') + '],');
+    lines.push('        attributes: &[');
+    (schema.attributes || []).forEach(function (row) {
+      lines.push('            AttributeRow { name: ' + literal(row.name) +
+        ', kind: ' + literal(row.kind || '') + ' },');
+    });
+    lines.push('        ],');
+    lines.push('    },');
+  });
+  lines.push('];', '');
+  log.debug("Leaving renderRustSchemas().");
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // The persistence model (#444, phase 3).
 // ---------------------------------------------------------------------------
 
@@ -1636,4 +1799,42 @@ export function renderRustPersistence(postgres, mariadb) {
   });
   log.debug("Leaving renderRustPersistence().");
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// THE POLICY KINDS' TABLES, FOR `sts-policy` (#444 phase 4, the policy slice).
+//
+// Each kind on Directory > Policies reads its rows from the model at load
+// (`ModelTables.fields()`, `.selectors()`, `.schema()`, `.facts()`); the Rust
+// port reads the SAME tables, as one JSON document committed at
+// `models/generated/rust/sts-policy/src/generated/policy_tables.json`,
+// which tests/tools/regenerate-model-docs.sh copies into rust/crates/ with
+// the rest of the Rust tree and tests/model_domain.js holds there. What the Node module computes and passes in (a
+// limit `crypto.js` owns, the computed rows) is the Rust module's own, as it
+// is the Node module's.
+// ---------------------------------------------------------------------------
+/**
+ * The policy objects' tables, by object id.
+ *
+ * @param objects - every directory object `readDirectory()` read
+ * @param schemaOf - model_lib's `schemaOf()`
+ * @param fieldsOf - model_lib's `fieldsOf()`
+ * @param facts - model_lib's `factsOf()` of every object
+ * @returns the JSON text
+ */
+export function renderRustPolicyTables(objects, schemaOf, fieldsOf, facts) {
+  log.debug("Entering renderRustPolicyTables().");
+  const out = {};
+  objects.filter(function (object) {
+    return object.authored === true && /^policy\./.test(object.id);
+  }).sort(function (a, b) {
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  }).forEach(function (object) {
+    const declared = fieldsOf(object);
+    out[object.id] = { schema: schemaOf(object), fields: declared.fields,
+                       selectors: declared.selectors,
+                       facts: facts[object.id] || {} };
+  });
+  log.debug("Leaving renderRustPolicyTables(). " + Object.keys(out).length);
+  return JSON.stringify(out, null, 1) + '\n';
 }

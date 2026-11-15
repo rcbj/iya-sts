@@ -9,7 +9,9 @@
 //! plan, the status (whole and confined to a realm), recent runs by
 //! filter, a run by id, each row's expiry, and a purge in small batches —
 //! what it removed, what it pinned, what is left and what was written down
-//! between batches — must all be Node's.
+//! between batches — must all be Node's. So must a run by id that only the
+//! DURABLE store holds (`foundStored`, develop 3171d0aa8): the run a dead
+//! node left, found by one by-id read per realm, and the reads asked.
 //!
 //! The directory is `STS_CRYPTO_VECTORS`, never committed; with it unset
 //! this test says so and passes.
@@ -25,8 +27,8 @@ use sts_cluster::schedule::{
     BoxFuture, JobSpec, Kind, Schedule, SchedulerSettings, Schedules, Scope,
 };
 use sts_cluster::scheduler::{
-    Audit, Claim, ClaimRefused, Claims, Clock, Cluster, Deps, LeaseHandler,
-    Realms, RunRows, Scheduler,
+    Audit, Claim, ClaimRefused, Claims, Clock, Cluster, Deps, Extras,
+    LeaseHandler, Realms, RunHistory, RunRows, Scheduler,
 };
 use sts_core::realm::Realm;
 
@@ -157,6 +159,80 @@ impl Clock for World {
         let now = self.now;
         Box::pin(async move { Ok(now) })
     }
+}
+
+/// A second scheduler's own rows and its durable store, for `findRun()`'s
+/// store read (`foundStored` in the vectors).
+struct Stored {
+    own: Mutex<IndexMap<String, IndexMap<String, Json>>>,
+    durable: Json,
+    reads: Mutex<Vec<String>>,
+    no_store: Mutex<bool>,
+}
+
+impl RunRows for Stored {
+    fn get(&self, realm: &str, key: &str) -> Option<Json> {
+        self.own.lock().unwrap().get(realm)?.get(key).cloned()
+    }
+    fn set(&self, realm: &str, key: &str, row: Json) {
+        self.own
+            .lock()
+            .unwrap()
+            .entry(realm.to_string())
+            .or_default()
+            .insert(key.to_string(), row);
+    }
+    fn rows(&self, realm: &str) -> Vec<Json> {
+        self.own
+            .lock()
+            .unwrap()
+            .get(realm)
+            .map(|m| m.values().cloned().collect())
+            .unwrap_or_default()
+    }
+    fn delete(&self, realm: &str, key: &str) {
+        if let Some(m) = self.own.lock().unwrap().get_mut(realm) {
+            m.shift_remove(key);
+        }
+    }
+    fn settle(&self) -> BoxFuture<'_, ()> {
+        Box::pin(async {})
+    }
+}
+
+impl RunHistory for Stored {
+    fn persisted(&self) -> bool {
+        true
+    }
+    fn read_runs(
+        &self,
+        realm: &str,
+        ids: Vec<String>,
+    ) -> BoxFuture<'_, Result<Option<HashMap<String, Json>>, String>> {
+        self.reads
+            .lock()
+            .unwrap()
+            .push(format!("{}:{}", realm, ids.join(",")));
+        let answer = if *self.no_store.lock().unwrap() {
+            Ok(None)
+        } else if realm == "default" && ids.iter().any(|i| i == "after-boom") {
+            Err("the store is unreachable".to_string())
+        } else {
+            Ok(Some(
+                ids.iter()
+                    .filter_map(|id| {
+                        let row = &self.durable[realm][id];
+                        (!row.is_null()).then(|| (id.clone(), row.clone()))
+                    })
+                    .collect(),
+            ))
+        };
+        Box::pin(async move { answer })
+    }
+    fn drop_held(&self, _: &str, _: &str) -> bool {
+        true
+    }
+    fn restore_row(&self, _: &str, _: &str, _: Json) {}
 }
 
 /// Integral floats as integers, so `30000.0` is Node's `30000`.
@@ -310,7 +386,7 @@ async fn the_history_and_the_report_are_nodes() {
     {
         diff(
             &format!("find {}", id),
-            &norm(sched.find_run(id).unwrap_or(Json::Null)),
+            &norm(sched.find_run(id).await.unwrap_or(Json::Null)),
             want,
             &mut failures,
         );
@@ -364,9 +440,60 @@ async fn the_history_and_the_report_are_nodes() {
         &v["settles"],
         &mut failures,
     );
+    // A run by id from the store, on a second scheduler over rows of its
+    // own, as the builder made it.
+    let mut own: IndexMap<String, IndexMap<String, Json>> = IndexMap::new();
+    for one in v["ownRows"].as_array().unwrap() {
+        own.entry(one["realm"].as_str().unwrap().to_string())
+            .or_default()
+            .insert(
+                one["row"]["runId"].as_str().unwrap().to_string(),
+                one["row"].clone(),
+            );
+    }
+    let store = Arc::new(Stored {
+        own: Mutex::new(own),
+        durable: v["durable"].clone(),
+        reads: Mutex::new(Vec::new()),
+        no_store: Mutex::new(false),
+    });
+    let stored = Scheduler::with_extras(
+        Schedules::new(world.clone()),
+        Deps {
+            cluster: world.clone(),
+            claims: world.clone(),
+            rows: store.clone(),
+            realms: world.clone(),
+            audit: world.clone(),
+            clock: world.clone(),
+            host: "h1".to_string(),
+            pid: 41,
+            thread: None,
+            is_request_worker: false,
+        },
+        Extras {
+            history: Some(store.clone()),
+            ..Extras::default()
+        },
+    );
+    let mut found_stored = Vec::new();
+    for want in v["foundStored"].as_array().unwrap() {
+        let id = want["id"].as_str().unwrap();
+        *store.no_store.lock().unwrap() = id.ends_with("?nostore");
+        let from = store.reads.lock().unwrap().len();
+        let view = stored
+            .find_run(id.trim_end_matches("?nostore"))
+            .await
+            .unwrap_or(Json::Null);
+        let reads = store.reads.lock().unwrap()[from..].to_vec();
+        let got = json!({ "id": id, "view": norm(view), "reads": reads });
+        diff(&format!("found stored {}", id), &got, want, &mut failures);
+        found_stored.push(got);
+    }
     // Rust's report and purge, for `tests/rust_store_vectors.js` to hold to
     // Node's.
     if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        rust.insert("foundStored".into(), json!(found_stored));
         rust.insert("purged".into(), norm(purged.to_json()));
         rust.insert("pinned".into(), json!(pinned));
         std::fs::write(

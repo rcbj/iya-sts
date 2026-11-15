@@ -742,12 +742,70 @@ function sealing(t) {
   log.debug("Leaving sealing().");
 }
 
+// A claim store that grants a (scope, realm, key) once, as the claims table's
+// primary key does: the second claimOnce() of a held key is refused.
+function exclusiveClaims(name) {
+  log.debug("Entering exclusiveClaims(). " + name);
+  const held = new Set();
+  const stub = stubDriver(name);
+  stub.claimOnce = function (scope, realm, key) {
+    log.debug("Entering claimOnce(). " + name);
+    stub.calls.push({ op: 'claimOnce', scope: scope });
+    const id = scope + '|' + realm + '|' + key;
+    const claimed = !held.has(id);
+    held.add(id);
+    log.debug("Leaving claimOnce(). " + claimed);
+    return Promise.resolve({ claimed: claimed });
+  };
+  log.debug("Leaving exclusiveClaims().");
+  return stub;
+}
+
+// ONE CERTIFICATE AUTHORITY BUILDER ACROSS EVERY CELL (CI run 43642810770).
+// A CA row is `sts_keys`, a global table, so `pki.js`'s build claim has to
+// exclude every cell's builders: two cells over one global database, each
+// with a database of its own, ask for the same realm's build and only one is
+// granted. An ordinary claim still excludes only one cell's processes.
+async function pkiBuildClaim(t) {
+  log.debug("Entering pkiBuildClaim().");
+  t.equal(tiers.PKI_BUILD_SCOPE, 'pki.build',
+          'the build claim\'s scope is named in the tiers');
+  t.equal(tiers.claimTierOf(tiers.PKI_BUILD_SCOPE), 'global',
+          'the certificate authority build claim is kept in the global tier');
+  const pkiSource = fs.readFileSync(path.join(ROOT, 'common', 'pki.js'),
+                                    'utf8');
+  t.check(pkiSource.indexOf("scope: '" + tiers.PKI_BUILD_SCOPE + "'") >= 0,
+       'common/pki.js claims its builds under that scope');
+  const shared = exclusiveClaims('global');
+  const digest = function (realm, kind, value) {
+    return kind + ':' + value;
+  };
+  const a = tiered.create({ global: shared, cell: exclusiveClaims('cell-a'),
+                            cellId: 'cella', digest: digest });
+  const b = tiered.create({ global: shared, cell: exclusiveClaims('cell-b'),
+                            cellId: 'cellb', digest: digest });
+  const first = await a.claimOnce(tiers.PKI_BUILD_SCOPE, '', 'scope:acme',
+                                  {});
+  const second = await b.claimOnce(tiers.PKI_BUILD_SCOPE, '', 'scope:acme',
+                                   {});
+  t.check(first && first.claimed,
+       'cell A is granted the build of a realm\'s branch');
+  t.check(second && !second.claimed,
+       'and cell B, asking for the same build, is refused while A holds it');
+  const runA = await a.claimOnce('scheduler.run', '', 'slot', {});
+  const runB = await b.claimOnce('scheduler.run', '', 'slot', {});
+  t.check(runA.claimed && runB.claimed,
+       'an ordinary run claim is still one cell\'s: both cells are granted');
+  log.debug("Leaving pkiBuildClaim().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   everyClassified(t);
   directory(t);
   await tieredDriver(t);
   await globalJobs(t);
+  await pkiBuildClaim(t);
   sealing(t);
   log.debug("Leaving run().");
 }
