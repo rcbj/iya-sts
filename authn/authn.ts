@@ -17780,6 +17780,23 @@ class Authn {
     // never a first factor, so the first factor's `amr` is always in the list.
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
+    // A RECOVERY CODE IS A RECOVERY DOOR, AND IT IS RECORDED ON THE ENTRY
+    // (2026-11-14, found by #444's D12). Under a recoveryAssurance that holds
+    // a recovery to a passkey (3cq), the admin's password, a reset link and
+    // an activation link each write `stsRecoveryPending` (noteRecovery()),
+    // and a recovery code wrote nothing: the sign-in was held, but nothing
+    // said a recovery was under way once the person left the set-up. It is
+    // written here, before either way on, so the next sign-in meets it until
+    // a passkey signs them in. noteRecovery() writes nothing where no hold is
+    // required (no passkey, or `any`), and nothing is written for a door the
+    // policy refuses outright (`operator-only`, STS-AUTHN-0380), which is
+    // no recovery at all.
+    const doorRefused = this.deps.passkeyPolicy.recoveryRefusal({
+      username: step.username, door: 'recovery-code', at: 'door',
+      covered: this.deps.credentials.holdsPasskey(step.username) });
+    if (!doorRefused || doorRefused.code !== 'STS-AUTHN-0380') {
+      this.deps.credentials.noteRecovery(step.username, 'recovery-code');
+    }
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol) {
