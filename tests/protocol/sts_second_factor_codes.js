@@ -46,9 +46,9 @@
 //      revoke of an id nobody holds (STS-AUTHN-0219); an app password
 //      presented at a door outside its scope (SSF's own STS-SSF-0009) and
 //      at the sign-in screen (STS-AUTHN-0214), on a disabled account
-//      (STS-AUTHN-0200), and a wrong one (STS-AUTHN-0054). The app password survives a reset of the
-//      person's password; one made while app passwords are on goes on
-//      working once they are turned off.
+//      (STS-AUTHN-0200), and a wrong one (STS-AUTHN-0054). The app
+//      password survives a reset of the person's password; one made while
+//      app passwords are on goes on working once they are turned off.
 //
 // THE PRODUCT REALMS turn `risk.assessSignIns` off: a sign-in from this
 // job's client is scored `automated-client` and refused STS-RISK-0016,
