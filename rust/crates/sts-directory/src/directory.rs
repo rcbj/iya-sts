@@ -1638,7 +1638,14 @@ itself (over LDAPS), or set it through /admin-api/users/set-password",
             }
             if asked || (all && !operational) {
                 let spelt = self.model.canonical_name(name);
-                let shown = shown_values(name, values.clone());
+                // `new ldap.Attribute({ type, values })`: a `;binary`
+                // type's strings are base64, read back as the bytes they
+                // decode to.
+                let shown = sts_ldap::attribute::Attribute::from_strings(
+                    &spelt,
+                    &shown_values(name, values.clone()),
+                )
+                .values();
                 match attributes.iter_mut().find(|(k, _)| *k == spelt) {
                     Some(slot) => slot.1 = shown,
                     None => attributes.push((spelt, shown)),

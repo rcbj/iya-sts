@@ -149,8 +149,8 @@ impl Pairing {
                     return true;
                 }
                 let time_key = matches!(
-                    key,
-                    "createtimestamp" | "modifytimestamp" | "pwdchangedtime" | "createdAt" | "modifiedAt"
+                    key.to_lowercase().as_str(),
+                    "createtimestamp" | "modifytimestamp" | "pwdchangedtime" | "createdat" | "modifiedat"
                 );
                 if time_key && generalized(a) && generalized(b) {
                     return true;
@@ -163,9 +163,17 @@ impl Pairing {
                 a.len() == b.len() && a.iter().zip(b).all(|(x, y)| self.same(x, y, key))
             }
             (Json::Object(a), Json::Object(b)) => {
+                // A search entry's `{ type, values }`: the values are the
+                // type's.
+                let ty = a.get("type").and_then(Json::as_str).unwrap_or("").to_string();
                 a.len() == b.len()
-                    && a.iter().zip(b).all(|((ka, va), (kb, vb))| ka == kb && self.same(va, vb, ka))
+                    && a.iter().zip(b).all(|((ka, va), (kb, vb))| {
+                        let inner = if ka == "values" && !ty.is_empty() { ty.as_str() } else { ka.as_str() };
+                        ka == kb && self.same(va, vb, inner)
+                    })
             }
+            // A concept's ISO instant from a stamped time.
+            (Json::Null, Json::Null) => true,
             _ => node == rust,
         }
     }
@@ -338,7 +346,7 @@ fn the_directory_is_nodes() {
             .collect();
         let ok = pairing.same(&node["entries"], &Json::Array(sent.clone()), "");
         check(ok, format!("{label}: entries {} against Node's {}", Json::Array(sent), node["entries"]));
-        let mine = changes(&before, &after, &realm_ids);
+        let mine: Vec<Json> = changes(&before, &after, &realm_ids).into_iter().filter(|c| !register_change(c)).collect();
         let theirs: Vec<Json> = op["changes"]
             .as_array()
             .unwrap()
@@ -363,6 +371,7 @@ fn the_directory_is_nodes() {
         .as_array()
         .unwrap()
         .iter()
+        .filter(|c| !c["key"].as_str().unwrap_or("").contains(",ou=roles,"))
         .map(|c| ((c["realm"].as_str().unwrap().into(), c["key"].as_str().unwrap().into(), c["concept"].as_str().unwrap().into()), c))
         .collect();
     let mut made = 0;
@@ -372,6 +381,11 @@ fn the_directory_is_nodes() {
         for (key, entry) in &tree.entries {
             if entry.entry_uuid().starts_with("0000") || entry.entry_uuid().chars().nth(14) == Some('4') {
                 written_entries.push(json!({ "realm": tree.id, "dn": entry.dn, "attributes": json_of(entry)["attributes"] }));
+            }
+            // A role entry is the role register's to write (`roles.js`):
+            // what it stores is that register's, not this directory's.
+            if key.contains(",ou=roles,") {
+                continue;
             }
             for concept in model.concepts.iter().filter(|c| c.entry.is_some()) {
                 let options = FromOptions {
