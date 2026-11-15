@@ -439,6 +439,53 @@ on the same store: the two never run together in production (D11), but they
 must read and write the cluster tables' rows alike, and they agree on who
 leads at every token.
 
+### 4.7 Phase 3 end-to-end: Rust opens a store Node wrote (2026-11-14)
+
+`tests/tools/rust-store-e2e.sh <postgres|mariadb> <node image> <rust image>
+<tests image>` is phase 3's closing check, run on both engines. A Node 1.x
+probe in product mode, on a PostgreSQL 18 (or MariaDB 11.8) store over TLS
+with a key-encryption key in a file, writes a real store through
+`/admin-api` — the realms `acme` and `diff`, a process-wide and a realm
+setting, a person and an application — and is stopped. The Rust image
+(`rust/Dockerfile`) is started on the same store, KEK, appconfig and host
+name. On both engines 35 checks passed and none failed:
+
+* **It opens the store, adopts the origin and reads the KEK**: schema 32
+  present, origin `n:sts:front` (the one Node wrote under), 3 realm key sets
+  read and checked, coordinating from the change log's head, 18 run rows
+  restored with `scheduler.runs`' expiring rows left in the table (#883).
+* **It restores the realms and their settings**: 2 realms and the override
+  with the directory (195 entries on postgres, 197 on MariaDB), so `acme`'s
+  accent colour is in its `/web/theme.css`, byte for byte Node's.
+* **The same keys**: the current RSA key of both realms is Node's, and every
+  key both publish has Node's id and public members. The DOCUMENT differs
+  and is phase 5's: Rust also publishes ES256K, EdDSA and Ed448, which
+  Node's signing policy leaves out in product, the RS256 key's `x5c` is one
+  certificate shorter, and in one MariaDB run of four Node published a
+  second whole generation of keys beside the current set (#42's key
+  generations), which Rust's JWKS does not.
+* **Shells, `/web` and `/healthcheck` over HTTPS**; an undefined realm is the
+  ordinary 404.
+* **`http-differential.js` against Node rerun on a copy of the store**: 326
+  cases, 326 the same, 91 with differences later phases own. Rust is given
+  the Node image's `version.json`, since no two image builds share a build
+  instant.
+* **`tls-handshake-compare.sh`**: the two listeners answered alike.
+* **Not yet, listed rather than failed**: discovery, `/oauth2/token`,
+  `/authn/login`, `/admin-api`, SCIM and `/home-api` answer 404.
+
+What closing the first pass found and fixed: the postgres driver refused
+`sslmode=verify-full`, the compose file's own default (`dialOptions()` is
+ported now), and the runtime read `persistence.databaseTlsRejectUnauthorized`
+without the mode, so a product process told `false` dialled its database
+unverified where Node reads `true` (`STS-CORE-0106`). The postgres driver
+adds `persistence.databaseTlsCaFile`'s anchors to the platform's store,
+where Node puts them in its place (only the crypto module may build a
+store). The origin claim is renewed beside a clustered node's heartbeat;
+without a heartbeat (development, `cluster.mode=off`) it is renewed by the
+per-process job `persistence.origin-renew`, the one job Node's scheduler page
+does not list.
+
 ## 5. The management API is the console's and the portal's only door
 
 ### 5.1 What exists, and the gap
