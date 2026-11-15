@@ -1120,16 +1120,51 @@ than #1760 answering 404); `configured: false` holds nothing, and the proxy
 then answers 404 to everything. **Every member is read again by D2's rules**
 (`proxy_config.rs`): the upstream an absolute http(s) URL with no userinfo,
 query or fragment; at most 64 routes with unique ids; a route path with no
-dot segment, `//`, `%`, backslash or control character; the methods,
-mechanisms and match from their closed sets; each non-public route's
-`application` and `resolved` (D10) and every route's `identity` (D11);
-`publicBaseUrl` when a route uses `session`; the two bounds in
-range; each signing certificate a PEM certificate; the validation URLs
-absolute. **One refusal refuses the document WHOLE and the one held is kept**
+dot segment, `//`, `%`, backslash or control character; the mechanisms and
+match from their closed sets; each non-public route's `application` and
+`resolved` (D10) and every route's `identity` (D11); `publicBaseUrl` when a
+route uses `session`; the two bounds in range; each signing certificate a
+PEM certificate; the validation URLs absolute. **Two route members are
+REQUIRED**, and a route without either refuses the document:
+
+* **`methods`**, from the closed set. **An EMPTY list allows NO method — the
+  route is deny-all**; "any" is the whole set, stated. It meant "any" until
+  rcbj's decision on #1760, so an absent list cannot be read either way
+  without guessing, and is refused.
+* **`authorization`** — `{ kind, policy, resource, actionModel, roles }`, the
+  route's ONE authorization choice (`proxy_config.rs`'s `Authorization`).
+  `kind` is `policy` (an administrator's own policy entry), `simple` (the
+  one the service generated from the route's roles) or `public`; **public is
+  a kind now, not a boolean**, and a public route takes no mechanism, names
+  no application and has no `resolved` — the old boolean's rules, keyed on
+  the kind (`Route::is_public()`). `policy` is required and non-empty for
+  EVERY kind: the NAME of a policy entry (the `name` of a row of
+  `GET /xacml/pep/policies`, never its PolicyId), the service naming the one
+  it generated (`pep-<pep>-<route>`) for a simple or public route. `resource`
+  is the resource-id sent, empty for the normalised path. `actionModel` is
+  `method` (the HTTP method), `crud` (GET, HEAD, OPTIONS `read`; POST
+  `create`; PUT, PATCH `update`; DELETE `delete`) or `read-write` (the three
+  safe methods `read`, the four others `write`). `roles` is the service's
+  own and is not read beyond being an object, the policy already saying it.
+  The route members `public`, `resource` and `action` are gone.
+
+**One refusal refuses the document WHOLE and the one held is kept**
 (`STS-XPEP-0062`) — a route table loaded in part forwards what nobody
 configured or refuses what somebody did. Unknown members are ignored, so a
 service that adds one does not switch the proxy off. Not nudged: it
 converges on the poll.
+
+**THE DOCUMENT'S BACKWARDS COMPATIBILITY WAS NOT KEPT** for the change to
+`methods` and `authorization` (rcbj: the proxy is unreleased, so its pulled
+document changes shape freely). **A PEP older than it, reading a new
+document**, ignores `authorization` as an unknown member and finds no
+`public`, so it reads a public route as non-public with no mechanism and
+refuses the document whole (`0062`), keeping what it held — but only when
+the table HAS a public route: a table without one it would load, reading an
+empty `methods` as "any" and deciding every route from the root with the
+path and the method. **A PEP newer than it, reading an older service's
+document** (no `authorization`, or a route without `methods`), refuses it
+whole. The pair is upgraded together.
 
 ### A request, in order
 
@@ -1152,21 +1187,42 @@ converges on the poll.
    segment boundary (`/api` is `/api` and `/api/…`, never `/apix`; a
    configured trailing `/` is dropped). No route, or no configuration
    switched on: 404 (`STS-XPEP-0065`), and the application is never reached.
-4. **The method**: one the route does not take is 405 with `Allow`
-   (`STS-XPEP-0066`); the next route is NOT tried.
+4. **The method**: a NON-EMPTY `methods` without it is 405 with `Allow`
+   (`STS-XPEP-0066`); the next route is NOT tried. That is route matching,
+   not authorization. **An EMPTY list is not a 405** — there is nothing to
+   put in `Allow` — and the request goes on to be decided (7), then refused
+   (7a).
 4a. **The route's application** (D10): a non-public route the pull marked
    `usable: false` is 403 (`STS-XPEP-0093`), before any credential.
 5. **A declared body over `maxBodyBytes`**: 413 before anything else
    (`STS-XPEP-0067`).
-6. **The mechanism**, unless the route is public (below).
-7. **The decision** (D8): `service.rs`'s `decide_proxy()` — subject the
-   username when known, else `sub`; resource the route's `resource` or the
-   normalised path (typed anyURI, as `/protected` types it); action the
-   route's `action` or the method; through the one builder, the PIP asked
-   first, `enforce.rs`'s bias and obligation rule, counted with
-   `/protected`'s counters (so the heartbeat reports them). Not allowed:
-   403 (`STS-XPEP-0086`). A public route takes no mechanism and no
-   decision.
+6. **The mechanism**, unless the route is public (below). A public route
+   establishes no identity.
+7. **The decision, for EVERY route, a public one included** (D8, and rcbj's
+   decision on #1760: *all authorization decisions are made in XACML*):
+   `service.rs`'s `decide_proxy()` — subject the username when known, else
+   `sub`, and for a public route NO `subject-id` at all (the anonymous
+   subject: the access-subject category sent empty, as `/protected` sends a
+   request with no `subject`); resource `authorization.resource` or the
+   normalised path (typed anyURI, as `/protected` types it); action by
+   `authorization.actionModel`; through the one builder, **evaluated against
+   the policy entry `authorization.policy` NAMES in what this PEP last
+   pulled — never the root, which no route falls back to** — the PIP walking
+   THAT policy and the repository answering its references, `enforce.rs`'s
+   bias and obligation rule, counted with `/protected`'s counters (so the
+   heartbeat reports them). `sync.rs`'s `Policies::by_name` holds every entry
+   that loaded by its name (a name two rows carry is in neither); the route
+   decision does not ask whether a root is held. **The named policy not
+   held** — never pulled, withheld, disabled, renamed, failed to load — is
+   403 (`STS-XPEP-0117`, logged at warn) WHATEVER THE BIAS, with nothing
+   counted: a permit-biased PEP reading it as NotApplicable would open the
+   route the moment its policy went missing. Not allowed: 403
+   (`STS-XPEP-0086`).
+7a. **Deny-all**: a route whose `methods` is EMPTY is refused now, 403
+   (`STS-XPEP-0116`), after its decision was made and counted and even when
+   the policy permitted — so a policy that permits too much cannot open a
+   route that states no method. A missing policy is still `0117` (7 comes
+   first). Nothing of 7 or 7a reaches the application.
 8. **The identity** (D11, below), established BEFORE the forward — or the
    request is refused.
 9. **The forward**, below.
@@ -1308,8 +1364,10 @@ strictly**: a non-public route without `application` or `resolved`, a
 need (an audience for `oauth2`, a `samlAudience` for `saml2`, a `clientId`
 for `session`), a usable session route whose client `realm.clients` does not
 carry, or a client without a secret or redirect URI refuses the document
-WHOLE (`STS-XPEP-0062`). A public route naming an application is refused
-too.
+WHOLE (`STS-XPEP-0062`). A route whose `authorization.kind` is `public`
+naming an application or a mechanism is refused too. D10 is about which
+application a route fronts; WHO may reach it is the route's own policy
+(*A request, in order*, 7).
 
 ### The session mechanism: the proxy is the application's relying party (D5)
 
@@ -1578,10 +1636,12 @@ on a timer.
 
 ### What holds it
 
-`cargo test -p xacml-pep`, 61 tests, of which the proxy's are: the
+`cargo test -p xacml-pep`, 111 tests, of which the proxy's are: the
 configuration's every refusal — D10's `application` and `resolved`, D11's
-`identity` among them — and the contract's own example
-(`proxy_config.rs`); the path rules and the header rules
+`identity`, and a route without `methods` or `authorization`, an unknown
+`kind` or `actionModel`, an empty `policy` and the old `public` boolean
+standing in for `authorization` among them — the contract's own example,
+and every method under each action model (`proxy_config.rs`); the path rules and the header rules
 (`proxy_request.rs`); every supported algorithm, a wrong key, a wrong key
 type, `none`, a tampered signature, an unknown `kid`, strict base64url, and
 the claim (any of several audiences) and `cnf` checks (`jwt.rs`); the
@@ -1610,8 +1670,20 @@ ticket, an injected identity header stripped in every case and from every
 route, a CR LF value and a 403 refused; a service token cached and not used
 within 30 s of its end; an assertion posted to the ACS, the jar sent and
 never shown to the browser, a 401 establishing it again; a session route's
-evidence being the library's access token), and the pull's token, `ETag`,
-304, failure and whole refusal.
+evidence being the library's access token), the pull's token, `ETag`, 304,
+failure and whole refusal (a route without `methods` or `authorization`, an
+unknown `kind` or `actionModel`, the held table kept), and **each route
+decided by its own policy** through the engine: a route naming a denying
+policy refused under a permitting root and a route naming a permitting one
+admitted under a denying root, or none; a policy not held, or withheld by a
+later pull, refused with `0117` under either bias, uncounted and unforwarded;
+the action-id the engine saw under each model (policies permitting exactly
+`update`, `write` and `PUT`); the resource-id `authorization.resource` names
+and the path when it is empty (policies permitting exactly one anyURI); a
+public route permitted only for a request with NO `subject-id`, then refused
+when its policy denies or is withheld; and an empty `methods` refusing every
+method with `0116` after a counted Permit, public and not, the application
+never reached, with `0117` first when the policy is missing too.
 
 **Mutants, applied one at a time by hand and all caught**: the audience
 check (any of the resolved audiences), the segment boundary, `%2e`
@@ -1626,8 +1698,10 @@ surviving, only the route's own identity headers stripped, forwarding when
 the identity fails, the jar leaking to the browser, a cached token used to
 its expiry, a CR LF claim accepted, a separator in a list member accepted,
 jwt mode sending no Bearer, a client cookie shadowing the jar's, a 401 not
-re-establishing the application session, and the missing claims never
-asked. Four survived a first pass and the tests that catch them were added:
+re-establishing the application session, the missing claims never asked,
+and (#1760's route authorization) PUT sent as `write` under `crud`, the root
+evaluated in place of the route's policy, an empty `methods` let through
+when the policy permits, and a public route not decided. Four survived a first pass and the tests that catch them were added:
 `%2e` not forming a segment, the introspected issuer, the library's cache
 (the receiver's callback ended the proxy session as well, so the cookie
 alone told), and a CR LF claim (the header library refused it too, so only a
@@ -1642,7 +1716,10 @@ The managed settings' pull: `STS-XPEP-0100` (a failed pull, the held settings ke
 `0029`–`0032`); `0064`–`0069` the route table, the body and the upstream;
 `0070`–`0075` and `0088`, `0089` the credential and the service's
 validation; `0076`–`0078` SAML; `0079`, `0080` Basic; `0081`–`0085`,
-`0090` and `0094` the session mechanism; `0086` the decision; `0087`
+`0090` and `0094` the session mechanism; `0086` the decision; `0116` a
+route whose `methods` is empty (deny-all), refused after its decision;
+`0117` a route whose `authorization.policy` this PEP does not hold, refused
+without one; `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
 says is not usable (D10); `0095`–`0098` the identity (D11). **No log line carries
@@ -1668,7 +1745,8 @@ contained and throttled as before. **0035–0046 are the AuthZEN edge PDP's**
 **0055–0059 the forward of a fine-grained authorization evaluation and the
 catalogue's `fgaApplications`** (#564, P7); a request it refuses under the mapping contract is logged with the
 `STS-AUTHZEN-*` code the service gives the same request. **0060–0092 are the
-reverse proxy's** (#1760), listed in *THE REVERSE PROXY*. **0103–0105 are the
+reverse proxy's** (#1760), with 0093–0099, 0108–0111, 0116 and 0117, listed
+in *THE REVERSE PROXY*. **0103–0105 are the
 defined listeners'** (#1760): a refused bind, a certificate not obtained, a
 definition left out.
 

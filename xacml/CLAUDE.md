@@ -44,6 +44,7 @@ and the nudge.
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
 | `xacml_pep_listeners.ts` | **A remote PEP's listeners (#1760)**: the environment's four, the ones defined on its page (`xacmlPepListeners`), their validation, the pull's section and the reading of what the PEP reports (`xacmlPepListenersInUse`). A LIBRARY. See *A remote PEP's listeners* below. |
+| `xacml_pep_route_policies.ts` | **A reverse-proxy route's policy (#1760)**: the save's checks of a route's authorization choice, the simple and public routes' generated policies (ALFA through the store's validating write, marked `xacmlPepRoute`), their removal, the default resource and the application's home page. A LIBRARY. See *A ROUTE'S AUTHORIZATION* below. |
 | `xacml_pep_http.ts` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
 | `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP, the hostname it reports and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
@@ -1586,9 +1587,10 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   (`xacml_admin.ts`'s `withRoute()`) build the whole document from the
   stored one and hand it to the same `validate()` and `resolutionProblem()`
   as `set-pep-proxy` — one validator. `set-pep-route` takes `route` (an
-  object) or the form's members (`routeAction` is the route's `action`,
-  since `action` is the API's), replaces a route of the same id where it
-  stands keeping its `identity`, and inserts at `position`. A missing route
+  object) or the form's members (the authorization's are `authz*`, below),
+  replaces a route of the same id where it stands keeping its `identity`
+  and its `authorization` where the form says nothing of them, and inserts
+  at `position`. A missing route
   object, a missing application or a position outside the list is
   `STS-XACML-0256`. The page carries `applicationChoices`, which names the
   chosen application and `routeDetailOf()` resolves against.
@@ -1635,8 +1637,123 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   `data-check-all`): both switches of a form and name share one refresh,
   so each shows the state — None when no method is ticked, All when
   every one is — and unticking None with nothing ticked leaves it ticked.
-  None ticked is the empty list, which `validateRoute()` takes as ANY
-  method, and None's tooltip says so. `tests/xacml_pep_console.js` B1–B8.
+  **NONE IS DENY-ALL (rcbj 2026-11-15: "None should mean no methods
+  allowed, essentially deny all")**: the empty list is stored, the route
+  still matches its path, and the PEP refuses every request on it with 403
+  AFTER asking the route's policy (`STS-XPEP-0116` where it permitted,
+  `0086` where it denied) — so the decision is
+  still made in XACML and counted, and a hand-written policy that permits
+  too much cannot open a route that states no method; a simple or public
+  route's generated policy is then the deny rule alone. **Any method is
+  stated**: All stores the seven. A route with no `methods` member is
+  refused (`STS-XACML-0262`), so the form posts `methodsGiven`, which makes
+  no box ticked the empty list. The routes table draws *none (deny all)*.
+  `tests/xacml_pep_console.js` B1–B8, `tests/xacml_pep_route_policies.js`
+  1, 2.6–2.7, 4.4.
+* **A ROUTE'S AUTHORIZATION (#1760, rcbj 2026-11-15)**: "the authorization
+  section to have two approaches to the XACML policy: 1) select an existing
+  XACML policy ... 2) provide the parameters for a very simple (and common
+  policy)", and then "force them to pick one of these two policies or
+  Public. But, that still results in a generated XACML policy representing
+  the public access for this path. All authorization decisions are made in
+  XACML." So `authorization` is a REQUIRED route member, `{ kind, policy,
+  resource, actionModel, roles }` (`STS-XACML-0263` for none or a kind
+  outside `policy | simple | public`, `0264` for a member of the wrong
+  shape), and it REPLACED `public`, `resource` and `action`, with no
+  backwards compatibility: the proxy is unreleased, and the validator
+  refuses the old members as members it does not name. `kind: public` is
+  what `public: true` was (no mechanism, no application, no identity).
+  * **EVERY ROUTE NAMES ONE POLICY, AND THE PEP DECIDES IT WITH THAT POLICY
+    ALONE**, never the realm's root: `policy` is a policy ENTRY'S NAME, the
+    `name` of a row of `GET /xacml/pep/policies`, because a route is
+    configured by name and a PolicyId is the document's. For `simple` and
+    `public` it is always `pep-<pep>-<route>` (`PepProxy.
+    generatedPolicyName()`; `validate(doc, pep)` writes it, so a document
+    loaded from another PEP's file names THIS PEP's policy once saved). A
+    policy the PEP does not hold refuses every request on the route
+    (`STS-XPEP-0117`, whatever the bias). `xacml-pep/CLAUDE.md` has the
+    PEP's half.
+  * **THE SAVE ASKS MORE THAN THE GRAMMAR** (`xacml_pep_route_policies.ts`'s
+    `problem()`, after `resolutionProblem()`): an existing policy held,
+    enabled and SENT to a PEP — `pepPull()` withholds `access-control`,
+    `role-issuance` and every application's policy (`0265`); a simple
+    route's roles CONFIGURED roles of the realm, because the PIP answers
+    `urn:sts:xacml:role` with configured roles only (rule 3bq, `0266`); a
+    generated name not held by a policy without this route's mark
+    (`0267`). The pull asks none of it again: a role deleted since must
+    not take the whole route table down; the generated policy says what it
+    said, and the route page reports a policy missing, disabled or
+    withheld (`routeDetail.authorization.policy.problem`, and each row of
+    `proxyRoutes`).
+  * **THE GENERATED POLICY** is ALFA (`alfaFor()`) read by `xacml_alfa.ts`,
+    written by `xacml_xml.ts` and stored by `XacmlStore.write()` — the
+    editor's and `import-alfa`'s door, so it is statically validated like
+    every other. First-applicable: one Permit per action with the route's
+    roles (any of them), the resource-id `anyURI-equal` and the action-id;
+    a public route's one Permit names the methods and no subject; and a
+    LAST UNTARGETED DENY, because a route's policy is the route's whole
+    decision and a permit-biased PEP would admit a NotApplicable. Its
+    entry carries `xacmlPepRoute` = `<pep>/<route>` (OID 759, the
+    concept's `pepRoute`), kept by every rewrite as `xacmlApplication` is,
+    so `root()` never takes it (the "only enabled policy" fallback would
+    otherwise make a realm's one route the root) and `write()` refuses it
+    as the root (`STS-XACML-0267`). Every save of a simple or public route
+    writes it again (unchanged text is not rewritten); before the document,
+    so a PEP pulling the new table finds its policies.
+  * **THE LIFECYCLE** (`XacmlAdmin.afterRouteSave()`): a rename removes the
+    old route's generated policy (the new one was just written); a remove
+    needs `removePolicy: true` when there is one (`0268`, rcbj: "ask for
+    confirmation on remove") and takes it; a switch to an existing policy,
+    and a route a whole-document save dropped, LEAVE it, unreferenced, and
+    the answer's `policies.unreferenced` names it — an edit that did not
+    ask never deletes a policy. `clear-pep-proxy` leaves them too.
+    `generate-pep-route-policy` writes one again from the route as saved.
+  * **THE RESOURCE.** A simple or public route's `resource` must be an
+    absolute http(s) URL; empty, the save fills `defaultResource()`: the
+    proxy's `publicBaseUrl` and the path, else the PEP's environment HTTPS
+    proxy listener, `https://<the hostname it reports, else its name>:<the
+    port it reported for proxy-https, else 9543>` — the address the
+    configuration states first, then the one the PEP itself serves. An
+    existing-policy route's empty resource is the request's normalised
+    path, so a hand-written policy can still decide by path (the 8081
+    demo's `pep-demo-routes` does). **The application's URL is
+    `appHomePageUrl`**, its declared home page — where a person reaches it,
+    so where the proxy stands — whose origin and the route's path is
+    offered beside the default (`applicationUrl()`, a Use on the form) with
+    a different origin flagged; redirect URIs are callbacks, not front
+    doors, as the attribute's own row argues.
+  * **THE ACTION** is `actionModel`: `method` (the HTTP method; an existing
+    policy's default), `crud` (GET/HEAD/OPTIONS read, POST create,
+    PUT/PATCH update, DELETE delete) or `read-write` (read, and write for
+    the rest). A simple route is `crud` or `read-write`, a public route
+    `method`. `PepProxy.METHOD_ACTIONS` is the table; the PEP's
+    `ActionModel::action_for()` is its copy, both held by tests.
+  * **THE CONSOLE** (`XacmlPage.authorizationFields()`): one selector,
+    `authzKind`, with an empty first option on a new route, and each
+    choice's fields a panel the runtime shows for the value
+    (`ConsoleRuntime.wireChoicePanels()`, `select[data-panels]`); the
+    shared Resource box with the default as its placeholder and where it
+    comes from; the existing-policy chooser (`authzPolicy`, asking
+    `GET /admin-api/xacml/policies?routable=true`, which gained `q`, `per`,
+    `page` and `routable`, unchanged without them) and the action sent;
+    the simple panel's model select (its own panels show that model's
+    actions) and a box and a role chooser per action (`authzRole.<action>`,
+    several roles, each with a Remove, asking `GET /admin-api/roles`); the
+    route page's policy state and **Generate the policy again**. The
+    choosers are the application chooser's presses on more attributes
+    (`WebAnswers.pepRouteState()`, `pepRouteKindOf()`), answered in the
+    browser and never sent; `find.attribute` keeps each chooser's results
+    to itself. `set-pep-route-authorization` sets the choice alone for
+    `/admin-api`.
+  * **AN OLDER PEP AND A NEWER ONE DO NOT MIX**, deliberately: a PEP older
+    than this reads no `authorization` and defaults `public` to false, so a
+    table holding a public route is refused whole there (it keeps what it
+    held); one holding none is accepted and decided by the root by path and
+    method, with an empty `methods` read as any. Upgrade the PEP with the
+    service. A newer PEP refuses an older service's document whole.
+  `tests/xacml_pep_route_policies.js` holds it all through the real engine;
+  `tests/xacml_pep_proxy.js` reads its older fixtures into this shape
+  (`shaped()`).
 * **A ROUTE'S OWN PAGE** (rcbj 2026-11-14: "click on a route name and go to
   another page and be able to update all the configuration values"),
   `/admin/xacml/pep/route?pep=&route=`: `getXacmlPeps` with `route` adds

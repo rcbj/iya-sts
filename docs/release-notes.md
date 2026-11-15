@@ -183,6 +183,23 @@ has the precedence and the reasons.
   `proxyMaxAccounts`, `PEP_PROXY_MAX_ACCOUNTS`, default 5;
   [Several accounts in one browser](remote-pep.md#several-accounts-in-one-browser)).
 
+### Changed: every reverse-proxy route is authorized by its own policy
+
+* **Every request on every route is decided in XACML by that route's own
+  policy, never by the realm's root.** Each route makes one `authorization`
+  choice: an existing policy, a simple generated policy (a resource, CRUD
+  or read/write, and the roles for each action), or Public, which generates
+  a policy too ([Authorizing a route](xacml.md#authorizing-a-route)). The
+  route forms draw the choice as one selector, with a search for the policy
+  and for each action's roles.
+* **An empty methods list is deny-all**, and a route takes any method by
+  listing all seven. Every route states its `methods`.
+* **Not compatible with the proxy documents of earlier builds**, which the
+  proxy feature's unreleased state allows: `public`, `resource` and
+  `action` are refused as members, `methods` and `authorization` are
+  required, and a remote PEP and the service upgrade together. Save each
+  route's choice again (or edit the document) after the upgrade.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the

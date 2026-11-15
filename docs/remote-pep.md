@@ -1004,7 +1004,11 @@ to `?since=<syncToken>` while nothing changed.
 The document names the upstream, the `publicBaseUrl` a browser reaches the
 proxy at (https in product mode, and always for a session route), the
 timeouts, and an ordered list of routes; the first route that matches wins and
-a request no route matches is refused `404`. Each route that is not `public`
+a request no route matches is refused `404`. Every route states its `methods`
+(all seven for any method, none for **deny-all**) and makes one
+**authorization** choice — see [Authorizing a route](xacml.md#authorizing-a-route):
+every request on it, a public route's included, is decided in XACML by that
+route's own policy, never by the realm's root. Each route that is not public
 names the **application** in the realm's registry that it fronts. Nothing is
 copied from the application: what each mechanism needs is read from its entry
 when the configuration is saved and again at every pull.
@@ -1237,9 +1241,9 @@ in the clear it is right only behind something that terminates TLS.
 ### Its routes, one at a time
 
 The **Create a New Route** sub-tab of the **Reverse proxy** tab
-(`#xacml-pep-proxy-new-route`) has a form to add a route — its path, prefix or exact, its methods, public or the
+(`#xacml-pep-proxy-new-route`) has a form to add a route — its path, prefix or exact, its methods, the
 mechanisms it accepts, its application (found with a search of the
-realm's applications, below), the XACML resource and action, whether credentials are
+realm's applications, below), its authorization (below), whether credentials are
 forwarded, whether CAEP/RISC signals end its sessions, and where it goes in
 the list. Once it is saved, the new route's own page opens, as a new
 application's does. To change a route, or the application it fronts, click
@@ -1273,8 +1277,8 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   application linked to the application's page, its position in the list,
   the PEP's upstream, and the reverse-proxy listeners that serve it, each
   with what the PEP last reported. Every proxy listener serves every route.
-* **One form for every value**: the id, path and match, methods, public, the
-  mechanisms, the application, the XACML resource and action, credential
+* **One form for every value**: the id, path and match, methods, the
+  mechanisms, the application, the authorization, credential
   forwarding, signals, the position, and the identity (its mode, headers and
   claims, separator), one field per line, grouped under *Matching*,
   *Authentication*, *Authorization*, *Order* and *Identity sent to the
@@ -1283,10 +1287,29 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   id in `from` and every member of the form. The save goes through the same
   checks as the document editor and the other forms.
 * **Methods** has a **None** and an **All** box on both forms, ahead of the
-  seven methods. **All** ticks every method; **None** unticks them all,
-  and with no method ticked the route takes any method (the route's
-  `methods` is stored empty). Ticking a method by hand updates both. They
-  are shortcuts only: the methods saved are the ones ticked.
+  seven methods. **All** ticks every method, which is how a route takes any
+  method: the seven are stored. **None** unticks them all, and a route with
+  no method is **deny-all**: its path still matches, so no later route is
+  tried, the PEP asks the route's policy (so the decision is counted) and
+  then refuses every request `403`: `STS-XPEP-0116`, or `STS-XPEP-0086`
+  where the policy itself denied. Nothing reaches the application. Ticking a method by hand updates both.
+  They are shortcuts only: the methods saved are the ones ticked. Through
+  the API a route with no `methods` member is refused (`STS-XACML-0262`).
+* **Authorization** is one selector with the matching fields below it:
+  **An existing policy** (found with a search of the realm's policies a
+  route may choose, and the action the PEP sends: the HTTP method, CRUD or
+  read/write), **A simple policy** (an action model, CRUD or read/write, a
+  box per action, and for each ticked action the roles that may take it,
+  each found with a search of the realm's configured roles), or **Public**.
+  The **XACML resource** box is shared: empty, a simple or public route is
+  sent as the proxy's base URL and its path, and an existing-policy route as
+  the request's path. On the route's page the application's home page
+  (`appHomePageUrl`) is shown beside the default, with **Use** to take it,
+  and a different origin is flagged; the policy that decides the route is
+  linked to the editor, with why the PEP would refuse every request if it
+  is missing, disabled or never sent to a PEP, and **Generate the policy
+  again** rewrites a simple or public route's policy. A new route starts
+  with no choice, and a save without one is refused (`STS-XACML-0263`).
 * **The application is chosen by a search**, on this form and on Create a
   New Route alike. The chosen application is shown linked to its page. Type
   part of an application's identifier or name in the box and press **Find**
@@ -1306,7 +1329,10 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   the Reverse proxy tab's **Manifest** sub-tab (`#xacml-pep-proxy-manifest`),
   which the page's note links to.
 * **Remove** asks for a confirmation (a box to tick) and then sends
-  `remove-pep-route`. The page lands on the PEP's Configured Routes.
+  `remove-pep-route`. The page lands on the PEP's Configured Routes. A route
+  with a generated policy names it in the box, which sends
+  `removePolicy: true`, and the policy goes with the route
+  (`STS-XACML-0268` without it).
 
 Opened without `route`, the page lists every PEP's routes as links.
 
@@ -1317,7 +1343,10 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"name":"pep-1","from":"orders","id":"orders-api","path":"/orders",
        "match":"prefix","methods":["GET","POST"],"mechanisms":["session"],
-       "application":"orders-app","mode":"headers",
+       "application":"orders-app","authzKind":"simple",
+       "authzActionModel":"read-write","authzActions":["read","write"],
+       "authzRole.read":["orders-users"],"authzRole.write":["orders-admins"],
+       "mode":"headers",
        "headerName":["X-Remote-User"],"headerClaim":["username"]}' \
   https://localhost:8081/admin-api/xacml/set-pep-route
 ```
