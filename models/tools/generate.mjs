@@ -23,7 +23,8 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
-import { renderRustApi, renderRustDomain } from '../lib/rust_lib.mjs';
+import { renderRustApi, renderRustDomain, renderRustSchemas }
+  from '../lib/rust_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
@@ -258,6 +259,9 @@ async function generate() {
     throw new Error('The model has no object written by hand, so the ' +
       'service would have no table to read.');
   }
+  // The same tables as Rust, for sts-registers (#444, phase 4).
+  fs.writeFileSync(path.join(out, 'schemas.rs'),
+    renderRustSchemas(objects, schemaOf));
   authored.forEach(function (object) {
     fs.writeFileSync(path.join(out, object.id + '.schema.json'),
       JSON.stringify(schemaOf(object)));

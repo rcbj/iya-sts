@@ -139,6 +139,14 @@ function declarations(t) {
     'rust/crates/sts-model/src/generated/' + name + '.rs is what the model ' +
       'generates (tests/tools/regenerate-model-docs.sh)');
   });
+  // sts-registers' SCHEMA tables (#444, phase 4), written by the same
+  // script from the same objects.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-registers',
+    'src', 'generated', 'schemas.rs'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated', 'schemas.rs'),
+      'utf8'),
+  'rust/crates/sts-registers/src/generated/schemas.rs is what the model ' +
+    'generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');

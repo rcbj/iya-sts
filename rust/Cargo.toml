@@ -21,6 +21,7 @@ members = [
   "crates/sts-model",
   "crates/sts-guards",
   "crates/sts-kerberos",
+  "crates/sts-registers",
   "bins/xacml-pep",
   "bins/sts-runtime",
 ]
@@ -48,6 +49,7 @@ sts-mgmt-api = { path = "crates/sts-mgmt-api" }
 sts-model = { path = "crates/sts-model" }
 sts-xml = { path = "crates/sts-xml" }
 sts-kerberos = { path = "crates/sts-kerberos" }
+sts-registers = { path = "crates/sts-registers" }
 axum = "0.8"
 base64 = "0.23"
 flate2 = "1"
