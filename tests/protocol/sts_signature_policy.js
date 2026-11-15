@@ -12,6 +12,27 @@
 // /admin-api, then discovery, the JWK Set, IdP metadata, /crypto/metadata and
 // /admin-api/crypto are read back. tests/signature_policy_metadata.js holds the
 // defaults; this holds the configured half, from outside the process.
+//
+// D12 (#444) EXTENDS IT with what a client sees of `tests/signature_policy.js`
+// (sections G-I): the list write rules by code off `/admin-api/audit`
+// (STS-KEYS-0189, 0190, 0192, 0193); what an access token is signed with by
+// default, under a list, under keys.pqcOnly and for a setting naming EdDSA; a
+// post-quantum ID Token algorithm registrable by default; and, at a PRODUCT
+// realm's token endpoint (development checks no client credential), an
+// ML-DSA-44 private_key_jwt assertion accepted with keys.postQuantumSigning
+// on and refused with it off. Two things are PINNED rather than asserted as
+// the in-process file states them, and both are Node findings: the refusal
+// is recorded STS-OAUTH-0007 (the client-authentication code) and never
+// STS-KEYS-0157, and an ES256 assertion is still ACCEPTED under
+// keys.acceptedSigningAlgorithms=RS256 although discovery then publishes
+// RS256 alone for token_endpoint_auth (STS-KEYS-0179 is never recorded).
+// NOT carried, and why: the COSE, XML, X.509 and Data Integrity doors and
+// the HTTP message-signature door are owed by the families that sign and
+// verify those (FAPI HTTP signatures in this phase; phases 6, 7 and 9);
+// signJwt()'s own refusals, the effective lists' order and the registry are
+// library answers (d); STS-KEYS-0194 cannot be reached, because
+// tls.signatureAlgorithms is restart-only and a live write is refused before
+// its rule.
 // ---------------------------------------------------------------------------
 const assert = require("assert");
 const { Command, Option } = require("commander");
@@ -38,6 +59,7 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
 const REALM = usernameFor("sigpol").replace(/[^a-z0-9-]/g, "").slice(0, 30);
+const PRODUCT = "sigpp-" + REALM.slice(-20);
 const realmBase = base + "/realm/" + REALM;
 const api = base + "/admin-api";
 const realmApi = realmBase + "/admin-api";
@@ -97,6 +119,296 @@ async function discovery() {
   assert.strictEqual(r.status, 200);
   log.debug("Leaving discovery().");
   return r.json;
+}
+
+// ---- D12 (#444): tests/signature_policy.js over the wire -----------------
+const nodeCrypto = require("crypto");
+const mldsa = require("@noble/post-quantum/ml-dsa.js");
+const SECRET = "sigpol-" + REALM.slice(-12) + "-0123456789abcdef-secret";
+
+function b64u(value) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(value).toString("base64url");
+}
+
+function algOf(token) {
+  log.debug("Entering algOf().");
+  const alg = JSON.parse(Buffer.from(String(token).split(".")[0],
+                                     "base64url").toString("utf8")).alg;
+  log.debug("Leaving algOf(). " + alg);
+  return alg;
+}
+
+async function codeCount(realmBaseUrl, code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await send(realmBaseUrl + "/admin-api/audit?per=500&code=" +
+                       encodeURIComponent(code));
+  log.debug("Leaving codeCount().");
+  return Number((r.json && r.json.matched) || 0);
+}
+
+// A write refused, and the code it is recorded under: the audit count of the
+// code rises by one, and the answer names no code.
+async function refusedWrite(key, value, code, what) {
+  log.debug("Entering refusedWrite(). " + key);
+  const before = await codeCount(realmBase, code);
+  const r = await post(realmApi + "/config/set", { key: key,
+                                                   value: String(value) });
+  let after = await codeCount(realmBase, code);
+  for (let i = 0; i < 20 && after <= before; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    after = await codeCount(realmBase, code);
+  }
+  check(what + " (" + code + ")", function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.strictEqual(r.json.ok, false);
+    assert.ok(after > before, code + " rows " + before + " -> " + after);
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.text), r.text.slice(0, 300));
+  });
+  log.debug("Leaving refusedWrite().");
+}
+
+async function client(realmApiUrl, id, extra) {
+  log.debug("Entering client(). " + id);
+  const r = await post(realmApiUrl + "/applications/create", {
+    identifier: id, name: id, protocols: ["oauth2", "oidc"],
+    fields: Object.assign({ oauthClientId: [id], oauthClientSecret: SECRET,
+      oauthTokenEndpointAuthMethod: "client_secret_post",
+      oauthGrantType: ["client_credentials"] }, extra || {}) });
+  assert.strictEqual(r.status, 200, "registered " + id + ": " +
+                     r.text.slice(0, 300));
+  log.debug("Leaving client().");
+}
+
+async function accessTokenAlg(id) {
+  log.debug("Entering accessTokenAlg(). " + id);
+  const r = await send(realmBase + "/oauth2/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "client_credentials",
+      client_id: id || "sp-cc", client_secret: SECRET }).toString() });
+  assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+  log.debug("Leaving accessTokenAlg().");
+  return algOf(r.json.access_token);
+}
+
+async function d12Sections() {
+  log.debug("Entering d12Sections().");
+  await client(realmApi, "sp-cc");
+
+  log.info("=== G. the write rules, by code ===");
+  await refusedWrite("cose.algorithms", "ES256,ES256", "STS-KEYS-0189",
+                     "G1. a list may not name an algorithm twice");
+  await refusedWrite("keys.acceptedSigningAlgorithms", "ES256",
+                     "STS-KEYS-0190", "G2. an accept list must hold what " +
+                     "the realm signs with");
+  const g3 = await post(realmApi + "/config/set", {
+    key: "keys.acceptedSigningAlgorithms", value: "RS256,ES256" });
+  check("G3. one that does is taken", function () {
+    assert.strictEqual(g3.status, 200, g3.text.slice(0, 300));
+  });
+  await reset("keys.acceptedSigningAlgorithms");
+  await setting("keys.signingAlgorithms", "PS256,RS256");
+  await refusedWrite("keys.acceptedSigningAlgorithms", "RS256",
+                     "STS-KEYS-0190", "G4. and what it signs with is the " +
+                     "configured sign list, where one is set");
+  await refusedWrite("oauth2.signedMetadataAlgorithm", "ES256",
+                     "STS-KEYS-0192", "G5. a chosen algorithm must be " +
+                     "within its list");
+  const g6 = await post(realmApi + "/config/set", {
+    key: "oauth2.signedMetadataAlgorithm", value: "PS256" });
+  check("G6. one that is, is taken", function () {
+    assert.strictEqual(g6.status, 200, g6.text.slice(0, 300));
+  });
+  await reset("oauth2.signedMetadataAlgorithm");
+  await reset("keys.signingAlgorithms");
+  await refusedWrite("saml.signatureAlgorithms", "RS384", "STS-KEYS-0192",
+                     "G7. an XML list may not leave out the chosen XML " +
+                     "algorithm");
+  await setting("saml.signatureAlgorithms", "RS256,RS512");
+  await refusedWrite("saml.signatureAlgorithm", "rsa-sha384",
+                     "STS-KEYS-0192", "G8. saml.signatureAlgorithm stays " +
+                     "within its list");
+  const g9 = await post(realmApi + "/config/set", {
+    key: "saml.signatureAlgorithm", value: "rsa-sha512" });
+  check("G9. and may name what is in it", function () {
+    assert.strictEqual(g9.status, 200, g9.text.slice(0, 300));
+  });
+  await reset("saml.signatureAlgorithm");
+  await reset("saml.signatureAlgorithms");
+  await setting("keys.postQuantumSigning", false);
+  await refusedWrite("keys.pqcOnly", true, "STS-KEYS-0193",
+                     "G10. pqcOnly cannot go on with post-quantum signing off");
+  await reset("keys.postQuantumSigning");
+  await setting("keys.pqcOnly", true);
+  await refusedWrite("keys.postQuantumSigning", false, "STS-KEYS-0193",
+                     "G11. nor can post-quantum signing go off under it");
+  await reset("keys.pqcOnly");
+
+  log.info("=== H. what an access token is signed with ===");
+  const plain = await accessTokenAlg();
+  check("H1. RS256 by default", function () {
+    assert.strictEqual(plain, "RS256");
+  });
+  await setting("keys.signingAlgorithms", "PS256,RS256");
+  const listed = await accessTokenAlg();
+  check("H2. a list's first usable element is the default: PS256",
+        function () {
+    assert.strictEqual(listed, "PS256");
+  });
+  await reset("keys.signingAlgorithms");
+  await setting("oauth2.accessTokenSigningAlg", "ES256");
+  await setting("keys.signingAlgorithms", "PS256,RS256");
+  const fellBack = await accessTokenAlg();
+  check("H3. a setting naming an algorithm the list leaves out signs with " +
+        "the list's first instead", function () {
+    assert.strictEqual(fellBack, "PS256");
+  });
+  await reset("keys.signingAlgorithms");
+  await reset("oauth2.accessTokenSigningAlg");
+  await setting("oauth2.accessTokenSigningAlg", "EdDSA");
+  const eddsa = await accessTokenAlg();
+  check("H4. EdDSA is not signable by default (#1292): a setting naming it " +
+        "signs RS256", function () {
+    assert.strictEqual(eddsa, "RS256");
+  });
+  await reset("oauth2.accessTokenSigningAlg");
+  await setting("keys.pqcOnly", true);
+  const pqcOnly = await accessTokenAlg();
+  check("H5. under keys.pqcOnly the default is post-quantum, ML-DSA-44",
+        function () {
+    assert.strictEqual(pqcOnly, "ML-DSA-44");
+  });
+  await setting("keys.signingAlgorithms", "ML-DSA-87,ML-DSA-65,RS256");
+  const pqList = await accessTokenAlg();
+  check("H6. and a list's first usable element is the default under it",
+        function () {
+    assert.strictEqual(pqList, "ML-DSA-87");
+  });
+  await reset("keys.signingAlgorithms");
+  await reset("keys.pqcOnly");
+  const h7 = await post(realmApi + "/applications/create", {
+    identifier: "sp-pq", name: "sp-pq", protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: ["sp-pq"], oauthClientSecret: SECRET,
+              oauthGrantType: ["client_credentials"],
+              oauthIdTokenSignedResponseAlg: "ML-DSA-65" } });
+  check("H7. a post-quantum ID Token algorithm is registrable by default",
+        function () {
+    assert.strictEqual(h7.status, 200, h7.text.slice(0, 300));
+  });
+
+  log.info("=== I. the token endpoint of a product realm ===");
+  const made = await post(api + "/realms/create", { id: PRODUCT,
+    domain: PRODUCT + ".example.net", name: "Signature policy product" });
+  assert.strictEqual(made.status, 200, made.text.slice(0, 300));
+  const pApi = base + "/realm/" + PRODUCT + "/admin-api";
+  const pBase = base + "/realm/" + PRODUCT;
+  const mode = await post(api + "/realms/set", { id: PRODUCT,
+    key: "global.mode", value: "product" });
+  assert.strictEqual(mode.status, 200, mode.text.slice(0, 300));
+  const pq = mldsa.ml_dsa44.keygen(nodeCrypto.randomBytes(32));
+  const ec = nodeCrypto.generateKeyPairSync("ec",
+                                            { namedCurve: "prime256v1" });
+  const pqJwk = { kty: "AKP", alg: "ML-DSA-44", use: "sig", kid: "pq1",
+                  pub: b64u(pq.publicKey) };
+  const ecJwk = Object.assign(ec.publicKey.export({ format: "jwk" }),
+                              { kid: "ec1", use: "sig", alg: "ES256" });
+  for (const one of [["pkj-pq", pqJwk], ["pkj-ec", ecJwk]]) {
+    const r = await post(pApi + "/applications/create", {
+      identifier: one[0], name: one[0], protocols: ["oauth2"],
+      fields: { oauthClientId: [one[0]],
+                oauthTokenEndpointAuthMethod: "private_key_jwt",
+                oauthGrantType: ["client_credentials"],
+                oauthJwks: JSON.stringify({ keys: [one[1]] }) } });
+    assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+  }
+  const tokenUrl = pBase + "/oauth2/token";
+  const assertion = function (id, alg, kid, signer) {
+    const now = Math.floor(Date.now() / 1000);
+    const h = b64u(JSON.stringify({ alg: alg, kid: kid, typ: "JWT" }));
+    const p = b64u(JSON.stringify({ iss: id, sub: id, aud: tokenUrl,
+      iat: now, exp: now + 300,
+      jti: id + "-" + nodeCrypto.randomBytes(8).toString("hex") }));
+    return h + "." + p + "." + b64u(signer(Buffer.from(h + "." + p)));
+  };
+  const pqAssertion = function () {
+    return assertion("pkj-pq", "ML-DSA-44", "pq1", function (m) {
+      return mldsa.ml_dsa44.sign(pq.secretKey, m);
+    });
+  };
+  const ecAssertion = function () {
+    return assertion("pkj-ec", "ES256", "ec1", function (m) {
+      return nodeCrypto.sign("sha256", m, { key: ec.privateKey,
+                                            dsaEncoding: "ieee-p1363" });
+    });
+  };
+  const present = function (id, jws) {
+    return send(tokenUrl, { method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "client_credentials",
+        client_id: id, client_assertion: jws, client_assertion_type:
+          "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" })
+        .toString() });
+  };
+  const pqOn = await present("pkj-pq", pqAssertion());
+  check("I1. an ML-DSA-44 private_key_jwt assertion is accepted by default",
+        function () {
+    assert.strictEqual(pqOn.status, 200, pqOn.text.slice(0, 300));
+  });
+  const garbled = await present("pkj-pq", pqAssertion().slice(0, -8) +
+                                "AAAAAAAA");
+  check("I2. and a broken one is refused (the product realm checks)",
+        function () {
+    assert.strictEqual(garbled.status, 401, garbled.text.slice(0, 300));
+  });
+  const authBefore = await codeCount(pBase, "STS-OAUTH-0007");
+  const keysBefore = await codeCount(pBase, "STS-KEYS-0157");
+  const off = await post(api + "/realms/set", { id: PRODUCT,
+    key: "keys.postQuantumSigning", value: "false" });
+  assert.strictEqual(off.status, 200, off.text.slice(0, 300));
+  const pqOff = await present("pkj-pq", pqAssertion());
+  let authAfter = await codeCount(pBase, "STS-OAUTH-0007");
+  for (let i = 0; i < 20 && authAfter <= authBefore; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    authAfter = await codeCount(pBase, "STS-OAUTH-0007");
+  }
+  check("I3. with keys.postQuantumSigning off the same assertion is refused " +
+        "invalid_client, and no code is sent", function () {
+    assert.strictEqual(pqOff.status, 401, pqOff.text.slice(0, 300));
+    assert.strictEqual(pqOff.json.error, "invalid_client");
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(pqOff.text));
+  });
+  const keysAfter = await codeCount(pBase, "STS-KEYS-0157");
+  check("I4. PINNED: it is recorded STS-OAUTH-0007, the client-" +
+        "authentication refusal, and never STS-KEYS-0157", function () {
+    assert.ok(authAfter > authBefore, authBefore + " -> " + authAfter);
+    assert.strictEqual(keysAfter, keysBefore);
+  });
+  const ecOk = await present("pkj-ec", ecAssertion());
+  check("I5. an ES256 assertion is accepted", function () {
+    assert.strictEqual(ecOk.status, 200, ecOk.text.slice(0, 300));
+  });
+  const narrow = await post(api + "/realms/set", { id: PRODUCT,
+    key: "keys.acceptedSigningAlgorithms", value: "RS256" });
+  assert.strictEqual(narrow.status, 200, narrow.text.slice(0, 300));
+  const pdoc = (await send(pBase + "/.well-known/openid-configuration")).json;
+  check("I6. with keys.acceptedSigningAlgorithms=RS256 discovery publishes " +
+        "RS256 alone for client assertions", function () {
+    assert.deepStrictEqual(
+      pdoc.token_endpoint_auth_signing_alg_values_supported, ["RS256"]);
+  });
+  const unlisted = await present("pkj-ec", ecAssertion());
+  const k179 = await codeCount(pBase, "STS-KEYS-0179");
+  check("I7. PINNED (a Node defect): an ES256 assertion is still accepted " +
+        "there, and STS-KEYS-0179 is not recorded", function () {
+    assert.strictEqual(unlisted.status, 200, unlisted.text.slice(0, 300));
+    assert.strictEqual(k179, 0);
+  });
+  log.debug("Leaving d12Sections().");
 }
 
 async function test() {
@@ -184,7 +496,9 @@ async function test() {
   });
   await reset("cose.acceptedAlgorithms");
 
-  assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +
+  await d12Sections();
+
+  assert.ok(checks >= 35, "only " + checks + " checks ran; a section has " +
                           "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -200,7 +514,28 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().catch(function (e) {
+// REMOVAL IS OPT-IN: with STS_TEST_REMOVE_REALMS=1 (a private probe that
+// would otherwise fill its directory) both realms are removed at the end,
+// pass or fail. A suite run leaves them standing (tests/CLAUDE.md, *No job
+// removes a realm*).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  for (const id of [REALM, PRODUCT]) {
+    const r = await post(api + "/realms/remove", { id: id });
+    log.info("removed the realm " + id + " (" + r.status + ")");
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+test().then(function () {
+  return removeRealms();
+}, function (e) {
   log.error(e.stack || e.message);
-  process.exit(1);
+  return removeRealms().then(function () {
+    process.exit(1);
+  });
 });
