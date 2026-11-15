@@ -270,7 +270,8 @@ async function sectionB() {
   log.debug("Entering sectionB().");
   log.info("=== B. the write rules ===");
   const pale = await refusedWith("STS-AUTHN-0544", function () {
-    return postJson(API + "/branding/save", { "branding.textColor": "#eeeeee" });
+    return postJson(API + "/branding/save",
+                    { "branding.textColor": "#eeeeee" });
   });
   check("pale text on the white card is refused with the contrast it has",
         function () {
