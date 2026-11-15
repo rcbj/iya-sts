@@ -5471,7 +5471,7 @@ Scope: `admin:read`.
 | `clusters[].listenerRows[].reported.id` | string |  |  |
 | `clusters[].listenerRows[].reported.port` | integer |  |  |
 | `clusters[].listenerRows[].reported.protocol` | one of `http`, `https` |  |  |
-| `clusters[].listenerRows[].reported.purpose` | one of `api`, `proxy` |  |  |
+| `clusters[].listenerRows[].reported.purpose` | one of `api`, `proxy`, `crl` |  |  |
 | `clusters[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `crl-only`, `other` |  |  |
 | `clusters[].listenerRows[].reported.renew` | integer |  |  |
 | `clusters[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
