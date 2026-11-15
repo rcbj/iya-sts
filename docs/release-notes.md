@@ -4,6 +4,38 @@ title: Release notes
 
 # Release notes
 
+## Unreleased
+
+These changes are on a feature branch and are not part of any release yet.
+
+### The remote PEP binds no plain-HTTP listener by default
+
+The remote XACML PEP container (`iyasec/iya-sts-xacml-pep`) no longer binds
+its plain-HTTP decision API on 9090 or its plain-HTTP reverse proxy on 9180
+unless you ask for them. Over HTTPS, 9443 and 9543 behave as before.
+
+* **To keep the old behaviour**, add `PEP_HTTP=true` (the API) and
+  `PEP_PROXY_HTTP=true` (the proxy) to the container's environment. With
+  `docker-compose.yml`, set `XACML_PEP_HTTP=true` and
+  `XACML_PEP_PROXY_HTTP=true` on the host.
+* **A container that sets `PEP_PORT` or `PEP_PROXY_PORT` without the
+  switch** logs `STS-XPEP-0106` once at start, naming the line that brings
+  the listener back. A switch set to anything other than `true` or `false`
+  leaves the listener off and logs `STS-XPEP-0107`.
+* **The image's healthcheck** probes `/healthcheck` over HTTPS on
+  `PEP_HTTPS_PORT` when plain HTTP is off. A PEP with no HTTPS pair yet
+  reports itself unhealthy until it has one. If something gates on that
+  health, turn `PEP_HTTP=true` on.
+* **`docker-compose.yml`'s default `PEP_NOTIFY_URL`** is now
+  `https://xacml-pep:9443/notify`. The old `http://` default was refused unless
+  `xacml.pepNotifyAllowHttp` was on.
+* **Admin console**: the remote PEP's Listener tab shows the two listeners as
+  *off*, each with its switch. A listener the PEP reports *off* no longer
+  holds its port, so a listener defined on the tab may use 9090.
+
+[Plain HTTP is off by default](remote-pep.md#plain-http-is-off-by-default)
+has the precedence and the reasons.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the

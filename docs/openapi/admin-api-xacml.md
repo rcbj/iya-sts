@@ -3729,6 +3729,7 @@ Scope: `admin:read`.
 | `listenerCertificates.useCase` | string |  |  |
 | `listenersCatalogue` | object |  |  |
 | `listenersCatalogue.bootstrap` | list |  |  |
+| `listenersCatalogue.bootstrap[].enable` | string |  |  |
 | `listenersCatalogue.bootstrap[].env` | string |  |  |
 | `listenersCatalogue.bootstrap[].id` | string |  |  |
 | `listenersCatalogue.bootstrap[].port` | integer |  |  |
@@ -3798,6 +3799,7 @@ Scope: `admin:read`.
 | `peps[].listenerRows[].definition.protocol` | one of `http`, `https` |  |  |
 | `peps[].listenerRows[].definition.purpose` | one of `api`, `proxy` |  |  |
 | `peps[].listenerRows[].definition.renew` | integer |  |  |
+| `peps[].listenerRows[].enable` | string |  |  |
 | `peps[].listenerRows[].env` | string |  |  |
 | `peps[].listenerRows[].id` | string |  |  |
 | `peps[].listenerRows[].issued` | object |  |  |
@@ -3827,7 +3829,7 @@ Scope: `admin:read`.
 | `peps[].listenerRows[].reported.port` | integer |  |  |
 | `peps[].listenerRows[].reported.protocol` | one of `http`, `https` |  |  |
 | `peps[].listenerRows[].reported.purpose` | one of `api`, `proxy` |  |  |
-| `peps[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `not-configured`, `other` |  |  |
+| `peps[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `other` |  |  |
 | `peps[].listenerRows[].reported.renew` | integer |  |  |
 | `peps[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
 | `peps[].listenerRows[].reported.state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
@@ -3860,7 +3862,7 @@ Scope: `admin:read`.
 | `peps[].listenersInUse.listeners[].port` | integer |  |  |
 | `peps[].listenersInUse.listeners[].protocol` | one of `http`, `https` |  |  |
 | `peps[].listenersInUse.listeners[].purpose` | one of `api`, `proxy` |  |  |
-| `peps[].listenersInUse.listeners[].reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `not-configured`, `other` |  |  |
+| `peps[].listenersInUse.listeners[].reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `other` |  |  |
 | `peps[].listenersInUse.listeners[].renew` | integer |  |  |
 | `peps[].listenersInUse.listeners[].source` | one of `environment`, `service` |  |  |
 | `peps[].listenersInUse.listeners[].state` | one of `listening`, `waiting`, `failed`, `off` |  |  |

@@ -44,6 +44,10 @@ pub struct Options {
     pub description: String,
     pub bias: Bias,
     pub port: u16,
+    /// THE PLAIN-HTTP API LISTENER IS OFF BY DEFAULT (#1760, rcbj
+    /// 2026-11-14): `PEP_HTTP=true` binds it on `port`. See
+    /// [`plain_http`] for the precedence and the notices.
+    pub http: PlainHttp,
     pub poll_interval_ms: u64,
     pub heartbeat_interval_ms: u64,
     /// The longest a poll or a heartbeat waits while the PDP refuses it.
@@ -89,6 +93,9 @@ pub struct Options {
     /// until the service sends a configuration for this PEP.
     pub proxy_enabled: bool,
     pub proxy_port: u16,
+    /// The proxy's plain-HTTP listener, off by default the same way:
+    /// `PEP_PROXY_HTTP=true` binds it on `proxy_port`.
+    pub proxy_http: PlainHttp,
     /// Served with the same reloaded `PEP_HTTPS_CERT`/`KEY` pair as 9443,
     /// asking every client for a certificate (never requiring one) so a
     /// certificate-bound token's `cnf.x5t#S256` can be checked.
@@ -340,6 +347,124 @@ fn file_from_env(name: &str) -> Option<Vec<u8>> {
     }
 }
 
+/// One plain-HTTP listener's switch, as read at start (#1760).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlainHttp {
+    /// Whether the listener is bound.
+    pub on: bool,
+    /// The switch's name (`PEP_HTTP`, `PEP_PROXY_HTTP`).
+    pub switch: &'static str,
+    /// The port variable beside it (`PEP_PORT`, `PEP_PROXY_PORT`).
+    pub port_var: &'static str,
+    /// What to say at start, if anything: see [`plain_http`].
+    pub notice: Option<PlainHttpNotice>,
+}
+
+/// Why a plain-HTTP listener's start deserves a line of its own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlainHttpNotice {
+    /// The switch is unset and the port variable IS set: a deployment
+    /// written when plain HTTP was on by default and relying on it
+    /// (`STS-XPEP-0106`).
+    Relied,
+    /// The switch holds something other than `true` or `false`; the
+    /// listener stays off (`STS-XPEP-0107`). The value is kept.
+    Unreadable(String),
+}
+
+/// PLAIN HTTP IS OFF UNLESS IT IS ASKED FOR (#1760, rcbj 2026-11-14:
+/// "Disable the HTTP listeners by default on the Remote XACML PEPs &
+/// reverse proxy"). The precedence, highest first:
+///
+/// 1. **the switch** (`PEP_HTTP`, `PEP_PROXY_HTTP`): `true` binds the
+///    listener, `false` does not; anything else does not either, and says
+///    so (`STS-XPEP-0107`), because a typo that turned plaintext ON would
+///    be the wrong way to fail;
+/// 2. **unset, the listener is off.** The PORT variable alone does not
+///    turn it on: a template that wrote `PEP_PORT=9090` down to document
+///    the default would otherwise keep plaintext on without anybody
+///    choosing it, which is the thing this default exists to stop. A port
+///    variable set with no switch is a deployment that relied on the old
+///    default, so it is told so once at start (`STS-XPEP-0106`), with the
+///    one line that brings the listener back.
+///
+/// The service's equivalent is not a setting: these two are bound before
+/// the first pull, which is why they are the environment's. A listener
+/// DEFINED on the PEP's Listener tab (`xacmlPepListeners`) is the managed
+/// way to serve plain HTTP, and binds at the next pull.
+pub fn plain_http(
+    switch: Option<&str>,
+    port: Option<&str>,
+) -> (bool, Option<PlainHttpNotice>) {
+    match switch.map(str::trim) {
+        Some("true") => (true, None),
+        Some("false") => (false, None),
+        Some("") | None => {
+            let relied = port.map(|p| !p.trim().is_empty()).unwrap_or(false);
+            (false, relied.then_some(PlainHttpNotice::Relied))
+        }
+        Some(other) => (false, Some(PlainHttpNotice::Unreadable(
+            other.to_string()))),
+    }
+}
+
+/// [`plain_http`] over the environment.
+pub fn plain_http_from_env(switch: &'static str,
+                           port_var: &'static str) -> PlainHttp {
+    let said = std::env::var(switch).ok();
+    let port = std::env::var(port_var).ok();
+    let (on, notice) = plain_http(said.as_deref(), port.as_deref());
+    PlainHttp { on, switch, port_var, notice }
+}
+
+impl PlainHttp {
+    /// Logs what this switch means at start: always one line when the
+    /// listener is off, and the coded notice when one is owed.
+    pub fn announce(&self, what: &str, port: u16) {
+        match &self.notice {
+            Some(PlainHttpNotice::Relied) => tracing::warn!(
+                "{}xacml-pep: {} is set ({}) but {} is not, and plain HTTP \
+                 is OFF BY DEFAULT since #1760: the {} does not listen on \
+                 {}. If you relied on it, add {}=true to this container's \
+                 environment; otherwise remove {} to silence this.",
+                tag("STS-XPEP-0106"),
+                self.port_var,
+                port,
+                self.switch,
+                what,
+                port,
+                self.switch,
+                self.port_var
+            ),
+            Some(PlainHttpNotice::Unreadable(value)) => tracing::error!(
+                "{}xacml-pep: {} is \"{}\", which is neither true nor \
+                 false, so the {}'s plain-HTTP listener stays OFF. Set {}=true \
+                 to bind it on {}.",
+                tag("STS-XPEP-0107"),
+                self.switch,
+                value,
+                what,
+                self.switch,
+                port
+            ),
+            None if !self.on => tracing::info!(
+                "xacml-pep: the {}'s plain-HTTP listener is off (the default \
+                 since #1760); {}=true binds it on {}.",
+                what,
+                self.switch,
+                port
+            ),
+            None => tracing::info!(
+                "xacml-pep: the {}'s plain-HTTP listener is on ({}=true), on \
+                 {}.",
+                what,
+                self.switch,
+                port
+            ),
+        }
+    }
+}
+
 fn env_or(name: &str, fallback: &str) -> String {
     std::env::var(name)
         .ok()
@@ -455,6 +580,7 @@ impl Options {
                 Bias::DenyBiased
             },
             port: int_from_env("PEP_PORT", 9090),
+            http: plain_http_from_env("PEP_HTTP", "PEP_PORT"),
             poll_interval_ms: int_from_env("PEP_POLL_INTERVAL_MS", 15000),
             heartbeat_interval_ms: int_from_env(
                 "PEP_HEARTBEAT_INTERVAL_MS",
@@ -494,6 +620,8 @@ impl Options {
             .max(1),
             proxy_enabled: std::env::var("PEP_PROXY").as_deref() != Ok("false"),
             proxy_port: int_from_env("PEP_PROXY_PORT", 9180),
+            proxy_http: plain_http_from_env("PEP_PROXY_HTTP",
+                                            "PEP_PROXY_PORT"),
             proxy_https_port: int_from_env("PEP_PROXY_HTTPS_PORT", 9543),
             proxy_session_recheck_ms: int_from_env(
                 "PEP_PROXY_SESSION_RECHECK_MS",
@@ -649,6 +777,29 @@ mod tests {
         let (none, refused) = parse_callers("{}");
         assert!(none.is_empty() && refused.len() == 1);
         assert!(parse_callers("").0.is_empty());
+    }
+
+    #[test]
+    fn plain_http_is_off_unless_asked_for() {
+        // The default: nothing set, nothing bound, nothing to say.
+        assert_eq!(plain_http(None, None), (false, None));
+        assert_eq!(plain_http(Some(""), None), (false, None));
+        // An explicit enable, and an explicit disable.
+        assert_eq!(plain_http(Some("true"), None), (true, None));
+        assert_eq!(plain_http(Some(" true "), Some("9090")), (true, None));
+        assert_eq!(plain_http(Some("false"), Some("9090")), (false, None));
+        // The port alone does not turn it on, and is told so.
+        assert_eq!(plain_http(None, Some("9090")),
+                   (false, Some(PlainHttpNotice::Relied)));
+        assert_eq!(plain_http(Some(""), Some("9180")),
+                   (false, Some(PlainHttpNotice::Relied)));
+        assert_eq!(plain_http(None, Some("  ")), (false, None));
+        // A value that is neither stays off, never on.
+        for odd in ["TRUE", "yes", "1", "on"] {
+            assert_eq!(plain_http(Some(odd), None),
+                       (false, Some(PlainHttpNotice::Unreadable(
+                           odd.to_string()))), "{}", odd);
+        }
     }
 
     #[test]

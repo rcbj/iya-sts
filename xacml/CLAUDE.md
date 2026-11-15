@@ -1434,6 +1434,14 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   `api-https`, `proxy-http`, `proxy-https`, with the variables that bind
   them): what lets the PEP connect first, so read-only, and their ids are
   reserved. Their HTTPS pair is still `issue-pep-certificate`'s.
+  **The two plain-HTTP ones are off by default** (rcbj 2026-11-14,
+  `xacml-pep/CLAUDE.md` has the PEP's switch and precedence): each row
+  carries `enable`, the variable that binds it (`PEP_HTTP`,
+  `PEP_PROXY_HTTP`; `''` for the HTTPS two), a PEP reports one nobody turned
+  on as `off` with the reason `http-off`, and the tab draws it without the
+  alert, naming the switch. **A row reported `off` holds no port**
+  (`environmentOf()`), so a listener defined here may take 9090 — the
+  managed way to serve plain HTTP; one not reported holds its default.
 * **THE DEFINED ONES ARE ONE ATTRIBUTE**, `xacmlPepListeners` (OID 756), a
   JSON array validated WHOLE on every write: `STS-XACML-0243` (shape, a
   stray member, more than 32), `0244` (id, reserved, twice), `0245`

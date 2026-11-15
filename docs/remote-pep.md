@@ -56,20 +56,85 @@ reports them rather than hiding them.
 | `POST /notify` | the PDP's nudge, meaning *pull now*. Answers 204 and pulls afterwards |
 | `GET /healthcheck` | liveness. It deliberately does **not** ask whether the policy is current |
 
-They are plain HTTP on port 9090 — and the same four over **HTTPS on 9443**
-once the PEP has been given a certificate by the realm it registered to, which
-is the section below. The HTTPS listener also answers AuthZEN, as an
+They are served over **HTTPS on 9443** once the PEP has been given a
+certificate by the realm it registered to, which is the section below — and
+over plain HTTP on port 9090 **only when you turn it on** (next section). The HTTPS listener also answers AuthZEN, as an
 [edge PDP](#an-authzen-edge-pdp). The container generates no key of its own:
 both key pairs it can hold, the client certificate and the listener's, are
 handed to it.
 
+## Plain HTTP is off by default
+
+**The PEP binds no plain-HTTP listener unless you ask it to** — neither the
+decision API's on 9090 nor the reverse proxy's on 9180. Until #1760 both were
+bound whenever the container started. Turn each on with one line in the
+container's environment:
+
+| Variable | Default | What it binds |
+|---|---|---|
+| `PEP_HTTP` | `false` | the decision API (`GET /`, `/protected`, `/notify`, `/healthcheck`, `/crl/<name>`) in plain HTTP on `PEP_PORT` (9090) |
+| `PEP_PROXY_HTTP` | `false` | the reverse proxy in plain HTTP on `PEP_PROXY_PORT` (9180) |
+
+**The precedence**, highest first:
+
+1. **The switch.** `true` binds the listener and `false` does not. Any other
+   value leaves it off and is logged as `STS-XPEP-0107`, since a typo should
+   never turn plaintext on.
+2. **Unset, the listener is off.** The port variable does not turn it on by
+   itself. A container started with `PEP_PORT` (or `PEP_PROXY_PORT`) set and
+   no switch was most likely written while plain HTTP was on by default, so it
+   logs `STS-XPEP-0106` once at start, naming the line that brings the
+   listener back.
+
+**The way back is one line**: `PEP_HTTP=true` (and `PEP_PROXY_HTTP=true` for
+the proxy). With the shipped `docker-compose.yml` that is
+`XACML_PEP_HTTP=true` and `XACML_PEP_PROXY_HTTP=true` on the host.
+
+**The service's equivalent is a listener, not a setting.** These two listeners
+are bound before the PEP has pulled anything, so they belong to its
+environment. To serve plain HTTP from the console, define an HTTP listener on
+the PEP's Listener tab (*Its listeners*, below). It binds at the next pull,
+and in product mode a plain-HTTP proxy listener still needs
+`xacml.pepPlainHttpProxyListeners`. Once the PEP reports a listener off, that
+listener's port is free, so a defined listener can take 9090.
+
+**What else moved with it:**
+
+* **The image's healthcheck** (`xacml-pep --healthcheck`) asks `/healthcheck`
+  over HTTPS on `PEP_HTTPS_PORT`. It does not verify the certificate, because
+  it is the container's own loopback and the question is liveness. With
+  `PEP_HTTP=true` it asks 9090 as before. A PEP with HTTP off and no HTTPS
+  pair yet reports itself unhealthy, which is accurate: it is answering
+  nobody.
+* **`docker-compose.yml`'s default notify URL** is
+  `https://xacml-pep:9443/notify`. The old `http://` default was refused by
+  default anyway (`xacml.pepNotifyAllowHttp` is off), and product mode refuses
+  it always. The PEP's listener certificate names the notify URL's host.
+  Until the service can verify that certificate (`xacml.pepNotifyCaFile`),
+  the nudge is refused and the poll converges on its own.
+* **The Listener tab** shows `api-http` and `proxy-http` as *off*, together
+  with the switch that turns each on.
+* **The test stacks turn both switches on explicitly**, and
+  `docker-compose-run-tests.yml` explains why. The job reaches the PEP before
+  it issues the HTTPS pair. The credential's CRL distribution point is plain
+  HTTP, as CRLs conventionally are. The job also asserts the plain-HTTP nudge.
+
+The examples on this page use `http://localhost:9090` because it is the
+shortest form, and they assume `PEP_HTTP=true`. Once the PEP holds its pair,
+the same calls work at `https://localhost:9444` with
+`--cacert service-root.pem`.
+
 ## The quickest look
 
 ```bash
-docker compose --profile xacml up --build
+XACML_PEP_HTTP=true docker compose --profile xacml up --build
 
 curl -s http://localhost:9090/ | jq '.holding, .registration.why'
 ```
+
+Without `XACML_PEP_HTTP=true` the PEP has no listener you can read until it
+holds an HTTPS pair, and `docker logs xacml-pep` is where it says what it is
+doing.
 
 **Out of the box it holds nothing, and that is the honest default rather than a
 broken one.** The compose service ships with no client certificate, and the three
@@ -493,8 +558,8 @@ it in and the old certificate goes on its issuer's revocation list as
 and the other — is never used, and a listener already serving keeps the pair it
 has.
 
-**Plain HTTP stays on 9090.** The container's healthcheck uses it, and turning it
-off is a decision for your network edge. `/admin/xacml/peps` says which
+**Plain HTTP on 9090 is off unless `PEP_HTTP=true`** (*Plain HTTP is off by
+default*, above). Once the pair is served, the healthcheck uses it. `/admin/xacml/peps` says which
 certificate the realm *issued*; only the PEP's `GET /` can say which one it is
 *serving*.
 
@@ -929,7 +994,9 @@ table has one row per listener the PEP has:
   (`PEP_HTTPS_PORT`), `proxy-http` (`PEP_PROXY_PORT`) and `proxy-https`
   (`PEP_PROXY_HTTPS_PORT`). They are what lets the PEP reach this service
   before it has pulled anything, so they are shown read-only and only its
-  environment changes them. The two HTTPS ones serve the pair on the PEP's
+  environment changes them. **The two plain-HTTP ones are off unless
+  `PEP_HTTP` or `PEP_PROXY_HTTP` is `true`**. The tab shows each of them as
+  *off* and names its switch. The two HTTPS ones serve the pair on the PEP's
   own mount, which **Issue certificate** at the bottom of the tab issues
   (*An HTTPS listener, certified by the realm it registered to*, above).
 * **Any number defined here** (up to 32), each HTTP or HTTPS, for the
@@ -1045,7 +1112,8 @@ session store keeps the bounds it was built with.
 `PEP_TLS_CERT`, `PEP_TLS_KEY`, `PEP_TLS_CA` and `PEP_TLS_INSECURE` are needed
 to reach and authenticate to the service before the first pull; `PEP_PORT`,
 `PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are the ports
-of the four listeners that let the PEP connect first (further listeners are
+of the four listeners that let the PEP connect first, and `PEP_HTTP` and
+`PEP_PROXY_HTTP` switch the two plain-HTTP ones on (further listeners are
 defined on the Listener tab);
 `PEP_HTTPS_CERT`, `PEP_HTTPS_KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA` and
 `PEP_PROXY_UPSTREAM_CA` name files on the PEP's own disk; `PEP_PROXY` says
@@ -1073,7 +1141,8 @@ environment's, then the default.
 | `PEP_PIP` | `true` | resolve designators the request did not carry against the PDP's directory — *managed*: `pip` |
 | `PEP_POLL_INTERVAL_MS` | `15000` | **the contract**, and the interval a failed registration is retried on — *managed*: `pollIntervalMs` |
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | — *managed*: `heartbeatIntervalMs` |
-| `PEP_PORT` | `9090` | |
+| `PEP_PORT` | `9090` | the decision API's plain-HTTP port, bound only with `PEP_HTTP=true` |
+| `PEP_HTTP` | `false` | `true` binds plain HTTP on `PEP_PORT` (*Plain HTTP is off by default*) |
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | the **listener's** pair, issued by the PEP's realm: the leaf followed by its chain, and the key. Both or neither. They may not exist yet when the container starts |
 | `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read — *managed*: `httpsReloadIntervalMs` |
@@ -1084,7 +1153,8 @@ environment's, then the default.
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at — *managed*: `authzenPdpIdentifier` |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` — *managed*: `authzenForwardTimeoutMs` |
 | `PEP_PROXY` | `true` | the reverse proxy. Until the service sends a configuration, it answers `404` to everything |
-| `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP listener |
+| `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP port, bound only with `PEP_PROXY_HTTP=true` |
+| `PEP_PROXY_HTTP` | `false` | `true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT` |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | the proxy's HTTPS listener, with the pair 9443 serves. It asks a client for a certificate and never requires one |
 | `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | on a `signals: false` session route: how old the service's last answer that a session is live may be. `0` asks on every access — *managed*: `proxySessionRecheckMs` |
 | `PEP_PROXY_SESSION_TTL_MS` | `28800000` | the longest a proxy session lives — *managed*: `proxySessionTtlMs` |

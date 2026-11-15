@@ -9,8 +9,11 @@
 //!
 //! `xacml-pep --stamp <dir>` writes `version.json` at image build time, and
 //! `xacml-pep --healthcheck` is the image's HEALTHCHECK (there is no node
-//! or curl in it): it asks `GET /healthcheck` on `PEP_PORT` and exits 0 on
-//! a 200.
+//! or curl in it): it asks `GET /healthcheck` and exits 0 on a 200 — on
+//! `PEP_PORT` in plain HTTP when `PEP_HTTP=true`, and otherwise (the
+//! default since #1760, which turned plain HTTP off) over HTTPS on
+//! `PEP_HTTPS_PORT`, not verifying the certificate: it is the process's
+//! own loopback, and liveness is the question, not who answers.
 
 mod authzen;
 mod authzen_catalogue;
@@ -51,7 +54,7 @@ use sts_core::version;
 use tokio::net::TcpListener;
 
 use crate::listener::{peer_of, HttpsListener, Transport};
-use crate::listeners::{EnvKind, ListenerSet, PlainStatus};
+use crate::listeners::{plain_kind, EnvKind, ListenerSet, PlainStatus};
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
 use crate::pip::RemotePip;
@@ -340,9 +343,12 @@ async fn start(options: Options, info: version::VersionInfo) {
         options.authzen_client_ca.clone(),
         listeners::certify_with(proxy_client),
     ));
+    // PLAIN HTTP IS OFF BY DEFAULT (#1760): reported `off`/`http-off` so
+    // the console can say how to turn it on (`options::plain_http`).
     let api_http = Arc::new(PlainStatus::default());
+    options.http.announce("decision API", options.port);
     listener_set.environment("api-http", options.port,
-                             EnvKind::Plain(api_http.clone()));
+                             plain_kind(options.http.on, api_http.clone()));
     listener_set.environment("api-https", options.https_port,
                              EnvKind::Tls(https.clone()));
     let reporting = listener_set.clone();
@@ -466,10 +472,18 @@ async fn start(options: Options, info: version::VersionInfo) {
         // above is untouched by it. It answers 404 to everything until the
         // service sends a configuration for this PEP.
         let proxy_http = Arc::new(PlainStatus::default());
-        listener_set.environment("proxy-http", options.proxy_port,
-                                 EnvKind::Plain(proxy_http.clone()));
+        options.proxy_http.announce("reverse proxy", options.proxy_port);
+        listener_set.environment(
+            "proxy-http",
+            options.proxy_port,
+            plain_kind(options.proxy_http.on, proxy_http.clone()),
+        );
         let (plain, port) = (proxy.clone(), options.proxy_port);
+        let bind_plain = options.proxy_http.on;
         tokio::spawn(async move {
+            if !bind_plain {
+                return;
+            }
             match TcpListener::bind(("0.0.0.0", port)).await {
                 Ok(socket) => {
                     proxy_http.set("listening", "none");
@@ -510,11 +524,15 @@ async fn start(options: Options, info: version::VersionInfo) {
             });
         }
         tracing::info!(
-            "xacml-pep: the reverse proxy answers on {} (plain) and {} \
-             (HTTPS, with the pair 9443 serves), over the route table the \
-             service sends for this PEP; deny by default.",
-            options.proxy_port,
-            options.proxy_https_port
+            "xacml-pep: the reverse proxy answers on {} (HTTPS, with the \
+             pair 9443 serves){}, over the route table the service sends \
+             for this PEP; deny by default.",
+            options.proxy_https_port,
+            if options.proxy_http.on {
+                format!(" and {} (plain)", options.proxy_port)
+            } else {
+                String::new()
+            }
         );
     }
     if !options.proxy_enabled {
@@ -524,7 +542,13 @@ async fn start(options: Options, info: version::VersionInfo) {
                                  EnvKind::Off("proxy-off"));
     }
     install_fault_handler();
-    serve_http(pep, options.port, api_http).await;
+    if options.http.on {
+        serve_http(pep, options.port, api_http).await;
+    } else {
+        // Nothing left to await but the tasks above: the process lives as
+        // long as they do, and a signal ends it as before.
+        std::future::pending::<()>().await;
+    }
 }
 
 /// How long the HTTPS listeners wait before re-reading their pair: the
@@ -534,32 +558,88 @@ fn reload_interval(options: &Options) -> Duration {
 }
 
 /// The image's HEALTHCHECK: liveness only, as `/healthcheck` itself is.
+/// Plain HTTP when `PEP_HTTP=true`, else HTTPS (the module header).
 fn healthcheck() -> i32 {
-    use std::io::{Read, Write};
-    let port = std::env::var("PEP_PORT").unwrap_or_else(|_| "9090".into());
+    let (http, _) = options::plain_http(
+        std::env::var("PEP_HTTP").ok().as_deref(),
+        std::env::var("PEP_PORT").ok().as_deref(),
+    );
+    let (var, fallback) = probe_port(http);
+    let port = std::env::var(var).unwrap_or_else(|_| fallback.into());
     let address = format!("127.0.0.1:{}", port.trim());
-    let Ok(mut stream) = std::net::TcpStream::connect(&address) else {
+    let Ok(stream) = std::net::TcpStream::connect(&address) else {
         return 1;
     };
     let timeout = Some(Duration::from_secs(4));
     if stream.set_read_timeout(timeout).is_err()
-        || stream
-            .write_all(
-                b"GET /healthcheck HTTP/1.1\r\nHost: localhost\r\n\
-                         Connection: close\r\n\r\n",
-            )
-            .is_err()
+        || stream.set_write_timeout(timeout).is_err()
     {
         return 1;
     }
+    let answer = if http {
+        ask_healthcheck(stream)
+    } else {
+        let Ok(mut connector) =
+            openssl::ssl::SslConnector::builder(openssl::ssl::SslMethod::tls())
+        else {
+            return 1;
+        };
+        // The process's own loopback: liveness, not identity.
+        connector.set_verify(openssl::ssl::SslVerifyMode::NONE);
+        match connector.build().connect("localhost", stream) {
+            Ok(tls) => ask_healthcheck(tls),
+            Err(_) => None,
+        }
+    };
+    healthy(answer.as_deref())
+}
+
+/// Which port the healthcheck asks, by its variable and default: plain
+/// HTTP's only when it is switched on.
+fn probe_port(http: bool) -> (&'static str, &'static str) {
+    if http {
+        ("PEP_PORT", "9090")
+    } else {
+        ("PEP_HTTPS_PORT", "9443")
+    }
+}
+
+/// `GET /healthcheck` over a connected stream, plain or TLS.
+fn ask_healthcheck<S: std::io::Read + std::io::Write>(
+    mut stream: S,
+) -> Option<String> {
+    stream
+        .write_all(
+            b"GET /healthcheck HTTP/1.1\r\nHost: localhost\r\n\
+                     Connection: close\r\n\r\n",
+        )
+        .ok()?;
     let mut answer = String::new();
     if stream.read_to_string(&mut answer).is_err() && answer.is_empty() {
-        return 1;
+        return None;
     }
-    if answer.starts_with("HTTP/1.1 200") {
-        0
-    } else {
-        1
+    Some(answer)
+}
+
+/// 0 for a 200, 1 for anything else or nothing.
+fn healthy(answer: Option<&str>) -> i32 {
+    match answer {
+        Some(text) if text.starts_with("HTTP/1.1 200") => 0,
+        _ => 1,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_healthcheck_asks_https_unless_plain_http_is_on() {
+        assert_eq!(probe_port(false), ("PEP_HTTPS_PORT", "9443"));
+        assert_eq!(probe_port(true), ("PEP_PORT", "9090"));
+        assert_eq!(healthy(Some("HTTP/1.1 200 OK\r\n")), 0);
+        assert_eq!(healthy(Some("HTTP/1.1 503 x\r\n")), 1);
+        assert_eq!(healthy(None), 1);
     }
 }
 

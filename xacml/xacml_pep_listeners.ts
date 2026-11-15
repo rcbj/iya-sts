@@ -91,6 +91,8 @@ interface BootstrapListener {
   purpose: 'api' | 'proxy';
   env: string;
   port: number;
+  // The switch that binds a plain-HTTP one (#1760: off by default), or ''.
+  enable: string;
 }
 
 // One listener as the PEP reported it.
@@ -148,7 +150,7 @@ const STATES = ['listening', 'waiting', 'failed', 'off'];
 const REASONS = ['none', 'address-in-use', 'permission-denied',
                  'address-unavailable', 'no-certificate',
                  'certificate-refused', 'certificate-request-refused',
-                 'proxy-off', 'not-configured', 'other'];
+                 'proxy-off', 'http-off', 'not-configured', 'other'];
 const MEMBERS = ['id', 'protocol', 'purpose', 'address', 'port', 'dnsNames',
                  'ipAddresses', 'keyAlg', 'renew'];
 const ID = /^[A-Za-z0-9._-]{1,64}$/;
@@ -158,15 +160,18 @@ const CERT_MEMBERS = ['subject', 'issuer', 'serialHex', 'subjectAltName',
 
 // THE ENVIRONMENT'S FOUR, with the ports the container defaults to. Their
 // ids are reserved, so a defined listener can never be mistaken for one.
+// THE TWO PLAIN-HTTP ONES ARE OFF BY DEFAULT (#1760, rcbj 2026-11-14):
+// `enable` names the switch that binds each, and a PEP reports one nobody
+// turned on as `off` with the reason `http-off`.
 const BOOTSTRAP: BootstrapListener[] = [
   { id: 'api-http', protocol: 'http', purpose: 'api', env: 'PEP_PORT',
-    port: 9090 },
+    port: 9090, enable: 'PEP_HTTP' },
   { id: 'api-https', protocol: 'https', purpose: 'api',
-    env: 'PEP_HTTPS_PORT', port: 9443 },
+    env: 'PEP_HTTPS_PORT', port: 9443, enable: '' },
   { id: 'proxy-http', protocol: 'http', purpose: 'proxy',
-    env: 'PEP_PROXY_PORT', port: 9180 },
+    env: 'PEP_PROXY_PORT', port: 9180, enable: 'PEP_PROXY_HTTP' },
   { id: 'proxy-https', protocol: 'https', purpose: 'proxy',
-    env: 'PEP_PROXY_HTTPS_PORT', port: 9543 }
+    env: 'PEP_PROXY_HTTPS_PORT', port: 9543, enable: '' }
 ];
 
 /**
@@ -429,7 +434,16 @@ class PepListeners {
     const reported = inUse ? inUse.listeners.filter(function (one) {
       return one.source === 'environment';
     }) : [];
-    const out = BOOTSTRAP.map(function (one) {
+    // ONE THE PEP REPORTS `off` HOLDS NO PORT (#1760): with plain HTTP off
+    // by default, 9090 is free for a listener defined here — which is the
+    // managed way to serve plain HTTP. Unreported, the default port is
+    // held, the safe reading of a PEP that has not said.
+    const out = BOOTSTRAP.filter(function (one) {
+      const said = reported.filter(function (r) {
+        return r.id === one.id;
+      })[0];
+      return !said || said.state !== 'off';
+    }).map(function (one) {
       const said = reported.filter(function (r) {
         return r.id === one.id;
       })[0];
@@ -713,12 +727,14 @@ class PepListeners {
     };
     const out = BOOTSTRAP.map(function (one) {
       return { id: one.id, source: 'environment', protocol: one.protocol,
-               purpose: one.purpose, env: one.env, defaultPort: one.port,
-               definition: null, reported: reported(one.id) };
+               purpose: one.purpose, env: one.env, enable: one.enable,
+               defaultPort: one.port, definition: null,
+               reported: reported(one.id) };
     }).concat(defined.map(function (one) {
       return { id: one.id, source: 'service', protocol: one.protocol,
-               purpose: one.purpose, env: '', defaultPort: one.port,
-               definition: one, reported: reported(one.id) };
+               purpose: one.purpose, env: '', enable: '',
+               defaultPort: one.port, definition: one,
+               reported: reported(one.id) };
     }) as any[]);
     log.debug("Leaving PepListeners.rows(). " + out.length);
     return out;

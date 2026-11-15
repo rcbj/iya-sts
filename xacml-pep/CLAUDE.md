@@ -9,11 +9,36 @@ locally. Its code is `rust/bins/xacml-pep` on the engine crate
 in THIS directory is its image and its one shared expectation.
 
 ```
-docker compose --profile xacml up --build
+XACML_PEP_HTTP=true docker compose --profile xacml up --build
 
 curl http://localhost:9090/
 curl "http://localhost:9090/protected?subject=alice&employeeType=staff&action=GET"
 ```
+
+**PLAIN HTTP IS OFF BY DEFAULT (#1760, rcbj 2026-11-14: "Disable the HTTP
+listeners by default on the Remote XACML PEPs & reverse proxy").** Neither
+`api-http` (`PEP_PORT`, 9090) nor `proxy-http` (`PEP_PROXY_PORT`, 9180)
+binds unless its switch, `PEP_HTTP` or `PEP_PROXY_HTTP`, is `true`
+(`options::plain_http`). The precedence: the switch decides (`true` on,
+`false` off, anything else off and `STS-XPEP-0107`, because a typo must never
+turn plaintext ON); unset, the listener is off, and **the port variable does
+NOT turn it on** — a template that wrote `PEP_PORT=9090` down to document the
+default would otherwise keep plaintext on without anybody choosing it, which
+is what the default exists to stop. A port variable set with no switch is a
+deployment that relied on the old default, so it gets `STS-XPEP-0106` once at
+start naming the line that brings it back. **No managed setting**: these two
+bind before the first pull; a listener defined on the Listener tab is the
+service's way to serve plain HTTP, and a listener the PEP reports `off` holds
+no port, so a definition may take 9090. Reported `off`/`http-off` on the
+heartbeat. With the API's plain listener off, `start()` awaits nothing but its
+tasks (`std::future::pending`), and **the healthcheck asks HTTPS on
+`PEP_HTTPS_PORT`, certificate unverified** (its own loopback; liveness, not
+identity) — a PEP with no pair yet is honestly unhealthy, answering nobody.
+**The test stacks turn both on explicitly** (`docker-compose-run-tests.yml`
+argues it: the job reaches the PEP before it issues the HTTPS pair, the
+credential's CRL distribution point is plain HTTP, and the job asserts the
+plain-HTTP nudge); so do the CI liveness check and the AWS suite task.
+`docker-compose.yml` defaults its notify URL to `https://xacml-pep:9443/notify`.
 
 **It replaced a Node container with the same contract** — the same
 environment variables and defaults, ports, endpoints, JSON bodies, log lines
@@ -483,7 +508,8 @@ keys, variables and bounds); the table below marks them.
 | `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. *Managed* (`pip`). |
 | `PEP_POLL_INTERVAL_MS` | `15000` | **The contract**, and since 2026-09-06 also the interval a FAILED REGISTRATION is retried on. *Managed* (`pollIntervalMs`). |
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | *Managed* (`heartbeatIntervalMs`). |
-| `PEP_PORT` | `9090` | |
+| `PEP_PORT` | `9090` | The plain-HTTP API port, bound only with `PEP_HTTP=true` (#1760). |
+| `PEP_HTTP` | `false` | **`true` binds plain HTTP on `PEP_PORT`.** Off by default since #1760; the precedence and the two notices are above. |
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
 | `PEP_HTTPS_PORT` | `9443` | |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. *Managed* (`httpsReloadIntervalMs`). |
@@ -494,7 +520,8 @@ keys, variables and bounds); the table below marks them.
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. *Managed* (`authzenForwardTimeoutMs`). |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). *Managed* (`resource`, `description`, `timeoutMs`, `maxBodyBytes`, `logLevel`; `PEP_BACKOFF_MAX_MS` too, `backoffMaxMs`). |
 | `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 404 to everything until the service sends this PEP a configuration. |
-| `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener. A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
+| `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener, bound only with `PEP_PROXY_HTTP=true` (#1760). A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
+| `PEP_PROXY_HTTP` | `false` | **`true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT`.** Off by default since #1760, as `PEP_HTTP`. |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | Its HTTPS listener: the SAME `PEP_HTTPS_CERT`/`KEY` pair 9443 serves, re-read on the same interval, and a client is ASKED for a certificate (never required to present one) so a certificate-bound token's `cnf.x5t#S256` can be checked. No pair, no listener. |
 | `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | On a session route with `signals: false` (or whose receiver would not start): how old the service's last "live" answer about a proxy session may be before the next access asks `POST /xacml/pep/session` again. `0` asks on every access. *Managed* (`proxySessionRecheckMs`). |
 | `PEP_PROXY_SESSION_TTL_MS` | `28800000` (8 h) | The longest a proxy session lives, whatever the service says. *Managed* (`proxySessionTtlMs`). |
@@ -873,7 +900,7 @@ while the realm has it on, and nothing unimplemented, as the service's does.
 ## THE REVERSE PROXY (#1760)
 
 ```
-PEP_PROXY_PORT        9180   plain HTTP
+PEP_PROXY_PORT        9180   plain HTTP, only with PEP_PROXY_HTTP=true
 PEP_PROXY_HTTPS_PORT  9543   the pair 9443 serves, a client certificate asked for
 GET  /.iya-pep/callback      the session mechanism's redirect URI
 GET  /.iya-pep/logout        ends the proxy session, then the service's

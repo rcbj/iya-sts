@@ -1377,6 +1377,7 @@ class XacmlPage {
         'certificate-request-refused':
           t.html('consoleXacml.listeners.reason.certificateRequestRefused'),
         'proxy-off': t.html('consoleXacml.listeners.reason.proxyOff'),
+        'http-off': t.html('consoleXacml.listeners.reason.httpOff'),
         'not-configured': t.html('consoleXacml.listeners.reason.notConfigured'),
         other: t.html('consoleXacml.listeners.reason.other')
       }
@@ -1495,13 +1496,24 @@ class XacmlPage {
         : (one.definition
             ? one.definition.address + ':' + one.definition.port
             : '');
+      // PLAIN HTTP OFF BY DEFAULT (#1760) is a choice, not a fault: it is
+      // drawn as `off` without the alert, with the line that turns it on.
+      const httpOff = !!said && said.reason === 'http-off';
       const state = said
         ? (said.state === 'listening' ? words.state.listening
-            : '<strong class="xacml-alert">' +
-              (words.state[said.state] || esc(said.state)) + '</strong>') +
-          (said.reason && said.reason !== 'none'
-            ? '<div class="sub">' + (words.reason[said.reason] ||
-                                     esc(said.reason)) + '</div>' : '') +
+            : (httpOff ? words.state.off
+                : '<strong class="xacml-alert">' +
+                  (words.state[said.state] || esc(said.state)) +
+                  '</strong>')) +
+          (httpOff
+            ? '<div class="sub">' +
+              t.html('consoleXacml.listeners.httpOffHow', {
+                enable: one.enable || 'PEP_HTTP',
+                port: said.port || one.defaultPort }) + '</div>'
+            : (said.reason && said.reason !== 'none'
+                ? '<div class="sub">' + (words.reason[said.reason] ||
+                                         esc(said.reason)) + '</div>'
+                : '')) +
           (one.definition && one.protocol === 'https' &&
            said.renew !== one.definition.renew
             ? '<div class="sub">' +
@@ -1531,7 +1543,12 @@ class XacmlPage {
         esc(one.id) + '</code></th><td>' + words.source[one.source] +
         (one.source === 'environment'
           ? '<div class="sub">' + t.html('consoleXacml.listeners.defaultPort',
-              { env: one.env, port: one.defaultPort }) + '</div>' : '') +
+              { env: one.env, port: one.defaultPort }) + '</div>' +
+            (one.enable
+              ? '<div class="sub">' +
+                t.html('consoleXacml.listeners.enableHint',
+                       { enable: one.enable }) + '</div>' : '')
+          : '') +
         '</td><td>' + (one.protocol === 'https' ? 'HTTPS' : 'HTTP') +
         '</td><td>' + (where ? '<code>' + esc(where) + '</code>'
                              : '<span class="sub">' +

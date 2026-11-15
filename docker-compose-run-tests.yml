@@ -1030,13 +1030,32 @@ services:
       # companion below, and drives it on these two ports by this host name.
       - PEP_PROXY_PORT=9180
       - PEP_PROXY_HTTPS_PORT=9543
+      # PLAIN HTTP TURNED ON EXPLICITLY (#1760: it is off by default in the
+      # image and in docker-compose.yml). This stack cannot move to HTTPS,
+      # for three reasons, each the job's:
+      #   * the HTTPS pair does not exist when this container starts: the
+      #     job issues it once the PEP has REGISTERED in the realm it
+      #     creates, and asserts the registration, the pull and the refused
+      #     nudge before that, over 9090;
+      #   * the credential's CRL distribution point is
+      #     http://xacml-pep:9090/crl (`--crl-base`, ./run-tests.sh), which a
+      #     product-mode service fetches under hard-fail; a CRL is served in
+      #     the clear by convention (RFC 5280 section 4.2.1.13), since one
+      #     behind TLS would have to be validated with itself;
+      #   * the job asserts the nudge over plain http, refused and then
+      #     delivered with xacml.pepNotifyAllowHttp, and the proxy's plain
+      #     listener beside its HTTPS one.
+      - PEP_HTTP=true
+      - PEP_PROXY_HTTP=true
       # ZERO, so the PEP asks the service whether a proxy session's sign-on
       # session is still live on EVERY access: the job signs the person out
       # at the service and asserts the very next access is refused, which a
       # five-second window would make a race.
       - PEP_PROXY_SESSION_RECHECK_MS=${XACML_PEP_PROXY_SESSION_RECHECK_MS:-0}
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9090,path:'/healthcheck'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      # The binary's own probe: the image is the Rust PEP, which holds no
+      # node (xacml-pep/Dockerfile). With PEP_HTTP=true it asks 9090.
+      test: ["CMD", "xacml-pep", "--healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 12

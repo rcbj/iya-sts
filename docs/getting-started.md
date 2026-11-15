@@ -668,7 +668,8 @@ service logs when it starts.
 and in the Version column of `/admin/xacml/peps` on this service's console:
 
 ```bash
-curl -s http://localhost:9090/ | head -20      # the PEP's own page
+curl -s http://localhost:9090/ | head -20      # with XACML_PEP_HTTP=true
+curl -sk https://localhost:9444/ | head -20    # once it holds its HTTPS pair
 ```
 
 Its **release always matches** this service's — both images are built from

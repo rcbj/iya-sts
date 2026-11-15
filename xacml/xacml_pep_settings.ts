@@ -202,6 +202,11 @@ const BOOTSTRAP: BootstrapRow[] = [
   { env: 'PEP_TLS_CA', reason: 'connect', default: '' },
   { env: 'PEP_TLS_INSECURE', reason: 'connect', default: 'false' },
   { env: 'PEP_PORT', reason: 'bind', default: '9090' },
+  // PLAIN HTTP IS OFF BY DEFAULT (#1760): each switch binds its listener
+  // before the first pull, so it is the environment's; a listener defined
+  // on the Listener tab is the managed way to serve plain HTTP.
+  { env: 'PEP_HTTP', reason: 'bind', default: 'false' },
+  { env: 'PEP_PROXY_HTTP', reason: 'bind', default: 'false' },
   { env: 'PEP_HTTPS_PORT', reason: 'bind', default: '9443' },
   { env: 'PEP_PROXY_PORT', reason: 'bind', default: '9180' },
   { env: 'PEP_PROXY_HTTPS_PORT', reason: 'bind', default: '9543' },

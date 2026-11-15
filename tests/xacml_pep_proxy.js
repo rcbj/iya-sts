@@ -1910,6 +1910,49 @@ async function childBody() {
                             return one.id;
                           }),
                           lview.applicationChoices]));
+  // PLAIN HTTP OFF BY DEFAULT (#1760): a PEP reports api-http `off` with
+  // the reason `http-off`, which is kept rather than folded into `other`;
+  // that row holds no port, so a listener defined here may take 9090; and
+  // every environment row names the switch that binds it.
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+    { listeners: { listeners: [
+      { id: 'api-http', source: 'environment', protocol: 'http',
+        purpose: 'api', address: '0.0.0.0', port: 9090,
+        state: 'off', reason: 'http-off', renew: 0, certificate: null },
+      { id: 'proxy-http', source: 'environment', protocol: 'http',
+        purpose: 'proxy', address: '0.0.0.0', port: 9180,
+        state: 'listening', reason: 'none', renew: 0, certificate: null }
+    ] } });
+  const offRow = inRealm(function () {
+    return peps.read(NAME);
+  });
+  const onOff = listenerAct({ action: 'set-pep-listener',
+    listener: { id: 'plain9090', protocol: 'http', purpose: 'api',
+                port: 9090 } });
+  const onListening = listenerAct({ action: 'set-pep-listener',
+    listener: { id: 'plain9180', protocol: 'http', purpose: 'api',
+                port: 9180 } });
+  listenerAct({ action: 'remove-pep-listener', listener: 'plain9090' });
+  const offView = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  });
+  const enables = offView.peps[0].listenerRows.slice(0, 4)
+    .map(function (one) {
+      return one.id + '=' + one.enable;
+    }).join(',');
+  t.check(r.status === 200 && offRow.listenersInUse &&
+          offRow.listenersInUse.listeners[0].reason === 'http-off' &&
+          offRow.listenersInUse.listeners[0].state === 'off' &&
+          onOff && onOff.ok &&
+          errorCodes.codeOf(onListening) === 'STS-XACML-0247' &&
+          enables === 'api-http=PEP_HTTP,api-https=,' +
+                      'proxy-http=PEP_PROXY_HTTP,proxy-https=' &&
+          offView.listenersCatalogue.bootstrap[0].enable === 'PEP_HTTP' &&
+          offView.listenersCatalogue.bootstrap[1].enable === '',
+          'L8b. a plain-HTTP listener reported off (http-off) is kept as ' +
+          'that, holds no port, and every environment row names its switch',
+          JSON.stringify([offRow.listenersInUse, onOff && onOff.ok,
+                          errorCodes.codeOf(onListening), enables]));
   // The certificate, over a key the PEP holds.
   const pepKey = await keyMaterialL.generateKeyPair('ec-p256');
   const csr = await x509L.certificationRequest({ subject: 'CN=ppxpep',
@@ -1981,6 +2024,7 @@ async function childBody() {
           'are named on the page', brief(sp));
   const answersL = [
     answerProblem('GET', '/admin-api/xacml/peps', 200, lview),
+    answerProblem('GET', '/admin-api/xacml/peps', 200, offView),
     answerProblem('GET', '/admin-api/xacml/peps', 200, inRealm(function () {
       return xacmlAdminL.pepsJson(NAME);
     })),

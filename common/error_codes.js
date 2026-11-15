@@ -23972,6 +23972,17 @@ const CODES = [
       'PEP\'s own reading of it; that listener is left out and the ' +
       'others are bound (#1760).',
     spec: 'none; that one listener is left out' },
+  { code: 'STS-XPEP-0106',
+    summary: 'The remote PEP started with PEP_PORT (or PEP_PROXY_PORT) set ' +
+      'and PEP_HTTP (or PEP_PROXY_HTTP) not set: plain HTTP is off by ' +
+      'default since #1760, so that listener is not bound. Logged once at ' +
+      'start; PEP_HTTP=true (or PEP_PROXY_HTTP=true) brings it back.',
+    spec: 'none; the listener is reported off (http-off)' },
+  { code: 'STS-XPEP-0107',
+    summary: 'PEP_HTTP or PEP_PROXY_HTTP holds a value that is neither ' +
+      'true nor false; the plain-HTTP listener it switches stays off ' +
+      '(#1760). Logged once at start.',
+    spec: 'none; the listener is reported off (http-off)' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

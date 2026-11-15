@@ -331,8 +331,19 @@ impl PlainStatus {
 pub enum EnvKind {
     Plain(Arc<PlainStatus>),
     Tls(Arc<HttpsListener>),
-    /// Not bound at all (the proxy off).
+    /// Not bound at all: the proxy off (`proxy-off`), or a plain-HTTP
+    /// listener nobody turned on (`http-off`, the default since #1760).
     Off(&'static str),
+}
+
+/// One of the two plain-HTTP environment listeners: bound and reported
+/// by `status` when its switch is on, else `off` with `http-off` (#1760).
+pub fn plain_kind(on: bool, status: Arc<PlainStatus>) -> EnvKind {
+    if on {
+        EnvKind::Plain(status)
+    } else {
+        EnvKind::Off("http-off")
+    }
 }
 
 struct EnvListener {
@@ -1071,5 +1082,27 @@ mod tests {
         assert_eq!(report["listeners"][1]["source"], "environment");
         assert_eq!(report["listeners"][1]["purpose"], "proxy");
         assert_eq!(report["listeners"][1]["state"], "off");
+    }
+
+    #[test]
+    fn a_plain_listener_nobody_turned_on_is_reported_http_off() {
+        let listeners = set(refusing(), false);
+        let status = Arc::new(PlainStatus::default());
+        listeners.environment("api-http", 9090,
+                              plain_kind(false, status.clone()));
+        listeners.environment("proxy-http", 9180,
+                              plain_kind(false, status.clone()));
+        let report = listeners.report();
+        for i in 0..2 {
+            assert_eq!(report["listeners"][i]["state"], "off");
+            assert_eq!(report["listeners"][i]["reason"], "http-off");
+            assert_eq!(report["listeners"][i]["protocol"], "http");
+        }
+        // Switched on, it is the listener's own status.
+        let on = set(refusing(), false);
+        status.set("listening", "none");
+        on.environment("api-http", 9090, plain_kind(true, status));
+        assert_eq!(on.report()["listeners"][0]["state"], "listening");
+        assert_eq!(on.report()["listeners"][0]["reason"], "none");
     }
 }

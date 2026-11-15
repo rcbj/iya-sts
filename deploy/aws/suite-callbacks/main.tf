@@ -358,6 +358,11 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "PEP_HTTPS_CERT", value = "/shared/pep/server/pep-server.crt" },
         { name = "PEP_HTTPS_KEY", value = "/shared/pep/server/pep-server.key" },
         { name = "PEP_HTTPS_PORT", value = "9443" },
+        # Plain HTTP is off by default since #1760, and on here for the
+        # stack's reasons (docker-compose-run-tests.yml): the job reaches
+        # 9090 before it issues the HTTPS pair, the CRLs and the nudge.
+        { name = "PEP_HTTP", value = "true" },
+        { name = "PEP_PROXY_HTTP", value = "true" },
         { name = "PEP_HTTPS_RELOAD_INTERVAL_MS", value = "1000" },
         { name = "PEP_TLS_INSECURE", value = "true" },
         { name = "PEP_RESOURCE", value = "https://example.test/records" },

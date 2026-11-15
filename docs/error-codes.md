@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5602** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5604** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 178
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 105
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 107
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5219,6 +5219,8 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0103` | A listener the service defined for this remote PEP (#1760) could not bind its address and port; it is reported failed on the heartbeat and the others are unaffected. | none; reported on the heartbeat |
 | `STS-XPEP-0104` | The remote PEP could not obtain a certificate for an HTTPS listener the service defined: the request was refused, the answer was not a usable chain for its key, or the PDP could not be reached; the listener waits and asks again. | none; reported on the heartbeat |
 | `STS-XPEP-0105` | A listener definition the service sent fails the remote PEP's own reading of it; that listener is left out and the others are bound (#1760). | none; that one listener is left out |
+| `STS-XPEP-0106` | The remote PEP started with PEP_PORT (or PEP_PROXY_PORT) set and PEP_HTTP (or PEP_PROXY_HTTP) not set: plain HTTP is off by default since #1760, so that listener is not bound. Logged once at start; PEP_HTTP=true (or PEP_PROXY_HTTP=true) brings it back. | none; the listener is reported off (http-off) |
+| `STS-XPEP-0107` | PEP_HTTP or PEP_PROXY_HTTP holds a value that is neither true nor false; the plain-HTTP listener it switches stays off (#1760). Logged once at start. | none; the listener is reported off (http-off) |
 
 ## STS-AUTHZEN
 

@@ -1020,7 +1020,13 @@ async function startThePep() {
     // the session recheck at zero for section 10's sign-out.
     PEP_PROXY_PORT: "9180",
     PEP_PROXY_HTTPS_PORT: "9543",
-    PEP_PROXY_SESSION_RECHECK_MS: "0"
+    PEP_PROXY_SESSION_RECHECK_MS: "0",
+    // PLAIN HTTP ON, EXPLICITLY (#1760: off by default): this job asserts
+    // the registration, the pull and the refused nudge over 9090 before it
+    // has issued the HTTPS pair, and the credential's CRLs are served there
+    // (docker-compose-run-tests.yml gives the stack's reasons in full).
+    PEP_HTTP: "true",
+    PEP_PROXY_HTTP: "true"
   };
 
   pep.certDir = await mintTheContainersCredential();
