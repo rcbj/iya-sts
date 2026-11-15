@@ -125,12 +125,32 @@ const PASSWORD = "Lr-" + crypto.randomBytes(9).toString("base64url") +
                  "-Correct.Horse-42";
 const FLOOR_PRODUCT = 60;
 
-// THE DIRECTORY'S CEILING IS THE PROCESS'S (`ldap.maxEntries`, every realm's
-// entries counted together) and a realm's own value is the one its writes
-// are checked against, so each realm here raises its own: a long run leaves
-// hundreds of realms behind, each seeded with dozens of entries, and the
-// shipped twenty thousand is then full before this job writes anything.
-const ROOMY = { "ldap.maxEntries": "1000000" };
+// REMOVAL IS OPT-IN (STS_TEST_REMOVE_REALMS=1). tests/CLAUDE.md's *No job
+// removes a realm* is the rule for a shared run, where what a job leaves is
+// there to be read afterwards; a hand run against a private service sets the
+// variable, and the realms this job made are removed at its end, pass or
+// fail, so a long series of runs does not fill the directory's ceiling.
+const MADE_REALMS = [];
+
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  for (const id of MADE_REALMS) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("  (removed the realm " + id + ": " + r.status + ")");
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A realm that cannot be removed is left, as a shared run leaves it.
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
 
 let checks = 0;
 function check(what, fn) {
@@ -495,8 +515,9 @@ async function setUp(realm, mode) {
   await ok(base + "/admin-api/realms/create",
            { id: realm, domain: realm + ".example.net",
              name: "D12 LDAP rules " + mode,
-             overrides: Object.assign({ "global.mode": mode }, ROOMY) },
+             overrides: { "global.mode": mode } },
            "created the " + mode + " realm " + realm);
+  MADE_REALMS.push(realm);
   if (mode === "product") {
     await setRealm(realm, "authn.allowOptionalSecondFactor", "true");
   }
@@ -1256,8 +1277,8 @@ async function applicationRegistration(prod, dev) {
   const realm = "lrs" + STAMP;
   await ok(base + "/admin-api/realms/create",
            { id: realm, domain: realm + ".example.net",
-             name: "D12 LDAP sighting", overrides: ROOMY },
-           "created " + realm);
+             name: "D12 LDAP sighting" }, "created " + realm);
+  MADE_REALMS.push(realm);
   const api = realmBase(realm) + "/admin-api";
   const adminMade = await ok(api + "/users/create", {
     username: ADMIN, invent: false, credential: "password",
@@ -1405,9 +1426,11 @@ program.addOption(new Option("-u, --url <url>",
                   "ignored; kept for a uniform CLI across the suite"));
 program.parse(process.argv);
 
-test().then(function () {
+test().then(async function () {
+  await removeRealms();
   log.info("Test completed successfully.");
-}).catch(function (e) {
+}).catch(async function (e) {
   log.error(e.stack || e.message);
+  await removeRealms();
   process.exit(1);
 });

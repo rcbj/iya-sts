@@ -94,12 +94,32 @@ const PERSON = ("ldifperson" + STAMP).toLowerCase().replace(/[^a-z0-9]/g, "")
   .slice(0, 40);
 const PASSWORD = "Ldif-Person-" + String(Date.now()).slice(-8) + "-Pw!x";
 
-// THE DIRECTORY'S CEILING IS THE PROCESS'S (`ldap.maxEntries`, every realm's
-// entries counted together) and a realm's own value is the one its writes
-// are checked against, so each realm here raises its own: a long run leaves
-// hundreds of realms behind, each seeded with dozens of entries, and the
-// shipped twenty thousand is then full before this job writes anything.
-const ROOMY = { "ldap.maxEntries": "1000000" };
+// REMOVAL IS OPT-IN (STS_TEST_REMOVE_REALMS=1). tests/CLAUDE.md's *No job
+// removes a realm* is the rule for a shared run, where what a job leaves is
+// there to be read afterwards; a hand run against a private service sets the
+// variable, and the realms this job made are removed at its end, pass or
+// fail, so a long series of runs does not fill the directory's ceiling.
+const MADE_REALMS = [];
+
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked to.");
+    return;
+  }
+  for (const id of MADE_REALMS) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("  (removed the realm " + id + ": " + r.status + ")");
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A realm that cannot be removed is left, as a shared run leaves it.
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
 
 let checks = 0;
 function check(what, fn) {
@@ -231,9 +251,9 @@ async function test() {
   log.info("=== 0. two throwaway realms " + FROM + " and " + TO + " ===");
   for (const id of [FROM, TO]) {
     await ok(base + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "Application LDIF " + STAMP,
-      overrides: ROOMY },
+      domain: id + ".example.net", name: "Application LDIF " + STAMP },
       "created the realm " + id);
+    MADE_REALMS.push(id);
   }
   const fromApi = base + "/realm/" + FROM + "/admin-api";
   const toApi = base + "/realm/" + TO + "/admin-api";
@@ -404,10 +424,10 @@ async function test() {
   const PROD = realmId("ldifp-");
   await ok(base + "/admin-api/realms/create", { id: PROD,
     domain: PROD + ".example.net", name: "Person LDIF product " + STAMP,
-    overrides: Object.assign({ "global.mode": "product",
-                               "authn.allowOptionalSecondFactor": "true" },
-                             ROOMY) },
+    overrides: { "global.mode": "product",
+                 "authn.allowOptionalSecondFactor": "true" } },
     "created the product realm " + PROD);
+  MADE_REALMS.push(PROD);
   const prodApi = base + "/realm/" + PROD + "/admin-api";
   const WHO = (PERSON + "g").slice(0, 40);
   await ok(fromApi + "/users/create", { username: WHO, invent: false,
@@ -565,7 +585,10 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-test().catch(function (e) {
+test().then(function () {
+  return removeRealms();
+}).catch(async function (e) {
   log.error("sts_application_ldif FAILED: " + ((e && e.stack) || e));
+  await removeRealms();
   process.exit(1);
 });
