@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-authn"
+version = "0.1.0"
+description = "The session core (authn/authn.ts): the sign-on session every artifact is a projection of, its events, cookie, clocks, store and the doors other families call."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-store.workspace = true
+sts-cluster.workspace = true
+sts-model.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tokio-postgres.workspace = true
+postgres-openssl.workspace = true
+openssl.workspace = true
+
+[lints]
+workspace = true
