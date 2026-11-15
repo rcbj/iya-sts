@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+
+[package]
+name = "sts-policy"
+version = "0.1.0"
+description = "The named policies on Directory > Policies: the selection every kind shares (rule 3cx) and the seven kinds' reads, saves, refusals and acts, over ports to the directory and the registers."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+regex.workspace = true
+serde_json.workspace = true
+sts-core.workspace = true
+sts-crypto.workspace = true
+sts-model.workspace = true
+tracing.workspace = true
+unicode-normalization.workspace = true
+
+[lints]
+workspace = true

@@ -1637,3 +1637,41 @@ export function renderRustPersistence(postgres, mariadb) {
   log.debug("Leaving renderRustPersistence().");
   return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// THE POLICY KINDS' TABLES, FOR `sts-policy` (#444 phase 4, the policy slice).
+//
+// Each kind on Directory > Policies reads its rows from the model at load
+// (`ModelTables.fields()`, `.selectors()`, `.schema()`, `.facts()`); the Rust
+// port reads the SAME tables, as one JSON document committed at
+// `models/generated/rust/sts-policy/src/generated/policy_tables.json`,
+// which tests/tools/regenerate-model-docs.sh copies into rust/crates/ with
+// the rest of the Rust tree and tests/model_domain.js holds there. What the Node module computes and passes in (a
+// limit `crypto.js` owns, the computed rows) is the Rust module's own, as it
+// is the Node module's.
+// ---------------------------------------------------------------------------
+/**
+ * The policy objects' tables, by object id.
+ *
+ * @param objects - every directory object `readDirectory()` read
+ * @param schemaOf - model_lib's `schemaOf()`
+ * @param fieldsOf - model_lib's `fieldsOf()`
+ * @param facts - model_lib's `factsOf()` of every object
+ * @returns the JSON text
+ */
+export function renderRustPolicyTables(objects, schemaOf, fieldsOf, facts) {
+  log.debug("Entering renderRustPolicyTables().");
+  const out = {};
+  objects.filter(function (object) {
+    return object.authored === true && /^policy\./.test(object.id);
+  }).sort(function (a, b) {
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  }).forEach(function (object) {
+    const declared = fieldsOf(object);
+    out[object.id] = { schema: schemaOf(object), fields: declared.fields,
+                       selectors: declared.selectors,
+                       facts: facts[object.id] || {} };
+  });
+  log.debug("Leaving renderRustPolicyTables(). " + Object.keys(out).length);
+  return JSON.stringify(out, null, 1) + '\n';
+}

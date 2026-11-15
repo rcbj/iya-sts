@@ -5485,7 +5485,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./ldap-wire-vectors.js').build(ROOT);
                    } },
-                 { file: 'pkcs8-node.json', build: pkcs8Vectors }];
+                 { file: 'pkcs8-node.json', build: pkcs8Vectors },
+                 // The named policies' (#444 phase 4):
+                 // tests/tools/policy-vectors.js.
+                 { file: 'policy-node.json',
+                   build: function () {
+                     return require('./policy-vectors.js').build(ROOT);
+                   } }];
 
 // A PRIVATE KEY MADE PKCS#8 (#444, phase 3): the conversion `sts-core`'s
 // secrets reader needs for OpenBao's PKCS#1 client key, as node does it —
