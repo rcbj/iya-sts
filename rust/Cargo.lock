@@ -2868,6 +2868,7 @@ dependencies = [
 name = "sts-registers"
 version = "0.1.0"
 dependencies = [
+ "jsonschema",
  "regex",
  "serde",
  "serde_json",
@@ -2879,6 +2880,7 @@ dependencies = [
  "sts-policy",
  "sts-xacml",
  "tracing",
+ "url",
 ]
 
 [[package]]

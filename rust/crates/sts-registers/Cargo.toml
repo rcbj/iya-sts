@@ -21,6 +21,8 @@ sts-policy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 regex.workspace = true
+url.workspace = true
+jsonschema.workspace = true
 tracing.workspace = true
 
 [build-dependencies]

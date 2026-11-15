@@ -59,6 +59,16 @@ impl Normalised {
     }
 }
 
+// A HOT PATH: every check's answer passes through it, so no span.
+/// Node's '' for "no problem" as an `Option`.
+pub fn nz(text: String) -> Option<String> {
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
+}
+
 /// The attributes a seal applies to (`SEALED_FIELDS`).
 pub const SEALED_FIELDS: &[&str] = &[
     "oauthAssertionPrivateKey",
@@ -319,7 +329,9 @@ impl ApplicationRegistry {
                             && !truthy("oauthJwks")
                             && !truthy("oauthJwksUri"));
                     if let Some(problem) =
-                        uris::backchannel_scheme_problem(&first, public)
+                        uris::backchannel_scheme_problem(&first, public, &|u| {
+                            self.effects.dial_problem(u)
+                        })
                     {
                         out.errors.push(problem.message);
                         note(problem.code, &mut code);
@@ -385,7 +397,11 @@ impl ApplicationRegistry {
             if name == "ssfAllowedEvents" {
                 let problems: Vec<String> = values
                     .iter()
-                    .filter_map(|one| uris::ssf_allowed_event_problem(one))
+                    .filter_map(|one| {
+                        uris::ssf_allowed_event_problem(one, &|u| {
+                            self.effects.ssf_event_known(u)
+                        })
+                    })
                     .collect();
                 if !problems.is_empty() {
                     out.errors.extend(problems);
@@ -427,7 +443,9 @@ impl ApplicationRegistry {
             let problems: Vec<String> = values
                 .iter()
                 .filter_map(|one| {
-                    uris::kerberos_trust_attribute_problem(self, name, one)
+                    uris::kerberos_trust_attribute_problem(self, name, one, &|r| {
+                        self.effects.kerberos_accepts_realm(r)
+                    })
                 })
                 .collect();
             if !problems.is_empty() {

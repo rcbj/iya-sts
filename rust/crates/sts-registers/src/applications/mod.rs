@@ -51,7 +51,7 @@ pub mod store;
 pub mod tables;
 pub mod write;
 
-mod ports;
+pub mod ports;
 
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -93,6 +93,8 @@ pub trait AppEnv: Send + Sync {
     fn seal(&self, text: &str, label: &str) -> Option<String>;
     /// `keystore.open(text, label)`.
     fn open(&self, text: &str, label: &str) -> Option<String>;
+    /// `mode.inForce(key, value, source)`: the value a mode lets stand.
+    fn in_force(&self, key: &str, value: &Value) -> Value;
 }
 
 /// What a write sets off outside the register.
@@ -128,6 +130,13 @@ pub trait AppEffects: Send + Sync {
         usage: &str,
         der: &[u8],
     ) -> Option<(String, ErrorCode)>;
+    /// `federation_http.urlProblem(url)`: '' when this service may dial
+    /// it.
+    fn dial_problem(&self, url: &str) -> String;
+    /// `ssf_events.EVENT_BY_URI[uri]` is an event the transmitter knows.
+    fn ssf_event_known(&self, uri: &str) -> bool;
+    /// `krb5_trusts.acceptsRealm(realm)`.
+    fn kerberos_accepts_realm(&self, realm: &str) -> bool;
 }
 
 /// The fine-grained authorization lifecycle slot (`setFgaLifecycle()`,
