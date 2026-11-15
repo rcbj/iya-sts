@@ -4275,7 +4275,7 @@ name = "sts-credentials"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
- "indexmap",
+ "indexmap 2.14.2",
  "regex",
  "serde",
  "serde_json",
