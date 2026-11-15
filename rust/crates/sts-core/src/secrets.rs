@@ -228,29 +228,34 @@ fn missing_sdk(provider: &str) -> Failure {
     )
 }
 
-/// A refusal from a provider: the condition's code where `secrets.js`
-/// marks one, and the sentence without it. `None` is an error Node leaves
-/// unmarked — what an SDK or a store said — so the refusal to start
-/// carries the secret's code alone, as `tagReadFailure()` writes it.
+/// A refusal from a provider: the condition's code, the sentence without
+/// it, and whether `secrets.js` MARKS the condition. An unmarked failure —
+/// what an SDK or a store said — carries STS-KEYS-0043, the code a caller
+/// that tags `code` (the keystore's unwrap) has always written for one,
+/// and the refusal to start carries the secret's code alone, as
+/// `tagReadFailure()` writes it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Failure {
-    pub code: Option<ErrorCode>,
+    pub code: ErrorCode,
     pub message: String,
+    pub marked: bool,
 }
 
 impl Failure {
     fn new(code: ErrorCode, message: impl Into<String>) -> Failure {
         Failure {
-            code: Some(code),
+            code,
             message: message.into(),
+            marked: true,
         }
     }
 
     /// An unmarked failure: what a store or an SDK said.
     fn uncoded(message: impl Into<String>) -> Failure {
         Failure {
-            code: None,
+            code: codes::STS_KEYS_0043,
             message: message.into(),
+            marked: false,
         }
     }
 }
@@ -601,12 +606,15 @@ impl Secrets {
                 "file" => self.read_file(spec),
                 "vault" => self.read_vault(spec).await,
                 "vault-transit" => self.transit(spec).await,
-                "aws" => self.read_aws(spec).await,
-                "gcp" => self.read_gcp(spec).await,
-                "azure" => self.read_azure(spec).await,
-                "aws-kms" => self.aws_kms(spec).await,
-                "gcp-kms" => self.gcp_kms(spec).await,
-                _ => self.azure_keys(spec).await,
+                // BOXED: the SDKs' futures are deep, and inlined into this
+                // one they pushed the layout of every future that awaits a
+                // read (the runtime's start) past rustc's query depth.
+                "aws" => self.boxed(self.read_aws(spec)).await,
+                "gcp" => self.boxed(self.read_gcp(spec)).await,
+                "azure" => self.boxed(self.read_azure(spec)).await,
+                "aws-kms" => self.boxed(self.aws_kms(spec)).await,
+                "gcp-kms" => self.boxed(self.gcp_kms(spec)).await,
+                _ => self.boxed(self.azure_keys(spec)).await,
             }
         };
         self.record(spec, &provider, began.elapsed(), answer.as_ref().err());
@@ -619,10 +627,21 @@ impl Secrets {
             format!(
                 "{}{}{}",
                 tag(which),
-                failure.code.map(tag).unwrap_or_default(),
+                if failure.marked {
+                    tag(failure.code)
+                } else {
+                    String::new()
+                },
                 failure.message
             )
         })
+    }
+
+    fn boxed<'a>(
+        &self,
+        read: impl Future<Output = Result<Secret, Failure>> + Send + 'a,
+    ) -> BoxFuture<'a, Result<Secret, Failure>> {
+        Box::pin(read)
     }
 
     fn record(

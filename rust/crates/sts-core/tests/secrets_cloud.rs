@@ -56,6 +56,9 @@ impl KmsCrypto for Crypto {
     }
 }
 
+/// A read: its name in the vectors, the provider, the ref, the settings.
+type Read<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, &'a str)]);
+
 fn secrets(extra: &[(&str, &str)]) -> Secrets {
     let mut env: HashMap<String, String> = std::env::vars()
         .filter(|(k, _)| !k.starts_with("STS_KEYS_"))
@@ -113,7 +116,7 @@ async fn the_clouds_as_node_reads_and_wraps_them() {
     let mut failures: Vec<String> = Vec::new();
 
     // THE READS: the same bytes, and the database password beside them.
-    let reads: &[(&str, &str, &str, &[(&str, &str)])] = &[
+    let reads: &[Read] = &[
         ("aws", "aws", "sts-kek", &[("STS_KEYS_KEK_FIELD", "kek")]),
         ("aws-binary", "aws", "sts-kek-binary", &[]),
         ("aws-whole", "aws", "sts-kek", &[]),
