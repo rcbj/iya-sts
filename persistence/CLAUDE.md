@@ -300,7 +300,14 @@ deadlocked 796 times with the row constructor and none with equalities.
 MariaDB and keeps the row constructor on PostgreSQL, whose text is unchanged;
 an empty list stays Knex's `1 = 0`. The flush's three DELETEs,
 `releaseClaims()` and the risk engine's stalled-import UPDATE use it; a new
-key-named write on MariaDB owes it. `tests/mariadb_deadlock_retry.js`. The expiry
+key-named write on MariaDB owes it. `tests/mariadb_deadlock_retry.js`.
+**`directory_portable.js` writes text, not Knex**, and its three key-named
+writes — the key rows' DELETE, the entries' DELETE and the counts' fold —
+kept the row constructor until 2026-11-14: EXPLAIN on 11.8 planned the two
+DELETEs `type ALL` and the fold `type index` for one row. `keysMatch()`
+there is `whereKeys()`'s predicate as text; they plan `range` now.
+`tests/directory_portable.js` A12/A13 (the statements and the source) and
+C31 (EXPLAIN of every write the flush sends) hold it. The expiry
 purge's batch is `DELETE … LIMIT n`. **Held whole on MariaDB**: every
 on-demand store, and every session — the driver says `lendsNoBridge`, and
 `authn/session_window.ts` turns the window off for it (`on` is refused),
