@@ -253,12 +253,14 @@ fn pseudonyms_answer(
             .unwrap_or("")
             .to_string();
         if code.is_empty() {
-            code = "STS-LDAP-0093".into();
+            code = codes::STS_LDAP_0093.as_str().into();
             if sentence.is_empty() {
                 sentence = NO_PERSON.into();
             }
         }
-        let status = if code == "STS-LDAP-0093" || code == "STS-PORTAL-0623" {
+        let status = if code == codes::STS_LDAP_0093.as_str()
+            || code == codes::STS_PORTAL_0623.as_str()
+        {
             503
         } else {
             400
