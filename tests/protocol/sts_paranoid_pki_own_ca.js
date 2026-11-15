@@ -23,7 +23,8 @@
 //      certificate still verifies (OpenSSL reads no list); with it on the
 //      view still reports the handshake's verdict, which carries no
 //      revocation on this port by design, and the DOOR refuses it:
-//      /tls/sign-in starts no session, refusedOnRevocation, STS-PKI-0118;
+//      /tls/sign-in starts no session, refusedOnRevocation, STS-PKI-0118
+//      on the realm's audit log (#38);
 //      an unrevoked one verifies;
 //   B. AN OUTBOUND DIAL (the RFC 9728 import, `load-resource-metadata`, at a
 //      listener this job runs on OUTBOUND_TEST_HOST with a `tls-server`
@@ -239,14 +240,18 @@ async function test(realm) {
   const realmBefore = await K.codeCount(realm, "STS-PKI-0118");
   const defBefore = await K.codeCount(null, "STS-PKI-0118");
   const door = await signIn(realm, bad);
-  let rows = 0;
-  for (let i = 0; i < 20 && rows < 1; i += 1) {
-    rows = (await K.codeCount(realm, "STS-PKI-0118")) - realmBefore +
-           (await K.codeCount(null, "STS-PKI-0118")) - defBefore;
-    if (rows < 1) {
+  // The door's refusal is on the REALM's audit log (#38, 2026-11-15); the
+  // handshake's own row stays the default realm's, a handshake having no
+  // realm. Until #38 only that row existed, so this job summed both.
+  let realmRows = 0;
+  for (let i = 0; i < 20 && realmRows < 1; i += 1) {
+    realmRows = (await K.codeCount(realm, "STS-PKI-0118")) - realmBefore;
+    if (realmRows < 1) {
       await K.sleep(150);
     }
   }
+  const rows = realmRows +
+               (await K.codeCount(null, "STS-PKI-0118")) - defBefore;
   check("A2b. and the door refuses it: /tls/sign-in starts no session, " +
         "refusedOnRevocation off the service's own register, recorded " +
         "STS-PKI-0118", function () {
@@ -255,7 +260,8 @@ async function test(realm) {
     assert.strictEqual(j.session && j.session.refusedOnRevocation, true,
                        door.text.slice(0, 300));
     assert.ok(/REVOKED/.test(j.session.why), door.text.slice(0, 300));
-    assert.ok(rows >= 1, "STS-PKI-0118 rows: " + rows);
+    assert.ok(realmRows >= 1, "STS-PKI-0118 rows in the realm: " +
+              realmRows + " (both realms: " + rows + ")");
   });
   const onGood = await settle(good, true);
   check("A3. and an unrevoked one from the same CA still verifies",
