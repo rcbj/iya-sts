@@ -237,6 +237,13 @@ function declarations(t) {
       'utf8'),
   'rust/crates/sts-oauth/src/generated/oauth.json is what the model ' +
     'generates (tests/tools/regenerate-model-docs.sh)');
+  // sts-authn-api's copy (#444, phase 5): the document /authn-api serves.
+  t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-authn-api',
+    'src', 'generated', 'openapi.authn.json'), 'utf8') ===
+    fs.readFileSync(path.join(ROOT, 'models', 'generated',
+      'openapi.authn.json'), 'utf8'),
+  'rust/crates/sts-authn-api/src/generated/openapi.authn.json is what the ' +
+    'model generates (tests/tools/regenerate-model-docs.sh)');
   const Classes = require('../common/domain_classes');
   t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
     'a generated class makes its concept');
