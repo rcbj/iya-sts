@@ -2317,6 +2317,31 @@ const JOBS = [
   // D12 (#444): the main port's chain ends with the service Root, byte for
   // byte (tls_presented_root).
   { file: 'sts_tls_presented_root.js', browser: false, local: true },
+  // D12 (#444): an outside certificate is the one entry storing it, at the
+  // sign-in screen, /tls/sign-in, SCIM, SSF and /xacml (stored_certificates,
+  // application_stored_certificates). Posts a test Root to the client
+  // truststore and removes it.
+  { file: 'sts_client_certificate_mapping.js', browser: false, local: true },
+  // D12 (#444): the remaining enrollment codes — EST's /nonce, a realm named
+  // twice, re-enrollment, clientAuth, ML-KEM templates, a product
+  // application's secret and Basic switch, ACME's CA profile and replaces
+  // (cert_enrollment, est_handlers, application_enrollment).
+  { file: 'sts_enrollment_codes.js', browser: false, local: true },
+  // D12 (#444): the CA build's refusals, the xml pin slots and a pinned key
+  // signing at once with pki.pinnedSignerLeadMinutes 0 (pki_defaults,
+  // pki_hybrid, pki_rebuild_recertifies, pinned_signers).
+  { file: 'sts_pki_codes.js', browser: false, local: true },
+  // D12 (#444): a certificate follows its holder's entry through a rename
+  // and a delete over LDAP (certificate_holder_rename).
+  { file: 'sts_certificate_holder_rename.js', browser: false, local: true },
+  // D12 (#444): a presented certificate's revocation under hard-fail — a
+  // served CRL, an unanswered one, noRevAvail beside a CRL DP
+  // (revocation_status). Posts test Roots to the client truststore and
+  // removes them; needs OUTBOUND_TEST_HOST for its CRL.
+  { file: 'sts_revocation_hard_fail.js', browser: false, local: true },
+  // D12 (#444): the directory copy of a realm's CRL over the LDAP socket,
+  // unbound, in development and product (crl_directory_publication).
+  { file: 'sts_crl_directory_publication.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
