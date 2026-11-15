@@ -776,6 +776,133 @@ impl Core {
         }));
         Ok(next)
     }
+
+    // -----------------------------------------------------------------
+    // THE REALM'S LISTINGS (`eabsInRealm()`, `challengesInRealm()`,
+    // `hostNamesInRealm()`, `authorityOf()`): what the console's ACME,
+    // EST and SCEP pages and their `/admin-api` views list, each from one
+    // walk of the holders of an attribute (#352's `holdersWithValuesOf()`),
+    // people first and then applications, in the directory's order.
+    // -----------------------------------------------------------------
+
+    /// `holdersWithValuesOf(key)`: `(entry, values)` of every holder.
+    fn holders_with_values_of(&self, key: &str) -> Vec<(Entry, Vec<String>)> {
+        let mut out = Vec::new();
+        for kind in ["person", "application"] {
+            for (id, values) in self
+                .d
+                .entries
+                .holders_with_values(kind, super::attribute(kind, key))
+            {
+                out.push((Entry::new(kind, &id), values));
+            }
+        }
+        out
+    }
+
+    /// `{ entry, entryUri, ...one }`, as `Object.assign()` orders it.
+    fn with_entry(entry: &Entry, one: &Json) -> Json {
+        let mut row = serde_json::Map::new();
+        row.insert("entry".into(), entry.to_json());
+        row.insert("entryUri".into(), Json::from(entry.uri()));
+        if let Some(o) = one.as_object() {
+            for (k, v) in o {
+                row.insert(k.clone(), v.clone());
+            }
+        }
+        Json::Object(row)
+    }
+
+    /// `challengesFrom(values)`: the public view of each challenge.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn challenges_from(values: &[String]) -> Vec<Json> {
+        let now = now_ms();
+        parse_json_values(values)
+            .iter()
+            .map(|one| {
+                let used = one
+                    .get("usedAt")
+                    .filter(|u| {
+                        !u.is_null() && *u != &json!("") && *u != &json!(false)
+                    })
+                    .cloned();
+                let status = if used.is_some() {
+                    "used"
+                } else if ms_of(str_of(one, "expiresAt")) <= now {
+                    "expired"
+                } else {
+                    "unused"
+                };
+                let mut row = serde_json::Map::new();
+                for key in
+                    ["id", "profile", "createdAt", "expiresAt", "createdBy"]
+                {
+                    if let Some(v) = one.get(key) {
+                        row.insert(key.into(), v.clone());
+                    }
+                }
+                row.insert("usedAt".into(), used.unwrap_or(Json::Null));
+                row.insert("status".into(), Json::from(status));
+                Json::Object(row)
+            })
+            .collect()
+    }
+
+    /// `eabsInRealm()`: every EAB key in the ambient realm, newest first.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn eabs_in_realm(&self) -> Vec<Json> {
+        let mut out = Vec::new();
+        for (entry, values) in self.holders_with_values_of("eab") {
+            for one in Self::eabs_from(&values) {
+                out.push(Self::with_entry(&entry, &one));
+            }
+        }
+        out.sort_by(|a, b| str_of(b, "createdAt").cmp(str_of(a, "createdAt")));
+        out
+    }
+
+    /// `challengesInRealm()`: every SCEP challenge in the ambient realm,
+    /// newest first.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn challenges_in_realm(&self) -> Vec<Json> {
+        let mut out = Vec::new();
+        for (entry, values) in self.holders_with_values_of("challenge") {
+            for one in Self::challenges_from(&values) {
+                out.push(Self::with_entry(&entry, &one));
+            }
+        }
+        out.sort_by(|a, b| str_of(b, "createdAt").cmp(str_of(a, "createdAt")));
+        out
+    }
+
+    /// `hostNamesInRealm()`: every entry with a registered host name.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn host_names_in_realm(&self) -> Vec<Json> {
+        let mut out = Vec::new();
+        for (entry, values) in self.holders_with_values_of("hostName") {
+            let names: Vec<String> = values
+                .iter()
+                .map(|one| normal_host_name(one))
+                .filter(|one| !one.is_empty())
+                .collect();
+            if !names.is_empty() {
+                out.push(json!({ "entry": entry.to_json(),
+                                 "entryUri": entry.uri(),
+                                 "hostNames": names }));
+            }
+        }
+        out
+    }
+
+    /// `authorityOf(family)`: the family's Issuing CA in this realm, with
+    /// nothing private (`pki.describeIssuer()`); `None` before the branch
+    /// holds one.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn authority_of(&self, family: &str) -> Option<Json> {
+        self.d
+            .authority
+            .describe_issuer(&sts_core::realm::current_id(), family)
+    }
 }
 
 fn hex_bytes(text: &str) -> Vec<u8> {

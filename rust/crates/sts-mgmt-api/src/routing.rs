@@ -40,8 +40,8 @@ pub enum Handler {
     /// `sts-registers`' `People` (its `disable` and `enable` are not routed
     /// here yet: the account lock's writes are not in the runtime).
     UsersAction,
-    /// A family's own act (`families.rs`): the certificate authority's and
-    /// the enrollment protocols'.
+    /// A family's own act or view (`families.rs`): the certificate
+    /// authority's and the enrollment protocols', with their monitors.
     Family,
 }
 
@@ -103,7 +103,17 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::DeleteScepChallenge
         | Operation::RevokeScepCertificate
         | Operation::AddScepHostName
-        | Operation::RemoveScepHostName => Some(Handler::Family),
+        | Operation::RemoveScepHostName
+        | Operation::DeactivateAcmeAccount
+        | Operation::IssueEstServerKey
+        | Operation::ReissueScepRa
+        | Operation::GetPki
+        | Operation::GetAcme
+        | Operation::GetAcmeMonitor
+        | Operation::GetEst
+        | Operation::GetEstMonitor
+        | Operation::GetScep
+        | Operation::GetScepMonitor => Some(Handler::Family),
         not_yet_ported!() => None,
     }
 }

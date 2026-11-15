@@ -565,6 +565,7 @@ fn unknown_action(
                 body,
                 caller: None,
                 base: &realm_base,
+                setup: None,
             };
             match services.families.answer(&asked) {
                 Some(a) => a,
@@ -752,6 +753,7 @@ fn run(
                 body,
                 caller,
                 base: &realm_base,
+                setup: Some(&s),
             };
             match services.families.answer(&asked) {
                 Some(a) => a,

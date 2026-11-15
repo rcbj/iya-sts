@@ -453,6 +453,8 @@ pub struct EnrollStack {
     pub acme: AcmeStore,
     pub est: EstStore,
     pub scep: ScepStore,
+    /// `enrollment_monitor.{acme,est,scep}`.
+    pub monitor: crate::monitor::EnrollmentMonitor,
 }
 
 /// The three servers, once built.
@@ -463,11 +465,14 @@ pub struct Families {
     pub scep: Arc<Scep>,
     pub http: Arc<sts_http::HttpLayer>,
     pub settings: Arc<Settings>,
+    /// What the three have done (`enrollment_monitor.ts`), for the monitor
+    /// views; the same instance the core records through.
+    pub monitor: Arc<crate::monitor::EnrollmentMonitor>,
 }
 
 impl EnrollStack {
     /// Declares the stores (`acme.*`, `devices.challenges`,
-    /// `scep.transactions`).
+    /// `scep.transactions`, `enrollment_monitor.*`).
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn declare(
         lifecycle: &Arc<RealmLifecycle>,
@@ -477,6 +482,9 @@ impl EnrollStack {
             acme: AcmeStore::declare(lifecycle, handles),
             est: EstStore::declare(lifecycle, handles),
             scep: ScepStore::declare(lifecycle, handles),
+            monitor: crate::monitor::EnrollmentMonitor::declare(
+                lifecycle, handles,
+            ),
         }
     }
 
@@ -495,6 +503,7 @@ impl EnrollStack {
             mode: parts.mode.clone(),
         });
         let quiet = Arc::new(Quiet);
+        let monitor = Arc::new(self.monitor.clone());
         let core = Core::new(CoreDeps {
             settings: parts.settings.clone(),
             mode: parts.mode.clone(),
@@ -522,7 +531,7 @@ impl EnrollStack {
             gate: quiet.clone(),
             audit: quiet.clone(),
             signals: quiet.clone(),
-            monitor: quiet,
+            monitor: monitor.clone(),
             keystore,
             claims: parts.claims.clone(),
             limits: Arc::new(RateLimiter::new(
@@ -537,6 +546,7 @@ impl EnrollStack {
             core,
             http: parts.http,
             settings: parts.settings,
+            monitor,
         })
     }
 }

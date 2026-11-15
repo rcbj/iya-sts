@@ -30,6 +30,9 @@ pub struct Asked<'a> {
     pub caller: Option<&'a Caller>,
     /// The request's base URL, the ambient realm's prefix included.
     pub base: &'a str,
+    /// The setup operations, for a view's settings block
+    /// (`adminViews.settingsBlockOf()`); `None` where a caller has none.
+    pub setup: Option<&'a crate::setup::Setup<'a>>,
 }
 
 /// What answers them.

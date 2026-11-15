@@ -405,7 +405,6 @@ macro_rules! not_yet_ported {
         | Operation::ResetRiscAccount
         | Operation::ClearRiscAccounts
         | Operation::GetScim
-        | Operation::GetPki
         | Operation::GetCertificates
         | Operation::GetPkiTrust
         | Operation::AddSignerTrustAnchors
@@ -529,15 +528,6 @@ macro_rules! not_yet_ported {
         | Operation::UnbanSpiffeAgent
         | Operation::DeleteSpiffeAgent
         | Operation::CreateSpiffeJoinToken
-        | Operation::GetAcme
-        | Operation::GetAcmeMonitor
-        | Operation::DeactivateAcmeAccount
-        | Operation::GetEst
-        | Operation::GetEstMonitor
-        | Operation::IssueEstServerKey
-        | Operation::GetScep
-        | Operation::GetScepMonitor
-        | Operation::ReissueScepRa
         | Operation::GetOidfed
         | Operation::AddOidfedSubordinate
         | Operation::RemoveOidfedSubordinate
