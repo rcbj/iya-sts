@@ -4,7 +4,7 @@
 [package]
 name = "sts-mgmt-api"
 version = "0.1.0"
-description = "/admin-api (mgmt-api/admin_api.ts). Today: the gate's access-token half."
+description = "/admin-api (mgmt-api/admin_api.ts): the framework every operation sits in — routing held to the model, the request and answer checks, the gate — and the setup operations."
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -13,12 +13,25 @@ publish.workspace = true
 [dependencies]
 sts-core.workspace = true
 sts-crypto.workspace = true
+sts-model.workspace = true
 sts-oauth.workspace = true
 sts-store.workspace = true
+axum.workspace = true
+indexmap.workspace = true
+jsonschema.workspace = true
+regex.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 openssl.workspace = true
+hyper.workspace = true
+tower = { version = "0.5", features = ["util"] }
 
 [lints]
 workspace = true
+
+[build-dependencies]
+serde_json.workspace = true
