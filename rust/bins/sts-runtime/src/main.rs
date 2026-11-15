@@ -58,6 +58,7 @@ mod ldap_listener;
 mod listener;
 mod listeners;
 mod oauth;
+mod pki;
 mod solo;
 mod stack;
 mod store;
@@ -361,7 +362,11 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
         );
     }
     // 4.
-    let material = match certificates::settle(&settings) {
+    let material = match certificates::settle(
+        &settings,
+        stack.pki.get().map(|a| a.as_ref()),
+        Some((&stack.listener_keys, stack.node_name.as_str())),
+    ) {
         Ok(m) => m,
         Err(p) => fatal(p.code, &p.message),
     };
@@ -432,6 +437,33 @@ async fn run(settings: Arc<Settings>) -> Result<(), String> {
             )
         })?;
         tasks.spawn(serve_plain(tcp, router.clone()));
+    }
+    // THE PLAIN-HTTP REVOCATION LISTENER (`pki_service.ts`'s `listen()`):
+    // `/pki/`, SCEP and `/healthcheck` only, on the http:// address every
+    // certificate names. Recorded rather than fatal, as Node's is.
+    let revocation_port = settings.value_of("pki.httpPort").as_int();
+    if revocation_port > 0 {
+        let at = format!("{}:{}", host, revocation_port);
+        match TcpListener::bind(&at).await {
+            Ok(tcp) => {
+                tracing::info!(
+                    "pki: the revocation endpoints are also on plain HTTP port {} (/pki/ only), which is \
+                     the address every certificate this service issues names for its CRL, its OCSP \
+                     responder and its issuer's certificate.",
+                    revocation_port
+                );
+                tasks.spawn(serve_plain(
+                    tcp,
+                    crate::pki::revocation_listener(router.clone()),
+                ));
+            }
+            Err(e) => tracing::error!(
+                "{}pki: the plain-HTTP revocation listener could not start: {}. Every http:// CRL and \
+                 OCSP address in this service's certificates will answer nothing.",
+                tag(codes::STS_CORE_0043),
+                e
+            ),
+        }
     }
     tracing::info!(
         "WS-Trust STS listening on {}://{}:{} (mode {}). The listener certificate is {}.",
