@@ -18,3 +18,4 @@ pub mod role_actions;
 pub mod people;
 pub mod group_claims;
 pub mod ownership;
+pub mod app_permissions;

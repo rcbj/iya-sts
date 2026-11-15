@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use replay::{code_text, Replay};
 use serde_json::{json, Value};
+use sts_registers::app_permissions::AppPermissions;
 use sts_registers::group_claims::GroupClaims;
 use sts_registers::outcome::Outcome;
 use sts_registers::ownership::{Ownership, OwnershipDeps};
@@ -161,7 +162,16 @@ fn every_register_answers_as_node_does() {
     let mut skipped = std::collections::BTreeMap::<String, usize>::new();
     for (i, step) in steps.iter().enumerate() {
         let register = step["register"].as_str().unwrap_or("");
-        let replay = Arc::new(Replay::new(step, &[]));
+        // The application register's pure helpers are ported into the
+        // crate (app_permissions.rs), so Node's calls of them are not owed.
+        let replay = Arc::new(Replay::new(
+            step,
+            &[
+                "applications.permissionBaseOf",
+                "applications.permissionsOf",
+                "applications.permissionValueOf",
+            ],
+        ));
         let answer = match register {
             "roles" => run_roles(step, &replay),
             "roleActions" => {
@@ -240,6 +250,23 @@ fn every_register_answers_as_node_does() {
                     )),
                 })
             }
+            "appPermissions" => {
+                let p = AppPermissions::new(replay.clone());
+                let input = &step["input"];
+                let arg = |i: usize| input["args"][i].as_str().unwrap_or("").to_string();
+                Some(match step["op"].as_str().unwrap_or("") {
+                    "register" => plain(p.register()),
+                    "forApplication" => plain(p.for_application(
+                        input["identifier"].as_str().unwrap_or(""))),
+                    "definePermission" => {
+                        got(p.define_permission(&arg(0), &arg(1), &arg(2), &arg(3)))
+                    }
+                    "removePermission" => got(p.remove_permission(&arg(0), &arg(1), &arg(2))),
+                    "grant" => got(p.grant(&arg(0), &arg(1), &arg(2))),
+                    "revoke" => got(p.revoke(&arg(0), &arg(1), &arg(2))),
+                    _ => got(p.set_base_uri(&arg(0), &arg(1), &arg(2))),
+                })
+            }
             "rbac" => {
                 let rbac = Rbac::new(
                     Some(replay.clone()),
@@ -260,6 +287,11 @@ fn every_register_answers_as_node_does() {
         let mut wrong = replay.finish();
         let (mine, theirs) = pinned(register, step, answer.answer.clone());
         if mine != theirs {
+            if let Ok(dir) = std::env::var("STS_REGISTERS_DIFF") {
+                let at = std::path::Path::new(&dir);
+                let _ = std::fs::write(at.join(format!("{i}-rust.json")), mine.to_string());
+                let _ = std::fs::write(at.join(format!("{i}-node.json")), theirs.to_string());
+            }
             wrong.push(format!(
                 "answer\n     rust {}\n     node {}",
                 mine, theirs

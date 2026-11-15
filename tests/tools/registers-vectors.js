@@ -38,23 +38,46 @@ const path = require('path');
  * @returns {any} its JSON image
  */
 function clone(value) {
-  if (value === undefined) {
-    return null;
-  }
-  const seen = new WeakSet();
-  const text = JSON.stringify(value, function (key, v) {
+  // Only a TRUE cycle (an object inside itself) is cut: an object shared
+  // by two members, as a register's answer often is, is written twice.
+  const ancestors = [];
+  const copy = function (v) {
+    if (v === undefined || typeof v === 'function' || typeof v === 'symbol') {
+      return undefined;
+    }
     if (typeof v === 'bigint') {
       return String(v);
     }
-    if (v && typeof v === 'object') {
-      if (seen.has(v)) {
-        return '[cycle]';
-      }
-      seen.add(v);
+    if (v === null || typeof v !== 'object') {
+      return typeof v === 'number' && !isFinite(v) ? null : v;
     }
-    return v;
-  });
-  return text === undefined ? null : JSON.parse(text);
+    if (typeof v.toJSON === 'function') {
+      return copy(v.toJSON());
+    }
+    if (ancestors.indexOf(v) >= 0) {
+      return '[cycle]';
+    }
+    ancestors.push(v);
+    let out;
+    if (Array.isArray(v)) {
+      out = v.map(function (one) {
+        const c = copy(one);
+        return c === undefined ? null : c;
+      });
+    } else {
+      out = {};
+      Object.keys(v).forEach(function (k) {
+        const c = copy(v[k]);
+        if (c !== undefined) {
+          out[k] = c;
+        }
+      });
+    }
+    ancestors.pop();
+    return out;
+  };
+  const out = copy(value);
+  return out === undefined ? null : out;
 }
 
 /**
