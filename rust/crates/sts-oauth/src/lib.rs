@@ -71,6 +71,7 @@ pub mod clients;
 pub mod consent;
 pub mod delegation_acts;
 pub mod delegation_policy;
+pub mod device_authorization;
 pub mod dpop;
 pub mod dpop_reservation;
 pub mod dpop_stores;

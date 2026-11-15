@@ -1063,6 +1063,17 @@ impl OAuthStack {
             )),
             delegation: Some(delegation),
             acts: Some(acts),
+            // RFC 8628's device codes, in Node's store (#150), claimed once
+            // across the cluster.
+            devices: Some(
+                sts_oauth::device_authorization::DeviceCodes::declare(
+                    &parts.lifecycle,
+                    &parts.handles,
+                    settings.clone(),
+                    Arc::new(ProcessClaims::default()),
+                    Arc::new(sts_core::time::now_ms_f64),
+                ),
+            ),
         });
         let servers = AuthorizationServers::declare(
             &parts.lifecycle,
@@ -1306,6 +1317,18 @@ impl OAuthStack {
         );
         // RFC 7662 introspection (with RFC 9701's JWT answer) and RFC 7009
         // revocation.
+        // RFC 8628's device authorization endpoint (#150).
+        let routes = routes.route(
+            "/oauth2/device_authorization",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.device_authorization(h, r).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         let routes = routes.route(
             "/oauth2/introspect",
             axum::routing::post({
@@ -1951,6 +1974,39 @@ impl OAuthStack {
                 .await
                 .into_response()
         }
+    }
+
+    /// `POST /oauth2/device_authorization` (RFC 8628 section 3.1).
+    async fn device_authorization(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let htu = format!("{}/oauth2/device_authorization", base);
+        let dpop = headers
+            .get("dpop")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let ask = sts_oauth::introspection::EndpointAsk {
+            base,
+            address,
+            body,
+            authorization: header_of(&headers, "authorization"),
+            accept: header_of(&headers, "accept"),
+            peer: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        sendable(
+            self.tokens
+                .device_authorization(&ask, dpop.as_deref(), &htu),
+        )
+        .await
+        .into_response()
     }
 
     async fn token(

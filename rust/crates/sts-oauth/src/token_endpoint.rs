@@ -47,6 +47,7 @@ use crate::jwt_access_token::{
 };
 use crate::minted::{IssuedUnder, TokenRegister};
 
+pub mod device;
 pub mod exchange;
 
 /// What a token request is.
@@ -264,6 +265,9 @@ pub struct TokenEndpoint {
     /// The delegation register an exchange is written to; `None` records
     /// nothing.
     pub acts: Option<Arc<crate::delegation_acts::DelegationActs>>,
+    /// RFC 8628's device codes; `None` answers the grant as Node does
+    /// with the device flow off.
+    pub devices: Option<Arc<crate::device_authorization::DeviceCodes>>,
 }
 
 /// `credentials.verifyAsync()` and `mechanismsFor()` for the password
@@ -624,6 +628,7 @@ impl TokenEndpoint {
         // cluster first.
         let mut dpop_jkt = ask.dpop_jkt.clone();
         let mut dpop_jwk = Json::Null;
+        let mut dpop_claims = Json::Null;
         if let Some(header) = ask.dpop.as_deref() {
             let skew = sts_oauth_dpop_skew(&self.dpop);
             let reservation = crate::dpop_reservation::Reservation::reserve(
@@ -658,6 +663,7 @@ impl TokenEndpoint {
                 Ok(proof) => {
                     dpop_jkt = proof.jkt;
                     dpop_jwk = proof.jwk;
+                    dpop_claims = Json::Object(proof.claims);
                 }
                 Err(f) if f.need_nonce => {
                     let mut a = self.refusal(
@@ -952,6 +958,7 @@ impl TokenEndpoint {
             observed_method: observed.method.clone(),
             dpop_jkt,
             dpop_jwk,
+            dpop_claims,
             flows,
             resources: resources.clone(),
         };
@@ -964,6 +971,9 @@ impl TokenEndpoint {
             }
             "refresh_token" => self.refresh_grant(&issuing).await,
             exchange::GRANT => self.token_exchange(&issuing).await,
+            crate::device_authorization::GRANT_TYPE => {
+                self.device_grant(&issuing).await
+            }
             "password" if self.passwords.is_some() => {
                 self.password_grant(&issuing, &scope, &resources).await
             }
@@ -2905,6 +2915,8 @@ struct Issuing<'a> {
     dpop_jkt: String,
     #[allow(dead_code)]
     dpop_jwk: Json,
+    /// The verified DPoP proof's claims (`c_s256`, Key Binding).
+    dpop_claims: Json,
     flows: Option<Json>,
     resources: Vec<String>,
 }

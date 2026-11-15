@@ -47,9 +47,12 @@ fs.rmSync(dir, { recursive: true, force: true });
 // `oauth7`): beside the slice-two set, the FAPI report, the attestation
 // challenge and the device and CIBA endpoints — each under a named
 // authorization server too.
+// The device authorization endpoint and grant left with `oauth8`; the
+// person's answer on /portal/device is still Node's /account-api operation.
 const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
+  '/account-api/device|' +
   '/oauth2/(register|' +
-  'fapi|challenge|device_authorization|' +
+  'fapi|challenge|' +
   'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
 // THE GRANTS THE RUST TOKEN ENDPOINT DOES NOT ISSUE YET (#444 phase 5,
@@ -58,8 +61,7 @@ const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
 // above — so a job reaches the grants after them. Both runtimes verify the other's tokens: one store, one key.
 const TOKEN_PATH = new RegExp('^(/realm/[^/]+)?(/[^/]+)?/oauth2/token' +
   '(\\?|$)');
-const NODE_GRANTS = ['urn:ietf:params:oauth:grant-type:device_code',
-  'urn:openid:params:grant-type:ciba'];
+const NODE_GRANTS = ['urn:openid:params:grant-type:ciba'];
 // RFC 8693's TOKEN EXCHANGE IS RUST'S since the `oauth8` slice, except an
 // exchange presenting or asking for a type whose verifier is not ported:
 // an RFC 7522 SAML assertion, a Kerberos ticket (#658) and Native SSO's

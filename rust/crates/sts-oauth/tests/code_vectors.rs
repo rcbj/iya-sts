@@ -693,6 +693,7 @@ async fn the_code_flow() {
             requested: None,
             delegation: None,
             acts: None,
+            devices: None,
         };
         // ---- Discovery ---------------------------------------------------
         for case in cases

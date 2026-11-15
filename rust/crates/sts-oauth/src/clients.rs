@@ -102,6 +102,11 @@ pub trait Clients: Send + Sync {
     fn global_consents_of(&self, _client_id: &str) -> Vec<String> {
         Vec::new()
     }
+    /// `registrationOf(clientId).client_name`: the RFC 7591 registration's
+    /// `client_name`, '' for none or a client that was not registered.
+    fn registered_client_name(&self, _client_id: &str) -> String {
+        String::new()
+    }
     /// The entry's display name (`entry.name`), or the client_id.
     fn name_of(&self, client_id: &str) -> String {
         client_id.to_string()
@@ -273,6 +278,24 @@ pub struct RegisterClients {
 }
 
 impl Clients for RegisterClients {
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn registered_client_name(&self, client_id: &str) -> String {
+        let loaded = self.registry.load(client_id);
+        if !loaded.known || !loaded.record.registered {
+            return String::new();
+        }
+        let raw = crate::js::string_of(
+            loaded.record.fields.get("appRegistrationJson"),
+        );
+        serde_json::from_str::<Json>(&raw)
+            .ok()
+            .and_then(|d| {
+                d.get("client_name")
+                    .and_then(Json::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_default()
+    }
     #[tracing::instrument(level = "debug", skip(self))]
     fn client_config_of(&self, client_id: &str) -> Json {
         let loaded = self.registry.load(client_id);
