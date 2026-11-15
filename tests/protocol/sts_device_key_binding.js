@@ -37,10 +37,10 @@
 // presentation (0707). STS-OAUTH-0702 (a bound_key code redeemed with no
 // proof) has no door over the wire: bound_key requires dpop_jkt at the
 // authorization request, and a code bound by dpop_jkt is refused
-// invalid_grant without a proof before Key Binding is asked. Not carried (class (d)): the device codes
-// held under their digests, the user code's normalisation and the
-// interval arithmetic of the store (only the answers are on the wire, and
-// sections 2 and 3 assert them).
+// invalid_grant without a proof before Key Binding is asked. Not carried
+// (class (d)): the device codes held under their digests, the user code's
+// normalisation and the interval arithmetic of the store (only the answers
+// are on the wire, and sections 2 and 3 assert them).
 //
 // OWNED HERE (local: true): this repository's authorization server, portal
 // and API. Since #568 the person approves on the STATIC portal: signed in as
