@@ -358,6 +358,29 @@ function checkRealmWrites(t) {
     realms.remove('trl-bad');
   }
 
+  // #39 (2026-11-15): a lifetime of 0 is refused on a create, and a realm
+  // READ BACK holding one — stored before the row had `min: 1` — is
+  // restored without it rather than refused whole.
+  const zeroCreate = realms.create({ id: 'trl-zero', name: 'trl-zero',
+    overrides: { 'saml11.assertionLifetimeMin': 0 } });
+  t.check(!zeroCreate.ok, 'create() refuses saml11.assertionLifetimeMin 0 ' +
+          '(#39)', JSON.stringify(zeroCreate.errors));
+  if (zeroCreate.ok) {
+    realms.remove('trl-zero');
+  }
+  const restored = realms.create({ id: 'trl-restored', name: 'trl-restored',
+    restored: true, overrides: { 'saml11.assertionLifetimeMin': 0,
+                                 'saml2.assertionLifetimeMin': 5 } });
+  t.check(restored.ok && restored.realm &&
+          !('saml11.assertionLifetimeMin' in restored.realm.overrides) &&
+          restored.realm.overrides['saml2.assertionLifetimeMin'] === 5,
+          'a restored realm holding a lifetime of 0 is restored, without ' +
+          'that one value (#39)', JSON.stringify(restored.errors ||
+            (restored.realm && restored.realm.overrides)));
+  if (restored.ok) {
+    realms.remove('trl-restored');
+  }
+
   withRealm(t, 'trl-set', {}, function (realm) {
     const good = realms.setOverride(realm.id, 'oauth2.rfc9700', true);
     t.check(good.ok, 'setOverride() accepts oauth2.rfc9700 on a realm',
