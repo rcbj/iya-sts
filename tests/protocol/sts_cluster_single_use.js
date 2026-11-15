@@ -34,18 +34,21 @@
 //   e. a DPoP proof accepted at A's token endpoint is refused at B's for
 //      the replay, and a fresh proof is accepted there. Both are sent with
 //      the Host the proof's `htu` names, as a balancer passes it: a node
-//      checks `htu` against the URL the request was made to.
+//      checks `htu` against the URL the request was made to;
+//   f. (tests/cluster_single_use_credentials.js) the TOTP code that
+//      confirmed an enrolment at A's portal is refused as a replay ("already
+//      been used") at B's sign-in.
 //
 // What stays in process (class (d)): the claim store answering on a later
 // tick so two calls REALLY interleave, a stale copy written back, and a
 // store that cannot be asked failing closed (STS-OAUTH-0518) — a race a job
 // wins only sometimes, and a fault no running service can be told to have;
 // the hosted surfaces' renewal claimed elsewhere; and, of the other two
-// files, the SAML artifacts, the OpenID4VCI and GNAP values, the Kerberos
-// Authenticator, TOTP, recovery codes, links, EAB keys, SCEP challenges and
-// the bootstrap (each is spent through the same `cluster_claims.js` door
-// as the five above, and each family's own job holds its replay on one
-// node).
+// files, what is not above: the SAML artifacts, the OpenID4VCI and GNAP
+// values, the Kerberos Authenticator, recovery codes, links, EAB keys and
+// SCEP challenges are spent through the same `cluster_claims.js` door as
+// the six above, with the stale-copy and fail-closed halves in process; and
+// the bootstrap of two cold-starting nodes is a start-up race.
 //
 // Its realms are removed at the end only under STS_TEST_REMOVE_REALMS=1
 // (a hand run on a shared probe); the suite leaves them standing.
@@ -57,6 +60,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const authnSignin = require("./authn_signin");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -569,6 +573,97 @@ async function proofs() {
   log.debug("Leaving proofs().");
 }
 
+// RFC 6238's code, for section f.
+function totpCode(secret, atMs) {
+  log.debug("Entering totpCode().");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const ch of String(secret).replace(/[\s=]/g, "").toUpperCase()) {
+    bits += alphabet.indexOf(ch).toString(2).padStart(5, "0");
+  }
+  const key = Buffer.from(bits.match(/.{8}/g).map(function (b) {
+    return parseInt(b, 2);
+  }));
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(atMs / 30000)));
+  const digest = nodeCrypto.createHmac("sha1", key).update(message).digest();
+  const at = digest[digest.length - 1] & 0x0f;
+  const value = ((digest[at] & 0x7f) << 24) | (digest[at + 1] << 16) |
+                (digest[at + 2] << 8) | digest[at + 3];
+  log.debug("Leaving totpCode().");
+  return String(value % 1000000).padStart(6, "0");
+}
+
+async function secondFactors() {
+  log.debug("Entering secondFactors().");
+  log.info("=== f. a TOTP code ===");
+  const who = ("totp" + STAMP).toLowerCase().replace(/[^a-z0-9]/g, "")
+    .slice(0, 30);
+  await ok("POST", base + "/realm/" + PLAIN + "/admin-api/users/create", {
+    username: who, invent: false, credential: "password",
+    password: PASSWORD,
+    attributes: { givenName: "Totp", sn: who,
+                  mail: who + "@" + PLAIN + ".example.net" } },
+    "created the TOTP person");
+  const b = await portal.signInToThePortal(NODE_A + "/realm/" + PLAIN, who,
+                                           null, { password: PASSWORD });
+  const started = await b.act("/portal/mfa", { action: "start" });
+  assert.strictEqual(started.status, 200, String(started.text).slice(0, 300));
+  const view = await b.page("/portal/mfa");
+  const secret = (view.json && view.json.setup &&
+                  view.json.setup.grouped) || "";
+  assert.ok(secret, "no secret on the setup view: " +
+            JSON.stringify(view.json).slice(0, 300));
+  const code = totpCode(secret, Date.now());
+  const confirmed = await b.act("/portal/mfa",
+                                { action: "confirm", code: code });
+  assert.strictEqual(confirmed.status, 200,
+                     String(confirmed.text).slice(0, 300));
+  // The same code, at node B's sign-in, inside its thirty seconds.
+  const nb = browser(NODE_B);
+  const p = pkce();
+  const r = await nb.go("GET", "/realm/" + PLAIN + "/oauth2/authorize?" +
+    form({ response_type: "code", client_id: PUBLIC, redirect_uri: REDIRECT,
+           scope: "openid", state: "t-" + STAMP,
+           code_challenge: p.challenge, code_challenge_method: "S256" }));
+  const cookie = function () {
+    return Object.keys(nb.jar).map(function (k) {
+      return k + "=" + nb.jar[k];
+    }).join("; ");
+  };
+  const answer = await authnSignin.submit(NODE_B + "/realm/" + PLAIN,
+    new URL(r.location, NODE_B).toString(),
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: cookie() });
+  (answer.setCookies || []).forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    const at = pair.indexOf("=");
+    if (at > 0) {
+      nb.jar[pair.slice(0, at)] = pair.slice(at + 1);
+    }
+  });
+  const shown = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return nb.go(m, new URL(u, NODE_B).toString());
+  });
+  assert.ok(shown.step && shown.step.view && shown.step.view.page === "totp",
+            "node B's sign-in did not ask for the code: " + shown.status +
+            " " + String(shown.text).slice(0, 300));
+  const replay = await authnSignin.stepAct(shown.step, "totp",
+                                           { code: code },
+                                           { cookie: cookie() });
+  check("f. the TOTP code that confirmed the enrolment at A is refused as a " +
+        "replay at B's sign-in", function () {
+    assert.ok(String(shown.step.base).indexOf(NODE_B) === 0 ||
+              NODE_A === NODE_B, "the step was not node B's: " +
+              shown.step.base);
+    assert.strictEqual(replay.status, 400, replay.status + " " +
+                       String(replay.text).slice(0, 300));
+    assert.ok(/already been used/.test((replay.errors || []).join(" ") +
+              String(replay.text)), JSON.stringify(replay.errors));
+  });
+  log.debug("Leaving secondFactors().");
+}
+
 async function test() {
   log.debug("Entering test().");
   await setUp();
@@ -576,6 +671,7 @@ async function test() {
   await refreshes();
   await pushed();
   await proofs();
+  await secondFactors();
   log.info("sts_cluster_single_use: " + checks + " checks passed.");
   log.debug("Leaving test().");
 }
