@@ -16,8 +16,8 @@
 )]
 
 use super::forms::{
-    aws_key_refusal, azure_key_refusal, azure_kind, gcp_key_refusal,
-    is_azure_key_name, is_gcp_key_name,
+    aws_key_refusal, azure_key_refusal, azure_kind, azure_version_refusal,
+    gcp_key_refusal, is_azure_key_name, is_gcp_key_name,
 };
 use super::{missing_sdk, Failure, Secret, Secrets, Spec};
 use crate::errors::codes;
@@ -317,6 +317,14 @@ impl Secrets {
                 facts.bits,
             ) {
                 return Err(Failure::new(codes::STS_KEYS_0102, why));
+            }
+            // A KEY WITH NO VERSION IS REFUSED BEFORE ANYTHING IS WRAPPED
+            // (#1789): the stored form is `<version>:<body>`, and Key Vault
+            // names the version only here and in a rotation.
+            if let Some(why) =
+                azure_version_refusal(&name, &vault, &facts.version)
+            {
+                return Err(Failure::new(codes::STS_KEYS_0198, why));
             }
             let (_, rsa) = azure_kind(&facts.kty);
             let handle =

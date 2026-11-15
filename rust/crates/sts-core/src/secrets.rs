@@ -185,8 +185,10 @@ const REMOTE: &[&str] = &["vault-transit", "aws-kms", "gcp-kms", "azure-keys"];
 mod cloud;
 mod forms;
 pub use forms::{
-    aws_context, azure_body, gcp_body, gcp_version_of, is_azure_key_name,
-    is_gcp_key_name, node_base64, AZURE_RSA_MIN_BITS,
+    aws_context, azure_body, azure_key_refusal, azure_version_refusal,
+    gcp_body, gcp_version_of, is_azure_key_name, is_azure_version,
+    is_gcp_key_name, no_bytes, node_base64, rsa_modulus_bits,
+    AZURE_RSA_MIN_BITS,
 };
 
 #[cfg(feature = "aws")]
@@ -1118,6 +1120,9 @@ impl Secrets {
                     Secrets::new(self.settings.clone(), self.env.clone());
                 if let Some(slot) = self.normalizer.get() {
                     again.set_key_normalizer(slot.clone());
+                }
+                if let Some(slot) = self.kms_crypto.get() {
+                    again.set_kms_crypto(slot.clone());
                 }
                 again
             },

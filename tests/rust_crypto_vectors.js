@@ -326,6 +326,9 @@ function restOfRun(t) {
   if (fs.existsSync(path.join(VECTORS, 'x509-door-rust.json'))) {
     x509DoorFromRust(t, read('x509-door-rust.json'));
   }
+  // The cloud key-encryption keys' (#444, phase 3): tests/tools/
+  // kms-vectors.js.
+  require('./tools/kms-vectors.js').fromRust(t, VECTORS);
   log.debug("Leaving restOfRun(). " + pending.length + " asynchronous.");
   return pending.reduce(function (chain, next) {
     return chain.then(next);

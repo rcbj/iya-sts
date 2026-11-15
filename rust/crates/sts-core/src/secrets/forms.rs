@@ -31,6 +31,70 @@ use base64::Engine;
 /// The smallest RSA key `azure-keys` wraps with (`AZURE_RSA_MIN_BITS`).
 pub const AZURE_RSA_MIN_BITS: usize = 3072;
 
+/// `noBytes()` (develop's #1789): an answer's bytes missing, or present and
+/// EMPTY. Node's checks were `!answer.ciphertext`, which an empty
+/// Uint8Array passes, and this port copied each SDK's `Option` the same
+/// way, so an empty ciphertext was stored as a wrap that opens nothing and
+/// an empty plaintext used as a data key. Every answer check on bytes goes
+/// through this now.
+// Hot path (every wrap and unwrap): no span.
+pub fn no_bytes(value: Option<&[u8]>) -> bool {
+    value.is_none_or(<[u8]>::is_empty)
+}
+
+/// `rsaModulusBits()`: the size of an RSA modulus in bits from its
+/// big-endian bytes (a JWK's `n`), leading zero bytes skipped and the top
+/// byte counting only its significant bits; 0 for none. Key Vault answers
+/// `n` with a leading zero byte, as ASN.1 would, so counting bytes times
+/// eight called a 3072-bit key "3080-bit" and let a 3064-bit key past the
+/// 3072-bit floor — Node's defect until #1789, copied here until now.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn rsa_modulus_bits(n: &[u8]) -> usize {
+    let Some(first) = n.iter().position(|b| *b != 0) else {
+        return 0;
+    };
+    (n.len() - first - 1) * 8 + (8 - n[first].leading_zeros() as usize)
+}
+
+/// `AZURE_VERSION`, `/^[A-Za-z0-9]+$/`: a Key Vault key version as the
+/// stored form carries it and unwrap() reads it back (Key Vault's are 32
+/// hex digits).
+// Hot path (every wrap): no span.
+pub fn is_azure_version(version: &str) -> bool {
+    !version.is_empty() && version.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+/// `azureKeysProvider.read()`'s refusal of a key answered with no version,
+/// or one of another shape (`STS-KEYS-0198`, #1789): the stored form is
+/// `<version>:<body>`, so an empty version wrote `:<body>`, a data key
+/// nothing could ever open. `None` for a usable version.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn azure_version_refusal(
+    name: &str,
+    vault: &str,
+    version: &str,
+) -> Option<String> {
+    if is_azure_version(version) {
+        return None;
+    }
+    Some(format!(
+        "the Key Vault key \"{}\" in {} was answered with {}; a data key is \
+         stored with the version that wraps it, and one wrapped now could \
+         never be unwrapped.",
+        name,
+        vault,
+        if version.is_empty() {
+            "no version".to_string()
+        } else {
+            format!(
+                "the version \"{}\", which is not a key version (letters and \
+                 digits)",
+                version
+            )
+        }
+    ))
+}
+
 /// AWS KMS's encryption context for a data key: `{ 'sts-dek': aad }`.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn aws_context(aad: &str) -> (&'static str, String) {
@@ -224,7 +288,7 @@ pub(super) fn azure_kind(kty: &str) -> (bool, bool) {
 
 /// azureKeysProvider's refusal of a key it cannot wrap with, or `None`.
 #[tracing::instrument(level = "debug", skip_all)]
-pub(super) fn azure_key_refusal(
+pub fn azure_key_refusal(
     name: &str,
     vault: &str,
     kty: &str,
@@ -331,6 +395,27 @@ mod tests {
         .contains(
             "(it is RSA 2048-bit, enabled, operations wrapKey unwrapKey)"
         ));
+        assert_eq!(rsa_modulus_bits(&[]), 0);
+        assert_eq!(rsa_modulus_bits(&[0, 0]), 0);
+        assert_eq!(rsa_modulus_bits(&[1]), 1);
+        assert_eq!(rsa_modulus_bits(&[0, 0x80, 0]), 16);
+        let mut n = vec![0u8; 385];
+        n[1] = 0xc5;
+        assert_eq!(rsa_modulus_bits(&n), 3072);
+        n[1] = 0;
+        n[2] = 0x80;
+        assert_eq!(rsa_modulus_bits(&n), 3064);
+        assert!(no_bytes(None) && no_bytes(Some(&[])));
+        assert!(!no_bytes(Some(&[0])));
+        assert!(is_azure_version("0a1B"));
+        assert!(!is_azure_version("") && !is_azure_version("v-1"));
+        assert!(azure_version_refusal("k", "https://v", "abc").is_none());
+        assert_eq!(
+            azure_version_refusal("k", "https://v", "").unwrap(),
+            "the Key Vault key \"k\" in https://v was answered with no \
+             version; a data key is stored with the version that wraps it, \
+             and one wrapped now could never be unwrapped."
+        );
         assert!(azure_key_refusal(
             "k",
             "https://v",

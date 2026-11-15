@@ -5583,7 +5583,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    } },
                  // The audit log's and the mail channel's (#444, phase 4):
                  // tests/tools/auditmail-vectors.js.
-                 { file: 'auditmail-node.json', build: auditMailVectors }];
+                 { file: 'auditmail-node.json', build: auditMailVectors },
+                 // The cloud key-encryption keys' (#444, phase 3): the
+                 // PKCS#12 of an Azure PEM, and #1789's answer checks.
+                 { file: 'kms-node.json',
+                   build: function () {
+                     return require('./kms-vectors.js').build(ROOT);
+                   } }];
 
 // THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and
 // `sts-mail`'s vectors, built by the two files `auditmail-vectors.js` names.

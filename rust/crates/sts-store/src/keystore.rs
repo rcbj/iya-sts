@@ -37,7 +37,7 @@ use serde_json::{json, Value as Json};
 use sts_core::errors::codes;
 use sts_core::log::tag;
 use sts_core::mode::Mode;
-use sts_core::secrets::{KeyNormalizer, RemoteKek, Secret, Secrets};
+use sts_core::secrets::{KeyNormalizer, KmsCrypto, RemoteKek, Secret, Secrets};
 use sts_core::settings::Settings;
 use sts_crypto::secrets::{self, KekInput};
 
@@ -285,6 +285,43 @@ impl KeyNormalizer for Pkcs8Normalizer {
     }
 }
 
+/// The cloud providers' cryptography (`secrets.js`'s `crypto.digest()` and
+/// `bytesEqualConstantTime()` for `azure-keys`' RSA wrapping, and the PKCS#12
+/// `azure_identity` takes for a PEM client certificate), from the crypto
+/// module, which is the only one that may compute them (rcbj's rule, #453).
+/// Until it was filled an `azure-keys` RSA key and a PEM in
+/// `AZURE_CLIENT_CERTIFICATE_PATH` were refused by name.
+pub struct CloudCrypto;
+
+impl KmsCrypto for CloudCrypto {
+    fn sha256(&self, data: &[u8]) -> Vec<u8> {
+        sts_crypto::jws_alg::Hash::Sha256.digest(data)
+    }
+
+    fn equal(&self, a: &[u8], b: &[u8]) -> bool {
+        sts_crypto::secrets::constant_time_equals(a, b)
+    }
+
+    fn pkcs12_of_pem(
+        &self,
+        pem: &[u8],
+        password: &str,
+    ) -> Result<Vec<u8>, String> {
+        sts_crypto::keys::pkcs12_of_pem(pem, password)
+            .map_err(|e| e.to_string())
+    }
+}
+
+/// The secrets reader the keystore reads its key-encryption key through,
+/// its two cryptography slots filled from the crypto module.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn secrets_reader(settings: Arc<Settings>) -> Secrets {
+    let secrets = Secrets::new(settings, std::env::vars().collect());
+    secrets.set_key_normalizer(Arc::new(Pkcs8Normalizer));
+    secrets.set_kms_crypto(Arc::new(CloudCrypto));
+    secrets
+}
+
 /// The data keys of one process.
 pub struct DataKeys {
     /// The key-encryption key, as its provider handed it back (text, or
@@ -494,8 +531,7 @@ impl DataKeys {
         // THE KEY-ENCRYPTION KEY FROM ITS PROVIDER (`secrets.readKek()`):
         // a value from a file or a secret store, or a key management
         // service's handle, which never hands its key over.
-        let secrets =
-            Secrets::new(settings.clone(), std::env::vars().collect());
+        let secrets = secrets_reader(settings.clone());
         let keys = match secrets.read_kek(mode).await? {
             Secret::Value { bytes, text } => {
                 DataKeys::durable(bytes, text, driver, Some(settings))?
