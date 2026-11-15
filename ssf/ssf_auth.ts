@@ -977,7 +977,11 @@ class SsfAuth {
     // A PASSWORD CARRIES NO SCOPE (#1473, ASVS 5.0.0 8.2.1): both scopes are
     // granted below, so in product the person must hold Admin Write.
     if (mode.restrictsUnscopedPeople()) {
-      const held = (require('../admin-ui/admin_rbac').rolesOf(user) || {}).groups;
+      // THIS REALM'S ROSTER (2026-11-14, found by #444's D12): with no realm
+      // named, `rolesOf()` read the default realm's, so a trust realm's own
+      // Admin Write was never seen here.
+      const held = (require('../admin-ui/admin_rbac').rolesOf(user,
+        require('../common/realms').currentId()) || {}).groups;
       const writes = Array.isArray(held) && held.some(function (one: any) {
         return one.role === 'write';
       });
