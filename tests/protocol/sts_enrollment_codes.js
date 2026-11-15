@@ -24,7 +24,8 @@
 //      (STS-ENROLL-0019); an ML-KEM template at a profile that is not
 //      key-encipherment (STS-EST-0017);
 //   C. THE CORE: a CA profile named as an EST label (STS-ENROLL-0002);
-//      PINNED: a development realm certifies an RSA-1024 key;
+//      a development realm refuses an RSA-1024 key (STS-ENROLL-0031,
+//      #35; it was certified, which this job pinned);
 //   D. AN APPLICATION IN A PRODUCT REALM: a wrong client secret
 //      (STS-ENROLL-0016), Basic authentication its own
 //      `estBasicAuthentication` turns off (STS-ENROLL-0096);
@@ -211,16 +212,14 @@ async function core(realm, E, alice) {
     publicKeyPem: weak.publicKey.export({ type: "spki", format: "pem" }),
     privateKeyPem: weak.privateKey.export({ type: "pkcs8", format: "pem" }),
     subjectAltName: [] });
-  // PINNED AS OBSERVED (D12): a development realm certifies an RSA-1024
-  // key. Whether development should is rcbj's call; STS-ENROLL-0031 (a key
-  // this CA cannot certify) is not what an RSA-1024 request meets here.
-  const weakAnswer = await send(E + "/tls-client/simpleenroll",
-                                Buffer.from(built.der), { basic: alice });
-  check("C1. (pinned) a development realm certifies an RSA-1024 key",
-        function () {
-    assert.strictEqual(weakAnswer.status, 200,
-                       String(weakAnswer.body).slice(0, 200));
-  });
+  // REFUSED IN EVERY MODE (#35, 2026-11-15): an RSA key under 2048 bits is
+  // a key this authority cannot certify, STS-ENROLL-0031. Until #35 a
+  // development realm certified it, which this job pinned.
+  refusal("C1. a development realm refuses an RSA-1024 key",
+    await refusedBy(realm, "STS-ENROLL-0031", function () {
+      return send(E + "/tls-client/simpleenroll", Buffer.from(built.der),
+                  { basic: alice });
+    }), "STS-ENROLL-0031");
   refusal("C2. a CA profile named as an EST label is refused by design",
     await refusedBy(realm, "STS-ENROLL-0002", async function () {
       return send(E + "/issuing-ca/simpleenroll", (await csr(alice[0])).der,
