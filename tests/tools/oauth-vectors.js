@@ -419,6 +419,157 @@ function validationVectors(ROOT) {
     .concat(run('token', 'body', token));
 }
 
+// A form POST, as a client sends one.
+function post(port, urlPath, form, headers) {
+  return new Promise(function (resolve) {
+    const body = new URLSearchParams(form).toString();
+    const req = http.request({ host: '127.0.0.1', port: port, path: urlPath,
+      method: 'POST', headers: Object.assign({
+        'content-type': 'application/x-www-form-urlencoded',
+        'content-length': Buffer.byteLength(body) }, headers || {}) },
+    function (res) {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', function (c) {
+        text += c;
+      });
+      res.on('end', function () {
+        resolve({ status: res.statusCode, headers: res.headers, text: text });
+      });
+    });
+    req.on('error', function (e) {
+      resolve({ status: 0, headers: {}, text: String(e && e.message) });
+    });
+    req.end(body);
+  });
+}
+
+function decoded(jwt) {
+  const parts = String(jwt || '').split('.');
+  if (parts.length !== 3) {
+    return null;
+  }
+  return { header: JSON.parse(Buffer.from(parts[0], 'base64url')),
+           claims: JSON.parse(Buffer.from(parts[1], 'base64url')) };
+}
+
+// THE TOKEN ENDPOINT over HTTP: the client credentials grant with each
+// client authentication method, and the refusals before any grant, in a
+// development realm and a product one.
+async function tokenVectors(ROOT, port, mods) {
+  const { realms, helpers } = mods;
+  const applications = require(path.join(ROOT, 'common', 'applications'));
+  const SECRET = 'oauth-vector-token-secret-0123456789abcdef0123456789ab';
+  const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const ecJwk = Object.assign(ec.publicKey.export({ format: 'jwk' }),
+                              { kid: 'tk-ec' });
+  const out = [];
+  for (const realmMode of ['development', 'product']) {
+    const id = 'tok' + realmMode.slice(0, 3);
+    const made = realms.create({ id: id, name: id,
+      description: 'oauth-vectors.js',
+      overrides: realmMode === 'product' ? { 'global.mode': 'product' }
+        : {} });
+    if (!made.ok) {
+      out.push({ name: '(realm refused)', problem: JSON.stringify(made) });
+    }
+    const realm = realms.get(id);
+    const clients = {};
+    realms.run(realm, function () {
+      const make = function (cid, fields) {
+        applications.createApplication({ identifier: cid,
+          protocols: ['oauth2'],
+          fields: Object.assign({ oauthClientId: cid,
+            oauthRedirectUri: ['https://rp.vectors.example/cb'],
+            oauthGrantType: ['client_credentials', 'authorization_code',
+                             'refresh_token'] }, fields) });
+      };
+      make('tk-basic', { oauthClientSecret: SECRET,
+                         oauthTokenEndpointAuthMethod: 'client_secret_basic' });
+      make('tk-post', { oauthClientSecret: SECRET,
+                        oauthTokenEndpointAuthMethod: 'client_secret_post' });
+      make('tk-pkjwt', { oauthJwks: JSON.stringify({ keys: [ecJwk] }),
+                         oauthTokenEndpointAuthMethod: 'private_key_jwt' });
+      make('tk-public', { oauthTokenEndpointAuthMethod: 'none' });
+      ['tk-basic', 'tk-post', 'tk-pkjwt', 'tk-public', 'tk-nobody']
+        .forEach(function (cid) {
+          clients[cid] = clone(applications.clientConfigOf(cid));
+          clients[cid + ':flows'] = clone(applications.declaredFlowsOf(cid));
+        });
+    });
+    const P = '/realm/' + id;
+    const BASE = 'http://127.0.0.1:' + port + P;
+    const basic = function (cid, secret) {
+      return 'Basic ' + Buffer.from(cid + ':' + secret).toString('base64');
+    };
+    const assertion = function () {
+      const now = Math.floor(Date.now() / 1000);
+      return signJws({ alg: 'ES256', typ: 'JWT', kid: 'tk-ec' },
+        { iss: 'tk-pkjwt', sub: 'tk-pkjwt', aud: BASE + '/oauth2/token',
+          jti: nodeCrypto.randomUUID(), iat: now, exp: now + 60 },
+        ec.privateKey, 'ES256');
+    };
+    const CASES = [
+      { name: 'cc, basic', form: { grant_type: 'client_credentials' },
+        headers: { authorization: basic('tk-basic', SECRET) } },
+      { name: 'cc, basic, a scope',
+        form: { grant_type: 'client_credentials', scope: 'read write' },
+        headers: { authorization: basic('tk-basic', SECRET) } },
+      { name: 'cc, post', form: { grant_type: 'client_credentials',
+          client_id: 'tk-post', client_secret: SECRET } },
+      { name: 'cc, private_key_jwt', form: function () {
+        return { grant_type: 'client_credentials',
+          client_assertion_type: 'urn:ietf:params:oauth:client-assertion-' +
+            'type:jwt-bearer', client_assertion: assertion() };
+      } },
+      { name: 'cc, wrong secret', form: { grant_type: 'client_credentials' },
+        headers: { authorization: basic('tk-basic', 'nope') } },
+      { name: 'cc, public client', form: { grant_type: 'client_credentials',
+          client_id: 'tk-public' } },
+      { name: 'cc, unknown client', form: { grant_type: 'client_credentials',
+          client_id: 'tk-nobody', client_secret: 'x' } },
+      { name: 'no grant_type', form: { client_id: 'tk-post',
+          client_secret: SECRET } },
+      { name: 'an unknown grant_type', form: { grant_type: 'urn:nope',
+          client_id: 'tk-post', client_secret: SECRET } },
+      { name: 'a malformed scope', form: { grant_type: 'client_credentials',
+          client_id: 'tk-post', client_secret: SECRET, scope: 'a "b"' } },
+      { name: 'the password grant', form: { grant_type: 'password',
+          client_id: 'tk-post', client_secret: SECRET, username: 'u',
+          password: 'p' } }
+    ];
+    for (const c of CASES) {
+      const form = typeof c.form === 'function' ? c.form() : c.form;
+      const nowMs = Date.now();
+      const r = await post(port, P + '/oauth2/token', form, c.headers);
+      let body = r.text;
+      try {
+        body = JSON.parse(r.text);
+      } catch (e) {
+        body = r.text;
+      }
+      const kept = {};
+      ['content-type', 'cache-control', 'www-authenticate', 'pragma']
+        .forEach(function (h) {
+          if (r.headers[h] !== undefined) {
+            kept[h] = r.headers[h];
+          }
+        });
+      out.push({ name: c.name, realm: id, mode: realmMode, nowMs: nowMs,
+                 base: BASE, form: form, headers: c.headers || {},
+                 status: r.status, responseHeaders: kept, body: body,
+                 accessToken: body && body.access_token
+                   ? decoded(body.access_token) : null });
+    }
+    await realms.run(realm, async function () {
+      out.push({ name: '(the realm)', realm: id, mode: realmMode,
+                 clients: clients,
+                 blob: clone(mods.keystore.serialise(helpers.stsKeysFor())) });
+    });
+  }
+  return out;
+}
+
 async function build(ROOT) {
   require(path.join(ROOT, 'common', 'protocol_stack'));
   const app = require(path.join(ROOT, 'common', 'app'));
@@ -437,11 +588,13 @@ async function build(ROOT) {
   });
   const port = server.address().port;
   const out = { problems: [] };
+  mods.config.setOverride('realms.maxCount', 64);
   try {
     out.sanitize = sanitizeVectors(mods.oauth21);
     out.validation = validationVectors(ROOT);
     out.clientAuth = await clientAuthVectors(mods);
     out.jwks = await jwksVectors(ROOT, port, mods);
+    out.token = await tokenVectors(ROOT, port, mods);
   } catch (e) {
     out.problems.push(String((e && e.stack) || e));
   }

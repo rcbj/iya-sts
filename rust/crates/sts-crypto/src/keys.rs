@@ -516,3 +516,12 @@ pub fn certificate_signed_by(certificate_pem: &str, issuer_pem: &str) -> bool {
         .and_then(|key| cert.verify(&key))
         .unwrap_or(false)
 }
+
+/// A private key, as the JWE decryption takes it.
+pub type PrivateKey = PKey<Private>;
+
+/// A private key from PEM (PKCS#8 or the traditional forms).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn private_key_from_pem(pem: &str) -> CryptoResult<PrivateKey> {
+    Ok(PKey::private_key_from_pem(pem.as_bytes())?)
+}
