@@ -69,6 +69,34 @@ class XacmlPage {
       esc(value === null || value === undefined ? '' : value) + '">';
   }
 
+  // ---------------------------------------------------------------------------
+  // THE REMOTE PEP'S FIELD TOOLTIPS (#1760, rcbj 2026-11-14: "Make better
+  // field tooltips on all the new tabs under Protocols->XACML"). The
+  // console's one mechanism, `kit.tip()` as a `title`, given the WHOLE
+  // sentence (`Infinity`): each says what the field does, its values and
+  // default, when it takes effect and, where it applies, the precedence.
+  // The prose has two other doors, which is the condition admin-ui/CLAUDE.md
+  // sets for a tooltip-only sentence: docs/remote-pep.md and the management
+  // API's own descriptions.
+  // ---------------------------------------------------------------------------
+  static tipOf(t: Json, key: string, vars?: Json): string {
+    return kit.tip(t.text(key, vars), Infinity);
+  }
+
+  // A table heading with its tooltip.
+  static th(t: Json, labelKey: string, tipKey: string): string {
+    return '<th' + XacmlPage.tipOf(t, tipKey) + '>' + t.html(labelKey) +
+      '</th>';
+  }
+
+  // A form field's label with its tooltip, around the control.
+  static labelled(t: Json, labelKey: string, tipKey: string, control: string,
+                  extraTip?: string): string {
+    const tip = t.text(tipKey) + (extraTip ? ' ' + t.text(extraTip) : '');
+    return '<label' + kit.tip(tip, Infinity) + '>' + t.html(labelKey) + ' ' +
+      control + '</label>';
+  }
+
   static textField(name: string, value: unknown, size?: number): string {
     return '<input type="text" name="' + esc(name) + '" value="' +
       esc(value === null || value === undefined ? '' : value) + '"' +
@@ -862,17 +890,19 @@ class XacmlPage {
         ? '<form method="post" action="/admin/xacml/peps">' +
           self.hidden('action', 'issue-pep-certificate') +
           self.hidden('name', row.name) +
-          '<div class="sub">' + t.html('consoleXacml.pep.moreDns') +
-          ' <input name="dnsNames" ' +
-          'size="18" placeholder="pep.example.test"></div>' +
-          '<div class="sub">' + t.html('consoleXacml.pep.ipAddresses') +
-          ' <input name="ipAddresses" ' +
-          'size="14" placeholder="10.0.0.5"></div>' +
-          '<div class="sub">' + t.html('consoleXacml.pep.key') + ' ' +
-          self.select('keyAlg', json.listenerCertificates.keyAlgorithms
-            .map(function (one) {
-              return { value: one, label: one };
-            }), json.listenerCertificates.defaultKeyAlg) + ' ' +
+          '<div class="sub">' + self.labelled(t, 'consoleXacml.pep.moreDns',
+            'consoleXacml.tip.issue.dnsNames', '<input name="dnsNames" ' +
+            'size="18" placeholder="pep.example.test">') + '</div>' +
+          '<div class="sub">' + self.labelled(t,
+            'consoleXacml.pep.ipAddresses', 'consoleXacml.tip.issue.ipAddresses',
+            '<input name="ipAddresses" size="14" placeholder="10.0.0.5">') +
+          '</div>' +
+          '<div class="sub">' + self.labelled(t, 'consoleXacml.pep.key',
+            'consoleXacml.tip.issue.keyAlg',
+            self.select('keyAlg', json.listenerCertificates.keyAlgorithms
+              .map(function (one) {
+                return { value: one, label: one };
+              }), json.listenerCertificates.defaultKeyAlg)) + ' ' +
           '<button type="submit">' + (held
             ? t.html('consoleXacml.pep.reissue')
             : t.html('consoleXacml.pep.issue')) +
@@ -989,14 +1019,21 @@ class XacmlPage {
       (json.peps.length
         ? '<p class="sub">' + t.html('consoleXacml.pepPage.openRow') + '</p>'
         : '') +
-      '<table><tr><th>PEP</th><th>' + t.html('consoleXacml.th.certificate') +
-      '</th><th>' + t.html('consoleXacml.th.state') + '</th>' +
-      '<th>' + t.html('consoleXacml.th.itsBias') + '</th><th>' +
-      t.html('consoleXacml.th.enforced') + '</th><th>' +
-      t.html('consoleXacml.th.notify') + '</th>' +
-      '<th>' + t.html('consoleXacml.th.listener') + '</th>' +
-      '<th>' + t.html('consoleXacml.pepPage.th.proxy') + '</th>' +
-      '<th>' + t.html('consoleXacml.th.actions') + '</th></tr>' + rows +
+      '<table><tr><th' + self.tipOf(t, 'consoleXacml.tip.peps.name') +
+      '>PEP</th>' +
+      self.th(t, 'consoleXacml.th.certificate',
+              'consoleXacml.tip.peps.certificate') +
+      self.th(t, 'consoleXacml.th.state', 'consoleXacml.tip.peps.state') +
+      self.th(t, 'consoleXacml.th.itsBias', 'consoleXacml.tip.peps.bias') +
+      self.th(t, 'consoleXacml.th.enforced',
+              'consoleXacml.tip.peps.enforced') +
+      self.th(t, 'consoleXacml.th.notify', 'consoleXacml.tip.peps.notify') +
+      self.th(t, 'consoleXacml.th.listener',
+              'consoleXacml.tip.peps.listener') +
+      self.th(t, 'consoleXacml.pepPage.th.proxy',
+              'consoleXacml.tip.peps.proxy') +
+      self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
+      '</tr>' + rows +
       '</table>' +
       kit.note(
         '<p>' + t.html('consoleXacml.peps.cert1') +
@@ -1096,16 +1133,25 @@ class XacmlPage {
             t.html('consoleXacml.routeForm.remove') + '</button></form></td>'
           : '') + '</tr>';
     }).join('');
-    return '<table><tr><th>' + t.html('consoleXacml.proxy.th.id') +
-      '</th><th>' + t.html('consoleXacml.proxy.th.path') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.methods') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.mechanisms') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.application') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.decision') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.headers') + '</th><th>' +
-      t.html('consoleXacml.proxy.th.forward') + '</th>' +
+    return '<table><tr>' +
+      self.th(t, 'consoleXacml.proxy.th.id', 'consoleXacml.tip.routes.id') +
+      self.th(t, 'consoleXacml.proxy.th.path',
+              'consoleXacml.tip.routes.path') +
+      self.th(t, 'consoleXacml.proxy.th.methods',
+              'consoleXacml.tip.routes.methods') +
+      self.th(t, 'consoleXacml.proxy.th.mechanisms',
+              'consoleXacml.tip.routes.mechanisms') +
+      self.th(t, 'consoleXacml.proxy.th.application',
+              'consoleXacml.tip.routes.application') +
+      self.th(t, 'consoleXacml.proxy.th.decision',
+              'consoleXacml.tip.routes.decision') +
+      self.th(t, 'consoleXacml.proxy.th.headers',
+              'consoleXacml.tip.routes.headers') +
+      self.th(t, 'consoleXacml.proxy.th.forward',
+              'consoleXacml.tip.routes.forward') +
       (ctx && ctx.write && name
-        ? '<th>' + t.html('consoleXacml.th.actions') + '</th>' : '') +
+        ? self.th(t, 'consoleXacml.th.actions',
+                  'consoleXacml.tip.routes.actions') : '') +
       '</tr>' + rows + '</table>';
   }
 
@@ -1145,7 +1191,10 @@ class XacmlPage {
             '</option>';
         })).join('');
       return '<tr><td><input type="text" name="headerName" value="' +
-        esc(one.name || '') + '"></td><td><select name="headerClaim">' +
+        esc(one.name || '') + '" placeholder="X-Remote-User"' +
+        self.tipOf(t, 'consoleXacml.tip.identity.headerName') +
+        '></td><td><select name="headerClaim"' +
+        self.tipOf(t, 'consoleXacml.tip.identity.claim') + '>' +
         options + '</select></td></tr>';
     }).join('');
     return '<form method="post" action="/admin/xacml/peps">' +
@@ -1153,14 +1202,20 @@ class XacmlPage {
       self.hidden('name', name) + self.hidden('route', route.id) +
       '<h4>' + t.html('consoleXacml.proxy.identity.heading',
                       { route: route.id }) + '</h4>' +
-      '<label>' + t.html('consoleXacml.proxy.identity.mode') +
-      ' <select name="mode">' + modes + '</select></label>' +
-      '<table><tr><th>' + t.html('consoleXacml.proxy.identity.thName') +
-      '</th><th>' + t.html('consoleXacml.proxy.identity.thClaim') +
-      '</th></tr>' + table + '</table>' +
-      '<label>' + t.html('consoleXacml.proxy.identity.separator') +
-      ' <input type="text" name="separator" maxlength="1" size="2" value="' +
-      esc(identity.separator || ',') + '"></label>' +
+      self.labelled(t, 'consoleXacml.proxy.identity.mode',
+                    'consoleXacml.tip.identity.mode',
+                    '<select name="mode">' + modes + '</select>') +
+      '<table><tr>' +
+      self.th(t, 'consoleXacml.proxy.identity.thName',
+              'consoleXacml.tip.identity.headerName') +
+      self.th(t, 'consoleXacml.proxy.identity.thClaim',
+              'consoleXacml.tip.identity.claim') +
+      '</tr>' + table + '</table>' +
+      self.labelled(t, 'consoleXacml.proxy.identity.separator',
+                    'consoleXacml.tip.identity.separator',
+                    '<input type="text" name="separator" maxlength="1" ' +
+                    'size="2" value="' + esc(identity.separator || ',') +
+                    '">') +
       '<div class="sub">' + t.html('consoleXacml.proxy.identity.note') +
       '</div><button type="submit">' +
       t.html('consoleXacml.proxy.identity.save') + '</button></form>';
@@ -1203,18 +1258,29 @@ class XacmlPage {
     const table = streams === null
       ? '<p class="sub">' + t.html('consoleXacml.proxy.signals.noRows') +
         '</p>'
-      : '<table><tr><th>' +
-        t.html('consoleXacml.proxy.signals.th.serves') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.stream') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.running') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.started') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.lastPoll') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.lastSuccess') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.failures') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.polls') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.sets') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.ended') + '</th><th>' +
-        t.html('consoleXacml.proxy.signals.th.health') + '</th></tr>' +
+      : '<table><tr>' +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.serves',
+                     'consoleXacml.tip.signals.serves') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.stream',
+                     'consoleXacml.tip.signals.stream') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.running',
+                     'consoleXacml.tip.signals.running') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.started',
+                     'consoleXacml.tip.signals.started') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.lastPoll',
+                     'consoleXacml.tip.signals.lastPoll') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.lastSuccess',
+                     'consoleXacml.tip.signals.lastSuccess') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.failures',
+                     'consoleXacml.tip.signals.failures') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.polls',
+                     'consoleXacml.tip.signals.polls') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.sets',
+                     'consoleXacml.tip.signals.sets') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.ended',
+                     'consoleXacml.tip.signals.ended') +
+        XacmlPage.th(t, 'consoleXacml.proxy.signals.th.health',
+                     'consoleXacml.tip.signals.health') + '</tr>' +
         streams.map(function (one: Json) {
           const apps = (one.applications || []).map(function (id: string) {
             return '<a href="/admin/applications?application=' +
@@ -1293,7 +1359,8 @@ class XacmlPage {
       ? '<form method="post" action="/admin/xacml/peps">' +
         self.hidden('action', 'set-pep-proxy') +
         self.hidden('name', row.name) +
-        '<label>' + t.html('consoleXacml.proxy.editLabel') +
+        '<label' + self.tipOf(t, 'consoleXacml.tip.proxy.document') + '>' +
+        t.html('consoleXacml.proxy.editLabel') +
         '<br><textarea name="proxy" rows="18" cols="88">' +
         esc(JSON.stringify(proxy || self.proxyTemplate(), null, 2)) +
         '</textarea></label><div class="sub">' +
@@ -1441,31 +1508,50 @@ class XacmlPage {
     return '<form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'set-pep-listener') + self.hidden('name', name) +
       (one ? self.hidden('id', d.id)
-        : '<label>' + t.html('consoleXacml.listeners.form.id') + ' ' +
-          '<input type="text" name="id" size="20" maxlength="64" ' +
-          'required></label> ') +
-      '<label>' + t.html('consoleXacml.listeners.form.protocol') + ' ' +
-      self.select('protocol', options(['http', 'https']), d.protocol) +
-      '</label> <label>' + t.html('consoleXacml.listeners.form.purpose') +
-      ' ' + self.select('purpose', options(['api', 'proxy']), d.purpose) +
-      '</label> <label>' + t.html('consoleXacml.listeners.form.address') +
-      ' <input type="text" name="address" size="16" maxlength="64" value="' +
-      esc(d.address) + '"></label> <label>' +
-      t.html('consoleXacml.listeners.form.port') +
-      ' <input type="number" name="port" min="1" max="65535" required ' +
-      'value="' + esc(d.port) + '"></label>' +
+        : self.labelled(t, 'consoleXacml.listeners.form.id',
+            'consoleXacml.tip.listener.id',
+            '<input type="text" name="id" size="20" maxlength="64" ' +
+            'placeholder="public-https" required>',
+            'consoleXacml.tip.listener.when') + ' ') +
+      self.labelled(t, 'consoleXacml.listeners.form.protocol',
+        'consoleXacml.tip.listener.protocol',
+        self.select('protocol', options(['http', 'https']), d.protocol),
+        'consoleXacml.tip.listener.when') + ' ' +
+      self.labelled(t, 'consoleXacml.listeners.form.purpose',
+        'consoleXacml.tip.listener.purpose',
+        self.select('purpose', options(['api', 'proxy']), d.purpose),
+        'consoleXacml.tip.listener.when') + ' ' +
+      self.labelled(t, 'consoleXacml.listeners.form.address',
+        'consoleXacml.tip.listener.address',
+        '<input type="text" name="address" size="16" maxlength="64" ' +
+        'placeholder="0.0.0.0" value="' + esc(d.address) + '">',
+        'consoleXacml.tip.listener.when') + ' ' +
+      self.labelled(t, 'consoleXacml.listeners.form.port',
+        'consoleXacml.tip.listener.port',
+        '<input type="number" name="port" min="1" max="65535" required ' +
+        'placeholder="8443" value="' + esc(d.port) + '">',
+        'consoleXacml.tip.listener.when') +
       '<div class="sub">' + t.html('consoleXacml.listeners.form.httpsOnly') +
-      '</div><label>' + t.html('consoleXacml.listeners.form.dnsNames') +
-      ' <input type="text" name="dnsNames" size="40" value="' +
-      esc((d.dnsNames || []).join(', ')) + '"></label> <label>' +
-      t.html('consoleXacml.listeners.form.ipAddresses') +
-      ' <input type="text" name="ipAddresses" size="24" value="' +
-      esc((d.ipAddresses || []).join(', ')) + '"></label> <label>' +
-      t.html('consoleXacml.listeners.form.keyAlg') + ' ' +
-      self.select('keyAlg', (catalogue.keyAlgorithms || [])
-        .map(function (v: string) {
-          return { value: v, label: v };
-        }), d.keyAlg || catalogue.defaultKeyAlg) + '</label> ' +
+      '</div>' +
+      self.labelled(t, 'consoleXacml.listeners.form.dnsNames',
+        'consoleXacml.tip.listener.dnsNames',
+        '<input type="text" name="dnsNames" size="40" ' +
+        'placeholder="pep.example.test, pep.internal" value="' +
+        esc((d.dnsNames || []).join(', ')) + '">',
+        'consoleXacml.tip.listener.when') + ' ' +
+      self.labelled(t, 'consoleXacml.listeners.form.ipAddresses',
+        'consoleXacml.tip.listener.ipAddresses',
+        '<input type="text" name="ipAddresses" size="24" ' +
+        'placeholder="10.0.0.5" value="' +
+        esc((d.ipAddresses || []).join(', ')) + '">',
+        'consoleXacml.tip.listener.when') + ' ' +
+      self.labelled(t, 'consoleXacml.listeners.form.keyAlg',
+        'consoleXacml.tip.listener.keyAlg',
+        self.select('keyAlg', (catalogue.keyAlgorithms || [])
+          .map(function (v: string) {
+            return { value: v, label: v };
+          }), d.keyAlg || catalogue.defaultKeyAlg),
+        'consoleXacml.tip.listener.when') + ' ' +
       '<button type="submit">' + (one
         ? t.html('consoleXacml.listeners.form.update')
         : t.html('consoleXacml.listeners.form.add')) + '</button></form>';
@@ -1558,15 +1644,24 @@ class XacmlPage {
         '</td><td>' + self.listenerCertificate(t, one) + '</td><td>' +
         actions + '</td></tr>';
     }).join('');
-    const table = '<table><tr><th>' +
-      t.html('consoleXacml.listeners.th.listener') + '</th><th>' +
-      t.html('consoleXacml.listeners.th.source') + '</th><th>' +
-      t.html('consoleXacml.listeners.th.protocol') + '</th><th>' +
-      t.html('consoleXacml.listeners.th.address') + '</th><th>' +
-      t.html('consoleXacml.listeners.th.purpose') + '</th><th>' +
-      t.html('consoleXacml.listeners.th.state') + '</th><th>' +
-      t.html('consoleXacml.listeners.th.certificate') + '</th><th>' +
-      t.html('consoleXacml.th.actions') + '</th></tr>' + body + '</table>';
+    const table = '<table><tr>' +
+      self.th(t, 'consoleXacml.listeners.th.listener',
+              'consoleXacml.tip.listeners.listener') +
+      self.th(t, 'consoleXacml.listeners.th.source',
+              'consoleXacml.tip.listeners.source') +
+      self.th(t, 'consoleXacml.listeners.th.protocol',
+              'consoleXacml.tip.listener.protocol') +
+      self.th(t, 'consoleXacml.listeners.th.address',
+              'consoleXacml.tip.listeners.address') +
+      self.th(t, 'consoleXacml.listeners.th.purpose',
+              'consoleXacml.tip.listener.purpose') +
+      self.th(t, 'consoleXacml.listeners.th.state',
+              'consoleXacml.tip.listeners.state') +
+      self.th(t, 'consoleXacml.listeners.th.certificate',
+              'consoleXacml.tip.listeners.certificate') +
+      self.th(t, 'consoleXacml.th.actions',
+              'consoleXacml.tip.listeners.actions') +
+      '</tr>' + body + '</table>';
     const defined = (row.listeners || []) as Json[];
     const catalogue = json.listenersCatalogue || {};
     const forms = ctx.write
@@ -1614,9 +1709,35 @@ class XacmlPage {
                          public: false, mechanisms: ['session'],
                          application: '', resource: '', action: '',
                          forwardCredentials: false, signals: true };
+    const when = 'consoleXacml.tip.route.when';
+    return '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+      (route ? self.hidden('id', r.id)
+        : self.labelled(t, 'consoleXacml.routeForm.id',
+            'consoleXacml.tip.route.id', '<input type="text" name="id" ' +
+            'size="16" maxlength="64" placeholder="orders-api" required>',
+            when) + ' ') +
+      self.routeFields(t, json, r, count, route ? route.id : 'new',
+                       !route) +
+      '<button type="submit">' + (route
+        ? t.html('consoleXacml.routeForm.update')
+        : t.html('consoleXacml.routeForm.add')) + '</button></form>';
+  }
+
+  // THE ROUTE'S FIELDS, shared by the Reverse proxy tab's forms and the
+  // route's own page (#1760): every member of a route but its id and its
+  // identity, each with its tooltip. `isNew` puts the add form's position
+  // (last) in the box's placeholder.
+  static routeFields(t: Json, json: Json, r: Json, count: number,
+                     listKey: string, isNew: boolean): string {
+    const self = this;
+    const when = 'consoleXacml.tip.route.when';
     const box = function (field: string, value: string,
                           on: boolean): string {
-      return '<label><input type="checkbox" name="' + field + '" value="' +
+      return '<label' + self.tipOf(t, field === 'methods'
+          ? 'consoleXacml.tip.route.methods'
+          : 'consoleXacml.tip.route.mechanisms') +
+        '><input type="checkbox" name="' + field + '" value="' +
         esc(value) + '"' + (on ? ' checked' : '') + '> ' + esc(value) +
         '</label> ';
     };
@@ -1628,45 +1749,50 @@ class XacmlPage {
       .map(function (m) {
         return box('mechanisms', m, (r.mechanisms || []).indexOf(m) >= 0);
       }).join('');
-    const listId = 'pep-route-apps-' + (route ? route.id : 'new');
-    return '<form method="post" action="/admin/xacml/peps">' +
-      self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
-      (route ? self.hidden('id', r.id)
-        : '<label>' + t.html('consoleXacml.routeForm.id') + ' <input ' +
-          'type="text" name="id" size="16" maxlength="64" required>' +
-          '</label> ') +
-      '<label>' + t.html('consoleXacml.routeForm.path') + ' <input ' +
-      'type="text" name="path" size="28" required value="' + esc(r.path) +
-      '"></label> <label>' + t.html('consoleXacml.routeForm.match') + ' ' +
-      self.select('match', [
-        { value: 'prefix', label: t.text('consoleXacml.routeForm.prefix') },
-        { value: 'exact', label: t.text('consoleXacml.routeForm.exact') }],
-        r.match) + '</label>' +
-      '<div>' + t.html('consoleXacml.routeForm.methods') + ' ' + methods +
+    const listId = 'pep-route-apps-' + listKey;
+    return self.labelled(t, 'consoleXacml.routeForm.path',
+        'consoleXacml.tip.route.path', '<input type="text" name="path" ' +
+        'size="28" required placeholder="/api" value="' + esc(r.path) + '">',
+        when) + ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.match',
+        'consoleXacml.tip.route.match', self.select('match', [
+          { value: 'prefix', label: t.text('consoleXacml.routeForm.prefix') },
+          { value: 'exact', label: t.text('consoleXacml.routeForm.exact') }],
+          r.match), when) +
+      '<div><span' + self.tipOf(t, 'consoleXacml.tip.route.methods') + '>' +
+      t.html('consoleXacml.routeForm.methods') + '</span> ' + methods +
       '<span class="sub">' + t.html('consoleXacml.routeForm.methodsNote') +
-      '</span></div><div><label>' +
-      t.html('consoleXacml.routeForm.public') + ' ' +
-      self.yesNo('public', r.public, t) + '</label> ' +
-      t.html('consoleXacml.routeForm.mechanisms') + ' ' + mechanisms +
-      '</div><div><label>' + t.html('consoleXacml.routeForm.application') +
-      ' <input type="text" name="application" size="24" list="' + listId +
-      '" value="' + esc(r.application) + '"></label>' +
-      self.applicationList(json, listId) + ' <label>' +
-      t.html('consoleXacml.routeForm.resource') + ' <input type="text" ' +
-      'name="resource" size="20" value="' + esc(r.resource) + '"></label> ' +
-      '<label>' + t.html('consoleXacml.routeForm.action') + ' <input ' +
-      'type="text" name="routeAction" size="12" value="' + esc(r.action) +
-      '"></label></div><div><label>' +
-      t.html('consoleXacml.routeForm.forward') + ' ' +
-      self.yesNo('forwardCredentials', r.forwardCredentials, t) +
-      '</label> <label>' + t.html('consoleXacml.routeForm.signals') + ' ' +
-      self.yesNo('signals', r.signals !== false, t) + '</label> <label>' +
-      t.html('consoleXacml.routeForm.position') + ' <input type="number" ' +
-      'name="position" min="0" max="' + count + '" placeholder="' +
-      (route ? '' : String(count)) + '"></label></div>' +
-      '<button type="submit">' + (route
-        ? t.html('consoleXacml.routeForm.update')
-        : t.html('consoleXacml.routeForm.add')) + '</button></form>';
+      '</span></div><div>' +
+      self.labelled(t, 'consoleXacml.routeForm.public',
+        'consoleXacml.tip.route.public', self.yesNo('public', r.public, t),
+        when) + ' <span' +
+      self.tipOf(t, 'consoleXacml.tip.route.mechanisms') + '>' +
+      t.html('consoleXacml.routeForm.mechanisms') + '</span> ' + mechanisms +
+      '</div><div>' +
+      self.labelled(t, 'consoleXacml.routeForm.application',
+        'consoleXacml.tip.route.application', '<input type="text" ' +
+        'name="application" size="24" placeholder="orders-app" list="' +
+        listId + '" value="' + esc(r.application) + '">', when) +
+      self.applicationList(json, listId) + ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.resource',
+        'consoleXacml.tip.route.resource', '<input type="text" ' +
+        'name="resource" size="20" placeholder="https://orders.example.test"' +
+        ' value="' + esc(r.resource) + '">', when) + ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.action',
+        'consoleXacml.tip.route.action', '<input type="text" ' +
+        'name="routeAction" size="12" placeholder="read" value="' +
+        esc(r.action) + '">', when) + '</div><div>' +
+      self.labelled(t, 'consoleXacml.routeForm.forward',
+        'consoleXacml.tip.route.forward',
+        self.yesNo('forwardCredentials', r.forwardCredentials, t), when) +
+      ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.signals',
+        'consoleXacml.tip.route.signals',
+        self.yesNo('signals', r.signals !== false, t), when) + ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.position',
+        'consoleXacml.tip.route.position', '<input type="number" ' +
+        'name="position" min="0" max="' + count + '" placeholder="' +
+        (isNew ? String(count) : '') + '">', when) + '</div>';
   }
 
   // The realm's applications as a datalist: the chooser SUGGESTS, and the
@@ -1694,14 +1820,17 @@ class XacmlPage {
     return '<h4>' + t.html('consoleXacml.routeForm.mapHeading') + '</h4>' +
       '<form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'set-pep-route-application') +
-      self.hidden('name', name) + '<label>' +
-      t.html('consoleXacml.routeForm.route') + ' ' +
-      self.select('route', routes.map(function (one: Json) {
-        return { value: one.id, label: one.id + ' (' + one.path + ')' };
-      }), routes[0].id) + '</label> <label>' +
-      t.html('consoleXacml.routeForm.application') + ' <input type="text" ' +
-      'name="application" size="24" required list="pep-route-apps-map">' +
-      '</label>' + self.applicationList(json, 'pep-route-apps-map') +
+      self.hidden('name', name) +
+      self.labelled(t, 'consoleXacml.routeForm.route',
+        'consoleXacml.tip.map.route',
+        self.select('route', routes.map(function (one: Json) {
+          return { value: one.id, label: one.id + ' (' + one.path + ')' };
+        }), routes[0].id), 'consoleXacml.tip.route.when') + ' ' +
+      self.labelled(t, 'consoleXacml.routeForm.application',
+        'consoleXacml.tip.route.application', '<input type="text" ' +
+        'name="application" size="24" required placeholder="orders-app" ' +
+        'list="pep-route-apps-map">', 'consoleXacml.tip.route.when') +
+      self.applicationList(json, 'pep-route-apps-map') +
       ' <button type="submit">' + t.html('consoleXacml.routeForm.map') +
       '</button><div class="sub">' + t.html('consoleXacml.routeForm.mapNote') +
       '</div></form>';
@@ -1747,6 +1876,68 @@ class XacmlPage {
     };
     return Object.prototype.hasOwnProperty.call(labels, key)
       ? labels[key] : esc(key);
+  }
+
+  // ONE SETTING'S TOOLTIP (#1760): what it does (by its own key, so the
+  // catalogs' check finds each), then the facts every row has — the
+  // values it takes, its default, when a change takes effect, and the
+  // precedence — from the catalogue the service answers, so they cannot
+  // drift from what the save checks.
+  static settingTip(t: Json, row: Json, words: Json): string {
+    const what: Json = {
+      description: t.text('consoleXacml.tip.setting.description'),
+      resource: t.text('consoleXacml.tip.setting.resource'),
+      notifyUrl: t.text('consoleXacml.tip.setting.notifyUrl'),
+      bias: t.text('consoleXacml.tip.setting.bias'),
+      pip: t.text('consoleXacml.tip.setting.pip'),
+      pollIntervalMs: t.text('consoleXacml.tip.setting.pollIntervalMs'),
+      heartbeatIntervalMs:
+        t.text('consoleXacml.tip.setting.heartbeatIntervalMs'),
+      backoffMaxMs: t.text('consoleXacml.tip.setting.backoffMaxMs'),
+      timeoutMs: t.text('consoleXacml.tip.setting.timeoutMs'),
+      maxBodyBytes: t.text('consoleXacml.tip.setting.maxBodyBytes'),
+      httpsReloadIntervalMs:
+        t.text('consoleXacml.tip.setting.httpsReloadIntervalMs'),
+      logLevel: t.text('consoleXacml.tip.setting.logLevel'),
+      authzen: t.text('consoleXacml.tip.setting.authzen'),
+      authzenPdpIdentifier:
+        t.text('consoleXacml.tip.setting.authzenPdpIdentifier'),
+      authzenForwardTimeoutMs:
+        t.text('consoleXacml.tip.setting.authzenForwardTimeoutMs'),
+      proxySessionRecheckMs:
+        t.text('consoleXacml.tip.setting.proxySessionRecheckMs'),
+      proxySessionTtlMs: t.text('consoleXacml.tip.setting.proxySessionTtlMs'),
+      proxyMaxSessions: t.text('consoleXacml.tip.setting.proxyMaxSessions'),
+      proxyJwksTtlMs: t.text('consoleXacml.tip.setting.proxyJwksTtlMs'),
+      proxyUpstreamInsecure:
+        t.text('consoleXacml.tip.setting.proxyUpstreamInsecure'),
+      proxyRpAllowInsecure:
+        t.text('consoleXacml.tip.setting.proxyRpAllowInsecure'),
+      proxySignalsPollMs:
+        t.text('consoleXacml.tip.setting.proxySignalsPollMs'),
+      proxySignalsStaleMs:
+        t.text('consoleXacml.tip.setting.proxySignalsStaleMs')
+    };
+    const values = row.type === 'integer'
+      ? t.text('consoleXacml.pepSettings.range',
+               { min: row.min, max: row.max })
+      : (row.type === 'boolean' ? 'true, false'
+          : (row.type === 'enum' ? (row.values || []).join(', ')
+              : (row.type === 'text'
+                  ? t.text('consoleXacml.tip.setting.textValues',
+                           { max: row.maxLength })
+                  : t.text('consoleXacml.tip.setting.urlValues'))));
+    const fallback = row.default === '' || row.default === null ||
+      row.default === undefined
+      ? t.text('consoleXacml.tip.setting.noDefault') : String(row.default);
+    const applies = kit.plainTextOf(words.applies[row.applies] ||
+                                    String(row.applies));
+    return (Object.prototype.hasOwnProperty.call(what, row.key)
+      ? what[row.key] + ' ' : '') +
+      t.text('consoleXacml.tip.setting.facts', {
+        values: values, default: fallback, applies: applies, env: row.env }) +
+      (row.refusedInProduct
+        ? ' ' + t.text('consoleXacml.pepSettings.refusedInProduct') : '');
   }
 
   static settingWords(t: Json): Json {
@@ -1838,8 +2029,11 @@ class XacmlPage {
           '</th></tr>' : '';
       lastGroup = one.group;
       const reported = inUse && inUse.values ? inUse.values[one.key] : null;
-      return heading + '<tr><td>' + self.settingLabel(t, one.key) +
-        '<div class="sub"><code>' + esc(one.env) + '</code></div></td><td>' +
+      const tip = kit.tip(self.settingTip(t, one, words), Infinity);
+      return heading + '<tr><td><label' + tip + '>' +
+        self.settingLabel(t, one.key) + '</label>' +
+        '<div class="sub"><code>' + esc(one.env) + '</code></div></td><td' +
+        tip + '>' +
         self.settingInput(t, one, set[one.key], !!ctx.write) + '</td><td>' +
         (reported
           ? '<code>' + esc(String(reported.value)) + '</code>' +
@@ -1862,12 +2056,17 @@ class XacmlPage {
         t.html('consoleXacml.pepSettings.problem') + ' ' +
         esc(row.settingsProblem) + '</div>'
       : '';
-    const table = '<table><tr><th>' +
-      t.html('consoleXacml.pepSettings.th.setting') + '</th><th>' +
-      t.html('consoleXacml.pepSettings.th.setHere') + '</th><th>' +
-      t.html('consoleXacml.pepSettings.th.inUse') + '</th><th>' +
-      t.html('consoleXacml.pepSettings.th.default') + '</th><th>' +
-      t.html('consoleXacml.pepSettings.th.applies') + '</th></tr>' + body +
+    const table = '<table><tr>' +
+      self.th(t, 'consoleXacml.pepSettings.th.setting',
+              'consoleXacml.tip.settings.setting') +
+      self.th(t, 'consoleXacml.pepSettings.th.setHere',
+              'consoleXacml.tip.settings.setHere') +
+      self.th(t, 'consoleXacml.pepSettings.th.inUse',
+              'consoleXacml.tip.settings.inUse') +
+      self.th(t, 'consoleXacml.pepSettings.th.default',
+              'consoleXacml.tip.settings.default') +
+      self.th(t, 'consoleXacml.pepSettings.th.applies',
+              'consoleXacml.tip.settings.applies') + '</tr>' + body +
       '</table>';
     const form = ctx.write
       ? '<form method="post" action="/admin/xacml/peps">' +
@@ -1887,9 +2086,13 @@ class XacmlPage {
     const bootstrap = '<h3>' +
       t.html('consoleXacml.pepSettings.bootstrap.heading') + '</h3><p>' +
       t.html('consoleXacml.pepSettings.bootstrap.lead') + '</p>' +
-      '<table><tr><th>' + t.html('consoleXacml.pepSettings.th.variable') +
-      '</th><th>' + t.html('consoleXacml.pepSettings.th.default') +
-      '</th><th>' + t.html('consoleXacml.pepSettings.th.why') + '</th></tr>' +
+      '<table><tr>' +
+      self.th(t, 'consoleXacml.pepSettings.th.variable',
+              'consoleXacml.tip.settings.variable') +
+      self.th(t, 'consoleXacml.pepSettings.th.default',
+              'consoleXacml.tip.settings.envDefault') +
+      self.th(t, 'consoleXacml.pepSettings.th.why',
+              'consoleXacml.tip.settings.why') + '</tr>' +
       catalogue.bootstrap.map(function (one: Json) {
         return '<tr><td><code>' + esc(one.env) + '</code></td><td><code>' +
           esc(one.default) + '</code></td><td>' +
@@ -1921,8 +2124,10 @@ class XacmlPage {
       return '<p class="warn">' + t.html('consoleXacml.pepPage.notFound',
         { name: String(json.pep || '') }) + '</p>' + back;
     }
-    const line = function (label: string, value: string): string {
-      return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
+    const line = function (label: string, value: string,
+                           tipKey: string): string {
+      return '<tr><th' + self.tipOf(t, tipKey) + '>' + label + '</th><td>' +
+        value + '</td></tr>';
     };
     const code = function (value: unknown): string {
       return value === undefined || value === null || value === ''
@@ -1933,29 +2138,40 @@ class XacmlPage {
     const overview = kit.note('<p>' + t.html('consoleXacml.pepPage.lead') +
                               '</p>') +
       '<table>' +
-      line(t.html('consoleXacml.pepPage.th.name'), code(row.name)) +
-      line(t.html('consoleXacml.th.certificate'), self.pepWho(t, row)) +
-      line(t.html('consoleXacml.pepPage.th.identity'), code(row.identity)) +
+      line(t.html('consoleXacml.pepPage.th.name'), code(row.name),
+           'consoleXacml.tip.overview.name') +
+      line(t.html('consoleXacml.th.certificate'), self.pepWho(t, row),
+           'consoleXacml.tip.peps.certificate') +
+      line(t.html('consoleXacml.pepPage.th.identity'), code(row.identity),
+           'consoleXacml.tip.overview.identity') +
       line(t.html('consoleXacml.pepPage.th.thumbprint'),
-           code(row.thumbprint)) +
+           code(row.thumbprint), 'consoleXacml.tip.overview.thumbprint') +
       line(t.html('consoleXacml.pepPage.th.registered'),
-           code(row.registeredAt)) +
-      line(t.html('consoleXacml.pepPage.th.version'), code(row.version)) +
+           code(row.registeredAt), 'consoleXacml.tip.overview.registered') +
+      line(t.html('consoleXacml.pepPage.th.version'), code(row.version),
+           'consoleXacml.tip.overview.version') +
       line(t.html('consoleXacml.pepPage.th.description'),
            row.description ? esc(row.description)
-             : code('')) +
-      line(t.html('consoleXacml.pepPage.th.resource'), code(row.resource)) +
-      line(t.html('consoleXacml.th.itsBias'), code(row.bias)) +
-      line(t.html('consoleXacml.th.state'), self.pepState(t, row)) +
+             : code(''), 'consoleXacml.tip.overview.description') +
+      line(t.html('consoleXacml.pepPage.th.resource'), code(row.resource),
+           'consoleXacml.tip.overview.resource') +
+      line(t.html('consoleXacml.th.itsBias'), code(row.bias),
+           'consoleXacml.tip.peps.bias') +
+      line(t.html('consoleXacml.th.state'), self.pepState(t, row),
+           'consoleXacml.tip.peps.state') +
       line(t.html('consoleXacml.pepPage.th.syncToken'),
-           code(row.syncToken)) +
-      line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row)) +
-      line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row)) +
+           code(row.syncToken), 'consoleXacml.tip.overview.syncToken') +
+      line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row),
+           'consoleXacml.tip.peps.notify') +
+      line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
+           'consoleXacml.tip.peps.actions') +
       '</table>';
     const decisions = '<table>' +
-      line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row)) +
+      line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row),
+           'consoleXacml.tip.peps.enforced') +
       line(t.html('consoleXacml.pepPage.th.policies'),
-           code(row.policyCount)) + '</table>' +
+           code(row.policyCount), 'consoleXacml.tip.overview.policies') +
+      '</table>' +
       kit.note('<p>' + t.html('consoleXacml.peps.numbers1') + '</p><p>' +
                t.html('consoleXacml.peps.numbers2') + '</p>',
                t.text('consoleXacml.peps.numbersLabel'));

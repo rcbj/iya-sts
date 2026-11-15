@@ -985,6 +985,14 @@ the trail leading back to the tab. Its tabs:
 | Reverse proxy | its routes as a table, each with its application linked; a form to add a route, one to edit each, one to map an application to a route, each route's identity mode, the whole configuration document and Clear (below) |
 | Signal streams | its CAEP/RISC stream health: the totals, then a table with one row per stream (below) |
 
+**Every field and column on these tabs has a tooltip**, as do the Remote PEPs
+table and the issue form. Hover over a field's name. Each tooltip says what
+the field does, which values it takes and its default, when a change takes
+effect and, for a setting, the precedence: a value set here, then the PEP's
+environment variable, then the default. The tooltips are in all seven console
+languages. This page and the management API's field descriptions say the
+same things.
+
 ### Its listeners
 
 The **Listener** tab is modelled on Server configuration → Listeners. Its
