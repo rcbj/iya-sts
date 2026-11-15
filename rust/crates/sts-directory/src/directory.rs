@@ -876,10 +876,33 @@ impl Directory {
             return Some(e);
         }
         let users_key = normalize_dn(Some(&users));
+        // The name is asked first and without allocating: this walks every
+        // entry for a name nobody holds (every create's clash check), and
+        // normalising each entry's parent DN first made a bulk load's
+        // creates slow down linearly with the directory (#444, `apis5`).
+        let named = |v: &String| {
+            v.trim().eq_ignore_ascii_case(&wanted)
+                || v.trim().to_lowercase() == wanted
+        };
         self.realms[r].entries.values().find(|e| {
-            normalize_dn(Some(&parent_dn(Some(&e.dn)))) == users_key
-                && Self::username_keys(e).contains(&wanted)
+            (e.values("uid").iter().any(named)
+                || e.values("stspseudonym").iter().any(named)
+                || Self::rdn_may_be(&e.dn, &wanted)
+                    && Self::username_of_dn(&e.dn).trim().to_lowercase()
+                        == wanted)
+                && normalize_dn(Some(&parent_dn(Some(&e.dn)))) == users_key
         })
+    }
+
+    // A HOT PATH (once per entry of a clash scan), so no span: whether the
+    // first RDN's raw value could unescape to `wanted` — equal ignoring
+    // ASCII case, or holding an escape that only the full parse can judge.
+    fn rdn_may_be(dn: &str, wanted: &str) -> bool {
+        let first = dn.split(',').next().unwrap_or("");
+        let raw = first.split_once('=').map_or("", |(_, v)| v).trim();
+        raw.contains('\\')
+            || !raw.is_ascii()
+            || raw.eq_ignore_ascii_case(wanted)
     }
 
     // A HOT PATH: asked by every handler and every rule, so no span.
