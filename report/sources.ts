@@ -3270,16 +3270,24 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
   return { ok: true, rows: rows.finish() };
 }
 
+// WHETHER A POOL IS THERE TO WAIT FOR is the POOL's answer, not the
+// setting's (2026-11-14, found by #444's D12). `workers.requestCount` is
+// what was asked for; the pool runs what `common/process_memory`'s
+// `requestWorkers()` allows, which is NONE on a memory store (dispatch needs
+// a coordinating store) whatever the setting says. Reading the setting, a
+// memory-store service with the default `1` waited for a worker that would
+// never start: every report job stayed queued and STS-REPORT-0024 was
+// logged every two seconds.
 function reportWorkersReady(): boolean {
   log.debug("Entering reportWorkersReady().");
-  const config = require('../common/config');
-  const configured = Number(config.value('workers.requestCount'));
+  const pool = require('../common/request_pool');
+  const state = pool.stats();
+  const configured = Number(state.configured) || 0;
   if (!(configured > 0)) {
     log.debug("Leaving reportWorkersReady(). No pool.");
     return true;
   }
-  const pool = require('../common/request_pool');
-  const ready = Number(pool.stats().ready) || 0;
+  const ready = Number(state.ready) || 0;
   log.debug("Leaving reportWorkersReady().");
   return ready > 0;
 }
@@ -3780,10 +3788,27 @@ function reportNoteFailure(def: any, description: string): void {
   log.debug("Leaving reportNoteFailure().");
 }
 
+// THE INSTANT A JOB RUN IS FOR (2026-11-14, found by #444's D12). The
+// scheduler hands every job `ctx.nowMs` as a FUNCTION (cluster/scheduler.ts,
+// `nowMs: () => number`), and these two jobs read it as a number: the
+// schedule's `Number(ctx.nowMs)` was NaN, so no definition ever had a due
+// slot ({"enqueued":0} every minute), and the retention's arithmetic on a
+// function expired nothing. The tests' own entry points (`jobs.ts`'s
+// `reportScheduleNow(at)`) pass a number, which is why they never saw it.
+// Both forms are read; anything else is now.
+function reportJobNow(ctx: any): number {
+  log.debug("Entering reportJobNow().");
+  const given = ctx ? ctx.nowMs : undefined;
+  const at = typeof given === 'function' ? Number(given.call(ctx))
+    : Number(given);
+  log.debug("Leaving reportJobNow().");
+  return Number.isFinite(at) && at > 0 ? at : Date.now();
+}
+
 async function reportRetainWork(ctx: any): Promise<any> {
   log.debug("Entering reportRetainWork().");
   const limits = new Limits();
-  const now = ctx && ctx.nowMs ? ctx.nowMs : Date.now();
+  const now = reportJobNow(ctx);
   const artifactMs = limits.artifactRetentionS() * 1000;
   const jobMs = limits.jobRetentionS() * 1000;
   const list = stores.listJobs();
@@ -3838,7 +3863,7 @@ async function reportScheduleWork(ctx: any): Promise<any> {
   const scheduler = require('../cluster/scheduler');
   const rights = require('./rights');
   const jobsApi = require('./jobs');
-  const now = ctx && ctx.nowMs ? Number(ctx.nowMs) : Date.now();
+  const now = reportJobNow(ctx);
   const defs = stores.listDefinitions();
   let enqueued = 0;
   for (let i = 0; i < defs.length; i++) {

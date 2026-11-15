@@ -1581,11 +1581,21 @@ function setOverride(id, key, raw) {
         'is defined.'] },
                            'STS-CORE-0013');
   }
-  const problem = checkRealmOverride(key, raw);
+  // A RULE BETWEEN SETTINGS READS THIS REALM'S COMPANION, not the caller's
+  // (2026-11-14, found by #444's D12): the realm's overrides with this value
+  // in them are the write batch, so `oauth2.accessTokenSigningAlg=ES256` is
+  // judged against the realm's own `keys.signingAlgorithms`, as the realm's
+  // `/admin-api/config/set` judges it (STS-KEYS-0192). A setting the realm
+  // does not carry is read at the value it inherits. checkOverrides()'s rule.
+  const batch = Object.assign({}, realm.overrides, { [key]: raw });
+  const checked = config.withWriteBatch(batch, function () {
+    return { problem: checkRealmOverride(key, raw),
+             code: checkRealmOverrideCode(key, raw) };
+  });
+  const problem = checked.problem;
   if (problem) {
     log.debug("Leaving setOverride(). Refused: " + problem);
-    return errorCodes.mark({ ok: false, errors: [problem] },
-                           checkRealmOverrideCode(key, raw));
+    return errorCodes.mark({ ok: false, errors: [problem] }, checked.code);
   }
   // THE MODE RULE, ASKED IN THE REALM THE WRITE LANDS IN (#171): a
   // TLS-verification skip may not be turned on in a product realm. Asked
@@ -1719,9 +1729,31 @@ function pinnedSignerClearProblems(realm, after) {
 // same all-or-nothing rule config.js's checkOverride() exists for: a realm that
 // took three of four settings and refused the fourth would be a realm nobody
 // asked for.
+//
+// **THE OTHER OVERRIDES OF THE SAME WRITE ARE WHAT A RULE BETWEEN SETTINGS
+// READS (2026-11-14, found by #444's D12).** A realm's overrides arrive as one
+// object, and each key was checked alone, so a rule naming a companion
+// setting (STS-KEYS-0192: an algorithm chosen outside the list that governs
+// it) read the companion's value in force — the caller's realm's — and not
+// the one beside it: `oauth2.accessTokenSigningAlg=ES256` was taken under
+// `keys.signingAlgorithms=RS256` in the same object, which the realm's own
+// `/admin-api/config/set` refuses. The keys are checked inside
+// `config.withWriteBatch()`, which is how `set-many` hands a rule the values
+// posted together. A key the object does not carry is the default realm's,
+// which is what the realm inherits for it: the object REPLACES the realm's
+// overrides.
 function checkOverrides(overrides) {
   log.debug("Entering checkOverrides().");
   const errors = [];
+  config.withWriteBatch(overrides || {}, function () {
+    checkEachOverride(overrides, errors);
+  });
+  log.debug("Leaving checkOverrides().");
+  return errors;
+}
+
+function checkEachOverride(overrides, errors) {
+  log.debug("Entering checkEachOverride().");
   Object.keys(overrides || {}).forEach(function (key) {
     // checkRealmOverride() and not config.checkOverride(), so that the two
     // `realms.*` settings are refused on a create and an update exactly as they
@@ -1734,8 +1766,7 @@ function checkOverrides(overrides) {
       firstCode(errors, checkRealmOverrideCode(key, overrides[key]));
     }
   });
-  log.debug("Leaving checkOverrides().");
-  return errors;
+  log.debug("Leaving checkEachOverride().");
 }
 
 // ---------------------------------------------------------------------------

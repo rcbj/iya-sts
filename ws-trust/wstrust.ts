@@ -1658,7 +1658,13 @@ class WsTrust {
                  checked.reason + '): ' + checked.detail);
         log.debug("Leaving WsTrust.messageCredential(). The credential was " +
                   "refused.");
-        return { ok: false, errorCode: 'STS-WSTRUST-0003',
+        // A RIGHT PASSWORD REFUSED FOR WANT OF A SECOND FACTOR is recorded
+        // as the verifier's STS-AUTHN-0213, as LDAP and SCIM record it, so
+        // the audit log tells it from a wrong password; the fault the
+        // requester sees is the same (2026-11-14, found by #444's D12).
+        return { ok: false,
+                 errorCode: checked.reason === 'second-factor-required'
+                   ? 'STS-AUTHN-0213' : 'STS-WSTRUST-0003',
                  trustFault: 'FailedAuthentication',
                  reason: 'Authentication failed for user ' + user + '.' };
       }

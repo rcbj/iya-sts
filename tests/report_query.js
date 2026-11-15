@@ -3458,8 +3458,30 @@ async function disabledOwner(t) {
   log.debug("Leaving disabledOwner().");
 }
 
+// A MEMORY STORE WITH workers.requestCount AT ITS DEFAULT RUNS NO REQUEST
+// WORKER, AND THE DRAIN DOES NOT WAIT FOR ONE (2026-11-14, #444's D12): it
+// read the setting (1) and waited for a pool that never starts, so every
+// report job stayed queued and STS-REPORT-0024 was logged every two seconds.
+async function drainWithoutPool(t) {
+  log.debug("Entering drainWithoutPool().");
+  const config = require('../common/config');
+  const pool = require('../common/request_pool');
+  const jobs = require('../report/jobs');
+  const configured = Number(pool.stats().configured) || 0;
+  t.check(Number(config.value('workers.requestCount')) === 1 &&
+          configured === 0,
+          'drain: the setting asks for a worker and this memory store runs ' +
+          'none', config.value('workers.requestCount') + ' / ' + configured);
+  const out = await jobs.drainNow();
+  t.check(!(out && out.waiting === true),
+          'drain: with no pool it runs rather than waiting for a worker ' +
+          '(no STS-REPORT-0024)', JSON.stringify(out));
+  log.debug("Leaving drainWithoutPool().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
+  await drainWithoutPool(t);
   documents(t);
   formats(t);
   await artifacts(t);

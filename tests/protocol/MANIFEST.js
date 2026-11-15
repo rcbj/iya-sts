@@ -1628,6 +1628,204 @@ const JOBS = [
   // The configuration dump shows every parameter and no secret.
   { file: 'sts_config_dump.js', browser: false, local: true },
   // ---------------------------------------------------------------------
+  // #444's D12, PHASES 3 AND 4 (2026-11-15): what only the in-process
+  // tests held, carried over the wire so it stays covered when Rust
+  // replaces Node, and the over-the-wire proof of the Rust runtime. Each
+  // header names the tests/*.js file(s) it carries; d12-list.md (beside
+  // the #444 briefs) records what moved to class (d) and why. Every job
+  // works in throwaway realms of its own and removes them only when
+  // STS_TEST_REMOVE_REALMS=1, a private probe's switch: tests/CLAUDE.md's
+  // NO JOB REMOVES A REALM is the rule for a suite run. The `exclusive`
+  // ones write a process-wide setting and put it back.
+  // ---------------------------------------------------------------------
+  // D12 (#444): a realm's sign-in appearance over the wire — the default
+  // look, the contrast and colour refusals, a theme on every shell, the
+  // logo's refusals and serving, the preview (tests/branding*.js).
+  { file: 'sts_branding.js', browser: false, local: true },
+  // D12 (#444): the rules every response follows — HSTS, charset, cross-site
+  // cookie writes, __Host- both ways, Permissions-Policy and COOP/CORP, the
+  // Qualys sentences, non-object JSON bodies, /healthcheck on both
+  // listeners (asvs_response_rules, cookie_wire, qualys_hardening,
+  // parse_body_non_object, healthcheck).
+  { file: 'sts_response_headers.js', browser: false, local: true },
+  // D12 (#444): the main port's transport over real sockets — the 431 that
+  // always arrives, a large body over one HTTP/2 session, an early answer
+  // to a 24 MB upload (parser_refusal, http2_large_body, lingering_close).
+  { file: 'sts_http_transport.js', browser: false, local: true },
+  // D12 (#444): the CORS allowlist asked of the service itself, in two
+  // throwaway realms (tests/cors.js).
+  { file: 'sts_cors.js', browser: false, local: true },
+  // D12 (#444): the static public surfaces — the front door, the seven
+  // description pages, the removed diagnostic pages, the footer, /web's
+  // files and the error page's timed continue.
+  { file: 'sts_static_surfaces.js', browser: false, local: true },
+  // D12 (#444): every ACME, EST and SCEP answer held to
+  // tests/enrollment_model_wire.snapshot.json over the wire.
+  { file: 'sts_enrollment_model_wire.js', browser: false, local: true },
+  // D12 (#444): what a realm may carry (config_realm_layer.js) and a realm's
+  // DNS domain (realm_domain.js) — overrides, realms.*, every restart-only row
+  // walked, domain shape/seeding/uniqueness/fixity, naming contexts over LDAP.
+  { file: 'sts_realm_rules.js', browser: false, local: true },
+  // D12 (#444): issued_sets.js and the two delegation_map_* files — one token
+  // response one set, mixed after a revocation; one application one box.
+  { file: 'sts_issued_sets_and_delegation_map.js', browser: false,
+    local: true },
+  // D12 (#444): return_address_provenance.js — SAML 1.1 sightings, product
+  // refusal STS-REG-0049, confirm/discard codes, in a realm switched by
+  // realms/set.
+  { file: 'sts_return_addresses.js', browser: false, local: true },
+  // D12 (#444): rate_limiter.js and scan_and_rate_limits.js — the client-secret
+  // limiter at its realm-configured limit, and the second-factor roster's cap.
+  { file: 'sts_rate_limits.js', browser: false, local: true },
+  // D12 (#444): custom_listeners.js — the listener write rules by code, the
+  // mapping, the sockets. Writes listeners.custom and the service mapping and
+  // puts both back; console and API stay on main. Needs four free ports
+  // (STS_TEST_CUSTOM_LISTENER_PORTS, default 8095-8098) the runner reaches.
+  { file: 'sts_custom_listeners.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): realm_retiring.js part A — a removal held open by a push
+  // receiver that never answers; sets realms.removalDeliveryTimeoutS=20 and
+  // resets it. Needs OUTBOUND_TEST_HOST/GNAP_PUSH_HOST (as sts_outbound_tls).
+  { file: 'sts_realm_retiring.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): the main port over HTTP/2 and HTTP/1.1 alike — answers,
+  // a certificate-bound token, multiplexing, the stream cap / GOAWAY / idle
+  // bounds, http.http2 off and back, the :authority/host refusal, CONNECT
+  // and OPTIONS *. Toggles process-wide http.* settings and resets them.
+  { file: 'sts_main_port_http2.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): the listeners' TLS policy off real handshakes — defaults,
+  // disableTls12, tls13CipherSuites, pqcOnly (STS-TLS-0043), the main
+  // port's client-certificate toggles, a realm listener's own TLS 1.2 on
+  // STS_TEST_REALM_LISTENER_PORT, and the RFC 6066 resumption rules through
+  // openssl s_client. Process-wide settings, reset in a finally; posts and
+  // removes a Root.
+  { file: 'sts_listener_tls_policy.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): a person's TLS client certificate from the portal, its
+  // refusals by code, /tls/sign-in in the issuing realm, the RFC 7523 key
+  // pair not an identity, revocation by another person refused.
+  { file: 'sts_tls_client_certificates.js', browser: false, local: true },
+  // D12 (#444): a connection that fails at the TLS layer — the alert read,
+  // the FIN at once, the descriptor held — on every way in. Not meaningful
+  // behind an L4 balancer that closes its own side (cluster mode).
+  { file: 'sts_tls_alert_close.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): the ICAP malware scan through the logo door, against
+  // stand-ins in the job's process reached at OUTBOUND_TEST_HOST.
+  { file: 'sts_malware_scan.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): the PROXY v2 reader and the CDN edge secret. In full only
+  // with global.proxyProtocol=v2 and STS_TEST_PROXY_PROTOCOL_DIRECT (and
+  // STS_TEST_EDGE_SECRET for the edge's with-secret half); otherwise it
+  // asserts the off behaviour.
+  { file: 'sts_proxy_protocol.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): single-use values spent once across nodes — a code, its
+  // RFC 9700 replay, one refresh token at two nodes, a PAR request_uri, a
+  // DPoP proof, a TOTP code. STS_TEST_NODE_URLS names the nodes; unset, the
+  // base twice (the balancer in cluster mode).
+  { file: 'sts_cluster_single_use.js', browser: false, local: true },
+  // D12 (#444): the directory's socket rules in a product and a
+  // development realm — binds and reads (directory_read_security,
+  // directory_read_authorization), writes (directory_write_authorization),
+  // a refusal's diagnosticMessage, each attribute's own matching rule, and
+  // an LDAP add of an application registering it.
+  { file: 'sts_ldap_rules.js', browser: false, local: true },
+  // D12 (#444): a group by hand and its members, SCIM Bulk deletes in one
+  // batch, a product realm's seed and LDAPS policy, and a DN longer than
+  // MariaDB's key refused at the door (only on a MariaDB store).
+  { file: 'sts_directory_writes.js', browser: false, local: true },
+  // D12 (#444): SASL EXTERNAL over LDAPS with the certificate a person
+  // issued themselves on the portal, in each of the three modes and from
+  // an outside authority. Flips two process-wide LDAPS toggles and adds
+  // two truststore anchors, all put back.
+  { file: 'sts_ldap_sasl_external.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): the management API's gate as a caller meets it — the audit
+  // actor read back off /admin-api/audit for console and client tokens, a
+  // body `actor` refused (STS-API-0009), /admin-api/me per caller, every
+  // indexed operation walked for scope and realm, and a token refused
+  // STS-API-0126 once /logout's selective sign-out ends its session.
+  { file: 'sts_admin_api_gate.js', browser: false, local: true },
+  // D12 (#444): adminApi.authRequired=false is development's alone, and the
+  // published document with the gate off; a default-realm console token in
+  // product under a realm's prefix. Turns the process-wide gate off and the
+  // default realm to product for a while, so it is a barrier.
+  { file: 'sts_admin_api_auth_required_mode.js', browser: false, local: true,
+    exclusive: true },
+  // D12 (#444): what /admin-api, /account-api, /authn-api and /report-api
+  // refuse by name — an undeclared parameter, a wrong-typed value and an
+  // undefined header, each 400 with its code recorded and never sent.
+  { file: 'sts_api_request_names.js', browser: false, local: true },
+  // D12 (#444): the delegation picture as one answer, verifications started
+  // and read at /admin-api, the Kerberos account policy, and the roles and
+  // sessions pagers.
+  { file: 'sts_admin_api_reads.js', browser: false, local: true },
+  // D12 (#444): the bootstrap administrator, an administrator's credential
+  // controls (reset links, a required TOTP set-up), the administrators'
+  // second-factor policy and unstorable enrolment names.
+  { file: 'sts_admin_bootstrap.js', browser: false, local: true },
+  // D12 (#444): an application's field rules over /admin-api — CORS origins
+  // and what CORS answers, the one-valued description, primary names, a
+  // create's secret and its lifetime, reveal-secret, the delegation lists'
+  // self-reference and searches, appMayAct's may_act, the flow lists.
+  { file: 'sts_application_fields.js', browser: false, local: true },
+  // D12 (#444): application roles (naming, the per-application roles claim on
+  // ID Tokens, the requirement refused at the token endpoint, member types,
+  // the Roles tab) and a permission's identifier and name rules.
+  { file: 'sts_app_roles.js', browser: false, local: true },
+  // D12 (#444): the attribute policy, named profiles and custom attributes in
+  // a product and a development realm, and the LDAPS socket in product.
+  { file: 'sts_attribute_policy.js', browser: false, local: true },
+  // D12 (#444): a group's owners through /admin-api and an LDAP delete.
+  { file: 'sts_group_owners.js', browser: false, local: true },
+  // D12 (#444): audit export to a syslog collector and a webhook the job runs
+  // (OUTBOUND_TEST_HOST), its acts and refusals; the client address on rows.
+  { file: 'sts_audit_export.js', browser: false, local: true },
+  // D12 (#444): a person's attribute editor and field grid through
+  // /admin-api, the codes behind a person's key-pair refusals, and who
+  // wrote an address deciding whether it is verified (console, SCIM, LDAP).
+  { file: 'sts_person_editor.js', browser: false, local: true },
+  // D12 (#444): the owners of roles and applications, what is closed to
+  // owners (GET /admin-api/ownership, set-protected), and an RFC 9396 type
+  // named after an inherited member refused (STS-OAUTH-0453).
+  { file: 'sts_owners.js', browser: false, local: true },
+  // D12 (#444): a deleted application, person or group leaves every role
+  // and group that named it, and whoever is made again under the name holds
+  // nothing; LDAP's referential integrity and a rename's memberships.
+  { file: 'sts_role_member_forget.js', browser: false, local: true },
+  // D12 (#444): named locale profiles and named authentication policies
+  // (saved, named, deleted, read by the shells and the sign-in screen), and
+  // webauthn.algorithms as an ordered choice through /admin-api.
+  { file: 'sts_named_policies.js', browser: false, local: true },
+  // D12 (#444): the issuance policy's protocol-declaration rule in a
+  // product realm, and every Protocols page's endpoint list concrete and
+  // routed under its realm.
+  { file: 'sts_protocol_declaration.js', browser: false, local: true },
+  // D12 (#444): the setting doors over the wire: a SAML NameID format is an
+  // absolute URI (STS-CORE-0006); NUL and lone surrogates refused at the
+  // setting and realm doors (STS-CORE-0171); a write says it is gone on
+  // restart with no store; /admin-api/users' count age and cap.
+  { file: 'sts_setting_rules.js', browser: false, local: true },
+  // D12 (#444): the console as a client: its files compressed per
+  // Accept-Encoding and never an /admin-api answer; its tokens DPoP-bound
+  // (STS-OAUTH-0943); a console role granted only to a person who exists
+  // (STS-ADMIN-0920).
+  { file: 'sts_console_client.js', browser: false, local: true },
+  // D12 (#444, #600, #1240): a service account's owners (STS-SVCACCT-0023,
+  // 0024, 0031, 0032, 0033) and the named service-account policy it names,
+  // at the API, over LDAPS and at the sign-in screen.
+  { file: 'sts_service_account_policies.js', browser: false, local: true },
+  // D12 (#444, #302, #303, #551): a role, not a scope, authorizes an
+  // issuance: the console roles, a person's and an application's admin
+  // scopes, gated permissions, delegation alone on client_credentials and
+  // the Shared Signals roles.
+  { file: 'sts_role_permissions.js', browser: false, local: true },
+  // D12 (#444, #496, #94): in product an application nobody registered, or
+  // development only saw, gets nothing in WS-Trust, WS-Federation, OAuth,
+  // SAML 2.0 and SAML 1.1; and what a partner's fedAttributeMap may write.
+  { file: 'sts_unregistered_applications.js', browser: false, local: true },
   // #444's D12, PHASE 5 (2026-11-15): OAuth 2.0 and OpenID Connect, the
   // reports application and /report-api, and sessions, sign-in and
   // credentials — what only the in-process tests held, carried over the

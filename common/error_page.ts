@@ -167,7 +167,11 @@ class ErrorPage {
         value: incident ? String(incident) : t.text('errorPages.noIncident') }
     ];
     const rows: DiagnosticRow[] = first.concat(diagnostics || []);
-    const portal = realms.currentPrefix() + '/portal';
+    // ROOT-RELATIVE, LIKE EVERY LINK A SERVER-DRAWN PAGE CARRIES: `app.js`
+    // puts the realm's prefix on it as the page is sent. Drawn with the
+    // prefix it was `/realm/<id>/realm/<id>/portal`, a 404 (2026-11-14,
+    // found by #444's D12).
+    const portal = '/portal';
     const out = '<div class="next"><p>' + t.html('errorPages.startOver') +
       '</p><a class="portal" href="' + Html.esc(portal) + '">' +
       t.html('errorPages.portal') + '</a></div>' +

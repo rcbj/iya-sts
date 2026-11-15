@@ -15838,13 +15838,15 @@ const CODES = [
       'the socket may test.',
     spec: 'LDAP result code 50, insufficientAccessRights' },
   { code: 'STS-LDAP-0076',
-    summary: 'In product mode, an add or modify named createTimestamp, ' +
-      'modifyTimestamp or entryDN, which the directory maintains itself.',
+    summary: 'An add or modify named an attribute the directory maintains ' +
+      'itself: entryUUID or stsProvisionedBy in every mode, and in product ' +
+      'mode createTimestamp, modifyTimestamp and entryDN as well.',
     spec: 'LDAP result code 19, constraintViolation' },
   { code: 'STS-LDAP-0077',
-    summary: 'A delete or rename of the default realm\'s bootstrap ' +
-      'administrator (admin.bootstrapUsername) was refused — over LDAP or ' +
-      'SCIM — because that account cannot be removed.',
+    summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
+      '(admin.bootstrapUsername, or the name product mode generates) was ' +
+      'refused — over LDAP or SCIM — because that account cannot be ' +
+      'removed.',
     spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +

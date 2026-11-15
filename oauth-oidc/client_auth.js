@@ -516,6 +516,7 @@ async function verifyAssertion(opts) {
   const audiences = opts.audiences || [];
   let claims = null;
   let lastError = '';
+  let lastCode = '';
   let usedEntry = null;
   const attempts = Array.isArray(verifyWith) ? verifyWith : [verifyWith];
   for (let i = 0; i < attempts.length && !claims; i++) {
@@ -540,11 +541,18 @@ async function verifyAssertion(opts) {
       usedEntry = verifyEntries[i] || null;
     } catch (e) {
       lastError = e.message;
+      // A refusal the signature policy made carries its own code (#1368's
+      // STS-KEYS-0179 for an algorithm keys.acceptedSigningAlgorithms does not
+      // list): it is recorded as that, not as a signature that did not
+      // verify (2026-11-14, #444's D12).
+      lastCode = String(errorCodes.codeOf(e) || '');
     }
   }
   if (!claims) {
     log.debug("Leaving verifyAssertion(). It did not verify.");
-    return { ok: false, errorCode: 'STS-OAUTH-0007',
+    return { ok: false,
+             errorCode: /^STS-KEYS-/.test(lastCode) ? lastCode
+                                                    : 'STS-OAUTH-0007',
              description: 'the client_assertion did not verify: ' + lastError +
                           '. ' +
                           'It must be signed by a key this client ' +
