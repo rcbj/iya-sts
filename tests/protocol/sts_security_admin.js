@@ -339,13 +339,31 @@ async function testBody() {
   const visitor = await consoleSignIn.signInToTheConsole(realmBase, VISITOR,
                                                          log);
   const open = await visitor.api("GET", "/admin-api/me");
-  check("6. a trust realm's open window hands a person holding no role " +
-        "read and write, and not security", function () {
-    assert.strictEqual(open.status, 200, "it answered " + open.status);
-    assert.ok(open.json.read === true && open.json.write === true &&
-              open.json.security === false, JSON.stringify(open.json));
-  });
-  const claimed = await claimConsole();
+  // PRODUCT HAS NO OPEN WINDOW (run #300): a product realm's console is
+  // closed from the start, so a person holding no role is handed nothing,
+  // and the bootstrap administrator's password is not "anything at all" —
+  // the roster is read as the realm made it, unclaimed.
+  const product = open.json && open.json.mode === "product";
+  if (product) {
+    check("6. PRODUCT: a trust realm's console has no open window; a " +
+          "person holding no role is handed neither read, write nor " +
+          "security", function () {
+      assert.strictEqual(open.status, 200, "it answered " + open.status);
+      assert.ok(open.json.read === false && open.json.write === false &&
+                open.json.security === false &&
+                open.json.console.open === false, JSON.stringify(open.json));
+    });
+  } else {
+    check("6. a trust realm's open window hands a person holding no role " +
+          "read and write, and not security", function () {
+      assert.strictEqual(open.status, 200, "it answered " + open.status);
+      assert.ok(open.json.read === true && open.json.write === true &&
+                open.json.security === false, JSON.stringify(open.json));
+    });
+  }
+  const claimed = product ?
+    JSON.parse((await asHarness("GET", "/admin-api/rbac")).text) :
+    await claimConsole();
   check("8. the realm's bootstrap administrator is not seeded into the " +
         "Security Administrator's role", function () {
     const rows = (claimed.grants || []).filter(function (row) {
