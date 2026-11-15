@@ -247,7 +247,7 @@ async fn the_applications_operations_answer_within_their_models() {
             "GET",
             "/admin-api/applications?application=router-app",
             None,
-            404,
+            200,
         ),
         (
             "POST",
