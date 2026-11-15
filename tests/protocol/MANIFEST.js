@@ -599,7 +599,8 @@ const JOBS = [
   // 185 s, 220 s and 272 s in three cluster runs, then cut off at the
   // default 300 s in section 7. Asking one realm's rows would make it
   // constant; until then the bound says what it costs.
-  { file: 'sts_scheduler.js',            browser: false, timeoutMs: 600000 },
+  { file: 'sts_scheduler.js',            browser: false, local: true,
+    timeoutMs: 600000 },
   // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
   // answers the request and surface pools with the seven figures, adding
   // up, drawn by the front process; no post-quantum pool since #363; the
@@ -651,8 +652,10 @@ const JOBS = [
   // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
   // this job's own sign-in, every window and level in its shape with every
   // count at or over risk.geoMinimumCount or held back, the four refusals,
-  // and the page — the map inline with no script, the zoom trail, the
-  // outlines credited, ?format=json the API's answer. Loads no dataset.
+  // and the page — drawing.map, the outlines file, the map the console's
+  // bundle lays out from them (#444 phase 2b) with no script, the zoom
+  // trail, the outlines credited, ?format=json the API's answer. Loads no
+  // dataset.
   // `local: true`: this repository's own /admin and /admin-api.
   { file: 'sts_admin_geolocation.js',    browser: false },
   // EVERY CLOSED SET AN ADMINISTRATOR CAN TYPE INTO (#86, 2026-09-26): each

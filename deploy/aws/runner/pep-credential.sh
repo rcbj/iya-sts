@@ -33,6 +33,15 @@ SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=iya-sts}"
 mkdir -p "${OUT}/server"
 chmod 0777 "${OUT}" "${OUT}/server"
 
+# THE TASK'S ADDRESS, FOR THE PEP CONTAINER TOO (2026-11-14). The remote PEP
+# is a Rust binary in an image with no node (#444), so it cannot ask the task
+# metadata endpoint itself; it builds PEP_NOTIFY_URL from ${OUT}/task-ip,
+# written here before anything that can fail, and falls back to
+# `hostname -I` when the file is empty.
+TASK_IP="$(node -e "fetch(process.env.ECS_CONTAINER_METADATA_URI_V4+'/task').then(r=>r.json()).then(t=>process.stdout.write(t.Containers[0].Networks[0].IPv4Addresses[0]))" 2>/dev/null || true)"
+printf '%s' "${TASK_IP}" > "${OUT}/task-ip" 2>/dev/null || true
+chmod 0644 "${OUT}/task-ip" 2>/dev/null || true
+
 deadline=$(( $(date +%s) + ${STS_SUITE_WAIT_SECS:-900} ))
 until node -e '
   require("https").get(process.argv[1] + "/healthcheck",
@@ -63,8 +72,8 @@ fi
 # THE CREDENTIAL'S CRLs ARE SERVED BY THE PEP CONTAINER (#174): a product-mode
 # service refuses a chain whose CAs name no list, and this container exits
 # long before the chain is presented. The PEP shares this task's address (the
-# same one its PEP_NOTIFY_URL is built from) and serves ${OUT}/crl at /crl/.
-TASK_IP="$(node -e "fetch(process.env.ECS_CONTAINER_METADATA_URI_V4+'/task').then(r=>r.json()).then(t=>process.stdout.write(t.Containers[0].Networks[0].IPv4Addresses[0]))" 2>/dev/null || true)"
+# same one its PEP_NOTIFY_URL is built from, read from ${OUT}/task-ip above)
+# and serves ${OUT}/crl at /crl/.
 CRL_BASE_ARG=()
 if [ -n "${TASK_IP}" ];
 then

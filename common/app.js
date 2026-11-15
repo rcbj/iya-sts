@@ -222,9 +222,22 @@ function enterRealm(req, res, next) {
   // again. A realm that still does not exist falls through exactly as before,
   // to the same `Cannot GET` body. The barrier middleware below is told, so
   // one request catches up once.
+  //
+  // **AND IN A FRONT PROCESS WITH REQUEST WORKERS (2026-11-15)**, for the
+  // same reason one process over: a worker creates a realm, and this process
+  // learns of it from the change log. Until then everything the front decides
+  // here is decided in the DEFAULT realm — above all `cookie_wire.ts`'s
+  // names, which follow the realm's mode. A realm created in development
+  // under a product process (the job's own throwaway realm in every product
+  // mode) had its cookies prefixed and translated as the default realm's
+  // while this process was behind, and NOT once it caught up, so the cookie
+  // set on one answer arrived at the worker under its wire name on the next
+  // and was not found: `sts_est_attestation_freshness` in GitHub Actions run
+  // 43672106260's mariadb mode, "The request carried no EST nonce cookie"
+  // (STS-DEVICE-0016) three seconds after the realm was made.
   // ---------------------------------------------------------------------
-  if (!match && clusterBarrier.isActive() &&
-      realms.unknownRealmPath(pathname)) {
+  if (!match && realms.unknownRealmPath(pathname) &&
+      (clusterBarrier.isActive() || requestPool.frontWithWorkers())) {
     clusterBarrier.syncShared().then(function (answer) {
       clusterBarrier.markSynced(req, answer);
       const again = realms.matchPath(pathname);

@@ -2832,6 +2832,13 @@ const CODES = [
       'for this tick, neither run nor taken as finished, and are asked ' +
       'about again at the next; every other run in the tick went on.',
     spec: '' },
+  { code: 'STS-SCHED-0024',
+    summary: 'A run of a cluster job waited because another run of the ' +
+      'same job in the same realm was still running, on this node or ' +
+      'another (#1757): a manual run waits until that run ends, and a ' +
+      'scheduled run until it ends or its slot does, after which the next ' +
+      'slot is due.',
+    spec: '' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',
