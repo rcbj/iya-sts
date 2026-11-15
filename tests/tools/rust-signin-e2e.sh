@@ -175,13 +175,20 @@ browse() {
   secret="$(jq -r ".\"$user\".secret // \"\"" "$OUT/people.json")"
   if $DRIVER browser "$BASE" "$id" "$user" "$pw" $secret \
        > "$OUT/$label-$who.json" 2>> "$SUMMARY"; then
-    local cookie
+    local cookie location
     cookie="$(jq -r .cookie "$OUT/$label-$who.json")"
-    if [ -n "$cookie" ]; then
+    location="$(jq -r .location "$OUT/$label-$who.json")"
+    # FINISHED means the bundle left the sign-in pages for the address the
+    # answer named — the authorization request it interrupted (Rust serves
+    # no /oauth2/authorize yet; Node goes on to the portal's callback) —
+    # and the browser holds the session cookie that answer set.
+    if [ -n "$cookie" ] &&
+       echo "$location" | grep -qE '/oauth2/authorize|/portal/callback\?code='
+    then
       pass "$label: $user signed in ($(jq -r '.steps | join(", ")' \
         "$OUT/$label-$who.json")) and holds $(echo "$cookie" | cut -d= -f1)"
     else
-      fail "$label: $user has no session cookie: $(cat "$OUT/$label-$who.json")"
+      fail "$label: $user did not finish: $(cat "$OUT/$label-$who.json")"
     fi
   else
     fail "$label: the $user sign-in in the browser (see summary)"
@@ -189,6 +196,8 @@ browse() {
 }
 
 say "== Rust on the store Node wrote: the unchanged bundle in Chrome =="
+# The enrolment spent this step's code: the next one is the person's next.
+sleep 31
 start "$RUST_IMAGE" rust
 browse pwd rust
 browse totp rust

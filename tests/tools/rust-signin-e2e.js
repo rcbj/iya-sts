@@ -198,6 +198,43 @@ function totpCode(secret, at) {
   return String(n % 1000000).padStart(6, '0');
 }
 
+/**
+ * One sign-in at the screen as its page drives it, through the forced
+ * password change an administrator-made password asks for (the new one is
+ * kept) and, where product asks for a second factor, an authenticator
+ * app's enrolment (its secret is kept).
+ */
+async function firstSignIn(base, person, name) {
+  const jar = {};
+  const id = await begin(base, jar);
+  await call(base, { method: 'GET', path: '/authn/login', jar: jar });
+  let r = await view(base, jar, 'pending', id);
+  let csrf = r.json.csrf;
+  r = await act(base, jar, 'pending', id, '/password',
+                { username: name, password: person.password }, csrf);
+  if (r.json && r.json.next === 'password-change') {
+    const chosen = 'E2e-' + crypto.randomBytes(12).toString('base64url') +
+                   '-9q';
+    r = await act(base, jar, 'password-change', r.json.id, '',
+                  { new_password: chosen, confirm_password: chosen }, csrf);
+    person.password = chosen;
+  }
+  if (r.json && r.json.next === 'mfa' && r.json.step === 'enrol') {
+    let mfa = r.json.id;
+    r = await act(base, jar, 'mfa', mfa, '/setup/totp', {}, csrf);
+    mfa = (r.json && r.json.id) || mfa;
+    r = await view(base, jar, 'mfa', mfa, '?page=setup');
+    const secret = String(r.json.view.setup.totp.secret).replace(/\s/g, '');
+    csrf = r.json.csrf || csrf;
+    r = await act(base, jar, 'mfa', mfa, '/setup/confirm',
+                  { code: totpCode(secret) }, csrf);
+    person.secret = secret;
+  }
+  if (!r.json || r.json.ok !== true || r.json.next !== 'redirect') {
+    throw new Error(name + "'s first sign-in did not finish: " + r.text);
+  }
+}
+
 async function setup(base, secret, out) {
   const token = await adminToken(base, secret);
   const people = {};
@@ -208,32 +245,16 @@ async function setup(base, secret, out) {
                     mail: name + '@example.net' } });
     people[name] = { password: made.password };
   }
-  // The authenticator app, enrolled where product asks for one.
-  const jar = {};
-  const id = await begin(base, jar);
-  await call(base, { method: 'GET', path: '/authn/login', jar: jar });
-  let r = await view(base, jar, 'pending', id);
-  let csrf = r.json.csrf;
-  r = await act(base, jar, 'pending', id, '/password',
-                { username: 'e2e.totp', password: people['e2e.totp'].password },
-                csrf);
-  if (!r.json || r.json.next !== 'mfa' || r.json.step !== 'enrol') {
-    throw new Error('the sign-in did not ask for a second factor: ' + r.text);
-  }
-  let mfa = r.json.id;
-  r = await act(base, jar, 'mfa', mfa, '/setup/totp', {}, csrf);
-  mfa = (r.json && r.json.id) || mfa;
-  r = await view(base, jar, 'mfa', mfa, '?page=setup');
-  const totpSecret = String(r.json.view.setup.totp.secret).replace(/\s/g, '');
-  csrf = r.json.csrf || csrf;
-  r = await act(base, jar, 'mfa', mfa, '/setup/confirm',
-                { code: totpCode(totpSecret) }, csrf);
-  if (!r.json || r.json.ok !== true) {
-    throw new Error('the enrolment was not confirmed: ' + r.text);
-  }
-  people['e2e.totp'].secret = totpSecret;
+  // The authenticator app, enrolled where product asks everybody for one;
+  // then a second factor made optional, so the first person signs in with
+  // a password alone.
+  await firstSignIn(base, people['e2e.totp'], 'e2e.totp');
   await api(base, token, '/admin-api/config/set',
             { key: 'authn.allowOptionalSecondFactor', value: true });
+  await firstSignIn(base, people['e2e.pwd'], 'e2e.pwd');
+  if (!people['e2e.totp'].secret) {
+    throw new Error('e2e.totp was not asked to set up a second factor');
+  }
   fs.writeFileSync(out, JSON.stringify(people));
   console.log('setup: two people, the second with an authenticator app');
 }
@@ -249,20 +270,24 @@ async function beginTwo(base, out) {
  */
 async function browser(base, id, user, password, secret) {
   const WebSocket = require('ws');
-  const port = 19780 + Math.floor(Math.random() * 100);
+  // Port 0: Chrome picks a free one and names it in DevToolsActivePort —
+  // a fixed port may be another session's listener.
+  let port = 0;
   const dir = fs.mkdtempSync(require('os').tmpdir() + '/e2e-chrome-');
   const chrome = childProcess.spawn('google-chrome', ['--headless=new',
     '--disable-gpu', '--no-sandbox', '--ignore-certificate-errors',
-    '--user-data-dir=' + dir, '--remote-debugging-port=' + port,
+    '--user-data-dir=' + dir, '--remote-debugging-port=0',
     '--user-agent=' + UA, 'about:blank'], { stdio: 'ignore' });
   const sleep = function (ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
   };
   try {
     let target = null;
-    for (let i = 0; i < 50 && !target; i++) {
+    for (let i = 0; i < 150 && !target; i++) {
       await sleep(200);
       try {
+        port = Number(fs.readFileSync(dir + '/DevToolsActivePort', 'utf8')
+          .split('\n')[0]);
         const list = await new Promise(function (res, rej) {
           require('http').get('http://127.0.0.1:' + port + '/json/list',
             function (r) {
