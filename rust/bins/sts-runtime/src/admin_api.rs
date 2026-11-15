@@ -2091,6 +2091,7 @@ pub fn announcements_for(
 /// What `/account-api` reads, in the ambient realm.
 struct Account {
     settings: Arc<Settings>,
+    mode: Arc<Mode>,
     dir: Arc<LiveDir>,
     tokens: Arc<sts_oauth::minted::TokenRegister>,
     sessions: Arc<sts_authn::Sessions>,
@@ -2184,6 +2185,82 @@ impl sts_mgmt_api::account::AccountPorts for Account {
     }
     fn offered(&self) -> Vec<Json> {
         self.catalogs.offered()
+    }
+    fn pseudonyms(&self, username: &str) -> Option<Json> {
+        // `listView(username)`: `Credential.fromEntry()`'s two members of
+        // the entry, `rules.CAP` and `mail.available()`.
+        let entry = self.person_entry(username);
+        let at = entry.as_ref().map(|e| e["attributes"].clone());
+        let list = |a: &str| -> Vec<Json> {
+            at.as_ref()
+                .and_then(|x| x.get(a))
+                .and_then(Json::as_array)
+                .cloned()
+                .unwrap_or_default()
+        };
+        let pending = list("stspseudonymverifyaddress")
+            .first()
+            .and_then(Json::as_str)
+            .filter(|p| !p.is_empty())
+            .map_or(Json::Null, |p| json!(p));
+        Some(
+            json!({ "pseudonyms": list("stspseudonym"), "pending": pending,
+                     "cap": 8, "available": self.mail_available() }),
+        )
+    }
+    fn write_pseudonyms(
+        &self,
+        username: &str,
+        op: &str,
+        value: &str,
+        source: &str,
+    ) -> Json {
+        rp::PersonWriter::write_pseudonyms(
+            &PersonWriter {
+                dir: self.dir.clone(),
+                mode: self.mode.clone(),
+            },
+            username,
+            op,
+            value,
+            source,
+        )
+    }
+    fn mail_available(&self) -> bool {
+        // `Mail.available()`: `default` is capture in development and off
+        // in product.
+        let captures = self.mode.predicate("capturesMail").unwrap_or(false);
+        let named = self.settings.value_of("mail.transport");
+        let t = match named.as_str() {
+            "" | "default" => {
+                if captures {
+                    "capture"
+                } else {
+                    "off"
+                }
+            }
+            other => other,
+        };
+        t != "off" && !(t == "capture" && !captures)
+    }
+    fn text(
+        &self,
+        username: &str,
+        key: &str,
+        params: &[(&str, &str)],
+    ) -> String {
+        // `PageLocale.forPage({application: sts-user-portal, username})`,
+        // as far as the person's own preferredLanguage; English after it.
+        let preferred: Vec<String> = self
+            .person_entry(username)
+            .and_then(|e| {
+                e["attributes"]["preferredlanguage"][0]
+                    .as_str()
+                    .map(str::to_string)
+            })
+            .map(|p| sts_http::i18n::accept_language(&p))
+            .unwrap_or_default();
+        self.catalogs.translator(&preferred, "").text(key, params)
     }
 }
 
@@ -2481,6 +2558,7 @@ impl AdminStack {
             services: services.clone(),
             ports: Arc::new(Account {
                 settings: settings.clone(),
+                mode: mode.clone(),
                 dir: dir.clone(),
                 tokens: parts.oauth.tokens.register.clone(),
                 sessions: parts.sessions.clone(),
