@@ -633,7 +633,7 @@ impl<'a> AttributePolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_LDAP_0166, problems);
         }
-        if self.entries(realm).is_none() {
+        if !self.ports.directory.installed(Container::Attributes) {
             return common::no_directory(
                 codes::STS_LDAP_0167,
                 "an attribute policy",
@@ -699,7 +699,7 @@ impl<'a> AttributePolicy<'a> {
         let folded = js::fold(name);
         let which = if folded.is_empty() { DEFAULT_PROFILE.to_string() } else { folded };
         let target = Value::String(which.clone());
-        if self.entries(realm).is_none() {
+        if !self.ports.directory.installed(Container::Attributes) {
             return common::removed(false, self.read(realm, &target));
         }
         if which == DEFAULT_PROFILE {
@@ -851,7 +851,7 @@ impl<'a> AttributePolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_LDAP_0169, problems);
         }
-        if self.ports.directory.entries(realm, Container::AttributeDefinitions).is_none() {
+        if !self.ports.directory.installed(Container::AttributeDefinitions) {
             return common::no_directory(
                 codes::STS_LDAP_0167,
                 "a custom attribute",
@@ -933,7 +933,7 @@ impl<'a> AttributePolicy<'a> {
         let empty = Object::new();
         let given = body.unwrap_or(&empty);
         let wanted = js::trim(&js::string_or_empty(given.get("name"))).to_string();
-        if self.ports.directory.entries(realm, Container::AttributeDefinitions).is_none() {
+        if !self.ports.directory.installed(Container::AttributeDefinitions) {
             return Answer::refused(
                 codes::STS_LDAP_0167,
                 vec!["There is no embedded directory in this process, so there is no custom \
@@ -1074,7 +1074,7 @@ impl<'a> AttributePolicy<'a> {
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn undefine(&self, realm: &str, name: Option<&Value>) -> Answer {
         let wanted = js::trim(&js::string_or_empty(name)).to_string();
-        if self.ports.directory.entries(realm, Container::AttributeDefinitions).is_none() {
+        if !self.ports.directory.installed(Container::AttributeDefinitions) {
             return Answer::refused(
                 codes::STS_LDAP_0167,
                 vec!["There is no embedded directory in this process, so there is no custom \

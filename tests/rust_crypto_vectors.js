@@ -53,6 +53,18 @@ function read(name) {
  */
 function run(t) {
   log.debug("Entering run().");
+  // The named policies' (#444 phase 4), which need no key and so no other
+  // set: `tests/tools/policy-vectors.js` holds what the sts-policy crate
+  // answered to Node's answers, and its generated passwords to Node's
+  // password policy.
+  if (fs.existsSync(path.join(VECTORS, 'policy-rust.json')) &&
+      fs.existsSync(path.join(VECTORS, 'policy-node.json'))) {
+    require('./tools/policy-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('policy-rust.json'),
+      read('policy-node.json'), function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The directory's wire layer (sts-ldap): synchronous, and it needs no
   // other Rust vector.
   if (fs.existsSync(path.join(VECTORS, 'ldap-wire-rust.json'))) {

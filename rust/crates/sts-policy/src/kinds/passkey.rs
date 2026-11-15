@@ -897,7 +897,7 @@ impl<'a> PasskeyPolicy<'a> {
             return Answer::refused(codes::STS_AUTHN_0308, vec![refused]);
         }
         let which = super::locale::which(name);
-        if self.ports.directory.entries(realm, Container::Passkey).is_none() {
+        if !self.ports.directory.installed(Container::Passkey) {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {

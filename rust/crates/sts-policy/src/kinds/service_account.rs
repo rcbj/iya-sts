@@ -351,7 +351,7 @@ impl<'a> ServiceAccountPolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_SVCACCT_0002, problems);
         }
-        if self.ports.directory.entries(realm, Container::ServiceAccount).is_none() {
+        if !self.ports.directory.installed(Container::ServiceAccount) {
             return common::no_directory(
                 codes::STS_SVCACCT_0003,
                 "a service-account policy",
@@ -379,7 +379,7 @@ impl<'a> ServiceAccountPolicy<'a> {
             return Answer::refused(codes::STS_SVCACCT_0001, vec![refused]);
         }
         let which = which(name);
-        if self.ports.directory.entries(realm, Container::ServiceAccount).is_none() {
+        if !self.ports.directory.installed(Container::ServiceAccount) {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {

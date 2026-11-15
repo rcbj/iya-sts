@@ -391,7 +391,7 @@ impl<'a> PasswordPolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_AUTHN_0108, problems);
         }
-        if self.ports.directory.entries(realm, Container::Password).is_none() {
+        if !self.ports.directory.installed(Container::Password) {
             return common::no_directory(
                 codes::STS_AUTHN_0109,
                 "a password policy",
@@ -432,7 +432,7 @@ impl<'a> PasswordPolicy<'a> {
             return Answer::refused(codes::STS_AUTHN_0107, vec![refused]);
         }
         let which = Self::which(name);
-        if self.ports.directory.entries(realm, Container::Password).is_none() {
+        if !self.ports.directory.installed(Container::Password) {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {

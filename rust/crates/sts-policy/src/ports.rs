@@ -126,6 +126,10 @@ pub struct PeopleNaming {
 /// The embedded directory, as the kinds use it. The real one is the
 /// directory slice's; every method is the Node hook of the same name.
 pub trait PolicyDirectory {
+    /// Whether the directory offers this container's hooks at all (Node's
+    /// `haveDirectory()`, which reads nothing): where it does not, the
+    /// built-in profile is in force and nothing can be saved.
+    fn installed(&self, container: Container) -> bool;
     /// Every entry of a container in a realm, or `None` where no directory
     /// is installed (Node's `haveDirectory()` false: the built-in profile
     /// is in force and nothing can be saved).

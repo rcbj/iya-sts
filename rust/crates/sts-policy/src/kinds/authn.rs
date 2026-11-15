@@ -522,7 +522,7 @@ impl<'a> AuthnPolicy<'a> {
         if !bad.is_empty() {
             return Answer::refused(codes::STS_AUTHN_0541, bad);
         }
-        if self.ports.directory.entries(realm, Container::Authn).is_none() {
+        if !self.ports.directory.installed(Container::Authn) {
             return common::no_directory(
                 codes::STS_AUTHN_0245,
                 "an authentication policy",
@@ -694,7 +694,7 @@ impl<'a> AuthnPolicy<'a> {
                 )],
             );
         }
-        if self.ports.directory.entries(realm, Container::Authn).is_none() {
+        if !self.ports.directory.installed(Container::Authn) {
             return common::no_directory(
                 codes::STS_AUTHN_0245,
                 "an authentication policy",
@@ -715,7 +715,7 @@ impl<'a> AuthnPolicy<'a> {
         if let Some(refused) = Self::check_name(name) {
             return Answer::refused(codes::STS_AUTHN_0242, vec![refused]);
         }
-        if self.ports.directory.entries(realm, Container::Authn).is_none() {
+        if !self.ports.directory.installed(Container::Authn) {
             return common::removed(false, self.read(realm, Some(DEFAULT_PROFILE)));
         }
         let removed = self.ports.directory.delete(realm, Container::Authn, DEFAULT_PROFILE);

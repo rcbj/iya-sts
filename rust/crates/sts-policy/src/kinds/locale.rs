@@ -260,7 +260,7 @@ impl<'a> LocalePolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_I18N_0004, problems);
         }
-        if self.ports.directory.entries(realm, Container::Locale).is_none() {
+        if !self.ports.directory.installed(Container::Locale) {
             return common::no_directory(codes::STS_I18N_0005, "a locale policy", "ou=localePolicies");
         }
         let mut attributes =
@@ -283,7 +283,7 @@ impl<'a> LocalePolicy<'a> {
             return Answer::refused(codes::STS_I18N_0003, vec![refused]);
         }
         let which = which(name);
-        if self.ports.directory.entries(realm, Container::Locale).is_none() {
+        if !self.ports.directory.installed(Container::Locale) {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {

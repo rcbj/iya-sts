@@ -187,7 +187,7 @@ impl<'a> PostLoginPolicy<'a> {
     /// names.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn person_groups(&self, realm: &str, username: &str) -> Vec<GroupReference> {
-        if username.is_empty() || self.ports.directory.entries(realm, Container::PostLogin).is_none()
+        if username.is_empty() || !self.ports.directory.installed(Container::PostLogin)
         {
             return Vec::new();
         }
@@ -307,7 +307,7 @@ impl<'a> PostLoginPolicy<'a> {
         if !problems.is_empty() {
             return Answer::refused(codes::STS_AUTHN_0471, problems);
         }
-        if self.ports.directory.entries(realm, Container::PostLogin).is_none() {
+        if !self.ports.directory.installed(Container::PostLogin) {
             return common::no_directory(
                 codes::STS_AUTHN_0472,
                 "a post-login profile",
@@ -334,7 +334,7 @@ impl<'a> PostLoginPolicy<'a> {
             return Answer::refused(codes::STS_AUTHN_0470, vec![refused]);
         }
         let which = which(name);
-        if self.ports.directory.entries(realm, Container::PostLogin).is_none() {
+        if !self.ports.directory.installed(Container::PostLogin) {
             return common::removed(false, self.read(realm, Some(&which)));
         }
         if which != DEFAULT_PROFILE {

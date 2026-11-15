@@ -302,9 +302,13 @@ async function build(ROOT) {
         'webauthn.registrationAlgorithmsAllowed',
         deps.registrationAlgorithmsAllowed, null);
       deps.clients = function () {
-        return { act: wrap('passkeyClients.act', function (action, body) {
-          return req('common/passkey_clients').act(action, body);
-        }, null) };
+        // The answer and the code it is marked with, which a copy loses.
+        return { act: function (action, body) {
+          const out = req('common/passkey_clients').act(action, body);
+          rec(['passkeyClients.act', realmId(), clone(action), clone(body)],
+              { value: out, code: errorCodes.codeOf(out) || '' });
+          return out;
+        } };
       };
     }
     if (kind === 'locale') {
@@ -1029,7 +1033,14 @@ async function build(ROOT) {
   const unknown = adminActions.policiesAction({ action: 'frobnicate' }, {});
   kinds.unknown = { answer: clone(unknown),
                     code: errorCodes.codeOf(unknown) || '' };
-  return { setup: SETUP, selection: SELECTION, kinds: kinds, cases: CASES };
+  // What a named authentication policy may list (authn_policy.ts's
+  // vocabularies(), reached lazily there and recorded once here).
+  const vocabularies = {
+    mechanisms: req('federation/federation').MECHANISM_IDS.slice(0),
+    secondFactors: req('common/mfa_mechanisms').IDS.slice(0)
+  };
+  return { setup: SETUP, selection: SELECTION, kinds: kinds,
+           vocabularies: vocabularies, cases: CASES };
 }
 
 /**
@@ -1044,8 +1055,23 @@ async function build(ROOT) {
  *   the runner's check
  */
 function checkRust(ROOT, rust, node, check) {
+  // Compared with every object's members sorted: a member's place is no
+  // part of an answer.
+  const canonical = function (v) {
+    if (Array.isArray(v)) {
+      return v.map(canonical);
+    }
+    if (v && typeof v === 'object') {
+      const out = {};
+      Object.keys(v).sort().forEach(function (k) {
+        out[k] = canonical(v[k]);
+      });
+      return out;
+    }
+    return v;
+  };
   const same = function (a, b) {
-    return JSON.stringify(a) === JSON.stringify(b);
+    return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
   };
   const wrong = [];
   (rust.cases || []).forEach(function (row, n) {
