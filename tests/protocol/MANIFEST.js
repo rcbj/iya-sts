@@ -2409,6 +2409,11 @@ const JOBS = [
   // and lifetimes (saml_artifact_and_simplesign, saml_artifact_digests B, C,
   // E, F).
   { file: 'sts_saml_artifacts.js', browser: false, local: true },
+  // D12 (#444): RFC 7522 section 3 item by item at a running token
+  // endpoint, the lenient readings of items 4 and 6, a registered
+  // certificate and the replay, and a registered copy of a revoked
+  // certificate (saml_assertion_grant, STS-PKI-0129).
+  { file: 'sts_saml2_bearer_items.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
