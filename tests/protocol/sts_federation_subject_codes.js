@@ -33,6 +33,8 @@
 //      one that began the sign-in is refused (401, STS-FED-0237);
 //   L. a link already carried by one person refused on a second
 //      (STS-FED-0107) in both modes;
+//   M. (mail_address_sources 4) a partner's address written verified, and
+//      not verified when the partner said email_verified false;
 //   A. product refuses setting any-existing (STS-FED-0095); a relationship
 //      that carries it anyway — set while the realm was in development — is
 //      refused at the sign-in (STS-FED-0094), writing nothing; development's
@@ -444,6 +446,44 @@ async function anyExisting(dev, prod) {
   log.debug("Leaving anyExisting().");
 }
 
+// ------------------------------------------------------------------- M
+// mail_address_sources 4: a partner's address is written verified unless
+// the partner said `email_verified: false`.
+async function mailVerified(w) {
+  log.debug("Entering mailVerified().");
+  log.info("=== M. a partner's address, verified or not ===");
+  await K.ok(K.rb(w.SP) + "/admin-api/federation/set", { id: REL,
+    field: "fedSubjectPolicy", value: "jit-namespaced" }, "jit-namespaced");
+  for (const mapping of ["given_name=givenName", "family_name=sn",
+                         "email=mail"]) {
+    await K.ok(K.rb(w.SP) + "/admin-api/federation/add-value", { id: REL,
+      field: "fedAttributeMap", value: mapping }, "mapped " + mapping);
+  }
+  const yes = "urn:uuid:" + nodeCrypto.randomUUID();
+  const no = "urn:uuid:" + nodeCrypto.randomUUID();
+  const a = await signIn(w, yes, { given_name: "Ver", family_name: "Ified",
+    email: "verified@partner.example", email_verified: true });
+  const b = await signIn(w, no, { given_name: "Un", family_name: "Verified",
+    email: "unverified@partner.example", email_verified: false });
+  const ea = await entry(w, namespaced(yes));
+  const eb = await entry(w, namespaced(no));
+  K.check("M1. email_verified true writes the address verified", function () {
+    assert.strictEqual(a.r.status, 200, K.shown(a.r));
+    assert.strictEqual(attr(ea, "mail")[0], "verified@partner.example");
+    assert.ok(/verified@partner\.example/.test(
+      JSON.stringify(attr(ea, "stsMailVerified"))),
+              JSON.stringify(ea.attrs).slice(0, 300));
+  });
+  K.check("M2. email_verified false writes the address and does not " +
+          "verify it", function () {
+    assert.strictEqual(b.r.status, 200, K.shown(b.r));
+    assert.strictEqual(attr(eb, "mail")[0], "unverified@partner.example");
+    assert.strictEqual(attr(eb, "stsMailVerified").length, 0,
+                       JSON.stringify(eb.attrs).slice(0, 300));
+  });
+  log.debug("Leaving mailVerified().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const dev = await makeRealm("fsc-d", "development");
@@ -454,7 +494,8 @@ async function test() {
   await secondLink(dev, "development");
   await secondLink(prod, "product");
   await anyExisting(dev, prod);
+  await mailVerified(dev);
   log.debug("Leaving test().");
 }
 
-K.main(test, 14);
+K.main(test, 16);

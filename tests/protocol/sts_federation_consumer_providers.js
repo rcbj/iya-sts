@@ -38,6 +38,9 @@
 //   F. Google: a signed ID Token against the provider's keys, the bare-host
 //      alias not accepted for a peer that is not accounts.google.com, an
 //      ID Token naming another issuer refused;
+//   S. (portal_delegate_search A2, A5, B2) the newcomer's stamp is D5; an
+//      administrator's edit keeps it; the portal's delegate search finds a
+//      native person and never the newcomer whose name shares its digits;
 //   N. the portal's disconnect of the provider that is a newcomer's only way
 //      in refused (409, STS-PORTAL-0614) and the link kept; with a second
 //      connection the same disconnect allowed and the link gone.
@@ -471,6 +474,53 @@ async function disconnect(newcomer) {
   log.debug("Leaving disconnect().");
 }
 
+// ------------------------------------------------------------------- S
+// portal_delegate_search A5 and B2: the consumer newcomer's stamp kept by
+// an administrator's edit, and the portal's delegate search never finding
+// the newcomer while it finds a native person whose name shares the run.
+async function stampAndSearch(newcomer) {
+  log.debug("Entering stampAndSearch().");
+  log.info("=== S. the stamp kept, and the delegate search ===");
+  const edited = await api("/users/set-attribute", { user: newcomer.name,
+    attribute: "title", value: "Edited" });
+  const after = await entry(newcomer.name);
+  K.check("S1 (delegate search A5). an administrator's edit of the " +
+          "newcomer keeps stsProvisionedBy federation:cp-discord",
+  function () {
+    assert.strictEqual(edited.status, 200, edited.text.slice(0, 300));
+    assert.strictEqual(attr(after, "title")[0], "Edited");
+    assert.ok(/"stsProvisionedBy":\s*\[?"federation:cp-discord"/
+      .test(JSON.stringify(after.json)), JSON.stringify(after.attrs)
+      .slice(0, 300));
+  });
+  const token = "80351110";
+  const native = "nat-" + token + "-" + K.rand(2);
+  const searcher = "srch-" + K.rand(3);
+  const password = "Fcp-Passw0rd!-" + K.rand(3);
+  for (const who of [native, searcher]) {
+    await K.ok(K.rb(SP) + "/admin-api/users/create", { username: who,
+      invent: false, credential: "password", password: password,
+      attributes: { cn: "Native " + who, givenName: "Native", sn: who,
+                    mail: who + "@fcp.example" } }, "created " + who);
+  }
+  const client = await portal.signInToThePortal(K.rb(SP), searcher, log,
+                                                { password: password });
+  const found = await client.api("GET", "/account-api/delegate/candidates?q=" +
+                                 encodeURIComponent(token));
+  const uids = ((found.json || {}).people || []).map(function (one) {
+    return one.uid;
+  });
+  K.check("S2 (delegate search B2). the search finds the native person and " +
+          "not the consumer provider's newcomer whose name holds the same " +
+          "digits", function () {
+    assert.strictEqual(found.status, 200, JSON.stringify(found.json)
+      .slice(0, 300));
+    assert.ok(uids.indexOf(native) >= 0, JSON.stringify(uids));
+    assert.ok(uids.indexOf(newcomer.name) < 0, JSON.stringify(uids));
+  });
+  log.debug("Leaving stampAndSearch().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const server = http.createServer(providerHandler);
@@ -486,6 +536,7 @@ async function test() {
     const newcomer = await discord();
     await github();
     await google();
+    await stampAndSearch(newcomer);
     await disconnect(newcomer);
   } finally {
     server.close();
@@ -493,4 +544,4 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-K.main(test, 20);
+K.main(test, 23);
