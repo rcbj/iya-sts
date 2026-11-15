@@ -232,8 +232,15 @@ impl Reader<'_> {
 
     fn at(&self, template: &str, pos: usize) -> String {
         let (line, column) = line_and_column(self.s, pos);
+        // V8's template for trailing text already ends "after JSON", and
+        // takes no second " in JSON".
+        let place = if template.ends_with("after JSON") {
+            ""
+        } else {
+            " in JSON"
+        };
         format!(
-            "{template} in JSON at position {pos} (line {line} column \
+            "{template}{place} at position {pos} (line {line} column \
              {column})"
         )
     }
