@@ -4212,6 +4212,45 @@ class ScimClients {
   // One cell's answer to an act. Another cell's code crossed the channel spelt
   // out (`code`, `answerAct()`), because a mark does not survive JSON; it is a
   // mark again here, so that what this act answers never carries it (#1355).
+  // THE COUNTS OF A RECONCILIATION DONE IN EVERY CELL, merged into the one
+  // answer (#553 section 7). Until CI run #250 the fan-out answer carried
+  // only each cell's sentence, so a caller reading `users` and `groups` —
+  // the single-cell answer's members — read nothing. The merge is not a sum
+  // throughout, because the two kinds of resource are held differently:
+  //   * `users` and `deprovisioned` ARE summed: a person is reconciled only
+  //     in their home cell (section 1), and a deprovision is queued by the
+  //     cell that linked the resource, so no two cells count the same one;
+  //   * `groups` is the MOST any cell queued: a group's definition is every
+  //     cell's (section 3), so each pushing cell queues every group in scope
+  //     to PATCH its own share of the membership. That is one queued row per
+  //     cell, by design, and still one group — summing would report a group
+  //     in two cells as two.
+  // A cell that could not be reached adds nothing; `ok` is false when any
+  // reachable cell's reconciliation failed part way.
+  private static mergedReconcile(results: Json[]): Json {
+    helpers.log.debug("Entering ScimClients.mergedReconcile().");
+    const out: Json = { users: 0, groups: 0, deprovisioned: 0 };
+    let failed = false;
+    results.forEach(function (one: Json) {
+      if (!one || !one.reachable) {
+        return;
+      }
+      out.users += Number(one.users) || 0;
+      out.deprovisioned += Number(one.deprovisioned) || 0;
+      out.groups = Math.max(out.groups, Number(one.groups) || 0);
+      if (one.ok === false) {
+        failed = true;
+      }
+    });
+    if (failed) {
+      out.why = 'The reconciliation failed part way in at least one ' +
+                'cell; each cell\'s result is listed in cells.';
+    }
+    helpers.log.debug("Leaving ScimClients.mergedReconcile(). " + out.users +
+                      " user(s), " + out.groups + " group(s).");
+    return out;
+  }
+
   private cellResult(cell: string, answer: Json): Json {
     const { log, errorCodes } = this.deps;
     log.debug("Entering ScimClients.cellResult(). " + cell);
@@ -4482,6 +4521,9 @@ class ScimClients {
                                         (one.errors || []).join(' ') || '');
       }).join(' ')
     };
+    if (action === 'reconcile') {
+      Object.assign(out, ScimClients.mergedReconcile(results));
+    }
     if (!ok) {
       log.debug("Leaving ScimClients.act(). Refused in every cell.");
       const first = results.filter(function (one) {

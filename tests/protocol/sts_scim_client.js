@@ -48,6 +48,18 @@
 // NLB that does not hairpin) cannot make that connection, and this job says
 // so in its failure rather than passing.
 //
+// IN THE `cells` MODE (STS_TEST_CELL_A_URL and STS_TEST_CELL_B_URL set) the
+// person is homed in one cell and pushed only from there, and only where the
+// issuance policy releases them to the provider's jurisdiction (#553 section
+// 2): a client that declares no jurisdiction is in an unknown one, which the
+// strict default never releases to, so every cell reconciled nobody (CI run
+// #250, and every cells run before it). So in that mode the client declares
+// `eu` and the source realm lists `*>eu` in `cells.permittedTransfers`,
+// waited for at cell B, as `sts_cells_scim_client.js` does; and step 2 reads
+// the merged counts a reconciliation in every cell answers at the top level
+// (`users` summed, `groups` the most one cell queued — each cell queues the
+// group for its own share). The single-cell run is unchanged.
+//
 // OWNED HERE (local: true): this repository's outbound SCIM client, its SCIM
 // service provider, its authorization server and its management API.
 // tests/CLAUDE.md's question 2 — asserted over HTTP against a running
@@ -59,6 +71,7 @@ const fs = require("fs");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const cellsKit = require("./cells_kit.js");
 const facts = require("./service_facts.js");
 
 var appconfig;
@@ -300,6 +313,21 @@ async function test() {
                                           value: true },
              "let the source realm's client dial plain http (development)");
   }
+  // THE CELLS MODE: the transfer to the provider's jurisdiction listed, at
+  // both cells, before the client exists (see the header).
+  const cells = cellsKit.cellsFromEnv();
+  if (cells) {
+    await ok(sourceApi + "/config/set", { key: "cells.permittedTransfers",
+                                          value: "*>eu" },
+             "listed the transfer *>eu in the source realm (cells)");
+    await cellsKit.until("cell B reads the listed transfer", WAIT_MS,
+                         async function () {
+                           const v = await cellsKit.settingAt(
+                             cells.b + "/realm/" + SOURCE,
+                             "cells.permittedTransfers");
+                           return String(v || "").indexOf("*>eu") >= 0;
+                         });
+  }
   const added = await ok(sourceApi + "/scim/clients/add-client", Object.assign({
     identifier: CLIENT, name: "Into " + TARGET, baseUrl: TARGET_SCIM,
     authMethod: "oauth2", tokenEndpoint: targetBase + "/oauth2/token",
@@ -310,7 +338,8 @@ async function test() {
     scopeMode: "groups", scopeGroups: GROUP,
     groupMode: "selected", groups: GROUP,
     deprovision: "deactivate", enabled: "true" },
-    anchor ? { caCertificates: anchor } : {}), "added the client " + CLIENT);
+    anchor ? { caCertificates: anchor } : {},
+    cells ? { jurisdiction: "eu" } : {}), "added the client " + CLIENT);
   check("the client is usable, its secret set and never shown", function () {
     assert.ok(added.client && added.client.usable &&
               added.client.oauthClientSecretSet,
@@ -333,9 +362,15 @@ async function test() {
   log.info("=== 2. a reconciliation pushes the person and the group ===");
   const reconciled = await ok(sourceApi + "/scim/clients/reconcile",
                               { id: CLIENT }, "reconciled " + CLIENT);
-  check("the reconciliation queued the person and the group", function () {
+  check("the reconciliation queued the person and the group" +
+        (cells ? " (the counts merged across both cells)" : ""), function () {
     assert.ok(reconciled.users === 1 && reconciled.groups === 1,
               JSON.stringify(reconciled));
+    if (cells) {
+      assert.ok(Array.isArray(reconciled.cells) &&
+                reconciled.cells.length === 2,
+                "one result per cell: " + JSON.stringify(reconciled));
+    }
   });
   const user = await waitFor("the person at the target", function () {
     return theUser(token, uuid);

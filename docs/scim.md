@@ -897,7 +897,12 @@ client's page.
 **An act may name a cell.** `retry-delivery`, `retry-dead`, `purge-dead`,
 `reconcile` and `deliver-now` take a `cell` member and are done in that cell
 only. Without one they are done in every cell, and the answer lists each
-cell's result in `cells`, a cell that cannot be reached as such:
+cell's result in `cells`, a cell that cannot be reached as such. A
+`reconcile` in every cell also answers the merged counts at the top level:
+`users` and `deprovisioned` are the cells' sum, since each person is
+reconciled only in their home cell, and `groups` is the most any one cell
+queued, since every cell queues each group in scope to send its own share of
+the members:
 
 ```
 POST /admin-api/scim/clients/purge-dead
