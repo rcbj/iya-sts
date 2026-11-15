@@ -22,7 +22,8 @@
 #   rust/crates/sts-store/src/generated/persistence.rs
 #   rust/crates/sts-mgmt-api/src/generated/operations.rs and the two
 #     documents /admin-api serves (openapi.{management,console,every}.json)
-#   rust/crates/sts-registers/src/generated/schemas.rs
+#   rust/crates/sts-registers/src/generated/schemas.rs and
+#     application.schema.json (the application register's whole SCHEMA)
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #

@@ -1670,6 +1670,37 @@ export function renderRustDirectory(tables) {
   return JSON.stringify(bundle, null, 1) + '\n';
 }
 
+// The application register's SCHEMA, for sts-registers (#444, phase 4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the application object's whole SCHEMA table — every row with
+ * every member the Node register reads (`editable`, `families`,
+ * `familyWhy`, `overrides`, `strictOverride`, `identifier`, `sensitive`,
+ * `secret`, …) — as the JSON `common/applications.js` reads from
+ * `models/generated/application.schema.json`, for the Rust port of that
+ * module in `rust/crates/sts-registers` (`applications::tables`). The
+ * `schemas.rs` table carries a row's name and kind only, which is all the
+ * other registers ask; the application register decides with the rest.
+ *
+ * @param objects - the objects `readDirectory()` read
+ * @param schemaOf - model_lib's `schemaOf()`
+ * @returns the JSON text
+ */
+export function renderRustApplicationSchema(objects, schemaOf) {
+  log.debug("Entering renderRustApplicationSchema().");
+  const application = objects.filter(function (object) {
+    return object.authored === true && object.id === 'application';
+  })[0];
+  const bundle = {
+    generated: 'models/directory/application.tsp (#1390, #444). Do not ' +
+      'edit: change the model and run tests/tools/regenerate-model-docs.sh.',
+    schema: application ? schemaOf(application) : null
+  };
+  log.debug("Leaving renderRustApplicationSchema().");
+  return JSON.stringify(bundle, null, 1) + '\n';
+}
+
 // The directory objects' tables, for sts-registers (#444, phase 4).
 // ---------------------------------------------------------------------------
 
