@@ -74,6 +74,37 @@
 //      unregistered-device, and Monitoring → Risk lists the five device
 //      signals.
 //
+// AND D12 (#444, 2026-11-15): WHAT `tests/devices.js` AND
+// `tests/device_policy.js` HELD IN PROCESS THAT A CLIENT CAN SEE.
+//
+//  15. (extended) the refusal under devices.requireCompliantDevice is
+//      recorded STS-DEVICE-0037.
+//  18. The register's refusals through `/admin-api/devices`, each read off
+//      the realm's audit log by its code: no owner, an unknown owner kind
+//      and a person named as an application (0001); a person at
+//      devices.maxPerPerson (0002) and an application at
+//      devices.maxPerApplication (0003); a private JWK, a symmetric key,
+//      an unreadable certificate and an unknown key kind (0004); a key
+//      another device holds, or the same device twice (0005); a device at
+//      devices.maxKeysPerDevice (0006); an unknown device (0007); an
+//      unknown key (0008); a label on two lines, an unknown platform
+//      (0010); an unknown application (0012); an unknown action (0013); a
+//      WebAuthn key nobody enrolled, and one on an application's device
+//      (0015). An unknown owner kind or key kind and a compliance or
+//      status outside its list are refused by the request schema first
+//      (STS-API-0009), so STS-DEVICE-0011 has no door over the API.
+//  19. A device marked compromised: its DPoP-bound client_credentials
+//      request is refused by the device-compromised rule (STS-DEVICE-0038),
+//      and issued with devices.refuseCompromised off.
+//
+// NOT carried (class (d)): the thumbprint arithmetic against node's own
+// export and the entry's stored attributes (devices.js 3a, 3b, 4 — the
+// API answers the thumbprint, asserted in sections 1 and 9, and never the
+// entry); a new owner taking a device without its Native SSO secret (5a:
+// the secret is never answered); the timeline's evicted count; and
+// device_policy.js's issuance-request facts, read off the XACML request
+// object no answer carries.
+//
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
@@ -347,6 +378,202 @@ function dpopProof(pair, url) {
                { jti: crypto.randomBytes(12).toString("base64url"),
                  htm: "POST", htu: url,
                  iat: Math.floor(Date.now() / 1000) }, pair.privateKey);
+}
+
+// THE CODES ARE RECORDED, NEVER SENT: read off this realm's audit log.
+async function codeCount(code) {
+  log.debug("Entering codeCount(). " + code);
+  const r = await hop("GET", api + "/audit?per=500&code=" +
+                      encodeURIComponent(code));
+  log.debug("Leaving codeCount().");
+  return Number((r.json && r.json.matched) || 0);
+}
+
+async function codesSettle(code, atLeast) {
+  log.debug("Entering codesSettle(). " + code);
+  let n = await codeCount(code);
+  for (let i = 0; i < 40 && n < atLeast; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 150);
+    });
+    n = await codeCount(code);
+  }
+  log.debug("Leaving codesSettle(). " + n);
+  return n;
+}
+
+// One refusal, and the code it is recorded under: the count rises by one.
+async function refusedAs(code, path, payload, what) {
+  log.debug("Entering refusedAs(). " + code);
+  const before = await codeCount(code);
+  const r = await hop("POST", api + path, payload || {});
+  const after = await codesSettle(code, before + 1);
+  check("18. refused, recorded " + code + ": " + what, function () {
+    assert.strictEqual(r.status, 400, r.text.slice(0, 300));
+    assert.ok(r.json && r.json.ok === false, r.text.slice(0, 300));
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.text), r.text.slice(0, 300));
+    assert.ok(after > before, code + " " + before + " -> " + after);
+  });
+  log.debug("Leaving refusedAs().");
+  return r;
+}
+
+async function registerCodes() {
+  log.debug("Entering registerCodes().");
+  log.info("=== 18. the register's refusals, by code (devices.js) ===");
+  const who = names.usernameFor("dev-codes");
+  await registry.ensurePerson(base, who, PASSWORD);
+  const app = "devc-app-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  await ok(api + "/applications/create", { identifier: app, name: app,
+    protocols: ["oauth2"], fields: { oauthClientId: [app] } },
+    "registered an application for the codes");
+  await refusedAs("STS-DEVICE-0001", "/devices/create", { label: "x" },
+                  "no owner");
+  // An owner kind outside the two is refused by the request schema first
+  // (STS-API-0009), before the register's STS-DEVICE-0001.
+  await refusedAs("STS-API-0009", "/devices/create", { owner: who,
+    ownerKind: "robot" }, "an owner kind outside person and application");
+  await refusedAs("STS-DEVICE-0001", "/devices/create", { owner: who,
+    ownerKind: "application" }, "a person named as an application");
+  await refusedAs("STS-DEVICE-0010", "/devices/create", { owner: who,
+    label: "two\nlines" }, "a label on two lines");
+  await refusedAs("STS-DEVICE-0010", "/devices/create", { owner: who,
+    platform: "amiga" }, "an unknown platform");
+  await refusedAs("STS-DEVICE-0012", "/devices/create", { owner: who,
+    applications: ["no-app-" + STAMP] }, "an unknown application");
+  const mine = await ok(api + "/devices/create", { owner: who,
+    label: "codes laptop", platform: "linux" }, "registered a device");
+  const id = mine.device.id;
+  const appDevice = await ok(api + "/devices/create", { owner: app,
+    ownerKind: "application", label: "codes host" },
+    "registered an application's device");
+  await ok(api + "/config/set", { key: "devices.maxPerPerson", value: 1 },
+           "set devices.maxPerPerson to 1");
+  try {
+    await refusedAs("STS-DEVICE-0002", "/devices/create", { owner: who,
+      label: "one too many" }, "a person at devices.maxPerPerson");
+  } finally {
+    await ok(api + "/config/reset", { key: "devices.maxPerPerson" },
+             "put devices.maxPerPerson back");
+  }
+  await ok(api + "/config/set", { key: "devices.maxPerApplication",
+                                  value: 1 },
+           "set devices.maxPerApplication to 1");
+  try {
+    await refusedAs("STS-DEVICE-0003", "/devices/create", { owner: app,
+      ownerKind: "application" }, "an application at " +
+      "devices.maxPerApplication");
+  } finally {
+    await ok(api + "/config/reset", { key: "devices.maxPerApplication" },
+             "put devices.maxPerApplication back");
+  }
+  const ec = publicJwk();
+  await refusedAs("STS-DEVICE-0004", "/devices/add-key", { id: id,
+    kind: "jwk", value: ec.priv }, "a private JWK");
+  await refusedAs("STS-DEVICE-0004", "/devices/add-key", { id: id,
+    kind: "jwk", value: { kty: "oct", k: "c2VjcmV0" } }, "a symmetric key");
+  await refusedAs("STS-DEVICE-0004", "/devices/add-key", { id: id,
+    kind: "x509", value: "not a certificate" }, "an unreadable certificate");
+  await refusedAs("STS-API-0009", "/devices/add-key", { id: id,
+    kind: "rsa" }, "an unknown key kind (the request schema's refusal)");
+  await ok(api + "/devices/add-key", { id: id, kind: "jwk", value: ec.pub },
+           "added a key");
+  await refusedAs("STS-DEVICE-0005", "/devices/add-key", {
+    id: appDevice.device.id, kind: "jwk", value: ec.pub },
+    "a key another device holds");
+  await refusedAs("STS-DEVICE-0005", "/devices/add-key", { id: id,
+    kind: "jwk", value: ec.pub }, "the same key on the same device twice");
+  await refusedAs("STS-DEVICE-0015", "/devices/add-key", { id: id,
+    kind: "webauthn", value: "not-enrolled-" + STAMP },
+    "a WebAuthn key its owner never enrolled");
+  await refusedAs("STS-DEVICE-0015", "/devices/add-key", {
+    id: appDevice.device.id, kind: "webauthn", value: "x-" + STAMP },
+    "a WebAuthn key on an application's device");
+  await ok(api + "/config/set", { key: "devices.maxKeysPerDevice",
+                                  value: 1 },
+           "set devices.maxKeysPerDevice to 1");
+  try {
+    await refusedAs("STS-DEVICE-0006", "/devices/add-key", { id: id,
+      kind: "jwk", value: publicJwk().pub }, "a device at " +
+      "devices.maxKeysPerDevice");
+  } finally {
+    await ok(api + "/config/reset", { key: "devices.maxKeysPerDevice" },
+             "put devices.maxKeysPerDevice back");
+  }
+  await refusedAs("STS-DEVICE-0008", "/devices/remove-key", { id: id,
+    key: "k-none" }, "a key the device does not hold");
+  await refusedAs("STS-DEVICE-0007", "/devices/update", {
+    id: "no-such-device", label: "x" }, "an unknown device");
+  // STS-DEVICE-0011 is not reachable here: the request schema holds the
+  // same closed lists and refuses first (STS-API-0009).
+  await refusedAs("STS-API-0009", "/devices/set-compliance", { id: id,
+    status: "fine" }, "a compliance outside its list");
+  await refusedAs("STS-API-0009", "/devices/set-status", { id: id,
+    status: "lost" }, "a status outside its list");
+  await refusedAs("STS-DEVICE-0013", "/devices/no-such-action", {},
+                  "an unknown action");
+  const held = await read("/devices?device=" + id);
+  check("18. after every refusal the device holds the one key it was given",
+        function () {
+    assert.strictEqual(held.device.keys.length, 1,
+                       JSON.stringify(held.device.keys));
+    assert.strictEqual(held.device.compliance, "unknown");
+    assert.strictEqual(held.device.status, "active");
+  });
+  log.debug("Leaving registerCodes().");
+}
+
+// THE DEVICE-COMPROMISED RULE (device_policy.js): a compromised device's
+// request is refused while devices.refuseCompromised is on, its default.
+async function compromisedRefused(token, dpopKey) {
+  log.debug("Entering compromisedRefused().");
+  log.info("=== 19. a compromised device's request (device_policy.js) ===");
+  const request = async function () {
+    const r = await fetch(token, { method: "POST", headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        DPoP: dpopProof(dpopKey, token) },
+      body: form({ grant_type: "client_credentials", client_id: HOST }) });
+    const text = await r.text();
+    return { status: r.status, text: text };
+  };
+  const listed = await read("/devices?owner=" + encodeURIComponent(HOST) +
+                            "&ownerKind=application");
+  const bound = (listed.devices || []).filter(function (d) {
+    return d.keys.some(function (k) {
+      return k.thumbprint === thumbprint(dpopKey.publicKey
+        .export({ format: "jwk" }));
+    });
+  })[0];
+  assert.ok(bound, "the DPoP key's device: " + JSON.stringify(listed)
+    .slice(0, 400));
+  const before = await codeCount("STS-DEVICE-0038");
+  await ok(api + "/devices/set-status", { id: bound.id,
+    status: "compromised", reason: "D12 device-compromised rule" },
+    "marked the DPoP device compromised");
+  const refusedNow = await request();
+  const after = await codesSettle("STS-DEVICE-0038", before + 1);
+  check("19. a request from a compromised device is refused, recorded " +
+        "STS-DEVICE-0038, with no code in the answer", function () {
+    assert.ok(refusedNow.status >= 400, refusedNow.status + " " +
+              refusedNow.text.slice(0, 300));
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(refusedNow.text), refusedNow.text);
+    assert.ok(after > before, "STS-DEVICE-0038 " + before + " -> " + after);
+  });
+  await ok(api + "/config/set", { key: "devices.refuseCompromised",
+                                  value: false },
+           "turned devices.refuseCompromised off in this realm");
+  let issued = null;
+  try {
+    issued = await request();
+  } finally {
+    await ok(api + "/config/reset", { key: "devices.refuseCompromised" },
+             "put devices.refuseCompromised back");
+  }
+  check("19. with devices.refuseCompromised off the same request is issued",
+        function () {
+    assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));
+  });
+  log.debug("Leaving compromisedRefused().");
 }
 
 async function test() {
@@ -1051,6 +1278,11 @@ async function test() {
     assert.ok(refusedBound.status >= 400, "refused: " + refusedBound.status);
     assert.strictEqual(issuedBound.status, 200, JSON.stringify(issuedJson));
   });
+  const required = await codesSettle("STS-DEVICE-0037", 1);
+  check("the refusal is recorded STS-DEVICE-0037, the device-required rule",
+        function () {
+    assert.ok(required >= 1, "STS-DEVICE-0037 rows: " + required);
+  });
 
   log.info("=== 16. acr_values=urn:sts:acr:compliant-device ===");
   const ACR = "dev-acr-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
@@ -1151,7 +1383,10 @@ async function test() {
       });
   });
 
-  assert.ok(checks >= 32, "only " + checks + " checks ran");
+  await registerCodes();
+  await compromisedRefused(token, dpopKey);
+
+  assert.ok(checks >= 50, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
