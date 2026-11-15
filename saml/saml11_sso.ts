@@ -1446,8 +1446,10 @@ class Saml11Sso {
     const askedMethod = PhishingResistance.assertionUri(
       session, ctx.requestedUris);
     const method = askedMethod || how.method;
+    // READ AS IT STANDS (#39, 2026-11-15): the row's `min: 1` bounds it, and
+    // `|| 60` turned a value nothing refused into an hour; see the row.
     const lifetimeMin = Number(this.settingFor(
-      ctx.rpId, 'saml11.assertionLifetimeMin')) || 60;
+      ctx.rpId, 'saml11.assertionLifetimeMin'));
     // The relying party's saml11NameIdFormat, else saml11.nameIdFormat:
     // SAML 1.1 has no request message to ask for a format in.
     const format = String(this.settingFor(ctx.rpId, 'saml11.nameIdFormat') ||
@@ -3248,8 +3250,7 @@ class Saml11Sso {
         subject: username,
         audience: rpId,
         lifetimeMin: Number(this.settingFor(rpId,
-                                            'saml11.assertionLifetimeMin')) ||
-                     60,
+                                            'saml11.assertionLifetimeMin')),
         authnMethod: how.method,
         authnInstant: new Date((authn.sessionView(live).authTime || 0) *
                                1000).toISOString(),
@@ -3282,8 +3283,7 @@ class Saml11Sso {
       subject: username,
       audience: rpId,
       lifetimeMin: Number(this.settingFor(rpId,
-                                          'saml11.assertionLifetimeMin')) ||
-                   60,
+                                          'saml11.assertionLifetimeMin')),
       issuer: providerId,
       nameQualifier: providerId,
       confirmationMethod: CONFIRMATION_BEARER,

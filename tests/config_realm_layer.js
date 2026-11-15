@@ -309,6 +309,17 @@ function checkWritingEnd(t) {
   t.check(typeof scheme === 'string',
           'a realm may NOT carry global.https — it binds no socket',
           JSON.stringify(scheme));
+  // #39 (2026-11-15): the two SAML assertion lifetimes have a floor of one
+  // minute at every layer; 0 was accepted, and read back as sixty.
+  ['saml2.assertionLifetimeMin', 'saml11.assertionLifetimeMin']
+    .forEach(function (key) {
+      t.check(typeof config.checkOverride(key, '0', true) === 'string' &&
+              typeof config.checkOverride(key, '0') === 'string' &&
+              config.checkOverride(key, '1', true) === null,
+              key + ' refuses 0 on a realm and process-wide, and accepts 1 ' +
+              '(#39)', JSON.stringify([config.checkOverride(key, '0', true),
+                                       config.checkOverride(key, '1', true)]));
+    });
   log.debug("Leaving checkWritingEnd().");
 }
 
