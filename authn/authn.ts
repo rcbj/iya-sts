@@ -13411,6 +13411,32 @@ class Authn {
     log.debug("Leaving Authn.refuseAtScreen().");
   }
 
+  // ---------------------------------------------------------------------------
+  // A SELF-SERVICE RECOVERY DOOR WAS PASSED, AND THE ENTRY SAYS SO (2026-11-14
+  // for a recovery code, 2026-11-15 for an emailed code or link, #31; both
+  // found by #444's D12). Under a recoveryAssurance that holds a recovery to
+  // a passkey (3cq), the administrator's password, a reset link and an
+  // activation link each write `stsRecoveryPending` (noteRecovery()); a
+  // recovery code, an emailed code and an emailed link wrote nothing: the
+  // sign-in was held (STS-AUTHN-0381), but nothing said a recovery was under
+  // way once the person left the set-up. The finisher calls this before
+  // either way on, so the next sign-in meets it until a passkey signs them
+  // in. noteRecovery() writes nothing where no hold is required (no passkey,
+  // or `any`), and nothing is written for a door the policy refuses
+  // outright (`operator-only`, STS-AUTHN-0380), which is no recovery at all.
+  // ---------------------------------------------------------------------------
+  private noteRecoveryDoor(username: string, door: string): void {
+    const { log, passkeyPolicy, credentials } = this.deps;
+    log.debug("Entering Authn.noteRecoveryDoor(). " + door);
+    const doorRefused = passkeyPolicy.recoveryRefusal({
+      username: username, door: door, at: 'door',
+      covered: credentials.holdsPasskey(username) });
+    if (!doorRefused || doorRefused.code !== 'STS-AUTHN-0380') {
+      credentials.noteRecovery(username, door);
+    }
+    log.debug("Leaving Authn.noteRecoveryDoor().");
+  }
+
   // AN EMAILED SECOND FACTOR, VERIFIED: the step's first factor and `otp`
   // (D2 — RFC 8176 registers nothing for email, and a single-use secret sent
   // to the person is what `otp` names), `acr` `mfa` (D1), and the credential
@@ -13433,6 +13459,9 @@ class Authn {
     pendingMfa.delete(String(mfaId));
     const amr = this.firstAmrOf(step).concat(
       this.firstAmrOf(step).indexOf('otp') >= 0 ? [] : ['otp']);
+    // An emailed code or link is a recovery door (#31), as a recovery code
+    // is; recorded before either way on.
+    this.noteRecoveryDoor(step.username, 'email-' + kind);
     if (step.thenEnrol) {
       // A proof before an enrolment (#475): the set-up screen, no session.
       this.enrolAfterProof(res, step, amr);
@@ -13479,6 +13508,9 @@ class Authn {
     const record = step.authn;
     const username = step.username;
     const credential = { kind: 'email-' + kind };
+    // The same recovery door as a second factor's (#31): recorded before
+    // the risk assessment and the second factor it may ask for.
+    this.noteRecoveryDoor(username, 'email-' + kind);
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: String(record.application || ''),
         credential: credential,
@@ -17782,22 +17814,8 @@ class Authn {
     // never a first factor, so `pwd` is always in the list.
     const amr = this.firstAmrOf(step).concat(['otp']);
     // A RECOVERY CODE IS A RECOVERY DOOR, AND IT IS RECORDED ON THE ENTRY
-    // (2026-11-14, found by #444's D12). Under a recoveryAssurance that holds
-    // a recovery to a passkey (3cq), the admin's password, a reset link and
-    // an activation link each write `stsRecoveryPending` (noteRecovery()),
-    // and a recovery code wrote nothing: the sign-in was held, but nothing
-    // said a recovery was under way once the person left the set-up. It is
-    // written here, before either way on, so the next sign-in meets it until
-    // a passkey signs them in. noteRecovery() writes nothing where no hold is
-    // required (no passkey, or `any`), and nothing is written for a door the
-    // policy refuses outright (`operator-only`, STS-AUTHN-0380), which is
-    // no recovery at all.
-    const doorRefused = this.deps.passkeyPolicy.recoveryRefusal({
-      username: step.username, door: 'recovery-code', at: 'door',
-      covered: this.deps.credentials.holdsPasskey(step.username) });
-    if (!doorRefused || doorRefused.code !== 'STS-AUTHN-0380') {
-      this.deps.credentials.noteRecovery(step.username, 'recovery-code');
-    }
+    // (2026-11-14, found by #444's D12) — see noteRecoveryDoor().
+    this.noteRecoveryDoor(step.username, 'recovery-code');
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up
     // screen, offering what the application allows.
     if (step.thenEnrol) {

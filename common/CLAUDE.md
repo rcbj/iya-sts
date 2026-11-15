@@ -15021,7 +15021,12 @@ not refused, and the default stays.
   link's `stsPasswordResetSource`), the administrator's `reset-password`
   (`admin-password`), and the activation link's finish (`activation`, only
   where a passkey enrolled BEFORE the link was issued is held:
-  `noteActivationRecovery()`). The first passkey sign-in clears it
+  `noteActivationRecovery()`), and the three self-service doors of a
+  sign-in — a recovery code (`recovery-code`, 2026-11-14) and an emailed
+  code or link (`email-code`, `email-link`, #31, 2026-11-15), first factor
+  or second — through `authn.ts`'s `noteRecoveryDoor()`, before either way
+  on, and not for a door `operator-only` refuses outright
+  (`STS-AUTHN-0380`). The first passkey sign-in clears it
   (`authn.ts`'s `recoveryCompleted()`, audit `authn.recovery.completed`).
 * **The question is the issuance policy's** (`recover-account`, xacml/
   CLAUDE.md), asked through `passkeyPolicy.recoveryRefusal()` with the facts
