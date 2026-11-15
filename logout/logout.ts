@@ -1123,7 +1123,16 @@ class Logout {
             return one.realm === realm;
           })[0];
           if (target) ctx.cleanups.push(target);
-          if (session.wsfedRealms) delete session.wsfedRealms[realm];
+          // AND THE STORE IS TOLD (2026-11-15, found by #444's D12): the
+          // delete edits an object the session store holds and does not
+          // journal, so without this the realm stayed on the session in the
+          // store — on another node, and after a restart — as the
+          // `oidc-rp` row's delete above has always told it.
+          // `authn.noteSessionChanged()` carries the argument.
+          if (session.wsfedRealms) {
+            delete session.wsfedRealms[realm];
+            authn.noteSessionChanged(session);
+          }
           log.debug("Leaving wsfed-rp.terminate().");
           return { ok: true,
                    message: realm + ' was forgotten on session ' + session.id +
@@ -1183,8 +1192,10 @@ class Logout {
             return one.entityId === entityId;
           })[0];
           if (target) ctx.logoutRequests.push(target);
+          // And the store is told, as for `wsfed-rp` above (2026-11-15).
           if (session.saml2ServiceProviders) {
             delete session.saml2ServiceProviders[entityId];
+            authn.noteSessionChanged(session);
           }
           log.debug("Leaving saml2-sp.terminate().");
           return { ok: true,
