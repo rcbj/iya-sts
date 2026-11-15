@@ -40,7 +40,7 @@ use sts_core::log::tag;
 use sts_core::mode::Mode;
 use sts_core::realm::{self, RealmRegistry};
 use sts_core::settings::Settings;
-use sts_directory::funnel::{self, KeyRefusal};
+use sts_directory::funnel::{self, NotAPerson};
 use sts_directory::{Directory, EntryExt};
 use sts_store::model::StoredEntry;
 use sts_store::persistence::{LiveDirectory, MemoryDirectory, Persistence};
@@ -200,9 +200,9 @@ impl IdentityFunnel {
         let name = name.trim();
         let protocol = text(record, "protocol");
         let is_client = record.get("isClient") == Some(&Json::Bool(true));
-        match funnel::refusal_of_key(name, &protocol, is_client) {
+        match funnel::not_a_person(name, &protocol, is_client) {
             None => {}
-            Some(KeyRefusal::Subject) => {
+            Some(NotAPerson::Subject) => {
                 tracing::info!(
                     "{}ldap: not creating an entry for \"{}\": it is a \
                      subject identifier naming nobody in this realm's \

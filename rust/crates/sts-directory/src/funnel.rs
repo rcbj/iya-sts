@@ -16,7 +16,7 @@
 //! * [`name_plan`]: `namePlan()`, the entry a name-shaped identity gets
 //!   (`uid=<name>,ou=users`, the persona only where
 //!   `mode.inventsClaimValues()`);
-//! * [`refusal_of_key`]: the early returns of `autoCreateUser()` that are
+//! * [`not_a_person`]: the early returns of `autoCreateUser()` that are
 //!   about the identity rather than the directory;
 //! * [`apply_authentication_factors`]: `applyAuthenticationFactors()`, the
 //!   `authnMethod` values and the `mfaAuthenticated` flag an
@@ -312,7 +312,7 @@ pub fn name_plan(
 /// Why `autoCreateUser()` creates nobody for this identity, before the
 /// directory is asked: `None` where it goes on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyRefusal {
+pub enum NotAPerson {
     /// No identity at all.
     Empty,
     /// An LDAP bind names a DN, not a user.
@@ -328,30 +328,30 @@ pub enum KeyRefusal {
 
 /// The identity half of `autoCreateUser()`'s early returns.
 #[tracing::instrument(level = "trace")]
-pub fn refusal_of_key(
+pub fn not_a_person(
     key: &str,
     protocol: &str,
     is_client: bool,
-) -> Option<KeyRefusal> {
+) -> Option<NotAPerson> {
     let name = key.trim();
     if name.is_empty() {
-        return Some(KeyRefusal::Empty);
+        return Some(NotAPerson::Empty);
     }
     if protocol.eq_ignore_ascii_case("ldap") {
-        return Some(KeyRefusal::Ldap);
+        return Some(NotAPerson::Ldap);
     }
     if is_client {
-        return Some(KeyRefusal::Client);
+        return Some(NotAPerson::Client);
     }
     let lower = name.to_lowercase();
     if lower.starts_with("urn:uuid:") || crate::uuid::uuid_shaped(&lower) {
-        return Some(KeyRefusal::Subject);
+        return Some(NotAPerson::Subject);
     }
     if crate::uuid::dn_shaped(name)
         || crate::uuid::did_shaped(name)
         || lower.starts_with("spiffe://")
     {
-        return Some(KeyRefusal::UnportedShape);
+        return Some(NotAPerson::UnportedShape);
     }
     None
 }

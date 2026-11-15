@@ -139,6 +139,7 @@ fn s(v: Option<&Json>) -> String {
     crate::js::string_of(v)
 }
 
+// A HOT PATH: read once per catalogue row of every answer, so no span.
 pub(crate) fn first_value(
     directory: &dyn ClaimDirectory,
     username: &str,
@@ -153,6 +154,7 @@ pub(crate) fn first_value(
 
 /// A row's `toClaim()`: `schacDateOfBirth`'s YYYYMMDD as YYYY-MM-DD, a
 /// postal address's `$` as a newline.
+// A HOT PATH: once per claim a row produces, so no span.
 pub(crate) fn to_claim(attr: &str, value: String) -> String {
     match attr {
         "schacdateofbirth" => {

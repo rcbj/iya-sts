@@ -239,6 +239,7 @@ impl RequestedClaims {
     }
 
     /// `requestedClaimNames(request, member)`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn names(request: Option<&Json>, member: &str) -> Vec<String> {
         request
             .and_then(|r| r.get(member))
@@ -249,6 +250,7 @@ impl RequestedClaims {
 
     /// `mergedUserinfoRequest(fromToken, fromRequest)`: the token's entry
     /// wins where both name a claim.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub fn merged_userinfo(
         from_token: Option<&Json>,
         from_request: Option<&Json>,

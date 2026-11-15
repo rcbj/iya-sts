@@ -419,6 +419,7 @@ impl TokenEndpoint {
     }
 
     /// `secretLockout(res, clientId, lockedOut)`: 429 with `Retry-After`.
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn secret_lockout(
         &self,
         client_id: &str,
@@ -437,6 +438,7 @@ impl TokenEndpoint {
         a
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn refusal(
         &self,
         code: sts_core::errors::ErrorCode,
@@ -447,6 +449,7 @@ impl TokenEndpoint {
         Answer::refusal(code, status, error, description)
     }
 
+    #[tracing::instrument(level = "debug", skip_all)]
     pub(crate) fn with_basic_challenge(
         &self,
         mut answer: Answer,
@@ -1535,6 +1538,7 @@ impl TokenEndpoint {
     /// across the cluster, for as long as a member of it could live.
     /// `stats.revoke(jti, via, how, exp)`: true where the jti was newly
     /// revoked.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) fn revoke_jti(&self, jti: &str, via: &str, exp: i64) -> bool {
         let _ = exp;
         self.register.revoke(
@@ -1547,6 +1551,7 @@ impl TokenEndpoint {
     }
 
     /// `bcp.revokeFamily(familyId, clientId)`.
+    #[tracing::instrument(level = "debug", skip(self))]
     pub(crate) async fn revoke_family_by_id(
         &self,
         family: &str,
