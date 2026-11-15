@@ -241,6 +241,11 @@
 //                   service, then render it. `./run-coverage.sh` is the way in.
 //   COVERAGE_DIR    where the raw data and the rendered report go
 //                   (default ./coverage).
+//   STS_TEST_444    `on` runs the jobs #444 created (MANIFEST.js
+//                   `optIn: '444'`, and UNIT_OPT_IN's in-process files);
+//                   `off`, the default, reports each SKIPPED with the reason
+//                   (rcbj, 2026-11-15). ./run-tests.sh --with-444 sets it.
+//                   Any other value is refused. See OPT-IN SWITCHES below.
 // ===========================================================================
 
 const { spawn, spawnSync, execFileSync } = require('child_process');
@@ -496,7 +501,10 @@ function vendoredJobs(options) {
                 // Which protocol jobs run at the same time — see WHICH JOBS
                 // RUN AT THE SAME TIME in MANIFEST.js, and runScheduled().
                 lane: String(entry.lane || 'main'),
-                exclusive: !!entry.exclusive });
+                exclusive: !!entry.exclusive,
+                // The switch this job runs behind, '' for none — see
+                // OPT-IN SWITCHES above main().
+                optIn: String(entry.optIn || '') });
   });
   const browserJobs = jobs.filter(function (j) { return j.browser; });
   if (browserJobs.length) {
@@ -1616,6 +1624,88 @@ const UNIT_ALONE = new Set([
   'notify_after_commit'
 ]);
 
+// ---------------------------------------------------------------------------
+// OPT-IN SWITCHES (rcbj, 2026-11-15): "put a flag around all #444 related
+// tests". A protocol job carries its switch in MANIFEST.js (`optIn: '444'`),
+// whose OPT_IN_SWITCHES is the closed set of switches and the variable each
+// reads; an in-process file carries it here, beside UNIT_ALONE, for the same
+// reason that list is here. A job behind a switch that is off is SKIPPED with
+// the reason — in the summary's SKIPPED line, `<skipped>` in the JUnit —
+// never dropped and never counted as passed, and a run in which every chosen
+// job is switched off checked nothing and fails.
+//
+// THE IN-PROCESS LIST FOR `444` IS EMPTY, AND THAT IS THE FINDING: every file
+// #444 created is a protocol job (D12, phases 3-8). Two in-process files were
+// written because #444's port FOUND something — `ldap_malformed_pdu` and
+// `users_create_secrets` — and they guard the TypeScript service's own fixes,
+// which is exactly what the integrator's runs are for, so they run.
+// tests/suite_444_switch.js holds every name here to an existing file.
+// ---------------------------------------------------------------------------
+const UNIT_OPT_IN = {
+  '444': []
+};
+
+// The state of every switch, read from `env`: { state: { '444': { on, env,
+// value, flag } }, problem }. A value that is neither `on` nor `off` is a
+// problem rather than a guess, because a typo that read as `off` would skip
+// two hundred jobs and a typo that read as `on` would run them unasked.
+function optInSwitches(env) {
+  log.debug('Entering optInSwitches().');
+  const out = { state: {}, problem: '' };
+  Object.keys(manifest.OPT_IN_SWITCHES).forEach(function (name) {
+    const def = manifest.OPT_IN_SWITCHES[name];
+    const raw = String(env[def.env] === undefined ? '' : env[def.env]).trim();
+    const value = raw === '' ? def.defaultValue : raw;
+    if (value !== 'on' && value !== 'off') {
+      out.problem = def.env + ' must be on or off, not \'' + raw + '\'';
+    }
+    out.state[name] = { on: value === 'on', env: def.env, value: value,
+                        flag: def.launcherFlag };
+  });
+  log.debug('Leaving optInSwitches().');
+  return out;
+}
+
+// The switch an in-process file runs behind, '' for none.
+function unitOptIn(name) {
+  log.debug('Entering unitOptIn().');
+  const found = Object.keys(UNIT_OPT_IN).filter(function (sw) {
+    return UNIT_OPT_IN[sw].indexOf(name) >= 0;
+  });
+  log.debug('Leaving unitOptIn().');
+  return found.length ? found[0] : '';
+}
+
+// Why `job` is not run under `switches`, or '' when it is.
+function switchedOffWhy(job, switches) {
+  log.debug('Entering switchedOffWhy().');
+  const sw = job.optIn ? switches.state[job.optIn] : null;
+  if (!sw || sw.on) {
+    log.debug('Leaving switchedOffWhy(). Runs.');
+    return '';
+  }
+  log.debug('Leaving switchedOffWhy(). Off.');
+  return '#' + job.optIn + ' tests switched off (' + sw.env + '=off)';
+}
+
+// The result a switched-off job is reported with.
+function switchedOffResult(job, why) {
+  log.debug('Entering switchedOffResult().');
+  log.debug('Leaving switchedOffResult().');
+  return Object.assign({}, job, {
+    status: 'skipped', ms: 0, code: null, assertions: [],
+    failures: [], why: why
+  });
+}
+
+// The summary's line for a skipped job — exported so the reason a switch
+// gives is held to reach it.
+function skippedLine(j) {
+  log.debug('Entering skippedLine().');
+  log.debug('Leaving skippedLine().');
+  return 'SKIPPED: ' + j.name + ' — ' + j.why;
+}
+
 async function runScheduled(jobs, runOne, opts) {
   log.debug('Entering runScheduled().');
   const results = new Array(jobs.length);
@@ -1832,7 +1922,8 @@ async function main() {
     testFiles(opts.only).filter(keptByMode).forEach(function (file) {
       const name = file.replace(/\.js$/, '');
       jobs.push({ suite: 'unit', name: name, file: file, dir: TESTS_DIR,
-                  timeoutMs: UNIT_WATCHDOG_MS[name] || 0 });
+                  timeoutMs: UNIT_WATCHDOG_MS[name] || 0,
+                  optIn: unitOptIn(name) });
     });
   }
   // THE PROTOCOL JOBS ARE VENDORED HERE SINCE 2026-08-28 and are no longer
@@ -1876,11 +1967,70 @@ async function main() {
       '. Nothing was checked.');
     process.exit(1);
   }
-  if (opts.list) {
-    jobs.forEach(function (j) {
-      process.stdout.write(j.suite + '  ' + j.name + '\n');
+  // ---- the opt-in switches (rcbj, 2026-11-15) ---------------------------
+  const switches = optInSwitches(process.env);
+  if (switches.problem) {
+    log.error(switches.problem + '. Nothing was run.');
+    // The line is flushed first: stdout to a pipe is asynchronous in node.
+    await new Promise(function (resolve) {
+      process.stdout.write('', resolve);
     });
+    process.exit(2);
+  }
+  const switchedOff = jobs.filter(function (j) {
+    return switchedOffWhy(j, switches) !== '';
+  });
+  if (opts.list) {
+    // ONE write, and the exit after it has been flushed: stdout to a pipe is
+    // asynchronous in node, and process.exit() straight after a few hundred
+    // writes cut the list short now and then (tests/suite_444_switch.js
+    // counted it a job or two short, about one run in six).
+    const listing = jobs.map(function (j) {
+      const why = switchedOffWhy(j, switches);
+      return j.suite + '  ' + j.name +
+             (why ? '  [SKIPPED: ' + why + ']' : '') + '\n';
+    }).join('');
+    await new Promise(function (resolve) {
+      process.stdout.write(listing, resolve);
+    });
+    log.debug('Leaving main(). Listed.');
     process.exit(0);
+  }
+  if (switchedOff.length) {
+    const names = {};
+    switchedOff.forEach(function (j) {
+      names[j.optIn] = (names[j.optIn] || 0) + 1;
+    });
+    Object.keys(names).forEach(function (sw) {
+      const st = switches.state[sw];
+      const line = names[sw] + ' job(s) behind the #' + sw + ' switch are ' +
+                   'SKIPPED: ' + st.env + '=off. ' + st.env + '=on (or ' +
+                   './run-tests.sh ' + st.flag + ') runs them.';
+      if (opts.only.length) {
+        // An operator who NAMED them must not find out from a grey row.
+        log.warn('--only ' + opts.only.join(',') + ' chose ' + line);
+      } else {
+        log.info(line);
+      }
+    });
+  }
+  if (switchedOff.length === jobs.length) {
+    // Every job chosen is behind a switch that is off: a run of skips
+    // checked nothing, and "No jobs to run" is the rule for that.
+    const sws = Object.keys(switches.state).filter(function (sw) {
+      return !switches.state[sw].on;
+    }).map(function (sw) {
+      return switches.state[sw].env + '=on (./run-tests.sh ' +
+             switches.state[sw].flag + ')';
+    });
+    log.error('Every job chosen' + (opts.only.length
+      ? ' by --only ' + opts.only.join(',') : '') + ' is switched off (' +
+      switchedOffWhy(switchedOff[0], switches) + '). Nothing was checked. ' +
+      'Turn it on with ' + sws.join(' or ') + '.');
+    await new Promise(function (resolve) {
+      process.stdout.write('', resolve);
+    });
+    process.exit(1);
   }
 
   // ---- where it is written ----------------------------------------------
@@ -1915,7 +2065,7 @@ async function main() {
   let instance = null;
   let protocolWhy = '';
   const haveProtocolJobs = jobs.some(function (j) {
-    return j.suite === 'protocol';
+    return j.suite === 'protocol' && !switchedOffWhy(j, switches);
   });
   if (haveProtocolJobs && opts.serviceUrl) {
     // COVERAGE CANNOT COME OUT OF A SERVICE THIS RUNNER ONLY SPEAKS HTTP TO,
@@ -2103,6 +2253,15 @@ async function main() {
   // called. A job that is not run answers its result without spawning.
   async function runOne(job, n) {
     log.debug('Entering runOne(). ' + job.name);
+    // A DELIBERATE EXCLUSION, by an opt-in switch (rcbj, 2026-11-15): first,
+    // so a switched-off job is never reported for lacking what it would need.
+    const offWhy = switchedOffWhy(job, switches);
+    if (offWhy) {
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name +
+               ' — ' + offWhy);
+      log.debug('Leaving runOne(). Switched off.');
+      return switchedOffResult(job, offWhy);
+    }
     // A JOB THAT COULD NOT BE RUN IS A FAILURE, NOT A SKIP, and this used to
     // be the other way round. The throwaway service failing to start left
     // thirteen jobs marked `skipped`, which the summary counts as passing —
@@ -2597,7 +2756,7 @@ async function main() {
     log.error('FAILED: ' + j.name + ' — ' + j.failures.join('; '));
   });
   skipped.forEach(function (j) {
-    log.warn('SKIPPED: ' + j.name + ' — ' + j.why);
+    log.warn(skippedLine(j));
   });
   log.info('report: ' + path.join(runDir, 'report.html'));
   log.debug('Leaving main().');
@@ -2626,4 +2785,9 @@ module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
                    // EXPORTED FOR tests/unit_job_environment.js too
                    // (2026-11-14): `--mode-only` is parsed apart from
                    // `--only`, which is what lets the two intersect.
-                   parseArgs: parseArgs };
+                   parseArgs: parseArgs,
+                   // EXPORTED FOR tests/suite_444_switch.js (2026-11-15).
+                   optInSwitches: optInSwitches, unitOptIn: unitOptIn,
+                   switchedOffWhy: switchedOffWhy,
+                   switchedOffResult: switchedOffResult,
+                   skippedLine: skippedLine, UNIT_OPT_IN: UNIT_OPT_IN };
