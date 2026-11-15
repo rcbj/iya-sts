@@ -67,7 +67,19 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  # THE LONG JOBS RUN ON A MANUAL DISPATCH ONLY (rcbj, 2026-11-14): the six
+  # mode jobs and the two OpenID conformance jobs are hours of runner time
+  # each, and the account has a finite number of them. A push or a pull
+  # request runs the cheap jobs (mirror, dependency-windows, build, unit,
+  # openapi-breaking); the whole suite is `gh workflow run tests.yml --ref
+  # develop`, started deliberately once a batch of fixes has landed.
+  # `coverage` adds the coverage run to a dispatch.
   workflow_dispatch:
+    inputs:
+      coverage:
+        description: Also run the coverage job
+        type: boolean
+        default: false
   # Nightly, for the coverage run. A schedule runs the DEFAULT branch's copy
   # of this file, so every checkout below takes `develop` on a schedule: the
   # tree worth measuring every night is the one work lands on.
@@ -331,6 +343,7 @@ jobs:
   # ---------------------------------------------------------------------------
   mode:
     name: mode (${{ matrix.mode }})
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.minutes }}
@@ -460,6 +473,7 @@ jobs:
   # GitHub's six hours (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
   openid-conformance:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 355
@@ -523,6 +537,7 @@ jobs:
   # plans, each also as its classical twin. The arithmetic is the job above's.
   # ---------------------------------------------------------------------------
   openid-conformance-oidcc:
+    if: github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 355
@@ -621,7 +636,7 @@ jobs:
   # build (about 128 minutes in all).
   # ---------------------------------------------------------------------------
   coverage:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.coverage)
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 210
