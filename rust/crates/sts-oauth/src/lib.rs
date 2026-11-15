@@ -51,5 +51,6 @@ pub mod model;
 pub mod mtls;
 pub mod refresh_crypto;
 pub mod revocation;
+pub mod scopes;
 pub mod sender_constraints;
 pub mod token_endpoint;
