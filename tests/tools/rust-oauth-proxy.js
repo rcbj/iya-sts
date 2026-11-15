@@ -10,9 +10,8 @@
 // slice): the protocol jobs that exercise the authorization server set
 // themselves up through `/admin-api`, which the Rust runtime does not serve
 // yet. This proxy, run on the host by tests/tools/rust-oauth-jobs.sh, sends
-// `/admin-api/*` — and the few OAuth endpoints this slice does not port
-// (dynamic registration, introspection, revocation, the consent screen,
-// RP-initiated logout, WebFinger) — to a Node service and everything else,
+// `/admin-api/*` — and the OAuth endpoints the runtime does not port yet
+// (`NODE_PATHS`) — to a Node service and everything else,
 // the authorization and token endpoints, discovery, the JWKS and the
 // sign-in screens, to the Rust one —
 // both on the SAME store, coordinating through its change log — so a job
@@ -41,8 +40,15 @@ const key = fs.readFileSync(path.join(dir, 'key.pem'));
 const cert = fs.readFileSync(path.join(dir, 'cert.pem'));
 fs.rmSync(dir, { recursive: true, force: true });
 
-const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/admin-api|' +
-  '/oauth2/(register|introspect|revoke|consent|logout)|' +
+// What the Rust runtime does not answer yet (#444 phase 5, the `oauth3`
+// slice): beside the slice-two set, UserInfo, pushed authorization requests,
+// the two mode reports, the FAPI report, the attestation challenge and the
+// device and CIBA endpoints — each under a named authorization server too.
+const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
+  '/authn-api/consent|' +
+  '/oauth2/(register|introspect|revoke|consent(\\.js)?|logout|userinfo|' +
+  'par|oauth21|rfc9700|fapi|challenge|device_authorization|' +
+  'bc-authorize)|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
 const counts = { rust: 0, node: 0 };
 https.createServer({ key: key, cert: cert }, function (req, res) {

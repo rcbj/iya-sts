@@ -54,6 +54,7 @@
 #![forbid(unsafe_code)]
 
 pub mod answer;
+pub mod authorization_servers;
 pub mod authorize;
 pub mod bcp;
 pub mod client_auth;

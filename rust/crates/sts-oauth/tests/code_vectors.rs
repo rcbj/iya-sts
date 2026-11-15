@@ -636,24 +636,30 @@ async fn the_code_flow() {
             sessions: Arc::new(Live),
         };
         // ---- Discovery ---------------------------------------------------
-        for case in cases.iter().filter(|c| {
-            c["kind"] == "metadata"
-                && s(&c["realm"]) == realm
-                && s(&c["name"]) == "/.well-known/oauth-authorization-server"
-        }) {
+        for case in cases
+            .iter()
+            .filter(|c| c["kind"] == "metadata" && s(&c["realm"]) == realm)
+        {
             compared += 1;
             let ui: Vec<String> =
                 catalogs.offered().iter().map(|o| s(&o["tag"])).collect();
-            let doc = sts_oauth::metadata::as_metadata(
-                &sts_oauth::metadata::MetadataInputs {
-                    settings: &settings,
-                    mode: &mode,
-                    base: &s(&case["base"]),
-                    ui_locales: ui,
-                    grant_types: tokens.grant_types_supported(),
-                    mtls_available: true,
-                },
-            );
+            let inputs = sts_oauth::metadata::MetadataInputs {
+                settings: &settings,
+                mode: &mode,
+                base: &s(&case["base"]),
+                ui_locales: ui,
+                grant_types: tokens.grant_types_supported(),
+                mtls_available: true,
+                realm_base: &s(&case["base"]),
+            };
+            // Both documents (#444 phase 5, the `oauth3` slice: the OpenID
+            // Connect members of `oidcMetadata()`).
+            let doc = if s(&case["name"]) == "/.well-known/openid-configuration"
+            {
+                sts_oauth::metadata::oidc_metadata(&inputs, None)
+            } else {
+                sts_oauth::metadata::as_metadata(&inputs)
+            };
             let mut want = case["body"].clone();
             let signed = want
                 .as_object_mut()
@@ -664,8 +670,9 @@ async fn the_code_flow() {
                 for (k, v) in want.as_object().unwrap() {
                     if doc.get(k) != Some(v) {
                         failures.push(format!(
-                            "metadata [{}] {}\n  rust {}\n  node {}",
+                            "metadata [{} {}] {}\n  rust {}\n  node {}",
                             mode_name,
+                            s(&case["name"]),
                             k,
                             doc.get(k).unwrap_or(&Json::Null),
                             v
@@ -680,8 +687,10 @@ async fn the_code_flow() {
                     .collect();
                 if !extra.is_empty() {
                     failures.push(format!(
-                        "metadata [{}] extra {:?}",
-                        mode_name, extra
+                        "metadata [{} {}] extra {:?}",
+                        mode_name,
+                        s(&case["name"]),
+                        extra
                     ));
                 }
                 let order: Vec<&String> =
@@ -690,8 +699,11 @@ async fn the_code_flow() {
                     want.as_object().unwrap().keys().collect();
                 if order != node_order {
                     failures.push(format!(
-                        "metadata [{}] order\n  rust {:?}\n  node {:?}",
-                        mode_name, order, node_order
+                        "metadata [{} {}] order\n  rust {:?}\n  node {:?}",
+                        mode_name,
+                        s(&case["name"]),
+                        order,
+                        node_order
                     ));
                 }
             }
