@@ -67,8 +67,9 @@ const ACCEPTED = [
     why: 'RFC 9110 section 8.6: a server MUST NOT send Content-Length in ' +
          'a 204; hyper drops it and Node sends "0" (a Node defect)' }
 ];
+// Over HTTPS the cookie carries the `__Host-` prefix.
 const OWNED_HEADERS = [
-  { header: 'set-cookie', match: /^sts_session=/,
+  { header: 'set-cookie', match: /^(__Host-)?sts_session=/,
     owner: 'the sign-in service (the session a page opens)' }
 ];
 

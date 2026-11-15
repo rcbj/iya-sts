@@ -339,7 +339,6 @@ fn front(chunks: &[Vec<u8>]) -> Json {
                 }),
                 Event::Write(b) => json!({ "write": js::hex(&b) }),
                 Event::Destroy => json!({ "destroy": true }),
-                Event::Stalled => panic!("the front never stalls (#1784)"),
                 Event::Thrown(m) => json!({ "thrown": m }),
             });
         }
