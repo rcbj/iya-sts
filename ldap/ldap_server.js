@@ -28079,18 +28079,31 @@ function writePerson(dn, attributes, options) {
 // was seeded, say — is still an ordinary person; the default realm's account
 // is protected by name, as before.
 // ---------------------------------------------------------------------------
+//
+// **THE NAME IS THE ONE IN FORCE IN THIS REALM, AND THE CONFIGURED ONE
+// (2026-11-14, #444's D12).** Product mode seeds a generated `admin-<hmac>`
+// where the configured name is a default one (#1447,
+// `common/bootstrap_name.ts`), and a realm can be product in a development
+// process, so comparing with `admin.bootstrapUsername` alone left the seeded
+// account unprotected. Both names are recognised: the generated one is the
+// account seeded now, the configured one an account seeded before #1447.
 function isBootstrapAdministratorEntry(stored) {
   log.debug('Entering isBootstrapAdministratorEntry().');
-  const wanted = String(config.value('admin.bootstrapUsername') || '')
-    .trim().toLowerCase();
+  const wanted = [String(config.value('admin.bootstrapUsername') || ''),
+                  String(require('../common/bootstrap_name').current() || '')]
+    .map(function (one) {
+      return one.trim().toLowerCase();
+    }).filter(Boolean);
   const flagged = !!(stored && stored.attributes &&
     (stored.attributes.stsbootstrapadministrator || [])
       .some(function (value) {
         return String(value).toUpperCase() === 'TRUE';
       }));
-  const answer = !!(stored && wanted && (realms.isDefault() || flagged) &&
+  const answer = !!(stored && wanted.length &&
+                    (realms.isDefault() || flagged) &&
                     isPersonEntry(stored) &&
-                    String(usernameOfEntry(stored)).toLowerCase() === wanted);
+                    wanted.indexOf(String(usernameOfEntry(stored))
+                      .toLowerCase()) >= 0);
   log.debug('Leaving isBootstrapAdministratorEntry(). ' + answer);
   return answer;
 }

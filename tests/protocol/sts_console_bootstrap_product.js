@@ -776,6 +776,47 @@ async function aProductRealmInADevelopmentProcess() {
     assert.ok(!after.body.bootstrap.claimedAt,
               JSON.stringify(after.body.bootstrap));
   });
+  // A NODE DEFECT, FIXED (2026-11-14, #444's D12): the realm was seeded
+  // with the CREATE's realm's name (`admin`, development) while its roster
+  // asks for the product name (`admin-<hmac>`), so nobody could ever claim
+  // this console. The name is now asked in the realm, and so is whether a
+  // generated password is handed back.
+  const bootName = String((made.body && made.body.bootstrap &&
+                           made.body.bootstrap.username) || "");
+  const generated = String((made.body && made.body.password) || "");
+  check("5. the realm is seeded under the name its roster asks for, and " +
+        "its create hands back that account's generated password",
+        function () {
+    assert.ok(roster.body.bootstrap && roster.body.bootstrap.seeded === true,
+              JSON.stringify(roster.body.bootstrap));
+    assert.strictEqual(bootName, roster.body.bootstrap.username,
+                       JSON.stringify(made.body.bootstrap));
+    assert.ok(/^admin-[0-9a-f]{16}$/.test(bootName), bootName);
+    assert.ok(generated && made.body.username === bootName,
+              JSON.stringify(made.body).slice(0, 300));
+  });
+  await signInWithPassword(QR, bootName, generated, NEW_ADMIN_PASSWORD);
+  // THE CLAIM, READ FROM THE ROSTER through the service's own API client.
+  // (The claimer's own first read is not asserted here: in a product realm
+  // it intermittently answers 401 STS-API-0122 although the claim was made,
+  // reported to #444 separately.)
+  let claimed = await api("GET", QR + "/admin-api/rbac");
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (claimed.body && claimed.body.bootstrap &&
+        claimed.body.bootstrap.claimedAt) {
+      break;
+    }
+    await new Promise(function (r) { setTimeout(r, 500); });
+    claimed = await api("GET", QR + "/admin-api/rbac");
+  }
+  check("5. so its bootstrap administrator signs in with that password and " +
+        "claims the console", function () {
+    assert.ok(claimed.body.bootstrap.claimedAt,
+              JSON.stringify(claimed.body.bootstrap));
+    assert.strictEqual(claimed.body.bootstrap.username, bootName);
+    assert.strictEqual(claimed.body.openToAnyone, false);
+    assert.strictEqual(claimed.body.bootstrapPasswordRequired, false);
+  });
   log.debug("Leaving aProductRealmInADevelopmentProcess().");
 }
 
@@ -959,7 +1000,7 @@ async function testBody() {
   // A FLOOR ON THE COUNT, for the reason sts_roles.js gives: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed".
-  const floor = product ? 14 : 11;
+  const floor = product ? 14 : 13;
   assert.ok(checks >= floor,
     "only " + checks + " checks ran where at least " + floor + " should " +
     "have, so a SECTION STOPPED BEING CALLED.");
