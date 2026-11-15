@@ -197,13 +197,13 @@ function kit(jobName, options) {
     realm: async function (prefix, mode) {
       log.debug("Entering realm(). " + prefix);
       const id = (prefix + "-" + STAMP).slice(0, 40);
+      const name = jobName + " " + prefix + " " + STAMP;
       const made = await send("POST", root + "/admin-api/realms/create",
-        { id: id, domain: id + ".example.net",
-          name: jobName + " " + prefix + " " + STAMP });
+        { id: id, domain: id + ".example.net", name: name });
       assert.ok(made.status === 200 && made.body && made.body.ok !== false,
         "creating the realm " + id + " answered " + made.status + " " +
         made.raw.slice(0, 300));
-      const realm = { id: id, base: root + "/realm/" + id,
+      const realm = { id: id, name: name, base: root + "/realm/" + id,
                       api: root + "/realm/" + id + "/admin-api" };
       if (mode) {
         const set = await send("POST", root + "/admin-api/realms/set",
@@ -334,11 +334,11 @@ function kit(jobName, options) {
       return (r.body && r.body.factors && r.body.factors.keys) || [];
     },
 
-    client: async function (realm) {
+    client: async function (realm, id) {
       log.debug("Entering client().");
-      await fixtures.publicClient(realm.api, CLIENT, [REDIRECT]);
+      await fixtures.publicClient(realm.api, id || CLIENT, [REDIRECT]);
       log.debug("Leaving client().");
-      return CLIENT;
+      return id || CLIENT;
     },
 
     // ONE SOFTWARE AUTHENTICATOR. `o.alg` -7 (ES256, the default) or -49
@@ -451,12 +451,13 @@ function kit(jobName, options) {
 
     // The sign-in screen of an authorization request (a pending record
     // exists only there), with the cookie the authorization endpoint set.
-    screen: async function (realm, given) {
+    screen: async function (realm, given, clientId) {
       log.debug("Entering screen().");
       const headers = given || BROWSER;
       const challenge = fixtures.pkce();
       const started = await fetch(realm.base + "/oauth2/authorize?" +
-        new URLSearchParams({ client_id: CLIENT, redirect_uri: REDIRECT,
+        new URLSearchParams({ client_id: clientId || CLIENT,
+          redirect_uri: REDIRECT,
           response_type: "code", scope: "openid",
           code_challenge: challenge.challenge,
           code_challenge_method: challenge.method }).toString(),
