@@ -259,6 +259,9 @@ async function prepare(realm) {
     domain: realm + ".example.net", name: "JOSE kid " + STAMP },
     "created the realm " + realm);
   CREATED.push(realm);
+  // Development is what this job asserts; a product stack's realms would
+  // otherwise inherit the process's mode.
+  await setting(realm, "global.mode", "development");
   const rb = base + "/realm/" + realm;
   await ok(rb + "/admin-api/users/create", { username: PERSON,
     invent: false, credential: "password", password: SECRET,

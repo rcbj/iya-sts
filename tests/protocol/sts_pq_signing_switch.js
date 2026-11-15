@@ -232,6 +232,9 @@ async function realm(id) {
     domain: id + ".example.net", name: "PQ switch " + STAMP },
     "created the realm " + id);
   CREATED.push(id);
+  // Development is what this job asserts; a product stack's realms would
+  // otherwise inherit the process's mode.
+  await setting(id, "global.mode", "development");
   await ok(base + "/realm/" + id + "/admin-api/applications/create", {
     identifier: "pq-cc", name: "pq-cc", protocols: ["oauth2"],
     fields: { oauthClientId: ["pq-cc"], oauthClientSecret: SECRET,

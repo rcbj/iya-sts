@@ -222,6 +222,9 @@ async function realm(id) {
     domain: id + ".example.net", name: "Signing allowlist " + STAMP },
     "created the realm " + id);
   CREATED.push(id);
+  // Development is what this job asserts; a product stack's realms would
+  // otherwise inherit the process's mode.
+  await setting(id, "global.mode", "development");
   await ok(base + "/realm/" + id + "/admin-api/users/create", {
     username: PERSON, invent: false, credential: "password",
     password: SECRET, attributes: { cn: "SAA " + PERSON, givenName: "SAA",
