@@ -108,7 +108,10 @@ impl RefreshKeys<'_> {
         self.0
             .get("secret")
             .and_then(Json::as_str)
-            .and_then(|s| sts_crypto::b64::decode_loose(s).ok())
+            .and_then(|s| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.decode(s).ok()
+            })
             .unwrap_or_default()
     }
     fn secret_kid(&self) -> String {

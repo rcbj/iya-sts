@@ -466,3 +466,60 @@ fn token_endpoint() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert_eq!(compared, 22, "every recorded token request is compared");
 }
+
+/// Node's sealed refresh tokens open here; with `STS_WRITE_VECTORS=1`,
+/// `oauth-rust.json` carries a refresh token sealed here and an access
+/// token signed here, for `tests/rust_crypto_vectors.js` to read in Node.
+#[test]
+fn refresh_tokens_both_ways() {
+    let Some(v) = vectors() else { return };
+    let mut written = Vec::new();
+    for row in v["token"].as_array().unwrap() {
+        let Some(refresh) = row.get("refresh") else {
+            continue;
+        };
+        let keys = &row["blob"]["refreshTokenEncKeys"];
+        let opened =
+            sts_oauth::refresh_crypto::open(&s(&refresh["sealed"]), keys)
+                .unwrap();
+        assert_eq!(opened, s(&refresh["jws"]));
+        // A token of another realm is refused, with Node's code.
+        let other = sts_oauth::refresh_crypto::open(&s(&refresh["jws"]), keys);
+        assert_eq!(
+            other.unwrap_err().code,
+            sts_core::errors::codes::STS_OAUTH_0237
+        );
+        let jws =
+            format!("{}.rust", s(&refresh["jws"]).rsplit_once('.').unwrap().0);
+        let sealed =
+            sts_oauth::refresh_crypto::seal(&jws, keys, "A256KW", "A256GCM")
+                .unwrap();
+        let set = sts_store::key_sets::KeySet {
+            realm: s(&row["realm"]),
+            blob: row["blob"].clone(),
+        };
+        let signer =
+            sts_oauth::token_endpoint::KeySetSigner { set: Arc::new(set) };
+        use sts_oauth::token_endpoint::Signer;
+        let claims = json!({ "iss": "https://as.vectors.example",
+                             "sub": "rust", "typ": "Bearer",
+                             "jti": format!("rust-{}", s(&row["realm"])),
+                             "iat": 1, "exp": 4_102_444_800i64 });
+        let token = signer
+            .sign(claims.as_object().unwrap(), "at+jwt", "RS256")
+            .unwrap();
+        written.push(json!({ "realm": row["realm"], "blob": row["blob"],
+                             "jws": jws, "sealed": sealed,
+                             "accessToken": token, "claims": claims }));
+    }
+    assert_eq!(written.len(), 2);
+    if std::env::var("STS_WRITE_VECTORS").as_deref() == Ok("1") {
+        let dir = std::env::var("STS_CRYPTO_VECTORS").unwrap();
+        std::fs::write(
+            std::path::Path::new(&dir).join("oauth-rust.json"),
+            serde_json::to_string_pretty(&json!({ "realms": written }))
+                .unwrap(),
+        )
+        .unwrap();
+    }
+}

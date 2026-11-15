@@ -447,6 +447,32 @@ pub fn private_key_pem_to_pkcs8(pem: &[u8]) -> CryptoResult<Vec<u8>> {
     })
 }
 
+/// Whether a certificate's signature verifies under another's public key
+/// (`X509Certificate#verify(issuer.publicKey)` in node), both PEM; false
+/// where either does not parse.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn certificate_signed_by(certificate_pem: &str, issuer_pem: &str) -> bool {
+    let (Ok(cert), Ok(issuer)) = (
+        X509::from_pem(certificate_pem.as_bytes()),
+        X509::from_pem(issuer_pem.as_bytes()),
+    ) else {
+        return false;
+    };
+    issuer
+        .public_key()
+        .and_then(|key| cert.verify(&key))
+        .unwrap_or(false)
+}
+
+/// A private key, as the JWE decryption takes it.
+pub type PrivateKey = PKey<Private>;
+
+/// A private key from PEM (PKCS#8 or the traditional forms).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn private_key_from_pem(pem: &str) -> CryptoResult<PrivateKey> {
+    Ok(PKey::private_key_from_pem(pem.as_bytes())?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,30 +524,4 @@ mod tests {
         let fine = JwsKey::from_jwk(&json!({"kty":"oct","k":"AAAA"})).unwrap();
         assert!(fine.use_problem().is_none());
     }
-}
-
-/// Whether a certificate's signature verifies under another's public key
-/// (`X509Certificate#verify(issuer.publicKey)` in node), both PEM; false
-/// where either does not parse.
-#[tracing::instrument(level = "debug", skip_all)]
-pub fn certificate_signed_by(certificate_pem: &str, issuer_pem: &str) -> bool {
-    let (Ok(cert), Ok(issuer)) = (
-        X509::from_pem(certificate_pem.as_bytes()),
-        X509::from_pem(issuer_pem.as_bytes()),
-    ) else {
-        return false;
-    };
-    issuer
-        .public_key()
-        .and_then(|key| cert.verify(&key))
-        .unwrap_or(false)
-}
-
-/// A private key, as the JWE decryption takes it.
-pub type PrivateKey = PKey<Private>;
-
-/// A private key from PEM (PKCS#8 or the traditional forms).
-#[tracing::instrument(level = "debug", skip_all)]
-pub fn private_key_from_pem(pem: &str) -> CryptoResult<PrivateKey> {
-    Ok(PKey::private_key_from_pem(pem.as_bytes())?)
 }

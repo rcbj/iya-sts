@@ -562,9 +562,16 @@ async function tokenVectors(ROOT, port, mods) {
                    ? decoded(body.access_token) : null });
     }
     await realms.run(realm, async function () {
+      // A refresh token Node seals, for Rust to open.
+      const crypto = require(path.join(ROOT, 'oauth-oidc',
+                                       'refresh_token_crypto'));
+      const jws = signJws({ alg: 'ES256', typ: 'JWT' },
+                          { typ: 'Refresh', jti: 'rt-' + id },
+                          ec.privateKey, 'ES256');
       out.push({ name: '(the realm)', realm: id, mode: realmMode,
                  clients: clients,
-                 blob: clone(mods.keystore.serialise(helpers.stsKeysFor())) });
+                 blob: clone(mods.keystore.serialise(helpers.stsKeysFor())),
+                 refresh: { jws: jws, sealed: crypto.seal(jws) } });
     });
   }
   return out;
@@ -602,4 +609,35 @@ async function build(ROOT) {
   return out;
 }
 
-module.exports = { build: build };
+// THE OTHER DIRECTION: what Rust wrote (`oauth-rust.json`), read by Node —
+// a refresh token Rust sealed opens under Node's refresh_token_crypto.ts
+// with the same stored key set, and an access token Rust signed verifies
+// under the set's certificate with Node's verifier.
+function checkRust(ROOT, rows, check) {
+  const keystore = require(path.join(ROOT, 'common', 'keystore'));
+  const stsCrypto = require(path.join(ROOT, 'common', 'crypto'));
+  const crypto = require(path.join(ROOT, 'oauth-oidc', 'refresh_token_crypto'));
+  (rows.realms || []).forEach(function (row) {
+    const keys = keystore.deserialise(row.blob);
+    let opened = '';
+    try {
+      opened = crypto.open(row.sealed, keys);
+    } catch (e) {
+      opened = 'refused: ' + e.message;
+    }
+    check(opened === row.jws, 'oauth: Node opens the refresh token Rust ' +
+          'sealed in ' + row.realm, opened);
+    let claims = null;
+    try {
+      claims = stsCrypto.verifyJws(row.accessToken, row.blob.certPem,
+                                   { algorithms: ['RS256'] });
+    } catch (e) {
+      claims = { refused: e.message };
+    }
+    check(!!claims && claims.jti === row.claims.jti &&
+          claims.typ === 'Bearer', 'oauth: Node verifies the access token ' +
+          'Rust signed in ' + row.realm, JSON.stringify(claims));
+  });
+}
+
+module.exports = { build: build, checkRust: checkRust };
