@@ -2441,8 +2441,8 @@ const JOBS = [
   // federation.outboundAllowHttp on.
   { file: 'sts_saml_metadata_sources.js', browser: false, local: true },
   // D12 (#444): what WS-Trust and WS-Federation answer, held to
-  // tests/ws_model_wire.snapshot.json's development pass, over the wire
-  // (ws_model_wire; the product pass owed).
+  // tests/ws_model_wire.snapshot.json's development and product passes,
+  // over the wire (ws_model_wire).
   { file: 'sts_ws_model_wire.js', browser: false, local: true },
   // D12 (#444): what a WS-Trust delegation leaves in the delegation
   // register and on /admin-api/users, and SAML 1.1 on behalf of somebody

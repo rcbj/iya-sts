@@ -32,9 +32,13 @@
 // minted ids, instants, ports, key material and random runs). Each step is
 // a check.
 //
-// OWED: the snapshot's PRODUCT pass (47 steps), which needs a session with
-// two factors (an authenticator enrolled through `/account-api`, as
-// `sts_portal_totp.js` does) and an app password scoped to /sts.
+// THE PRODUCT PASS (47 steps) runs in a second realm, recorded `wswirep`:
+// its sessions carry two factors — an authenticator app enrolled through
+// `/account-api` with `authn.allowOptionalSecondFactor` on for the one
+// sign-in that enrols it, then off, and every later sign-in answers the
+// screen's code step — and /sts takes an app password scoped to it, made
+// on the same page; the agreement product asks before single sign-on is
+// given at the consent screen by a session of its own.
 //
 // OWNED HERE (local: true). Its realm is removed only on a private probe.
 // ===========================================================================
@@ -77,8 +81,16 @@ const RP = "https://rp.wswire.test/app";
 const RP_REPLY = "https://rp.wswire.test/reply";
 const PERSON = "wswalice";
 const PASSWORD = "Wire-Password-7a!Kq2";
+const nodeCrypto = require("crypto");
+const portalSignin = require("./portal_signin.js");
+
+// THE REALM THE CONVERSATION IS IN NOW, and every realm it has been in,
+// by the id the snapshot records for it.
 let REALM = "";
+let MODE = "development";
+const REALMS = {};
 let LEAF = "";
+let LAST_BROWSER = null;
 
 function unescapeHtml(text) {
   log.debug("Entering unescapeHtml().");
@@ -317,13 +329,17 @@ function placed(one) {
     [encodeURIComponent(K.base), encodeURIComponent("http://127.0.0.1:1")],
     [origin.host, "127.0.0.1:1"],
     [encodeURIComponent(origin.host), "127.0.0.1%3A1"],
-    [REALM + ".example.net", "wswire.example.com"],
-    [REALM, "wswire"]];
+    [REALMS.wswirep + ".example.net", "wswirep.example.com"],
+    [REALMS.wswire + ".example.net", "wswire.example.com"],
+    [REALMS.wswirep, "wswirep"],
+    [REALMS.wswire, "wswire"]].filter(function (pair) {
+    return !/^undefined/.test(String(pair[0]));
+  });
   swaps.forEach(function (pair) {
     text = text.split(JSON.stringify(pair[0]).slice(1, -1))
       .join(JSON.stringify(pair[1]).slice(1, -1));
   });
-  text = text.replace(/; Secure(?=;|")/g, "");
+  text = text.replace(/; Secure(?=;|")/g, "").replace(/__Host-sts_/g, "sts_");
   // THE MAIN PORT'S TLS LEAF, which a metadata document served over TLS
   // names as its last signing KeyDescriptor (`sts_saml_sso_rules` M3) and
   // the in-process file's plain listener had none of.
@@ -371,9 +387,11 @@ function firstDifference(a, b, where) {
 }
 
 // ------------------------------------------------------------- the realm
-async function setUp() {
-  log.debug("Entering setUp().");
-  REALM = await K.realm("wswire", "development");
+async function setUp(mode, recorded) {
+  log.debug("Entering setUp(). " + mode);
+  REALM = await K.realm(recorded, mode);
+  REALMS[recorded] = REALM;
+  MODE = mode;
   await K.ok(K.rb(REALM) + "/admin-api/users/create", { username: PERSON,
     invent: false, credential: "password", password: PASSWORD,
     attributes: { givenName: "Wire", sn: "Alice",
@@ -385,25 +403,156 @@ async function setUp() {
   await K.ok(K.rb(REALM) + "/admin-api/applications/create", {
     identifier: RP, name: RP, protocols: ["wsfed"],
     fields: { wsfedReplyUrl: [RP_REPLY] } }, "created the relying party");
+  let secret = PASSWORD;
+  if (mode === "product") {
+    secret = await secondFactor();
+    await agree();
+  }
   log.debug("Leaving setUp().");
+  return secret;
 }
 
-// A password session of wswalice, signed in at the screen; its cookie.
+// ------------------------------------------------- the product pass's
+// PRODUCT REQUIRES A SECOND FACTOR OF EVERY PERSON (ASVS 5.0.0 6.3.3): the
+// in-process file started a ['pwd', 'otp'] session and made an app password
+// scoped to /sts directly. Here the person signs in to the portal once with
+// `authn.allowOptionalSecondFactor` on, enrols an authenticator app and
+// makes the app password there (`/account-api`), and the switch goes back
+// off before the conversation.
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+let TOTP = { secret: "", used: -1 };
+
+function base32ToBytes(text) {
+  log.debug("Entering base32ToBytes().");
+  const cleaned = String(text).toUpperCase().replace(/[\s=-]/g, "");
+  let bits = 0;
+  let value = 0;
+  const out = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    value = (value << 5) | B32.indexOf(cleaned[i]);
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  log.debug("Leaving base32ToBytes().");
+  return Buffer.from(out);
+}
+
+// RFC 4226 section 5.3 over RFC 6238 section 4.2, this job's own.
+function codeFor(secret, atMs) {
+  log.debug("Entering codeFor().");
+  const counter = Math.floor(Number(atMs || Date.now()) / 1000 / 30);
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(counter));
+  const digest = nodeCrypto.createHmac("sha1", base32ToBytes(secret))
+    .update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24) |
+                 ((digest[offset + 1] & 0xff) << 16) |
+                 ((digest[offset + 2] & 0xff) << 8) |
+                 (digest[offset + 3] & 0xff);
+  log.debug("Leaving codeFor().");
+  return String(binary % 1000000).padStart(6, "0");
+}
+
+// A code from a time step no earlier sign-in used: a code is taken once.
+async function freshCode() {
+  log.debug("Entering freshCode().");
+  while (Math.floor(Date.now() / 30000) <= TOTP.used) {
+    await K.sleep(1000);
+  }
+  TOTP.used = Math.floor(Date.now() / 30000);
+  log.debug("Leaving freshCode().");
+  return codeFor(TOTP.secret);
+}
+
+async function secondFactor() {
+  log.debug("Entering secondFactor().");
+  await K.set(REALM, "authn.allowOptionalSecondFactor", true);
+  const portal = await portalSignin.signInToThePortal(K.rb(REALM), PERSON,
+                                                      null,
+                                                      { password: PASSWORD });
+  let r = await portal.act("/portal/mfa", { action: "start" });
+  assert.ok(r.status === 200 && r.json && r.json.ok, K.shown(r));
+  const page = await portal.page("/portal/mfa");
+  const secret = String(((page.json && page.json.setup) || {}).grouped || "")
+    .replace(/\s+/g, "");
+  assert.ok(secret.length >= 32, "no secret: " + page.text.slice(0, 300));
+  TOTP = { secret: secret, used: -1 };
+  r = await portal.act("/portal/mfa", { action: "confirm",
+                                        code: await freshCode() });
+  assert.ok(r.status === 200 && r.json && r.json.ok, K.shown(r));
+  const made = await portal.act("/portal/app-passwords", { action: "create",
+    name: "ws_model_wire", door_wstrust: "on" });
+  const password = (made.json && (made.json.password ||
+    ((made.json.view || {}).fresh || {}).password ||
+    (made.json.made || {}).password)) || "";
+  assert.ok(made.status === 200 && password, "no app password: " +
+            JSON.stringify(made.json || made).slice(0, 400));
+  await K.unset(REALM, "authn.allowOptionalSecondFactor");
+  log.debug("Leaving secondFactor().");
+  return password;
+}
+
 async function signIn() {
   log.debug("Entering signIn().");
   const b = K.browser();
   const first = await b.go(K.rb(REALM) + "/wsfed?" + new URLSearchParams({
     wa: "wsignin1.0", wtrealm: RP }).toString());
   assert.ok(K.toSignIn(first), "not sent to sign in: " + K.shown(first));
-  await authnSignin.signInWithJar(K.rb(REALM), /^https?:/.test(
+  const signed = await authnSignin.signInWithJar(K.rb(REALM), /^https?:/.test(
     first.location) ? first.location : K.base + first.location,
   { action: "login", username: PERSON, password: PASSWORD }, b.jar);
-  assert.ok(b.jar.sts_session, "no session: " + JSON.stringify(b.jar));
+  if (MODE === "product") {
+    const jar = function () {
+      log.debug("Entering jar().");
+      log.debug("Leaving jar().");
+      return Object.keys(b.jar).map(function (k) {
+        return k + "=" + b.jar[k];
+      }).join("; ");
+    };
+    assert.ok(signed.location && /\/authn\/totp/.test(signed.location),
+              "the screen asked no second factor: " +
+              JSON.stringify((signed.answer || {}).json || {}).slice(0, 300));
+    const opened = await authnSignin.step(new URL(signed.location, K.base)
+      .toString(), { cookie: jar() });
+    const coded = await authnSignin.stepAct(opened, "totp",
+      { code: await freshCode() }, { cookie: jar() });
+    (coded.setCookies || []).forEach(function (line) {
+      const pair = String(line).split(";")[0];
+      const at = pair.indexOf("=");
+      b.jar[pair.slice(0, at)] = pair.slice(at + 1);
+    });
+  }
+  const name = Object.keys(b.jar).filter(function (k) {
+    return /sts_session$/.test(k);
+  })[0];
+  assert.ok(name, "no session: " + JSON.stringify(Object.keys(b.jar)));
+  LAST_BROWSER = b;
   log.debug("Leaving signIn().");
-  return "sts_session=" + b.jar.sts_session;
+  return name + "=" + b.jar[name];
 }
 
-async function conversation() {
+// THE AGREEMENT product mode asks before single sign-on (ASVS 5.0.0 7.6.2),
+// which the in-process file recorded for the relying party: given at the
+// consent screen, by a session of its own, so the conversation's sessions
+// carry no extra sign-in.
+async function agree() {
+  log.debug("Entering agree().");
+  await signIn();
+  const b = LAST_BROWSER;
+  const r = await b.go(K.rb(REALM) + "/wsfed?" + new URLSearchParams({
+    wa: "wsignin1.0", wtrealm: RP }).toString());
+  assert.ok((r.status === 302 || r.status === 303) &&
+            /\/oauth2\/consent/.test(r.location), "no consent asked: " +
+            K.shown(r));
+  await K.consent(b, new URL(r.location, K.base).toString());
+  log.debug("Leaving agree().");
+}
+
+async function conversation(secret) {
   log.debug("Entering conversation().");
   const wire = [];
   const P = "/realm/" + REALM;
@@ -413,7 +562,7 @@ async function conversation() {
     const before = await newestSeq();
     const r = await request(method, target, cookie, body, contentType);
     const code = await codeSince(before, target);
-    wire.push({ mode: "development", step: name, method: method,
+    wire.push({ mode: MODE, step: name, method: method,
                 path: target, status: r.status, code: code,
                 headers: r.headers, decoded: decoded(r), body: r.body });
     log.debug("Leaving step().");
@@ -426,7 +575,7 @@ async function conversation() {
                 soap11 ? "text/xml; charset=utf-8"
                        : "application/soap+xml; charset=utf-8");
   };
-  const ut = usernameToken(PERSON, PASSWORD);
+  const ut = usernameToken(PERSON, secret);
   await step("GET /sts", "GET", P + "/sts");
   await step("GET /sts/cert", "GET", P + "/sts/cert");
   const issued = await sts("Issue SAML 2.0, 1.3, SOAP 1.2",
@@ -580,25 +729,40 @@ async function test() {
   // portal at the realm prefix TWICE (`/realm/wswire/realm/wswire/portal`);
   // a running service sends it once. Reported (#444 D12 phase 7), not
   // pinned: the running service's link is the right one.
-  const expected = JSON.parse(JSON.stringify(recorded.wire.filter(
-    function (one) {
-      return one.mode === "development";
-    })).split("/realm/wswire/realm/wswire/portal")
-    .join("/realm/wswire/portal"));
+  let text = JSON.stringify(recorded.wire);
+  ["wswire", "wswirep"].forEach(function (id) {
+    text = text.split("/realm/" + id + "/realm/" + id + "/portal")
+      .join("/realm/" + id + "/portal");
+  });
+  // AND THE LINE ENDING AFTER A PEM: the recorded product pass's /sts/cert
+  // ends its certificate with CRLF, where a service whose keys persist (the
+  // probe's, every product stack's) ends it with nothing after the END line
+  // — where the certificate came from, not what WS-Trust answers.
+  const pemEnd = function (t) {
+    log.debug("Entering pemEnd().");
+    log.debug("Leaving pemEnd().");
+    return t.split("<pem>\\r\\n").join("<pem>");
+  };
+  const expected = JSON.parse(pemEnd(text));
   LEAF = await listenerLeaf();
-  await setUp();
-  const now = normalise((await conversation()).map(placed));
-  K.check("the conversation has as many steps as the recorded " +
-          "development pass", function () {
+  let wire = [];
+  for (const [mode, recordedId] of [["development", "wswire"],
+                                    ["product", "wswirep"]]) {
+    const secret = await setUp(mode, recordedId);
+    wire = wire.concat(await conversation(secret));
+  }
+  const now = JSON.parse(pemEnd(JSON.stringify(normalise(wire.map(placed)))));
+  K.check("the conversation has as many steps as recorded, both passes (" +
+          expected.length + ")", function () {
     assert.strictEqual(now.length, expected.length);
   });
   const differing = [];
   expected.forEach(function (one, i) {
     const why = firstDifference(one, now[i], "wire");
     if (why) {
-      differing.push(one.step + ": " + why);
+      differing.push(one.mode + ", " + one.step + ": " + why);
     } else {
-      K.check("development, " + one.step + ": " + one.method +
+      K.check(one.mode + ", " + one.step + ": " + one.method +
               " answers as recorded (" + one.status + ")", function () {
         assert.ok(true);
       });
@@ -615,4 +779,4 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-K.main(test, 49);
+K.main(test, 96);
