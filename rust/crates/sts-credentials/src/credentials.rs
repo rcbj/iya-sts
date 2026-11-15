@@ -545,6 +545,46 @@ impl Credentials {
             .map(Some)
     }
 
+    /// `noteKeyAttestationRefused(username, credentialId, code, why)`
+    /// (#530): the refused attestation marked on the key's row
+    /// (`attestationRefused`), once per sentence.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn note_key_attestation_refused(
+        &self,
+        username: &str,
+        credential_id: &str,
+        code: &str,
+        why: &str,
+    ) -> bool {
+        let units: Vec<u16> = why.encode_utf16().take(500).collect();
+        let why = String::from_utf16_lossy(&units);
+        let now = self.now();
+        let outcome = self.rewrite_key(username, credential_id, |found| {
+            if found["attestationRefused"].is_object()
+                && found["attestationRefused"]["why"] == json!(why)
+            {
+                return false;
+            }
+            found["attestationRefused"] =
+                json!({ "code": code, "why": why, "at": js::num(now) });
+            true
+        });
+        match outcome {
+            Ok(Some(result)) => js::truthy(&result),
+            Ok(None) => false,
+            Err(e) => {
+                tracing::error!(
+                    "{}credentials: the refused attestation of a passkey of \
+                     {} could not be recorded: {}",
+                    tag(codes::STS_AUTHN_0318),
+                    username,
+                    e
+                );
+                false
+            }
+        }
+    }
+
     /// `noteKeyPolicyRefused(username, credentialId, reason, code, why)`:
     /// the refusal marked on the key's row, once per key and reason.
     #[tracing::instrument(level = "debug", skip(self))]

@@ -33,10 +33,17 @@ use sts_core::errors::{codes, ErrorCode};
 use sts_credentials::credentials::{Credentials, VerifyOptions};
 use sts_credentials::evidence::Evidence;
 use sts_credentials::limits::{Limit, RateLimiter};
+use sts_credentials::webauthn::ceremonies::Ceremonies;
+use sts_credentials::webauthn::enrolment::KeyDoors;
+use sts_credentials::webauthn::policy::WebauthnPolicy;
+use sts_credentials::webauthn::trust::Metadata;
 use sts_credentials::Verdict;
 
 use crate::pending::PendingStores;
-use crate::ports::SignInFacts;
+use crate::ports::{PostLogin, SignInFacts};
+
+mod passkeys;
+pub use passkeys::POST_LOGIN_PATH;
 
 /// The screen.
 pub const LOGIN_PATH: &str = "/authn/login";
@@ -119,6 +126,8 @@ pub struct Fields {
     pub webauthn_only: String,
     pub remember_browser: String,
     pub device_fp: String,
+    /// `passkey_credential`: the ceremony's JSON (#474).
+    pub passkey_credential: String,
 }
 
 fn text(v: Option<&Json>) -> String {
@@ -169,6 +178,16 @@ pub struct SignIn {
     pub credentials: Arc<Credentials>,
     pub limits: Arc<RateLimiter>,
     pub facts: Arc<dyn SignInFacts>,
+    /// The passkey doors of `common/credentials.ts`.
+    pub keys: Arc<KeyDoors>,
+    /// `authn/webauthn_policy.ts` and the passkey profile's questions.
+    pub webauthn: Arc<WebauthnPolicy>,
+    /// `authn/webauthn_ceremonies.ts`.
+    pub ceremonies: Arc<Ceremonies>,
+    /// The FIDO metadata the attestation rules at sign-in look up.
+    pub metadata: Arc<dyn Metadata>,
+    /// `common/post_login.ts`'s progress rows (#1096).
+    pub post_login: Arc<dyn PostLogin>,
 }
 
 impl SignIn {
@@ -532,14 +551,9 @@ impl SignIn {
             truthy(Some(&self.facts.setting("authn.unauthenticatedSessions")))
                 && locked.is_empty()
                 && restricted.is_empty();
-        // `passkeyOffered(record)`: the realm's settings, then the record's.
-        let passkey = screen_offered
-            && truthy(key_policy.get("enabled"))
-            && truthy(key_policy.get("primaryAllowed"))
-            && truthy(key_policy.get("usernameless"))
-            && locked.is_empty()
-            && self.facts.authn_allows("passkey", "primary")
-            && SignIn::offers(&restricted, "webauthn");
+        // `passkeyOffered(record)` and `usernamelessRequired(record)`.
+        let passkey = screen_offered && self.passkey_offered(record).ok();
+        let usernameless = passkey && self.usernameless_required(record);
         let force_key = truthy(record.get("forceKey"));
         let force_mfa = truthy(record.get("forceMfa"));
         let id = text(record.get("id"));
@@ -603,12 +617,13 @@ impl SignIn {
             "remember": remember,
             "anonymous": anonymous,
             "passkey": passkey,
-            "usernameless": false,
+            "usernameless": usernameless,
             "email": email,
             "clientDisplay": self.facts.client_display(&text(record.get("application"))),
             "reauthentication": text(record.get("reauthentication")),
             "certificate": Json::Null,
-            "postQuantumRequired": Json::Null,
+            "postQuantumRequired": if truthy(record.get("postQuantumRequired")) {
+                self.post_quantum_help() } else { Json::Null },
             "forgot": if locked.is_empty() && self.facts.offers_password_reset() {
                 "/portal/forgot-password" } else { "" },
             "partners": if partners_offered {
@@ -766,11 +781,37 @@ impl SignIn {
             "certificate" => {
                 return Outcome::Unported("continueWithCertificate")
             }
-            "passkey" => return Outcome::Unported("signInWithPasskey"),
+            "passkey" => {
+                return Outcome::Answered(self.passkey_sign_in(
+                    call,
+                    record,
+                    &fields.passkey_credential,
+                ))
+            }
             "email-code" | "email-link" => {
                 return Outcome::Unported("signInByEmail")
             }
             _ => {}
+        }
+        if self.usernameless_required(&record) {
+            tracing::info!(
+                "authn: a sign-in naming a person was refused: the passkey \
+                 policy requires a passkey sign-in with no username for \
+                 \"{}\".",
+                text(record.get("application"))
+            );
+            return Outcome::Answered(
+                self.screen_refused(
+                    call,
+                    &mut record,
+                    "This application signs in with a passkey and no \
+                     username. Use Sign in with a passkey.",
+                    400,
+                    false,
+                    false,
+                )
+                .marked(codes::STS_AUTHN_0333),
+            );
         }
         let username = if locked.is_empty() {
             fields.username.trim().to_string()
@@ -1466,6 +1507,14 @@ impl SignIn {
             answer.cookies = response.cookies;
             return answer;
         }
+        // A SESSION HELD FOR A POST-LOGIN ACTIVITY (#1096): its step, in
+        // place of the refusal.
+        if let Some(mut answer) =
+            self.post_login_step(call, record, username, said)
+        {
+            answer.cookies = response.cookies;
+            return answer;
+        }
         let refused =
             said.get("refusedWith").and_then(Json::as_str).unwrap_or("");
         let code = if !refused.is_empty() {
@@ -1662,6 +1711,41 @@ impl SignIn {
                     )
                 });
             }
+            "webauthn" => {
+                let enrolled = self.mechanisms_for(&username);
+                let held =
+                    number(enrolled.get(if truthy(step.get("passwordless")) {
+                        "primaryKeys"
+                    } else {
+                        "mfaKeys"
+                    }));
+                if truthy(step.get("upgradeId")) {
+                    // A post-login upgrade's pending upgrade (#1100) is the
+                    // upgrade slice's; none is held here, so it is gone.
+                    return Err((
+                        codes::STS_AUTHN_0454,
+                        "This passkey upgrade has expired. Start over to sign \
+                         in again; you will be asked again."
+                            .into(),
+                    ));
+                }
+                if held < 1.0
+                    && !(truthy(step.get("atSignIn"))
+                        && text(step.get("factor")) == "webauthn")
+                {
+                    tracing::info!(
+                        "authn: a security-key screen was asked for \"{}\", \
+                         who holds no key marked as a second factor. Refused.",
+                        username
+                    );
+                    return Err((
+                        codes::STS_AUTHN_0025,
+                        "No passkey is registered as a second factor for that \
+                         account."
+                            .into(),
+                    ));
+                }
+            }
             _ => {}
         }
         Ok(step)
@@ -1717,15 +1801,12 @@ impl SignIn {
         call: &Call,
         page: &str,
         id: &str,
+        key: &str,
     ) -> Result<Result<Json, (ErrorCode, String)>, &'static str> {
-        if ["webauthn", "setup", "post-login"].contains(&page) {
-            return Err("getStep");
-        }
-        let step = match self.step_problem(page, id) {
+        let mut step = match self.step_problem(page, id) {
             Ok(s) => s,
             Err(p) => return Ok(Err(p)),
         };
-        let _ = &call.base;
         let username = text(step.get("username"));
         let application = step
             .get("authn")
@@ -1774,6 +1855,23 @@ impl SignIn {
                                 factor.clone() } else { "totp".into() },
                     "remaining": num(remaining), "total": num(total),
                     "low": remaining > 0.0 && remaining <= 3.0 });
+            }
+            "webauthn" => {
+                if truthy(step.get("upgradeId")) {
+                    return Err("upgradeStepFacts");
+                }
+                let (mut facts, _, _) =
+                    self.webauthn_facts(call, id, &mut step, key, "");
+                if let Some(f) = facts.as_object_mut() {
+                    f.remove("ceremony");
+                }
+                view["webauthn"] = facts;
+            }
+            "setup" => {
+                view["setup"] = self.mfa_setup_facts(call, &step);
+            }
+            "post-login" => {
+                view["postLogin"] = self.post_login_view(&step);
             }
             _ => {}
         }

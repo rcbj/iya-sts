@@ -560,6 +560,9 @@ impl AuthnApi {
     /// One request under `/authn-api`, answered as Node answers it.
     #[tracing::instrument(level = "debug", skip_all, fields(method = %arrived.method, path = %arrived.path))]
     pub async fn serve(&self, arrived: &Arrived) -> Sent {
+        // The passkey profile a door selects is the request's own (Node's
+        // `byRequest`): nothing selected by the previous one is read.
+        sts_credentials::webauthn::policy::clear_selection();
         let call = self.call_of(arrived);
         let mut arrived = arrived.clone();
         arrived.query = without_ticket(&arrived.query);
@@ -715,6 +718,7 @@ impl AuthnApi {
                         body.get("remember_browser"),
                     ),
                     device_fp: text(body.get("device_fp")),
+                    passkey_credential: text(body.get("credential")),
                 };
                 let mut call = call.clone();
                 call.request.device_fp = fields.device_fp.clone();
@@ -730,10 +734,52 @@ impl AuthnApi {
                 if let Err(a) = self.body_of(arrived, op) {
                     return done(a);
                 }
-                if let Err(a) = self.pending_of(id) {
+                let record = match self.pending_of(id) {
+                    Ok(r) => r,
+                    Err(a) => return done(a),
+                };
+                // EVERY CHALLENGE MINTED IS COUNTED, PER ADDRESS: a door of
+                // its own (`passkey-options`), naming nobody.
+                let allowed = self.signin.limits.attempt(
+                    "passkey-options",
+                    &call.request.address,
+                    "",
+                    &sts_credentials::limits::Limit::from_json(&Json::Null),
+                );
+                if !allowed.ok() {
+                    let mut a = Answer::json(
+                        429,
+                        json!({ "ok": false, "next": "refused",
+                                "errors": [text(allowed.value.get("detail"))] }),
+                    )
+                    .marked(codes::STS_AUTHN_0332);
+                    let retry = text(allowed.value.get("retryAfterS"));
+                    a.headers.push((
+                        "retry-after".into(),
+                        if retry.is_empty() || retry == "0" {
+                            "60".into()
+                        } else {
+                            retry
+                        },
+                    ));
                     return done(a);
                 }
-                Outcome::Unported("passkeyOptions")
+                match self.signin.passkey_options(call, record) {
+                    Ok(armed) => done(Answer::json(
+                        200,
+                        json!({ "ok": true, "challenge": armed["challenge"],
+                                "rpId": armed["rpId"],
+                                "options": armed["options"] }),
+                    )),
+                    Err((code, why)) => done(
+                        Answer::json(
+                            400,
+                            json!({ "ok": false, "next": "refused",
+                                    "errors": [why] }),
+                        )
+                        .marked(code),
+                    ),
+                }
             }
             Handler::PasswordChange => match self.step_of(id) {
                 Err(a) => done(a),
@@ -817,6 +863,39 @@ impl AuthnApi {
                             .await
                     }
                     "startOver" => done(self.signin.mfa_start_over(call, id)),
+                    "passkeyStepOptions" => self.signin.mfa_webauthn_options(
+                        call,
+                        id,
+                        &text(body.get("key")),
+                        &text(body.get("lane")),
+                        &text(body.get("algorithms")),
+                    ),
+                    "finishPasskeyStep" => self.signin.mfa_webauthn_act(
+                        call,
+                        id,
+                        &text(body.get("credential")),
+                    ),
+                    "beginAppEnrolment" => {
+                        self.signin.mfa_setup_act(call, id, "totp", "")
+                    }
+                    "confirmAppEnrolment" => self.signin.mfa_setup_act(
+                        call,
+                        id,
+                        "confirm",
+                        &text(body.get("code")),
+                    ),
+                    "beginKeyEnrolment" => {
+                        self.signin.mfa_setup_act(call, id, "webauthn", "")
+                    }
+                    "ignoreOffer" => {
+                        self.signin.mfa_setup_act(call, id, "skip", "")
+                    }
+                    "registerPostLoginPasskey" => {
+                        self.signin.post_login_act(call, id, "register")
+                    }
+                    "skipPostLoginActivity" => {
+                        self.signin.post_login_act(call, id, "skip")
+                    }
                     other => Outcome::Unported(
                         operations::by_id(other).map_or("mfaAct", |o| o.id),
                     ),
@@ -974,7 +1053,10 @@ impl AuthnApi {
         if page.starts_with("email-") {
             return Outcome::Unported("emailFactor.view");
         }
-        match self.signin.mfa_view(call, &page, id) {
+        match self
+            .signin
+            .mfa_view(call, &page, id, &text(value.get("key")))
+        {
             Err(what) => Outcome::Unported(what),
             Ok(Err((code, why))) => Outcome::Answered(refuse(400, &why, code)),
             Ok(Ok(seen)) => {

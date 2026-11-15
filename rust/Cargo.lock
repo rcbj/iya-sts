@@ -4229,6 +4229,7 @@ dependencies = [
  "sts-http",
  "sts-mgmt-api",
  "sts-model",
+ "sts-policy",
  "sts-store",
  "tokio",
  "tower",
