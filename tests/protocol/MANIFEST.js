@@ -599,7 +599,8 @@ const JOBS = [
   // 185 s, 220 s and 272 s in three cluster runs, then cut off at the
   // default 300 s in section 7. Asking one realm's rows would make it
   // constant; until then the bound says what it costs.
-  { file: 'sts_scheduler.js',            browser: false, timeoutMs: 600000 },
+  { file: 'sts_scheduler.js',            browser: false, local: true,
+    timeoutMs: 600000 },
   // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
   // answers the request and surface pools with the seven figures, adding
   // up, drawn by the front process; no post-quantum pool since #363; the

@@ -669,8 +669,20 @@ async function theClusterAgrees() {
                          "authn.session-expiry&outcome=succeeded&per=500");
   check("every slot of the session-expiry job is one succeeded run",
         function () {
+          // ZERO RUNS IS A FAILURE (2026-11-14). Counting doubles among no
+          // runs finds none, so this check passed on an empty answer and
+          // asserted nothing about #883 until #1764 made a job-filtered
+          // report read that job's own slots. The job runs every few
+          // minutes and the stack has been up longer than one, so an
+          // empty list means the report is not reading them.
+          assert.strictEqual(runs.status, 200, runs.text.slice(0, 300));
+          const list = (runs.body && runs.body.runs) || [];
+          assert.ok(list.length > 0,
+                    "no succeeded run of authn.session-expiry was " +
+                    "reported, so no slot could be checked for a double " +
+                    "run: " + runs.text.slice(0, 300));
           const bySlot = {};
-          runs.body.runs.forEach(function (r) {
+          list.forEach(function (r) {
             bySlot[r.dueAt] = (bySlot[r.dueAt] || 0) + 1;
           });
           const doubles = Object.keys(bySlot).filter(function (k) {
