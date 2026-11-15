@@ -722,9 +722,9 @@ async function createSection() {
       assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
       assert.strictEqual(code, cases[i][1], r.raw.slice(0, 300));
       assert.ok(!/STS-[A-Z]+-\d{4}/.test(r.raw), r.raw.slice(0, 300));
-      assert.ok(read.raw.indexOf('"' + id + '"') < 0 ||
-                !(read.body && read.body.application),
-                read.raw.slice(0, 300));
+      // `?application=` answers the one application's view, `found` false
+      // for an identifier nobody wrote.
+      assert.ok(!(read.body && read.body.found), read.raw.slice(0, 300));
     });
   }
   const made = await postJson(api + "/create", { identifier: "prm-created",
