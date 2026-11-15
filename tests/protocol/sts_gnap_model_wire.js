@@ -532,8 +532,8 @@ function firstDifference(a, b, where) {
     }
   }
   log.debug("Leaving firstDifference().");
-  return where + ": " + JSON.stringify(b).slice(0, 300) + " where " +
-    JSON.stringify(a).slice(0, 300) + " was recorded";
+  return where + ": " + String(JSON.stringify(b)).slice(0, 300) +
+    " where " + String(JSON.stringify(a)).slice(0, 300) + " was recorded";
 }
 
 async function test() {

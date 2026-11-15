@@ -2607,6 +2607,10 @@ const JOBS = [
   // D12 (#444): every GNAP endpoint's answer held to the recorded wire,
   // in a development and a product realm (gnap_model_wire).
   { file: 'sts_gnap_model_wire.js', browser: false, local: true },
+  // D12 (#444): every AuthZEN answer held to the recorded wire, in a
+  // development and a product realm (authzen_model_wire). Posts six
+  // outside test Roots to the client truststore and removes them.
+  { file: 'sts_authzen_model_wire.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
