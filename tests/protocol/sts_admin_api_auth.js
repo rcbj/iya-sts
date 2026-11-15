@@ -512,6 +512,48 @@ async function theDocumentDescribesTheGate() {
       "or a published port names an address the reader cannot reach.");
   });
 
+  // D12 (#444): the rest of tests/admin_api_document_security.js's claims
+  // about the guarded document, as the running service serves it — the
+  // builder's other half there (the gate OFF is
+  // sts_admin_api_auth_required_mode.js's, which may turn it off).
+  check("both scopes are described where a tool will read them, and the " +
+        "oauth2 scheme names the `resource` a token must be audienced at",
+        function () {
+    const oauth2 = ((document.components || {}).securitySchemes || {})
+      .oauth2 || {};
+    const scopes = ((oauth2.flows || {}).clientCredentials || {}).scopes ||
+      {};
+    assert.ok(scopes["admin:read"] && scopes["admin:write"],
+              Object.keys(scopes).join(", "));
+    const prose = String(oauth2.description || "");
+    assert.ok(prose.indexOf("resource=") >= 0 &&
+              prose.indexOf("/admin-api") >= 0, prose.slice(0, 200));
+  });
+  check("the http/bearer alternative carries an empty scope list, the only " +
+        "thing OpenAPI allows there", function () {
+    const wrong = [];
+    Object.keys(document.paths || {}).forEach(function (path) {
+      Object.keys(document.paths[path]).forEach(function (method) {
+        const alt = (document.paths[path][method].security || [])[1] || {};
+        if (!Array.isArray(alt.bearerAuth) || alt.bearerAuth.length !== 0) {
+          wrong.push(method.toUpperCase() + " " + path);
+        }
+      });
+    });
+    assert.deepStrictEqual(wrong.slice(0, 5), [], wrong.length + " wrong");
+  });
+  check("the prose at the top says a token is required, names the setting " +
+        "that turns it off, and does not open by saying nothing is " +
+        "protected", function () {
+    const prose = String((document.info || {}).description || "");
+    assert.ok(prose.indexOf("Nothing here is protected") < 0,
+              prose.slice(0, 120));
+    assert.ok(/requires an OAuth 2\.0 access token/.test(prose),
+              prose.slice(0, 200));
+    assert.ok(prose.indexOf("adminApi.authRequired") >= 0,
+              prose.slice(0, 200));
+  });
+
   // THE SCOPE PER OPERATION, AGAINST THE GATE'S OWN RULE — asserted here as
   // well as in process because this is the copy a client actually reads.
   check("every operation names the scope its method needs", function () {

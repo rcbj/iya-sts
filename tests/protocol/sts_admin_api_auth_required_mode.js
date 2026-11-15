@@ -19,7 +19,8 @@
 //   1. THE CONTROL: development with the setting off answers a caller with
 //      no credential; `GET /admin-api/me` says nobody is calling, with
 //      read and write; and an act then names nobody, on the HTTP row or on
-//      the action's own (a group create).
+//      the action's own (a group create); and the published OpenAPI
+//      document says no credential is needed, exactly.
 //   2. A PRODUCT REALM, the `false` still stored process-wide: no credential
 //      is 401, recorded STS-API-0001, the token gate's own refusal.
 //   3. IN PRODUCT a console session is not this API's credential: an Admin
@@ -39,6 +40,7 @@
 //      prefix (`/admin-api/me` answers them, not 403 STS-API-0125).
 //
 // D12 (#444): carries over tests/admin_api_auth_required_mode.js (1-6),
+// tests/admin_api_document_security.js's document with the gate off (1d),
 // tests/admin_api_actor.js (5, the control) and tests/admin_api_me.js (6
 // and 8), so they stay covered when Rust replaces Node.
 //
@@ -221,6 +223,32 @@ async function sections(ctx) {
     assert.ok(!me.json.caller, JSON.stringify(me.json.caller));
     assert.strictEqual(me.json.read, true);
     assert.strictEqual(me.json.write, true);
+  });
+  // THE DOCUMENT WITH THE GATE OFF (tests/admin_api_document_security.js):
+  // the open API described exactly, which only a job that may turn the gate
+  // off can ask.
+  const doc = await call("GET", base + "/admin-api/openapi.json", null);
+  check("1d. with the gate off the published document's `security` is the " +
+        "EMPTY array, no scheme is offered, no operation asks for one, and " +
+        "the original paragraph is back", function () {
+    assert.strictEqual(doc.status, 200, doc.text.slice(0, 200));
+    assert.ok(Array.isArray(doc.json.security) &&
+              doc.json.security.length === 0,
+              JSON.stringify(doc.json.security));
+    assert.ok(!(doc.json.components || {}).securitySchemes,
+              Object.keys(doc.json.components || {}).join(","));
+    const asking = [];
+    Object.keys(doc.json.paths || {}).forEach(function (path) {
+      Object.keys(doc.json.paths[path]).forEach(function (method) {
+        if (doc.json.paths[path][method].security) {
+          asking.push(method + " " + path);
+        }
+      });
+    });
+    assert.deepStrictEqual(asking.slice(0, 5), [], asking.length + " ask");
+    assert.ok(String(doc.json.info.description)
+      .indexOf("Nothing here is protected") >= 0,
+              String(doc.json.info.description).slice(0, 200));
   });
   const group = "aq-" + STAMP.slice(0, 20);
   const made = await call("POST", devBase + "/admin-api/groups/create", null,
@@ -421,7 +449,7 @@ async function test() {
   assert.ok(mode.status === 200 && mode.json.isProduct === false,
             "the default realm should be back in development: " +
             mode.text.slice(0, 200));
-  assert.ok(checks >= 11, "only " + checks + " checks ran");
+  assert.ok(checks >= 12, "only " + checks + " checks ran");
   log.info(checks + " checks passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
