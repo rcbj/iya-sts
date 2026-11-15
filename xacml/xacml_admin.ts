@@ -130,6 +130,9 @@ import pepRoutePolicies = require('./xacml_pep_route_policies');
 import pepSettings = require('./xacml_pep_settings');
 // A remote PEP's listeners (#1760): the grammar `set-pep-listener` is held to.
 import pepListeners = require('./xacml_pep_listeners');
+// Remote PEP clusters (#1760): the register under ou=pepClusters and the
+// merge a member's pulls are answered from. A LIBRARY.
+import pepClusters = require('./xacml_pep_clusters');
 // The realm's application register, for the route form's chooser (#1760).
 import applications = require('../common/applications');
 import pki = require('../common/pki');
@@ -195,6 +198,7 @@ interface XacmlAdminDeps {
   routePolicies: any;
   pepSettings: any;
   pepListeners: any;
+  clusters: any;
   // The realm's applications, as the route form's chooser lists them.
   applicationChoices(): Array<{ identifier: string; name: string }>;
   pki: any;
@@ -208,6 +212,52 @@ interface XacmlAdminDeps {
   // or a policy deleted — a require at load would run its slot's build
   // here, ahead of where `protocol_stack.ts` installs it.
   loadFga(): FgaPolicyReader;
+}
+
+// ---------------------------------------------------------------------------
+// WHOSE CONFIGURATION AN ACTION EDITS (#1760, Remote PEP clusters): a PEP's
+// own, or a cluster's, which every member pulls. The reverse proxy's, the
+// settings' and the listeners' actions are one piece of code for both, so a
+// cluster's document is held to exactly the grammar, checks and lifecycle a
+// PEP's is; what differs is here. For a PEP every member below is what the
+// code did before owners existed, so its answers and audit rows are
+// byte-for-byte what they were.
+// ---------------------------------------------------------------------------
+interface PepOwner {
+  // The name a sentence uses: the PEP's, or the cluster's.
+  name: string;
+  // `pep` or `cluster`.
+  kind: string;
+  // What the routes' generated policies are named and marked for: the PEP's
+  // name, or `@<cluster>`.
+  policyOwner: string;
+  // `xacml.pep` or `xacml.pep.cluster`, the audit rows' prefix.
+  audit: string;
+  // `remote PEP` or `remote PEP cluster`, in an audit row's detail.
+  noun: string;
+  // The stored documents, row-shaped: `proxy`, `settings`, `listeners`,
+  // and for a PEP its `hostname`, `name` and `listenersInUse`.
+  row(): any;
+  // What the PEP last reported about its listeners; null for a cluster,
+  // whose members are each checked against their own (`memberProblem()`).
+  listenersInUse(): any;
+  setProxy(text: string | null): boolean;
+  setSettings(text: string | null): boolean;
+  setListeners(text: string | null): boolean;
+  // The settings' validation: a cluster's refuses the notify URL, which is
+  // a member's address.
+  validateSettings(given: any): any;
+  // A simple or public route with no resource the save could not fill.
+  resourceProblem(doc: any): any;
+  // Every route's application resolving: a PEP's own callback, or each
+  // member's (and the members' listeners, and the signal streams).
+  resolve(proxy: any): any;
+  // A cluster's listeners as each member would pull them, checked against
+  // what that member last reported; null for a PEP, whose own report the
+  // listeners' validation already asked.
+  checkListeners(list: any[]): any;
+  // After a write: a cluster nudges its members.
+  changed(what: string): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +288,32 @@ const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
                      'remove-pep-route', 'set-pep-route-application',
                      'set-pep-route-authorization',
                      'generate-pep-route-policy'];
+
+// REMOTE PEP CLUSTERS' ACTIONS (#1760, phase 1): the cluster, its members,
+// and its shared proxy, routes, settings and listeners — the last six the
+// PEP's own actions through the cluster's owner.
+const CLUSTER_ACTIONS = ['create-pep-cluster', 'delete-pep-cluster',
+                         'add-pep-cluster-member',
+                         'remove-pep-cluster-member',
+                         'set-pep-cluster-member', 'set-pep-cluster-proxy',
+                         'set-pep-cluster-settings', 'set-pep-cluster-route',
+                         'remove-pep-cluster-route',
+                         'generate-pep-cluster-route-policy',
+                         'set-pep-cluster-listener',
+                         'remove-pep-cluster-listener'];
+
+// A MEMBER'S CONFIGURATION IS ITS CLUSTER'S (#1760): the PEP's own actions
+// on it are refused, naming the cluster (STS-XACML-0276). Its addresses are
+// `set-pep-cluster-member`'s; enabling, Forget and its environment's
+// listener certificate stay the PEP's.
+const MEMBER_REFUSED = ['set-pep-proxy', 'clear-pep-proxy',
+                        'set-pep-route-identity', 'set-pep-settings',
+                        'clear-pep-settings', 'set-pep-listener',
+                        'remove-pep-listener',
+                        'renew-pep-listener-certificate', 'set-pep-route',
+                        'remove-pep-route', 'set-pep-route-application',
+                        'set-pep-route-authorization',
+                        'generate-pep-route-policy'];
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.
@@ -289,6 +365,14 @@ class XacmlAdmin {
    * a promise.
    */
   static readonly PEP_ACTIONS = PEP_ACTIONS;
+  /**
+   * The remote PEP cluster actions (#1760).
+   */
+  static readonly CLUSTER_ACTIONS = CLUSTER_ACTIONS;
+  /**
+   * The PEP actions a cluster member is refused.
+   */
+  static readonly MEMBER_REFUSED = MEMBER_REFUSED;
   /**
    * The repository actions.
    */
@@ -355,6 +439,7 @@ class XacmlAdmin {
       routePolicies: pepRoutePolicies,
       pepSettings: pepSettings,
       pepListeners: pepListeners,
+      clusters: pepClusters,
       applicationChoices: function () {
         helpers.log.debug("Entering applicationChoices().");
         const rows = applications.list().map(function (row: any) {
@@ -620,9 +705,14 @@ class XacmlAdmin {
     // answer narrowed to that row, as `/admin-api/applications`'
     // `?application=` is, with `found` saying whether it is registered.
     const one = typeof pep === 'string' && pep !== '' ? pep : null;
+    const clusters = this.deps.clusters;
     const rows = peps.all().filter(function (row) {
       return one === null || row.name === one;
-    }).map(function (row) {
+    }).map(function (raw) {
+      // A MEMBER OF A CLUSTER IS SHOWN AS IT PULLS (#1760): its effective
+      // row, which names the cluster (`cluster`). A PEP in no cluster is
+      // its row, unchanged.
+      const row = clusters.effectiveRow(raw);
       const view = Object.assign({}, row);
       // THE IDENTITY ENTRY AS A SERVICE ACCOUNT (#1760): the person the
       // certificate resolves to, whether it is a service account, and its
@@ -662,7 +752,8 @@ class XacmlAdmin {
       // — the proxy's public base URL, else its HTTPS listener.
       view.proxyResourceBase = routePolicies.defaultResource(row, '', '/');
       if (row.proxy) {
-        const checked = pepProxy.validate(row.proxy, row.name);
+        const checked = pepProxy.validate(row.proxy,
+                                          pepProxy.ownerOf(row));
         if (checked.ok) {
           view.proxy = checked.proxy;
           view.proxyResourceBase = routePolicies.defaultResource(row,
@@ -679,7 +770,8 @@ class XacmlAdmin {
             }
             // THE ROUTE'S POLICY (#1760), and why the PEP would refuse its
             // every request: not held, disabled, or one it is never sent.
-            const policy = routePolicies.stateOf(row.name, route);
+            const policy = routePolicies.stateOf(pepProxy.ownerOf(row),
+                                                 route);
             return { route: route.id, application: route.application,
                      usable: one.usable, why: one.usable ? null : one.why,
                      authorization: route.authorization.kind,
@@ -856,11 +948,15 @@ class XacmlAdmin {
     });
     // THE AUTHORIZATION (#1760): the policy's state, the default resource
     // the route's path gives, and what its application's home page says.
-    const { routePolicies } = this.deps;
-    const fallback = routePolicies.defaultResource(row,
-      row.proxy ? row.proxy.publicBaseUrl : '', route.path);
+    const { routePolicies, pepProxy } = this.deps;
+    // A CLUSTER'S OWN VIEW (#1760) has no listener to default from: its
+    // default resource is its logical base URL's, or none.
+    const base = row.proxy ? row.proxy.publicBaseUrl : '';
+    const fallback = Array.isArray(row.members) && !base
+      ? { resource: '', base: '', source: 'publicBaseUrl' }
+      : routePolicies.defaultResource(row, base, route.path);
     const authorization = {
-      policy: routePolicies.stateOf(row.name, route),
+      policy: routePolicies.stateOf(pepProxy.ownerOf(row), route),
       defaultResource: fallback.resource,
       defaultSource: fallback.source,
       applicationUrl: routePolicies.applicationUrl(
@@ -1033,6 +1129,19 @@ class XacmlAdmin {
                     'and GET /admin-api/xacml/peps lists it.' },
                'STS-XACML-0038');
     }
+    if (MEMBER_REFUSED.indexOf(action) >= 0) {
+      const of = this.deps.clusters.clusterOf(name);
+      if (of) {
+        log.debug('Leaving XacmlAdmin.pepAction(). A cluster member.');
+        return errorCodes.mark({ ok: false,
+                 why: '"' + name + '" is a member of cluster "' + of.name +
+                      '", whose configuration it pulls: ' + action +
+                      ' is refused on a member. Edit the cluster ' +
+                      '(set-pep-cluster-*), or set this member\'s own ' +
+                      'addresses with set-pep-cluster-member.' },
+                 'STS-XACML-0276');
+      }
+    }
     if (action === 'set-pep-proxy' || action === 'clear-pep-proxy' ||
         action === 'set-pep-route-identity' || action === 'set-pep-route' ||
         action === 'remove-pep-route' ||
@@ -1040,16 +1149,16 @@ class XacmlAdmin {
         action === 'set-pep-route-authorization' ||
         action === 'generate-pep-route-policy') {
       log.debug('Leaving XacmlAdmin.pepAction(). The reverse proxy.');
-      return this.proxyAction(action, name, body);
+      return this.proxyAction(action, this.pepOwner(name), body);
     }
     if (action === 'set-pep-settings' || action === 'clear-pep-settings') {
       log.debug('Leaving XacmlAdmin.pepAction(). The settings.');
-      return this.settingsAction(action, name, body);
+      return this.settingsAction(action, this.pepOwner(name), body);
     }
     if (action === 'set-pep-listener' || action === 'remove-pep-listener' ||
         action === 'renew-pep-listener-certificate') {
       log.debug('Leaving XacmlAdmin.pepAction(). The listeners.');
-      return this.listenerAction(action, name, body || {});
+      return this.listenerAction(action, this.pepOwner(name), body || {});
     }
     if (action === 'forget-pep') {
       const gone = peps.remove(name);
@@ -1107,11 +1216,13 @@ class XacmlAdmin {
   // ===========================================================================
   // The stored proxy document with one route's identity replaced, or a
   // refusal: `set-pep-route-identity`'s first half.
-  private withRouteIdentity(name: string, body: any): any {
+  private withRouteIdentity(owner: PepOwner, body: any): any {
     const { log, errorCodes, peps, pepProxy } = this.deps;
     log.debug('Entering XacmlAdmin.withRouteIdentity().');
-    const row = peps.read(name);
-    const checked = row && row.proxy ? pepProxy.validate(row.proxy, name)
+    const name = owner.name;
+    const row = owner.row();
+    const checked = row && row.proxy
+      ? pepProxy.validate(row.proxy, owner.policyOwner)
                                      : null;
     if (!checked || !checked.ok) {
       log.debug('Leaving XacmlAdmin.withRouteIdentity(). No document.');
@@ -1287,11 +1398,13 @@ class XacmlAdmin {
 
   // The stored proxy document as a copy to edit, or a refusal: the first
   // half of every one-route action.
-  private proxyToEdit(name: string): any {
+  private proxyToEdit(owner: PepOwner): any {
     const { log, errorCodes, peps, pepProxy } = this.deps;
     log.debug('Entering XacmlAdmin.proxyToEdit().');
-    const row = peps.read(name);
-    const checked = row && row.proxy ? pepProxy.validate(row.proxy, name)
+    const name = owner.name;
+    const row = owner.row();
+    const checked = row && row.proxy
+      ? pepProxy.validate(row.proxy, owner.policyOwner)
                                      : null;
     if (!checked || !checked.ok) {
       log.debug('Leaving XacmlAdmin.proxyToEdit(). No document.');
@@ -1314,11 +1427,12 @@ class XacmlAdmin {
   // route the form can save is a route the document editor could have, and
   // the reverse.
   // ---------------------------------------------------------------------------
-  private withRoute(action: string, name: string, body: any): any {
+  private withRoute(action: string, owner: PepOwner, body: any): any {
     const { log, errorCodes } = this.deps;
     const self = this;
     log.debug('Entering XacmlAdmin.withRoute(). ' + action);
-    const held = this.proxyToEdit(name);
+    const name = owner.name;
+    const held = this.proxyToEdit(owner);
     if (!held.ok) {
       log.debug('Leaving XacmlAdmin.withRoute(). No document.');
       return held;
@@ -1341,7 +1455,7 @@ class XacmlAdmin {
         // (#1760, rcbj: "ask for confirmation on remove"): the console's
         // remove carries a ticked `removePolicy`, and a caller that did not
         // confirm is refused rather than left with a policy it forgot.
-        const generated = this.deps.routePolicies.generatedFor(name, id);
+        const generated = this.deps.routePolicies.generatedFor(owner.policyOwner, id);
         if (generated && self.flagOf(body.removePolicy) !== true) {
           log.debug('Leaving XacmlAdmin.withRoute(). Unconfirmed.');
           return errorCodes.mark({ ok: false,
@@ -1527,12 +1641,13 @@ class XacmlAdmin {
   // pull. Validated whole by `xacml_pep_listeners.ts` against the PEP's
   // environment listeners as it last reported them; each refusal coded.
   // ===========================================================================
-  private listenerAction(action: string, name: string, body: any): any {
+  private listenerAction(action: string, owner: PepOwner, body: any): any {
     const { log, audit, errorCodes, peps, pepListeners } = this.deps;
     log.debug('Entering XacmlAdmin.listenerAction(). ' + action);
-    const row = peps.read(name);
+    const name = owner.name;
+    const row = owner.row();
     const current = pepListeners.stored(row.listeners || '',
-                                        row.listenersInUse);
+                                        owner.listenersInUse());
     if (!current.listeners) {
       log.debug('Leaving XacmlAdmin.listenerAction(). Stored invalid.');
       return errorCodes.mark({ ok: false,
@@ -1570,7 +1685,8 @@ class XacmlAdmin {
       }
       id = String((given && given.id) || '');
       checked = pepListeners.withListener(current.listeners, given,
-                                          row.listenersInUse);
+                                          owner.listenersInUse(),
+                                          owner.kind !== 'cluster');
     } else {
       checked = pepListeners.without(current.listeners,
                                      String(body.listener || body.id || ''),
@@ -1583,7 +1699,15 @@ class XacmlAdmin {
       return errorCodes.mark({ ok: false, why: checked.why }, checked.code);
     }
     const list = checked.listeners;
-    const written = peps.setListeners(name, list.length
+    // EVERY MEMBER'S OWN REPORT (#1760): a cluster's definitions with each
+    // member's addresses, against what that member last reported.
+    const clash = owner.checkListeners(list);
+    if (clash) {
+      log.debug('Leaving XacmlAdmin.listenerAction(). A member: ' +
+                clash.code);
+      return errorCodes.mark({ ok: false, why: clash.why }, clash.code);
+    }
+    const written = owner.setListeners(list.length
                                               ? JSON.stringify(list) : null);
     if (!written) {
       log.debug('Leaving XacmlAdmin.listenerAction(). Not written.');
@@ -1593,12 +1717,13 @@ class XacmlAdmin {
     }
     const verb = action === 'set-pep-listener' ? 'set'
       : (action === 'remove-pep-listener' ? 'remove' : 'renew');
-    audit.audit({ action: 'xacml.pep.listener.' + verb, actor: '',
+    audit.audit({ action: owner.audit + '.listener.' + verb, actor: '',
                   protocol: 'XACML',
                   detail: (verb === 'set' ? 'Defined' : verb === 'remove'
                     ? 'Removed' : 'Asked for a new certificate for') +
-                          ' listener "' + id + '" of remote PEP "' + name +
+                          ' listener "' + id + '" of ' + owner.noun + ' "' + name +
                           '"; ' + list.length + ' defined.' });
+    owner.changed('its listeners were saved');
     log.debug('Leaving XacmlAdmin.listenerAction(). ' + list.length);
     return { ok: true, listeners: list,
              what: verb === 'renew'
@@ -1622,15 +1747,17 @@ class XacmlAdmin {
   // `clear-pep-settings` removes them, so every setting is the PEP's
   // environment again from its next pull.
   // ===========================================================================
-  private settingsAction(action: string, name: string, body: any): any {
+  private settingsAction(action: string, owner: PepOwner, body: any): any {
     const { log, audit, errorCodes, peps, pepSettings } = this.deps;
     log.debug('Entering XacmlAdmin.settingsAction(). ' + action);
+    const name = owner.name;
     let settings: Record<string, unknown> = {};
     if (action === 'set-pep-settings') {
       const given = Object.assign({}, body || {});
       delete given.action;
       delete given.name;
-      const checked = pepSettings.validate(given);
+      delete given.cluster;
+      const checked = owner.validateSettings(given);
       if (!checked.ok) {
         log.debug('Leaving XacmlAdmin.settingsAction(). Refused: ' +
                   checked.code);
@@ -1640,7 +1767,7 @@ class XacmlAdmin {
       settings = checked.settings;
     }
     const keys = Object.keys(settings);
-    const written = peps.setSettings(name,
+    const written = owner.setSettings(
                                      keys.length ? JSON.stringify(settings)
                                                  : null);
     if (!written) {
@@ -1649,14 +1776,15 @@ class XacmlAdmin {
                                why: 'The directory refused the change.' },
                              'STS-XACML-0241');
     }
-    audit.audit({ action: 'xacml.pep.settings.' +
+    audit.audit({ action: owner.audit + '.settings.' +
                           (keys.length ? 'set' : 'clear'),
                   actor: '', protocol: 'XACML',
                   detail: (keys.length
-                    ? 'Set ' + keys.length + ' setting(s) of remote PEP "' +
-                      name + '": ' + keys.join(', ') + '.'
-                    : 'Cleared the managed settings of remote PEP "' + name +
-                      '".') });
+                    ? 'Set ' + keys.length + ' setting(s) of ' + owner.noun +
+                      ' "' + name + '": ' + keys.join(', ') + '.'
+                    : 'Cleared the managed settings of ' + owner.noun +
+                      ' "' + name + '".') });
+    owner.changed('its managed settings were saved');
     log.debug('Leaving XacmlAdmin.settingsAction(). ' + keys.length +
               ' set.');
     return { ok: true, settings: keys.length ? settings : null,
@@ -1673,7 +1801,7 @@ class XacmlAdmin {
   // base URL and its path (`routePolicies.defaultResource()`), so the
   // stored document says the resource-id its policy decides. A document
   // that is not JSON is handed on as it is, for the validator's refusal.
-  private withDefaultResources(name: string, given: any): any {
+  private withDefaultResources(owner: PepOwner, given: any): any {
     const { log, peps, routePolicies } = this.deps;
     log.debug('Entering XacmlAdmin.withDefaultResources().');
     let doc: any = given;
@@ -1691,8 +1819,17 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.withDefaultResources(). No routes.');
       return doc;
     }
-    const row = peps.read(name);
+    const row = owner.row();
     const out = JSON.parse(JSON.stringify(doc));
+    // A CLUSTER WITH NO LOGICAL BASE URL DEFAULTS NOTHING (#1760): it has
+    // no listener of its own, and a member's address may not stand for the
+    // one policy every member decides with (`resourceProblem()` refuses).
+    if (owner.kind === 'cluster' && !(typeof out.publicBaseUrl === 'string' &&
+                                      out.publicBaseUrl)) {
+      log.debug('Leaving XacmlAdmin.withDefaultResources(). A cluster ' +
+                'with no base URL.');
+      return out;
+    }
     out.routes.forEach(function (route: any) {
       const choice = route && route.authorization;
       if (choice && typeof choice === 'object' &&
@@ -1715,12 +1852,13 @@ class XacmlAdmin {
   // dropped, leaves its generated policy in the repository, unreferenced,
   // and the answer says so — a policy is never deleted by an edit that did
   // not ask for it.
-  private afterRouteSave(action: string, name: string, body: any,
+  private afterRouteSave(action: string, owner: PepOwner, body: any,
                          before: any, after: any):
       { removed: string[]; unreferenced: string[] } {
     const { log, routePolicies } = this.deps;
     log.debug('Entering XacmlAdmin.afterRouteSave(). ' + action);
     const removed: string[] = [];
+    const name = owner.policyOwner;
     const unreferenced: string[] = [];
     const generatedNow = (after.routes || []).filter(function (one: any) {
       return one.authorization.kind !== 'policy';
@@ -1760,10 +1898,11 @@ class XacmlAdmin {
   // `generate-pep-route-policy` (#1760): writes a simple or public route's
   // policy again from the route as stored — after the policy was edited by
   // hand, or deleted — through the same generator a save uses.
-  private generateRoutePolicy(name: string, body: any): any {
+  private generateRoutePolicy(owner: PepOwner, body: any): any {
     const { log, audit, errorCodes, routePolicies } = this.deps;
     log.debug('Entering XacmlAdmin.generateRoutePolicy().');
-    const held = this.proxyToEdit(name);
+    const name = owner.name;
+    const held = this.proxyToEdit(owner);
     if (!held.ok) {
       log.debug('Leaving XacmlAdmin.generateRoutePolicy(). No document.');
       return held;
@@ -1786,14 +1925,14 @@ class XacmlAdmin {
                     'generated for it. Make its choice simple or public ' +
                     'to generate one.' }, 'STS-XACML-0264');
     }
-    const one = routePolicies.write(name, route);
+    const one = routePolicies.write(owner.policyOwner, route);
     if (!one.ok) {
       log.debug('Leaving XacmlAdmin.generateRoutePolicy(). ' + one.code);
       return errorCodes.mark({ ok: false, why: one.why }, one.code);
     }
     audit.audit({ action: 'xacml.policy.write', actor: '', protocol: 'XACML',
                   detail: 'Generated "' + one.name + '" for route "' + id +
-                          '" of remote PEP "' + name + '".' });
+                          '" of ' + owner.noun + ' "' + name + '".' });
     log.debug('Leaving XacmlAdmin.generateRoutePolicy(). ' + one.written);
     return { ok: true, policy: one.name, written: one.written,
              what: one.written
@@ -1803,21 +1942,23 @@ class XacmlAdmin {
                  id + '" chooses; nothing was written.' };
   }
 
-  private proxyAction(action: string, name: string, body: any): any {
+  private proxyAction(action: string, owner: PepOwner, body: any): any {
     const { log, audit, errorCodes, peps, pepProxy } = this.deps;
+    const name = owner.name;
     log.debug('Entering XacmlAdmin.proxyAction(). ' + action);
     if (action === 'clear-pep-proxy') {
-      const cleared = peps.setProxy(name, null);
+      const cleared = owner.setProxy(null);
       if (!cleared) {
         log.debug('Leaving XacmlAdmin.proxyAction(). Not cleared.');
         return errorCodes.mark({ ok: false,
                                  why: 'The directory refused the change.' },
                                'STS-XACML-0202');
       }
-      audit.audit({ action: 'xacml.pep.proxy.clear', actor: '',
+      audit.audit({ action: owner.audit + '.proxy.clear', actor: '',
                     protocol: 'XACML',
                     detail: 'Removed the reverse-proxy configuration of ' +
-                            'remote PEP "' + name + '".' });
+                            owner.noun + ' "' + name + '".' });
+      owner.changed('its reverse-proxy configuration was cleared');
       log.debug('Leaving XacmlAdmin.proxyAction(). Cleared.');
       return { ok: true,
                what: '"' + name + '" holds no reverse-proxy configuration; ' +
@@ -1827,16 +1968,16 @@ class XacmlAdmin {
     }
     if (action === 'generate-pep-route-policy') {
       log.debug('Leaving XacmlAdmin.proxyAction(). Generating.');
-      return this.generateRoutePolicy(name, body || {});
+      return this.generateRoutePolicy(owner, body || {});
     }
     // WHAT WAS STORED, for the generated policies a save renames, removes
     // or leaves behind (below).
-    const before = this.proxyToEdit(name);
+    const before = this.proxyToEdit(owner);
     let given = (body || {}).proxy;
     if (action === 'set-pep-route' || action === 'remove-pep-route' ||
         action === 'set-pep-route-application' ||
         action === 'set-pep-route-authorization') {
-      const built = this.withRoute(action, name, body || {});
+      const built = this.withRoute(action, owner, body || {});
       if (!built.ok) {
         log.debug('Leaving XacmlAdmin.proxyAction(). Route refused.');
         return built;
@@ -1848,7 +1989,7 @@ class XacmlAdmin {
       // header/claim table: the stored document with that route's
       // `identity` replaced, then saved through the same checks as a whole
       // document. A row with no header name is an unused row of the table.
-      const built = this.withRouteIdentity(name, body || {});
+      const built = this.withRouteIdentity(owner, body || {});
       if (!built.ok) {
         log.debug('Leaving XacmlAdmin.proxyAction(). No route.');
         return built;
@@ -1863,8 +2004,17 @@ class XacmlAdmin {
                     'the ordered routes. clear-pep-proxy removes one.' },
                'STS-XACML-0201');
     }
-    const checked = pepProxy.validate(this.withDefaultResources(name, given),
-                                      name);
+    const filled = this.withDefaultResources(owner, given);
+    // A CLUSTER HAS NO LISTENER TO DEFAULT A RESOURCE FROM (#1760): its
+    // simple and public routes are decided by one policy for every member,
+    // so their resource is the cluster's logical base URL or their own.
+    const unfilled = owner.resourceProblem(filled);
+    if (unfilled) {
+      log.debug('Leaving XacmlAdmin.proxyAction(). No resource.');
+      return errorCodes.mark({ ok: false, why: unfilled.why },
+                             unfilled.code);
+    }
+    const checked = pepProxy.validate(filled, owner.policyOwner);
     if (!checked.ok) {
       log.debug('Leaving XacmlAdmin.proxyAction(). Refused: ' + checked.code);
       return errorCodes.mark({ ok: false, why: checked.why }, checked.code);
@@ -1873,7 +2023,7 @@ class XacmlAdmin {
     // session route's client that is not confidential, lacks the code grant
     // or the callback, an oauth2 route's with no audience, a saml2 route's
     // with no entity ID — each refused by its code. The pull asks again.
-    const unusable = pepProxy.resolutionProblem(checked.proxy);
+    const unusable = owner.resolve(checked.proxy);
     if (unusable) {
       log.debug('Leaving XacmlAdmin.proxyAction(). Unresolved: ' +
                 unusable.code);
@@ -1886,7 +2036,8 @@ class XacmlAdmin {
     // public routes' policies are written BEFORE the document, so a PEP
     // that pulls the new route table already finds its policies.
     const { routePolicies } = this.deps;
-    const choiceProblem = routePolicies.problem(checked.proxy.routes, name);
+    const choiceProblem = routePolicies.problem(checked.proxy.routes,
+                                                owner.policyOwner);
     if (choiceProblem) {
       log.debug('Leaving XacmlAdmin.proxyAction(). Choice: ' +
                 choiceProblem.code);
@@ -1895,7 +2046,8 @@ class XacmlAdmin {
     }
     const generated: string[] = [];
     for (let i = 0; i < checked.proxy.routes.length; i++) {
-      const one = routePolicies.write(name, checked.proxy.routes[i]);
+      const one = routePolicies.write(owner.policyOwner,
+                                      checked.proxy.routes[i]);
       if (!one.ok) {
         log.debug('Leaving XacmlAdmin.proxyAction(). Generation: ' +
                   one.code);
@@ -1905,31 +2057,33 @@ class XacmlAdmin {
         generated.push(one.name);
       }
     }
-    const written = peps.setProxy(name, JSON.stringify(checked.proxy));
+    const written = owner.setProxy(JSON.stringify(checked.proxy));
     if (!written) {
       log.debug('Leaving XacmlAdmin.proxyAction(). Not written.');
       return errorCodes.mark({ ok: false,
                                why: 'The directory refused the change.' },
                              'STS-XACML-0202');
     }
-    audit.audit({ action: 'xacml.pep.proxy.set', actor: '',
+    audit.audit({ action: owner.audit + '.proxy.set', actor: '',
                   protocol: 'XACML',
-                  detail: 'Set the reverse-proxy configuration of remote ' +
-                          'PEP "' + name + '": ' +
+                  detail: 'Set the reverse-proxy configuration of ' +
+                          owner.noun + ' "' + name + '": ' +
                           checked.proxy.routes.length + ' route(s), ' +
                           (checked.proxy.enabled ? 'enabled' : 'disabled') +
                           '.' });
-    const left = this.afterRouteSave(action, name, body || {},
+    const left = this.afterRouteSave(action, owner, body || {},
                                      before.ok ? before.proxy : null,
                                      checked.proxy);
     if (generated.length || left.removed.length) {
       audit.audit({ action: 'xacml.policy.write', actor: '',
                     protocol: 'XACML',
-                    detail: 'Reverse-proxy routes of remote PEP "' + name +
+                    detail: 'Reverse-proxy routes of ' + owner.noun + ' "' +
+                            name +
                             '": generated ' + (generated.join(', ') || 'none') +
                             '; removed ' + (left.removed.join(', ') || 'none') +
                             '.' });
     }
+    owner.changed('its reverse-proxy configuration was saved');
     log.debug('Leaving XacmlAdmin.proxyAction(). Saved.');
     return { ok: true, proxy: checked.proxy,
              policies: { generated: generated, removed: left.removed,
@@ -1944,6 +2098,810 @@ class XacmlAdmin {
                    (left.unreferenced.length ? ' No route references ' +
                      left.unreferenced.join(', ') + ' any more; it is left ' +
                      'in the repository.' : '') };
+  }
+
+  // ===========================================================================
+  // REMOTE PEP CLUSTERS (#1760, phase 1): the owners, the actions and the
+  // view. `xacml_pep_clusters.ts` holds the register and the merge; this is
+  // where an administrator's act is checked, written and nudged.
+  // ===========================================================================
+  /**
+   * The owner a PEP's own configuration is edited through: every member is
+   * what the code did before owners, so a PEP's answers are unchanged.
+   * @param name - the registered PEP's name
+   * @returns the owner
+   */
+  pepOwner(name: string): PepOwner {
+    const { log, peps, pepProxy, pepSettings } = this.deps;
+    log.debug('Entering XacmlAdmin.pepOwner(). ' + name);
+    log.debug('Leaving XacmlAdmin.pepOwner().');
+    return {
+      name: name, kind: 'pep', policyOwner: name, audit: 'xacml.pep',
+      noun: 'remote PEP',
+      row: function (): any {
+        return peps.read(name);
+      },
+      listenersInUse: function (): any {
+        const row = peps.read(name);
+        return row ? row.listenersInUse : null;
+      },
+      setProxy: function (text: string | null): boolean {
+        return peps.setProxy(name, text);
+      },
+      setSettings: function (text: string | null): boolean {
+        return peps.setSettings(name, text);
+      },
+      setListeners: function (text: string | null): boolean {
+        return peps.setListeners(name, text);
+      },
+      validateSettings: function (given: any): any {
+        return pepSettings.validate(given);
+      },
+      resourceProblem: function (): any {
+        return null;
+      },
+      resolve: function (proxy: any): any {
+        return pepProxy.resolutionProblem(proxy);
+      },
+      checkListeners: function (): any {
+        return null;
+      },
+      changed: function (): void {
+        log.debug('A PEP\'s own configuration converges on its poll.');
+      }
+    };
+  }
+
+  /**
+   * The owner a cluster's shared configuration is edited through: the same
+   * grammar and lifecycle as a PEP's, its generated policies the cluster's
+   * (`@<cluster>`), every member's own addresses checked, and every member
+   * nudged once the write commits.
+   * @param held - the cluster's row
+   * @returns the owner
+   */
+  clusterOwner(held: any): PepOwner {
+    const self = this;
+    const { log, errorCodes, pepProxy, pepSettings } = this.deps;
+    const clusters = this.deps.clusters;
+    log.debug('Entering XacmlAdmin.clusterOwner(). ' + held.name);
+    const name = held.name;
+    const current = function (): any {
+      return clusters.read(name) || held;
+    };
+    const write = function (member: string, text: string | null): boolean {
+      const now = current();
+      const next = Object.assign({}, now);
+      next[member] = text || '';
+      return clusters.write(next);
+    };
+    log.debug('Leaving XacmlAdmin.clusterOwner().');
+    return {
+      name: name, kind: 'cluster', policyOwner: clusters.ownerOf(name),
+      audit: 'xacml.pep.cluster', noun: 'remote PEP cluster',
+      row: function (): any {
+        const now = current();
+        return { name: name, cluster: name, proxy: now.proxy,
+                 settings: now.settings, listeners: now.listeners,
+                 hostname: '', listenersInUse: null };
+      },
+      listenersInUse: function (): any {
+        return null;
+      },
+      setProxy: function (text: string | null): boolean {
+        return write('proxy', text);
+      },
+      setSettings: function (text: string | null): boolean {
+        return write('settings', text);
+      },
+      setListeners: function (text: string | null): boolean {
+        return write('listeners', text);
+      },
+      validateSettings: function (given: any): any {
+        const source = given && given.settings !== undefined
+          ? given.settings : given;
+        let read: any = source;
+        if (typeof source === 'string') {
+          try {
+            read = JSON.parse(source);
+          } catch (e) {
+            log.debug('Caught in validateSettings(): ' +
+                      ((e && e.message) || e));
+            read = null;
+          }
+        }
+        if (read && typeof read === 'object' &&
+            read.notifyUrl !== undefined && read.notifyUrl !== '') {
+          return errorCodes.mark({ ok: false, code: 'STS-XACML-0278',
+            why: 'The notify URL is a member\'s address, not the ' +
+                 'cluster\'s: each member is nudged at its own. Set it on ' +
+                 'the member (set-pep-cluster-member, `notifyUrl`).' },
+            'STS-XACML-0278');
+        }
+        return pepSettings.validate(given);
+      },
+      resourceProblem: function (doc: any): any {
+        return clusters.resourceProblem(doc);
+      },
+      resolve: function (proxy: any): any {
+        const now = current();
+        const signals = clusters.signalsProblem(proxy, now.members.length);
+        if (signals) {
+          return signals;
+        }
+        if (!now.members.length) {
+          return pepProxy.resolutionProblem(proxy);
+        }
+        return clusters.memberProblem(Object.assign({}, now,
+          { proxy: JSON.stringify(proxy) }));
+      },
+      checkListeners: function (list: any[]): any {
+        const now = current();
+        return clusters.memberProblem(Object.assign({}, now,
+          { listeners: list.length ? JSON.stringify(list) : '' }));
+      },
+      changed: function (what: string): void {
+        self.nudgeMembers(current(), what);
+      }
+    };
+  }
+
+  // Every member of a cluster nudged once the write commits (#1760): a
+  // cluster's write changes every member's pulls at once.
+  private nudgeMembers(cluster: any, what: string, extra?: string[]): void {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.nudgeMembers().');
+    const names = (cluster ? cluster.members : []).map(function (one: any) {
+      return one.pep;
+    }).concat(extra || []);
+    try {
+      const surface: any = this.deps.loadXacml();
+      if (surface && typeof surface.nudgePeps === 'function') {
+        surface.nudgePeps(names, 'remote PEP cluster "' +
+          (cluster ? cluster.name : '') + '": ' + what);
+      }
+    } catch (e) {
+      // The nudge is an optimisation: every member converges on its poll.
+      log.debug('Caught in XacmlAdmin.nudgeMembers(): ' +
+                ((e && e.message) || e));
+    }
+    log.debug('Leaving XacmlAdmin.nudgeMembers(). ' + names.length);
+  }
+
+  // A refusal in the shape every action answers.
+  private refused(why: string, code: string): any {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlAdmin.refused(). ' + code);
+    log.debug('Leaving XacmlAdmin.refused().');
+    return errorCodes.mark({ ok: false, why: why }, code);
+  }
+
+  // A PEP's own documents, parsed, for the answer of a join that
+  // discarded them, so the console can offer them as a download.
+  private ownDocuments(row: any): any {
+    const { log, pepProxy, pepSettings, pepListeners } = this.deps;
+    log.debug('Entering XacmlAdmin.ownDocuments().');
+    const proxy = row && row.proxy ? pepProxy.validate(row.proxy, row.name)
+                                   : null;
+    const settings = pepSettings.stored((row && row.settings) || '');
+    const listeners = pepListeners.stored((row && row.listeners) || '', null);
+    log.debug('Leaving XacmlAdmin.ownDocuments().');
+    return {
+      proxy: proxy && proxy.ok ? proxy.proxy : null,
+      settings: settings.settings,
+      listeners: listeners.listeners && listeners.listeners.length
+        ? listeners.listeners : null
+    };
+  }
+
+  // Whether a PEP holds a configuration of its own.
+  private holdsOwn(row: any): boolean {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.holdsOwn().');
+    log.debug('Leaving XacmlAdmin.holdsOwn().');
+    return !!row && !!(row.proxy || row.settings || row.listeners);
+  }
+
+  // A PEP's own configuration removed (a join with `discard`, and the PEP a
+  // cluster is created from): its pulls are the cluster's from now on.
+  private clearOwn(name: string): void {
+    const { log, peps } = this.deps;
+    log.debug('Entering XacmlAdmin.clearOwn(). ' + name);
+    const row = peps.read(name);
+    if (row && row.proxy) {
+      peps.setProxy(name, null);
+    }
+    if (row && row.settings) {
+      peps.setSettings(name, null);
+    }
+    if (row && row.listeners) {
+      peps.setListeners(name, null);
+    }
+    log.debug('Leaving XacmlAdmin.clearOwn().');
+  }
+
+  // A member that leaves keeping a copy (#1760): the effective documents
+  // become its own, its routes' generated policies `pep-<pep>-<route>`.
+  private keepCopy(cluster: any, member: any): any {
+    const { log, peps, pepProxy, routePolicies } = this.deps;
+    const clusters = this.deps.clusters;
+    log.debug('Entering XacmlAdmin.keepCopy(). ' + member.pep);
+    const docs = clusters.documentsFor(cluster, member);
+    const generated: string[] = [];
+    if (docs.proxy) {
+      const checked = pepProxy.validate(docs.proxy, member.pep);
+      if (!checked.ok) {
+        log.debug('Leaving XacmlAdmin.keepCopy(). Grammar.');
+        return checked;
+      }
+      const choice = routePolicies.problem(checked.proxy.routes, member.pep);
+      if (choice) {
+        log.debug('Leaving XacmlAdmin.keepCopy(). Choice.');
+        return choice;
+      }
+      for (let i = 0; i < checked.proxy.routes.length; i++) {
+        const one = routePolicies.write(member.pep, checked.proxy.routes[i]);
+        if (!one.ok) {
+          log.debug('Leaving XacmlAdmin.keepCopy(). Generation.');
+          return one;
+        }
+        if (one.written) {
+          generated.push(one.name);
+        }
+      }
+      peps.setProxy(member.pep, JSON.stringify(checked.proxy));
+    }
+    if (docs.settings) {
+      peps.setSettings(member.pep, docs.settings);
+    }
+    if (docs.listeners) {
+      peps.setListeners(member.pep, docs.listeners);
+    }
+    log.debug('Leaving XacmlAdmin.keepCopy(). ' + generated.length);
+    return { ok: true, generated: generated };
+  }
+
+  /**
+   * Applies one remote PEP cluster action (#1760): create, delete, the
+   * members, and the shared proxy, routes, settings and listeners.
+   *
+   * @param given - the body, with `action` and `cluster`
+   * @returns a result with `ok` and `what` or `why`
+   */
+  clusterAction(given?: any): any {
+    const self = this;
+    const { log, audit, peps, pepProxy, pepSettings, pepListeners,
+            routePolicies } = this.deps;
+    const clusters = this.deps.clusters;
+    const body = given || {};
+    const action = String(body.action || '');
+    log.debug('Entering XacmlAdmin.clusterAction(). ' + action);
+    const name = String(body.cluster || '');
+    if (action === 'create-pep-cluster') {
+      log.debug('Leaving XacmlAdmin.clusterAction(). Create.');
+      return this.createCluster(name, body);
+    }
+    const held = name ? clusters.read(name) : null;
+    if (!held) {
+      log.debug('Leaving XacmlAdmin.clusterAction(). No such cluster.');
+      return this.refused(name
+        ? 'No remote PEP cluster is called "' + name + '" in this realm. ' +
+          'GET /admin-api/xacml/pep-clusters lists them.'
+        : 'Which cluster? Send `cluster`, its name.', 'STS-XACML-0269');
+    }
+    const owner = this.clusterOwner(held);
+    // THE SHARED DOCUMENTS: the PEP's own actions, through the cluster.
+    const shared: { [action: string]: string } = {
+      'set-pep-cluster-proxy': 'set-pep-proxy',
+      'set-pep-cluster-route': 'set-pep-route',
+      'remove-pep-cluster-route': 'remove-pep-route',
+      'generate-pep-cluster-route-policy': 'generate-pep-route-policy'
+    };
+    if (Object.prototype.hasOwnProperty.call(shared, action)) {
+      log.debug('Leaving XacmlAdmin.clusterAction(). The proxy.');
+      return this.proxyAction(shared[action], owner, body);
+    }
+    if (action === 'set-pep-cluster-settings') {
+      log.debug('Leaving XacmlAdmin.clusterAction(). The settings.');
+      return this.settingsAction('set-pep-settings', owner, body);
+    }
+    if (action === 'set-pep-cluster-listener' ||
+        action === 'remove-pep-cluster-listener') {
+      log.debug('Leaving XacmlAdmin.clusterAction(). The listeners.');
+      return this.listenerAction(action === 'set-pep-cluster-listener'
+        ? 'set-pep-listener' : 'remove-pep-listener', owner, body);
+    }
+    if (action === 'delete-pep-cluster') {
+      const release = String(body.release || '');
+      if (held.members.length && release !== 'keep' && release !== 'empty') {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Members left.');
+        return this.refused('Cluster "' + name + '" has ' +
+          held.members.length + ' member(s) (' + held.members.map(
+            function (one: any) { return one.pep; }).join(', ') + '). ' +
+          'Send `release`: keep, and each member keeps a copy of the ' +
+          'cluster\'s configuration as its own, or empty, and each is ' +
+          'left with none.', 'STS-XACML-0273');
+      }
+      const kept: string[] = [];
+      for (let i = 0; i < held.members.length; i++) {
+        const member = held.members[i];
+        if (release === 'keep' && peps.read(member.pep)) {
+          const copy = this.keepCopy(held, member);
+          if (!copy.ok) {
+            log.debug('Leaving XacmlAdmin.clusterAction(). Copy refused.');
+            return this.refused('Member "' + member.pep + '" could not ' +
+              'keep a copy: ' + copy.why, copy.code);
+          }
+          kept.push(member.pep);
+        }
+      }
+      const removed: string[] = [];
+      const proxy = held.proxy ? pepProxy.validate(held.proxy, owner.policyOwner)
+                               : null;
+      ((proxy && proxy.ok && proxy.proxy.routes) || [])
+        .forEach(function (route: any) {
+          const gone = routePolicies.remove(owner.policyOwner, route.id);
+          if (gone) {
+            removed.push(gone);
+          }
+        });
+      if (!clusters.remove(name)) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Not removed.');
+        return this.refused('The directory would not remove cluster "' +
+                            name + '".', 'STS-XACML-0279');
+      }
+      audit.audit({ action: 'xacml.pep.cluster.delete', actor: '',
+                    protocol: 'XACML',
+                    detail: 'Deleted remote PEP cluster "' + name + '" (' +
+                            held.members.length + ' member(s), release ' +
+                            (release || 'none') + '); removed ' +
+                            (removed.join(', ') || 'no policy') + '.' });
+      this.nudgeMembers(held, 'it was deleted');
+      log.debug('Leaving XacmlAdmin.clusterAction(). Deleted.');
+      return { ok: true, cluster: name, released: kept,
+               policies: { generated: [], removed: removed,
+                           unreferenced: [] },
+               what: 'Cluster "' + name + '" is deleted. ' + (kept.length
+                 ? kept.join(', ') + ' kept a copy of its configuration.'
+                 : (held.members.length
+                     ? 'Its members hold no configuration now.' : '')) };
+    }
+    const pep = String(body.pep || '');
+    const at = held.members.map(function (one: any) {
+      return one.pep;
+    }).indexOf(pep);
+    if (action === 'add-pep-cluster-member') {
+      const member = clusters.memberOf({ pep: pep,
+        publicBaseUrl: body.publicBaseUrl, notifyUrl: body.notifyUrl,
+        listeners: this.overridesOf(body.listeners) }, 'The member');
+      if (member.ok === false) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Member refused.');
+        return this.refused(member.why, member.code);
+      }
+      const elsewhere = clusters.clusterOf(pep);
+      if (elsewhere) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Already a member.');
+        return this.refused('"' + pep + '" is already a member of cluster "' +
+          elsewhere.name + '"; a PEP is a member of one cluster at most. ' +
+          'Remove it there first.', 'STS-XACML-0271');
+      }
+      const row = peps.read(pep);
+      if (this.holdsOwn(row) && this.flagOf(body.discard) !== true) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Own configuration.');
+        return this.refused('"' + pep + '" holds a configuration of its ' +
+          'own (reverse proxy, settings or listeners), which joining ' +
+          'replaces with the cluster\'s. Confirm with `discard: true`; ' +
+          'the answer carries what was discarded.', 'STS-XACML-0272');
+      }
+      const next = Object.assign({}, held,
+        { members: held.members.concat([member]) });
+      const proxy = held.proxy ? pepProxy.validate(held.proxy, owner.policyOwner)
+                               : null;
+      const signals = clusters.signalsProblem(proxy && proxy.ok
+        ? proxy.proxy : null, next.members.length);
+      if (signals) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Signals.');
+        return this.refused(signals.why, signals.code);
+      }
+      const problem = clusters.memberProblem(next, pep);
+      if (problem) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Member check.');
+        return this.refused(problem.why, problem.code);
+      }
+      const discarded = this.holdsOwn(row) ? this.ownDocuments(row) : null;
+      if (!clusters.write(next)) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Not written.');
+        return this.refused('The directory refused the change.',
+                            'STS-XACML-0279');
+      }
+      if (discarded) {
+        this.clearOwn(pep);
+      }
+      audit.audit({ action: 'xacml.pep.cluster.member.add', actor: '',
+                    protocol: 'XACML',
+                    detail: 'Added "' + pep + '" to remote PEP cluster "' +
+                            name + '"' + (row ? '' : ' (not yet registered)') +
+                            (discarded ? '; its own configuration was ' +
+                              'discarded.' : '.') });
+      this.nudgeMembers({ name: name, members: [member] }, 'a member joined');
+      log.debug('Leaving XacmlAdmin.clusterAction(). Added.');
+      return { ok: true, cluster: name, pep: pep, registered: !!row,
+               discarded: discarded,
+               what: '"' + pep + '" is a member of cluster "' + name + '"' +
+                 (row ? '; it pulls the cluster\'s configuration from its ' +
+                   'next poll.' : '. It is not registered yet: it pulls ' +
+                   'the cluster\'s configuration once it registers.') };
+    }
+    if (at < 0) {
+      log.debug('Leaving XacmlAdmin.clusterAction(). Not a member.');
+      return this.refused(pep
+        ? '"' + pep + '" is not a member of cluster "' + name + '".'
+        : 'Which member? Send `pep`, its name.', 'STS-XACML-0269');
+    }
+    if (action === 'set-pep-cluster-member') {
+      const old = held.members[at];
+      const merged = {
+        pep: pep,
+        publicBaseUrl: body.publicBaseUrl === undefined ? old.publicBaseUrl
+          : body.publicBaseUrl,
+        notifyUrl: body.notifyUrl === undefined ? old.notifyUrl
+          : body.notifyUrl,
+        listeners: body.listeners === undefined ? old.listeners
+          : this.overridesOf(body.listeners)
+      };
+      const member = clusters.memberOf(merged, 'The member');
+      if (member.ok === false) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Member refused.');
+        return this.refused(member.why, member.code);
+      }
+      const members = held.members.slice();
+      members[at] = member;
+      const next = Object.assign({}, held, { members: members });
+      const problem = clusters.memberProblem(next, pep);
+      if (problem) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Member check.');
+        return this.refused(problem.why, problem.code);
+      }
+      if (!clusters.write(next)) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Not written.');
+        return this.refused('The directory refused the change.',
+                            'STS-XACML-0279');
+      }
+      audit.audit({ action: 'xacml.pep.cluster.member.set', actor: '',
+                    protocol: 'XACML',
+                    detail: 'Set the addresses of "' + pep + '" in remote ' +
+                            'PEP cluster "' + name + '".' });
+      this.nudgeMembers({ name: name, members: [member] },
+                        'a member\'s addresses changed');
+      log.debug('Leaving XacmlAdmin.clusterAction(). Member set.');
+      return { ok: true, cluster: name, pep: pep, member: member,
+               what: '"' + pep + '"\'s addresses in cluster "' + name +
+                 '" are saved; it pulls them on its next poll.' };
+    }
+    if (action === 'remove-pep-cluster-member') {
+      const keep = this.flagOf(body.keep) !== false &&
+        String(body.keep || '') !== 'empty';
+      const member = held.members[at];
+      let generated: string[] = [];
+      const registered = !!peps.read(pep);
+      if (keep && registered) {
+        const copy = this.keepCopy(held, member);
+        if (!copy.ok) {
+          log.debug('Leaving XacmlAdmin.clusterAction(). Copy refused.');
+          return this.refused('"' + pep + '" could not keep a copy: ' +
+                              copy.why, copy.code);
+        }
+        generated = copy.generated;
+      }
+      const members = held.members.slice();
+      members.splice(at, 1);
+      if (!clusters.write(Object.assign({}, held, { members: members }))) {
+        log.debug('Leaving XacmlAdmin.clusterAction(). Not written.');
+        return this.refused('The directory refused the change.',
+                            'STS-XACML-0279');
+      }
+      audit.audit({ action: 'xacml.pep.cluster.member.remove', actor: '',
+                    protocol: 'XACML',
+                    detail: 'Removed "' + pep + '" from remote PEP cluster "' +
+                            name + '"; ' + (keep && registered
+                              ? 'it kept a copy of the configuration.'
+                              : 'it holds no configuration.') });
+      this.nudgeMembers({ name: name, members: [member] }, 'a member left');
+      log.debug('Leaving XacmlAdmin.clusterAction(). Removed.');
+      return { ok: true, cluster: name, pep: pep,
+               kept: keep && registered,
+               policies: { generated: generated, removed: [],
+                           unreferenced: [] },
+               what: '"' + pep + '" is no longer a member of cluster "' +
+                 name + '". ' + (keep && registered
+                   ? 'It keeps a copy of the configuration as its own, and ' +
+                     'goes on enforcing it.'
+                   : 'It holds no configuration: its proxy answers 404 ' +
+                     'from its next pull.') };
+    }
+    log.debug('Leaving XacmlAdmin.clusterAction(). Unknown.');
+    return this.refused('Unknown cluster action "' + action + '".',
+                        'STS-XACML-0032');
+  }
+
+  // A member's listener overrides from the API's object, its JSON, or the
+  // console's form (one `<id> <address>:<port> <name> …` per line).
+  private overridesOf(value: unknown): any {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.overridesOf().');
+    if (value === undefined || value === null || value === '') {
+      log.debug('Leaving XacmlAdmin.overridesOf(). None.');
+      return {};
+    }
+    if (typeof value !== 'string') {
+      log.debug('Leaving XacmlAdmin.overridesOf(). As given.');
+      return value;
+    }
+    const text = value.trim();
+    if (text.charAt(0) === '{') {
+      try {
+        log.debug('Leaving XacmlAdmin.overridesOf(). JSON.');
+        return JSON.parse(text);
+      } catch (e) {
+        log.debug('Caught in XacmlAdmin.overridesOf(): ' +
+                  ((e && e.message) || e));
+        return text;
+      }
+    }
+    const out: any = {};
+    text.split(/\r?\n/).forEach(function (line: string) {
+      const words = line.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) {
+        return;
+      }
+      const one: any = {};
+      const where = /^(.*):(\d+)$/.exec(words[1] || '');
+      if (where) {
+        if (where[1]) {
+          one.address = where[1].replace(/^\[|\]$/g, '');
+        }
+        one.port = Number(where[2]);
+      } else if (words[1]) {
+        one.address = words[1];
+      }
+      if (words.length > 2) {
+        one.names = words.slice(2);
+      }
+      out[words[0]] = one;
+    });
+    log.debug('Leaving XacmlAdmin.overridesOf(). Lines.');
+    return out;
+  }
+
+  // `create-pep-cluster` (#1760): a cluster, empty or copied from a PEP,
+  // which becomes its first member and whose routes' policies are
+  // generated again under the cluster's names.
+  private createCluster(name: string, body: any): any {
+    const { log, audit, peps, pepProxy, pepSettings, pepListeners,
+            routePolicies } = this.deps;
+    const clusters = this.deps.clusters;
+    log.debug('Entering XacmlAdmin.createCluster(). ' + name);
+    if (!clusters.nameOk(name)) {
+      log.debug('Leaving XacmlAdmin.createCluster(). Name.');
+      return this.refused('A cluster\'s name (`cluster`) is 1 to 64 ' +
+        'letters, digits, dots, dashes or underscores.', 'STS-XACML-0270');
+    }
+    if (clusters.read(name)) {
+      log.debug('Leaving XacmlAdmin.createCluster(). Taken.');
+      return this.refused('A remote PEP cluster called "' + name +
+        '" already exists in this realm.', 'STS-XACML-0270');
+    }
+    const description = String(body.description || '').slice(0, 1024);
+    const from = String(body.from || '');
+    const owner = clusters.ownerOf(name);
+    const cluster: any = { name: name, description: description, proxy: '',
+                           settings: '', listeners: '', members: [] };
+    let generated: string[] = [];
+    let unreferenced: string[] = [];
+    if (from) {
+      const row = peps.read(from);
+      if (!row) {
+        log.debug('Leaving XacmlAdmin.createCluster(). No such PEP.');
+        return this.refused('No Policy Enforcement Point is registered as "' +
+          from + '"; a cluster is created from a registered PEP, or empty.',
+          'STS-XACML-0038');
+      }
+      const elsewhere = clusters.clusterOf(from);
+      if (elsewhere) {
+        log.debug('Leaving XacmlAdmin.createCluster(). Already a member.');
+        return this.refused('"' + from + '" is already a member of cluster "' +
+          elsewhere.name + '".', 'STS-XACML-0271');
+      }
+      const member: any = { pep: from, publicBaseUrl: '', notifyUrl: '',
+                            listeners: {} };
+      if (row.proxy) {
+        const mine = pepProxy.validate(row.proxy, from);
+        if (!mine.ok) {
+          log.debug('Leaving XacmlAdmin.createCluster(). PEP proxy.');
+          return this.refused('"' + from + '"\'s own proxy configuration ' +
+            'does not validate (' + mine.why + '); correct it first.',
+            mine.code);
+        }
+        const ours = pepProxy.validate(mine.proxy, owner);
+        const choice = routePolicies.problem(ours.proxy.routes, owner);
+        if (choice) {
+          log.debug('Leaving XacmlAdmin.createCluster(). Choice.');
+          return this.refused(choice.why, choice.code);
+        }
+        for (let i = 0; i < ours.proxy.routes.length; i++) {
+          const one = routePolicies.write(owner, ours.proxy.routes[i]);
+          if (!one.ok) {
+            log.debug('Leaving XacmlAdmin.createCluster(). Generation.');
+            return this.refused(one.why, one.code);
+          }
+          if (one.written) {
+            generated.push(one.name);
+          }
+        }
+        unreferenced = mine.proxy.routes.map(function (route: any) {
+          const left = routePolicies.generatedFor(from, route.id);
+          return left ? left.name : '';
+        }).filter(Boolean);
+        member.publicBaseUrl = ours.proxy.publicBaseUrl;
+        cluster.proxy = JSON.stringify(ours.proxy);
+      }
+      const settings = pepSettings.stored(row.settings || '').settings;
+      if (settings) {
+        const shared = Object.assign({}, settings);
+        if (typeof shared.notifyUrl === 'string') {
+          member.notifyUrl = shared.notifyUrl;
+        }
+        delete shared.notifyUrl;
+        cluster.settings = Object.keys(shared).length
+          ? JSON.stringify(shared) : '';
+      }
+      const listeners = pepListeners.stored(row.listeners || '', null)
+        .listeners;
+      if (listeners && listeners.length) {
+        cluster.listeners = JSON.stringify(listeners);
+      }
+      cluster.members = [member];
+    }
+    if (!clusters.write(cluster)) {
+      log.debug('Leaving XacmlAdmin.createCluster(). Not written.');
+      return this.refused('The directory refused the cluster.',
+                          'STS-XACML-0279');
+    }
+    if (from) {
+      this.clearOwn(from);
+    }
+    audit.audit({ action: 'xacml.pep.cluster.create', actor: '',
+                  protocol: 'XACML',
+                  detail: 'Created remote PEP cluster "' + name + '"' +
+                          (from ? ' from remote PEP "' + from + '"; ' +
+                            'generated ' + (generated.join(', ') || 'none') +
+                            '.' : ', empty.') });
+    this.nudgeMembers(cluster, 'it was created');
+    log.debug('Leaving XacmlAdmin.createCluster(). Created.');
+    return { ok: true, cluster: name, from: from || null,
+             policies: { generated: generated, removed: [],
+                         unreferenced: unreferenced },
+             what: 'Cluster "' + name + '" is created' + (from
+               ? ' from "' + from + '", its first member, which now pulls ' +
+                 'the cluster\'s configuration.' +
+                 (unreferenced.length ? ' No route references ' +
+                   unreferenced.join(', ') + ' any more; it is left in the ' +
+                   'repository.' : '')
+               : ', with no member and no configuration.') };
+  }
+
+  /**
+   * Describes the realm's remote PEP clusters (#1760), each with its
+   * shared documents as the pull reads them, its members and each
+   * member's problems, or one cluster (`cluster`) and one of its routes
+   * (`route`), as the cluster's pages draw them.
+   *
+   * @param cluster - optional; one cluster by name
+   * @param route - optional; with `cluster`, one route by id
+   * @returns the view as JSON
+   */
+  clustersJson(cluster?: string, route?: string): Record<string, any> {
+    const self = this;
+    const { log, config, peps, pepProxy, pepSettings, pepListeners,
+            routePolicies } = this.deps;
+    const clusters = this.deps.clusters;
+    log.debug('Entering XacmlAdmin.clustersJson().');
+    const one = typeof cluster === 'string' && cluster !== '' ? cluster : null;
+    const registered = peps.all();
+    const rows = clusters.all().filter(function (row: any) {
+      return one === null || row.name === one;
+    }).map(function (row: any) {
+      const owner = clusters.ownerOf(row.name);
+      const view: Record<string, any> = {
+        name: row.name, cluster: row.name, description: row.description,
+        proxy: null, proxyProblem: null, proxyRoutes: [],
+        proxyResourceBase: { resource: '', base: '',
+                             source: 'publicBaseUrl' },
+        settings: null, settingsProblem: null, listeners: null,
+        listenersProblem: null, listenerRows: [],
+        membersProblem: row.membersProblem
+      };
+      if (row.proxy) {
+        const checked = pepProxy.validate(row.proxy, owner);
+        if (checked.ok) {
+          view.proxy = checked.proxy;
+          if (checked.proxy.publicBaseUrl) {
+            view.proxyResourceBase = routePolicies.defaultResource(view,
+              checked.proxy.publicBaseUrl, '/');
+          }
+          view.proxyRoutes = checked.proxy.routes.map(function (r: any) {
+            const resolved = pepProxy.resolveRoute(r, checked.proxy).resolved;
+            const policy = routePolicies.stateOf(owner, r);
+            return { route: r.id, application: r.application,
+                     usable: resolved.usable,
+                     why: resolved.usable ? null : resolved.why,
+                     authorization: r.authorization.kind,
+                     policy: r.authorization.policy,
+                     policyProblem: policy.problem };
+          });
+        } else {
+          view.proxyProblem = checked.why;
+        }
+      }
+      const settings = pepSettings.stored(row.settings || '');
+      view.settings = settings.settings;
+      view.settingsProblem = settings.problem;
+      const defined = pepListeners.stored(row.listeners || '', null);
+      view.listeners = defined.listeners;
+      view.listenersProblem = defined.problem;
+      view.listenerRows = pepListeners.rows(defined.listeners || [], null)
+        .filter(function (r: any) {
+          return r.source === 'service';
+        }).map(function (r: any) {
+          return Object.assign(r, { issued: null });
+        });
+      const problems = clusters.memberProblems(row);
+      view.members = row.members.map(function (member: any, i: number) {
+        const reg = registered.filter(function (r: any) {
+          return r.name === member.pep;
+        })[0] || null;
+        let base = member.publicBaseUrl;
+        if (!base && view.proxy) {
+          base = view.proxy.publicBaseUrl;
+        }
+        return {
+          pep: member.pep, registered: !!reg,
+          publicBaseUrl: member.publicBaseUrl, notifyUrl: member.notifyUrl,
+          listeners: member.listeners,
+          effectivePublicBaseUrl: base || '',
+          hostname: reg ? reg.hostname : '',
+          lastSeen: reg ? reg.lastSeen : '',
+          stale: reg ? reg.stale : true,
+          enabled: reg ? reg.enabled : false,
+          code: problems[i].code, why: problems[i].why
+        };
+      });
+      return view;
+    });
+    const json: Record<string, any> = {
+      enabled: config.value('xacml.remotePeps') !== false,
+      clusters: rows,
+      // EVERY REGISTERED PEP AND ITS CLUSTER, for the Members tab's chooser.
+      peps: registered.map(function (r: any) {
+        const of = clusters.clusterOf(r.name);
+        return { name: r.name, cluster: of ? of.name : null,
+                 ownConfiguration: self.holdsOwn(r) };
+      }),
+      settingsCatalogue: pepSettings.catalogue(),
+      listenersCatalogue: pepListeners.catalogue()
+    };
+    if (one !== null) {
+      json.cluster = one;
+      json.found = rows.length > 0;
+      json.applicationChoices = this.deps.applicationChoices();
+      if (typeof route === 'string' && route !== '') {
+        json.route = route;
+        json.routeDetail = this.routeDetailOf(rows[0] || null, route,
+                                              json.applicationChoices);
+      }
+    }
+    log.debug('Leaving XacmlAdmin.clustersJson(). ' + rows.length);
+    return json;
   }
 
   /**
@@ -2516,7 +3474,8 @@ class XacmlAdmin {
     const { log } = this.deps;
     log.debug("Entering XacmlAdmin.actionNames().");
     log.debug("Leaving XacmlAdmin.actionNames().");
-    return POLICY_ACTIONS.concat(EDITOR_ACTIONS).concat(PEP_ACTIONS);
+    return POLICY_ACTIONS.concat(EDITOR_ACTIONS).concat(PEP_ACTIONS)
+      .concat(CLUSTER_ACTIONS);
   }
 
   // A plain result, or a promise of one (see `PEP_ACTIONS`).
@@ -2545,6 +3504,10 @@ class XacmlAdmin {
     if (PEP_ACTIONS.indexOf(action) >= 0) {
       log.debug('Leaving XacmlAdmin.combinedAction(). A remote PEP action.');
       return self.pepAction(body);
+    }
+    if (CLUSTER_ACTIONS.indexOf(action) >= 0) {
+      log.debug('Leaving XacmlAdmin.combinedAction(). A cluster action.');
+      return self.clusterAction(body);
     }
     // The refusal sentence names every action and counts them, which is the
     // shape `ssf/CLAUDE.md` records two tests as READING — a handler that
@@ -2651,6 +3614,16 @@ class XacmlAdmin {
           log.debug("Leaving monitor().");
           return self.monitorJson();
         },
+        // REMOTE PEP CLUSTERS (#1760): `GET /admin-api/xacml/pep-clusters`,
+        // with `cluster` and `route` for the cluster's own pages.
+        clusters: function (req?: any) {
+          log.debug("Entering clusters().");
+          const q = req && req.query ? req.query : {};
+          log.debug("Leaving clusters().");
+          return self.clustersJson(
+            typeof q.cluster === 'string' ? q.cluster : undefined,
+            typeof q.route === 'string' ? q.route : undefined);
+        },
         action: self.combinedAction.bind(self),
         actionNames: self.actionNames.bind(self)
       });
@@ -2717,6 +3690,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   overviewJson: slot.forward('overviewJson'),
   pepsJson: slot.forward('pepsJson'),
+  clustersJson: slot.forward('clustersJson'),
+  clusterAction: slot.forward('clusterAction'),
+  CLUSTER_ACTIONS: XacmlAdmin.CLUSTER_ACTIONS,
+  MEMBER_REFUSED: XacmlAdmin.MEMBER_REFUSED,
   // The monitor's view, for GET /admin-api/xacml/monitor. Rule 7: every page
   // of this console has an operation. There is no action beside it because
   // that page HAS no control — it reports and changes nothing, deliberately

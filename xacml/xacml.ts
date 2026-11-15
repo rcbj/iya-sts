@@ -169,6 +169,9 @@ import xml = require('./xacml_xml');
 import validate = require('./xacml_validate');
 import mtls = require('../oauth-oidc/mtls');
 import peps = require('./xacml_pep_registry');
+// Remote PEP clusters (#1760): a member's pulls are answered from its
+// EFFECTIVE row, the cluster's documents with its own addresses.
+import pepClusters = require('./xacml_pep_clusters');
 import pepHttp = require('./xacml_pep_http');
 // The remote PEP's reverse proxy (#1760): its configuration grammar, the
 // pull's body and the four validation doors. A LIBRARY: it registers no
@@ -2092,10 +2095,38 @@ class XacmlSurface {
     log.debug('Leaving XacmlSurface.nudgeRegisteredPeps().');
   }
 
-  private dispatchNudge(what: string): void {
+  /**
+   * Tells the named remote PEPs that their configuration changed, once the
+   * change has committed (#1760, Remote PEP clusters): a cluster's write is
+   * a change to every member's pulls at once, so every member is nudged,
+   * where a PEP's own configuration is left to its poll. Filtered through
+   * `notifiable()`, so a disabled PEP or one with no notify URL is not
+   * dialled. Off with notification or remote PEPs.
+   * @param names - the PEPs' names
+   * @param what - a description of the change, for the log
+   */
+  nudgePeps(names: string[], what: string): void {
+    const self = this;
+    const { log, pepHttp } = this.deps;
+    log.debug('Entering XacmlSurface.nudgePeps(). what=' + what);
+    const wanted = (names || []).map(String);
+    if (!wanted.length || !pepHttp.notifyAllowed() ||
+        !self.remotePepsEnabled()) {
+      log.debug('Leaving XacmlSurface.nudgePeps(). Nobody, or off.');
+      return;
+    }
+    self.afterCommit(function () {
+      self.dispatchNudge(what, wanted);
+    });
+    log.debug('Leaving XacmlSurface.nudgePeps(). ' + wanted.length);
+  }
+
+  private dispatchNudge(what: string, only?: string[]): void {
     const { log, errorCodes, peps, pepHttp } = this.deps;
     log.debug('Entering XacmlSurface.dispatchNudge(). what=' + what);
-    const rows = peps.notifiable();
+    const rows = peps.notifiable().filter(function (row: any) {
+      return !only || only.indexOf(row.name) >= 0;
+    });
     if (!rows.length) {
       log.debug('Leaving XacmlSurface.dispatchNudge(). Nobody to nudge.');
       return;
@@ -2873,7 +2904,7 @@ class XacmlSurface {
       }
       const name = self.pepNameOf(access.identity,
                                   String(req.query.name || ''));
-      const row = name ? peps.read(name) : null;
+      const row = name ? pepClusters.effectiveRow(peps.read(name)) : null;
       const pulled = self.deps.pepProxy.pull(baseUrlOf(req), row, name);
       const since = String(req.query.since || '');
       if (since && since === pulled.token) {
@@ -2916,7 +2947,7 @@ class XacmlSurface {
       }
       const name = self.pepNameOf(access.identity,
                                   String(req.query.name || ''));
-      const row = name ? peps.read(name) : null;
+      const row = name ? pepClusters.effectiveRow(peps.read(name)) : null;
       const pulled = self.deps.pepSettings.pull(row, name);
       const since = String(req.query.since || '');
       if (since && since === pulled.token) {
@@ -3041,8 +3072,8 @@ class XacmlSurface {
       log.debug('Entering POST /xacml/pep/identity.');
       self.validationDoor(req, res, 'identity', function (body, pep) {
         return self.deps.pepProxy.identity(body, pep,
-                                           pep ? peps.read(pep) : null,
-                                           baseUrlOf(req));
+          pep ? pepClusters.effectiveRow(peps.read(pep)) : null,
+          baseUrlOf(req));
       });
       log.debug('Leaving POST /xacml/pep/identity.');
     });
@@ -3574,5 +3605,6 @@ export = {
   // The repository change observer, for
   // `tests/cluster_observation_counters.js` (2026-09-15):
   // a clustered node nudges only after the commit.
-  nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps')
+  nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps'),
+  nudgePeps: slot.forward('nudgePeps')
 };

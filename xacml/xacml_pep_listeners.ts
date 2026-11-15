@@ -559,10 +559,14 @@ class PepListeners {
    * @param current - the stored definitions
    * @param given - the listener
    * @param inUse - the PEP's report
+   * @param environment - optional; false to leave out the environment's
+   *   ports (a cluster's definitions, which each member's own report is
+   *   asked of afterwards, #1760)
    * @returns the new list, or a coded refusal
    */
   withListener(current: Listener[], given: unknown,
-               inUse: InUse | null): Validated | Refusal {
+               inUse: InUse | null,
+               environment?: boolean): Validated | Refusal {
     const { log } = this.deps;
     log.debug("Entering PepListeners.withListener().");
     const one: any = this.one(given, 'The listener');
@@ -578,7 +582,7 @@ class PepListeners {
     } else {
       list.push(one);
     }
-    const checked = this.validate(list, inUse);
+    const checked = this.validate(list, inUse, environment);
     log.debug("Leaving PepListeners.withListener(). ok=" + checked.ok);
     return checked;
   }

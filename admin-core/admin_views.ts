@@ -2041,6 +2041,21 @@ class AdminViews {
   }
 
   /**
+   * Returns the remote PEP clusters from the XACML pages (#1760).
+   *
+   * @param req - the request
+   * @returns the view, or the no-XACML answer when the module is not loaded
+   */
+  xacmlPepClustersView(req): IyaApi.AdminAnswer<'getXacmlPepClusters'> {
+    const { log, noXacml } = this.deps;
+    log.debug('Entering AdminViews.xacmlPepClustersView().');
+    const json = xacmlPages && typeof xacmlPages.clusters === 'function'
+      ? xacmlPages.clusters(req) : noXacml();
+    log.debug('Leaving AdminViews.xacmlPepClustersView().');
+    return json;
+  }
+
+  /**
    * Returns the XACML decision tester's answer for the query.
    *
    * @param req - the request
@@ -16654,6 +16669,7 @@ export = {
   xacmlPoliciesView: slot.forward('xacmlPoliciesView'),
   xacmlEditorView: slot.forward('xacmlEditorView'),
   xacmlPepsView: slot.forward('xacmlPepsView'),
+  xacmlPepClustersView: slot.forward('xacmlPepClustersView'),
   xacmlDecideView: slot.forward('xacmlDecideView'),
   xacmlMonitorView: slot.forward('xacmlMonitorView'),
   directoryPageJson: slot.forward('directoryPageJson'),

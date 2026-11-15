@@ -75,7 +75,9 @@ const SCHEMA_OWNERS = [
   { id: 'xacmlPolicy', modulePath: '../xacml/xacml_store',
     container: 'ou=policies' },
   { id: 'xacmlPep', modulePath: '../xacml/xacml_pep_registry',
-    container: 'ou=peps' }
+    container: 'ou=peps' },
+  { id: 'xacmlPepCluster', modulePath: '../xacml/xacml_pep_clusters',
+    container: 'ou=pepClusters' }
 ];
 
 const DIRECTORY_STRING = '1.3.6.1.4.1.1466.115.121.1.15';

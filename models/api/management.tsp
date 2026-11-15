@@ -7524,6 +7524,33 @@ namespace IyaSts.Api.Management {
     `listeners`?: NullableXacmlPepListeners
   }
 
+@component model `XacmlPepClusterAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The cluster acted on."}) `cluster`?: string;
+    @js(#{`description`:"The member acted on."}) `pep`?: string;
+    @js(#{`description`:"create-pep-cluster: the PEP it was created from, or null."}) `from`?: NullableString;
+    @js(#{`description`:"add-pep-cluster-member: whether the PEP is registered yet."}) `registered`?: boolean;
+    @js(#{`description`:"remove-pep-cluster-member: whether the member kept a copy."}) `kept`?: boolean;
+    @js(#{`description`:"delete-pep-cluster: the members that kept a copy."}) `released`?: (string)[];
+    @js(#{`description`:"add-pep-cluster-member with discard: the PEP's own documents that joining replaced, for the console to offer as a download; null when it held none."}) `discarded`?: XacmlPepClusterDiscarded | null;
+    @js(#{`description`:"set-pep-cluster-member: the member as saved."}) `member`?: Record<unknown>;
+    `proxy`?: NullableXacmlPepProxy;
+    `settings`?: NullableXacmlPepSettings;
+    `listeners`?: NullableXacmlPepListeners;
+    @js(#{`description`:"What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them."}) `policies`?: {
+      `generated`?: (string)[];
+      `removed`?: (string)[];
+      `unreferenced`?: (string)[]
+    };
+    `policy`?: string;
+    `written`?: boolean
+  }
+
 @component model `XacmlPepProxyAnswer` {
     `ok`: boolean;
     `message`?: string;
@@ -28527,6 +28554,60 @@ op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/xacml/pep-clusters",
+  "get",
+  #{
+    `operationId`:"getXacmlPepClusters",
+    `summary`:"The realm's remote PEP clusters: each one's shared configuration and its members",
+    `description`:"Everything the PEP clusters tab on /admin/xacml and a cluster's own pages draw (#1760). A cluster's reverse proxy, managed settings and listener definitions are held once and every member pulls them as its own, differing only in its name and addresses. Each cluster carries its documents as the pull reads them, its routes' resolution and policy state, and each member's addresses, whether it is registered, and why a write would refuse it now (`code`, `why`). `peps` lists every registered PEP and its cluster, for the Members tab's chooser. With `cluster`, one cluster and `found`; with `route` as well, `routeDetail`.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep-cluster and GET /admin/xacml/pep-cluster/route` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The clusters and their members.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"cluster",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One cluster, by its name exactly. The answer then lists that cluster alone and says `found`."
+      },
+      #{
+        `name`:"route",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `cluster`: one route of the cluster's reverse proxy, by its id. The answer then carries `routeDetail`."
+      }
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getXacmlPepClusters`(@js(#{`maxLength`:64,`examples`:#["orders"]}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:64,`examples`:#["health"]}) `parameters/1/schema`: string,
+  `responses/200/content/application~1json/schema`: {
+    `xacml`?: boolean;
+    `message`?: string;
+    `enabled`?: boolean;
+    `clusters`?: (XacmlPepClusterView)[];
+    `peps`?: (XacmlPepClusterPep)[];
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `cluster`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/xacml/create-from-template",
   "post",
   #{
@@ -30887,6 +30968,403 @@ op `generateXacmlPepRoutePolicy`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"or
   },
   `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/create-pep-cluster",
+  "post",
+  #{
+    `operationId`:"createXacmlPepCluster",
+    `summary`:"Create a remote PEP cluster, empty or from a registered PEP",
+    `description`:"Creates a logical cluster of remote PEPs that share one configuration (#1760). With `from`, the PEP's reverse proxy, managed settings and listener definitions are copied to the cluster, the PEP becomes its first member (its publicBaseUrl and notify URL kept as its own addresses), its own documents are cleared, and the routes' generated policies are written again as pepc-<cluster>-<route>, marked @<cluster>/<route>; the PEP's old pep-<pep>-<route> policies are left in the repository, unreferenced. A name that is not 1 to 64 letters, digits, dots, dashes or underscores, or one already taken, is STS-XACML-0270; a PEP not registered STS-XACML-0038, one already a member STS-XACML-0271.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `createXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`from`:"pep-1",`description`:"The orders proxies"},#{`cluster`:"empty-cluster"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The registered PEP whose configuration the cluster starts from; omitted for an empty cluster."}) `from`?: string;
+    @js(#{`maxLength`:1024}) `description`?: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/delete-pep-cluster",
+  "post",
+  #{
+    `operationId`:"deleteXacmlPepCluster",
+    `summary`:"Delete a remote PEP cluster",
+    `description`:"Deletes a cluster and the policies generated for its routes (#1760). A cluster that still has members is refused unless `release` says what they keep: keep, and each registered member keeps a copy of the configuration as its own (its routes' policies generated again as pep-<pep>-<route>), or empty, and each is left with none (STS-XACML-0273). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `deleteXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`release`:"keep"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"keep or empty; required while the cluster has members."}) `release`?: "keep" | "empty";
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/add-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"addXacmlPepClusterMember",
+    `summary`:"Add a member to a remote PEP cluster",
+    `description`:"Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. A second member while a session route has `signals` on is refused (STS-XACML-0275): the members would share one signal stream. The member's routes must resolve with its own callback, <publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `addXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`publicBaseUrl`:"https://pep-2.example.test:9543",`discard`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own public base URL, the origin a browser reaches it at; empty for the cluster's."}) `publicBaseUrl`?: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own notify URL, which the nudge dials; empty for the one it registered with."}) `notifyUrl`?: string;
+    @js(#{`description`:"The member's own listener addresses: { <listener id>: { address, port, names } }, its JSON, or the console's lines of `<id> <address>:<port> <name> ...`."}) `listeners`?: Record<unknown> | string;
+    @js(#{`description`:"true confirms that the PEP's own configuration is replaced by the cluster's."}) `discard`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterMember",
+    `summary`:"Remove a member from a remote PEP cluster",
+    `description`:"Removes a member (#1760). By default (`keep` true) a registered member keeps a copy of the configuration it pulled as its own, its routes' policies generated again as pep-<pep>-<route>, and goes on enforcing it; with `keep` false it is left with none. Not a member is STS-XACML-0269.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`keep`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`description`:"Whether the member keeps a copy; true by default."}) `keep`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterMember",
+    `summary`:"Set a member's own addresses",
+    `description`:"Replaces a member's own addresses (#1760): its publicBaseUrl, notify URL and listener addresses, each member given replacing the stored one. Checked as a cluster write is, for this member (STS-XACML-0277 for a shape, the grammar's and the resolution's own codes otherwise).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`publicBaseUrl`:"https://pep-2.example.test:9543",`listeners`:#{`proxy-alt`:#{`port`:9544,`names`:#["pep-2.example.test"]}}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own public base URL, the origin a browser reaches it at; empty for the cluster's."}) `publicBaseUrl`?: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own notify URL, which the nudge dials; empty for the one it registered with."}) `notifyUrl`?: string;
+    @js(#{`description`:"The member's own listener addresses: { <listener id>: { address, port, names } }, its JSON, or the console's lines of `<id> <address>:<port> <name> ...`."}) `listeners`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-proxy",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterProxy",
+    `summary`:"Set a remote PEP cluster's reverse-proxy configuration",
+    `description`:"The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-<cluster>-<route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is refused in a cluster of more than one member (STS-XACML-0275). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterProxy`(@js(#{`examples`:#[#{`cluster`:"orders",`proxy`:#{`upstream`:"http://orders.internal:8080",`publicBaseUrl`:"https://orders.example.test",`routes`:#[#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`authorization`:#{`kind`:"public"}}]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"The configuration document, or its JSON: set-pep-proxy's."}) `proxy`: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-settings",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterSettings",
+    `summary`:"Set a remote PEP cluster's managed settings",
+    `description`:"The cluster's set-pep-settings (#1760): the same table, replacing what is set; every member pulls them. The notify URL is a member's address and is refused here (STS-XACML-0278).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterSettings`(@js(#{`examples`:#[#{`cluster`:"orders",`settings`:#{`bias`:"deny-biased",`pollIntervalMs`:30000}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"The settings, as set-pep-settings takes them."}) `settings`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-route",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterRoute",
+    `summary`:"Add or replace one route of a remote PEP cluster's reverse proxy",
+    `description`:"The cluster's set-pep-route (#1760): `route` or the form's members, `from` for a rename, `part` for one tab of the route's page. Saved through set-pep-cluster-proxy's checks.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterRoute`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"One route object, or its JSON; or the console form's members."}) `route`?: Record<unknown> | string;
+    @js(#{`maxLength`:64}) `from`?: string;
+    `part`?: string;
+    `position`?: integer | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-route",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterRoute",
+    `summary`:"Remove one route of a remote PEP cluster's reverse proxy",
+    `description`:"The cluster's remove-pep-route (#1760): a route with a generated policy needs `removePolicy` true (STS-XACML-0268).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterRoute`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:"health",`removePolicy`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `route`: string;
+    `removePolicy`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/generate-pep-cluster-route-policy",
+  "post",
+  #{
+    `operationId`:"generateXacmlPepClusterRoutePolicy",
+    `summary`:"Generate a cluster route's simple or public policy again",
+    `description`:"The cluster's generate-pep-route-policy (#1760): pepc-<cluster>-<route> written again from the route as stored.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `generateXacmlPepClusterRoutePolicy`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:"health"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `route`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-listener",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterListener",
+    `summary`:"Define or replace one listener of a remote PEP cluster",
+    `description`:"The cluster's set-pep-listener (#1760): the same grammar; each member's copy, with its own address, port and names, is checked against what that member reported (STS-XACML-0247 names the member).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:#{`id`:"proxy-alt",`protocol`:"https",`purpose`:"proxy",`port`:9544,`dnsNames`:#["orders.example.test"]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"One listener object, or its JSON; or the console form's members."}) `listener`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-listener",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterListener",
+    `summary`:"Remove one listener of a remote PEP cluster",
+    `description`:"The cluster's remove-pep-listener (#1760).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:"proxy-alt"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/ssf",

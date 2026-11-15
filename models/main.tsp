@@ -12,6 +12,7 @@ import "./directory/service_account.tsp";
 import "./directory/spiffe.tsp";
 import "./directory/xacml_policy.tsp";
 import "./directory/xacml_pep.tsp";
+import "./directory/xacml_pep_cluster.tsp";
 import "./directory/federation_relationship.tsp";
 import "./directory/policy_password.tsp";
 import "./directory/policy_authn.tsp";

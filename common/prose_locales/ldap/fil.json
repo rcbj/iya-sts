@@ -2058,5 +2058,29 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."
+  },
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Isang lohikal na cluster ng mga remote Policy Enforcement Point na may iisang configuration (#1760): ang reverse proxy, ang mga pinamamahalaang setting at ang mga depinisyon ng listener ay iniingatan dito nang minsan, at kinukuha ng bawat miyembro ang mga ito bilang sarili nito. Ang miyembro ay naiiba lamang sa pangalan at mga address nito. Dito iniingatan ang pagiging miyembro, kaya maaaring ilista ang isang PEP bago ito magparehistro, at ang isang PEP ay kabilang sa hindi hihigit sa isang cluster."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "Ang configuration ng reverse proxy na kinukuha ng bawat miyembro ng cluster mula sa GET /xacml/pep/proxy (#1760): ang sariling dokumento ng PEP (xacmlPepProxy), na sinusuri ng parehong gramatika, at ang mga nabuong policy ng mga ruta nito ay pinangalanang pepc-<cluster>-<route> at minarkahang @<cluster>/<route>. Ang publicBaseUrl nito ay ang lohikal na base URL ng cluster, kung saan binubuo ang default na resource ng isang simple o pampublikong ruta at ipinapadala sa isang miyembrong walang sariling publicBaseUrl. Isinusulat ng mga aksyong set-pep-cluster-proxy at set-pep-cluster-route."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "Ang mga pinamamahalaang setting na kinukuha ng bawat miyembro ng cluster mula sa GET /xacml/pep/settings (#1760): ang sariling dokumento ng PEP (xacmlPepSettings), na sinusuri ng parehong talahanayan, maliban sa notify URL, na address ng isang miyembro at itinatakda sa miyembro. Isinusulat ng aksyong set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Ang mga listener na tinukoy para sa bawat miyembro ng cluster (#1760): ang sariling array ng PEP (xacmlPepListeners), na sinusuri ng parehong gramatika. Maaaring palitan ng isang miyembro ang address at port ng isang listener at magdagdag ng mga DNS name sa certificate nito; ang certificate ng bawat miyembro ay sarili nito, na inisyu para sa sarili nitong key. Isinusulat ng mga aksyong set-pep-cluster-listener at remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Ang mga miyembro ng cluster (#1760): isang JSON array ng { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, ang bawat pep ay pangalan ng isang rehistradong PEP o ng isang hindi pa rehistrado, at ang iba ay ang sariling mga address ng miyembro. Ang isang PEP ay miyembro ng hindi hihigit sa isang cluster. Isinusulat ng mga aksyong create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member at remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Ang sinabi ng isang administrator tungkol sa cluster nang likhain ito."
   }
 }

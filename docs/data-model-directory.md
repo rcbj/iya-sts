@@ -56,6 +56,7 @@ Do not edit it by hand.
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
 | [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
+| [XACML policy enforcement point cluster](#xacml-policy-enforcement-point-cluster) | `XacmlPepCluster` | ou=pepClusters | 5 |
 | [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 11 |
 
 ## Application
@@ -1316,6 +1317,24 @@ Recorded in `../xacml/xacml_pep_registry`.
 | `xacmlPepThumbprint` | one | this service | `1.3.6.1.4.1.67607.1.1.737` | RFC 8705 x5t#S256 of that certificate — the SHA-256 of its DER, base64url. The same computation the token endpoint binds a certificate-bound access token with, through the same function, so the two spellings cannot drift. |
 | `xacmlPepUndischargeable` | one | this service | `1.3.6.1.4.1.67607.1.1.738` | How many of those refusals were an undischargeable obligation on a Permit. Counted separately because it is the one enforcement outcome that looks like a bug from the client side and is the specification working. |
 | `xacmlPepVersion` | one | this service | `1.3.6.1.4.1.67607.1.1.739` | What the remote PEP says it is. Free text. |
+
+## XACML policy enforcement point cluster
+
+TypeSpec model `XacmlPepCluster`.
+Container `ou=pepClusters`.
+Recorded in `../xacml/xacml_pep_clusters`.
+
+| Class | Origin | OID | Kind | Superior | Description |
+|---|---|---|---|---|---|
+| `xacmlPepCluster` | this service | `1.3.6.1.4.1.67607.1.2.24` | structural | top | A logical cluster of remote Policy Enforcement Points that share one configuration (#1760): the reverse proxy, the managed settings and the listener definitions are held here once, and every member pulls them as its own. A member differs only in its name and its addresses. Membership is held here, so a PEP may be listed before it registers, and a PEP belongs to at most one cluster. |
+
+| Attribute | Values | Origin | OID | Description |
+|---|---|---|---|---|
+| `description` | several | RFC | `2.5.4.13` | What an administrator said about the cluster when creating it. |
+| `xacmlPepClusterListeners` | one | this service | `1.3.6.1.4.1.67607.1.1.762` | The listeners defined for every member of the cluster (#1760): the PEP's own array (xacmlPepListeners), validated by the same grammar. A member may override a listener's address and port and add DNS names to its certificate; each member's certificate is its own, issued for its own key. Written by the set-pep-cluster-listener and remove-pep-cluster-listener actions. |
+| `xacmlPepClusterMembers` | one | this service | `1.3.6.1.4.1.67607.1.1.763` | The cluster's members (#1760): one JSON array of { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, each pep a registered PEP's name or one not yet registered, the rest the member's own addresses. A PEP is a member of at most one cluster. Written by the create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member and remove-pep-cluster-member actions. |
+| `xacmlPepClusterProxy` | one | this service | `1.3.6.1.4.1.67607.1.1.760` | The reverse-proxy configuration every member of the cluster pulls from GET /xacml/pep/proxy (#1760): the PEP's own document (xacmlPepProxy), validated by the same grammar, its routes' generated policies named pepc-<cluster>-<route> and marked @<cluster>/<route>. Its publicBaseUrl is the cluster's logical base URL, which a simple or public route's default resource is built from and which a member without a publicBaseUrl of its own is sent. Written by the set-pep-cluster-proxy and set-pep-cluster-route actions. |
+| `xacmlPepClusterSettings` | one | this service | `1.3.6.1.4.1.67607.1.1.761` | The managed settings every member of the cluster pulls from GET /xacml/pep/settings (#1760): the PEP's own document (xacmlPepSettings), validated by the same table, except the notify URL, which is a member's address and is set on the member. Written by the set-pep-cluster-settings action. |
 
 ## XACML policy
 

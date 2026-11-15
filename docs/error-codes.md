@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5627** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5639** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 190
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 202
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 118
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5119,6 +5119,18 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0266` | A reverse-proxy route's simple policy names a role that is not a configured role of this realm (#1760): a role must exist, since the PIP answers configured roles only. | HTTP 400 on /admin-api |
 | `STS-XACML-0267` | The policy generated for a reverse-proxy route could not be written: its name is held by a policy that was not generated for that route, or the repository refused the document (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0268` | A reverse-proxy route whose policy was generated for it was removed without `removePolicy` confirming that the generated policy goes with it (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0269` | A remote PEP cluster action named no cluster, a cluster this realm does not hold, or a PEP that is not a member of the cluster named (#1760, Remote PEP clusters). | HTTP 400 on /admin-api |
+| `STS-XACML-0270` | A remote PEP cluster could not be created: its name is not 1 to 64 letters, digits, dots, dashes or underscores, or a cluster of that name already exists in the realm (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0271` | A PEP was added to a remote PEP cluster, or a cluster created from it, while it is already a member of a cluster, or listed twice in one: a PEP is a member of one cluster at most (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0272` | A PEP holding a reverse proxy, managed settings or listeners of its own was added to a remote PEP cluster without `discard: true` confirming that joining replaces them with the cluster's (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0273` | A remote PEP cluster that still has members was deleted without `release` (keep or empty) saying what its members are left with (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0274` | A remote PEP cluster's simple or public route names no resource and the cluster has no publicBaseUrl, its logical base URL, to build the default from: every member decides with the cluster's one policy, so no member's address may stand for it (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0275` | A remote PEP cluster would have more than one member while one of its session routes ends sessions by CAEP/RISC signals: the members would share one signal stream, so a sign-out could be consumed by a member that does not hold the session. A stream per member is phase 3 (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0276` | An action that edits a PEP's own reverse proxy, settings or listeners was asked of a member of a remote PEP cluster, whose configuration is the cluster's; the refusal names the cluster (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0277` | A remote PEP cluster member is not of the member's shape: a PEP name that is not one, an address that is not text of at most 2048 characters with no space, or a listener override that is not { address, port, names } under a listener id (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0278` | A remote PEP cluster's managed settings carried a notify URL, which is a member's address and is set on the member (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0279` | The directory refused a write or a removal of a remote PEP cluster's entry under ou=pepClusters (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0280` | The members stored on a remote PEP cluster's entry do not validate (an ldapmodify, say); the cluster is read with none, so no PEP pulls its configuration until an administrator corrects it (#1760). | none — a warning in the log |
 
 ## STS-XPEP
 

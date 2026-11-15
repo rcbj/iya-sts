@@ -23478,6 +23478,74 @@ const CODES = [
       'removed without `removePolicy` confirming that the generated policy ' +
       'goes with it (#1760).',
     spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0269',
+    summary: 'A remote PEP cluster action named no cluster, a cluster this ' +
+      'realm does not hold, or a PEP that is not a member of the ' +
+      'cluster named (#1760, Remote PEP clusters).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0270',
+    summary: 'A remote PEP cluster could not be created: its name is not 1 ' +
+      'to 64 letters, digits, dots, dashes or underscores, or a ' +
+      'cluster of that name already exists in the realm (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0271',
+    summary: 'A PEP was added to a remote PEP cluster, or a cluster created ' +
+      'from it, while it is already a member of a cluster, or listed ' +
+      'twice in one: a PEP is a member of one cluster at most ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0272',
+    summary: 'A PEP holding a reverse proxy, managed settings or listeners ' +
+      'of its own was added to a remote PEP cluster without `discard: ' +
+      'true` confirming that joining replaces them with the ' +
+      'cluster\'s (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0273',
+    summary: 'A remote PEP cluster that still has members was deleted ' +
+      'without `release` (keep or empty) saying what its members are ' +
+      'left with (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0274',
+    summary: 'A remote PEP cluster\'s simple or public route names no ' +
+      'resource and the cluster has no publicBaseUrl, its logical ' +
+      'base URL, to build the default from: every member decides with ' +
+      'the cluster\'s one policy, so no member\'s address may stand ' +
+      'for it (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0275',
+    summary: 'A remote PEP cluster would have more than one member while one ' +
+      'of its session routes ends sessions by CAEP/RISC signals: the ' +
+      'members would share one signal stream, so a sign-out could be ' +
+      'consumed by a member that does not hold the session. A stream ' +
+      'per member is phase 3 (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0276',
+    summary: 'An action that edits a PEP\'s own reverse proxy, settings or ' +
+      'listeners was asked of a member of a remote PEP cluster, whose ' +
+      'configuration is the cluster\'s; the refusal names the cluster ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0277',
+    summary: 'A remote PEP cluster member is not of the member\'s shape: a ' +
+      'PEP name that is not one, an address that is not text of at ' +
+      'most 2048 characters with no space, or a listener override ' +
+      'that is not { address, port, names } under a listener id ' +
+      '(#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0278',
+    summary: 'A remote PEP cluster\'s managed settings carried a notify URL, ' +
+      'which is a member\'s address and is set on the member (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0279',
+    summary: 'The directory refused a write or a removal of a remote PEP ' +
+      'cluster\'s entry under ou=pepClusters (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0280',
+    summary: 'The members stored on a remote PEP cluster\'s entry do not ' +
+      'validate (an ldapmodify, say); the cluster is read with none, ' +
+      'so no PEP pulls its configuration until an administrator ' +
+      'corrects it (#1760).',
+    spec: 'none — a warning in the log' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

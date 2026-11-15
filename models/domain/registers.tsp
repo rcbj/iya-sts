@@ -95,6 +95,28 @@ model XacmlPep {
 }
 
 @domain(#{
+  area: "Authorization",
+  entry: "xacmlPepCluster",
+  what: "A logical cluster of remote policy enforcement points sharing one configuration."
+})
+model XacmlPepCluster {
+  @fromAttr(#{attr: "xacmlPepClusterProxy"})
+  `proxy`?: string;
+
+  @fromAttr(#{attr: "xacmlPepClusterSettings"})
+  `settings`?: string;
+
+  @fromAttr(#{attr: "xacmlPepClusterListeners"})
+  `listeners`?: string;
+
+  @fromAttr(#{attr: "xacmlPepClusterMembers"})
+  `members`?: string;
+
+  @fromAttr(#{attr: "description"})
+  `description`?: string[];
+}
+
+@domain(#{
   area: "Identity",
   entry: "spiffe",
   what: "A SPIFFE registration entry."

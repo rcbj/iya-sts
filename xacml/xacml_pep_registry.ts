@@ -1388,9 +1388,14 @@ class PepRegistry {
     // THE URL AN ADMINISTRATOR SET WINS (#1760): the row is answered with
     // it, so the nudge dials the managed address and the PEP's registered
     // one only where none is set.
+    // A MEMBER OF A CLUSTER IS NUDGED AT ITS OWN ADDRESS (#1760, Remote
+    // PEP clusters): its effective row carries the notify URL set on its
+    // membership. Required lazily: the clusters module reads this one.
+    const clusters = require('./xacml_pep_clusters');
     const rows = this.all().map(function (row) {
+      const effective = clusters.effectiveRow(row) || row;
       return Object.assign({}, row,
-                           { notifyUrl: pepSettings.notifyUrlOf(row) });
+                           { notifyUrl: pepSettings.notifyUrlOf(effective) });
     }).filter(function (row) {
       return row.enabled && row.notifyUrl;
     });

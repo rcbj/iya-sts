@@ -382,10 +382,12 @@ class PepProxy {
   }
 
   /**
-   * The name of the policy generated for one route of one PEP: `pep-`, the
-   * PEP's name and the route's id, each character a policy name may not
-   * hold as `_`, the PEP's part cut so the whole is at most 128.
-   * @param pep - the PEP's registered name
+   * The name of the policy generated for one route of one OWNER: `pep-`,
+   * the PEP's name and the route's id, each character a policy name may
+   * not hold as `_`, the owner's part cut so the whole is at most 128. A
+   * cluster's owner is `@<cluster>` (#1760, Remote PEP clusters), and its
+   * one policy per route, shared by every member, is `pepc-<cluster>-<id>`.
+   * @param pep - the PEP's registered name, or `@` and a cluster's name
    * @param route - the route's id
    * @returns the policy entry's name
    */
@@ -396,10 +398,31 @@ class PepProxy {
       helpers.log.debug("Leaving clean().");
       return String(text || '').replace(/[^A-Za-z0-9._-]/g, '_');
     };
+    const owner = String(pep || '');
+    const cluster = owner.charAt(0) === '@';
+    const prefix = cluster ? 'pepc-' : 'pep-';
     const id = clean(route).slice(0, 64);
-    const room = 128 - 'pep-'.length - 1 - id.length;
+    const room = 128 - prefix.length - 1 - id.length;
     helpers.log.debug("Leaving PepProxy.generatedPolicyName().");
-    return 'pep-' + clean(pep).slice(0, room) + '-' + id;
+    return prefix + clean(cluster ? owner.slice(1) : owner).slice(0, room) +
+      '-' + id;
+  }
+
+  /**
+   * Whose configuration a register row's document is (#1760, Remote PEP
+   * clusters): the PEP's own name, or `@` and its cluster's name when the
+   * row is a member's EFFECTIVE row (`xacml_pep_clusters.ts`'s
+   * `effectiveRow()`), so the routes' generated policies are named for
+   * the cluster and every member finds the one policy they share.
+   * @param row - a register row, or a member's effective row
+   * @returns the owner `validate()` and the route policies take
+   */
+  static ownerOf(row: { name: string; cluster?: string } | null): string {
+    helpers.log.debug("Entering PepProxy.ownerOf().");
+    const out = row && row.cluster ? '@' + row.cluster
+      : (row ? row.name : '');
+    helpers.log.debug("Leaving PepProxy.ownerOf().");
+    return out;
   }
 
   /**
@@ -477,7 +500,14 @@ class PepProxy {
       },
       allPeps: function (): Array<{ name: string; proxy: string }> {
         helpers.log.debug("Entering allPeps().");
-        const rows = require('./xacml_pep_registry').all();
+        // EACH MEMBER OF A CLUSTER AS IT PULLS (#1760): its effective row,
+        // the cluster's routes under its name. A PEP in no cluster is its
+        // row unchanged.
+        const clusters = require('./xacml_pep_clusters');
+        const rows = require('./xacml_pep_registry').all()
+          .map(function (row: any) {
+            return clusters.effectiveRow(row);
+          });
         helpers.log.debug("Leaving allPeps(). " + rows.length);
         return rows;
       },
@@ -1440,7 +1470,8 @@ class PepProxy {
     const self = this;
     const out: Array<Record<string, unknown>> = [];
     this.deps.allPeps().forEach(function (row) {
-      const checked = row.proxy ? self.validate(row.proxy, row.name) : null;
+      const checked = row.proxy
+        ? self.validate(row.proxy, PepProxy.ownerOf(row)) : null;
       if (!checked || !checked.ok) {
         return;
       }
@@ -1484,7 +1515,7 @@ class PepProxy {
         '/admin-api/xacml/set-pep-proxy. The proxy answers 404 to ' +
         'everything until then.';
     } else {
-      const checked = this.validate(row.proxy, row.name);
+      const checked = this.validate(row.proxy, PepProxy.ownerOf(row));
       if (checked.ok) {
         proxy = checked.proxy;
       } else {
@@ -2361,6 +2392,7 @@ export = {
   MAX_ROLES_PER_ACTION: PepProxy.MAX_ROLES_PER_ACTION,
   isPublic: PepProxy.isPublic,
   generatedPolicyName: PepProxy.generatedPolicyName,
+  ownerOf: PepProxy.ownerOf,
   actionOf: PepProxy.actionOf,
   validate: slot.forward('validate'),
   usesSession: slot.forward('usesSession'),

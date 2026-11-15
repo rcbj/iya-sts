@@ -265,6 +265,8 @@ const spiffeRegistry = require('../spiffe/spiffe_registry');
 // whatever point those files were first loaded.
 const xacmlStore = require('../xacml/xacml_store');
 const xacmlPepRegistry = require('../xacml/xacml_pep_registry');
+// Remote PEP clusters (#1760): `ou=pepClusters`, filled below.
+const xacmlPepClusters = require('../xacml/xacml_pep_clusters');
 const xacmlPip = require('../xacml/xacml_pip');
 // The audit log. A plain require and it cannot become anything else: audit.js
 // requires helpers.js and config.js only, so it can be reached from the deepest
@@ -935,6 +937,17 @@ function pepsDn() {
   log.debug("Entering pepsDn().");
   log.debug("Leaving pepsDn().");
   return 'ou=peps,' + baseDn();
+}
+
+// ou=pepClusters (#1760, Remote PEP clusters): one entry per logical
+// cluster of remote PEPs sharing one configuration. A container of its own
+// rather than entries in ou=peps, because a cluster is not a party that
+// registers: ou=peps is named from certificates, and a cluster is named by
+// an administrator. `xacml/xacml_pep_clusters.ts` owns the schema.
+function pepClustersDn() {
+  log.debug("Entering pepClustersDn().");
+  log.debug("Leaving pepClustersDn().");
+  return 'ou=pepClusters,' + baseDn();
 }
 
 // ou=trustAnchors is the DURABLE half of the client-certificate truststore
@@ -3693,6 +3706,9 @@ xacmlStore.SCHEMA.attributes.forEach(function (row) {
 xacmlPepRegistry.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML PEP registry schema');
 });
+xacmlPepClusters.SCHEMA.attributes.forEach(function (row) {
+  learnName(row.name, 'the XACML PEP cluster schema');
+});
 
 // The SCIM mapping's invention, `scimExternalId`, was a FIFTH list learnt
 // here until #1579; it is in the model's own names (`models/directory/
@@ -5227,6 +5243,7 @@ function seedTree() {
       'place on /admin/xacml/peps and an address for the change nudge. ' +
       'xacml/xacml_pep_registry.ts holds the schema.'
   }, { origin: 'seed' });
+  putPepClustersContainer();
   // STRUCTURAL, so not behind `mode.seedsDemoData()` below — and in the DEFAULT
   // realm only, because the truststore is the process's. See trustAnchorsDn().
   if (realms.currentId() === realms.DEFAULT_ID) {
@@ -11404,6 +11421,16 @@ if (typeof xacmlPepRegistry.setDirectory === 'function') {
            '/admin/xacml/peps is empty. Policy DISTRIBUTION is unaffected — ' +
            'a PEP pulls GET /xacml/pep/policies without registering — so ' +
            'what is lost is the register and the nudge, not the mechanism.');
+}
+
+// ou=pepClusters (#1760): the container and nothing else. A cluster is named
+// by an administrator, so no certificate naming crosses here.
+if (typeof xacmlPepClusters.setDirectory === 'function') {
+  xacmlPepClusters.setDirectory({
+    allPepClusters: allPepClusters,
+    writePepCluster: writePepCluster,
+    deletePepCluster: deletePepCluster
+  });
 }
 
 // `locateEntry` and nothing else. It is the function that already resolves all
@@ -25262,6 +25289,97 @@ function writePep(name, attributes) {
   log.debug('Leaving writePep(). The entry was ' +
             (existing ? 'updated.' : 'created.'));
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=pepClusters AS A STORE (#1760, Remote PEP clusters).
+//
+// ou=peps' three functions again, for entries an administrator names. The
+// container is seeded with a realm's tree, and a realm built before it has
+// none, so a first write makes it too (the signer truststore's rule).
+// ---------------------------------------------------------------------------
+function putPepClustersContainer() {
+  log.debug("Entering putPepClustersContainer().");
+  putEntry(pepClustersDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'pepClusters',
+    description: 'Logical clusters of remote XACML Policy Enforcement ' +
+      'Points that share one configuration: the reverse proxy, the managed ' +
+      'settings and the listener definitions are held on the cluster once, ' +
+      'and every member pulls them as its own, differing only in its name ' +
+      'and its addresses. xacml/xacml_pep_clusters.ts holds the schema.'
+  }, { origin: 'seed' });
+  log.debug("Leaving putPepClustersContainer().");
+}
+
+function pepClusterDn(name) {
+  log.debug("Entering pepClusterDn().");
+  log.debug("Leaving pepClusterDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + pepClustersDn();
+}
+
+function allPepClusters() {
+  log.debug('Entering allPepClusters().');
+  const rows = [];
+  const base = normalizeDn(pepClustersDn());
+  eachResidentEntry(function (stored) {
+    if (isUnder(stored.dn, pepClustersDn()) &&
+        normalizeDn(stored.dn) !== base) {
+      const object = entryObject(stored);
+      object.name = (stored.attributes.cn || [])[0] ||
+                    stored.dn.split(',')[0].replace(/^cn=/i, '');
+      rows.push(object);
+    }
+  });
+  log.debug('Leaving allPepClusters(). ' + rows.length + ' cluster(s).');
+  return rows;
+}
+
+// Create or REPLACE, writePep()'s rule: the attributes were read from this
+// entry a moment ago and changed, and a document cleared must go.
+function writePepCluster(name, attributes) {
+  log.debug('Entering writePepCluster(). name=' + name);
+  const dn = pepClusterDn(name);
+  const existing = entries.get(normalizeDn(dn));
+  if (!existing && cappedEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePepCluster(). The directory is full.');
+    return false;
+  }
+  if (!entries.get(normalizeDn(pepClustersDn()))) {
+    putPepClustersContainer();
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin : 'xacml' });
+  if (!stored || stored.ok === false) {
+    log.debug('Leaving writePepCluster(). Refused.');
+    return false;
+  }
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePepCluster(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePepCluster(name) {
+  log.debug('Entering deletePepCluster(). name=' + name);
+  const dn = pepClusterDn(name);
+  const existing = entries.get(normalizeDn(dn));
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+    auditPolicyDirectory('entry.delete', dn,
+                         existing ? existing.attributes : {}, false);
+  }
+  log.debug('Leaving deletePepCluster(). ' + gone);
+  return gone;
 }
 
 // ---------------------------------------------------------------------------

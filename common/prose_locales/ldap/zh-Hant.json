@@ -2058,5 +2058,29 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"
+  },
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "共用同一組態的遠端原則執行點（PEP）的邏輯叢集（#1760）：反向代理、受管設定和接聽程式定義在此只保存一次，每個成員都將其作為自己的組態拉取。成員之間只有名稱和位址不同。成員資格保存在此，因此 PEP 可以在註冊之前就列入，且一個 PEP 最多屬於一個叢集。"
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "叢集的每個成員從 GET /xacml/pep/proxy 拉取的反向代理組態（#1760）：與 PEP 自己的文件（xacmlPepProxy）相同，由同一語法驗證，其路由產生的原則命名為 pepc-<cluster>-<route> 並標記為 @<cluster>/<route>。其 publicBaseUrl 是叢集的邏輯基礎 URL，簡單或公開路由的預設資源由它建立，沒有自己 publicBaseUrl 的成員也會收到它。由 set-pep-cluster-proxy 和 set-pep-cluster-route 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "叢集的每個成員從 GET /xacml/pep/settings 拉取的受管設定（#1760）：與 PEP 自己的文件（xacmlPepSettings）相同，由同一表格驗證，但通知 URL 除外，它是成員的位址，在成員上設定。由 set-pep-cluster-settings 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "為叢集每個成員定義的接聽程式（#1760）：與 PEP 自己的陣列（xacmlPepListeners）相同，由同一語法驗證。成員可以覆寫接聽程式的位址和連接埠，並為其憑證新增 DNS 名稱；每個成員的憑證都是自己的，為其自己的金鑰簽發。由 set-pep-cluster-listener 和 remove-pep-cluster-listener 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "叢集的成員（#1760）：一個 JSON 陣列，元素為 { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }，每個 pep 是已註冊 PEP 的名稱或尚未註冊的名稱，其餘是成員自己的位址。一個 PEP 最多是一個叢集的成員。由 create-pep-cluster、add-pep-cluster-member、set-pep-cluster-member 和 remove-pep-cluster-member 動作寫入。"
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "管理員建立叢集時對它的描述。"
   }
 }

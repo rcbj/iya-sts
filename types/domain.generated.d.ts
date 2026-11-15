@@ -1166,6 +1166,18 @@ declare namespace IyaDomain {
   }
 
   /**
+   * A logical cluster of remote policy enforcement points sharing one
+   * configuration.
+   */
+  interface XacmlPepCluster {
+    proxy?: string;
+    settings?: string;
+    listeners?: string;
+    members?: string;
+    description?: string[];
+  }
+
+  /**
    * An XACML 3.0 policy or policy set this realm evaluates.
    */
   interface XacmlPolicy {
@@ -1224,6 +1236,7 @@ declare namespace IyaDomain {
     WsFederationRelyingParty: WsFederationRelyingParty;
     WsTrustRelyingParty: WsTrustRelyingParty;
     XacmlPep: XacmlPep;
+    XacmlPepCluster: XacmlPepCluster;
     XacmlPolicy: XacmlPolicy;
   }
 }

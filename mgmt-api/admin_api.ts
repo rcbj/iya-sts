@@ -7758,6 +7758,31 @@ class AdminApi {
           log.debug("Leaving the management API XACML remote PEPs endpoint.");
         } },
 
+      // REMOTE PEP CLUSTERS (#1760, phase 1): the XACML page's PEP clusters
+      // tab, and with `cluster` (and `route`) the cluster's own pages.
+      { method: 'GET', path: BASE + '/xacml/pep-clusters', tag: 'XACML',
+        operationId: 'getXacmlPepClusters',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep-cluster and GET ' +
+                 '/admin/xacml/pep-cluster/route',
+        parameters: [
+          { name: 'cluster', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'One cluster, by its name exactly. The answer ' +
+                         'then lists that cluster alone and says `found`.' },
+          { name: 'route', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'With `cluster`: one route of the cluster\'s ' +
+                         'reverse proxy, by its id. The answer then ' +
+                         'carries `routeDetail`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API XACML PEP clusters " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.xacmlPepClustersView(req));
+          log.debug("Leaving the management API XACML PEP clusters " +
+                    "endpoint.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/xacml/:action', tag: 'XACML',
         mirrors: 'POST /admin/xacml#xacml-tab-policies, POST ' +
@@ -7910,7 +7935,30 @@ class AdminApi {
           { action: 'set-pep-route-authorization',
             operationId: 'setXacmlPepRouteAuthorization' },
           { action: 'generate-pep-route-policy',
-            operationId: 'generateXacmlPepRoutePolicy' }
+            operationId: 'generateXacmlPepRoutePolicy' },
+          // Remote PEP clusters (#1760, phase 1).
+          { action: 'create-pep-cluster', operationId: 'createXacmlPepCluster' },
+          { action: 'delete-pep-cluster', operationId: 'deleteXacmlPepCluster' },
+          { action: 'add-pep-cluster-member',
+            operationId: 'addXacmlPepClusterMember' },
+          { action: 'remove-pep-cluster-member',
+            operationId: 'removeXacmlPepClusterMember' },
+          { action: 'set-pep-cluster-member',
+            operationId: 'setXacmlPepClusterMember' },
+          { action: 'set-pep-cluster-proxy',
+            operationId: 'setXacmlPepClusterProxy' },
+          { action: 'set-pep-cluster-settings',
+            operationId: 'setXacmlPepClusterSettings' },
+          { action: 'set-pep-cluster-route',
+            operationId: 'setXacmlPepClusterRoute' },
+          { action: 'remove-pep-cluster-route',
+            operationId: 'removeXacmlPepClusterRoute' },
+          { action: 'generate-pep-cluster-route-policy',
+            operationId: 'generateXacmlPepClusterRoutePolicy' },
+          { action: 'set-pep-cluster-listener',
+            operationId: 'setXacmlPepClusterListener' },
+          { action: 'remove-pep-cluster-listener',
+            operationId: 'removeXacmlPepClusterListener' }
         ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',

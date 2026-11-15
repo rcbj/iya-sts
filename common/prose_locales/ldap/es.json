@@ -2058,5 +2058,29 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Lo que el PEP dijo de sí mismo cuando se registró."
+  },
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Un clúster lógico de puntos de aplicación de políticas (PEP) remotos que comparten una configuración (#1760): el proxy inverso, los ajustes gestionados y las definiciones de escuchas se guardan aquí una sola vez, y cada miembro las obtiene como propias. Un miembro solo se diferencia por su nombre y sus direcciones. La pertenencia se guarda aquí, así que un PEP puede figurar antes de registrarse, y un PEP pertenece como mucho a un clúster."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "La configuración del proxy inverso que cada miembro del clúster obtiene de GET /xacml/pep/proxy (#1760): el mismo documento que el del PEP (xacmlPepProxy), validado con la misma gramática, con las políticas generadas de sus rutas llamadas pepc-<cluster>-<route> y marcadas @<cluster>/<route>. Su publicBaseUrl es la URL base lógica del clúster, a partir de la cual se construye el recurso predeterminado de una ruta simple o pública y que se envía a un miembro sin publicBaseUrl propio. La escriben las acciones set-pep-cluster-proxy y set-pep-cluster-route."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "Los ajustes gestionados que cada miembro del clúster obtiene de GET /xacml/pep/settings (#1760): el mismo documento que el del PEP (xacmlPepSettings), validado con la misma tabla, salvo la URL de notificación, que es una dirección del miembro y se establece en el miembro. La escribe la acción set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Las escuchas definidas para cada miembro del clúster (#1760): el mismo arreglo que el del PEP (xacmlPepListeners), validado con la misma gramática. Un miembro puede sustituir la dirección y el puerto de una escucha y añadir nombres DNS a su certificado; el certificado de cada miembro es el suyo, emitido para su propia clave. La escriben las acciones set-pep-cluster-listener y remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Los miembros del clúster (#1760): un arreglo JSON de { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, cada pep el nombre de un PEP registrado o de uno aún no registrado, y el resto las direcciones propias del miembro. Un PEP es miembro de un clúster como mucho. La escriben las acciones create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member y remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Lo que un administrador dijo del clúster al crearlo."
   }
 }

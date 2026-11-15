@@ -200,7 +200,19 @@ class PepTls {
       audit: audit,
       errorCodes: errorCodes,
       pki: pki,
-      peps: peps,
+      // A MEMBER OF A CLUSTER IS READ AS IT PULLS (#1760, Remote PEP
+      // clusters): its effective row, whose listeners are the cluster's
+      // with the member's own addresses and names. A PEP in no cluster is
+      // its row unchanged. The clusters module is required lazily: it
+      // reads the register this module reads.
+      peps: {
+        read: function (name: string): any {
+          helpers.log.debug("Entering read().");
+          const row = peps.read(name);
+          helpers.log.debug("Leaving read().");
+          return require('./xacml_pep_clusters').effectiveRow(row);
+        }
+      },
       isIP: net.isIP,
       subjectAltNameOf: function (pem) {
         return stsCrypto.parseCertificate(pem).subjectAltName;
