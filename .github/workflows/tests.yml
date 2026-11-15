@@ -90,7 +90,10 @@ on:
 # the run of the older one; a push to develop or main waits for the run
 # before it rather than cancelling it.
 concurrency:
-  group: tests-${{ github.event.pull_request.number || github.ref }}
+  # A manual dispatch is the whole suite and has a group of its own: in the
+  # push group it waited behind the cheap run of the last merge, and the next
+  # merge's push then replaced it while it was still pending (2026-11-15).
+  group: tests-${{ github.event_name == 'workflow_dispatch' && 'full-' || '' }}${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
