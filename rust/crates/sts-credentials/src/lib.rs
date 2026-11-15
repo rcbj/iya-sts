@@ -7,9 +7,12 @@
 //! A port of what Node does now in `common/credentials.ts` (THE ONE PLACE
 //! a presented credential is verified), its mechanisms — `common/totp.ts`,
 //! `common/backup_codes.ts` (3y), `common/app_passwords.ts` (3ax) — the
-//! WebAuthn verifier `authn/webauthn.js` and the attestation statements of
-//! `authn/webauthn_attestation.ts`, and `common/phishing_resistance.ts`
-//! (3cp). `authn/CLAUDE.md` is the design: the session is THE identity and
+//! WebAuthn verifier `authn/webauthn.js`, `authn/webauthn_attestation.ts`
+//! (all eight statement formats and the trust half of `assess()`: the FIDO
+//! Metadata Service, the trust path, revocation, Google's Android status
+//! list), the passkey doors of `credentials.ts` (`beginKeyEnrolment()`,
+//! `confirmKeyEnrolment()`, `addKey()`, `spendAssertion()`,
+//! `noteKeyUsed()`), and `common/phishing_resistance.ts` (3cp). `authn/CLAUDE.md` is the design: the session is THE identity and
 //! a credential is EVIDENCE on one of its events. This crate holds the
 //! evidence; the session record is the session slice's (`sts-authn`), and
 //! [`evidence`] is the narrow port between them.
