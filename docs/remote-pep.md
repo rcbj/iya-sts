@@ -1470,6 +1470,48 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   https://localhost:8081/admin-api/xacml/set-pep-route
 ```
 
+### The proxy as a picture
+
+The **Visual** sub-tab of the **Reverse proxy** tab
+(`#xacml-pep-proxy-visual`, the last of its four) draws the PEP from its
+configuration as it is when the page is opened. The trail ends *… › the PEP
+› Reverse proxy › Visual*. Readers see it too. It shows three things:
+
+* **The PEP**, a hexagon, with its name and the hostname it reports.
+* **Its listeners**, one box each: the id, HTTP or HTTPS, the address and
+  port, the purpose (decision API or reverse proxy), where it is defined,
+  and its state. The environment's four are grey and the ones defined on
+  the Listener tab indigo. A listener that is off (the two plain-HTTP ones
+  until `PEP_HTTP` or `PEP_PROXY_HTTP` turns them on) or that the PEP has
+  not reported is dashed. A green arrow runs from every reverse-proxy
+  listener to the proxy, because every proxy listener serves every route.
+* **The routes, as a tree by path** under the proxy's box (its upstream,
+  and whether it is enabled). `/pep-app`, `/pep-app/api` and
+  `/pep-app/api/admin` nest; a path segment no route stops at is a small
+  dashed chip, and a run of them is one chip. Each route's box shows its
+  position in the list (first match wins), its id, its path and match, its
+  methods, the application it fronts, and who may reach it:
+
+  | The route's authorization | The box says |
+  |---|---|
+  | **A simple policy** | each action of its model (`read`, `write`, or `create` … `delete`) and the roles allowed it, each role a link to the Roles page; an action with no role says *nobody* |
+  | **Public** | *Public*, and no application |
+  | **An existing policy** | *policy:* and the policy's name, a link to it in the policy editor. Its roles are not drawn: they are whatever the policy's rules say |
+  | **No methods** (None, deny all) | *deny all* and *nobody*, whatever the kind, in a dashed red box |
+
+  A route the PEP refuses now (its application does not qualify, or its
+  policy is missing, disabled or never sent) says so in red.
+
+Click a route's box to open its page, a listener's box to open the
+listener's page, the PEP to open its Overview and the proxy's box to open
+Configured Routes. A wide picture scrolls inside its own box; below the
+console's narrow breakpoint (a phone) it is drawn in one column instead,
+the listeners under the PEP and the routes under them. A key follows, and
+**The picture as text** opens the same tree as nested lists with the same
+links. The picture is drawn in the browser from the page's own
+`GET /admin-api/xacml/peps?pep=<name>` answer, so the management API has no
+operation of its own for it.
+
 ### Moving a proxy configuration between PEPs
 
 The **Manifest** sub-tab has four buttons on one row: **Save the

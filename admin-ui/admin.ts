@@ -4373,6 +4373,12 @@ class AdminConsole {
       // box, because a diagram scaled down is one whose labels have stopped
       // being legible while still looking as though they should be.
       '.diagram svg{display:block;max-width:none}' +
+      // THE PEP PICTURE (`xacml/web_pep_picture.ts`) is drawn twice: three
+      // columns, and stacked below the console's breakpoint, where three
+      // columns would open on the PEP alone.
+      '.pep-picture-stacked{display:none}' +
+      '@media (max-width:56rem){.pep-picture-wide{display:none}' +
+      '.pep-picture-stacked{display:block}}' +
       // The key. A table like every other, with the shape column sized to the
       // swatches rather than to its heading.
       'table.key td.art{width:5.5rem;text-align:center;vertical-align:middle;' +

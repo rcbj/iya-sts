@@ -298,10 +298,10 @@ async function run(t) {
   const routesPanel = panelOf(split, 'xacml-pep-proxy-routes');
   const newPanel = panelOf(split, 'xacml-pep-proxy-new-route');
   const manifest = panelOf(split, 'xacml-pep-proxy-manifest');
-  t.check(/<nav class="tabbar subbar"[^>]*><a class="first" href="#xacml-pep-proxy-routes">Configured Routes<\/a><a href="#xacml-pep-proxy-new-route">Create a New Route<\/a><a href="#xacml-pep-proxy-manifest">Manifest<\/a><\/nav>/
+  t.check(/<nav class="tabbar subbar"[^>]*><a class="first" href="#xacml-pep-proxy-routes">Configured Routes<\/a><a href="#xacml-pep-proxy-new-route">Create a New Route<\/a><a href="#xacml-pep-proxy-manifest">Manifest<\/a><a href="#xacml-pep-proxy-visual">Visual<\/a><\/nav>/
             .test(split),
-          'S1. the Reverse proxy tab is three sub-tabs, Configured Routes ' +
-          'first', split);
+          'S1. the Reverse proxy tab is four sub-tabs, Configured Routes ' +
+          'first (Visual is xacml_pep_picture.js\'s)', split);
   t.check(routesPanel.indexOf('/admin/xacml/pep/route?pep=pep-1&amp;' +
                               'route=orders-api') >= 0 &&
           routesPanel.indexOf('http://companion:9700') >= 0 &&
@@ -640,7 +640,8 @@ async function run(t) {
           'xacml-pep-proxy-routes">Configured ' +
           'Routes</a><a href="' + pepUrl + 'xacml-pep-proxy-new-route">Create ' +
           'a New Route</a><a href="' + pepUrl + 'xacml-pep-proxy-manifest">' +
-          'Manifest</a></nav>',
+          'Manifest</a><a href="' + pepUrl + 'xacml-pep-proxy-visual">' +
+          'Visual</a></nav>',
           'W2. the Reverse proxy sub-tabs, Configured Routes current');
   // The fourth row is the route's own tabs (RT, below): three sub-panels
   // inside Configured Routes, the route's sections.
@@ -740,7 +741,7 @@ async function run(t) {
   const ownTabs = tabHrefs(page).filter(function (one) {
     return one.href.charAt(0) === '#';
   });
-  t.check(routeTabs.length === 16 && routeTabs.every(function (one) {
+  t.check(routeTabs.length === 17 && routeTabs.every(function (one) {
     return one.href.indexOf('/admin/xacml') === 0;
   }) && ownTabs.map(function (one) {
     return one.href;
@@ -1453,6 +1454,8 @@ async function run(t) {
       'Configured Routes',
     '#xacml-pep-proxy-new-route': 'Reverse proxy -> #xacml-pep-tab-proxy | ' +
       'Create a New Route',
+    '#xacml-pep-proxy-visual': 'Reverse proxy -> #xacml-pep-tab-proxy | ' +
+      'Visual',
     '#xacml-pep-tab-signals': 'Signal streams',
     '#no-such-anchor': 'Overview'
   };

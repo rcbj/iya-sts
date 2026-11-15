@@ -2922,6 +2922,15 @@ WHERE the code runs, not what it draws.
   console operations' `svg` is console-only markup (`mgmt-api/CLAUDE.md`
   3cc), while `getCredentialLineage`'s `svg` and `format=svg` and
   `getGeolocation`'s `picture.svg` are on management operations.
+* **A FOURTH PICTURE WAS BORN IN THE BROWSER** (2026-11-15):
+  `xacml/web_pep_picture.ts`, a remote PEP's Visual sub-tab, has no server
+  wrapper, no `svg` member and no `?format=svg`; it is drawn from the PEP
+  page's answer as it stands, takes this section's palette, hexagon and text
+  metric, and its key is drawn in the browser from its own catalog
+  (`consolePepPicture`). `xacml/CLAUDE.md` has it. A click on a picture's
+  box is a console navigation since then: `ConsoleRuntime.onClick()`
+  compares `tagName` without case, because an SVG `<a>` is `a`, and before it
+  every picture's link was a full page load that dropped the token.
 * **THE KEYS ARE STILL DRAWN ON THE SERVER** (`mapKey`): fixed markup — the
   delegation key out of the glyph functions, the federation key out of
   one-box graphs put through the real renderer — whose sentences the server

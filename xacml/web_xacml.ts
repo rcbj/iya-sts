@@ -22,6 +22,9 @@
 
 import kit = require('../admin-ui/web_kit');
 import SettingsForms = require('../admin-ui/web_settings');
+// THE REVERSE PROXY TAB'S VISUAL SUB-TAB (rcbj, 2026-11-15): the PEP, its
+// listeners and its routes as a tree by path, drawn in the browser.
+import PepPicture = require('./web_pep_picture');
 
 type Json = any;
 
@@ -994,12 +997,14 @@ class XacmlPage {
       '&route=' + encodeURIComponent(route);
   }
 
-  // THE REVERSE PROXY TAB'S THREE SUB-TABS (rcbj, 2026-11-14), each an
-  // anchor a link or a crumb lands on.
+  // THE REVERSE PROXY TAB'S FOUR SUB-TABS (rcbj, 2026-11-14; Visual,
+  // `web_pep_picture.ts`, 2026-11-15), each an anchor a link or a crumb
+  // lands on.
   static readonly PROXY_TAB = 'xacml-pep-tab-proxy';
   static readonly PROXY_ROUTES_TAB = 'xacml-pep-proxy-routes';
   static readonly PROXY_NEW_ROUTE_TAB = 'xacml-pep-proxy-new-route';
   static readonly PROXY_MANIFEST_TAB = 'xacml-pep-proxy-manifest';
+  static readonly PROXY_VISUAL_TAB = 'xacml-pep-proxy-visual';
 
   // A ROUTE'S OWN PAGE IS TABS TOO (rcbj, 2026-11-15), a fourth row under
   // the three it keeps: Metadata (the effective state and the listeners
@@ -1497,6 +1502,15 @@ class XacmlPage {
           html[XacmlPage.PROXY_NEW_ROUTE_TAB] = newRoute;
           html[XacmlPage.PROXY_MANIFEST_TAB] = '<p class="sub">' +
             t.html('consoleXacml.proxy.documentHeading') + '</p>' + editor;
+          html[XacmlPage.PROXY_VISUAL_TAB] = PepPicture.panel(t, row, {
+            pep: self.pepHref(row.name) + '#xacml-pep-tab-overview',
+            proxy: self.proxyTabHref(row.name),
+            route: function (id: string): string {
+              return self.routeHref(row.name, id);
+            },
+            listener: function (id: string): string {
+              return self.listenerHref(row.name, id);
+            } });
           return Object.assign({}, one, { html: html[one.id] });
         }));
   }
@@ -3771,7 +3785,9 @@ class XacmlPage {
       { id: XacmlPage.PROXY_NEW_ROUTE_TAB,
         label: t.text('consoleXacml.proxy.tab.newRoute') },
       { id: XacmlPage.PROXY_MANIFEST_TAB,
-        label: t.text('consoleXacml.proxy.tab.manifest') }
+        label: t.text('consoleXacml.proxy.tab.manifest') },
+      { id: XacmlPage.PROXY_VISUAL_TAB,
+        label: t.text('consolePepPicture.tab') }
     ];
   }
 

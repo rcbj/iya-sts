@@ -48,6 +48,7 @@ and the nudge.
 | `xacml_pep_http.ts` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
 | `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP, the hostname it reports and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
+| `web_pep_picture.ts` | **A remote PEP drawn (rcbj, 2026-11-15)**: the Reverse proxy tab's Visual sub-tab, the PEP, its listeners and its routes as a tree by path, laid out in the browser from the PEP page's answer. A `web_` module; see *THE VISUAL SUB-TAB* below. |
 | `xacml_monitor.ts` | The decision and enforcement counters behind `/admin/xacml/monitor`. A LEAF. See *`/admin/xacml/monitor`* below. |
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
 | `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified, and what a federation partner's verified event does — since #432 including `signal-revoke-grants`, a person's GNAP and OAuth grants and tokens, behind `ssf.signalsRevokeGrants` (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
@@ -1807,6 +1808,34 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   draft PER TAB (`state.pepRoute.drafts`, `WebAnswers.pepRouteState()`,
   laid over the route by `XacmlPage.routeOfDraft()` for that tab's
   members), so a Find on one tab keeps what was typed on another.
+* **THE VISUAL SUB-TAB** (rcbj 2026-11-15: "a new tab labeled Visual ...
+  the remote PEP and a hierarchy of every configured path, its
+  corresponding application object, and which role is allowed to access
+  it. Show the configured listeners as well"), the Reverse proxy tab's
+  fourth and last (`XacmlPage.PROXY_VISUAL_TAB`,
+  `#xacml-pep-proxy-visual`), drawn by `web_pep_picture.ts` from the row
+  the PEP page already holds — `name`, `hostname`, `listenerRows`, `proxy`
+  and `proxyRoutes` — so the answer grew no member and no operation was
+  added (rule 7). It is the console's pictures' arrangement
+  (`admin-ui/CLAUDE.md`, *THE PICTURES ARE LAID OUT IN THE BROWSER*): inline
+  SVG from the bundle, the delegation picture's palette, hexagon and text
+  metric, `role="img"` with a title and a desc, a key, and the same tree as
+  nested lists for a text alternative. The layout is by hand, no dagre: the
+  PEP, its listeners (a green line from every proxy listener to the proxy,
+  since every proxy listener serves every route), and the routes as a path
+  trie (`PepPicture.tree()`, a segment no route stops at a chip, a run of
+  them merged) whose rows own both coordinates, so it grows down with the
+  routes. Below the console's 56rem breakpoint a stacked drawing is shown
+  instead (`.pep-picture-stacked`). **What each kind draws**: a simple
+  route every action of its model with its roles (each a link to
+  `/admin/roles?q=`; none is *nobody*); a public route *Public*; an
+  existing policy its NAME, linked to the editor, and no roles — reading
+  them would mean interpreting arbitrary XACML in the browser, and a guess
+  drawn as a fact is worse than the link; no methods *deny all* and
+  *nobody*, whatever the kind. Each box links to its page (a route's, a
+  listener's); the console runtime follows an SVG `<a>` (whose `tagName` is
+  `a`) as it does an HTML one since this change, which the delegation and
+  federation pictures' boxes gain too. `tests/xacml_pep_picture.js`.
 * **AN XACML TAB IS NEVER A PAGE** (rcbj 2026-11-15: the Deciding policy
   link answered "/admin/xacml/editor is not a page of this console").
   `/admin/xacml/{policies,editor,peps,decide,authzen}` are written as paths
