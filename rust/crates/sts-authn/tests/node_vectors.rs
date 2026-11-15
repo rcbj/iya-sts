@@ -113,6 +113,7 @@ fn request(cookie: &str) -> Request {
         user_agent: "Vectors/1.0".into(),
         address: String::new(),
         device_fp: String::new(),
+        ..Request::default()
     }
 }
 

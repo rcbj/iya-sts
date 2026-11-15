@@ -91,6 +91,15 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // Browsers' account sets (#561; #444, phase 5): the sets, cookies and
+  // sessions sts-authn wrote, read back by tests/tools/account-set-vectors.js.
+  if (fs.existsSync(path.join(VECTORS, 'account-sets-rust.json'))) {
+    require('./tools/account-set-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('account-sets-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The registers' role entries (#444, phase 4), which need no other set.
   if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
     registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,

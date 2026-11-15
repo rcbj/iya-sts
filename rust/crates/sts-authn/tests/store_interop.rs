@@ -197,6 +197,7 @@ impl Records for Plain {
     ) -> usize {
         0
     }
+    fn record_account_choice(&self, _k: &str, _n: Option<u64>) {}
 }
 
 impl AuditLog for Plain {

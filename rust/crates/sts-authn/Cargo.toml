@@ -20,9 +20,9 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
 tokio-postgres.workspace = true
 postgres-openssl.workspace = true
 openssl.workspace = true
