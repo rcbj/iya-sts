@@ -42,6 +42,7 @@ and the nudge.
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
+| `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
 | `xacml_pep_http.ts` | **The THIRD outbound request in this repository** — the nudge. Argued rather than cited. |
 | `xacml_pep_tls.ts` | **A remote PEP's HTTPS listener certificate (2026-09-13).** Issues a REGISTERED PEP a `serverAuth` key pair from its realm's `pep-tls` Issuing CA through `common/pki.js`, naming the PEP and its notify host, and hands the private key back once. A LIBRARY — `xacml_admin.ts` draws the control and answers the action. See *The remote PEP's HTTPS listener* below. |
 | `xacml_admin.ts` | The five `/admin/xacml` console pages and their actions, and `/admin/xacml/monitor`'s body. |
@@ -1368,6 +1369,58 @@ the two actions.
   the whole document through `set-pep-proxy`'s checks.
 
 `tests/xacml_pep_proxy.js` holds all of it in a child process.
+
+## A remote PEP's own page, and the settings it manages (#1760)
+
+**Each row of the Remote PEPs tab opens the PEP's own page**,
+`/admin/xacml/pep?pep=<name>` (`admin-ui/web_pages.ts`' row, drawn by
+`web_xacml.ts`'s `pepDetail()`), the application page's arrangement: the same
+operation, `GET /admin-api/xacml/peps`, asked with `pep`, answers that row
+alone and `found`. Its trail leads back to `/admin/xacml#xacml-tab-peps` (the
+row's `upTo`, which the runtime reads so a drill-down whose list is another
+page's tab has that page's crumb and nav). Six tabs: Overview (identity,
+registration, version, state, notify URL, the two row actions), Decisions,
+Settings, Listener certificate (with the issue control, which left the
+table), Reverse proxy (the whole section that was on the tab, moved) and
+Signal streams. The table keeps a Reverse proxy column: the route count, off,
+or an unusable route.
+
+**THE SETTINGS** (`xacml_pep_settings.ts`): every setting the container read
+only from its environment, except the minimum to connect the first time, may
+be set there. One attribute, `xacmlPepSettings` (OID 754, the concept's
+`settings`), holds ONLY what is set; `set-pep-settings` REPLACES it from
+`settings` (an object, a member it does not name refused by name) or from
+the members on the body (the console's form, an empty box "not set"),
+validated whole: `STS-XACML-0236` (not an object, an unknown member), `0237`
+(type, closed set), `0238` (bounds), `0239` (text, URL, origin), `0240`
+(product refuses `proxyUpstreamInsecure` and `proxyRpAllowInsecure` true —
+`mode.skipsOutboundTlsVerification()` and `dialsPlainHttpOutbound()`), `0241`
+(the directory refused). `clear-pep-settings` removes it. A registration and
+a heartbeat keep it, as they keep the proxy.
+
+* **`GET /xacml/pep/settings`** is the proxy pull's shape: `pepAccess()`
+  READ, its own token over the body (ETag, `?since=` 304), `no-store`, no
+  nudge, the PEP named by its certificate. A stored value that no longer
+  validates is pulled as `configured: false` (`STS-XACML-0242`).
+* **THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE
+  DEFAULT**, applied at the PEP (`xacml-pep/CLAUDE.md`, *Configuration*).
+  Backwards compatible both ways: an older PEP never asks; a newer PEP's 404
+  from an older service is its environment.
+* **WHAT THE PEP HAS IN FORCE** arrives on its heartbeat as `settings` and is
+  kept in `xacmlPepSettingsInUse` (OID 755) by `PepSettings.inUseOf()`, the
+  signal health's rule: only the table's settings, each value of its type,
+  each source one of `service`, `environment`, `default`, stamped on
+  arrival; absent keeps, `null` clears, a registration drops. The row's
+  `settingsCurrent` compares its token with what would be pulled now.
+* **THE NOTIFY URL SET HERE IS THE ONE THE NUDGE DIALS**: `notifiable()`
+  answers each row with `notifyUrlOf()`, so `xacml_pep_http.ts` is unchanged;
+  the registered URL stays on the row as the PEP reported it.
+* **NO PROSE IN THE CATALOGUE**: `settingsCatalogue` on the answer is keys,
+  variables, types, bounds, defaults, when a change applies and whether the
+  mode refuses `true`; the console's catalog says what each means.
+
+`tests/xacml_pep_proxy.js` S holds all of it; `cargo test -p xacml-pep` the
+PEP's half.
 
 ## What the console page is NOT
 

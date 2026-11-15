@@ -414,10 +414,61 @@ an operator; it is not repeated here.
 
 ## Configuration
 
-All of it from the environment. No appconfig file and no settings table, and
-that is not a shortcut: the mock's five-layer configuration exists to serve a
-console that can change a setting while the service runs, and a PEP has no
-console.
+**From the environment, and since #1760 from the PEP's console page as well.**
+This section said "all of it from the environment … a PEP has no console";
+rcbj's request on #1760 gave it one: *all information about the remote PEP
+(and reverse proxy) should be configurable on this new screen except the
+minimum config required for the remote PEP to be able to initially connect.*
+
+**THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE
+DEFAULT**, setting by setting (`src/settings.rs`, `Options::now()`). The
+`Options` fields are still the environment's values, exactly as before; a
+reader of a MANAGED setting reads `options.now()`, never the field, or a
+change made on the console never reaches it — `now()` overlays what the last
+settings pull applied. Twenty-three settings are managed (`settings::SETTINGS`,
+the service's `xacml/xacml_pep_settings.ts` `SETTINGS` in Rust, with the same
+keys, variables and bounds); the table below marks them.
+
+* **THE PULL** is `GET /xacml/pep/settings`, FIRST in every round so the
+  round's timers, timeouts and bias are the new ones: its own token, `?since=`
+  and `If-None-Match`, a failure keeps what is held (`STS-XPEP-0100`), an
+  OLDER SERVICE'S 404 is the environment in force, said once and anything an
+  earlier pull applied dropped (`STS-XPEP-0101`). `configured: false` drops
+  everything back to the environment.
+* **EACH VALUE IS READ AGAIN BY ITS ROW**, and one that fails is left to the
+  environment and named (`STS-XPEP-0102`) — per setting, not the whole
+  document as the route table is refused, because one setting does not change
+  what another means. **A member this PEP does not know is IGNORED**, so a
+  newer service can add a setting without stranding an older PEP.
+* **HOW EACH IS APPLIED WITHOUT A RESTART.** Read at its use through `now()`:
+  the bias (`Pep::enforcer()` builds the rule per decision), the PIP switch
+  (`RemotePip::governed_by()`), the resource, the AuthZEN switch, identifier
+  and forward timeout, the body bounds, the session re-check and the
+  upstream verification (its cached client is keyed by it). Asked before
+  every wait: the poll, heartbeat and back-off intervals (`on_backoff()`
+  takes a closure) and the HTTPS reload interval. Pushed by
+  `Sync::apply_settings_effects()` after a pull: the PDP client's timeout and
+  answer bound (per request, `PdpClient::set_limits()`), the proxy session
+  store's bounds and the log level (`sts_core::log::set_level()`, the one
+  change outside this crate: the installed layer's level is an atomic now).
+  Pushed by `Proxy::reconcile()` after each poll: the JWKS lifetime and the
+  relying parties' bounds, a changed bound rebuilding each party (its digest
+  carries the poll and stale bounds); a library session store keeps the
+  bounds it was built with, since it outlives rebuilds and holds signed-in
+  people.
+* **WHAT IT HAS IN FORCE** is `GET /`'s `settings` and the heartbeat's
+  `settings` member: `{ token, values: { key: { value, source } } }`, the
+  source `service`, `environment` or `default` (an environment variable
+  counts as set when it was non-empty at start). The service holds it to its
+  members and draws it beside what is set.
+* **BOOTSTRAP STAYS HERE**: `PEP_PDP_URL`, `PEP_NAME`, `PEP_TLS_CERT`/`KEY`,
+  `PEP_TLS_CA` and `PEP_TLS_INSECURE` (needed before the first pull), the
+  four ports (a listening socket is not rebound while it serves), the files
+  (`PEP_HTTPS_CERT`/`KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA`,
+  `PEP_PROXY_UPSTREAM_CA`), `PEP_PROXY` (whether the proxy's listeners start;
+  the proxy configuration's `enabled` is the managed switch) and
+  `PEP_AUTHZEN_CALLERS` (the operator's own narrowing of what the service
+  sends, which the service could not set and still narrow anything).
 
 | Variable | Default | What |
 |---|---|---|
@@ -426,33 +477,33 @@ console.
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate. Without it the PDP refuses the registration unless `xacml.pepRequireCertificate` is off. Enforcement is unaffected either way. |
 | `PEP_TLS_CA` | — | An anchor for the PDP's certificate. |
 | `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, whose listener certificate is issued by a service Root that development mode regenerates on every start — so there is no fixed anchor to verify against (`tls/CLAUDE.md`). Logged on every start, for `federation_http.ts`'s reason. |
-| `PEP_NOTIFY_URL` | — | Where the PDP should nudge. |
-| `PEP_BIAS` | `deny-biased` | This PEP's own. |
-| `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. |
-| `PEP_POLL_INTERVAL_MS` | `15000` | **The contract**, and since 2026-09-06 also the interval a FAILED REGISTRATION is retried on. |
-| `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | |
+| `PEP_NOTIFY_URL` | — | Where the PDP should nudge. *Managed* (`notifyUrl`). |
+| `PEP_BIAS` | `deny-biased` | This PEP's own. *Managed* (`bias`). |
+| `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. *Managed* (`pip`). |
+| `PEP_POLL_INTERVAL_MS` | `15000` | **The contract**, and since 2026-09-06 also the interval a FAILED REGISTRATION is retried on. *Managed* (`pollIntervalMs`). |
+| `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | *Managed* (`heartbeatIntervalMs`). |
 | `PEP_PORT` | `9090` | |
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
 | `PEP_HTTPS_PORT` | `9443` | |
-| `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. |
-| `PEP_AUTHZEN` | `true` | The AuthZEN edge PDP (#1179). `false` answers 501 (`STS-XPEP-0044`). |
+| `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. *Managed* (`httpsReloadIntervalMs`). |
+| `PEP_AUTHZEN` | `true` | The AuthZEN edge PDP (#1179). `false` answers 501 (`STS-XPEP-0044`). *Managed* (`authzen`). |
 | `PEP_AUTHZEN_CLIENT_CA` | — | **A path, read once**: the CA bundle an AuthZEN caller's certificate must chain to. Set, the HTTPS listener ASKS every client for a certificate; unset or unreadable, the edge PDP admits nobody (`STS-XPEP-0039`). |
 | `PEP_AUTHZEN_CALLERS` | — | **Optional since #1189.** A JSON array of `{ "name", "sha256", "applications" }`. Set, it NARROWS the callers pulled from the service to the certificates it names (`STS-XPEP-0054`), and before the first caller pull it decides alone, as #1179's door did (`STS-XPEP-0037`); unset, the pulled list alone decides and nothing is answered before it (`STS-XPEP-0050`). Set to a value that names nobody, it admits nobody. A malformed entry is left out (`STS-XPEP-0038`). |
-| `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). |
-| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. |
-| `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). |
+| `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). *Managed* (`authzenPdpIdentifier`). |
+| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. *Managed* (`authzenForwardTimeoutMs`). |
+| `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). *Managed* (`resource`, `description`, `timeoutMs`, `maxBodyBytes`, `logLevel`; `PEP_BACKOFF_MAX_MS` too, `backoffMaxMs`). |
 | `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 404 to everything until the service sends this PEP a configuration. |
 | `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener. A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | Its HTTPS listener: the SAME `PEP_HTTPS_CERT`/`KEY` pair 9443 serves, re-read on the same interval, and a client is ASKED for a certificate (never required to present one) so a certificate-bound token's `cnf.x5t#S256` can be checked. No pair, no listener. |
-| `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | On a session route with `signals: false` (or whose receiver would not start): how old the service's last "live" answer about a proxy session may be before the next access asks `POST /xacml/pep/session` again. `0` asks on every access. |
-| `PEP_PROXY_SESSION_TTL_MS` | `28800000` (8 h) | The longest a proxy session lives, whatever the service says. |
-| `PEP_PROXY_MAX_SESSIONS` | `10000` | The most proxy sessions held — a new one past it is REFUSED (503, `STS-XPEP-0085`), never made by evicting somebody — and, separately, the most sign-ins in flight, where the OLDEST is dropped. |
-| `PEP_PROXY_JWKS_TTL_MS` | `300000` | How long the realm's JWKS is used before it is fetched again. An unknown `kid` refetches at once after an ordinary fetch, then at most every 5 s. |
+| `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | On a session route with `signals: false` (or whose receiver would not start): how old the service's last "live" answer about a proxy session may be before the next access asks `POST /xacml/pep/session` again. `0` asks on every access. *Managed* (`proxySessionRecheckMs`). |
+| `PEP_PROXY_SESSION_TTL_MS` | `28800000` (8 h) | The longest a proxy session lives, whatever the service says. *Managed* (`proxySessionTtlMs`). |
+| `PEP_PROXY_MAX_SESSIONS` | `10000` | The most proxy sessions held — a new one past it is REFUSED (503, `STS-XPEP-0085`), never made by evicting somebody — and, separately, the most sign-ins in flight, where the OLDEST is dropped. *Managed* (`proxyMaxSessions`). |
+| `PEP_PROXY_JWKS_TTL_MS` | `300000` | How long the realm's JWKS is used before it is fetched again. An unknown `kid` refetches at once after an ordinary fetch, then at most every 5 s. *Managed* (`proxyJwksTtlMs`). |
 | `PEP_PROXY_UPSTREAM_CA` | — | **A path, read once**: anchors for an `https` upstream, beside the system's (`STS-XPEP-0092` when unreadable). |
-| `PEP_PROXY_UPSTREAM_INSECURE` | `false` | Do not verify an `https` upstream's certificate. |
-| `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | The session mechanism's relying party may talk to an `http` issuer (the library's `allowInsecure`): a development provider only. It never relaxes the redirect URI, which the library holds to https or loopback. |
-| `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | How often the CAEP/RISC receiver polls the service's stream (at least 100). |
-| `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | How long a receiver may go without a successful poll before its signals stop deciding whether a proxy session is live, and the service's session endpoint is asked instead (`STS-XPEP-0099`). Never less than three polls. |
+| `PEP_PROXY_UPSTREAM_INSECURE` | `false` | Do not verify an `https` upstream's certificate. *Managed* (`proxyUpstreamInsecure`). |
+| `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | The session mechanism's relying party may talk to an `http` issuer (the library's `allowInsecure`): a development provider only. It never relaxes the redirect URI, which the library holds to https or loopback. *Managed* (`proxyRpAllowInsecure`). |
+| `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | How often the CAEP/RISC receiver polls the service's stream (at least 100). *Managed* (`proxySignalsPollMs`). |
+| `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | How long a receiver may go without a successful poll before its signals stop deciding whether a proxy session is live, and the service's session endpoint is asked instead (`STS-XPEP-0099`). Never less than three polls. *Managed* (`proxySignalsStaleMs`). |
 
 `PEP_PROXY_MAX_SESSIONS` and `PEP_PROXY_SESSION_TTL_MS` also bound the
 LIBRARY's session store (one per client): twice the first as entries, the
@@ -1342,6 +1393,8 @@ direct test of the rule tells). `tests/protocol/sts_xacml_remote_pep.js` is
 the deployment's.
 
 ### Its error codes
+
+The managed settings' pull: `STS-XPEP-0100` (a failed pull, the held settings kept), `0101` (an older service's 404, the environment in force) and `0102` (one value refused, that setting the environment's).
 
 `0060`–`0062` the pull; `0063` the plain listener (the HTTPS one reuses
 `0029`–`0032`); `0064`–`0069` the route table, the body and the upstream;

@@ -2084,4 +2084,18 @@ mod tests {
         assert_ne!(sync.options.now().heartbeat_interval_ms, 3000);
         assert_eq!(sync.settings_json()["configured"], false);
     }
+
+    /// Every round pulls the settings, whatever the other pulls answer.
+    #[tokio::test]
+    async fn every_round_pulls_the_settings_first() {
+        let answer: Answer = Arc::new(Mutex::new((
+            200,
+            json!({ "syncToken": "r1", "configured": true,
+                    "settings": { "heartbeatIntervalMs": 4000 } }),
+            Vec::new(),
+        )));
+        let sync = settings_sync(&settings_service(answer).await);
+        sync.pull("poll").await;
+        assert_eq!(sync.options.now().heartbeat_interval_ms, 4000);
+    }
 }

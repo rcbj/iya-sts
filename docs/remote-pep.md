@@ -905,11 +905,76 @@ every such request needs `REMOTE_PEPS` and is audited as
 | `POST /xacml/pep/session` | whether a sign-on session is still live |
 | `POST /xacml/pep/identity` | for one of this PEP's routes and the caller's evidence (an access token, a SAML assertion or a Basic ticket, each validated again), the claims, access token or SAML Response the route forwards. The issuance policy decides the last two; a refusal is `403`, and what cannot be issued is `422` |
 
+## Its page on the console
+
+Each row of **Protocols → XACML → Remote PEPs** opens the PEP's own page,
+`/admin/xacml/pep?pep=<name>` (`GET /admin-api/xacml/peps?pep=<name>`), with
+the trail leading back to the tab. Its tabs:
+
+| Tab | What is on it |
+|---|---|
+| Overview | what it registered as — its certificate subject, directory identity and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging and Forget |
+| Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
+| Settings | every setting this service sets for it (below) |
+| Listener certificate | what this realm issued it, and Issue or Reissue |
+| Reverse proxy | its routes, each route's application and identity mode, the configuration document and Clear |
+| Signal streams | its CAEP/RISC stream health |
+
+### The settings this service sets for it
+
+Every setting the PEP used to take only from its environment, apart from the
+minimum it needs to reach this service the first time, may be set on the
+**Settings** tab or with `POST /admin-api/xacml/set-pep-settings`. They are
+kept on the PEP's own entry (`xacmlPepSettings`), validated on save — a value
+out of its bounds, outside its closed set or of the wrong type is refused
+with a code — and the PEP pulls them from `GET /xacml/pep/settings` on every
+poll and applies them without a restart.
+
+**The precedence is the service's value, then the PEP's environment variable,
+then the built-in default.** A box left empty is not set, so the PEP goes on
+using its environment for it, exactly as it did before this page existed.
+`clear-pep-settings` puts every setting back to the environment.
+
+* **An older PEP** never asks for its settings and goes on using its
+  environment.
+* **A newer PEP talking to an older service** gets `404` for the settings
+  pull, logs it once (`STS-XPEP-0101`) and uses its environment.
+* **A value the PEP cannot read** (out of its own bounds) is left to the
+  environment and logged (`STS-XPEP-0102`); a failed pull keeps what it holds
+  (`STS-XPEP-0100`). A setting a newer service sends that the PEP does not
+  know is ignored.
+* **What it has in force** is reported on its heartbeat, each value with
+  where it came from (`service`, `environment` or `default`), and the tab
+  shows it beside what is set, and whether the PEP has applied the latest.
+* **In product mode** `proxyUpstreamInsecure` and `proxyRpAllowInsecure`
+  cannot be set to `true`.
+
+When a change takes effect: at once for the bias, the PIP switch, the
+timeouts, the body bound, the log level, the AuthZEN settings and the proxy
+session bounds; from the next round of the timer for the poll, heartbeat and
+back-off intervals; at the next re-read of the HTTPS pair for its interval;
+and after the next poll for the JWKS lifetime and the relying-party and
+CAEP/RISC bounds, which rebuild the proxy's relying parties. A library
+session store keeps the bounds it was built with.
+
+**What stays in the environment, and why**: `PEP_PDP_URL`, `PEP_NAME`,
+`PEP_TLS_CERT`, `PEP_TLS_KEY`, `PEP_TLS_CA` and `PEP_TLS_INSECURE` are needed
+to reach and authenticate to the service before the first pull; `PEP_PORT`,
+`PEP_HTTPS_PORT`, `PEP_PROXY_PORT` and `PEP_PROXY_HTTPS_PORT` are ports the
+PEP binds, and a listening socket is not rebound while it serves;
+`PEP_HTTPS_CERT`, `PEP_HTTPS_KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA` and
+`PEP_PROXY_UPSTREAM_CA` name files on the PEP's own disk; `PEP_PROXY` says
+whether the proxy's listeners start at all (its configuration's `enabled` is
+the switch set on the Reverse proxy tab); and `PEP_AUTHZEN_CALLERS` is the
+operator's own narrowing of the callers the service sends, which the service
+could not set and still narrow anything.
+
 ## Configuration
 
-All of it from the environment — there is no appconfig file and no settings
-table here, because the service's five-layer configuration exists to serve a console
-and a PEP has none.
+From the environment, and — for every variable marked *managed* below — from
+the PEP's page on the console as well, which wins where it sets a value (see
+*The settings this service sets for it*). The service's value, then the
+environment's, then the default.
 
 | Variable | Default | |
 |---|---|---|
@@ -918,34 +983,34 @@ and a PEP has none.
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | the client certificate. The leaf followed by the issuing CA |
 | `PEP_TLS_CA` | — | an anchor for the PDP's certificate |
 | `PEP_TLS_INSECURE` | `false` | do not verify the PDP. The ordinary setting against this service in development |
-| `PEP_NOTIFY_URL` | — | where the PDP should nudge |
-| `PEP_BIAS` | `deny-biased` | this PEP's own. `permit-biased` is the other |
-| `PEP_PIP` | `true` | resolve designators the request did not carry against the PDP's directory |
-| `PEP_POLL_INTERVAL_MS` | `15000` | **the contract**, and the interval a failed registration is retried on |
-| `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | |
+| `PEP_NOTIFY_URL` | — | where the PDP should nudge — *managed*: `notifyUrl` |
+| `PEP_BIAS` | `deny-biased` | this PEP's own. `permit-biased` is the other — *managed*: `bias` |
+| `PEP_PIP` | `true` | resolve designators the request did not carry against the PDP's directory — *managed*: `pip` |
+| `PEP_POLL_INTERVAL_MS` | `15000` | **the contract**, and the interval a failed registration is retried on — *managed*: `pollIntervalMs` |
+| `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | — *managed*: `heartbeatIntervalMs` |
 | `PEP_PORT` | `9090` | |
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | the **listener's** pair, issued by the PEP's realm: the leaf followed by its chain, and the key. Both or neither. They may not exist yet when the container starts |
 | `PEP_HTTPS_PORT` | `9443` | published on 9444 by `docker-compose.yml` |
-| `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read |
-| `PEP_RESOURCE` | | the resource id used when a request names none |
-| `PEP_AUTHZEN` | `true` | the AuthZEN edge PDP. `false` answers `501` |
+| `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | how often the two files are re-read — *managed*: `httpsReloadIntervalMs` |
+| `PEP_RESOURCE` | | the resource id used when a request names none — *managed*: `resource` |
+| `PEP_AUTHZEN` | `true` | the AuthZEN edge PDP. `false` answers `501` — *managed*: `authzen` |
 | `PEP_AUTHZEN_CLIENT_CA` | — | the CA bundle an AuthZEN caller's certificate must chain to. Unset, nobody is admitted |
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
-| `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at |
-| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` |
+| `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at — *managed*: `authzenPdpIdentifier` |
+| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` — *managed*: `authzenForwardTimeoutMs` |
 | `PEP_PROXY` | `true` | the reverse proxy. Until the service sends a configuration, it answers `404` to everything |
 | `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP listener |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | the proxy's HTTPS listener, with the pair 9443 serves. It asks a client for a certificate and never requires one |
-| `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | on a `signals: false` session route: how old the service's last answer that a session is live may be. `0` asks on every access |
-| `PEP_PROXY_SESSION_TTL_MS` | `28800000` | the longest a proxy session lives |
-| `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `503` |
-| `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept |
-| `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled |
-| `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | how long the stream may go without a successful poll. After that, sessions are checked with the service's session endpoint until it answers again. `GET /` shows the stream's state under `proxy.signals` |
+| `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | on a `signals: false` session route: how old the service's last answer that a session is live may be. `0` asks on every access — *managed*: `proxySessionRecheckMs` |
+| `PEP_PROXY_SESSION_TTL_MS` | `28800000` | the longest a proxy session lives — *managed*: `proxySessionTtlMs` |
+| `PEP_PROXY_MAX_SESSIONS` | `10000` | the most proxy sessions held. A new one past it is refused `503` — *managed*: `proxyMaxSessions` |
+| `PEP_PROXY_JWKS_TTL_MS` | `300000` | how long the realm's JWKS is kept — *managed*: `proxyJwksTtlMs` |
+| `PEP_PROXY_SIGNALS_POLL_MS` | `5000` | how often the CAEP and RISC stream is polled — *managed*: `proxySignalsPollMs` |
+| `PEP_PROXY_SIGNALS_STALE_MS` | `60000` | how long the stream may go without a successful poll. After that, sessions are checked with the service's session endpoint until it answers again. `GET /` shows the stream's state under `proxy.signals` — *managed*: `proxySignalsStaleMs` |
 | `PEP_PROXY_UPSTREAM_CA` | — | a path: anchors for an `https` upstream |
-| `PEP_PROXY_UPSTREAM_INSECURE` | `false` | do not verify an `https` upstream |
-| `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | let the relying party use an `http` issuer, for development only. Redirect URIs stay https |
-| `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_LOG_LEVEL` | | |
+| `PEP_PROXY_UPSTREAM_INSECURE` | `false` | do not verify an `https` upstream — *managed*: `proxyUpstreamInsecure` |
+| `PEP_PROXY_RP_ALLOW_INSECURE` | `false` | let the relying party use an `http` issuer, for development only. Redirect URIs stay https — *managed*: `proxyRpAllowInsecure` |
+| `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_BACKOFF_MAX_MS`, `PEP_LOG_LEVEL` | | *managed*: `description`, `timeoutMs`, `maxBodyBytes`, `backoffMaxMs`, `logLevel` |
 
 ## Against a trust realm
 

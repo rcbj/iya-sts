@@ -3649,6 +3649,107 @@ async function findTheProxy() {
   return "";
 }
 
+// ---------------------------------------------------------------------------
+// SECTION 9b (#1760): THE SETTINGS THE SERVICE SETS FOR THE PEP.
+//
+// What the PEP's console page saves reaches the CONTAINER on its next poll,
+// with no restart: GET / says each setting's value and whether it is the
+// service's, the environment's or the default, and the PDP's row carries
+// the same report from the heartbeat and says the PEP holds what was set.
+// Cleared, the environment is back. Only settings no later section reads are
+// changed (the description, the log level, the bias for one round trip),
+// and every one is cleared before the proxy section.
+// ---------------------------------------------------------------------------
+async function itTakesItsSettingsFromTheService() {
+  log.debug("Entering itTakesItsSettingsFromTheService().");
+  const before = await pepOverview();
+  check("the PEP reports its settings and the service offers them",
+        function () {
+          assert.ok(before.settings && before.settings.offered === true &&
+            before.settings.values && before.settings.values.bias,
+            "GET / should carry `settings` with `offered: true` against " +
+            "this service; it said " +
+            JSON.stringify(before.settings).slice(0, 400));
+          assert.notStrictEqual(before.settings.values.bias.source,
+            "service", "nothing is set for this PEP yet");
+        });
+  const marker = "set by sts_xacml_remote_pep " + Date.now();
+  const saved = await act("set-pep-settings", {
+    name: PEP_NAME,
+    settings: { description: marker, logLevel: "info",
+                bias: "permit-biased" }
+  }, "saved the PEP's settings");
+  check("set-pep-settings answers what it saved", function () {
+    assert.ok(saved.settings && saved.settings.description === marker,
+      "the answer should carry the settings; it said " +
+      JSON.stringify(saved).slice(0, 300));
+  });
+  await until("the PEP to apply the service's settings", async function () {
+    const now = await pepOverview();
+    const v = now.settings && now.settings.values;
+    if (v && v.description && v.description.value === marker &&
+        v.description.source === "service" && now.bias === "permit-biased") {
+      return { ok: true };
+    }
+    return { ok: false, note: "GET / settings: " +
+             JSON.stringify(now.settings).slice(0, 300) };
+  });
+  // GET /'s `bias` is what every decision is enforced with (`now().bias`),
+  // so the wait above is the bias assertion.
+  checks += 1;
+  await until("the PDP's row to say the PEP holds them", async function () {
+    const r = await get(api("/xacml/peps?pep=" +
+                            encodeURIComponent(PEP_NAME)));
+    const row = r.body && r.body.peps && r.body.peps[0];
+    if (r.status === 200 && r.body.found === true && row &&
+        row.settingsCurrent === true && row.settingsInUse &&
+        row.settingsInUse.values.description &&
+        row.settingsInUse.values.description.source === "service") {
+      return { ok: true };
+    }
+    return { ok: false, note: r.status + " " + JSON.stringify(row && {
+      settingsCurrent: row.settingsCurrent,
+      settingsInUse: row.settingsInUse }).slice(0, 300) };
+  });
+  const page = await get(api("/xacml/peps?pep=" +
+                              encodeURIComponent(PEP_NAME)));
+  check("the PEP's page answers that row alone, with the catalogue",
+        function () {
+          assert.ok(page.status === 200 && page.body.peps.length === 1 &&
+            page.body.settingsCatalogue &&
+            page.body.settingsCatalogue.settings.length === 23,
+            "GET /admin-api/xacml/peps?pep= should answer one row and the " +
+            "catalogue; it answered " + page.status + " " +
+            String(page.text).slice(0, 300));
+        });
+  const refused = await postJson(api("/xacml/set-pep-settings"),
+    { name: PEP_NAME, settings: { pollIntervalMs: 5 } });
+  check("an out-of-bounds setting is refused and nothing changes",
+        function () {
+          assert.ok(refused.status === 400 && refused.body &&
+            refused.body.ok === false,
+            "pollIntervalMs 5 should be refused; it answered " +
+            refused.status + " " + String(refused.text).slice(0, 300));
+        });
+  await act("clear-pep-settings", { name: PEP_NAME },
+            "cleared the PEP's settings");
+  await until("the PEP to fall back to its environment", async function () {
+    const now = await pepOverview();
+    const v = now.settings && now.settings.values;
+    if (v && v.description && v.description.source !== "service" &&
+        now.settings.configured === false &&
+        now.bias === before.bias) {
+      return { ok: true };
+    }
+    return { ok: false, note: "GET / settings: " +
+             JSON.stringify(now.settings).slice(0, 300) };
+  });
+  log.info("[settings] OK — the PEP applied the service's settings and " +
+           "fell back to its environment when they were cleared, without " +
+           "a restart.");
+  log.debug("Leaving itTakesItsSettingsFromTheService().");
+}
+
 async function itProxiesAnApplication() {
   log.debug("Entering itProxiesAnApplication().");
   log.info("=== The container as a reverse proxy in front of an " +
@@ -4965,6 +5066,7 @@ async function test() {
       // Section 10 (#1760) BEFORE section 9, which takes the PDP away for
       // good: the proxy pulls its configuration and validates credentials
       // at the service, so it needs the seam section 9 cuts.
+      await itTakesItsSettingsFromTheService();
       await itProxiesAnApplication();
       await itKeepsEnforcingWhenThePdpIsGone();
     } finally {
