@@ -2264,8 +2264,10 @@ impl AuthorizationEndpoint {
             });
             return match screen.begin(&info) {
                 Ok(location) => {
+                    // `authn.stepApplication()` names no application for a
+                    // consent, so its hidden address carries no `app`.
                     Answer::redirect(&if self.mode.hides_step_ids() {
-                        hide_step(&location, &client_id)
+                        hide_step(&location, "")
                     } else {
                         location
                     })
