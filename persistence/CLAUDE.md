@@ -4214,6 +4214,17 @@ per cell. In multi-cell mode the scheduler claims those runs under
 that scope in the global database (`claimTierOf()`); `purgeClaims()` runs on
 both. A new job that writes global state belongs on that list.
 
+**AND `pki.js`'s BUILD CLAIM IS THE GLOBAL TIER'S TOO (2026-11-14)**
+(`tiers.PKI_BUILD_SCOPE`, `pki.build`). Every certificate authority row is
+`sts_keys`, a global table, so the builders `oneBuildInTheCluster()` must
+exclude are every cell's. Kept in the cell's database it excluded one cell's
+processes only, two cells each built a branch of one realm, and the row's
+first-writer-wins merge was the only arbiter: GitHub Actions run 43642810770's
+`cells` mode published two Intermediates, two JOSE and two XML Signing CAs of
+one name in three realms (`sts_pki_distribution_points`). A new claim scope
+that guards a write to a global table belongs in `GLOBAL_CLAIM_SCOPES`.
+`tests/cell_tiers.js` (`pkiBuildClaim()`).
+
 **SEALING BY TIER.** A cell-tier minted row is sealed under the cell's own
 key-encryption key (`keys.cellKek*`, `keystore.seal(…, 'cell')`), which lives
 only in the cell's region and has no fallback; `keystore.open()` tries the
