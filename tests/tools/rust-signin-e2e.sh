@@ -41,6 +41,13 @@
 #   screen (the security-key box), signs in with it as the second factor, and with no
 #   username; Node honours all three sessions in step 4, and `e2e.key2`
 #   does the same against Node in step 5.
+# AND THE CODE, TOKEN AND DPoP LEG (the `oauth2` slice, phase 5's
+# milestone; tests/tools/rust-console-e2e.js): Node also gives the bootstrap
+# administrator and a third person their first sign-in, and on each
+# runtime headless Chrome opens the UNCHANGED console at /admin and portal
+# at /portal, signs in at the screen each is sent to, and records the
+# token request's answer (a DPoP-bound token, its audience, the refresh
+# token) and the API calls the page then made, with their statuses.
 #
 # Writes <out-dir> (default tests/vectors/rust-signin-e2e, gitignored).
 # Needs google-chrome on the host and NODE_PATH holding `ws`.
@@ -64,6 +71,7 @@ SUMMARY="$OUT/summary.txt"
 : > "$SUMMARY"
 FAILED=0
 DRIVER="node $REPO/tests/tools/rust-signin-e2e.js"
+CONSOLE="node $REPO/tests/tools/rust-console-e2e.js"
 
 for img in "$NODE_IMAGE" "$RUST_IMAGE"; do
   label="$(docker image inspect --format \
@@ -89,6 +97,7 @@ trap cleanup EXIT
 
 rand() { openssl rand -hex 24; }
 APP_PW="$(rand)"; OWNER_PW="$(rand)"; SECRET="$(rand)"
+ADMIN_PW="Boot-$(rand)-9q"
 SECRETS="$OUT/secrets"
 mkdir -p "$SECRETS"
 rm -f "$SECRETS/sts-kek"
@@ -135,7 +144,14 @@ printf '%s\n' "CONFIG_FILE=./env/local.js" "STS_MODE=product" \
   "STS_SECRETS_ALLOW_LOCAL_SECRETS=true" "STS_CLUSTER_MODE=off" \
   "STS_WORKERS_REQUEST_COUNT=0" "STS_DEBUGGER_ENABLED=off" \
   "STS_CSRF_SECRET=$(rand)" \
-  "ADMIN_API_CLIENT_SECRET=$SECRET" > "$OUT/service.env"
+  "ADMIN_API_CLIENT_SECRET=$SECRET" \
+  "STS_ADMIN_BOOTSTRAP_PASSWORD=$ADMIN_PW" > "$OUT/service.env"
+# E2E_EXTRA_ENV: further `NAME=value` lines for both runtimes, space-
+# separated (a setting a run is made under, said in its summary).
+for line in ${E2E_EXTRA_ENV:-}; do
+  printf '%s\n' "$line" >> "$OUT/service.env"
+  say "  (with $line)"
+done
 
 start() {
   local image="$1" what="$2"
@@ -176,9 +192,44 @@ start "$NODE_IMAGE" node-writer
 if $DRIVER setup "$BASE" "$SECRET" "$OUT/people.json" >> "$SUMMARY" 2>&1
 then pass "two people, the second with an authenticator app"
 else fail "the people were made (see summary)"; exit 1; fi
+# The bootstrap administrator's name is the one product mode made (its
+# password is the one configured, and never printed).
+ADMIN_USER="$(docker logs "$SVC" 2>&1 | grep -o 'username: admin-[0-9a-f]*' |
+  head -1 | cut -d' ' -f2)"
+if $CONSOLE setup "$BASE" "$SECRET" "$ADMIN_USER" "$ADMIN_PW" \
+     "$OUT/console-people.json" \
+     >> "$SUMMARY" 2>&1
+then pass "the bootstrap administrator and e2e.ann signed in once"
+else fail "the console's people (see summary)"; exit 1; fi
 $DRIVER begin "$BASE" "$OUT/pending.json" >> "$SUMMARY" 2>&1
 pass "two sign-ins begun at /oauth2/authorize"
 stop node-writer
+
+# The code, token and DPoP leg: one surface, one person.
+surface() {
+  local label="$1" path="$2" key="$3" user pw secret got
+  user="$(jq -r ".\"$key\".username // \"$key\"" "$OUT/console-people.json")"
+  pw="$(jq -r ".\"$key\".password" "$OUT/console-people.json")"
+  secret="$(jq -r ".\"$key\".secret // \"\"" "$OUT/console-people.json")"
+  got="$OUT/$label-${path#/}.json"
+  if $CONSOLE surface "$BASE" "$path" "$user" "$pw" "$secret" \
+       > "$got" 2>> "$SUMMARY"; then
+    if jq -e '[.calls[] | select(.url == "/oauth2/token" and .status == 200
+               and .answer.token_type == "DPoP")] | length > 0' "$got" \
+         >/dev/null; then
+      pass "$label $path: $user holds a DPoP-bound token for $(jq -r \
+        '[.calls[] | select(.url == "/oauth2/token") | .answer.aud][0]' \
+        "$got") (refresh $(jq -r '[.calls[] | select(.url ==
+        "/oauth2/token") | .answer.refresh][0]' "$got")); the page then \
+        asked: $(jq -r '[.calls[] | select(.url | test("-api/")) |
+        "\(.url) \(.status)"] | unique | join("; ")' "$got")"
+    else
+      fail "$label $path: no DPoP-bound token: $(head -c 2000 "$got")"
+    fi
+  else
+    fail "$label $path: the browser run (see summary)"
+  fi
+}
 
 browse() {
   local who="$1" label="$2" id user pw secret
@@ -239,9 +290,22 @@ say "== Rust on the store Node wrote: the unchanged bundle in Chrome =="
 # The enrolment spent this step's code: the next one is the person's next.
 sleep 31
 start "$RUST_IMAGE" rust
+# The JWKS over the store Node wrote: the default realm's RS256 key is the
+# one the hierarchy certified (bare base64 in the store).
+jwks="$(curl -sk "$BASE/oauth2/jwks")"
+if echo "$jwks" | jq -e '.keys[0].kty == "RSA" and (.keys[0].x5c | length) > 0' \
+     >/dev/null 2>&1; then
+  pass "rust: /oauth2/jwks publishes the certified RS256 key ($(echo "$jwks" |
+    jq -r '.keys | length') keys)"
+else
+  fail "rust: /oauth2/jwks: $(echo "$jwks" | head -c 300)"
+fi
 browse pwd rust
 browse totp rust
 passkeys rust e2e.key
+surface rust /admin admin
+sleep 31
+surface rust /portal e2e.ann
 
 say "== Rust signs the first person out at /logout: the unchanged bundle =="
 cookie="$(jq -r .cookie "$OUT/rust-pwd.json" 2>/dev/null || true)"
@@ -299,6 +363,9 @@ sleep 31
 browse pwd node
 browse totp node
 passkeys node e2e.key2
+surface node /admin admin
+sleep 31
+surface node /portal e2e.ann
 stop node-reader
 
 say "== $( [ "$FAILED" = 0 ] && echo PASSED || echo FAILED ) =="

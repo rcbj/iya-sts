@@ -57,6 +57,7 @@ mod certificates;
 mod ldap_listener;
 mod listener;
 mod listeners;
+mod oauth;
 mod pki;
 mod solo;
 mod stack;

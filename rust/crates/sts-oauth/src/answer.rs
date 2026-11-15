@@ -190,6 +190,28 @@ impl Answer {
     /// HTTP layer records and never sends ([`sts_http::mark`]'s shape).
     pub fn into_response(self) -> axum::response::Response {
         use axum::http::{HeaderName, HeaderValue, StatusCode};
+        // `res.redirect()`: Express's body and `Vary: Accept`.
+        if self.status == 302 && self.body == Body::Empty {
+            if let Some(location) = self.header("location").map(str::to_string)
+            {
+                let mut response = sts_http::redirect(&location);
+                for (name, value) in &self.headers {
+                    if name == "location" {
+                        continue;
+                    }
+                    if let (Ok(n), Ok(v)) = (
+                        HeaderName::from_bytes(name.as_bytes()),
+                        HeaderValue::from_str(value),
+                    ) {
+                        response.headers_mut().insert(n, v);
+                    }
+                }
+                return match self.code {
+                    Some(code) => sts_http::mark(response, code),
+                    None => response,
+                };
+            }
+        }
         let bytes = match &self.body {
             Body::Empty => Vec::new(),
             Body::Json(j) => j.to_string().into_bytes(),

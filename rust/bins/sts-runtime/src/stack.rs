@@ -80,8 +80,11 @@ pub struct Stack {
     /// The sign-on session, the credentials and `/authn-api` with the
     /// sign-in surface's shells (`8` and `8-api`, #444 phase 5).
     pub signin: sts_authn_api::wiring::SignInStack,
-    /// `/authn-api`'s router, put behind the HTTP layer.
+    /// `/authn-api`'s router and the authorization server's, put behind
+    /// the HTTP layer.
     pub authn_routes: axum::Router,
+    /// The authorization server (`9`, #444 phase 5).
+    pub oauth: Arc<crate::oauth::OAuthStack>,
     /// The certificate authority (#444 phase 6), made once the store is
     /// open: its rows are the keystore's.
     pub pki: OnceLock<Arc<sts_pki::authority::Authority>>,
@@ -702,8 +705,37 @@ impl Stack {
         scheduler.register(sts_authn::job::account_set_expiry_job(
             signin.sessions.clone(),
         ))?;
-        let authn_routes =
-            signin.mount(&http, surfaces.clone(), settings.clone());
+        // THE AUTHORIZATION SERVER (`9`, #444 phase 5): its stores declared
+        // before the store opens, over the sign-in stack's session core and
+        // pending sign-ins, and the live directory.
+        let oauth =
+            crate::oauth::OAuthStack::declare(crate::oauth::OAuthParts {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                registry: registry.clone(),
+                lifecycle: lifecycle.clone(),
+                handles: handles.clone(),
+                persistence: persistence.clone(),
+                live: directory.clone(),
+                sessions: signin.sessions.clone(),
+                pending: signin.signin.stores.pending.clone(),
+                people: Arc::new(sts_authn_api::wiring::DirectoryPorts {
+                    directory: directory.clone(),
+                    persistence: persistence.clone(),
+                    registry: registry.clone(),
+                    settings: settings.clone(),
+                    mode: mode.clone(),
+                }),
+                catalogs: Arc::new(sts_http::i18n::Catalogs::load(
+                    &sts_http::i18n::Catalogs::dir_in(
+                        &sts_http::files::WebRoot::from_env().0,
+                    ),
+                )),
+                tokens: tokens.clone(),
+            });
+        let authn_routes = signin
+            .mount(&http, surfaces.clone(), settings.clone())
+            .merge(oauth.router(http.clone()));
         // THE PROTOCOL-INDEPENDENT SIGN-OUT (`common/protocol_stack.ts`'s
         // 23a, second to last): `/logout`, `/logout/signed-out`, and the
         // page's operations behind `/authn-api/logout`.
@@ -757,6 +789,7 @@ impl Stack {
             cluster_mode: resolved,
             signin,
             authn_routes,
+            oauth,
             pki: OnceLock::new(),
             listener_keys,
             node_name,
@@ -768,6 +801,9 @@ impl Stack {
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn start(&self) -> Result<(), String> {
         self.persistence.start().await?;
+        // The application register's directory, from what the store gave
+        // back (`oauth.rs`).
+        self.oauth.reload_directory();
         // THE DEFAULT REALM'S KEY SET, before anything is served: read
         // from the store, or made on its first start and stored (a set
         // another process stored first is the one kept) — or, where keys do
@@ -911,6 +947,47 @@ mod tests {
             .to_str()
             .unwrap()
             .contains("frame-ancestors 'none'"));
+        stack.stop().await;
+    }
+
+    #[tokio::test]
+    async fn the_authorization_server_is_served() {
+        let stack = Stack::build(settings(
+            json!({ "persistence": { "mode": "memory" } }),
+        ))
+        .unwrap();
+        stack.start().await.unwrap();
+        let response = stack
+            .router()
+            .oneshot(
+                Request::get("/.well-known/oauth-authorization-server")
+                    .header("host", "as.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let doc: Json = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(doc["issuer"], "http://as.example");
+        assert!(doc["signed_metadata"].is_string());
+        // An unknown client is refused at the authorization endpoint.
+        let response = stack
+            .router()
+            .oneshot(
+                Request::get(
+                    "/oauth2/authorize?client_id=nobody&response_type=code\
+                     &redirect_uri=https%3A%2F%2Frp.example%2Fcb",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(response.status() == 302 || response.status() == 400);
         stack.stop().await;
     }
 

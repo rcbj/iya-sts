@@ -275,9 +275,85 @@ fn request_validation() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// OpenID4VCI's credential scopes, as Node's default configurations name
+/// them.
+const CREDENTIAL_SCOPES: [&str; 5] = [
+    "identity_credential",
+    "identity_credential_jwt",
+    "identity_credential_ldp",
+    "identity_credential_did",
+    "identity_credential_ldp_did",
+];
+
+/// Claims held in the test.
+#[derive(Default)]
+struct LocalClaims(std::sync::Mutex<std::collections::HashSet<String>>);
+
+impl sts_cluster::scheduler::Claims for LocalClaims {
+    fn claim(
+        &self,
+        scope: &str,
+        value: &str,
+        realm: &str,
+        _ttl_ms: f64,
+    ) -> sts_cluster::schedule::BoxFuture<
+        '_,
+        Result<
+            sts_cluster::scheduler::Claim,
+            sts_cluster::scheduler::ClaimRefused,
+        >,
+    > {
+        let key = format!("{}|{}|{}", scope, realm, value);
+        let fresh = self.0.lock().unwrap().insert(key.clone());
+        Box::pin(async move {
+            if fresh {
+                Ok(sts_cluster::scheduler::Claim {
+                    claimed_at: 0.0,
+                    handle: json!(key),
+                })
+            } else {
+                Err(sts_cluster::scheduler::ClaimRefused::Held)
+            }
+        })
+    }
+    fn release(
+        &self,
+        handle: &Json,
+    ) -> sts_cluster::schedule::BoxFuture<'_, ()> {
+        if let Some(k) = handle.as_str() {
+            self.0.lock().unwrap().remove(k);
+        }
+        Box::pin(async {})
+    }
+}
+
+struct NoPeople;
+impl sts_oauth::token_endpoint::People for NoPeople {
+    fn user_for(&self, username: &str) -> Json {
+        json!({ "username": username })
+    }
+    fn name_for_subject(&self, _sub: &str) -> Option<String> {
+        None
+    }
+    fn has_subject_resolver(&self) -> bool {
+        false
+    }
+}
+
+struct NoSessions;
+impl sts_oauth::token_endpoint::GrantSessions for NoSessions {
+    fn ended(&self, _sid: &str) -> String {
+        "ended".into()
+    }
+}
+
 struct RecordedClients(Json);
 
 impl sts_oauth::clients::Clients for RecordedClients {
+    // This service's own objects are seeded in every realm.
+    fn seeded(&self, identifier: &str) -> bool {
+        identifier.starts_with("sts-")
+    }
     fn client_config_of(&self, client_id: &str) -> Json {
         self.0
             .get(client_id)
@@ -322,8 +398,8 @@ fn decode(jwt: &str) -> Json {
     })
 }
 
-#[test]
-fn token_endpoint() {
+#[tokio::test]
+async fn token_endpoint() {
     let Some(v) = vectors() else { return };
     let cases = v["token"].as_array().unwrap();
     let mut failures = Vec::new();
@@ -362,6 +438,19 @@ fn token_endpoint() {
         );
         let history: Arc<dyn AssertionHistory> =
             Arc::new(MemoryAssertionHistory::default());
+        let clients: Arc<dyn sts_oauth::clients::Clients> =
+            Arc::new(RecordedClients(realm_row["clients"].clone()));
+        let grants = sts_oauth::grants::GrantStores::declare(
+            &lifecycle,
+            &handles,
+            settings.clone(),
+        );
+        let dpop = sts_oauth::dpop_stores::DpopStores::new(
+            &lifecycle,
+            &handles,
+            settings.clone(),
+            Arc::new(|| chrono::Utc::now().timestamp()),
+        );
         for case in cases
             .iter()
             .filter(|c| s(&c["realm"]) == realm && c.get("clients").is_none())
@@ -377,9 +466,7 @@ fn token_endpoint() {
             let endpoint = sts_oauth::token_endpoint::TokenEndpoint {
                 settings: settings.clone(),
                 mode: mode.clone(),
-                clients: Arc::new(RecordedClients(
-                    realm_row["clients"].clone(),
-                )),
+                clients: clients.clone(),
                 auth,
                 register: register.clone(),
                 status: Arc::new(
@@ -390,17 +477,21 @@ fn token_endpoint() {
                 }),
                 clock,
                 id_tokens: None,
-                credential_scopes: [
-                    "identity_credential",
-                    "identity_credential_jwt",
-                    "identity_credential_ldp",
-                    "identity_credential_did",
-                    "identity_credential_ldp_did",
-                ]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-                protected_scopes: Vec::new(),
+                scopes: Arc::new(sts_oauth::scopes::ScopePolicy {
+                    settings: settings.clone(),
+                    mode: mode.clone(),
+                    clients: clients.clone(),
+                    credential_scopes: CREDENTIAL_SCOPES
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                }),
+                grants: grants.clone(),
+                claims: Arc::new(LocalClaims::default()),
+                dpop: dpop.clone(),
+                gated: Arc::new(sts_oauth::authorize::NoGatedScopes),
+                people: Arc::new(NoPeople),
+                sessions: Arc::new(NoSessions),
             };
             let form: Vec<(String, String)> = case["form"]
                 .as_object()
@@ -414,7 +505,7 @@ fn token_endpoint() {
                 authorization: s(&case["headers"]["authorization"]),
                 ..Default::default()
             };
-            let answer = endpoint.answer(&ask);
+            let answer = endpoint.answer(&ask).await;
             compared += 1;
             let name = format!("{} [{}]", s(&case["name"]), mode_name);
             let mut got_headers = serde_json::Map::new();

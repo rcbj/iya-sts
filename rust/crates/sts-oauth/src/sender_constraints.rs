@@ -41,8 +41,38 @@ pub struct Refusal {
 }
 
 /// The hosted clients that are DPoP-bound whenever they are public clients
-/// (#446): the admin console. Not a setting.
-pub const DPOP_BOUND_PUBLIC_CLIENTS: [&str; 1] = ["sts-admin-console"];
+/// (#446, then #568's portal and #956's reports): not a setting.
+pub const DPOP_BOUND_PUBLIC_CLIENTS: [&str; 3] =
+    ["sts-admin-console", "sts-user-portal", "sts-report"];
+
+/// `MTLS_EXEMPT_CLIENTS`: the hosted surfaces, which run in a browser and
+/// have no certificate to present.
+pub const MTLS_EXEMPT_CLIENTS: [&str; 3] =
+    ["sts-admin-console", "sts-user-portal", "sts-report"];
+
+/// `rotationRequired()`: RFC 9700, OAuth 2.1 or product mode, or
+/// `oauth2.refreshTokenRotation`. FAPI 2.0's prohibition is the FAPI
+/// slice's.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn rotation_required(settings: &Settings, bcp_enabled: bool) -> bool {
+    bcp_enabled || settings.value_of("oauth2.refreshTokenRotation").as_bool()
+}
+
+/// `refreshDpopRequired()`.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn refresh_dpop_required(settings: &Settings) -> bool {
+    settings
+        .value_of("oauth2.refreshTokenRequireDpop")
+        .as_bool()
+}
+
+/// `refreshMtlsRequired()`.
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn refresh_mtls_required(settings: &Settings) -> bool {
+    settings
+        .value_of("oauth2.refreshTokenRequireMtls")
+        .as_bool()
+}
 
 /// `dpopBoundPublicClient()`: the admin console running as a public client,
 /// every token issued to which must be DPoP-bound — a key the browser

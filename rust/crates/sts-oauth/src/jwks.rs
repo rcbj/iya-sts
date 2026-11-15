@@ -393,7 +393,9 @@ fn current_rsa(inputs: &JwksInputs<'_>) -> Result<Json, String> {
         .published("jose", "RS256", &kid)
         .unwrap_or((self_signed, Vec::new()));
     let x5c = x5c_of(&cert, &chain, inputs.sources);
-    rsa_jwk(&kid, &cert, x5c)
+    // The hierarchy files a published certificate as bare base64 (once
+    // Node certified the key, which product always has): read as PEM.
+    rsa_jwk(&kid, &as_pem(&cert), x5c)
         .ok_or_else(|| "the RSA certificate could not be read".to_string())
 }
 
@@ -664,5 +666,58 @@ impl CertificateSources for StoredSources {
             });
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod certified_tests {
+    #![allow(clippy::unwrap_used)] // tests
+
+    use super::*;
+
+    /// The hierarchy's certificate as the store files it: bare base64.
+    struct Certified(String);
+
+    impl CertificateSources for Certified {
+        fn published(
+            &self,
+            _use_case: &str,
+            _slot: &str,
+            _kid: &str,
+        ) -> Option<(String, Vec<String>)> {
+            Some((self.0.clone(), Vec::new()))
+        }
+        fn service_root_pem(&self) -> Option<String> {
+            None
+        }
+        fn pinned_signers(&self, _use_case: &str) -> Vec<PinnedSigner> {
+            Vec::new()
+        }
+    }
+
+    #[test]
+    fn a_certified_rsa_key_is_published_from_bare_base64() {
+        let blob = sts_store::key_sets::generate_key_set(0).unwrap();
+        let bare = blob["certB64"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| strip_pem(blob["certPem"].as_str().unwrap()));
+        let sources = Certified(bare.clone());
+        let settings = std::sync::Arc::new(sts_core::settings::Settings::new(
+            Json::Null,
+            std::collections::HashMap::new(),
+        ));
+        let mode = sts_core::mode::Mode::shared(settings.clone());
+        let policy = JwksPolicy::from_settings(&settings, &mode);
+        let keys = jwks_keys(&JwksInputs {
+            blob: &blob,
+            pq_keys: None,
+            sources: &sources,
+            policy: &policy,
+            now_ms: 0.0,
+        })
+        .unwrap();
+        assert_eq!(keys[0]["kty"], "RSA");
+        assert_eq!(keys[0]["x5c"][0], json!(bare));
     }
 }
