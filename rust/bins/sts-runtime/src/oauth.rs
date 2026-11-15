@@ -9,6 +9,7 @@
 //! |---|---|
 //! | `GET`, `POST /oauth2/authorize` | [`AuthorizationEndpoint`] |
 //! | `POST /oauth2/token` | [`TokenEndpoint`] |
+//! | `POST /oauth2/introspect`, `/oauth2/revoke` | [`TokenEndpoint`] ([`sts_oauth::introspection`]) |
 //! | `GET /.well-known/oauth-authorization-server`, `/.well-known/openid-configuration` | [`sts_oauth::metadata`], with `signed_metadata` |
 //! | `GET /oauth2/autopost.js` | the `form_post` page's one script |
 //!
@@ -972,6 +973,30 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        // RFC 7662 introspection (with RFC 9701's JWT answer) and RFC 7009
+        // revocation.
+        let routes = routes.route(
+            "/oauth2/introspect",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.introspect_or_revoke(h, r, true).await }
+                }
+            })
+            .fallback(unrouted),
+        );
+        let routes = routes.route(
+            "/oauth2/revoke",
+            axum::routing::post({
+                let (me, h) = (me.clone(), h.clone());
+                move |r: AxumRequest| {
+                    let (me, h) = (me.clone(), h.clone());
+                    async move { me.introspect_or_revoke(h, r, false).await }
+                }
+            })
+            .fallback(unrouted),
+        );
         // The two mode reports (`GET /oauth2/rfc9700`, `/oauth2/oauth21`).
         let routes = routes.route(
             "/oauth2/rfc9700",
@@ -1166,6 +1191,29 @@ impl OAuthStack {
             })
             .fallback(unrouted),
         );
+        let mut routes = routes;
+        for (path, introspect) in [
+            ("/{as}/oauth2/introspect", true),
+            ("/{as}/oauth2/revoke", false),
+        ] {
+            let (me, h) = (me.clone(), h.clone());
+            routes = routes.route(
+                path,
+                axum::routing::post(
+                    move |Path(server): Path<String>, r: AxumRequest| {
+                        let (me, h) = (me.clone(), h.clone());
+                        async move {
+                            let inner = me.clone();
+                            me.for_profile(server, move || {
+                                inner.introspect_or_revoke(h, r, introspect)
+                            })
+                            .await
+                        }
+                    },
+                )
+                .fallback(unrouted),
+            );
+        }
         let logout = {
             let (me, h) = (me.clone(), h.clone());
             move |Path(server): Path<String>, r: AxumRequest| {
@@ -1542,6 +1590,36 @@ impl OAuthStack {
             t
         }
         sendable(self.userinfo.answer(&ask)).await.into_response()
+    }
+
+    /// `POST /oauth2/introspect` and `POST /oauth2/revoke`.
+    async fn introspect_or_revoke(
+        self: Arc<Self>,
+        http: Arc<sts_http::HttpLayer>,
+        request: AxumRequest,
+        introspect: bool,
+    ) -> Response {
+        self.reload_directory();
+        self.ensure_keys().await;
+        let (base, headers, address, body) = self.arrived(&http, &request);
+        let ask = sts_oauth::introspection::EndpointAsk {
+            base,
+            address,
+            body,
+            authorization: header_of(&headers, "authorization"),
+            accept: header_of(&headers, "accept"),
+            peer: None,
+        };
+        fn sendable<T: Send>(t: T) -> T {
+            t
+        }
+        if introspect {
+            sendable(self.tokens.introspect(&ask)).await.into_response()
+        } else {
+            sendable(self.tokens.revoke_request(&ask))
+                .await
+                .into_response()
+        }
     }
 
     async fn token(

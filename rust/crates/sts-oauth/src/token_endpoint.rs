@@ -419,7 +419,7 @@ impl TokenEndpoint {
     }
 
     /// `secretLockout(res, clientId, lockedOut)`: 429 with `Retry-After`.
-    fn secret_lockout(
+    pub(crate) fn secret_lockout(
         &self,
         client_id: &str,
         locked: &crate::secret_limit::LimitRefusal,
@@ -437,7 +437,7 @@ impl TokenEndpoint {
         a
     }
 
-    fn refusal(
+    pub(crate) fn refusal(
         &self,
         code: sts_core::errors::ErrorCode,
         status: u16,
@@ -447,7 +447,11 @@ impl TokenEndpoint {
         Answer::refusal(code, status, error, description)
     }
 
-    fn with_basic_challenge(&self, mut answer: Answer, basic: bool) -> Answer {
+    pub(crate) fn with_basic_challenge(
+        &self,
+        mut answer: Answer,
+        basic: bool,
+    ) -> Answer {
         if basic {
             let realm = self
                 .settings
@@ -1529,6 +1533,28 @@ impl TokenEndpoint {
 
     /// `bcp.revokeFamily(familyId, clientId)`: the family claimed as revoked
     /// across the cluster, for as long as a member of it could live.
+    /// `stats.revoke(jti, via, how, exp)`: true where the jti was newly
+    /// revoked.
+    pub(crate) fn revoke_jti(&self, jti: &str, via: &str, exp: i64) -> bool {
+        let _ = exp;
+        self.register.revoke(
+            &sts_core::realm::current_id(),
+            jti,
+            via,
+            false,
+            self.clock.now_ms(),
+        )
+    }
+
+    /// `bcp.revokeFamily(familyId, clientId)`.
+    pub(crate) async fn revoke_family_by_id(
+        &self,
+        family: &str,
+        client_id: &str,
+    ) -> bool {
+        self.revoke_family(family, client_id).await
+    }
+
     async fn revoke_family(&self, family: &str, client_id: &str) -> bool {
         if family.is_empty() {
             return false;

@@ -66,6 +66,7 @@ pub mod dpop_stores;
 pub mod grants;
 pub mod id_token;
 pub mod identity_assurance;
+pub mod introspection;
 pub mod jarm;
 pub mod js;
 pub mod jwks;
