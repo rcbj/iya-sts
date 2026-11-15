@@ -253,6 +253,7 @@ rust/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/
     sts-xacml/                   the engine: no I/O; shared by the runtime and the PEP
     sts-enrollment/              ACME, EST, SCEP over one CertEnrollment core
+    sts-audit/                   the audit log, GET /admin-api/audit, the audit export (#641)
     sts-risk/  sts-attribute-sources/  sts-mail/  sts-cells/
     sts-authzen/  sts-uma/
     sts-report/                  /report-api: its sources, query, jobs and formats
