@@ -2534,6 +2534,15 @@ const JOBS = [
   // D12 (#444): which layer refuses a GNAP document — the bound, the
   // schema, the walker — each by its code (gnap_request).
   { file: 'sts_gnap_request_layers.js', browser: false, local: true },
+  // D12 (#444): what ends a GNAP grant from outside the protocol — one
+  // session's sign-out, the grant's own row on /admin-api/sessions, a
+  // global sign-out, a disabled account, a deleted client entry — in a
+  // product realm (gnap_revocation).
+  { file: 'sts_gnap_revocation_wire.js', browser: false, local: true },
+  // D12 (#444): the access-type catalogue's door and each built-in rule of
+  // a GNAP right by its code, and RFC 9396 reading the same catalogue at
+  // /oauth2/token (gnap_catalogue, gnap_limits_ownership).
+  { file: 'sts_gnap_catalogue_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
