@@ -249,3 +249,28 @@ fn jwks_documents() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn request_validation() {
+    let Some(v) = vectors() else { return };
+    let mut failures = Vec::new();
+    for case in v["validation"].as_array().unwrap() {
+        let input = case["input"].as_object().unwrap();
+        let got = match sts_oauth::model::check(
+            &s(&case["id"]),
+            input,
+            &s(&case["where"]),
+        ) {
+            Ok(value) => json!({ "ok": true, "value": value }),
+            Err(r) => json!({ "ok": false, "code": r.code, "field": r.field,
+                              "detail": r.detail }),
+        };
+        if got != case["answer"] {
+            failures.push(format!(
+                "{}\n  rust {}\n  node {}",
+                case["input"], got, case["answer"]
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

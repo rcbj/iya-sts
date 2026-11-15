@@ -372,6 +372,53 @@ async function clientAuthVectors(mods) {
   return out;
 }
 
+// The model's request validators, over inputs as Express parses them
+// (`qs`: a repeated name is an array, `a[b]=c` an object).
+function validationVectors(ROOT) {
+  const validation = require(path.join(ROOT, 'common', 'validation'));
+  const OAuthModel = require(path.join(ROOT, 'oauth-oidc', 'oauth_model'));
+  const V = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+  const authorize = [
+    {}, { client_id: 'a', response_type: 'code', extra: 'kept' },
+    { client_id: 'a b' }, { client_id: '' }, { client_id: 'x'.repeat(257) },
+    { client_id: ['a', 'b'] }, { scope: { a: 'b' } }, { state: 'a\nb' },
+    { scope: 'openid "x"' }, { scope: 'openid  profile' }, { scope: '' },
+    { code_challenge: 'abc' }, { code_challenge: V }, { code_challenge: '' },
+    { max_age: 'soon' }, { max_age: '-1' }, { max_age: '1.5' },
+    { max_age: '30' }, { max_age: '' }, { max_age: '400000000' },
+    { domain_hint: 'a b' }, { response_mode: 'x'.repeat(65) },
+    { redirect_uri: 'https://rp.example/cb' },
+    { redirect_uri: 'https://rp.example/cb#frag' },
+    { redirect_uri: 'rp.example/cb' }, { redirect_uri: 'myapp:/cb' },
+    { redirect_uri: 'com.example.app:/cb' }, { redirect_uri: 'http:///x' },
+    { resource: 'javascript:alert(1)' },
+    { resource: ['https://a.example', 'https://b.example'] },
+    { resource: ['https://a.example', 'data:x'] },
+    { dpop_jkt: 'a=b' }, { login_hint: 'Ann Lee' },
+    { __proto__: null, constructor: 'x' },
+    { claim: ['a', 'b'] }, { claim: 'one' }
+  ];
+  const token = [
+    { grant_type: 'authorization_code', code: 'c', code_verifier: V },
+    { code_verifier: 'short' }, { client_id: 'x'.repeat(257) },
+    { scope: 'openid "x"' }, { refresh_token: '' }, { code: '' },
+    { client_assertion_type: 'nope' }, { state: 'a\nb' },
+    { password: 'line\nbreak' }, { grant_type: 'x', unknown: 'kept' },
+    { grant_type: ['a', 'b'] }, { resource: 'https://a.example' }
+  ];
+  const run = function (id, where, inputs) {
+    return inputs.map(function (input) {
+      const answer = validation.checkParsed(input, where,
+                                            OAuthModel.request(id));
+      return { id: id, where: where, input: clone(input),
+               keys: Object.keys(input),
+               answer: clone(answer) };
+    });
+  };
+  return run('authorize', 'query', authorize)
+    .concat(run('token', 'body', token));
+}
+
 async function build(ROOT) {
   require(path.join(ROOT, 'common', 'protocol_stack'));
   const app = require(path.join(ROOT, 'common', 'app'));
@@ -392,6 +439,7 @@ async function build(ROOT) {
   const out = { problems: [] };
   try {
     out.sanitize = sanitizeVectors(mods.oauth21);
+    out.validation = validationVectors(ROOT);
     out.clientAuth = await clientAuthVectors(mods);
     out.jwks = await jwksVectors(ROOT, port, mods);
   } catch (e) {

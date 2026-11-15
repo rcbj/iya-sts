@@ -28,6 +28,7 @@ pub mod dpop_stores;
 pub mod js;
 pub mod jwks;
 pub mod jwt_access_token;
+pub mod model;
 pub mod mtls;
 pub mod revocation;
 pub mod sender_constraints;
