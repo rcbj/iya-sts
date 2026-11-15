@@ -125,6 +125,13 @@ const PASSWORD = "Lr-" + crypto.randomBytes(9).toString("base64url") +
                  "-Correct.Horse-42";
 const FLOOR_PRODUCT = 60;
 
+// THE DIRECTORY'S CEILING IS THE PROCESS'S (`ldap.maxEntries`, every realm's
+// entries counted together) and a realm's own value is the one its writes
+// are checked against, so each realm here raises its own: a long run leaves
+// hundreds of realms behind, each seeded with dozens of entries, and the
+// shipped twenty thousand is then full before this job writes anything.
+const ROOMY = { "ldap.maxEntries": "1000000" };
+
 let checks = 0;
 function check(what, fn) {
   log.debug("Entering check(). " + what);
@@ -488,7 +495,7 @@ async function setUp(realm, mode) {
   await ok(base + "/admin-api/realms/create",
            { id: realm, domain: realm + ".example.net",
              name: "D12 LDAP rules " + mode,
-             overrides: { "global.mode": mode } },
+             overrides: Object.assign({ "global.mode": mode }, ROOMY) },
            "created the " + mode + " realm " + realm);
   if (mode === "product") {
     await setRealm(realm, "authn.allowOptionalSecondFactor", "true");
@@ -1249,7 +1256,8 @@ async function applicationRegistration(prod, dev) {
   const realm = "lrs" + STAMP;
   await ok(base + "/admin-api/realms/create",
            { id: realm, domain: realm + ".example.net",
-             name: "D12 LDAP sighting" }, "created " + realm);
+             name: "D12 LDAP sighting", overrides: ROOMY },
+           "created " + realm);
   const api = realmBase(realm) + "/admin-api";
   const adminMade = await ok(api + "/users/create", {
     username: ADMIN, invent: false, credential: "password",

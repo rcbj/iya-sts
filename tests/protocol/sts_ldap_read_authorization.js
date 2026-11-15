@@ -290,7 +290,9 @@ async function setUp(realm, mode) {
   // simple bind cannot ask for one (STS-AUTHN-0213, refused as a wrong
   // password); `authn.allowOptionalSecondFactor` is what
   // directory_read_authorization.js turns on for the same reason.
-  const overrides = { "global.mode": mode };
+  // And the realm raises its own `ldap.maxEntries`: the ceiling counts every
+  // realm's entries together, and a long run leaves hundreds of realms.
+  const overrides = { "global.mode": mode, "ldap.maxEntries": "1000000" };
   if (mode === "product") {
     overrides["authn.allowOptionalSecondFactor"] = "true";
   }

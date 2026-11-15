@@ -94,6 +94,13 @@ const PERSON = ("ldifperson" + STAMP).toLowerCase().replace(/[^a-z0-9]/g, "")
   .slice(0, 40);
 const PASSWORD = "Ldif-Person-" + String(Date.now()).slice(-8) + "-Pw!x";
 
+// THE DIRECTORY'S CEILING IS THE PROCESS'S (`ldap.maxEntries`, every realm's
+// entries counted together) and a realm's own value is the one its writes
+// are checked against, so each realm here raises its own: a long run leaves
+// hundreds of realms behind, each seeded with dozens of entries, and the
+// shipped twenty thousand is then full before this job writes anything.
+const ROOMY = { "ldap.maxEntries": "1000000" };
+
 let checks = 0;
 function check(what, fn) {
   log.debug("Entering check().");
@@ -224,7 +231,8 @@ async function test() {
   log.info("=== 0. two throwaway realms " + FROM + " and " + TO + " ===");
   for (const id of [FROM, TO]) {
     await ok(base + "/admin-api/realms/create", { id: id,
-      domain: id + ".example.net", name: "Application LDIF " + STAMP },
+      domain: id + ".example.net", name: "Application LDIF " + STAMP,
+      overrides: ROOMY },
       "created the realm " + id);
   }
   const fromApi = base + "/realm/" + FROM + "/admin-api";
@@ -396,8 +404,9 @@ async function test() {
   const PROD = realmId("ldifp-");
   await ok(base + "/admin-api/realms/create", { id: PROD,
     domain: PROD + ".example.net", name: "Person LDIF product " + STAMP,
-    overrides: { "global.mode": "product",
-                 "authn.allowOptionalSecondFactor": "true" } },
+    overrides: Object.assign({ "global.mode": "product",
+                               "authn.allowOptionalSecondFactor": "true" },
+                             ROOMY) },
     "created the product realm " + PROD);
   const prodApi = base + "/realm/" + PROD + "/admin-api";
   const WHO = (PERSON + "g").slice(0, 40);
