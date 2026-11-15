@@ -358,3 +358,30 @@ impl ApplicationRegistry {
         })
     }
 }
+
+#[cfg(test)]
+mod registration_json_tests {
+    use super::masked_registration_json;
+    use serde_json::json;
+
+    // `maskedRegistrationJson()` (Node's fix of 2026-11-14): the two
+    // credentials masked, the rest of the document as it stood, anything
+    // that is not a JSON object answered as it is.
+    #[test]
+    fn the_two_credentials_are_masked_and_nothing_else() {
+        let doc = r#"{"client_id":"c","client_secret":"s","registration_access_token":"t","n":1}"#;
+        assert_eq!(
+            masked_registration_json(&json!([doc])),
+            json!(["{\"client_id\":\"c\",\"client_secret\":\"(set — not \
+                 returned)\",\"registration_access_token\":\"(set — not \
+                 returned)\",\"n\":1}"])
+        );
+        assert_eq!(masked_registration_json(&json!("[1]")), json!("[1]"));
+        assert_eq!(masked_registration_json(&json!("x{")), json!("x{"));
+        assert_eq!(masked_registration_json(&json!("")), json!(""));
+        assert_eq!(
+            masked_registration_json(&json!(r#"{"client_secret":""}"#)),
+            json!(r#"{"client_secret":""}"#)
+        );
+    }
+}

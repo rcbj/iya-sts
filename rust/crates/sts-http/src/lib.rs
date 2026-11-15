@@ -1063,3 +1063,26 @@ pub fn layered(
 ) -> axum::Router {
     HttpLayer::minimal(registry).wrap(router)
 }
+
+#[cfg(test)]
+mod realm_link_tests {
+    use super::with_realm_links;
+
+    // Node's `withRealmLinks()` since 2026-11-14 (#444 D12): a root-relative
+    // link is prefixed once, and one that already carries the prefix, or
+    // is protocol-relative, is left alone.
+    #[test]
+    fn a_link_is_prefixed_once() {
+        let page = "<a href=\"/portal\">p</a><a href=\"/realm/acme/portal\">\
+                    q</a><a href=\"/realm/acmex/x\">r</a><img src=\"//h/i\">\
+                    <form action=\"/realm/acme?x=1\"></form>";
+        assert_eq!(
+            with_realm_links(page, "/realm/acme"),
+            "<a href=\"/realm/acme/portal\">p</a><a \
+             href=\"/realm/acme/portal\">q</a><a \
+             href=\"/realm/acme/realm/acmex/x\">r</a><img src=\"//h/i\">\
+             <form action=\"/realm/acme?x=1\"></form>"
+        );
+        assert_eq!(with_realm_links(page, ""), page);
+    }
+}
