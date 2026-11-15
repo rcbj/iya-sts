@@ -2512,6 +2512,12 @@ const JOBS = [
   // the realm's custom attributes as text (application_claims C,
   // application_claim_selections C, custom_attribute_claims D).
   { file: 'sts_application_saml_claims.js', browser: false, local: true },
+  // D12 (#444): a session the service itself scored MEDIUM (a development
+  // realm's risk.mediumScorePercent 1, observed, then enforced) meeting
+  // the identity-provider-initiated doors of WS-Federation, SAML 2.0 and
+  // SAML 1.1: stepped up once, refused when still unmet (wsfed_initiation
+  // g, saml_initiation D).
+  { file: 'sts_risk_initiation.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
