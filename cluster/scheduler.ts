@@ -4064,7 +4064,9 @@ class Scheduler {
    * store on the database's clock.
    *
    * @param opts - `realm` confines it to one realm's realm-scoped rows; also
-   *   the filters of recentRuns()
+   *   the filters of recentRuns(); `pageJobs(total, everyJobId)` and
+   *   `pageRuns(total)`, each answering `{ offset, perPage }`, name the
+   *   slice of each list to build (#1766), and without them every row is
    * @returns a promise of the report
    */
   async status(opts?: Json): Promise<Json> {
@@ -4079,17 +4081,55 @@ class Scheduler {
     const onlyRealm = o.realm ? String(o.realm) : '';
     const leaderRow = this.storeOf(realms.DEFAULT_ID).get(LEADER_KEY) || null;
     const leader = await this.leaderView(leaderRow, at);
-    const jobs: Json[] = [];
+    // THE ROWS ARE LISTED, THEN PAGED, THEN BUILT (#1766, 2026-11-14). A
+    // job view reads that job's run rows in its realm, so building every
+    // (job, realm) pair and slicing afterwards cost every realm's store once
+    // per job for one page of fifty: 13 s a walk in run 29, with the realms
+    // the suite leaves standing. The pairs are cheap to list; with a
+    // `pageJobs(total, everyJobId)` the caller says which slice it answers
+    // and only those views are built, and the realm stores they need are
+    // read once each (`runsByJob`). Without one, every pair, as before.
+    const pairs: Array<{ job: JobSpec; realmId: string }> = [];
+    const everyJobId: string[] = [];
+    const seenJob = new Set<string>();
     this.jobIds().forEach(function (id: string): void {
       const job = self.jobs.get(id);
       const realmIds = self.realmIdsFor(job).filter(function (r: string) {
         return !onlyRealm || job.scope === 'service' || r === onlyRealm;
       });
       realmIds.forEach(function (realmId: string): void {
-        jobs.push(self.jobView(job, realmId, at, leader, onlyRealm));
+        pairs.push({ job: job, realmId: realmId });
+        if (!seenJob.has(job.id)) {
+          seenJob.add(job.id);
+          everyJobId.push(job.id);
+        }
       });
     });
-    const runs = await this.recentRuns(o, at);
+    let shownPairs = pairs;
+    if (typeof o.pageJobs === 'function') {
+      const asked = o.pageJobs(pairs.length, everyJobId) || {};
+      const from = Math.max(0, Number(asked.offset) || 0);
+      shownPairs = pairs.slice(from, from + Math.max(0, Number(asked.perPage)
+                                                    || 0));
+    }
+    const runsByJob = new Map<string, Map<string, Json[]>>();
+    const jobs: Json[] = shownPairs.map(function (pair): Json {
+      return self.jobView(pair.job, pair.realmId, at, leader, onlyRealm,
+                          runsByJob);
+    });
+    // The runs likewise: listed and ordered from the rows, paged by
+    // `pageRuns(total)`, and only the rows shown turned into views.
+    const runRows = await this.recentRunRows(o, at);
+    let shownRuns = runRows;
+    if (typeof o.pageRuns === 'function') {
+      const asked = o.pageRuns(runRows.length) || {};
+      const from = Math.max(0, Number(asked.offset) || 0);
+      shownRuns = runRows.slice(from, from + Math.max(0, Number(asked.perPage)
+                                                      || 0));
+    }
+    const runs = shownRuns.map(function (row: Json): Json {
+      return self.runView(row);
+    });
     const out = {
       generatedAt: new Date(at).toISOString(),
       nowMs: at,
@@ -4176,18 +4216,50 @@ class Scheduler {
   // Every run row of one job in one realm, newest first. A finished
   // interval body is not resident (#883); `latestRun` keeps one of it so
   // lastRun does not depend on the page's window.
-  private runsOf(jobId: string, realmId: string): Json[] {
+  //
+  // `byRealm` (#1766): a report's index of each realm's run rows by job,
+  // filled the first time a realm is asked, so a page of views reads each
+  // realm's store once rather than once per job. The rows are in the
+  // store's order either way, so the answer is the same.
+  private runsOf(jobId: string, realmId: string,
+                 byRealm?: Map<string, Map<string, Json[]>>): Json[] {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runsOf().");
-    const out: Json[] = [];
+    let out: Json[] = [];
     const seen = new Set<string>();
-    this.storeOf(realmId).forEach(function (row: Json): void {
-      if (row && (row.kind === 'run') && row.jobId === jobId &&
-          row.realm === realmId) {
-        out.push(row);
-        seen.add(String(row.runId));
+    if (byRealm) {
+      let index = byRealm.get(realmId);
+      if (!index) {
+        const built = new Map<string, Json[]>();
+        this.storeOf(realmId).forEach(function (row: Json): void {
+          if (row && (row.kind === 'run') && row.realm === realmId) {
+            const key = String(row.jobId);
+            const list = built.get(key);
+            if (list) {
+              list.push(row);
+            } else {
+              built.set(key, [row]);
+            }
+          }
+        });
+        byRealm.set(realmId, built);
+        index = built;
       }
-    });
+      out = (index.get(String(jobId)) || []).filter(function (row: Json) {
+        return row.jobId === jobId;
+      });
+      out.forEach(function (row: Json): void {
+        seen.add(String(row.runId));
+      });
+    } else {
+      this.storeOf(realmId).forEach(function (row: Json): void {
+        if (row && (row.kind === 'run') && row.jobId === jobId &&
+            row.realm === realmId) {
+          out.push(row);
+          seen.add(String(row.runId));
+        }
+      });
+    }
     const latest = this.latestRun.get(String(jobId) + '|' +
                                        String(realmId));
     if (latest && !seen.has(String(latest.runId))) {
@@ -4202,7 +4274,8 @@ class Scheduler {
   }
 
   private jobView(job: JobSpec, realmId: string, at: number, leader: Json,
-                  onlyRealm: string): Json {
+                  onlyRealm: string,
+                  byRealm?: Map<string, Map<string, Json[]>>): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.jobView(). " + job.id + " " + realmId);
     const off = this.offReason(job, realmId);
@@ -4243,7 +4316,7 @@ class Scheduler {
       log.debug("Leaving Scheduler.jobView(). Per-process.");
       return view;
     }
-    const runs = this.runsOf(job.id, realmId);
+    const runs = this.runsOf(job.id, realmId, byRealm);
     const finished = runs.filter(function (row: Json): boolean {
       return FINAL.indexOf(row.state) >= 0;
     });
@@ -4330,6 +4403,19 @@ class Scheduler {
     log.debug("Leaving Scheduler.nextRunOf(). " + view.nextRunState + ".");
   }
 
+  // A run row's instant as `runView()` writes it: the ISO text, or null for
+  // no instant. One function, so the order recentRunRows() sorts the rows in
+  // is the order of the views' own text. Called per row; no log pair.
+  /**
+   * Answers a stored instant as `runView()` writes it.
+   *
+   * @param ms - milliseconds since the epoch, or anything falsy
+   * @returns the ISO text, or null
+   */
+  static isoOf(ms: Json): string | null {
+    return Number(ms) ? new Date(Number(ms)).toISOString() : null;
+  }
+
   /**
    * Returns a run row as the page and the API show it, times as ISO strings.
    *
@@ -4339,9 +4425,7 @@ class Scheduler {
   runView(row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runView().");
-    const iso = function (ms: Json): string | null {
-      return Number(ms) ? new Date(Number(ms)).toISOString() : null;
-    };
+    const iso = Scheduler.isoOf;
     const out = {
       runId: row.runId, jobId: row.jobId || null, realm: row.realm || null,
       trigger: row.trigger || 'schedule', state: row.state,
@@ -4498,9 +4582,24 @@ class Scheduler {
    * @returns a promise of the runs' views
    */
   async recentRuns(opts: Json, at?: number): Promise<Json[]> {
-    const { log, realms } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.recentRuns().");
+    const rows = await this.recentRunRows(opts, at);
+    log.debug("Leaving Scheduler.recentRuns(). " + rows.length + ".");
+    return rows.map(function (row: Json): Json {
+      return self.runView(row);
+    });
+  }
+
+  // THE ROWS recentRuns() ANSWERS, in its order, before any becomes a view
+  // (#1766): the report pages these and builds the views of one page. The
+  // order is the views' own — newest by the ISO text of `startedAt`, else
+  // `queuedAt`, as `runView()` writes them — read from the row.
+  private async recentRunRows(opts: Json, at?: number): Promise<Json[]> {
+    const { log, realms } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.recentRunRows().");
     const o = opts || {};
     const byId = new Map<string, Json>();
     realms.list().forEach(function (realm: Json): void {
@@ -4512,7 +4611,7 @@ class Scheduler {
         if (!self.acceptsRun(row, id, o)) {
           return;
         }
-        byId.set(String(row.runId), self.runView(row));
+        byId.set(String(row.runId), row);
       });
     });
     let windowed = false;
@@ -4530,13 +4629,13 @@ class Scheduler {
             if (!self.acceptsRun(row, partition, o)) {
               return;
             }
-            byId.set(String(row.runId), self.runView(row));
+            byId.set(String(row.runId), row);
           });
         }
       } catch (e) {
         // The list was not read. The resident rows are what the page shows,
         // uncapped, rather than an empty window that reads as no history.
-        log.debug("Caught in Scheduler.recentRuns(): " +
+        log.debug("Caught in Scheduler.recentRunRows(): " +
                   ((e && e.message) || e));
         windowed = false;
       }
@@ -4544,13 +4643,21 @@ class Scheduler {
     if (await this.jobSlotRuns(o, Number(at) || this.nowMs(), byId)) {
       windowed = true;
     }
-    const out = Array.from(byId.values());
-    out.sort(function (a: Json, b: Json): number {
-      return String(b.startedAt || b.queuedAt || '').localeCompare(
-        String(a.startedAt || a.queuedAt || ''));
+    // Each key worked out once, not once per comparison; the sort is
+    // stable, so rows with one key keep the order they were gathered in.
+    const keyed = Array.from(byId.values()).map(function (row: Json): Json {
+      return { row: row,
+               key: String(Scheduler.isoOf(row.startedAt) ||
+                           Scheduler.isoOf(row.queuedAt) || '') };
+    });
+    keyed.sort(function (a: Json, b: Json): number {
+      return b.key.localeCompare(a.key);
+    });
+    const out = keyed.map(function (one: Json): Json {
+      return one.row;
     });
     const shown = windowed ? out.slice(0, NEWEST_WINDOW) : out;
-    log.debug("Leaving Scheduler.recentRuns(). " + shown.length + ".");
+    log.debug("Leaving Scheduler.recentRunRows(). " + shown.length + ".");
     return shown;
   }
 
@@ -4617,7 +4724,7 @@ class Scheduler {
         if (!self.acceptsRun(copy, realmId, o)) {
           return;
         }
-        byId.set(String(copy.runId), self.runView(copy));
+        byId.set(String(copy.runId), copy);
       });
     }
     log.debug("Leaving Scheduler.jobSlotRuns(). " + reached);

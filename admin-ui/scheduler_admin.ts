@@ -228,9 +228,31 @@ class SchedulerAdmin {
     const q = query || {};
     const realm = this.confinedRealm(req);
     const runId = SchedulerPage.firstOf(q.run);
+    // PAGED BEFORE IT IS BUILT (#1766, 2026-11-14). The report built every
+    // job view in every realm and every run's view, and this then kept one
+    // page of each: a full walk of the page cost pages × rows, and grew
+    // with the realms a run leaves standing (13 s a walk in run 29). Now
+    // the scheduler hands each list's length to these two pagers before it
+    // builds a view, and builds the slice they name. The paging is the one
+    // `pagedRows()` would have made of the whole list, and so is the slice.
+    // A request for one run builds neither list: it answers neither.
+    let runsPaging: Json = null;
+    let jobsPaging: Json = null;
+    let everyJobId: string[] = [];
     const report: Json = await scheduler.status({
       realm: realm, job: SchedulerPage.firstOf(q.job),
-      outcome: SchedulerPage.firstOf(q.outcome)
+      outcome: SchedulerPage.firstOf(q.outcome),
+      pageJobs: function (total: number, ids: string[]): Json {
+        everyJobId = ids;
+        jobsPaging = runId ? { offset: 0, perPage: 0 }
+          : adminViews.pagingOf(q, total, { noun: 'jobs', name: 'jobs' });
+        return jobsPaging;
+      },
+      pageRuns: function (total: number): Json {
+        runsPaging = runId ? { offset: 0, perPage: 0 }
+          : adminViews.pagingOf(q, total, { noun: 'runs' });
+        return runsPaging;
+      }
     });
     report.confinedToRealm = realm || null;
     report.filters = { job: SchedulerPage.firstOf(q.job) || null,
@@ -244,10 +266,8 @@ class SchedulerAdmin {
                found: !!visible, detail: visible ? run : null,
                leader: report.leader };
     }
-    const paged = adminViews.pagedRows(q, report.runs, { noun: 'runs' });
-    report.runs = paged.shown;
-    report.runsPaging = adminViews.pagingJson(paged.paging);
-    Object.defineProperty(report, 'paging', { value: paged.paging,
+    report.runsPaging = adminViews.pagingJson(runsPaging);
+    Object.defineProperty(report, 'paging', { value: runsPaging,
                                               enumerable: false });
     // THE JOBS ARE PAGED TOO (2026-09-22, rcbj), on `jobsPage`, because the
     // list grows without a bound anybody sets: every owner registers its
@@ -257,17 +277,10 @@ class SchedulerAdmin {
     // each keeps the other where the reader left it (`pageParamsOf()`).
     // EVERY job's id, before the page narrows the list: the runs filter's
     // menu is built from it, and a menu offering only the jobs on the
-    // current page could not filter by any other.
-    const everyJobId: string[] = [];
-    (report.jobs as Json[]).forEach(function (job: Json): void {
-      if (everyJobId.indexOf(String(job.id)) < 0) {
-        everyJobId.push(String(job.id));
-      }
-    });
-    const pagedJobs = adminViews.pagedRows(q, report.jobs, { noun: 'jobs',
-                                                            name: 'jobs' });
-    report.jobs = pagedJobs.shown;
-    report.jobsPaging = adminViews.pagingJson(pagedJobs.paging);
+    // current page could not filter by any other. The scheduler lists them
+    // in the jobs' order, each once (a Set there, where an `indexOf` here
+    // was quadratic in the rows).
+    report.jobsPaging = adminViews.pagingJson(jobsPaging);
     report.jobIds = everyJobId;
     // The page's settings, as every page that owns settings answers them
     // (#446): the page is drawn from this view alone. A realm's own
@@ -276,7 +289,7 @@ class SchedulerAdmin {
       report.settings = admin.configSettingsJson(PAGE);
     }
     Object.defineProperty(report, 'jobsPagingRaw', {
-      value: pagedJobs.paging, enumerable: false });
+      value: jobsPaging, enumerable: false });
     log.debug("Leaving SchedulerAdmin.schedulerView(). " +
               report.jobs.length + " job row(s).");
     return report;
