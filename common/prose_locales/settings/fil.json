@@ -7779,6 +7779,14 @@
     "en": "e41d92adf65ec5bc",
     "text": "NAKA-ON bilang default. Minsan itong naging ANG TANGING pagtanggi sa family na ito; humihingi na ng certificate ang bawat /xacml endpoint ngayon, at ang pinamamahalaan pa rin ng setting na ito ay ang REGISTRATION mismo — nagsusulat ito ng entry, ito ang inililista ng console, at ito ang address na pinapadalhan ng nudge, kaya ang \"aling PEP ito\" ang eksaktong tanong doon at ang client certificate ang sagot. Ang access-policy layer sa itaas nito ay iba at mas malakas na check (roles.remotePepGroup, at xacml.enforceAccess para i-off ito); ang isang ito ay tungkol sa kung tinatanggap man lang ang registration na WALANG certificate at minamarkahang unauthenticated. Gaya ng bawat ibang gate sa serbisyong ito, TURNSTILE ito: hindi kailangang mag-chain ang certificate sa anuman, dahil nalalapat nang walang pagbabago ang argumento ng RFC 8705 — ang napapatunayan ay ang parehong key ang nakatapos ng handshake. Ang pag-off dito ay nagpapahintulot sa PEP na mag-register sa plain HTTP, na siyang kailangan ng run na naka-off ang global.https; ang ganitong registration ay minamarkahang UNAUTHENTICATED sa entry nito at sa console sa halip na tahimik na hindi makilala mula sa isang nakapagpatunay ng isang bagay."
   },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "Maaaring magtakda ang isang remote PEP ng plain-HTTP na reverse-proxy listener"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "NAKA-OFF bilang default, at binabasa lang sa product mode, kung saan tinatanggihan ang isang listener na itinakda sa pahina ng isang remote PEP (#1760) na nagse-serve ng reverse proxy nito sa plain HTTP (STS-XACML-0249): ang proxy ang lugar kung saan nagsa-sign in ang isang browser at dala nito ang session cookie nito, kaya kapag walang encryption ay tama lang ito kung may nasa harap nito na nagtatapos ng TLS — isang katotohanan tungkol sa deployment na isang administrator lang ang makapagsasabi, at iyon ang sinasabi ng pag-on sa setting na ito. Pinapayagan ng development mode ang ganitong listener anuman ang sabihin nito. Ang mga listener lang na itinakda sa pahina ang saklaw nito; ang apat na ibinibigkis ng environment ng PEP (kasama ang PEP_PROXY_PORT) ay sa operator nito."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "Mga PIP query na magagawa ng isang caller kada rate-limit window"

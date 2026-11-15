@@ -31,6 +31,38 @@
     "en": "3cca9630a4d544af",
     "text": "Ang mga tumatawag sa AuthZEN, na TINATANGGAP ng isang remote PEP"
   },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "Ang reverse-proxy configuration, para IPATUPAD ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "Ang mga pinamamahalaang setting ng isang remote PEP, para i-APPLY nito"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "Ang sertipiko ng listener ng isang remote PEP, sa sarili nitong susi"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "Token introspection, para sa proxy ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic, bina-validate para sa proxy ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "Isang SAML 2.0 assertion, bina-validate para sa proxy ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "Buhay pa ba ang isang sign-on session, para sa proxy ng isang remote PEP"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "Ang ipinapasa ng route ng isang remote PEP sa application nito"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "Ang ipinatupad ng isang remote PEP"
@@ -2502,33 +2534,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (hinihingi ang client certificate, hindi kailanman kinakailangan)"
-  },
-  "endpoints.route./xacml/pep/proxy.name": {
-    "en": "739682a1ecd3fb3e",
-    "text": "Ang reverse-proxy configuration, para IPATUPAD ng isang remote PEP"
-  },
-  "endpoints.route./xacml/pep/settings.name": {
-    "en": "6bae1b3fbf022a6d",
-    "text": "Ang mga pinamamahalaang setting ng isang remote PEP, para i-APPLY nito"
-  },
-  "endpoints.route./xacml/pep/introspect.name": {
-    "en": "82423c6f4bbc4b7f",
-    "text": "Token introspection, para sa proxy ng isang remote PEP"
-  },
-  "endpoints.route./xacml/pep/basic.name": {
-    "en": "386c0d38a90c8eea",
-    "text": "HTTP Basic, bina-validate para sa proxy ng isang remote PEP"
-  },
-  "endpoints.route./xacml/pep/saml.name": {
-    "en": "f5df4c2323752626",
-    "text": "Isang SAML 2.0 assertion, bina-validate para sa proxy ng isang remote PEP"
-  },
-  "endpoints.route./xacml/pep/session.name": {
-    "en": "839d7610564c5a81",
-    "text": "Buhay pa ba ang isang sign-on session, para sa proxy ng isang remote PEP"
-  },
-  "endpoints.route./xacml/pep/identity.name": {
-    "en": "b9af583a88501df2",
-    "text": "Ang ipinapasa ng route ng isang remote PEP sa application nito"
   }
 }

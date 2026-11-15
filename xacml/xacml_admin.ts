@@ -125,6 +125,10 @@ import pepTls = require('./xacml_pep_tls');
 import pepProxy = require('./xacml_pep_proxy');
 // A remote PEP's managed settings (#1760): `set-pep-settings`'s grammar.
 import pepSettings = require('./xacml_pep_settings');
+// A remote PEP's listeners (#1760): the grammar `set-pep-listener` is held to.
+import pepListeners = require('./xacml_pep_listeners');
+// The realm's application register, for the route form's chooser (#1760).
+import applications = require('../common/applications');
 import pki = require('../common/pki');
 import monitor = require('./xacml_monitor');
 
@@ -186,6 +190,9 @@ interface XacmlAdminDeps {
   pepTls: any;
   pepProxy: any;
   pepSettings: any;
+  pepListeners: any;
+  // The realm's applications, as the route form's chooser lists them.
+  applicationChoices(): Array<{ identifier: string; name: string }>;
   pki: any;
   monitor: any;
   // Required at the moment they are needed, never at load.
@@ -221,7 +228,10 @@ interface XacmlAdminDeps {
 const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
                      'issue-pep-certificate', 'set-pep-proxy',
                      'clear-pep-proxy', 'set-pep-route-identity',
-                     'set-pep-settings', 'clear-pep-settings'];
+                     'set-pep-settings', 'clear-pep-settings',
+                     'set-pep-listener', 'remove-pep-listener',
+                     'renew-pep-listener-certificate', 'set-pep-route',
+                     'remove-pep-route', 'set-pep-route-application'];
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.
@@ -324,6 +334,16 @@ class XacmlAdmin {
       pepTls: pepTls,
       pepProxy: pepProxy,
       pepSettings: pepSettings,
+      pepListeners: pepListeners,
+      applicationChoices: function () {
+        helpers.log.debug("Entering applicationChoices().");
+        const rows = applications.list().map(function (row: any) {
+          return { identifier: String(row.identifier || ''),
+                   name: String(row.name || row.identifier || '') };
+        });
+        helpers.log.debug("Leaving applicationChoices(). " + rows.length);
+        return rows;
+      },
       pki: pki,
       monitor: monitor,
       loadXacml: function (): XacmlRoutes {
@@ -532,7 +552,7 @@ class XacmlAdmin {
    */
   pepsJson(pep?: string): Record<string, any> {
     const { log, config, peps, pepHttp, pepTls, pki,
-            pepProxy, pepSettings } = this.deps;
+            pepProxy, pepSettings, pepListeners } = this.deps;
     log.debug('Entering XacmlAdmin.pepsJson().');
     // ONE PEP's PAGE (#1760), `/admin/xacml/pep?pep=<name>`: the same
     // answer narrowed to that row, as `/admin-api/applications`'
@@ -563,12 +583,25 @@ class XacmlAdmin {
       view.proxy = null;
       view.proxyProblem = null;
       view.proxyRoutes = [];
+      // Which routes and applications each OIDC client serves, for the
+      // signal streams' table: a stream is a client's, and the PEP's report
+      // names the client.
+      const servedBy: Record<string, { routes: string[];
+                                       applications: string[] }> = {};
       if (row.proxy) {
         const checked = pepProxy.validate(row.proxy);
         if (checked.ok) {
           view.proxy = checked.proxy;
           view.proxyRoutes = checked.proxy.routes.map(function (route) {
             const one = pepProxy.resolveRoute(route, checked.proxy).resolved;
+            if (one.clientId) {
+              const at = servedBy[one.clientId] ||
+                (servedBy[one.clientId] = { routes: [], applications: [] });
+              at.routes.push(route.id);
+              if (at.applications.indexOf(route.application) < 0) {
+                at.applications.push(route.application);
+              }
+            }
             return { route: route.id, application: route.application,
                      usable: one.usable, why: one.usable ? null : one.why };
           });
@@ -594,6 +627,49 @@ class XacmlAdmin {
         delete certificate.chainPem;
       }
       view.listenerCertificate = certificate;
+      // THE SIGNAL STREAMS, ONE ROW EACH (#1760): the stream's client joined
+      // to the routes and applications this PEP's configuration says it
+      // serves. A client id the configuration does not name is answered
+      // empty rather than echoed: the PEP wrote it.
+      if (view.signals && Array.isArray(view.signals.streams)) {
+        view.signals = Object.assign({}, view.signals, {
+          streams: view.signals.streams.map(function (one: any) {
+            const known = Object.prototype.hasOwnProperty.call(servedBy,
+                                                               one.clientId);
+            return Object.assign({}, one, {
+              clientId: known ? one.clientId : '',
+              routes: known ? servedBy[one.clientId].routes : [],
+              applications: known ? servedBy[one.clientId].applications : []
+            });
+          })
+        });
+      }
+      // THE LISTENERS (#1760): the definitions read through the validator
+      // the pull uses (the stored text is not answered), and every
+      // listener — the environment's four and the defined ones — joined to
+      // what the PEP last reported about it and, for a defined HTTPS one,
+      // the certificate this realm issued it. `listenersInUse` null is a
+      // PEP that does not report listeners (one older than them).
+      const defined = pepListeners.stored(row.listeners || '',
+                                          row.listenersInUse);
+      view.listeners = defined.listeners;
+      view.listenersProblem = defined.problem;
+      view.listenerRows = pepListeners.rows(defined.listeners || [],
+                                            row.listenersInUse)
+        .map(function (one: any) {
+          const held: any = one.source === 'service' &&
+            one.protocol === 'https'
+            ? pepTls.certificateOf(pepListeners.slotOf(row.name, one.id))
+            : null;
+          return Object.assign(one, {
+            issued: held ? {
+              subject: held.subject, serialHex: held.serialHex,
+              notBefore: held.notBefore, notAfter: held.notAfter,
+              expired: held.expired, thumbprint: held.thumbprint,
+              dnsNames: held.dnsNames, ipAddresses: held.ipAddresses
+            } : null
+          });
+        });
       return view;
     });
     const json: Record<string, any> = {
@@ -631,11 +707,17 @@ class XacmlAdmin {
         return row.stale;
       }).length,
       // What may be set on a PEP's page, and what stays its environment.
-      settingsCatalogue: pepSettings.catalogue()
+      settingsCatalogue: pepSettings.catalogue(),
+      // What a listener may be (#1760): the environment's four, the closed
+      // sets and whether this realm allows a plain-HTTP proxy listener.
+      listenersCatalogue: pepListeners.catalogue()
     };
     if (one !== null) {
       json.pep = one;
       json.found = rows.length > 0;
+      // The route form's application chooser (#1760), on the PEP's own
+      // page only, as the roles page carries its own.
+      json.applicationChoices = this.deps.applicationChoices();
     }
     log.debug('Leaving XacmlAdmin.pepsJson(). ' + rows.length +
               ' registered PEP(s).');
@@ -778,13 +860,20 @@ class XacmlAdmin {
                'STS-XACML-0038');
     }
     if (action === 'set-pep-proxy' || action === 'clear-pep-proxy' ||
-        action === 'set-pep-route-identity') {
+        action === 'set-pep-route-identity' || action === 'set-pep-route' ||
+        action === 'remove-pep-route' ||
+        action === 'set-pep-route-application') {
       log.debug('Leaving XacmlAdmin.pepAction(). The reverse proxy.');
       return this.proxyAction(action, name, body);
     }
     if (action === 'set-pep-settings' || action === 'clear-pep-settings') {
       log.debug('Leaving XacmlAdmin.pepAction(). The settings.');
       return this.settingsAction(action, name, body);
+    }
+    if (action === 'set-pep-listener' || action === 'remove-pep-listener' ||
+        action === 'renew-pep-listener-certificate') {
+      log.debug('Leaving XacmlAdmin.pepAction(). The listeners.');
+      return this.listenerAction(action, name, body || {});
     }
     if (action === 'forget-pep') {
       const gone = peps.remove(name);
@@ -892,6 +981,259 @@ class XacmlAdmin {
     return { ok: true, proxy: proxy };
   }
 
+  // A form or API boolean: true, false, or undefined for "not given".
+  private flagOf(value: unknown): boolean | undefined {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.flagOf().');
+    const out = value === true || value === 'true' || value === 'on'
+      ? true : (value === false || value === 'false' ? false : undefined);
+    log.debug('Leaving XacmlAdmin.flagOf().');
+    return out;
+  }
+
+  // A list from a JSON array, a repeated form field or one text box.
+  private listOf(value: unknown): string[] {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.listOf().');
+    const out = (Array.isArray(value) ? value
+      : (value === undefined || value === null || value === ''
+          ? [] : String(value).split(/[\s,]+/)))
+      .map(function (one: unknown) {
+        return String(one).trim();
+      }).filter(Boolean);
+    log.debug('Leaving XacmlAdmin.listOf(). ' + out.length);
+    return out;
+  }
+
+  // The stored proxy document as a copy to edit, or a refusal: the first
+  // half of every one-route action.
+  private proxyToEdit(name: string): any {
+    const { log, errorCodes, peps, pepProxy } = this.deps;
+    log.debug('Entering XacmlAdmin.proxyToEdit().');
+    const row = peps.read(name);
+    const checked = row && row.proxy ? pepProxy.validate(row.proxy) : null;
+    if (!checked || !checked.ok) {
+      log.debug('Leaving XacmlAdmin.proxyToEdit(). No document.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" holds no valid reverse-proxy ' +
+                    'configuration to edit a route of; save one with ' +
+                    'set-pep-proxy first.' }, 'STS-XACML-0201');
+    }
+    log.debug('Leaving XacmlAdmin.proxyToEdit().');
+    return { ok: true, proxy: JSON.parse(JSON.stringify(checked.proxy)) };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE ROUTE FROM A FORM (#1760, rcbj: "ability to add paths / routes /
+  // Methods"). `set-pep-route` adds a route or replaces the one with its id,
+  // `remove-pep-route` removes one, and `set-pep-route-application` binds a
+  // route to an application of the realm's registry. Each builds the WHOLE
+  // document from the stored one and hands it to the same `validate()` and
+  // `resolutionProblem()` `set-pep-proxy` uses: one grammar, never two, so a
+  // route the form can save is a route the document editor could have, and
+  // the reverse.
+  // ---------------------------------------------------------------------------
+  private withRoute(action: string, name: string, body: any): any {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug('Entering XacmlAdmin.withRoute(). ' + action);
+    const held = this.proxyToEdit(name);
+    if (!held.ok) {
+      log.debug('Leaving XacmlAdmin.withRoute(). No document.');
+      return held;
+    }
+    const proxy = held.proxy;
+    const ids = proxy.routes.map(function (one: any) { return one.id; });
+    if (action === 'remove-pep-route' ||
+        action === 'set-pep-route-application') {
+      const id = String(body.route || '');
+      const at = ids.indexOf(id);
+      if (at < 0) {
+        log.debug('Leaving XacmlAdmin.withRoute(). No such route.');
+        return errorCodes.mark({ ok: false,
+                 why: '"' + name + '" has no route "' + id + '".' },
+                 'STS-XACML-0230');
+      }
+      if (action === 'remove-pep-route') {
+        proxy.routes.splice(at, 1);
+      } else {
+        const application = String(body.application || '').trim();
+        if (!application) {
+          log.debug('Leaving XacmlAdmin.withRoute(). No application.');
+          return errorCodes.mark({ ok: false,
+                   why: 'set-pep-route-application names the route and ' +
+                        '`application`, the identifier of an application ' +
+                        'in this realm\'s registry.' }, 'STS-XACML-0256');
+        }
+        proxy.routes[at].application = application;
+      }
+      log.debug('Leaving XacmlAdmin.withRoute(). ' + action);
+      return { ok: true, proxy: proxy };
+    }
+    // set-pep-route: `route` as an object (or its JSON), or the form's
+    // members on the body.
+    let given: any = body.route;
+    if (typeof given === 'string' && given.trim().charAt(0) === '{') {
+      try {
+        given = JSON.parse(given);
+      } catch (e) {
+        log.debug('Caught in XacmlAdmin.withRoute(): ' +
+                  ((e && e.message) || e));
+        given = null;
+      }
+    }
+    if (given === undefined || typeof given === 'string') {
+      const isPublic = self.flagOf(body.public) === true;
+      given = {
+        id: String(body.id || '').trim(),
+        path: String(body.path || ''),
+        match: body.match || 'prefix',
+        methods: self.listOf(body.methods),
+        public: isPublic,
+        mechanisms: isPublic ? [] : self.listOf(body.mechanisms),
+        application: isPublic ? '' : String(body.application || '').trim(),
+        resource: String(body.resource || ''),
+        action: String(body.routeAction || '')
+      };
+      const forward = self.flagOf(body.forwardCredentials);
+      const signals = self.flagOf(body.signals);
+      if (forward !== undefined) {
+        given.forwardCredentials = forward;
+      }
+      if (signals !== undefined) {
+        given.signals = signals;
+      }
+    }
+    if (!given || typeof given !== 'object' || Array.isArray(given)) {
+      log.debug('Leaving XacmlAdmin.withRoute(). No route.');
+      return errorCodes.mark({ ok: false,
+               why: 'set-pep-route takes `route`, one route object (id, ' +
+                    'path, match, methods, public, mechanisms, ' +
+                    'application, resource, action, identity, ' +
+                    'forwardCredentials, signals), or the console form\'s ' +
+                    'members.' }, 'STS-XACML-0256');
+    }
+    const at = ids.indexOf(given.id);
+    // AN EDIT KEEPS THE ROUTE'S IDENTITY where the form says nothing of it:
+    // the identity has a form of its own (`set-pep-route-identity`), and a
+    // route turned public forwards nobody.
+    if (at >= 0 && given.identity === undefined && !given.public) {
+      given.identity = proxy.routes[at].identity;
+    }
+    const position = body.position === undefined || body.position === ''
+      ? null : Number(body.position);
+    if (position !== null && !(Number.isInteger(position) && position >= 0 &&
+                               position <= proxy.routes.length)) {
+      log.debug('Leaving XacmlAdmin.withRoute(). Position.');
+      return errorCodes.mark({ ok: false,
+               why: '`position` is where the route goes in the list, from 0 ' +
+                    'to ' + proxy.routes.length + '; the first route that ' +
+                    'matches wins.' }, 'STS-XACML-0256');
+    }
+    if (at >= 0) {
+      proxy.routes.splice(at, 1);
+    }
+    const where = position !== null ? Math.min(position, proxy.routes.length)
+      : (at >= 0 ? at : proxy.routes.length);
+    proxy.routes.splice(where, 0, given);
+    log.debug('Leaving XacmlAdmin.withRoute(). At ' + where);
+    return { ok: true, proxy: proxy };
+  }
+
+  // ===========================================================================
+  // A REMOTE PEP'S LISTENERS' THREE ACTIONS (#1760).
+  //
+  // `set-pep-listener` adds a listener or replaces the one with its id (an
+  // edit keeps its `renew`), `remove-pep-listener` removes one and
+  // `renew-pep-listener-certificate` moves an HTTPS listener's `renew`, so
+  // the PEP generates a new key and asks for a new certificate on its next
+  // pull. Validated whole by `xacml_pep_listeners.ts` against the PEP's
+  // environment listeners as it last reported them; each refusal coded.
+  // ===========================================================================
+  private listenerAction(action: string, name: string, body: any): any {
+    const { log, audit, errorCodes, peps, pepListeners } = this.deps;
+    log.debug('Entering XacmlAdmin.listenerAction(). ' + action);
+    const row = peps.read(name);
+    const current = pepListeners.stored(row.listeners || '',
+                                        row.listenersInUse);
+    if (!current.listeners) {
+      log.debug('Leaving XacmlAdmin.listenerAction(). Stored invalid.');
+      return errorCodes.mark({ ok: false,
+               why: 'The listeners stored for "' + name + '" do not ' +
+                    'validate (' + current.problem + '); correct the ' +
+                    'attribute xacmlPepListeners first.' },
+               'STS-XACML-0252');
+    }
+    let checked: any;
+    let id = String(body.listener || body.id || '');
+    if (action === 'set-pep-listener') {
+      let given: any = body.listener;
+      if (typeof given === 'string') {
+        try {
+          given = JSON.parse(given);
+        } catch (e) {
+          log.debug('Caught in XacmlAdmin.listenerAction(): ' +
+                    ((e && e.message) || e));
+          given = null;
+        }
+      }
+      if (given === undefined) {
+        given = {};
+        ['id', 'protocol', 'purpose', 'address', 'port', 'dnsNames',
+         'ipAddresses', 'keyAlg'].forEach(function (key) {
+          if (body[key] !== undefined && body[key] !== '') {
+            given[key] = body[key];
+          }
+        });
+        if (given.protocol === 'http') {
+          delete given.dnsNames;
+          delete given.ipAddresses;
+          delete given.keyAlg;
+        }
+      }
+      id = String((given && given.id) || '');
+      checked = pepListeners.withListener(current.listeners, given,
+                                          row.listenersInUse);
+    } else {
+      checked = pepListeners.without(current.listeners,
+                                     String(body.listener || body.id || ''),
+                                     action ===
+                                       'renew-pep-listener-certificate');
+    }
+    if (!checked.ok) {
+      log.debug('Leaving XacmlAdmin.listenerAction(). Refused: ' +
+                checked.code);
+      return errorCodes.mark({ ok: false, why: checked.why }, checked.code);
+    }
+    const list = checked.listeners;
+    const written = peps.setListeners(name, list.length
+                                              ? JSON.stringify(list) : null);
+    if (!written) {
+      log.debug('Leaving XacmlAdmin.listenerAction(). Not written.');
+      return errorCodes.mark({ ok: false,
+                               why: 'The directory refused the change.' },
+                             'STS-XACML-0251');
+    }
+    const verb = action === 'set-pep-listener' ? 'set'
+      : (action === 'remove-pep-listener' ? 'remove' : 'renew');
+    audit.audit({ action: 'xacml.pep.listener.' + verb, actor: '',
+                  protocol: 'XACML',
+                  detail: (verb === 'set' ? 'Defined' : verb === 'remove'
+                    ? 'Removed' : 'Asked for a new certificate for') +
+                          ' listener "' + id + '" of remote PEP "' + name +
+                          '"; ' + list.length + ' defined.' });
+    log.debug('Leaving XacmlAdmin.listenerAction(). ' + list.length);
+    return { ok: true, listeners: list,
+             what: verb === 'renew'
+               ? '"' + name + '" generates a new key for listener "' + id +
+                 '" and asks for a new certificate on its next pull; the ' +
+                 'old one is superseded when the new one is issued.'
+               : '"' + name + '"\'s listeners are saved (' + list.length +
+                 ' defined); the PEP binds and unbinds them on its next ' +
+                 'pull, with no restart, and reports each one on its next ' +
+                 'heartbeat.' };
+  }
+
   // ===========================================================================
   // THE MANAGED SETTINGS' TWO ACTIONS (#1760).
   //
@@ -972,6 +1314,15 @@ class XacmlAdmin {
                      'unchanged.' };
     }
     let given = (body || {}).proxy;
+    if (action === 'set-pep-route' || action === 'remove-pep-route' ||
+        action === 'set-pep-route-application') {
+      const built = this.withRoute(action, name, body || {});
+      if (!built.ok) {
+        log.debug('Leaving XacmlAdmin.proxyAction(). Route refused.');
+        return built;
+      }
+      given = built.proxy;
+    }
     if (action === 'set-pep-route-identity') {
       // ONE ROUTE'S IDENTITY (D11), from the console's mode choice and its
       // header/claim table: the stored document with that route's

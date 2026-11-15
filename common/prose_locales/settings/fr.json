@@ -7779,6 +7779,14 @@
     "en": "e41d92adf65ec5bc",
     "text": "ACTIVÉ par défaut. C’était autrefois le SEUL refus de cette famille ; chaque endpoint /xacml demande désormais un certificat, et ce que ce paramètre régit encore, c’est spécifiquement l’ENREGISTREMENT — il écrit une entrée, c’est ce que la console liste, et c’est l’adresse à laquelle une notification est envoyée ; « quel PEP est-ce » est donc exactement la question qui s’y pose, et un certificat client en est la réponse. La couche de politique d’accès au-dessus est une vérification différente et plus forte (roles.remotePepGroup, et xacml.enforceAccess pour la désactiver) ; celle-ci porte sur l’acceptation même d’un enregistrement SANS certificat, marqué non authentifié. Comme toute autre barrière de ce service, c’est un TOURNIQUET : le certificat n’a pas besoin de remonter à quoi que ce soit, car l’argument de RFC 8705 s’applique sans changement — ce qui est prouvé, c’est que la même clé a mené à bien la poignée de main. Le désactiver permet à un PEP de s’enregistrer en HTTP simple, ce dont a besoin une exécution avec global.https désactivé ; un tel enregistrement est marqué NON AUTHENTIFIÉ sur son entrée et dans la console plutôt que d’être discrètement impossible à distinguer d’un enregistrement qui a prouvé quelque chose."
   },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "Un PEP distant peut définir un écouteur de proxy inverse en HTTP simple"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "DÉSACTIVÉ par défaut, et lu seulement en mode produit, où un écouteur défini sur la page d’un PEP distant (#1760) qui sert son proxy inverse en HTTP simple est refusé (STS-XACML-0249) : le proxy est l’endroit où un navigateur se connecte et porte son cookie de session, donc en clair il ne convient que si quelque chose devant lui termine TLS — un fait sur le déploiement que seul un administrateur peut affirmer, et que l’activation de ce paramètre affirme. Le mode développement autorise un tel écouteur quoi que dise ce paramètre. Il ne régit que les écouteurs définis sur la page ; les quatre que lie l’environnement du PEP (dont PEP_PROXY_PORT) relèvent de son opérateur."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "Requêtes PIP par appelant et par fenêtre de limitation"

@@ -1747,6 +1747,411 @@ async function childBody() {
           JSON.stringify(unknownS).slice(0, 300));
 
   // -------------------------------------------------------------------------
+  // L. THE LISTENERS (#1760): defined on the PEP's page, validated whole
+  // against the environment's as the PEP reported them, pulled beside the
+  // settings, reported back held to closed sets, and an HTTPS listener's
+  // certificate issued over the key the PEP generated.
+  // -------------------------------------------------------------------------
+  const xacmlAdminL = require(ROOT + '/xacml/xacml_admin');
+  const keyMaterialL = require(ROOT + '/common/crypto_impl/key_material');
+  const x509L = require(ROOT + '/common/crypto_impl/x509');
+  const listenerAct = function (body) {
+    return inRealm(function () {
+      return adminActions.xacmlAction(Object.assign({ name: NAME }, body));
+    });
+  };
+  const setL = listenerAct({ action: 'set-pep-listener', id: 'pub',
+                             protocol: 'https', purpose: 'proxy',
+                             port: '8443', dnsNames: 'a.example, b.example' });
+  t.check(setL && setL.ok && setL.listeners.length === 1 &&
+          setL.listeners[0].port === 8443 &&
+          setL.listeners[0].address === '0.0.0.0' &&
+          setL.listeners[0].keyAlg === 'ec-p256' &&
+          setL.listeners[0].dnsNames.join(',') === 'a.example,b.example' &&
+          setL.listeners[0].renew === 0,
+          'L1. set-pep-listener defines one from the form, normalised',
+          JSON.stringify(setL));
+  sp = await request(port, 'GET', SETTINGS_PULL, pepCred);
+  t.check(sp.status === 200 && Array.isArray(sp.json.listeners) &&
+          sp.json.listeners.length === 1 && sp.json.listeners[0].id === 'pub' &&
+          !/privateKey/.test(sp.text),
+          'L2. the settings pull carries the definition, and no key',
+          brief(sp));
+  const refusedL = [
+    [{ id: 'api-http', protocol: 'http', purpose: 'api', port: 9999 },
+     'STS-XACML-0244'],
+    [{ id: 'x', protocol: 'ftp', purpose: 'api', port: 9999 },
+     'STS-XACML-0245'],
+    [{ id: 'x', protocol: 'http', purpose: 'edge', port: 9999 },
+     'STS-XACML-0245'],
+    [{ id: 'x', protocol: 'http', purpose: 'api', port: 70000 },
+     'STS-XACML-0246'],
+    [{ id: 'x', protocol: 'http', purpose: 'api', address: 'host',
+       port: 9999 }, 'STS-XACML-0246'],
+    [{ id: 'x', protocol: 'http', purpose: 'api', port: 9090 },
+     'STS-XACML-0247'],
+    [{ id: 'x', protocol: 'https', purpose: 'api', address: '::',
+       port: 8443 }, 'STS-XACML-0247'],
+    [{ id: 'x', protocol: 'http', purpose: 'api', port: 9999,
+       dnsNames: ['a.example'] }, 'STS-XACML-0248'],
+    [{ id: 'x', protocol: 'https', purpose: 'api', port: 9999,
+       keyAlg: 'dsa-1024' }, 'STS-XACML-0248'],
+    [{ id: 'x', protocol: 'https', purpose: 'api', port: 9999,
+       dnsNames: ['bad name'] }, 'STS-XACML-0248'],
+    [{ id: 'x', protocol: 'http', purpose: 'api', port: 9999, extra: 1 },
+     'STS-XACML-0243']
+  ];
+  refusedL.forEach(function (one, i) {
+    const got = listenerAct({ action: 'set-pep-listener', listener: one[0] });
+    t.check(got && !got.ok && errorCodes.codeOf(got) === one[1],
+            'L3.' + i + '. set-pep-listener refuses ' +
+            JSON.stringify(one[0]) + ' with ' + one[1],
+            JSON.stringify(got) + ' ' + errorCodes.codeOf(got));
+  });
+  inRealm(function () {
+    config.setOverride('global.mode', 'product');
+  });
+  const plainProduct = listenerAct({ action: 'set-pep-listener',
+    listener: { id: 'plain', protocol: 'http', purpose: 'proxy',
+                port: 8080 } });
+  inRealm(function () {
+    config.setOverride('xacml.pepPlainHttpProxyListeners', true);
+  });
+  const plainAllowed = listenerAct({ action: 'set-pep-listener',
+    listener: { id: 'plain', protocol: 'http', purpose: 'proxy',
+                port: 8080 } });
+  inRealm(function () {
+    config.clearOverride('xacml.pepPlainHttpProxyListeners');
+    config.clearOverride('global.mode');
+  });
+  t.check(plainProduct && !plainProduct.ok &&
+          errorCodes.codeOf(plainProduct) === 'STS-XACML-0249' &&
+          plainAllowed && plainAllowed.ok &&
+          plainAllowed.listeners.length === 2,
+          'L4. product refuses a plain-HTTP proxy listener unless ' +
+          'xacml.pepPlainHttpProxyListeners is on',
+          JSON.stringify([plainProduct, plainAllowed]).slice(0, 400));
+  const renewL = listenerAct({ action: 'renew-pep-listener-certificate',
+                               listener: 'pub' });
+  const renewPlain = listenerAct({ action: 'renew-pep-listener-certificate',
+                                   listener: 'plain' });
+  const removeEnv = listenerAct({ action: 'remove-pep-listener',
+                                  listener: 'api-https' });
+  const removeL = listenerAct({ action: 'remove-pep-listener',
+                                listener: 'plain' });
+  t.check(renewL && renewL.ok && renewL.listeners[0].renew === 1 &&
+          errorCodes.codeOf(renewPlain) === 'STS-XACML-0250' &&
+          errorCodes.codeOf(removeEnv) === 'STS-XACML-0250' &&
+          removeL && removeL.ok && removeL.listeners.length === 1,
+          'L5. renew moves an HTTPS listener\'s counter; plain HTTP and the ' +
+          'environment\'s are refused; remove removes',
+          JSON.stringify([renewL, renewPlain, removeEnv, removeL])
+            .slice(0, 400));
+  // What the PEP reports, held to its members.
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+    { listeners: { listeners: [
+      { id: 'api-http', source: 'environment', protocol: 'http',
+        purpose: 'api', address: '0.0.0.0', port: 9091,
+        state: 'listening', reason: 'none', renew: 0, certificate: null },
+      { id: 'pub', source: 'service', protocol: 'https', purpose: 'proxy',
+        address: '0.0.0.0', port: 8443, state: 'failed',
+        reason: 'Address in use (os error 98) <b>', renew: 0,
+        certificate: { subject: 'CN=ppxpep', issuer: 'CN=x\u0007',
+                       serialHex: '0a', evil: 'drop me' } },
+      { id: 'bad id', state: 'listening' }
+    ], secret: 'nope' } });
+  row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  const lu = row2 && row2.listenersInUse;
+  t.check(r.status === 200 && lu && lu.listeners.length === 2 &&
+          lu.listeners[1].reason === 'other' &&
+          lu.listeners[1].certificate.subject === 'CN=ppxpep' &&
+          lu.listeners[1].certificate.issuer === '' &&
+          !('evil' in lu.listeners[1].certificate) && !('secret' in lu) &&
+          Math.abs(Date.parse(lu.at) - Date.now()) < 60000,
+          'L6. the heartbeat\'s listeners are kept to their closed sets, a ' +
+          'reason that is not one is "other", control text is dropped',
+          JSON.stringify(lu));
+  // The environment as reported is what a definition must not clash with.
+  const clashReported = listenerAct({ action: 'set-pep-listener',
+    listener: { id: 'x', protocol: 'http', purpose: 'api', port: 9091 } });
+  const freedDefault = listenerAct({ action: 'set-pep-listener',
+    listener: { id: 'x', protocol: 'http', purpose: 'api', port: 9090 } });
+  t.check(errorCodes.codeOf(clashReported) === 'STS-XACML-0247' &&
+          freedDefault && freedDefault.ok,
+          'L7. the clash check reads the environment\'s ports as the PEP ' +
+          'reported them', JSON.stringify([clashReported, freedDefault])
+            .slice(0, 300));
+  listenerAct({ action: 'remove-pep-listener', listener: 'x' });
+  const lview = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  });
+  const lrow = lview.peps[0];
+  t.check(lrow && Array.isArray(lrow.listeners) &&
+          lrow.listeners.length === 1 && lrow.listenersProblem === null &&
+          lrow.listenerRows.length === 5 &&
+          lrow.listenerRows[0].id === 'api-http' &&
+          lrow.listenerRows[0].reported.port === 9091 &&
+          lrow.listenerRows[4].id === 'pub' &&
+          lrow.listenerRows[4].definition.renew === 1 &&
+          lrow.listenerRows[4].reported.state === 'failed' &&
+          lview.listenersCatalogue.bootstrap.length === 4 &&
+          Array.isArray(lview.applicationChoices) &&
+          lview.applicationChoices.length >= 1 &&
+          lview.applicationChoices.every(function (one) {
+            return typeof one.identifier === 'string' && one.identifier &&
+              typeof one.name === 'string';
+          }),
+          'L8. the page answers every listener joined to the report, the ' +
+          'catalogue and the application chooser',
+          JSON.stringify([lrow && lrow.listeners,
+                          lrow && lrow.listenerRows.map(function (one) {
+                            return one.id;
+                          }),
+                          lview.applicationChoices]));
+  // The certificate, over a key the PEP holds.
+  const pepKey = await keyMaterialL.generateKeyPair('ec-p256');
+  const csr = await x509L.certificationRequest({ subject: 'CN=ppxpep',
+    publicKeyPem: pepKey.publicPem, privateKeyPem: pepKey.privatePem,
+    subjectAltName: [{ kind: 'dns', value: 'evil.example' }] });
+  const csrPem = '-----BEGIN CERTIFICATE REQUEST-----\n' +
+    Buffer.from(csr.der).toString('base64') +
+    '\n-----END CERTIFICATE REQUEST-----\n';
+  const CERT = PREFIX + '/xacml/pep/listener-certificate';
+  const issuedL = await request(port, 'POST', CERT, pepCred,
+                                { listener: 'pub', csr: csrPem });
+  const leaf = issuedL.json && issuedL.json.certificatePem
+    ? new nodeCrypto.X509Certificate(issuedL.json.certificatePem) : null;
+  t.check(issuedL.status === 200 && issuedL.json.issued === true &&
+          issuedL.headers['cache-control'] === 'no-store' &&
+          !/PRIVATE KEY/.test(issuedL.text) && leaf &&
+          leaf.publicKey.export({ type: 'spki', format: 'pem' }) ===
+            nodeCrypto.createPublicKey(pepKey.publicPem)
+              .export({ type: 'spki', format: 'pem' }) &&
+          /a\.example/.test(leaf.subjectAltName) &&
+          !/evil\.example/.test(leaf.subjectAltName) &&
+          /BEGIN CERTIFICATE[\s\S]*BEGIN CERTIFICATE/
+            .test(issuedL.json.fullChainPem),
+          'L9. the listener\'s certificate certifies the PEP\'s own key, ' +
+          'names the definition\'s names and not the request\'s, with its ' +
+          'chain, no-store and no key', brief(issuedL));
+  const againL = await request(port, 'POST', CERT, pepCred,
+                               { listener: 'pub', csr: csrPem });
+  t.check(againL.status === 200 && againL.json.issued === false &&
+          againL.json.serialHex === issuedL.json.serialHex,
+          'L10. the same key again is answered the certificate held',
+          brief(againL));
+  const noSuchL = await request(port, 'POST', CERT, pepCred,
+                                { listener: 'nope', csr: csrPem });
+  const badCsrL = await request(port, 'POST', CERT, pepCred,
+                                { listener: 'pub', csr: 'not a request' });
+  const anonL = await request(port, 'POST', CERT, null,
+                              { listener: 'pub', csr: csrPem });
+  t.check(noSuchL.status === 400 && badCsrL.status === 400 &&
+          (anonL.status === 401 || anonL.status === 403),
+          'L11. an unknown listener and an unreadable request are 400, and ' +
+          'the door is behind the PEP gate',
+          JSON.stringify([noSuchL.status, badCsrL.status, anonL.status]));
+  const withIssued = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  }).peps[0].listenerRows[4];
+  t.check(withIssued && withIssued.issued &&
+          withIssued.issued.serialHex === issuedL.json.serialHex,
+          'L12. the page shows the certificate this realm issued the ' +
+          'listener', JSON.stringify(withIssued && withIssued.issued));
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pepCred,
+                    { version: 'restarted-again' });
+  row2 = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(row2 && row2.listeners && row2.listenersInUse === null,
+          'L13. a re-registration keeps the definitions and drops the report',
+          JSON.stringify(row2 && row2.listenersInUse));
+  inRealm(function () {
+    peps.setListeners(NAME, '[{"id":"q","protocol":"gopher"}]');
+  });
+  sp = await request(port, 'GET', SETTINGS_PULL, pepCred);
+  const badL = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  }).peps[0];
+  t.check(sp.json && sp.json.listeners === undefined && badL &&
+          badL.listeners === null && /protocol/.test(badL.listenersProblem),
+          'L14. stored definitions that do not validate are not pulled and ' +
+          'are named on the page', brief(sp));
+  const answersL = [
+    answerProblem('GET', '/admin-api/xacml/peps', 200, lview),
+    answerProblem('GET', '/admin-api/xacml/peps', 200, inRealm(function () {
+      return xacmlAdminL.pepsJson(NAME);
+    })),
+    answerProblem('POST', '/admin-api/xacml/set-pep-listener', 200, setL),
+    answerProblem('POST', '/admin-api/xacml/set-pep-listener', 400,
+                  plainProduct),
+    answerProblem('POST', '/admin-api/xacml/remove-pep-listener', 200,
+                  removeL),
+    answerProblem('POST', '/admin-api/xacml/renew-pep-listener-certificate',
+                  200, renewL),
+    answerProblem('POST', '/admin-api/xacml/renew-pep-listener-certificate',
+                  400, renewPlain)
+  ];
+  t.check(answersL.every(function (one) {
+    return one === null;
+  }), 'L15. the page and the three listener actions\' answers meet their ' +
+      'models', JSON.stringify(answersL));
+  inRealm(function () {
+    peps.setListeners(NAME, null);
+  });
+
+  // -------------------------------------------------------------------------
+  // R. THE ROUTES ONE AT A TIME (#1760): each action builds the whole
+  // document and saves it through set-pep-proxy's own validator.
+  // -------------------------------------------------------------------------
+  const routeAct = function (body) {
+    return inRealm(function () {
+      return adminActions.xacmlAction(Object.assign({ name: NAME }, body));
+    });
+  };
+  const routesBefore = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  }).peps[0].proxy;
+  const guarded = routesBefore.routes.filter(function (one) {
+    return !one.public;
+  })[0];
+  const addR = routeAct({ action: 'set-pep-route', id: 'health',
+                          path: '/health', match: 'exact', methods: 'GET',
+                          public: 'true', position: '0' });
+  t.check(addR && addR.ok && addR.proxy.routes[0].id === 'health' &&
+          addR.proxy.routes[0].public === true &&
+          addR.proxy.routes[0].methods.join(',') === 'GET' &&
+          addR.proxy.routes.length === routesBefore.routes.length + 1,
+          'R1. set-pep-route adds a route from the form where it is asked',
+          JSON.stringify(addR).slice(0, 300));
+  const editR = routeAct({ action: 'set-pep-route', id: guarded.id,
+    path: guarded.path, match: guarded.match, methods: ['GET', 'HEAD'],
+    public: 'false', mechanisms: guarded.mechanisms,
+    application: guarded.application, resource: 'edited' });
+  const edited = editR && editR.proxy && editR.proxy.routes.filter(
+    function (one) {
+      return one.id === guarded.id;
+    })[0];
+  t.check(editR && editR.ok && edited &&
+          edited.methods.join(',') === 'GET,HEAD' &&
+          edited.resource === 'edited' &&
+          JSON.stringify(edited.identity) ===
+            JSON.stringify(guarded.identity) &&
+          editR.proxy.routes.indexOf(edited) ===
+            addR.proxy.routes.map(function (one) {
+              return one.id;
+            }).indexOf(guarded.id),
+          'R2. an edit replaces the route where it stands and keeps its ' +
+          'identity', JSON.stringify(edited));
+  const badPath = routeAct({ action: 'set-pep-route', id: 'bad',
+                             path: 'no-slash', public: 'true' });
+  const badPos = routeAct({ action: 'set-pep-route', id: 'bad', path: '/b',
+                            public: 'true', position: '99' });
+  const noApp = routeAct({ action: 'set-pep-route', id: 'bad', path: '/b',
+                           mechanisms: ['oauth2'] });
+  t.check(errorCodes.codeOf(badPath) === 'STS-XACML-0193' &&
+          errorCodes.codeOf(badPos) === 'STS-XACML-0256' &&
+          errorCodes.codeOf(noApp) === 'STS-XACML-0197',
+          'R3. a route the document editor would refuse is refused by the ' +
+          'same codes; a position past the list is STS-XACML-0256',
+          JSON.stringify([badPath, badPos, noApp].map(function (one) {
+            return errorCodes.codeOf(one);
+          })));
+  const mapUnknown = routeAct({ action: 'set-pep-route-application',
+                                route: guarded.id,
+                                application: 'no-such-app' });
+  const mapPublic = routeAct({ action: 'set-pep-route-application',
+                               route: 'health',
+                               application: guarded.application });
+  const mapNone = routeAct({ action: 'set-pep-route-application',
+                             route: guarded.id });
+  const mapOk = routeAct({ action: 'set-pep-route-application',
+                           route: guarded.id,
+                           application: guarded.application });
+  t.check(mapUnknown && !mapUnknown.ok && errorCodes.codeOf(mapUnknown) &&
+          errorCodes.codeOf(mapPublic) === 'STS-XACML-0197' &&
+          errorCodes.codeOf(mapNone) === 'STS-XACML-0256' &&
+          mapOk && mapOk.ok,
+          'R4. set-pep-route-application resolves the application like a ' +
+          'save; a public route takes none',
+          JSON.stringify([mapUnknown, mapPublic, mapNone].map(function (o) {
+            return errorCodes.codeOf(o);
+          })));
+  const removeUnknownR = routeAct({ action: 'remove-pep-route',
+                                    route: 'nope' });
+  const removeR = routeAct({ action: 'remove-pep-route', route: 'health' });
+  t.check(errorCodes.codeOf(removeUnknownR) === 'STS-XACML-0230' &&
+          removeR && removeR.ok &&
+          removeR.proxy.routes.length === routesBefore.routes.length,
+          'R5. remove-pep-route removes; an unknown one is STS-XACML-0230',
+          JSON.stringify(removeR).slice(0, 200));
+  const answersR = [
+    answerProblem('POST', '/admin-api/xacml/set-pep-route', 200, addR),
+    answerProblem('POST', '/admin-api/xacml/set-pep-route', 400, badPath),
+    answerProblem('POST', '/admin-api/xacml/remove-pep-route', 200, removeR),
+    answerProblem('POST', '/admin-api/xacml/set-pep-route-application', 200,
+                  mapOk),
+    answerProblem('POST', '/admin-api/xacml/set-pep-route-application', 400,
+                  mapNone)
+  ];
+  t.check(answersR.every(function (one) {
+    return one === null;
+  }), 'R6. the three route actions\' answers meet their models',
+      JSON.stringify(answersR));
+  const unknownR = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'nope' });
+  });
+  t.check(['set-pep-listener', 'remove-pep-listener',
+           'renew-pep-listener-certificate', 'set-pep-route',
+           'remove-pep-route', 'set-pep-route-application']
+    .every(function (one) {
+      return JSON.stringify(unknownR).indexOf(one) >= 0;
+    }), 'R7. the unknown-action sentence names the six new actions',
+          JSON.stringify(unknownR).slice(0, 200));
+
+  // -------------------------------------------------------------------------
+  // T. THE SIGNAL STREAMS, ONE ROW EACH (#1760): ages turned into times on
+  // arrival, a PEP's own times never believed, a client this PEP's routes
+  // do not name answered empty, and the answer meeting its model.
+  // -------------------------------------------------------------------------
+  const sessionRoute = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  }).peps[0].proxyRoutes;
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+    { signals: { receivers: 2, healthy: 1, stale: 1, streams: [
+      { clientId: 'ppx-web', streamId: 'stream-1', running: true,
+        healthy: true, startedAgeMs: 60000, lastPollAgeMs: 1000,
+        lastSuccessAgeMs: 1000, startedAt: '2001-01-01T00:00:00.000Z',
+        consecutiveFailures: 0, polls: 7, failedPolls: 1, setsAccepted: 2,
+        setsRefused: 0, sessionsEnded: 1, url: 'https://leak' },
+      { clientId: 'not <in> config', streamId: 'x y', running: false,
+        healthy: false, lastPollAgeMs: null, consecutiveFailures: 3 }
+    ] } });
+  const sview = inRealm(function () {
+    return xacmlAdminL.pepsJson(NAME);
+  });
+  const streams = sview.peps[0].signals && sview.peps[0].signals.streams;
+  const startedAgo = streams && Date.now() - Date.parse(streams[0].startedAt);
+  t.check(r.status === 200 && streams && streams.length === 2 &&
+          startedAgo > 55000 && startedAgo < 120000 &&
+          streams[0].polls === 7 && !('url' in streams[0]) &&
+          streams[1].clientId === '' && streams[1].streamId === '' &&
+          streams[1].lastPollAt === null &&
+          streams[1].consecutiveFailures === 3,
+          'T1. each stream is a row: times from the ages on arrival, never ' +
+          'the PEP\'s own, identifiers held to a charset',
+          JSON.stringify(streams) + ' ' + JSON.stringify(sessionRoute));
+  t.check(streams && (streams[0].clientId === '' ||
+                      streams[0].applications.indexOf('ppx-web') >= 0),
+          'T2. a stream of a client this PEP\'s routes resolve to names the ' +
+          'application it serves', JSON.stringify(streams && streams[0]));
+  t.check(answerProblem('GET', '/admin-api/xacml/peps', 200, sview) === null,
+          'T3. the page answer with streams meets its model',
+          String(answerProblem('GET', '/admin-api/xacml/peps', 200, sview)));
+
+  // -------------------------------------------------------------------------
   // G. BASIC IN PRODUCT: a password is verified, a second factor is owed by
   // everybody so the person's own password is refused, an app password
   // scoped to `xacml-pep` is accepted, and failures meet the door's limit.

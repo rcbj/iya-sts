@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5584** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5601** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,8 +86,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 164
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 102
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 178
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 105
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5090,6 +5090,20 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0240` | set-pep-settings: product mode refuses proxyUpstreamInsecure or proxyRpAllowInsecure true, which turn a certificate or scheme check off at the remote PEP. | HTTP 400 on /admin-api |
 | `STS-XACML-0241` | set-pep-settings or clear-pep-settings: the directory refused writing the remote PEP's entry. | HTTP 400 on /admin-api |
 | `STS-XACML-0242` | The settings stored for a remote PEP (xacmlPepSettings) do not validate — an ldapmodify wrote them — so GET /xacml/pep/settings sends configured: false and the PEP uses its environment; the console names why. | none; logged at the pull |
+| `STS-XACML-0243` | A listener defined for a remote PEP (#1760) is not an object, carries a member a listener does not have, has a renew that is not a non-negative integer, or the list is not an array or holds more than 32. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0244` | A listener defined for a remote PEP has an id that is not 1 to 64 letters, digits, dots, dashes or underscores, is one of the four environment listeners' ids, or is used twice. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0245` | A listener defined for a remote PEP has a protocol other than http or https, or a purpose other than api or proxy. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0246` | A listener defined for a remote PEP has an address that is not an IPv4 or IPv6 literal, or a port outside 1 to 65535. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0247` | A listener defined for a remote PEP would hold an address and port another of its listeners holds, a defined one or one of the environment's four as the PEP last reported them. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0248` | A listener defined for a remote PEP names certificate names or a key algorithm while plain HTTP, or, as HTTPS, more than 16 DNS names or IP addresses, a name a certificate cannot carry, or a key algorithm outside the closed set. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0249` | Product mode refuses a plain-HTTP reverse-proxy listener defined for a remote PEP unless xacml.pepPlainHttpProxyListeners is on. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0250` | No listener of that id is defined for the remote PEP (one of the environment's four is changed only by its environment), or renew-pep-listener-certificate named a plain-HTTP listener. | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0251` | The directory refused to write a remote PEP's listener definitions. | HTTP 400 on /admin-api |
+| `STS-XACML-0252` | The listener definitions stored for a remote PEP (xacmlPepListeners) do not validate — an ldapmodify wrote them — so GET /xacml/pep/settings sends none and the PEP binds only its environment's; the console names why. | none; logged at the pull |
+| `STS-XACML-0253` | POST /xacml/pep/listener-certificate named no listener, or one that is not an HTTPS listener defined for the calling PEP in this realm, or the calling PEP is not registered here. | HTTP 400 or 404, invalid_request |
+| `STS-XACML-0254` | POST /xacml/pep/listener-certificate carried no readable PKCS #10 request, one whose signature does not prove possession of its key, or a key the pep-tls Issuing CA does not certify for a listener. | HTTP 400, invalid_request |
+| `STS-XACML-0255` | A remote PEP's listener certificate could not be issued from the realm's pep-tls Issuing CA. | HTTP 500, server_error |
+| `STS-XACML-0256` | set-pep-route was sent no route object, or set-pep-route-application named no application; set-pep-route's position is outside the route list. | HTTP 400 on /admin-api; the console names why |
 
 ## STS-XPEP
 
@@ -5201,6 +5215,9 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0100` | The remote PEP could not pull its settings from GET /xacml/pep/settings (unreachable, or an answer other than 200, 304 or 404); it keeps the settings it holds, or the environment's when it holds none (#1760). | none; the held settings stay in force |
 | `STS-XPEP-0101` | The service answered 404 to GET /xacml/pep/settings: it is older than the managed settings, so every setting is the remote PEP's environment variable or its default. Logged once (#1760). | none; the environment is in force |
 | `STS-XPEP-0102` | A setting the service sent fails the remote PEP's own reading of its bounds or type; that setting is the environment's or the default, and the others are applied (#1760). | none; that one setting falls back |
+| `STS-XPEP-0103` | A listener the service defined for this remote PEP (#1760) could not bind its address and port; it is reported failed on the heartbeat and the others are unaffected. | none; reported on the heartbeat |
+| `STS-XPEP-0104` | The remote PEP could not obtain a certificate for an HTTPS listener the service defined: the request was refused, the answer was not a usable chain for its key, or the PDP could not be reached; the listener waits and asks again. | none; reported on the heartbeat |
+| `STS-XPEP-0105` | A listener definition the service sent fails the remote PEP's own reading of it; that listener is left out and the others are bound (#1760). | none; that one listener is left out |
 
 ## STS-AUTHZEN
 

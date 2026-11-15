@@ -1159,6 +1159,8 @@ declare namespace IyaDomain {
     signals?: string;
     settings?: string;
     settingsInUse?: string;
+    listeners?: string;
+    listenersInUse?: string;
     description?: string[];
   }
 

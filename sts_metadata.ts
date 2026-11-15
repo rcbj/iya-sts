@@ -3795,6 +3795,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'uses its environment for the rest, and the minimum it needs to ' +
           'connect is never here. Requires REMOTE_PEPS, as the policy pull ' +
           'does; no nudge.' },
+  { path: '/xacml/pep/listener-certificate', group: 'XACML',
+    name: 'A remote PEP listener\'s certificate, over its own key',
+    specs: ['xacml30'],
+    what: 'The certificate of an HTTPS listener an administrator defined ' +
+          'for this PEP on its console page (#1760): the PEP generates the ' +
+          'key and POSTs { listener, csr }, a PKCS #10 request whose ' +
+          'signature proves possession of it, and is answered the ' +
+          'certificate from the realm\'s pep-tls Issuing CA and its chain ' +
+          'through the Root, no-store and with no key. The names are the ' +
+          'PEP\'s and the definition\'s, never the request\'s; the same key ' +
+          'asked again is answered the certificate held while it has a third ' +
+          'of its life left. Requires REMOTE_PEPS, as the heartbeat does.' },
   { path: '/xacml/pep/introspect', group: 'XACML',
     name: 'Token introspection, for a remote PEP\'s proxy',
     specs: ['xacml30', 'rfc7662'],

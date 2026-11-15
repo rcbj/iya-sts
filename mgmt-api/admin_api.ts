@@ -7866,7 +7866,17 @@ class AdminApi {
           // The remote PEP's managed settings (#1760).
           { action: 'set-pep-settings', operationId: 'setXacmlPepSettings' },
           { action: 'clear-pep-settings',
-            operationId: 'clearXacmlPepSettings' }
+            operationId: 'clearXacmlPepSettings' },
+          // The remote PEP's listeners and its routes one at a time (#1760).
+          { action: 'set-pep-listener', operationId: 'setXacmlPepListener' },
+          { action: 'remove-pep-listener',
+            operationId: 'removeXacmlPepListener' },
+          { action: 'renew-pep-listener-certificate',
+            operationId: 'renewXacmlPepListenerCertificate' },
+          { action: 'set-pep-route', operationId: 'setXacmlPepRoute' },
+          { action: 'remove-pep-route', operationId: 'removeXacmlPepRoute' },
+          { action: 'set-pep-route-application',
+            operationId: 'setXacmlPepRouteApplication' }
         ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',

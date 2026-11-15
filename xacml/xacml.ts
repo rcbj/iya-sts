@@ -177,6 +177,9 @@ import pepHttp = require('./xacml_pep_http');
 import pepProxy = require('./xacml_pep_proxy');
 // A remote PEP's managed settings (#1760): the pull's body.
 import pepSettings = require('./xacml_pep_settings');
+// A remote PEP's listener certificates (#1760): a defined HTTPS listener's,
+// issued over the key the PEP generated. A LIBRARY over `common/pki.js`.
+import pepTls = require('./xacml_pep_tls');
 // The decision counters behind /admin/xacml/monitor. A LEAF (rule 3): it
 // registers no route, so its position here is not a position, and it requires
 // nothing that requires it back.
@@ -327,6 +330,7 @@ interface XacmlSurfaceDeps {
   pepHttp: typeof pepHttp;
   pepProxy: typeof pepProxy;
   pepSettings: typeof pepSettings;
+  pepTls: typeof pepTls;
   monitor: typeof monitor;
   roles: typeof roles;
   accessGate: typeof accessGate;
@@ -470,6 +474,7 @@ class XacmlSurface {
       pepHttp: pepHttp,
       pepProxy: pepProxy,
       pepSettings: pepSettings,
+      pepTls: pepTls,
       monitor: monitor,
       roles: roles,
       accessGate: accessGate,
@@ -2926,6 +2931,62 @@ class XacmlSurface {
     });
 
     // -------------------------------------------------------------------------
+    // POST /xacml/pep/listener-certificate — A DEFINED HTTPS LISTENER'S
+    // CERTIFICATE (#1760).
+    //
+    // The PEP generated the key; it sends `{ listener, csr }` and is answered
+    // the certificate and its chain, `no-store`, and NO KEY, because there is
+    // none here to send. `pepAccess()` WRITE, the heartbeat's gate, since
+    // this one makes the certificate authority sign; the PEP is named by its
+    // certificate, so it can ask only for a listener defined for ITSELF.
+    // `xacml_pep_tls.ts` decides the names and whether a held certificate
+    // still answers, and audits what it issues.
+    // -------------------------------------------------------------------------
+    app.post('/xacml/pep/listener-certificate', function (req, res) {
+      log.debug('Entering POST /xacml/pep/listener-certificate.');
+      if (self.remotePepOffCheck(res)) {
+        log.debug('Leaving POST /xacml/pep/listener-certificate. Off.');
+        return;
+      }
+      const access = self.pepAccess(req, res, accessGate.ACTION.WRITE,
+                                    'a remote PEP listener certificate');
+      if (!access.allowed) {
+        log.debug('Leaving POST /xacml/pep/listener-certificate. The ' +
+                  'access policy refused.');
+        return;
+      }
+      const body = parseBody(req);
+      const name = self.pepNameOf(access.identity, String(body.name || ''));
+      Promise.resolve(self.deps.pepTls.issueForListener(name, body))
+        .then(function (result: any) {
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                 'STS-XACML-0253');
+            self.fail(res, result.status || 400,
+                      result.status === 500 ? 'server_error'
+                                            : 'invalid_request',
+                      result.why);
+            log.debug('Leaving POST /xacml/pep/listener-certificate. ' +
+                      'Refused.');
+            return;
+          }
+          res.status(200).type('application/json')
+             .set('Cache-Control', 'no-store')
+             .send(JSON.stringify(result, null, 2));
+          log.debug('Leaving POST /xacml/pep/listener-certificate. ' +
+                    result.serialHex);
+        }, function (e: any) {
+          log.error(errorCodes.tag('STS-XACML-0255') + 'xacml: a listener ' +
+                    'certificate could not be issued: ' +
+                    ((e && e.stack) || e));
+          errorCodes.mark(res, 'STS-XACML-0255');
+          self.fail(res, 500, 'server_error',
+                    'The certificate could not be issued.');
+          log.debug('Leaving POST /xacml/pep/listener-certificate. Threw.');
+        });
+    });
+
+    // -------------------------------------------------------------------------
     // THE FOUR VALIDATION DOORS (#1760, D4): what the proxy cannot establish
     // itself, asked back over the PEP's mutual TLS. Each is `pepAccess()`'s
     // READ, rate limited per PEP BEFORE the access check (`/xacml/pip`'s
@@ -3046,7 +3107,10 @@ class XacmlSurface {
         signals: body.signals,
         // Every managed setting in force at the PEP and where it came from
         // (#1760). Absent from an older PEP; held to its members.
-        settings: body.settings
+        settings: body.settings,
+        // Every listener the PEP has and what it is doing (#1760). Absent
+        // from an older PEP, whose page says it does not report them.
+        listeners: body.listeners
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');

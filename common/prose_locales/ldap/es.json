@@ -2023,17 +2023,13 @@
     "en": "a4283bfe7916574e",
     "text": "Qué le ocurrió al último aviso — el estado, o la frase de rechazo. EL ÚNICO LUGAR DONDE SE REGISTRA UN AVISO FALLIDO, por la razón que da ssf_streams.js sobre un envío rechazado: por definición es invisible desde el extremo receptor."
   },
-  "xacmlPeps.schema.attributes.description.what": {
-    "en": "3e047a4417e13ade",
-    "text": "Lo que el PEP dijo de sí mismo cuando se registró."
-  },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "La configuración de proxy inverso que el PEP remoto obtiene de GET /xacml/pep/proxy (#1760): un documento JSON — enabled, la URL base de la aplicación de destino, la URL base pública por la que un navegador llega al proxy, los tiempos de espera y la tabla ordenada de rutas, cada ruta con su ruta de acceso, sus métodos, sus mecanismos de autenticación, la aplicación del registro del reino que protege, y el recurso y la acción XACML. Lo escribe la acción set-pep-proxy de la consola y de la API de gestión, se valida entero allí y de nuevo al construir la obtención, de modo que un valor escrito con ldapmodify que no es válido se obtiene como configured: false. Se conserva en un registro y un latido; se elimina con la fila."
   },
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
-    "en": "8e6cc7739c2c3ce3",
-    "text": "El estado de los flujos de señales CAEP/RISC del proxy inverso tal como el PEP remoto lo informó por última vez en un latido (#1760): un documento JSON solo de recuentos y edades — los receptores, cuántos están sanos y obsoletos, el umbral de obsolescencia y el intervalo de sondeo, la edad del último éxito más antiguo, el mayor número de fallos seguidos, los SET aceptados y rechazados, las sesiones terminadas, y de los almacenes de sesiones de la biblioteca las retenidas, el máximo, la vida, las desalojadas y las caducadas — con cuándo llegó. Cualquier otro miembro se descarta y todo valor que no sea un entero no negativo es 0, así que nunca se guarda un identificador de cliente, una URL ni un texto de error. Un latido sin él lo conserva, uno con null lo borra, y un registro lo descarta, porque un registro es un proceso nuevo. Ausente en un PEP que nunca lo informó, que la consola muestra como no informado."
+    "en": "973f5fff5b5df8e8",
+    "text": "La salud de los flujos de señales CAEP/RISC del proxy inverso tal como el PEP remoto la informó por última vez en un latido (#1760): un documento JSON solo de recuentos y antigüedades — los receptores, cuántos están sanos y obsoletos, el umbral de obsolescencia y el intervalo de consulta, la antigüedad del éxito más antiguo, el mayor número de fallos seguidos, los SET aceptados y rechazados, las sesiones terminadas, y los valores held, max, TTL, evicted y expired de los almacenes de sesiones de la biblioteca — con cuándo llegó y, de un PEP que las informa, una fila por flujo: el cliente OIDC al que sirve y su identificador de flujo, cada uno limitado a un juego de caracteres, si está en marcha y sano, cuándo se inició, cuándo consultó por última vez y cuándo tuvo éxito por última vez (calculado aquí a partir de las antigüedades que envió el PEP y de la llegada, nunca de un reloj del PEP), y sus contadores. Cualquier otro miembro se descarta y todo valor que no sea un entero no negativo es 0, así que nunca se guarda una URL ni un texto de error. Un latido sin él lo conserva, uno con null lo borra y un registro lo elimina, ya que un registro es un proceso nuevo. Ausente en un PEP que nunca lo informó, lo que la consola muestra como no informado."
   },
   "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
     "en": "2216d5f263d38ea5",
@@ -2042,5 +2038,17 @@
   "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
     "en": "b081386a6d832967",
     "text": "Lo que el PEP remoto informó por última vez, en un latido, tener en vigor para cada ajuste gestionado (#1760): un documento JSON de { token, values: { setting: { value, source } } }, con source service, environment o default, junto con cuándo llegó. Se descarta todo ajuste que la tabla no nombre, todo valor que no sea del tipo de su ajuste y cualquier otro origen. Un latido sin él lo conserva, uno con null lo borra, y un registro lo descarta. Ausente en un PEP anterior a los ajustes, que la consola muestra como no informado."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Las escuchas que un administrador definió para este PEP remoto en su página de la consola o con la acción set-pep-listener de la API de gestión (#1760), además de las cuatro que enlaza su entorno: un array JSON, cada escucha con su identificador, su protocolo (http o https), su función (api o proxy), su dirección y su puerto, y para una HTTPS los nombres DNS y las direcciones IP que lleva su certificado, su algoritmo de clave y un contador de renovación. Se valida completo al escribirse y de nuevo cuando el PEP las obtiene de GET /xacml/pep/settings, que las enlaza y desenlaza mientras funciona. El PEP genera la clave de cada escucha HTTPS y pide su certificado a POST /xacml/pep/listener-certificate, así que nunca hay aquí una clave privada. Se conserva en un registro y en un latido; se elimina con la fila."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Lo que el PEP remoto informó por última vez, en un latido, sobre cada una de sus escuchas (#1760), las cuatro de su entorno y las definidas: un documento JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, con cuándo llegó. El estado es uno de listening, waiting, failed y off y el motivo uno de un conjunto cerrado, nunca el texto del sistema operativo; el certificado es el sujeto, el emisor, el número de serie, el subjectAltName, la validez y la huella del que sirve. Cualquier otro miembro se descarta. Un latido sin él lo conserva, uno con null lo borra y un registro lo elimina. Ausente en un PEP anterior a las escuchas, lo que la consola muestra como no informado."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "Lo que el PEP dijo de sí mismo cuando se registró."
   }
 }

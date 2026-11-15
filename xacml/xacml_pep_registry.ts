@@ -126,6 +126,8 @@ import store = require('./xacml_store');
 // library requiring only leaves, so it can neither move a route nor close
 // a cycle.
 import pepSettings = require('./xacml_pep_settings');
+// A remote PEP's listeners (#1760): the reading of what the PEP reports.
+import pepListeners = require('./xacml_pep_listeners');
 
 // The directory functions `ldap/ldap_server.js` installs.
 interface PepDirectory {
@@ -176,6 +178,13 @@ interface PepRow {
   // What the PEP last reported having in force, normalised by
   // `xacml_pep_settings.ts`'s `inUseOf()`; null when it never reported.
   settingsInUse: any;
+  // The listeners an administrator defined for this PEP (#1760), as stored:
+  // the JSON text, or '' when none. Read and validated by
+  // `xacml_pep_listeners.ts`.
+  listeners: string;
+  // What the PEP last reported about every listener it has, normalised by
+  // `xacml_pep_listeners.ts`'s `inUseOf()`; null when it never reported.
+  listenersInUse: any;
   current: boolean;
   stale: boolean;
 }
@@ -202,6 +211,28 @@ interface PepSignals {
     evicted: number;
     expired: number;
   };
+  // ONE ROW PER STREAM (#1760), from a PEP that reports them on its
+  // heartbeat; absent from an older one. The client id and stream id are
+  // held to a charset, the times are computed here from the ages the PEP
+  // sent and when the report arrived, and every other member is dropped.
+  streams?: PepSignalStream[];
+}
+
+// One CAEP/RISC receiver as the PEP reported it.
+interface PepSignalStream {
+  clientId: string;
+  streamId: string;
+  running: boolean;
+  healthy: boolean;
+  startedAt: string | null;
+  lastPollAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  polls: number;
+  failedPolls: number;
+  setsAccepted: number;
+  setsRefused: number;
+  sessionsEnded: number;
 }
 
 // What a register or heartbeat answers. A refusal carries its code under a
@@ -567,6 +598,46 @@ class PepRegistry {
         expired: count(library.expired)
       }
     };
+    // THE STREAMS, when reported (#1760). A time is the arrival minus the
+    // age the PEP sent, so no clock of the PEP's is believed; the stored
+    // report is read back as it was written.
+    if (Array.isArray(said.streams)) {
+      const base = Date.parse(stamp);
+      const timeOf = function (age: unknown, stored: unknown): string | null {
+        // A report's own times are not read: only a stored one's.
+        if (at === undefined && typeof stored === 'string' &&
+            !isNaN(Date.parse(stored))) {
+          return new Date(Date.parse(stored)).toISOString();
+        }
+        return typeof age === 'number' && Number.isSafeInteger(age) &&
+          age >= 0 && !isNaN(base)
+          ? new Date(base - age).toISOString() : null;
+      };
+      const ident = function (value: unknown, max: number): string {
+        return typeof value === 'string' && value.length <= max &&
+          /^[A-Za-z0-9._:~@/+-]*$/.test(value) ? value : '';
+      };
+      signals.streams = said.streams.slice(0, 64)
+        .filter(function (one: any) {
+          return one && typeof one === 'object';
+        }).map(function (one: any): PepSignalStream {
+          return {
+            clientId: ident(one.clientId, 256),
+            streamId: ident(one.streamId, 128),
+            running: one.running === true,
+            healthy: one.healthy === true,
+            startedAt: timeOf(one.startedAgeMs, one.startedAt),
+            lastPollAt: timeOf(one.lastPollAgeMs, one.lastPollAt),
+            lastSuccessAt: timeOf(one.lastSuccessAgeMs, one.lastSuccessAt),
+            consecutiveFailures: count(one.consecutiveFailures),
+            polls: count(one.polls),
+            failedPolls: count(one.failedPolls),
+            setsAccepted: count(one.setsAccepted),
+            setsRefused: count(one.setsRefused),
+            sessionsEnded: count(one.sessionsEnded)
+          };
+        });
+    }
     log.debug('Leaving PepRegistry.signalsOf(). ' + signals.receivers +
               ' receiver(s).');
     return signals;
@@ -700,6 +771,8 @@ class PepRegistry {
         signals: PepRegistry.signalsOf(pep.signals || ''),
         settings: pep.settings || '',
         settingsInUse: pepSettings.inUseOf(pep.settingsInUse || ''),
+        listeners: pep.listeners || '',
+        listenersInUse: pepListeners.inUseOf(pep.listenersInUse || ''),
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
@@ -843,6 +916,11 @@ class PepRegistry {
     if (existing && existing.settings) {
       attributes.xacmlPepSettings = existing.settings;
     }
+    // AND THE DEFINED LISTENERS (#1760), for the same reason; what the PEP
+    // reported about them is dropped, as the settings in force are.
+    if (existing && existing.listeners) {
+      attributes.xacmlPepListeners = existing.listeners;
+    }
     // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
     // when its process starts, so the last snapshot describes receivers that
     // no longer exist. The next heartbeat reports the new ones.
@@ -923,9 +1001,14 @@ class PepRegistry {
     // absent keeps, null clears, an object replaces, held to its members.
     const inUse = said.settings === undefined ? existing.settingsInUse
       : pepSettings.inUseOf(said.settings, now);
+    // EVERY LISTENER THE PEP HAS AND WHAT IT IS DOING (#1760), the same
+    // rule again: held to the closed sets, stamped on arrival.
+    const listening = said.listeners === undefined ? existing.listenersInUse
+      : pepListeners.inUseOf(said.listeners, now);
     const attributes = this.attributesOf(
       Object.assign({}, existing, { signals: signals,
-                                    settingsInUse: inUse }), {
+                                    settingsInUse: inUse,
+                                    listenersInUse: listening }), {
       xacmlPepLastSeen: now,
       xacmlPepNotifyUrl: said.notifyUrl === undefined
         ? existing.notifyUrl : String(said.notifyUrl || ''),
@@ -1081,6 +1164,36 @@ class PepRegistry {
     return written;
   }
 
+  /**
+   * Sets or clears a registered PEP's defined listeners (#1760).
+   * @param name - the PEP's entry name
+   * @param text - the validated JSON array, or null to remove them
+   * @returns true when written
+   */
+  setListeners(name: string, text: string | null): boolean {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.setListeners(). name=' + name);
+    if (!this.haveDirectory()) {
+      log.debug('Leaving PepRegistry.setListeners(). No directory.');
+      return false;
+    }
+    const existing = this.read(name);
+    if (!existing) {
+      log.debug('Leaving PepRegistry.setListeners(). Not registered.');
+      return false;
+    }
+    const attributes: Record<string, unknown> =
+      this.attributesOf(Object.assign({}, existing, { listeners: '' })) as
+        Record<string, unknown>;
+    if (text) {
+      attributes.xacmlPepListeners = text;
+    }
+    const written = directory.writePep(name, attributes);
+    log.debug('Leaving PepRegistry.setListeners(). ' +
+              (written ? 'Written.' : 'Refused.'));
+    return written;
+  }
+
   // -------------------------------------------------------------------------
   // THE WHOLE ENTRY AS ATTRIBUTES, with an override or two applied.
   //
@@ -1133,6 +1246,14 @@ class PepRegistry {
     }
     if (row.settingsInUse) {
       attributes.xacmlPepSettingsInUse = JSON.stringify(row.settingsInUse);
+    }
+    // Only when defined, and only when reported (#1760).
+    if (row.listeners) {
+      attributes.xacmlPepListeners = row.listeners;
+    }
+    if (row.listenersInUse) {
+      attributes.xacmlPepListenersInUse =
+        JSON.stringify(row.listenersInUse);
     }
     log.debug("Leaving PepRegistry.attributesOf().");
     return Object.assign(attributes, overrides || {});
@@ -1235,6 +1356,7 @@ export = {
   setEnabled: slot.forward('setEnabled'),
   setProxy: slot.forward('setProxy'),
   setSettings: slot.forward('setSettings'),
+  setListeners: slot.forward('setListeners'),
   remove: slot.forward('remove'),
   notifiable: slot.forward('notifiable')
 };

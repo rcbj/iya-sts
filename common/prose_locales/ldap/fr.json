@@ -2023,17 +2023,13 @@
     "en": "a4283bfe7916574e",
     "text": "Ce qu’il est advenu de la dernière notification — le statut, ou la phrase de refus. LE SEUL ENDROIT OÙ UNE NOTIFICATION ÉCHOUÉE EST CONSIGNÉE, pour la raison que ssf_streams.js donne au sujet d’une poussée refusée : elle est par définition invisible du côté de la réception."
   },
-  "xacmlPeps.schema.attributes.description.what": {
-    "en": "3e047a4417e13ade",
-    "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
-  },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "La configuration de proxy inverse que le PEP distant récupère de GET /xacml/pep/proxy (#1760) : un document JSON — enabled, l’URL de base de l’application en amont, l’URL de base publique par laquelle un navigateur atteint le proxy, les délais et la table ordonnée des routes, chacune avec son chemin, ses méthodes, ses mécanismes d’authentification, l’application du registre du royaume qu’elle protège, et la ressource et l’action XACML. Écrite par l’action set-pep-proxy de la console et de l’API de gestion, validée entière là et de nouveau à la construction de la récupération : une valeur écrite par ldapmodify qui n’est pas valide est récupérée comme configured: false. Conservée par un enregistrement et un battement de cœur ; supprimée avec la ligne."
   },
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
-    "en": "8e6cc7739c2c3ce3",
-    "text": "L’état des flux de signaux CAEP/RISC du proxy inverse tel que le PEP distant l’a communiqué lors d’un battement de cœur (#1760) : un document JSON de comptes et de durées uniquement — les récepteurs, combien sont sains et périmés, le seuil de péremption et l’intervalle d’interrogation, l’âge du plus ancien dernier succès, le plus grand nombre d’échecs consécutifs, les SET acceptés et refusés, les sessions terminées, et pour les magasins de sessions de la bibliothèque les détenues, le maximum, la durée de vie, les évincées et les expirées — avec son heure d’arrivée. Tout autre membre est écarté et toute valeur qui n’est pas un entier positif ou nul vaut 0, de sorte qu’aucun identifiant de client, aucune URL ni aucun texte d’erreur n’est jamais conservé. Un battement de cœur qui ne le porte pas le conserve, un battement avec null l’efface, et un enregistrement le supprime, puisqu’un enregistrement est un nouveau processus. Absent sur un PEP qui ne l’a jamais communiqué, ce que la console affiche comme non communiqué."
+    "en": "973f5fff5b5df8e8",
+    "text": "La santé des flux de signaux CAEP/RISC du proxy inverse telle que le PEP distant l’a communiquée en dernier dans un signal de vie (#1760) : un document JSON de comptes et d’âges uniquement — les récepteurs, combien sont sains et périmés, le seuil de péremption et l’intervalle d’interrogation, l’âge du plus ancien dernier succès, le plus grand nombre d’échecs consécutifs, les SET acceptés et refusés, les sessions terminées, et pour les magasins de sessions de la bibliothèque les valeurs held, max, TTL, evicted et expired — avec son heure d’arrivée, et, venant d’un PEP qui les communique, une ligne par flux : le client OIDC qu’il sert et son identifiant de flux, chacun limité à un jeu de caractères, s’il fonctionne et s’il est sain, quand il a démarré, été interrogé en dernier et réussi en dernier (calculé ici à partir des âges envoyés par le PEP et de l’heure d’arrivée, jamais d’après une horloge du PEP), et ses compteurs. Tout autre membre est écarté et toute valeur qui n’est pas un entier non négatif vaut 0 : aucune URL ni aucun texte d’erreur n’est donc jamais conservé. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime, puisqu’un enregistrement est un nouveau processus. Absent sur un PEP qui ne l’a jamais communiqué, ce que la console affiche comme non communiqué."
   },
   "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
     "en": "2216d5f263d38ea5",
@@ -2042,5 +2038,17 @@
   "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
     "en": "b081386a6d832967",
     "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, comme étant en vigueur pour chaque paramètre géré (#1760) : un document JSON de la forme { token, values: { setting: { value, source } } }, la source étant service, environment ou default, avec son heure d’arrivée. Tout paramètre que la table ne nomme pas, toute valeur qui n’est pas du type de son paramètre et toute autre source sont écartés. Un signal de vie sans lui le conserve, un signal avec null l’efface, et un enregistrement l’écarte. Absent pour un PEP plus ancien que les paramètres, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Les écouteurs qu’un administrateur a définis pour ce PEP distant sur sa page de la console ou avec l’action set-pep-listener de l’API de gestion (#1760), en plus des quatre que lie son environnement : un tableau JSON, chaque écouteur avec son identifiant, son protocole (http ou https), son rôle (api ou proxy), son adresse et son port, et pour un écouteur HTTPS les noms DNS et adresses IP que porte son certificat, son algorithme de clé et un compteur de renouvellement. Validé en entier à l’écriture et de nouveau quand le PEP les récupère depuis GET /xacml/pep/settings, qui les lie et les délie pendant qu’il fonctionne. Le PEP génère la clé de chaque écouteur HTTPS et demande son certificat à POST /xacml/pep/listener-certificate : aucune clé privée n’est donc jamais ici. Conservé lors d’un enregistrement et d’un signal de vie ; supprimé avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, sur chacun de ses écouteurs (#1760), les quatre de son environnement et ceux qui sont définis : un document JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, avec son heure d’arrivée. L’état est l’un de listening, waiting, failed et off et la raison l’une d’un ensemble fermé, jamais le texte du système d’exploitation ; le certificat est le sujet, l’émetteur, le numéro de série, le subjectAltName, la validité et l’empreinte de celui qu’il sert. Tout autre membre est écarté. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime. Absent sur un PEP antérieur aux écouteurs, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
   }
 }

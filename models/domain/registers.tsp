@@ -81,6 +81,12 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepSettingsInUse"})
   `settingsInUse`?: string;
 
+  @fromAttr(#{attr: "xacmlPepListeners"})
+  `listeners`?: string;
+
+  @fromAttr(#{attr: "xacmlPepListenersInUse"})
+  `listenersInUse`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }

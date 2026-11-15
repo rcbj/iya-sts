@@ -742,6 +742,8 @@
   "xacmlPepLastNotify": 729,
   "xacmlPepLastSeen": 730,
   "xacmlPepNotifyUrl": 731,
+  "xacmlPepListeners": 756,
+  "xacmlPepListenersInUse": 757,
   "xacmlPepPolicyCount": 732,
   "xacmlPepProxy": 752,
   "xacmlPepRefused": 733,

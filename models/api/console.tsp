@@ -1536,6 +1536,8 @@ namespace IyaSts.Api.Console {
     `current`?: integer;
     `stale`?: integer;
     `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
     `pep`?: string;
     `found`?: boolean;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]

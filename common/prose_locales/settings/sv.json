@@ -7779,6 +7779,14 @@
     "en": "e41d92adf65ec5bc",
     "text": "PÅ som standard. Det var en gång det ENDA avslaget i den här familjen; varje /xacml-slutpunkt ber nu om ett certifikat, och det den här inställningen fortfarande styr är just REGISTRERINGEN — den skriver en post, den är vad konsolen listar, och den är adressen som en knuff skickas till, så \"vilken PEP är det här\" är precis frågan där och ett klientcertifikat är svaret. Åtkomstpolicylagret ovanför är en annan och starkare kontroll (roles.remotePepGroup, och xacml.enforceAccess för att stänga av den); den här handlar om huruvida en registrering UTAN certifikat över huvud taget accepteras och märks som oautentiserad. Som varje annan grind i den här tjänsten är den ett VÄNDKORS: certifikatet behöver inte kedja till något, eftersom RFC 8705:s argument gäller oförändrat — det som bevisas är att samma nyckel slutförde handskakningen. Att stänga av den låter en PEP registrera sig över okrypterad HTTP, vilket är vad en körning med global.https avstängd behöver; en sådan registrering märks som OAUTENTISERAD på sin post och i konsolen i stället för att i tysthet inte gå att skilja från en som bevisade något."
   },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "En fjärr-PEP får definiera en lyssnare för den omvända proxyn över vanlig HTTP"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "AV som standard, och läses bara i produktläge, där en lyssnare som definierats på en fjärr-PEP:s sida (#1760) och som serverar dess omvända proxy över vanlig HTTP avvisas (STS-XACML-0249): proxyn är där en webbläsare loggar in och bär sin sessionskaka, så okrypterat är den rätt bara när något framför den avslutar TLS — ett faktum om driftsättningen som bara en administratör kan slå fast, och som det att slå på den här inställningen slår fast. Utvecklingsläget tillåter en sådan lyssnare oavsett vad den här säger. Den styr bara lyssnarna som definieras på sidan; de fyra som PEP:ens miljö binder (PEP_PROXY_PORT bland dem) är dess operatörs."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "PIP-frågor som en anropare får göra per hastighetsbegränsningsfönster"

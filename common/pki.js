@@ -7551,7 +7551,8 @@ function tlsDnsNameProblem(name) {
  * @param scopeId - a realm id (a process use case uses the process branch)
  * @param useCaseId - the use case
  * @param spec - `slot`, `dnsNames`, `ipAddresses`, `keyAlg`, `commonName`,
- *   `label` and `days`
+ *   `label`, `days`, and `publicKeyPem` for a key the holder generated
+ *   (then no key is generated and `privateKeyPem` is null)
  * @returns a promise of `{ ok: true, issued }`, `issued` carrying the
  *   certificate, the private key and the anchor, or `{ ok: false, errors }`
  */
@@ -7633,7 +7634,14 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
     return branch;
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1760): a remote PEP's defined HTTPS
+  // listener sends the public half in a PKCS #10 request whose proof of
+  // possession its caller verified, so the private half never reaches this
+  // process and nothing is handed back. The algorithm named must be the
+  // key's; the caller read it off the request.
+  const pair = s.publicKeyPem
+    ? { publicPem: String(s.publicKeyPem), privatePem: null }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const was = certificateFor(id, uc.id, slot);
   const names = dnsNames.map(function (one) {
     return { kind: 'dns', value: one };
@@ -7673,8 +7681,11 @@ async function issueTlsServerKeyPair(scopeId, useCaseId, spec) {
   log.info('pki: a ' + keyDesc.label + ' ' + uc.label + ' certificate was ' +
            'issued for "' + slot + '" in "' + (id || 'default') + '", naming ' +
            names.map(function (one) { return one.value; }).join(', ') +
-           '; expires ' + made.record.notAfter + '. The private key was ' +
-           'handed to the caller and is not kept here.');
+           '; expires ' + made.record.notAfter + '. ' + (pair.privatePem
+             ? 'The private key was handed to the caller and is not kept ' +
+               'here.'
+             : 'The holder generated the key; this service never saw the ' +
+               'private half.'));
   log.debug('Leaving issueTlsServerKeyPair().');
   return { ok: true,
            issued: Object.assign(describeCertificate(made.record), {

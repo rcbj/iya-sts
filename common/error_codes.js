@@ -23311,6 +23311,81 @@ const CODES = [
       '/xacml/pep/settings sends configured: false and the PEP uses its ' +
       'environment; the console names why.',
     spec: 'none; logged at the pull' },
+  { code: 'STS-XACML-0243',
+    summary: 'A listener defined for a remote PEP (#1760) is not an ' +
+      'object, carries a member a listener does not have, has a ' +
+      'renew that is not a non-negative integer, or the list is ' +
+      'not an array or holds more than 32.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0244',
+    summary: 'A listener defined for a remote PEP has an id that is not ' +
+      '1 to 64 letters, digits, dots, dashes or underscores, is ' +
+      'one of the four environment listeners\' ids, or is used ' +
+      'twice.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0245',
+    summary: 'A listener defined for a remote PEP has a protocol other ' +
+      'than http or https, or a purpose other than api or proxy.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0246',
+    summary: 'A listener defined for a remote PEP has an address that is ' +
+      'not an IPv4 or IPv6 literal, or a port outside 1 to 65535.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0247',
+    summary: 'A listener defined for a remote PEP would hold an address ' +
+      'and port another of its listeners holds, a defined one or ' +
+      'one of the environment\'s four as the PEP last reported ' +
+      'them.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0248',
+    summary: 'A listener defined for a remote PEP names certificate ' +
+      'names or a key algorithm while plain HTTP, or, as HTTPS, ' +
+      'more than 16 DNS names or IP addresses, a name a ' +
+      'certificate cannot carry, or a key algorithm outside the ' +
+      'closed set.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0249',
+    summary: 'Product mode refuses a plain-HTTP reverse-proxy listener ' +
+      'defined for a remote PEP unless ' +
+      'xacml.pepPlainHttpProxyListeners is on.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0250',
+    summary: 'No listener of that id is defined for the remote PEP (one ' +
+      'of the environment\'s four is changed only by its ' +
+      'environment), or renew-pep-listener-certificate named a ' +
+      'plain-HTTP listener.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0251',
+    summary: 'The directory refused to write a remote PEP\'s listener ' +
+      'definitions.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0252',
+    summary: 'The listener definitions stored for a remote PEP ' +
+      '(xacmlPepListeners) do not validate — an ldapmodify wrote ' +
+      'them — so GET /xacml/pep/settings sends none and the PEP ' +
+      'binds only its environment\'s; the console names why.',
+    spec: 'none; logged at the pull' },
+  { code: 'STS-XACML-0253',
+    summary: 'POST /xacml/pep/listener-certificate named no listener, or ' +
+      'one that is not an HTTPS listener defined for the calling ' +
+      'PEP in this realm, or the calling PEP is not registered ' +
+      'here.',
+    spec: 'HTTP 400 or 404, invalid_request' },
+  { code: 'STS-XACML-0254',
+    summary: 'POST /xacml/pep/listener-certificate carried no readable ' +
+      'PKCS #10 request, one whose signature does not prove ' +
+      'possession of its key, or a key the pep-tls Issuing CA ' +
+      'does not certify for a listener.',
+    spec: 'HTTP 400, invalid_request' },
+  { code: 'STS-XACML-0255',
+    summary: 'A remote PEP\'s listener certificate could not be issued ' +
+      'from the realm\'s pep-tls Issuing CA.',
+    spec: 'HTTP 500, server_error' },
+  { code: 'STS-XACML-0256',
+    summary: 'set-pep-route was sent no route object, or ' +
+      'set-pep-route-application named no application; ' +
+      'set-pep-route\'s position is outside the route list.',
+    spec: 'HTTP 400 on /admin-api; the console names why' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -23874,6 +23949,22 @@ const CODES = [
       'reading of its bounds or type; that setting is the environment\'s ' +
       'or the default, and the others are applied (#1760).',
     spec: 'none; that one setting falls back' },
+  { code: 'STS-XPEP-0103',
+    summary: 'A listener the service defined for this remote PEP (#1760) ' +
+      'could not bind its address and port; it is reported failed ' +
+      'on the heartbeat and the others are unaffected.',
+    spec: 'none; reported on the heartbeat' },
+  { code: 'STS-XPEP-0104',
+    summary: 'The remote PEP could not obtain a certificate for an HTTPS ' +
+      'listener the service defined: the request was refused, the ' +
+      'answer was not a usable chain for its key, or the PDP ' +
+      'could not be reached; the listener waits and asks again.',
+    spec: 'none; reported on the heartbeat' },
+  { code: 'STS-XPEP-0105',
+    summary: 'A listener definition the service sent fails the remote ' +
+      'PEP\'s own reading of it; that listener is left out and the ' +
+      'others are bound (#1760).',
+    spec: 'none; that one listener is left out' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

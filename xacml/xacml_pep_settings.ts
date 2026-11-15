@@ -49,6 +49,8 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
 import stsCrypto = require('../common/crypto');
+// The listeners defined for a PEP (#1760), which travel on this pull.
+import pepListeners = require('./xacml_pep_listeners');
 
 const { log } = helpers;
 
@@ -523,7 +525,8 @@ class PepSettings {
    * @param name - the name the PEP's certificate gives it
    * @returns `{ token, body }`
    */
-  pull(row: { name: string; settings: string } | null, name: string):
+  pull(row: { name: string; settings: string; listeners?: string;
+              listenersInUse?: any } | null, name: string):
       { token: string; body: Record<string, unknown> } {
     const { log, errorCodes, sha256Base64 } = this.deps;
     log.debug("Entering PepSettings.pull(). name=" + name);
@@ -558,6 +561,23 @@ class PepSettings {
       sent.settings = settings;
     } else {
       sent.note = note;
+    }
+    // THE LISTENERS DEFINED FOR THIS PEP (#1760), beside the settings and
+    // under the same token, so a definition added, edited, renewed or
+    // removed reaches the PEP on its next poll. Sent only when there are
+    // some, so a PEP with none pulls the body it always did; one stored
+    // that does not validate sends none, and the PEP binds only its
+    // environment's.
+    if (row && row.listeners) {
+      const read = pepListeners.stored(row.listeners,
+                                       row.listenersInUse || null);
+      if (read.listeners && read.listeners.length) {
+        sent.listeners = read.listeners;
+      } else if (!read.listeners) {
+        log.warn(errorCodes.tag('STS-XACML-0252') + 'xacml: the listeners ' +
+                 'stored for remote PEP "' + row.name + '" do not validate (' +
+                 read.problem + '); none is pulled.');
+      }
     }
     const token = sha256Base64(JSON.stringify(sent))
       .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

@@ -7779,6 +7779,14 @@
     "en": "e41d92adf65ec5bc",
     "text": "ACTIVADO por defecto. Fue en su día el ÚNICO rechazo de esta familia; ahora todo endpoint de /xacml pide un certificado, y lo que este ajuste sigue rigiendo es específicamente el REGISTRO — escribe una entrada, es lo que enumera la consola y es la dirección a la que se envía un aviso, así que «qué PEP es este» es exactamente la pregunta allí y un certificado de cliente es la respuesta. La capa de política de acceso por encima es una comprobación distinta y más fuerte (roles.remotePepGroup, y xacml.enforceAccess para desactivarla); esta trata de si se acepta en absoluto un registro SIN certificado y se marca como no autenticado. Como cualquier otra puerta de este servicio, es un TORNIQUETE: no se exige que el certificado se encadene a nada, porque el argumento de RFC 8705 se aplica sin cambios — lo que se demuestra es que la misma clave completó el handshake. Desactivarlo permite a un PEP registrarse por HTTP sin cifrar, que es lo que necesita una ejecución con global.https desactivado; tal registro se marca como NO AUTENTICADO en su entrada y en la consola en lugar de ser discretamente indistinguible de uno que demostró algo."
   },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "Un PEP remoto puede definir una escucha de proxy inverso en HTTP simple"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "DESACTIVADO por defecto, y solo se lee en modo producto, donde se rechaza una escucha definida en la página de un PEP remoto (#1760) que sirve su proxy inverso en HTTP simple (STS-XACML-0249): el proxy es donde un navegador inicia sesión y lleva su cookie de sesión, así que en claro solo es correcto si algo delante de él termina TLS — un hecho sobre el despliegue que solo un administrador puede afirmar, y que activar este ajuste afirma. El modo desarrollo permite esa escucha diga lo que diga este ajuste. Solo rige las escuchas definidas en la página; las cuatro que enlaza el entorno del PEP (PEP_PROXY_PORT entre ellas) son de su operador."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "Consultas PIP que un llamante puede hacer por ventana de limitación"

@@ -3712,6 +3712,9 @@ Scope: `admin:read`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `applicationChoices` | list |  |  |
+| `applicationChoices[].identifier` | string |  |  |
+| `applicationChoices[].name` | string |  |  |
 | `current` | integer |  |  |
 | `elsewhere` | list |  |  |
 | `elsewhere[].count` | integer |  |  |
@@ -3724,6 +3727,22 @@ Scope: `admin:read`.
 | `listenerCertificates.keyAlgorithms` | list |  |  |
 | `listenerCertificates.keyAlgorithms[]` | string |  |  |
 | `listenerCertificates.useCase` | string |  |  |
+| `listenersCatalogue` | object |  |  |
+| `listenersCatalogue.bootstrap` | list |  |  |
+| `listenersCatalogue.bootstrap[].env` | string |  |  |
+| `listenersCatalogue.bootstrap[].id` | string |  |  |
+| `listenersCatalogue.bootstrap[].port` | integer |  |  |
+| `listenersCatalogue.bootstrap[].protocol` | string |  |  |
+| `listenersCatalogue.bootstrap[].purpose` | string |  |  |
+| `listenersCatalogue.defaultKeyAlg` | string |  |  |
+| `listenersCatalogue.keyAlgorithms` | list |  |  |
+| `listenersCatalogue.keyAlgorithms[]` | string |  |  |
+| `listenersCatalogue.maxListeners` | integer |  |  |
+| `listenersCatalogue.plainHttpProxyAllowed` | boolean |  |  |
+| `listenersCatalogue.protocols` | list |  |  |
+| `listenersCatalogue.protocols[]` | string |  |  |
+| `listenersCatalogue.purposes` | list |  |  |
+| `listenersCatalogue.purposes[]` | string |  |  |
 | `message` | string |  |  |
 | `notify` | object |  |  |
 | `notify.allowedHosts` | list |  |  |
@@ -3765,6 +3784,87 @@ Scope: `admin:read`.
 | `peps[].listenerCertificate.signatureAlg` | string |  |  |
 | `peps[].listenerCertificate.subject` | string |  |  |
 | `peps[].listenerCertificate.thumbprint` | string |  |  |
+| `peps[].listenerRows` | list |  |  |
+| `peps[].listenerRows[].defaultPort` | integer |  |  |
+| `peps[].listenerRows[].definition` | object |  |  |
+| `peps[].listenerRows[].definition.address` | string |  |  |
+| `peps[].listenerRows[].definition.dnsNames` | list |  |  |
+| `peps[].listenerRows[].definition.dnsNames[]` | string |  |  |
+| `peps[].listenerRows[].definition.id` | string |  |  |
+| `peps[].listenerRows[].definition.ipAddresses` | list |  |  |
+| `peps[].listenerRows[].definition.ipAddresses[]` | string |  |  |
+| `peps[].listenerRows[].definition.keyAlg` | string |  |  |
+| `peps[].listenerRows[].definition.port` | integer |  |  |
+| `peps[].listenerRows[].definition.protocol` | one of `http`, `https` |  |  |
+| `peps[].listenerRows[].definition.purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listenerRows[].definition.renew` | integer |  |  |
+| `peps[].listenerRows[].env` | string |  |  |
+| `peps[].listenerRows[].id` | string |  |  |
+| `peps[].listenerRows[].issued` | object |  |  |
+| `peps[].listenerRows[].issued.dnsNames` | list |  |  |
+| `peps[].listenerRows[].issued.dnsNames[]` | string |  |  |
+| `peps[].listenerRows[].issued.expired` | boolean |  |  |
+| `peps[].listenerRows[].issued.ipAddresses` | list |  |  |
+| `peps[].listenerRows[].issued.ipAddresses[]` | string |  |  |
+| `peps[].listenerRows[].issued.notAfter` | string |  |  |
+| `peps[].listenerRows[].issued.notBefore` | string |  |  |
+| `peps[].listenerRows[].issued.serialHex` | string |  |  |
+| `peps[].listenerRows[].issued.subject` | string |  |  |
+| `peps[].listenerRows[].issued.thumbprint` | string |  |  |
+| `peps[].listenerRows[].protocol` | one of `http`, `https` |  |  |
+| `peps[].listenerRows[].purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listenerRows[].reported` | object |  |  |
+| `peps[].listenerRows[].reported.address` | string |  |  |
+| `peps[].listenerRows[].reported.certificate` | object |  |  |
+| `peps[].listenerRows[].reported.certificate.fingerprint256` | string |  |  |
+| `peps[].listenerRows[].reported.certificate.issuer` | string |  |  |
+| `peps[].listenerRows[].reported.certificate.serialHex` | string |  |  |
+| `peps[].listenerRows[].reported.certificate.subject` | string |  |  |
+| `peps[].listenerRows[].reported.certificate.subjectAltName` | string |  |  |
+| `peps[].listenerRows[].reported.certificate.validFrom` | string |  |  |
+| `peps[].listenerRows[].reported.certificate.validTo` | string |  |  |
+| `peps[].listenerRows[].reported.id` | string |  |  |
+| `peps[].listenerRows[].reported.port` | integer |  |  |
+| `peps[].listenerRows[].reported.protocol` | one of `http`, `https` |  |  |
+| `peps[].listenerRows[].reported.purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `not-configured`, `other` |  |  |
+| `peps[].listenerRows[].reported.renew` | integer |  |  |
+| `peps[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
+| `peps[].listenerRows[].reported.state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
+| `peps[].listenerRows[].source` | one of `environment`, `service` |  |  |
+| `peps[].listeners` | list |  |  |
+| `peps[].listeners[].address` | string |  |  |
+| `peps[].listeners[].dnsNames` | list |  |  |
+| `peps[].listeners[].dnsNames[]` | string |  |  |
+| `peps[].listeners[].id` | string |  |  |
+| `peps[].listeners[].ipAddresses` | list |  |  |
+| `peps[].listeners[].ipAddresses[]` | string |  |  |
+| `peps[].listeners[].keyAlg` | string |  |  |
+| `peps[].listeners[].port` | integer |  |  |
+| `peps[].listeners[].protocol` | one of `http`, `https` |  |  |
+| `peps[].listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listeners[].renew` | integer |  |  |
+| `peps[].listenersInUse` | object |  |  |
+| `peps[].listenersInUse.at` | string |  |  |
+| `peps[].listenersInUse.listeners` | list |  |  |
+| `peps[].listenersInUse.listeners[].address` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate` | object |  |  |
+| `peps[].listenersInUse.listeners[].certificate.fingerprint256` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate.issuer` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate.serialHex` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate.subject` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate.subjectAltName` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate.validFrom` | string |  |  |
+| `peps[].listenersInUse.listeners[].certificate.validTo` | string |  |  |
+| `peps[].listenersInUse.listeners[].id` | string |  |  |
+| `peps[].listenersInUse.listeners[].port` | integer |  |  |
+| `peps[].listenersInUse.listeners[].protocol` | one of `http`, `https` |  |  |
+| `peps[].listenersInUse.listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `peps[].listenersInUse.listeners[].reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `not-configured`, `other` |  |  |
+| `peps[].listenersInUse.listeners[].renew` | integer |  |  |
+| `peps[].listenersInUse.listeners[].source` | one of `environment`, `service` |  |  |
+| `peps[].listenersInUse.listeners[].state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
+| `peps[].listenersProblem` | string, or null |  |  |
 | `peps[].name` | string |  |  |
 | `peps[].notifyProblem` | string, or null |  |  |
 | `peps[].notifyUrl` | string |  |  |
@@ -3921,6 +4021,24 @@ Scope: `admin:read`.
 | `peps[].signals.setsRefused` | integer |  |  |
 | `peps[].signals.stale` | integer |  |  |
 | `peps[].signals.staleAfterMs` | integer |  |  |
+| `peps[].signals.streams` | list |  |  |
+| `peps[].signals.streams[].applications` | list |  |  |
+| `peps[].signals.streams[].applications[]` | string |  |  |
+| `peps[].signals.streams[].clientId` | string |  |  |
+| `peps[].signals.streams[].consecutiveFailures` | integer |  |  |
+| `peps[].signals.streams[].failedPolls` | integer |  |  |
+| `peps[].signals.streams[].healthy` | boolean |  |  |
+| `peps[].signals.streams[].lastPollAt` | string, or null |  |  |
+| `peps[].signals.streams[].lastSuccessAt` | string, or null |  |  |
+| `peps[].signals.streams[].polls` | integer |  |  |
+| `peps[].signals.streams[].routes` | list |  |  |
+| `peps[].signals.streams[].routes[]` | string |  |  |
+| `peps[].signals.streams[].running` | boolean |  |  |
+| `peps[].signals.streams[].sessionsEnded` | integer |  |  |
+| `peps[].signals.streams[].setsAccepted` | integer |  |  |
+| `peps[].signals.streams[].setsRefused` | integer |  |  |
+| `peps[].signals.streams[].startedAt` | string, or null |  |  |
+| `peps[].signals.streams[].streamId` | string |  |  |
 | `peps[].stale` | boolean |  |  |
 | `peps[].syncToken` | string |  |  |
 | `peps[].thumbprint` | string |  |  |
@@ -4101,6 +4219,262 @@ Scope: `admin:write`.
 |---|---|---|---|
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/remove-pep-listener
+
+`removeXacmlPepListener`
+
+**Remove one of a remote PEP's defined listeners**
+
+Removes a listener defined for a registered remote PEP (#1760); the PEP unbinds it on its next pull. The environment's four cannot be removed here (STS-XACML-0250).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `listener` | string | yes | The listener's id. |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/remove-pep-route
+
+`removeXacmlPepRoute`
+
+**Remove one route of a remote PEP's reverse proxy**
+
+Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `route` | string | yes | The route's id. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/renew-pep-listener-certificate
+
+`renewXacmlPepListenerCertificate`
+
+**Have a remote PEP renew a defined HTTPS listener's certificate**
+
+Moves the renewal counter of an HTTPS listener defined for a registered remote PEP (#1760): on its next pull the PEP generates a new key and asks POST /xacml/pep/listener-certificate for a new certificate, which supersedes the old one. A plain-HTTP listener or an unknown id is refused (STS-XACML-0250). The environment's HTTPS pair is issued with issue-pep-certificate.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `listener` | string | yes | The listener's id. |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -4436,6 +4810,93 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/set-pep-listener
+
+`setXacmlPepListener`
+
+**Define or replace one of a remote PEP's listeners**
+
+Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `address` | string |  | The IPv4 or IPv6 address to bind; 0.0.0.0 (the default) or :: for every one. |
+| `dnsNames` | list, or string |  |  |
+| `dnsNames[]` | string |  |  |
+| `id` | string |  | The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four (api-http, api-https, proxy-http, proxy-https). An id already defined is replaced. |
+| `ipAddresses` | list, or string |  |  |
+| `ipAddresses[]` | string |  |  |
+| `keyAlg` | one of `ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072` |  | HTTPS only: the key the PEP generates, ec-p256 by default. |
+| `listener` | map |  | The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler. |
+| `listener.{key}` | any JSON |  |  |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `port` | integer |  | The port, 1 to 65535. |
+| `protocol` | one of `http`, `https` |  | http or https. |
+| `purpose` | one of `api`, `proxy` |  | api (the PEP's decision API: /protected, GET / and the AuthZEN endpoints) or proxy (the reverse proxy). |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
 ## POST /admin-api/xacml/set-pep-proxy
 
 `setXacmlPepProxy`
@@ -4468,6 +4929,230 @@ Scope: `admin:write`.
 | `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `proxy` | map | yes | The configuration document. Validated whole by the handler, which refuses a member it does not name, so this schema leaves its shape to that refusal. |
 | `proxy.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-route
+
+`setXacmlPepRoute`
+
+**Add or replace one route of a remote PEP's reverse proxy**
+
+Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  | The identifier of the application in this realm's registry the route fronts. |
+| `forwardCredentials` | boolean, or string |  | Whether the caller's own credential is forwarded upstream. |
+| `id` | string |  | The route's id; one already in the list is replaced where it stands, keeping its identity. |
+| `match` | one of `prefix`, `exact` |  | prefix (the default) or exact. |
+| `mechanisms` | list, or string |  |  |
+| `mechanisms[]` | string |  |  |
+| `methods` | list, or string |  |  |
+| `methods[]` | string |  |  |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `path` | string |  | The path the route matches. |
+| `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |
+| `public` | boolean, or string |  | true for a route that takes no credential and asks no policy; it names no mechanism and no application. |
+| `resource` | string |  | The XACML resource; the path when empty. |
+| `route` | map, or string |  |  |
+| `route.{key}` | any JSON |  |  |
+| `routeAction` | string |  | The XACML action (the route's `action`); the method when empty. |
+| `signals` | boolean, or string |  | Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].action` | string |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].public` | boolean |  |  |
+| `proxy.routes[].resource` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-route-application
+
+`setXacmlPepRouteApplication`
+
+**Map an application to one route of a remote PEP's reverse proxy**
+
+Binds a route of a registered remote PEP's reverse-proxy configuration to an application in this realm's registry (#1760, D10): the route's `application`, from which the pull reads what each mechanism needs. Saved through set-pep-proxy's checks, so an application that does not qualify for the route's mechanisms is refused by its code (STS-XACML-0217 to 0223) and a public route, which names none, by STS-XACML-0197. An unknown route is STS-XACML-0230 and a missing application STS-XACML-0256.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string | yes | The application's identifier in this realm's registry. |
+| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `route` | string | yes | The route's id. |
 
 **200**: The operation was applied.
 

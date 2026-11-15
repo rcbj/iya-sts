@@ -126,7 +126,7 @@ model XacmlPep {
   @attr(#{
     kind: "single",
     jsonBlob: true,
-    what: "The reverse proxy's CAEP/RISC signal-stream health as the remote PEP last reported it on a heartbeat (#1760): one JSON document of counts and ages only — the receivers, how many are healthy and stale, the stale threshold and poll interval, the oldest last-success age, the most failures in a row, the SETs accepted and refused, the sessions ended, and the library session stores' held, max, TTL, evicted and expired — with when it arrived. Every other member is dropped and every value that is not a non-negative integer is 0, so no client id, URL or error text is ever held. A heartbeat without it keeps it, one with null clears it, and a registration drops it, since a registration is a new process. Absent on a PEP that never reported it, which the console draws as not reported."
+    what: "The reverse proxy's CAEP/RISC signal-stream health as the remote PEP last reported it on a heartbeat (#1760): one JSON document of counts and ages only — the receivers, how many are healthy and stale, the stale threshold and poll interval, the oldest last-success age, the most failures in a row, the SETs accepted and refused, the sessions ended, and the library session stores' held, max, TTL, evicted and expired — with when it arrived, and, from a PEP that reports them, one row per stream: the OIDC client it serves and its stream id, each held to a charset, whether it runs and is healthy, when it started, last polled and last succeeded (computed here from the ages the PEP sent and the arrival, never a clock of the PEP's), and its counters. Every other member is dropped and every value that is not a non-negative integer is 0, so no URL or error text is ever held. A heartbeat without it keeps it, one with null clears it, and a registration drops it, since a registration is a new process. Absent on a PEP that never reported it, which the console draws as not reported."
   })
   xacmlPepSignals?: string;
   @attr(#{
@@ -141,6 +141,18 @@ model XacmlPep {
     what: "What the remote PEP last reported, on a heartbeat, having in force for each managed setting (#1760): one JSON document of { token, values: { setting: { value, source } } }, the source service, environment or default, with when it arrived. Every setting the table does not name, every value not of its setting's type and every other source is dropped. A heartbeat without it keeps it, one with null clears it, and a registration drops it. Absent on a PEP older than the settings, which the console draws as not reported."
   })
   xacmlPepSettingsInUse?: string;
+  @attr(#{
+    kind: "single",
+    jsonBlob: true,
+    what: "The listeners an administrator defined for this remote PEP on its console page or with the set-pep-listener action of the management API (#1760), beyond the four its environment binds: one JSON array, each listener its id, protocol (http or https), purpose (api or proxy), address and port, and for an HTTPS one the DNS names and IP addresses its certificate carries, its key algorithm and a renewal counter. Validated whole on write and again when the PEP pulls them from GET /xacml/pep/settings, which binds and unbinds them while it runs. The PEP generates each HTTPS listener's key and asks POST /xacml/pep/listener-certificate for its certificate, so no private key is ever here. Kept across a registration and a heartbeat; removed with the row."
+  })
+  xacmlPepListeners?: string;
+  @attr(#{
+    kind: "single",
+    jsonBlob: true,
+    what: "What the remote PEP last reported, on a heartbeat, about every listener it has (#1760), its environment's four and the defined ones: one JSON document of { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, with when it arrived. The state is one of listening, waiting, failed and off and the reason one of a closed set, never the operating system's text; the certificate is the subject, issuer, serial, subjectAltName, validity and fingerprint of the one it serves. Every other member is dropped. A heartbeat without it keeps it, one with null clears it, and a registration drops it. Absent on a PEP older than the listeners, which the console draws as not reported."
+  })
+  xacmlPepListenersInUse?: string;
   @attr(#{
     what: "Whatever the PEP said about itself when it registered."
   })

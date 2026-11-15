@@ -15027,6 +15027,23 @@ const SETTINGS = [
                  'the console rather than being quietly indistinguishable ' +
                  'from one that proved something.' },
 
+  { key: 'xacml.pepPlainHttpProxyListeners', group: 'XACML',
+    label: 'A remote PEP may define a plain-HTTP reverse-proxy listener',
+    env: 'STS_XACML_PEP_PLAIN_HTTP_PROXY_LISTENERS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF by default, and read only in product mode, where a ' +
+                 'listener defined on a remote PEP\'s page (#1760) that ' +
+                 'serves its reverse proxy over plain HTTP is refused ' +
+                 '(STS-XACML-0249): the proxy is where a browser signs in ' +
+                 'and carries its session cookie, so in the clear it is ' +
+                 'right only when something in front of it terminates TLS ' +
+                 '— a fact about the deployment only an administrator can ' +
+                 'state, which is what turning this on states. Development ' +
+                 'allows such a listener whatever this says. It governs ' +
+                 'only the listeners defined on the page; the four the ' +
+                 'PEP\'s environment binds (PEP_PROXY_PORT among them) are ' +
+                 'its operator\'s.' },
+
   { key: 'xacml.pipMaxPerWindow', group: 'XACML',
     label: 'PIP queries one caller may make per rate-limit window',
     env: 'STS_XACML_PIP_MAX_PER_WINDOW', type: 'int', dflt: 600,

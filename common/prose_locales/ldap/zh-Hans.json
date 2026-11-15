@@ -2023,17 +2023,13 @@
     "en": "a4283bfe7916574e",
     "text": "最近一次提醒的结果——状态，或拒绝的说明语句。这是记录失败提醒的唯一地方，理由与 ssf_streams.js 对被拒绝推送所述相同：根据定义，从接收端是看不到它的。"
   },
-  "xacmlPeps.schema.attributes.description.what": {
-    "en": "3e047a4417e13ade",
-    "text": "PEP 注册时关于自身所说的任何内容。"
-  },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "远程 PEP 从 GET /xacml/pep/proxy 拉取的反向代理配置（#1760）：一个 JSON 文档——enabled、上游应用程序的基本 URL、浏览器访问代理的公共基本 URL、超时以及有序的路由表，每条路由包含其路径、方法、身份验证机制、它所保护的领域注册表中的应用程序，以及 XACML 资源和操作。由控制台和管理 API 的 set-pep-proxy 操作写入，在那里整体验证，并在构建拉取时再次验证，因此 ldapmodify 写入的未通过验证的值会以 configured: false 被拉取。在注册和心跳中保留；随该行一起删除。"
   },
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
-    "en": "8e6cc7739c2c3ce3",
-    "text": "远程 PEP 在心跳中最后报告的反向代理 CAEP/RISC 信号流健康状况（#1760）：一个只含计数和时长的 JSON 文档——接收器数量、健康和过时的数量、过时阈值和轮询间隔、最早的最近成功时长、最多连续失败次数、接受和拒绝的 SET、结束的会话，以及库会话存储的持有数、最大值、生存期、驱逐数和过期数——以及它到达的时间。其他成员一律丢弃，任何不是非负整数的值都记为 0，因此从不保存客户端 ID、URL 或错误文本。不带它的心跳保留它，带 null 的心跳清除它，注册会丢弃它，因为注册意味着新进程。从未报告过的 PEP 上没有该属性，控制台显示为未报告。"
+    "en": "973f5fff5b5df8e8",
+    "text": "远程 PEP 最近一次在心跳中报告的反向代理 CAEP/RISC 信号流健康状况（#1760）：一个只包含计数和时长的 JSON 文档——接收器数量、健康和过期的数量、过期阈值和轮询间隔、最旧的上次成功时长、最多连续失败次数、接受和拒绝的 SET、结束的会话，以及库会话存储的 held、max、TTL、evicted 和 expired——以及到达时间；来自报告这些内容的 PEP 时，还包括每个流一行：它所服务的 OIDC 客户端及其流标识（各自限制在一个字符集内）、是否运行和健康、何时启动、上次轮询和上次成功的时间（在此处根据 PEP 发送的时长和到达时间计算，从不采用 PEP 的时钟），以及其计数器。其他成员一律丢弃，任何不是非负整数的值都记为 0，因此从不保存 URL 或错误文本。不含它的心跳保留它，值为 null 的心跳清除它，注册则删除它，因为注册意味着一个新进程。从未报告过的 PEP 上没有此项，控制台显示为未报告。"
   },
   "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
     "en": "2216d5f263d38ea5",
@@ -2042,5 +2038,17 @@
   "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
     "en": "b081386a6d832967",
     "text": "远程 PEP 最近一次在心跳中报告的、对每项受管设置实际生效的内容（#1760）：一个形如 { token, values: { setting: { value, source } } } 的 JSON 文档，source 为 service、environment 或 default，并附有到达时间。表中未列出的设置、类型与其设置不符的值以及其他任何来源都会被丢弃。不带它的心跳会保留它，带 null 的心跳会清除它，注册会丢弃它。比这些设置更旧的 PEP 上没有它，控制台将其显示为未报告。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "管理员在本远程 PEP 的控制台页面上或通过管理 API 的 set-pep-listener 操作为其定义的监听器（#1760），在其环境绑定的四个之外：一个 JSON 数组，每个监听器包含标识、协议（http 或 https）、用途（api 或 proxy）、地址和端口，对于 HTTPS 监听器还包括其证书携带的 DNS 名称和 IP 地址、密钥算法和续签计数器。写入时整体验证，PEP 从 GET /xacml/pep/settings 拉取时再次验证，并在运行中绑定和解除绑定。PEP 为每个 HTTPS 监听器生成密钥，并向 POST /xacml/pep/listener-certificate 申请证书，因此这里从不存放私钥。在注册和心跳中保留；随行一起删除。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "远程 PEP 最近一次在心跳中报告的、关于其每个监听器的情况（#1760），包括其环境的四个和已定义的监听器：一个 JSON 文档 { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }，以及到达时间。状态是 listening、waiting、failed 和 off 之一，原因来自一个封闭集合，从不是操作系统的文本；证书是其所提供证书的主体、签发者、序列号、subjectAltName、有效期和指纹。其他成员一律丢弃。不含它的心跳保留它，值为 null 的心跳清除它，注册则删除它。早于监听器功能的 PEP 上没有此项，控制台显示为未报告。"
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "PEP 注册时关于自身所说的任何内容。"
   }
 }

@@ -2023,17 +2023,13 @@
     "en": "a4283bfe7916574e",
     "text": "Ano ang nangyari sa huling nudge — ang status, o ang pangungusap ng pagtanggi. ANG TANGING LUGAR KUNG SAAN ITINATALA ANG NABIGONG NUDGE, sa dahilang ibinibigay ng ssf_streams.js tungkol sa tinanggihang push: hindi ito nakikita mula sa tumatanggap na dulo ayon sa depinisyon."
   },
-  "xacmlPeps.schema.attributes.description.what": {
-    "en": "3e047a4417e13ade",
-    "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."
-  },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "Ang reverse-proxy configuration na kinukuha ng remote PEP mula sa GET /xacml/pep/proxy (#1760): isang JSON document — enabled, ang base URL ng upstream application, ang public base URL na inaabot ng browser ang proxy, ang mga timeout at ang nakaayos na route table, bawat route kasama ang path, mga method, mga mekanismo ng authentication, ang application sa registry ng realm na pinoprotektahan nito, at ang XACML resource at action. Isinusulat ng set-pep-proxy action ng console at ng management API, bina-validate nang buo roon at muli kapag binubuo ang pull, kaya ang value na isinulat ng ldapmodify na hindi pumapasa ay kinukuha bilang configured: false. Pinapanatili sa registration at heartbeat; inaalis kasama ng row."
   },
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
-    "en": "8e6cc7739c2c3ce3",
-    "text": "Ang kalagayan ng mga CAEP/RISC signal stream ng reverse proxy ayon sa huling iniulat ng remote PEP sa isang heartbeat (#1760): isang JSON na dokumento ng mga bilang at edad lamang — ang mga receiver, ilan ang malusog at luma, ang hangganan ng pagkaluma at ang pagitan ng poll, ang edad ng pinakalumang huling tagumpay, ang pinakamaraming sunud-sunod na pagkabigo, ang mga SET na tinanggap at tinanggihan, ang mga session na tinapos, at para sa mga session store ng library ang hawak, max, TTL, pinaalis at nag-expire — kasama kung kailan ito dumating. Itinatapon ang ibang miyembro at 0 ang anumang halagang hindi di-negatibong integer, kaya walang client id, URL o teksto ng error na iniingatan kailanman. Pinapanatili ito ng heartbeat na wala nito, binubura ng may null, at inaalis ng registration, dahil ang registration ay bagong proseso. Wala sa PEP na hindi kailanman nag-ulat nito, na ipinapakita ng console bilang hindi iniulat."
+    "en": "973f5fff5b5df8e8",
+    "text": "Ang kalusugan ng mga CAEP/RISC signal stream ng reverse proxy ayon sa huling iniulat ng remote PEP sa isang heartbeat (#1760): isang JSON document ng mga bilang at edad lang — ang mga receiver, ilan ang malusog at luma na, ang hangganan ng pagkaluma at ang poll interval, ang edad ng pinakamatandang huling tagumpay, ang pinakamaraming sunod-sunod na pagkabigo, ang mga SET na tinanggap at tinanggihan, ang mga session na tinapos, at ang held, max, TTL, evicted at expired ng mga session store ng library — kasama kung kailan ito dumating, at, mula sa isang PEP na nag-uulat nito, isang hilera bawat stream: ang OIDC client na sine-serve nito at ang stream id nito, bawat isa ay limitado sa isang charset, kung tumatakbo ito at malusog, kung kailan ito nagsimula, huling nag-poll at huling nagtagumpay (kinukuwenta rito mula sa mga edad na ipinadala ng PEP at sa pagdating, hindi kailanman mula sa orasan ng PEP), at ang mga counter nito. Itinatapon ang anumang ibang member at nagiging 0 ang anumang value na hindi non-negative integer, kaya walang URL o teksto ng error na naiimbak kailanman. Pinananatili ito ng isang heartbeat na wala nito, binubura ito ng isang may null, at inaalis ito ng isang registration, dahil ang registration ay isang bagong proseso. Wala ito sa isang PEP na hindi kailanman nag-ulat nito, na ipinapakita ng console bilang hindi iniulat."
   },
   "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
     "en": "2216d5f263d38ea5",
@@ -2042,5 +2038,17 @@
   "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
     "en": "b081386a6d832967",
     "text": "Ang huling iniulat ng remote PEP, sa isang heartbeat, na ipinapatupad nito para sa bawat pinamamahalaang setting (#1760): isang JSON document na { token, values: { setting: { value, source } } }, na ang source ay service, environment o default, kasama kung kailan ito dumating. Itinatapon ang bawat setting na hindi pinangangalanan ng talahanayan, bawat value na hindi ayon sa uri ng setting nito, at bawat ibang source. Pinananatili ito ng heartbeat na wala nito, binubura ito ng heartbeat na may null, at itinatapon ito ng pagpaparehistro. Wala ito sa PEP na mas luma kaysa sa mga setting, na ipinapakita ng console bilang hindi iniulat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Ang mga listener na itinakda ng isang administrator para sa remote PEP na ito sa pahina nito sa console o sa set-pep-listener na aksyon ng management API (#1760), bukod sa apat na ibinibigkis ng environment nito: isang JSON array, bawat listener ay may id, protocol (http o https), layunin (api o proxy), address at port, at para sa isang HTTPS listener ang mga DNS name at IP address na dala ng sertipiko nito, ang key algorithm nito at isang renewal counter. Buong sinusuri sa pagsulat at muli kapag kinukuha ito ng PEP mula sa GET /xacml/pep/settings, na nagbibigkis at nag-aalis sa mga ito habang tumatakbo ito. Ginagawa ng PEP ang susi ng bawat HTTPS listener at humihingi ng sertipiko nito sa POST /xacml/pep/listener-certificate, kaya walang private key na naririto kailanman. Pinananatili sa isang registration at isang heartbeat; inaalis kasama ng row."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Ang huling iniulat ng remote PEP, sa isang heartbeat, tungkol sa bawat listener nito (#1760), ang apat ng environment nito at ang mga itinakda: isang JSON document na { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, kasama kung kailan ito dumating. Ang state ay isa sa listening, waiting, failed at off at ang reason ay isa sa isang saradong set, hindi kailanman ang teksto ng operating system; ang sertipiko ay ang subject, issuer, serial, subjectAltName, bisa at fingerprint ng sine-serve nito. Itinatapon ang anumang ibang member. Pinananatili ito ng isang heartbeat na wala nito, binubura ito ng isang may null, at inaalis ito ng isang registration. Wala ito sa isang PEP na mas luma kaysa sa mga listener, na ipinapakita ng console bilang hindi iniulat."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."
   }
 }

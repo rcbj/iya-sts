@@ -2023,17 +2023,13 @@
     "en": "a4283bfe7916574e",
     "text": "Vad som hände med den senaste knuffen — statusen, eller avvisningsmeningen. DET ENDA STÄLLE DÄR EN MISSLYCKAD KNUFF REGISTRERAS, av det skäl som ssf_streams.js anger om en avvisad push: den är per definition osynlig från den mottagande änden."
   },
-  "xacmlPeps.schema.attributes.description.what": {
-    "en": "3e047a4417e13ade",
-    "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
-  },
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "Konfigurationen för omvänd proxy som fjärr-PEP:en hämtar från GET /xacml/pep/proxy (#1760): ett JSON-dokument — enabled, uppströmsprogrammets bas-URL, den publika bas-URL som en webbläsare når proxyn på, tidsgränserna och den ordnade vägtabellen, varje väg med sin sökväg, sina metoder, sina autentiseringsmekanismer, programmet i realmens register som den står framför samt XACML-resurs och åtgärd. Skrivs av åtgärden set-pep-proxy i konsolen och hanterings-API:et, valideras helt där och igen när hämtningen byggs, så ett värde som ldapmodify skrev och som inte validerar hämtas som configured: false. Behålls vid en registrering och ett hjärtslag; tas bort med raden."
   },
   "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
-    "en": "8e6cc7739c2c3ce3",
-    "text": "Den omvända proxyns hälsa för CAEP/RISC-signalströmmarna som den fjärranslutna PEP:en senast rapporterade den i ett hjärtslag (#1760): ett JSON-dokument med enbart antal och åldrar — mottagarna, hur många som är friska och inaktuella, gränsen för inaktualitet och avfrågningsintervallet, åldern på den äldsta senaste lyckade avfrågningen, flest misslyckanden i rad, godtagna och avvisade SET, avslutade sessioner, och för bibliotekets sessionslager hållna, max, livslängd, utkastade och utgångna — med när det kom. Varje annan medlem tas bort och varje värde som inte är ett icke-negativt heltal blir 0, så inget klient-id, ingen URL och ingen feltext hålls någonsin. Ett hjärtslag utan det behåller det, ett med null rensar det, och en registrering tar bort det, eftersom en registrering är en ny process. Saknas på en PEP som aldrig rapporterat det, vilket konsolen visar som inte rapporterat."
+    "en": "973f5fff5b5df8e8",
+    "text": "Hälsan hos den omvända proxyns CAEP/RISC-signalflöden så som fjärr-PEP:en senast rapporterade den i ett hjärtslag (#1760): ett JSON-dokument med enbart antal och åldrar — mottagarna, hur många som är friska och inaktuella, gränsen för inaktualitet och avfrågningsintervallet, åldern på den äldsta senaste lyckade avfrågningen, flest fel i rad, accepterade och avvisade SET, avslutade sessioner, samt held, max, TTL, evicted och expired för bibliotekets sessionslager — med när det kom, och, från en PEP som rapporterar dem, en rad per flöde: OIDC-klienten den betjänar och dess flödes-id, vart och ett begränsat till en teckenuppsättning, om den körs och är frisk, när den startade, senast avfrågades och senast lyckades (beräknat här från åldrarna PEP:en skickade och ankomsten, aldrig från en klocka hos PEP:en), och dess räknare. Alla andra medlemmar kastas och varje värde som inte är ett icke-negativt heltal blir 0, så ingen URL eller feltext lagras någonsin. Ett hjärtslag utan det behåller det, ett med null rensar det och en registrering tar bort det, eftersom en registrering är en ny process. Saknas hos en PEP som aldrig rapporterat det, vilket konsolen visar som inte rapporterat."
   },
   "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
     "en": "2216d5f263d38ea5",
@@ -2042,5 +2038,17 @@
   "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
     "en": "b081386a6d832967",
     "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, att den har i kraft för varje hanterad inställning (#1760): ett JSON-dokument av formen { token, values: { setting: { value, source } } }, där source är service, environment eller default, med när det kom fram. Varje inställning som tabellen inte namnger, varje värde som inte är av inställningens typ och varje annan källa släpps. Ett hjärtslag utan det behåller det, ett med null rensar det, och en registrering släpper det. Saknas för en PEP som är äldre än inställningarna, vilket konsolen visar som inte rapporterad."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Lyssnarna som en administratör definierat för den här fjärr-PEP:en på dess sida i konsolen eller med hanterings-API:ets åtgärd set-pep-listener (#1760), utöver de fyra som dess miljö binder: en JSON-array, varje lyssnare med sitt id, sitt protokoll (http eller https), sitt syfte (api eller proxy), sin adress och port, och för en HTTPS-lyssnare de DNS-namn och IP-adresser dess certifikat bär, dess nyckelalgoritm och en förnyelseräknare. Valideras i sin helhet vid skrivning och igen när PEP:en hämtar dem från GET /xacml/pep/settings, som binder och kopplar bort dem medan den körs. PEP:en genererar varje HTTPS-lyssnares nyckel och ber POST /xacml/pep/listener-certificate om dess certifikat, så ingen privat nyckel finns någonsin här. Behålls vid en registrering och ett hjärtslag; tas bort med raden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, om varje lyssnare den har (#1760), miljöns fyra och de definierade: ett JSON-dokument { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, med när det kom. Tillståndet är ett av listening, waiting, failed och off och orsaken en ur en sluten mängd, aldrig operativsystemets text; certifikatet är subjekt, utfärdare, serienummer, subjectAltName, giltighet och fingeravtryck för det den serverar. Alla andra medlemmar kastas. Ett hjärtslag utan det behåller det, ett med null rensar det och en registrering tar bort det. Saknas hos en PEP som är äldre än lyssnarna, vilket konsolen visar som inte rapporterat."
+  },
+  "xacmlPeps.schema.attributes.description.what": {
+    "en": "3e047a4417e13ade",
+    "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
   }
 }

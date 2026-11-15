@@ -410,6 +410,7 @@ class ProtocolEndpoints {
         '/xacml/pep/register', '/xacml/pep/policies',
         '/xacml/pep/authzen-catalogue', '/xacml/pep/authzen-callers',
         '/xacml/pep/proxy', '/xacml/pep/settings',
+        '/xacml/pep/listener-certificate',
         '/xacml/pep/introspect', '/xacml/pep/basic',
         '/xacml/pep/saml', '/xacml/pep/session', '/xacml/pep/identity',
         '/xacml/pep/heartbeat', '/xacml/pip'

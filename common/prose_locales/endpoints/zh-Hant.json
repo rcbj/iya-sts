@@ -31,6 +31,38 @@
     "en": "3cca9630a4d544af",
     "text": "AuthZEN 呼叫方，供遠端 PEP 准入"
   },
+  "endpoints.route./xacml/pep/proxy.name": {
+    "en": "739682a1ecd3fb3e",
+    "text": "反向代理設定，供遠端 PEP 執行"
+  },
+  "endpoints.route./xacml/pep/settings.name": {
+    "en": "6bae1b3fbf022a6d",
+    "text": "遠端 PEP 的受管設定，供其套用"
+  },
+  "endpoints.route./xacml/pep/listener-certificate.name": {
+    "en": "96d34844bd14ca01",
+    "text": "遠程 PEP 監聽器的證書，基於其自身密鑰"
+  },
+  "endpoints.route./xacml/pep/introspect.name": {
+    "en": "82423c6f4bbc4b7f",
+    "text": "權杖自我檢查，供遠端 PEP 的代理使用"
+  },
+  "endpoints.route./xacml/pep/basic.name": {
+    "en": "386c0d38a90c8eea",
+    "text": "HTTP Basic，為遠端 PEP 的代理驗證"
+  },
+  "endpoints.route./xacml/pep/saml.name": {
+    "en": "f5df4c2323752626",
+    "text": "SAML 2.0 判斷提示，為遠端 PEP 的代理驗證"
+  },
+  "endpoints.route./xacml/pep/session.name": {
+    "en": "839d7610564c5a81",
+    "text": "登入工作階段是否仍然有效，供遠端 PEP 的代理使用"
+  },
+  "endpoints.route./xacml/pep/identity.name": {
+    "en": "b9af583a88501df2",
+    "text": "遠端 PEP 的路由轉送給其應用程式的內容"
+  },
   "endpoints.route./xacml/pep/heartbeat.name": {
     "en": "9570c5ba15aef084",
     "text": "遠端 PEP 已執行的內容"
@@ -2502,33 +2534,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（會索取用戶端憑證，但從不強制要求）"
-  },
-  "endpoints.route./xacml/pep/proxy.name": {
-    "en": "739682a1ecd3fb3e",
-    "text": "反向代理設定，供遠端 PEP 執行"
-  },
-  "endpoints.route./xacml/pep/settings.name": {
-    "en": "6bae1b3fbf022a6d",
-    "text": "遠端 PEP 的受管設定，供其套用"
-  },
-  "endpoints.route./xacml/pep/introspect.name": {
-    "en": "82423c6f4bbc4b7f",
-    "text": "權杖自我檢查，供遠端 PEP 的代理使用"
-  },
-  "endpoints.route./xacml/pep/basic.name": {
-    "en": "386c0d38a90c8eea",
-    "text": "HTTP Basic，為遠端 PEP 的代理驗證"
-  },
-  "endpoints.route./xacml/pep/saml.name": {
-    "en": "f5df4c2323752626",
-    "text": "SAML 2.0 判斷提示，為遠端 PEP 的代理驗證"
-  },
-  "endpoints.route./xacml/pep/session.name": {
-    "en": "839d7610564c5a81",
-    "text": "登入工作階段是否仍然有效，供遠端 PEP 的代理使用"
-  },
-  "endpoints.route./xacml/pep/identity.name": {
-    "en": "b9af583a88501df2",
-    "text": "遠端 PEP 的路由轉送給其應用程式的內容"
   }
 }
