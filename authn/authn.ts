@@ -5383,6 +5383,39 @@ class Authn {
     log.debug("Leaving Authn.noteCapacityEnd().");
   }
 
+  // ---------------------------------------------------------------------------
+  // WHETHER THE REALM IS AT ITS SESSION CAP NOW, with no side effect (2026-11-14,
+  // found by #444's D12). A browser that arrives while the realm is full is
+  // given no arrival session (`startArrivalSession()`), so its sign-in
+  // screen's acts carry no session and were refused "Load the sign-in page
+  // again" — which no reload changes while the realm stays full, and which
+  // named no code. `/authn-api` asks this to say what is true instead. It
+  // counts as `makeRoomForSession()` counts and frees nothing, so an expired
+  // row that an insert would end is still counted: the answer can be "full"
+  // a moment early, never "not full" while it is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether the ambient realm holds `authn.maxSessions` sessions now.
+   *
+   * @returns true at the cap; false with no cap, below it, or when the count
+   *   cannot be read
+   */
+  realmAtSessionCap() {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Authn.realmAtSessionCap().");
+    const cap = Math.floor(Number(config.value('authn.maxSessions')));
+    if (!(cap >= 1)) {
+      log.debug("Leaving Authn.realmAtSessionCap(). No cap.");
+      return false;
+    }
+    const size = this.windowOn()
+      ? sessionWindow.countForAdmission(realms.currentId(), cap)
+      : sessions.realmMap().size;
+    log.debug("Leaving Authn.realmAtSessionCap(). " + size + " of " + cap +
+              ".");
+    return size !== null && Number(size) >= cap;
+  }
+
   private noteRealmRefusal() {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.noteRealmRefusal().");
@@ -20322,6 +20355,7 @@ export = {
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,
   cookiesOf: slot.forward('cookiesOf'),
+  realmAtSessionCap: slot.forward('realmAtSessionCap'),
   sessionOf: slot.forward('sessionOf'),
   // SEVERAL ACCOUNTS IN ONE BROWSER (#561): `authn/CLAUDE.md`, *Several
   // signed-in accounts in one browser*, has each one's contract.
