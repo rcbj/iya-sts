@@ -4852,6 +4852,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-saml"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "flate2",
+ "serde_json",
+ "sts-core",
+ "sts-crypto",
+ "sts-xml",
+ "tracing",
+]
+
+[[package]]
 name = "sts-store"
 version = "0.1.0"
 dependencies = [

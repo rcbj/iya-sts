@@ -479,4 +479,4 @@ function checkRust(ROOT, rows, check) {
   });
 }
 
-module.exports = { build: build, checkRust: checkRust };
+module.exports = { build: build, checkRust: checkRust, policyNow: policyNow };

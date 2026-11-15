@@ -105,6 +105,14 @@ docker run --rm --label com.docker.compose.project=none \
   "${TAG}" bash -c \
   "cp models/generated/oauth.json /out/oauth/oauth.json && \
    chown $(id -u):$(id -g) /out/oauth/oauth.json"
+# sts-saml's copy of the SAML model (#444, phase 7): the very file
+# saml/saml_model.ts reads, which the crate reads whole.
+mkdir -p rust/crates/sts-saml/src/generated
+docker run --rm --label com.docker.compose.project=none \
+  -v "${PWD}/rust/crates/sts-saml/src/generated:/out/saml" \
+  "${TAG}" bash -c \
+  "cp models/generated/saml.json /out/saml/saml.json && \
+   chown $(id -u):$(id -g) /out/saml/saml.json"
 # sts-authn-api's copy (#444, phase 5): the document /authn-api serves and
 # holds every answer to, as the image's model build wrote it.
 mkdir -p rust/crates/sts-authn-api/src/generated

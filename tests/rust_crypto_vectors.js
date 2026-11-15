@@ -217,6 +217,15 @@ function runKerberos(t) {
         t.check(ok, what, detail);
       });
   }
+  // SAML 2.0 (#444 phase 7, `saml`): the assertions and Responses Rust
+  // signed verified by Node, the artifacts Rust minted and keyed read.
+  if (fs.existsSync(path.join(VECTORS, 'saml-rust.json'))) {
+    require('./tools/saml-vectors.js').checkRust(
+      path.join(__dirname, '..'), read('saml-rust.json'),
+      function (ok, what, detail) {
+        t.check(ok, what, detail);
+      });
+  }
   // The shared secrets (#444 phase 5, `oauth5`): the `sts_cluster_secrets`
   // rows Rust offered, opened and kept by Node, and the pairwise subjects
   // Rust derived from them, derived again by Node.
