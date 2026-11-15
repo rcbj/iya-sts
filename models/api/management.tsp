@@ -7531,7 +7531,14 @@ namespace IyaSts.Api.Management {
     `why`?: string;
     `what`?: string;
     `problems`?: NullableArray;
-    `proxy`?: NullableXacmlPepProxy
+    `proxy`?: NullableXacmlPepProxy;
+    @js(#{`description`:"What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them."}) `policies`?: {
+      `generated`?: (string)[];
+      `removed`?: (string)[];
+      `unreferenced`?: (string)[]
+    };
+    @js(#{`description`:"generate-pep-route-policy: the policy's name."}) `policy`?: string;
+    @js(#{`description`:"generate-pep-route-policy: whether it was written; false when it already said what the route chooses."}) `written`?: boolean
   }
 
 @component model `WithOkMessageErrors108` {
@@ -28025,13 +28032,51 @@ op `getXacml`(`responses/200/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
+    `parameters`:#[
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A search (#1760, the reverse-proxy route forms' policy chooser): a substring of a policy's name, PolicyId or description, without case. With q, per, page or routable the answer is that page of the matching policies, with matched, page and pages; with none of them, the whole repository."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Policies per page of a search; 50 by default, capped at 300."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of a search. CLAMPED rather than refused: a page past the end returns the last one."
+      },
+      #{
+        `name`:"routable",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"true keeps only the policies a reverse-proxy route may choose: enabled, and sent to a remote PEP (not this service's own access or issuance policy, not an application's)."
+      }
+    ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getXacmlPolicies`(`responses/200/content/application~1json/schema`: {
+op `getXacmlPolicies`(@js(#{`maxLength`:256,`examples`:#["pep-demo"]}) `parameters/0/schema`: string,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[5]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`enum`:#["true","false"]}) `parameters/3/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `root`?: NullableString;
     `policies`?: (WithNamePolicyIdKindEtc11)[];
+    @js(#{`description`:"A search's: how many policies matched."}) `matched`?: integer;
+    @js(#{`description`:"A search's: the page these rows are, clamped."}) `page`?: integer;
+    @js(#{`description`:"A search's: how many pages the match has."}) `pages`?: integer;
+    @js(#{`description`:"A search's: what was asked."}) `query`?: { `q`?: string; `routable`?: boolean };
     `applicationPolicies`?: (WithApplicationKnownEnforcedEtc4)[];
     `templates`?: (WithIdLabelBlurbEtc5)[];
     `serviceOwn`?: `WithKindTypeLexical`;
@@ -30336,7 +30381,7 @@ op `issueXacmlPepCertificate`(@js(#{
   #{
     `operationId`:"setXacmlPepProxy",
     `summary`:"Configure a registered remote PEP as a reverse proxy in front of an application",
-    `description`:"Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (empty for any), `public` (no credential and no XACML decision) or at least one of `mechanisms` `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), the XACML `resource` and `action` (empty for the path and the method), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).\n\nTHE DOCUMENT IS VALIDATED WHOLE AND IS CLOSED: a member the grammar does not name is refused by name, and nothing is written unless all of it is right. What is stored is the document normalised, every member present, which is what the pull sends.\n\nEACH ROUTE NAMES AN APPLICATION AND NOTHING IS COPIED FROM IT: the pull reads what each mechanism needs off the application's entry — the audiences of its access tokens (`oauthAudience`, `oauthPermissionBaseUri`), its SAML entity ID, its confidential OIDC client — so a save is refused, by code, for an unknown application, an oauth2 route whose application has no audience, a saml2 route whose application has no entity ID, and a session route whose application is not a confidential client (client_secret_basic or client_secret_post), does not allow authorization_code, does not register `<publicBaseUrl>/.iya-pep/callback`, or holds no unexpired secret. A session route needs an https publicBaseUrl.\n\nThe PEP must be REGISTERED in this realm (its row is where the configuration lives); the proxy picks a change up on its next pull — there is no nudge.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (required: all seven for any, empty for deny-all, STS-XACML-0262), its `authorization` (required, STS-XACML-0263: kind `policy` naming an existing policy, `simple` with a resource, an action model and roles per action, or `public`, anyone and no credential; simple and public generate the policy pep-<pep>-<route>; every request on the route is decided by that policy, never by the root), at least one of `mechanisms` unless it is public: `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).\n\nTHE DOCUMENT IS VALIDATED WHOLE AND IS CLOSED: a member the grammar does not name is refused by name, and nothing is written unless all of it is right. What is stored is the document normalised, every member present, which is what the pull sends.\n\nEACH ROUTE NAMES AN APPLICATION AND NOTHING IS COPIED FROM IT: the pull reads what each mechanism needs off the application's entry — the audiences of its access tokens (`oauthAudience`, `oauthPermissionBaseUri`), its SAML entity ID, its confidential OIDC client — so a save is refused, by code, for an unknown application, an oauth2 route whose application has no audience, a saml2 route whose application has no entity ID, and a session route whose application is not a confidential client (client_secret_basic or client_secret_post), does not allow authorization_code, does not register `<publicBaseUrl>/.iya-pep/callback`, or holds no unexpired secret. A session route needs an https publicBaseUrl.\n\nThe PEP must be REGISTERED in this realm (its row is where the configuration lives); the proxy picks a change up on its next pull — there is no nudge.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30355,7 +30400,7 @@ op `issueXacmlPepCertificate`(@js(#{
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `setXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1",`proxy`:#{`enabled`:true,`upstream`:"http://companion:8090/pep-app",`upstreamTimeoutMs`:10000,`maxBodyBytes`:1048576,`routes`:#[#{`id`:"public",`path`:"/public",`match`:"prefix",`methods`:#["GET","HEAD"],`public`:true},#{`id`:"api",`path`:"/api",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["oauth2","basic"],`application`:"my-api",`identity`:#{`mode`:"headers",`headers`:#[#{`name`:"X-Remote-User",`claim`:"username"},#{`name`:"X-Remote-Groups",`claim`:"groups"}],`separator`:","},`forwardCredentials`:false}]}}]}) `requestBody/content/application~1json/schema`: {
+op `setXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1",`proxy`:#{`enabled`:true,`upstream`:"http://companion:8090/pep-app",`upstreamTimeoutMs`:10000,`maxBodyBytes`:1048576,`routes`:#[#{`id`:"public",`path`:"/public",`match`:"prefix",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},#{`id`:"api",`path`:"/api",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["oauth2","basic"],`application`:"my-api",`authorization`:#{`kind`:"simple",`actionModel`:"read-write",`roles`:#{`read`:#["my-api-users"],`write`:#["my-api-admins"]}},`identity`:#{`mode`:"headers",`headers`:#[#{`name`:"X-Remote-User",`claim`:"username"},#{`name`:"X-Remote-Groups",`claim`:"groups"}],`separator`:","},`forwardCredentials`:false}]}}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
     }) `name`?: string;
@@ -30652,7 +30697,7 @@ op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`liste
   #{
     `operationId`:"setXacmlPepRoute",
     `summary`:"Add or replace one route of a remote PEP's reverse proxy",
-    `description`:"Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them; `from` renames the route it names to `id`. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them, and its authorization unless they carry `authzKind`; `from` renames the route it names to `id`, and a simple or public route's generated policy with it. Every route states `methods` (STS-XACML-0262; empty is deny-all) and one authorization choice (STS-XACML-0263): see set-pep-route-authorization. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30671,19 +30716,29 @@ op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`liste
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app"},#{`name`:"pep-1",`from`:"orders",`id`:"orders-api",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session","oauth2"],`application`:"orders-app",`resource`:"https://orders.example.test",`routeAction`:"",`forwardCredentials`:"false",`signals`:"true",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:",",`position`:1},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`public`:true},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app",`authzKind`:"simple",`authzActionModel`:"read-write",`authzActions`:#["read","write"],`authzRole.read`:#["orders-users"],`authzRole.write`:#["orders-admins"]},#{`name`:"pep-1",`from`:"orders",`id`:"orders-api",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`methodsGiven`:"true",`mechanisms`:#["session","oauth2"],`application`:"orders-app",`authzKind`:"policy",`authzPolicy`:"orders-policy",`authzPolicyActionModel`:"crud",`authzResource`:"https://orders.example.test",`forwardCredentials`:"false",`signals`:"true",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:",",`position`:1},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},`position`:0}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
     @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
-    @js(#{`description`:"The route as one object (id, path, match, methods, public, mechanisms, application, resource, action, identity, forwardCredentials, signals), or its JSON, in place of the members below."}) `route`?: Record<unknown> | string;
+    @js(#{`description`:"The route as one object (id, path, match, methods, mechanisms, application, authorization, identity, forwardCredentials, signals, multipleAccounts), or its JSON, in place of the members below. `methods` and `authorization` are required (STS-XACML-0262, 0263)."}) `route`?: Record<unknown> | string;
     @js(#{`maxLength`:64,`description`:"The route's id; one already in the list is replaced where it stands, keeping its identity."}) `id`?: string;
     @js(#{`maxLength`:2048,`description`:"The path the route matches."}) `path`?: string;
     @js(#{`enum`:#["prefix","exact"],`description`:"prefix (the default) or exact."}) `match`?: string;
-    @js(#{`description`:"The methods it matches, from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS; none for any."}) `methods`?: string[] | string;
-    @js(#{`description`:"true for a route that takes no credential and asks no policy; it names no mechanism and no application."}) `public`?: boolean | string;
+    @js(#{`description`:"The methods it allows, from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS: all seven for any, none for deny-all (every request on it is refused). Absent with no `methodsGiven` is not stated, which is refused (STS-XACML-0262)."}) `methods`?: string[] | string;
+    @js(#{`description`:"\"true\" when the form drew the method boxes, so that no `methods` is the empty list (deny-all) rather than not stated."}) `methodsGiven`?: boolean | string;
+    @js(#{`description`:"The route's authorization as one object, { kind: policy | simple | public, policy, resource, actionModel: method | crud | read-write, roles: { action: [role] } }, in place of the authz members below. On an edit, absent keeps the route's own."}) `authorization`?: Record<unknown> | string;
+    @js(#{`enum`:#["policy","simple","public",""],`description`:"The form's authorization choice: an existing policy, a simple generated policy, or Public (anyone, a generated policy too). Empty is no choice, refused on a new route (STS-XACML-0263)."}) `authzKind`?: string;
+    @js(#{`maxLength`:128,`description`:"kind policy: the existing policy's name in this realm's repository."}) `authzPolicy`?: string;
+    @js(#{`enum`:#["method","crud","read-write"],`description`:"kind policy: what the PEP sends as the action-id; the method by default."}) `authzPolicyActionModel`?: string;
+    @js(#{`maxLength`:1024,`description`:"The resource-id sent, an absolute URI. Empty: for a simple or public route the proxy's base URL and the path; for an existing policy the request's path."}) `authzResource`?: string;
+    @js(#{`enum`:#["crud","read-write"],`description`:"kind simple: the action model."}) `authzActionModel`?: string;
+    @js(#{`description`:"kind simple: the actions permitted, each of the model's: create, read, update, delete, or read, write."}) `authzActions`?: string[] | string;
+    @js(#{`description`:"kind simple: the configured roles that may take `read` (any of them), one to eight; the same for `authzRole.create`, `.update`, `.delete` and `.write`."}) `authzRole.read`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may create."}) `authzRole.create`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may update."}) `authzRole.update`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may delete."}) `authzRole.delete`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may write."}) `authzRole.write`?: string[] | string;
     @js(#{`description`:"How a caller is authenticated: session, oauth2, saml2, basic."}) `mechanisms`?: string[] | string;
     @js(#{`maxLength`:256,`description`:"The identifier of the application in this realm's registry the route fronts."}) `application`?: string;
-    @js(#{`maxLength`:2048,`description`:"The XACML resource; the path when empty."}) `resource`?: string;
-    @js(#{`maxLength`:2048,`description`:"The XACML action (the route's `action`); the method when empty."}) `routeAction`?: string;
     @js(#{`description`:"Whether the caller's own credential is forwarded upstream."}) `forwardCredentials`?: boolean | string;
     @js(#{`description`:"Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session."}) `signals`?: boolean | string;
     @js(#{`description`:"true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257)."}) `multipleAccounts`?: boolean | string;
@@ -30703,7 +30758,7 @@ op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"
   #{
     `operationId`:"removeXacmlPepRoute",
     `summary`:"Remove one route of a remote PEP's reverse proxy",
-    `description`:"Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230. A route with a policy generated for it (its authorization simple or public) is removed only with `removePolicy: true`, and the policy goes with it (STS-XACML-0268 otherwise).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30722,10 +30777,11 @@ op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `removeXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders"}]}) `requestBody/content/application~1json/schema`: {
+op `removeXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`removePolicy`:true}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
     @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`description`:"true confirms that the policy generated for the route (a simple or public choice) is removed with it; without it such a route is refused (STS-XACML-0268)."}) `removePolicy`?: boolean | string;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
@@ -30760,6 +30816,73 @@ op `setXacmlPepRouteApplication`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"or
     @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
     @js(#{`maxLength`:256,`description`:"The application's identifier in this realm's registry."}) `application`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-authorization",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteAuthorization",
+    `summary`:"Set one route's authorization: an existing policy, a simple generated policy, or Public",
+    `description`:"Replaces the authorization of one route of a registered remote PEP's reverse proxy (#1760) and saves the WHOLE document through set-pep-proxy's checks. Every route makes exactly one choice and every request on it is decided by that policy in XACML, never by the realm's root: kind policy names an existing policy of this realm's repository, enabled and sent to a remote PEP (STS-XACML-0265); kind simple names a resource, an action model (crud or read-write) and, for each action permitted, one to eight configured roles (STS-XACML-0266), and generates the policy pep-<pep>-<route>; kind public lets anyone take the route's methods and generates that policy too, and clears the route's mechanisms, application and identity. An empty resource on a simple or public route is filled with the proxy's base URL and the path. A grammar refusal is STS-XACML-0263 or 0264, a generated name held by a hand-written policy STS-XACML-0267, an unknown route STS-XACML-0230. Switching a route to an existing policy leaves its generated policy in the repository, unreferenced, and the answer's `policies.unreferenced` says so.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteAuthorization`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`authorization`:#{`kind`:"simple",`actionModel`:"crud",`roles`:#{`read`:#["orders-users"],`update`:#["orders-admins"],`delete`:#["orders-admins"]}}},#{`name`:"pep-1",`route`:"health",`authorization`:#{`kind`:"public"}},#{`name`:"pep-1",`route`:"orders",`authorization`:#{`kind`:"policy",`policy`:"orders-policy",`actionModel`:"method"}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`description`:"{ kind: policy | simple | public, policy, resource, actionModel: method | crud | read-write, roles: { action: [role] } }, or its JSON. The console's form members (authzKind, authzPolicy, authzPolicyActionModel, authzResource, authzActionModel, authzActions, authzRole.<action>) are read in its place."}) `authorization`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/generate-pep-route-policy",
+  "post",
+  #{
+    `operationId`:"generateXacmlPepRoutePolicy",
+    `summary`:"Generate a route's simple or public policy again",
+    `description`:"Writes the policy a simple or public route of a registered remote PEP's reverse proxy generates (#1760), pep-<pep>-<route>, again from the route as stored: after it was edited in the policy editor or deleted. It is written as ALFA and stored through the repository's validating write, marked xacmlPepRoute = <pep>/<route>, never the root. A route choosing an existing policy has nothing to generate (STS-XACML-0264); a name held by a policy not generated for the route is STS-XACML-0267; an unknown route STS-XACML-0230. The answer's `written` is false when the policy already says what the route chooses.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `generateXacmlPepRoutePolicy`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,

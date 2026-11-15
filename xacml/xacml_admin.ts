@@ -123,6 +123,9 @@ import pepTls = require('./xacml_pep_tls');
 // The remote PEP's reverse proxy (#1760): the grammar `set-pep-proxy` is
 // held to and the session mechanism's client. A LIBRARY, registering nothing.
 import pepProxy = require('./xacml_pep_proxy');
+// A route's policy (#1760): the existing one checked, the simple and public
+// ones generated. A LIBRARY, registering nothing.
+import pepRoutePolicies = require('./xacml_pep_route_policies');
 // A remote PEP's managed settings (#1760): `set-pep-settings`'s grammar.
 import pepSettings = require('./xacml_pep_settings');
 // A remote PEP's listeners (#1760): the grammar `set-pep-listener` is held to.
@@ -189,6 +192,7 @@ interface XacmlAdminDeps {
   pepHttp: any;
   pepTls: any;
   pepProxy: any;
+  routePolicies: any;
   pepSettings: any;
   pepListeners: any;
   // The realm's applications, as the route form's chooser lists them.
@@ -231,7 +235,9 @@ const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
                      'set-pep-settings', 'clear-pep-settings',
                      'set-pep-listener', 'remove-pep-listener',
                      'renew-pep-listener-certificate', 'set-pep-route',
-                     'remove-pep-route', 'set-pep-route-application'];
+                     'remove-pep-route', 'set-pep-route-application',
+                     'set-pep-route-authorization',
+                     'generate-pep-route-policy'];
 
 // ---------------------------------------------------------------------------
 // THE ACTIONS BEHIND THAT PAGE.
@@ -333,6 +339,7 @@ class XacmlAdmin {
       pepHttp: pepHttp,
       pepTls: pepTls,
       pepProxy: pepProxy,
+      routePolicies: pepRoutePolicies,
       pepSettings: pepSettings,
       pepListeners: pepListeners,
       applicationChoices: function () {
@@ -406,11 +413,12 @@ class XacmlAdmin {
    *
    * @returns the repository view as JSON
    */
-  policiesJson(): Record<string, any> {
+  policiesJson(query?: any): Record<string, any> {
     const self = this;
-    const { log, store, templates, validate } = this.deps;
+    const { log, store, templates, validate, routePolicies } = this.deps;
     log.debug('Entering XacmlAdmin.policiesJson().');
     const root = store.root();
+    const withheld = routePolicies.withheldNames();
     const rows = store.all().map(function (row) {
       // `application` and `orphanedAt` (#564): a policy an application owns
       // is drawn without the make-root control, which the action refuses
@@ -421,7 +429,14 @@ class XacmlAdmin {
                      combiningAlgId: row.combiningAlgId,
                      description: row.description,
                      application: row.application || null,
-                     orphanedAt: row.orphanedAt || null, problems: [] };
+                     orphanedAt: row.orphanedAt || null,
+                     // #1760: the route it was generated for, and whether
+                     // a reverse-proxy route may choose it — enabled and
+                     // one a remote PEP is sent.
+                     pepRoute: row.pepRoute || null,
+                     routable: row.enabled && !row.application &&
+                       withheld.indexOf(String(row.name).toLowerCase()) < 0,
+                     problems: [] };
       try {
         view.problems = validate.problemsIn(store.parseDocument(row.document));
       } catch (error) {
@@ -439,10 +454,44 @@ class XacmlAdmin {
     // policy no application names) or a link to the application's page.
     // `policies` keeps every row, owned ones included, for a caller that
     // reads the repository whole.
-    return { root: root ? root.name : null, policies: rows,
-             applicationPolicies: this.deps.loadFga().ownedPolicies(),
-             templates: templates.catalogue(),
-             serviceOwn: self.serviceOwnPolicies() };
+    const answer: Record<string, any> = {
+      root: root ? root.name : null, policies: rows,
+      applicationPolicies: this.deps.loadFga().ownedPolicies(),
+      templates: templates.catalogue(),
+      serviceOwn: self.serviceOwnPolicies() };
+    // A SEARCH OF THE REPOSITORY (#1760): the reverse-proxy route forms'
+    // policy chooser, the field search's arrangement (#459) — `q` a
+    // substring of a policy's name, PolicyId or description, without case,
+    // `per` and `page` its paging, CLAMPED like every page here, with
+    // `routable` to keep only what a route may choose. Asked with none of
+    // them, the answer is the whole repository as it always was.
+    const asked = query || {};
+    const first = function (value: unknown): string {
+      log.debug('Entering first().');
+      log.debug('Leaving first().');
+      return String((Array.isArray(value) ? value[0] : value) || '').trim();
+    };
+    const q = first(asked.q).toLowerCase();
+    const per = Number(first(asked.per));
+    const onlyRoutable = first(asked.routable) === 'true';
+    if (q || per || onlyRoutable) {
+      const matched = rows.filter(function (row) {
+        return (!onlyRoutable || row.routable) && (!q ||
+          [row.name, row.policyId, row.description].some(function (text) {
+            return String(text || '').toLowerCase().indexOf(q) >= 0;
+          }));
+      });
+      const size = per >= 1 ? Math.min(Math.floor(per), 300) : 50;
+      const pages = Math.max(1, Math.ceil(matched.length / size));
+      const page = Math.min(pages, Math.max(1,
+        Math.floor(Number(first(asked.page))) || 1));
+      answer.policies = matched.slice((page - 1) * size, page * size);
+      answer.matched = matched.length;
+      answer.page = page;
+      answer.pages = pages;
+      answer.query = { q: q, routable: onlyRoutable };
+    }
+    return answer;
   }
 
   // ---------------------------------------------------------------------------
@@ -552,7 +601,7 @@ class XacmlAdmin {
    */
   pepsJson(pep?: string, route?: string): Record<string, any> {
     const { log, config, peps, pepHttp, pepTls, pki,
-            pepProxy, pepSettings, pepListeners } = this.deps;
+            pepProxy, pepSettings, pepListeners, routePolicies } = this.deps;
     log.debug('Entering XacmlAdmin.pepsJson().');
     // ONE PEP's PAGE (#1760), `/admin/xacml/pep?pep=<name>`: the same
     // answer narrowed to that row, as `/admin-api/applications`'
@@ -595,10 +644,16 @@ class XacmlAdmin {
       // names the client.
       const servedBy: Record<string, { routes: string[];
                                        applications: string[] }> = {};
+      // THE DEFAULT RESOURCE'S BASE (#1760): what a simple or public route
+      // with no resource of its own is sent as, the route's path after it
+      // — the proxy's public base URL, else its HTTPS listener.
+      view.proxyResourceBase = routePolicies.defaultResource(row, '', '/');
       if (row.proxy) {
-        const checked = pepProxy.validate(row.proxy);
+        const checked = pepProxy.validate(row.proxy, row.name);
         if (checked.ok) {
           view.proxy = checked.proxy;
+          view.proxyResourceBase = routePolicies.defaultResource(row,
+            checked.proxy.publicBaseUrl, '/');
           view.proxyRoutes = checked.proxy.routes.map(function (route) {
             const one = pepProxy.resolveRoute(route, checked.proxy).resolved;
             if (one.clientId) {
@@ -609,8 +664,14 @@ class XacmlAdmin {
                 at.applications.push(route.application);
               }
             }
+            // THE ROUTE'S POLICY (#1760), and why the PEP would refuse its
+            // every request: not held, disabled, or one it is never sent.
+            const policy = routePolicies.stateOf(row.name, route);
             return { route: route.id, application: route.application,
-                     usable: one.usable, why: one.usable ? null : one.why };
+                     usable: one.usable, why: one.usable ? null : one.why,
+                     authorization: route.authorization.kind,
+                     policy: route.authorization.policy,
+                     policyProblem: policy.problem };
           });
         } else {
           view.proxyProblem = checked.why;
@@ -756,13 +817,15 @@ class XacmlAdmin {
     if (at < 0) {
       log.debug('Leaving XacmlAdmin.routeDetailOf(). Not found.');
       return { found: false, route: null, position: 0, count: routes.length,
-               usable: null, why: null, application: null, servedBy: [] };
+               usable: null, why: null, application: null, servedBy: [],
+               authorization: null };
     }
     const route = routes[at];
     const state = (row.proxyRoutes || []).filter(function (one: any) {
       return one.route === id;
     })[0] || null;
-    const chosen = route.public ? null
+    const isPublic = route.authorization.kind === 'public';
+    const chosen = isPublic ? null
       : (choices || []).filter(function (one: any) {
           return one.identifier === route.application;
         })[0] || null;
@@ -778,15 +841,29 @@ class XacmlAdmin {
         reason: said ? said.reason : null
       };
     });
+    // THE AUTHORIZATION (#1760): the policy's state, the default resource
+    // the route's path gives, and what its application's home page says.
+    const { routePolicies } = this.deps;
+    const fallback = routePolicies.defaultResource(row,
+      row.proxy ? row.proxy.publicBaseUrl : '', route.path);
+    const authorization = {
+      policy: routePolicies.stateOf(row.name, route),
+      defaultResource: fallback.resource,
+      defaultSource: fallback.source,
+      applicationUrl: routePolicies.applicationUrl(
+        isPublic ? '' : route.application, route.path,
+        route.authorization.resource || fallback.resource)
+    };
     log.debug('Leaving XacmlAdmin.routeDetailOf(). At ' + at);
     return {
       found: true, route: route, position: at, count: routes.length,
-      usable: route.public ? true : (state ? state.usable : null),
+      usable: isPublic ? true : (state ? state.usable : null),
       why: state && !state.usable ? state.why : null,
-      application: route.public ? null
+      application: isPublic ? null
         : { identifier: route.application,
             name: chosen ? chosen.name : '', found: !!chosen },
-      servedBy: servedBy
+      servedBy: servedBy,
+      authorization: authorization
     };
   }
 
@@ -946,7 +1023,9 @@ class XacmlAdmin {
     if (action === 'set-pep-proxy' || action === 'clear-pep-proxy' ||
         action === 'set-pep-route-identity' || action === 'set-pep-route' ||
         action === 'remove-pep-route' ||
-        action === 'set-pep-route-application') {
+        action === 'set-pep-route-application' ||
+        action === 'set-pep-route-authorization' ||
+        action === 'generate-pep-route-policy') {
       log.debug('Leaving XacmlAdmin.pepAction(). The reverse proxy.');
       return this.proxyAction(action, name, body);
     }
@@ -1019,7 +1098,8 @@ class XacmlAdmin {
     const { log, errorCodes, peps, pepProxy } = this.deps;
     log.debug('Entering XacmlAdmin.withRouteIdentity().');
     const row = peps.read(name);
-    const checked = row && row.proxy ? pepProxy.validate(row.proxy) : null;
+    const checked = row && row.proxy ? pepProxy.validate(row.proxy, name)
+                                     : null;
     if (!checked || !checked.ok) {
       log.debug('Leaving XacmlAdmin.withRouteIdentity(). No document.');
       return errorCodes.mark({ ok: false,
@@ -1100,13 +1180,90 @@ class XacmlAdmin {
     return out;
   }
 
+  // A ROUTE'S AUTHORIZATION FROM A BODY (#1760): `authorization` as an
+  // object (or its JSON) from a caller, or the console's members —
+  // `authzKind`, `authzPolicy` (the policy chooser's hidden value),
+  // `authzResource`, `authzActionModel`, the ticked `authzActions` and, for
+  // each, the role chooser's `authzRole.<action>` values. Undefined when
+  // the body says nothing of it, so an edit keeps the route's own; the
+  // validator judges the rest.
+  private authorizationFromForm(body: any): any {
+    const { log } = this.deps;
+    const self = this;
+    log.debug('Entering XacmlAdmin.authorizationFromForm().');
+    let given: any = body.authorization;
+    if (typeof given === 'string' && given.trim().charAt(0) === '{') {
+      try {
+        given = JSON.parse(given);
+      } catch (e) {
+        log.debug('Caught in XacmlAdmin.authorizationFromForm(): ' +
+                  ((e && e.message) || e));
+        // Handed on as text: the validator refuses it by name.
+        given = String(body.authorization);
+      }
+    }
+    if (given !== undefined) {
+      log.debug('Leaving XacmlAdmin.authorizationFromForm(). Given.');
+      return given;
+    }
+    if (body.authzKind === undefined || body.authzKind === '') {
+      log.debug('Leaving XacmlAdmin.authorizationFromForm(). None.');
+      return undefined;
+    }
+    const kind = String(body.authzKind);
+    const out: any = { kind: kind,
+                       resource: String(body.authzResource || '').trim() };
+    if (kind === 'policy') {
+      out.policy = String(body.authzPolicy || '').trim();
+      out.actionModel = String(body.authzPolicyActionModel || 'method');
+    }
+    if (kind === 'simple') {
+      // The form draws every model's actions and shows the chosen model's,
+      // so an action ticked under the other model is not this route's.
+      const model = String(body.authzActionModel || 'read-write');
+      const actions = this.deps.pepProxy.ACTION_MODELS[model] || [];
+      out.actionModel = model;
+      const roles: Record<string, string[]> = {};
+      self.listOf(body.authzActions).filter(function (action) {
+        return actions.indexOf(action) >= 0;
+      }).forEach(function (action) {
+        roles[action] = self.listOf(body['authzRole.' + action]);
+      });
+      out.roles = roles;
+    }
+    log.debug('Leaving XacmlAdmin.authorizationFromForm(). ' + kind);
+    return out;
+  }
+
+  // A route with its authorization choice put on it: a PUBLIC route takes
+  // no credential, so it keeps no mechanism, application, identity or
+  // account setting — the console's form posts the boxes it drew whatever
+  // the choice, and a route turned public from the API is the same edit.
+  private withChoice(route: any, choice: any): any {
+    const { log } = this.deps;
+    log.debug('Entering XacmlAdmin.withChoice().');
+    const out = Object.assign({}, route);
+    if (choice !== undefined) {
+      out.authorization = choice;
+    }
+    if (choice && typeof choice === 'object' && choice.kind === 'public') {
+      out.mechanisms = [];
+      out.application = '';
+      out.multipleAccounts = false;
+      delete out.identity;
+    }
+    log.debug('Leaving XacmlAdmin.withChoice().');
+    return out;
+  }
+
   // The stored proxy document as a copy to edit, or a refusal: the first
   // half of every one-route action.
   private proxyToEdit(name: string): any {
     const { log, errorCodes, peps, pepProxy } = this.deps;
     log.debug('Entering XacmlAdmin.proxyToEdit().');
     const row = peps.read(name);
-    const checked = row && row.proxy ? pepProxy.validate(row.proxy) : null;
+    const checked = row && row.proxy ? pepProxy.validate(row.proxy, name)
+                                     : null;
     if (!checked || !checked.ok) {
       log.debug('Leaving XacmlAdmin.proxyToEdit(). No document.');
       return errorCodes.mark({ ok: false,
@@ -1140,7 +1297,8 @@ class XacmlAdmin {
     const proxy = held.proxy;
     const ids = proxy.routes.map(function (one: any) { return one.id; });
     if (action === 'remove-pep-route' ||
-        action === 'set-pep-route-application') {
+        action === 'set-pep-route-application' ||
+        action === 'set-pep-route-authorization') {
       const id = String(body.route || '');
       const at = ids.indexOf(id);
       if (at < 0) {
@@ -1150,7 +1308,32 @@ class XacmlAdmin {
                  'STS-XACML-0230');
       }
       if (action === 'remove-pep-route') {
+        // A GENERATED POLICY GOES WITH ITS ROUTE, AND THE REMOVE SAYS SO
+        // (#1760, rcbj: "ask for confirmation on remove"): the console's
+        // remove carries a ticked `removePolicy`, and a caller that did not
+        // confirm is refused rather than left with a policy it forgot.
+        const generated = this.deps.routePolicies.generatedFor(name, id);
+        if (generated && self.flagOf(body.removePolicy) !== true) {
+          log.debug('Leaving XacmlAdmin.withRoute(). Unconfirmed.');
+          return errorCodes.mark({ ok: false,
+                   why: 'Route "' + id + '" has a policy generated for ' +
+                        'it, "' + generated.name + '", which is removed ' +
+                        'with the route. Confirm with `removePolicy: ' +
+                        'true`, or choose an existing policy for the route ' +
+                        'first to keep it.' }, 'STS-XACML-0268');
+        }
         proxy.routes.splice(at, 1);
+      } else if (action === 'set-pep-route-authorization') {
+        const choice = this.authorizationFromForm(body);
+        if (choice === undefined) {
+          log.debug('Leaving XacmlAdmin.withRoute(). No authorization.');
+          return errorCodes.mark({ ok: false,
+                   why: 'set-pep-route-authorization names the route and ' +
+                        '`authorization`: { kind: policy | simple | ' +
+                        'public, policy, resource, actionModel, roles }.' },
+                   'STS-XACML-0263');
+        }
+        proxy.routes[at] = this.withChoice(proxy.routes[at], choice);
       } else {
         const application = String(body.application || '').trim();
         if (!application) {
@@ -1178,22 +1361,31 @@ class XacmlAdmin {
       }
     }
     if (given === undefined || typeof given === 'string') {
-      const isPublic = self.flagOf(body.public) === true;
+      // THE METHODS ARE STATED (#1760): a form's None posts no `methods`
+      // at all, so the form says it drew the boxes (`methodsGiven`) and
+      // no box ticked is then the empty list, deny-all. A caller sending
+      // neither has stated nothing, which the validator refuses
+      // (STS-XACML-0262).
+      const methodsStated = body.methods !== undefined ||
+        self.flagOf(body.methodsGiven) === true;
       given = {
         id: String(body.id || '').trim(),
         path: String(body.path || ''),
         match: body.match || 'prefix',
-        methods: self.listOf(body.methods),
-        public: isPublic,
-        mechanisms: isPublic ? [] : self.listOf(body.mechanisms),
-        application: isPublic ? '' : String(body.application || '').trim(),
-        resource: String(body.resource || ''),
-        action: String(body.routeAction || '')
+        mechanisms: self.listOf(body.mechanisms),
+        application: String(body.application || '').trim()
       };
+      if (methodsStated) {
+        given.methods = self.listOf(body.methods);
+      }
+      const choice = self.authorizationFromForm(body);
+      if (choice !== undefined) {
+        given.authorization = choice;
+      }
       const forward = self.flagOf(body.forwardCredentials);
       const signals = self.flagOf(body.signals);
       const multiple = self.flagOf(body.multipleAccounts);
-      if (multiple !== undefined && !isPublic) {
+      if (multiple !== undefined) {
         given.multipleAccounts = multiple;
       }
       if (forward !== undefined) {
@@ -1204,8 +1396,8 @@ class XacmlAdmin {
       }
       // THE ROUTE PAGE SENDS THE IDENTITY TOO (#1760): with `mode`, the
       // form's identity members are the route's identity; a public route
-      // forwards nobody, so it takes none.
-      if (body.mode !== undefined && body.mode !== '' && !isPublic) {
+      // forwards nobody, so `withChoice()` takes it off again.
+      if (body.mode !== undefined && body.mode !== '') {
         given.identity = self.identityFromForm(body);
       }
     }
@@ -1213,9 +1405,9 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.withRoute(). No route.');
       return errorCodes.mark({ ok: false,
                why: 'set-pep-route takes `route`, one route object (id, ' +
-                    'path, match, methods, public, mechanisms, ' +
-                    'application, resource, action, identity, ' +
-                    'forwardCredentials, signals), or the console form\'s ' +
+                    'path, match, methods, mechanisms, application, ' +
+                    'authorization, identity, forwardCredentials, ' +
+                    'signals, multipleAccounts), or the console form\'s ' +
                     'members.' }, 'STS-XACML-0256');
     }
     // A RENAME (#1760, the route's own page): `from` is the route being
@@ -1233,12 +1425,16 @@ class XacmlAdmin {
                'STS-XACML-0230');
     }
     const at = ids.indexOf(from !== null ? from : given.id);
-    // AN EDIT KEEPS THE ROUTE'S IDENTITY where the form says nothing of it:
-    // the identity has a form of its own (`set-pep-route-identity`), and a
-    // route turned public forwards nobody.
-    if (at >= 0 && given.identity === undefined && !given.public) {
+    // AN EDIT KEEPS THE ROUTE'S IDENTITY AND ITS AUTHORIZATION where the
+    // form says nothing of them: each has an action of its own
+    // (`set-pep-route-identity`, `set-pep-route-authorization`).
+    if (at >= 0 && given.identity === undefined) {
       given.identity = proxy.routes[at].identity;
     }
+    if (at >= 0 && given.authorization === undefined) {
+      given.authorization = proxy.routes[at].authorization;
+    }
+    given = this.withChoice(given, given.authorization);
     const position = body.position === undefined || body.position === ''
       ? null : Number(body.position);
     if (position !== null && !(Number.isInteger(position) && position >= 0 &&
@@ -1410,6 +1606,141 @@ class XacmlAdmin {
                  'every setting is its environment\'s or the default.' };
   }
 
+  // THE DEFAULT RESOURCE, FILLED BEFORE THE GRAMMAR SEES IT (#1760): a
+  // simple or public route that names no resource is sent as the proxy's
+  // base URL and its path (`routePolicies.defaultResource()`), so the
+  // stored document says the resource-id its policy decides. A document
+  // that is not JSON is handed on as it is, for the validator's refusal.
+  private withDefaultResources(name: string, given: any): any {
+    const { log, peps, routePolicies } = this.deps;
+    log.debug('Entering XacmlAdmin.withDefaultResources().');
+    let doc: any = given;
+    if (typeof given === 'string') {
+      try {
+        doc = JSON.parse(given);
+      } catch (e) {
+        log.debug('Caught in XacmlAdmin.withDefaultResources(): ' +
+                  ((e && e.message) || e));
+        log.debug('Leaving XacmlAdmin.withDefaultResources(). Not JSON.');
+        return given;
+      }
+    }
+    if (!doc || typeof doc !== 'object' || !Array.isArray(doc.routes)) {
+      log.debug('Leaving XacmlAdmin.withDefaultResources(). No routes.');
+      return doc;
+    }
+    const row = peps.read(name);
+    const out = JSON.parse(JSON.stringify(doc));
+    out.routes.forEach(function (route: any) {
+      const choice = route && route.authorization;
+      if (choice && typeof choice === 'object' &&
+          (choice.kind === 'simple' || choice.kind === 'public') &&
+          (choice.resource === undefined || choice.resource === '') &&
+          typeof route.path === 'string') {
+        choice.resource = routePolicies.defaultResource(row,
+          typeof out.publicBaseUrl === 'string' ? out.publicBaseUrl : '',
+          route.path).resource;
+      }
+    });
+    log.debug('Leaving XacmlAdmin.withDefaultResources().');
+    return out;
+  }
+
+  // WHAT A SAVE LEAVES OF THE POLICIES GENERATED FOR THE ROUTES IT HELD
+  // (#1760): a route removed (its remove confirmed, above) or renamed takes
+  // its generated policy with it, since the new name's was just written; a
+  // route switched to an existing policy, or one a whole-document save
+  // dropped, leaves its generated policy in the repository, unreferenced,
+  // and the answer says so — a policy is never deleted by an edit that did
+  // not ask for it.
+  private afterRouteSave(action: string, name: string, body: any,
+                         before: any, after: any):
+      { removed: string[]; unreferenced: string[] } {
+    const { log, routePolicies } = this.deps;
+    log.debug('Entering XacmlAdmin.afterRouteSave(). ' + action);
+    const removed: string[] = [];
+    const unreferenced: string[] = [];
+    const generatedNow = (after.routes || []).filter(function (one: any) {
+      return one.authorization.kind !== 'policy';
+    }).map(function (one: any) {
+      return one.id;
+    });
+    const from = body.from === undefined || body.from === null ||
+      body.from === '' ? null : String(body.from);
+    ((before && before.routes) || []).forEach(function (old: any) {
+      if (generatedNow.indexOf(old.id) >= 0) {
+        return;
+      }
+      const held = routePolicies.generatedFor(name, old.id);
+      if (!held) {
+        return;
+      }
+      const goes = (action === 'remove-pep-route' &&
+                    String(body.route || '') === old.id) ||
+        (action === 'set-pep-route' && from === old.id &&
+         String(body.id || (body.route && body.route.id) || '') !== old.id &&
+         generatedNow.indexOf(String(body.id ||
+           (body.route && body.route.id) || '')) >= 0);
+      if (goes) {
+        const gone = routePolicies.remove(name, old.id);
+        if (gone) {
+          removed.push(gone);
+        }
+      } else {
+        unreferenced.push(held.name);
+      }
+    });
+    log.debug('Leaving XacmlAdmin.afterRouteSave(). ' + removed.length +
+              ' removed, ' + unreferenced.length + ' unreferenced.');
+    return { removed: removed, unreferenced: unreferenced };
+  }
+
+  // `generate-pep-route-policy` (#1760): writes a simple or public route's
+  // policy again from the route as stored — after the policy was edited by
+  // hand, or deleted — through the same generator a save uses.
+  private generateRoutePolicy(name: string, body: any): any {
+    const { log, audit, errorCodes, routePolicies } = this.deps;
+    log.debug('Entering XacmlAdmin.generateRoutePolicy().');
+    const held = this.proxyToEdit(name);
+    if (!held.ok) {
+      log.debug('Leaving XacmlAdmin.generateRoutePolicy(). No document.');
+      return held;
+    }
+    const id = String(body.route || '');
+    const route = held.proxy.routes.filter(function (one: any) {
+      return one.id === id;
+    })[0];
+    if (!route) {
+      log.debug('Leaving XacmlAdmin.generateRoutePolicy(). No route.');
+      return errorCodes.mark({ ok: false,
+               why: '"' + name + '" has no route "' + id + '".' },
+               'STS-XACML-0230');
+    }
+    if (route.authorization.kind === 'policy') {
+      log.debug('Leaving XacmlAdmin.generateRoutePolicy(). Existing.');
+      return errorCodes.mark({ ok: false,
+               why: 'Route "' + id + '" chooses an existing policy ("' +
+                    route.authorization.policy + '"), so nothing is ' +
+                    'generated for it. Make its choice simple or public ' +
+                    'to generate one.' }, 'STS-XACML-0264');
+    }
+    const one = routePolicies.write(name, route);
+    if (!one.ok) {
+      log.debug('Leaving XacmlAdmin.generateRoutePolicy(). ' + one.code);
+      return errorCodes.mark({ ok: false, why: one.why }, one.code);
+    }
+    audit.audit({ action: 'xacml.policy.write', actor: '', protocol: 'XACML',
+                  detail: 'Generated "' + one.name + '" for route "' + id +
+                          '" of remote PEP "' + name + '".' });
+    log.debug('Leaving XacmlAdmin.generateRoutePolicy(). ' + one.written);
+    return { ok: true, policy: one.name, written: one.written,
+             what: one.written
+               ? 'The policy "' + one.name + '" was written for route "' +
+                 id + '".'
+               : 'The policy "' + one.name + '" already says what route "' +
+                 id + '" chooses; nothing was written.' };
+  }
+
   private proxyAction(action: string, name: string, body: any): any {
     const { log, audit, errorCodes, peps, pepProxy } = this.deps;
     log.debug('Entering XacmlAdmin.proxyAction(). ' + action);
@@ -1432,9 +1763,17 @@ class XacmlAdmin {
                      'pull. The applications its routes named are ' +
                      'unchanged.' };
     }
+    if (action === 'generate-pep-route-policy') {
+      log.debug('Leaving XacmlAdmin.proxyAction(). Generating.');
+      return this.generateRoutePolicy(name, body || {});
+    }
+    // WHAT WAS STORED, for the generated policies a save renames, removes
+    // or leaves behind (below).
+    const before = this.proxyToEdit(name);
     let given = (body || {}).proxy;
     if (action === 'set-pep-route' || action === 'remove-pep-route' ||
-        action === 'set-pep-route-application') {
+        action === 'set-pep-route-application' ||
+        action === 'set-pep-route-authorization') {
       const built = this.withRoute(action, name, body || {});
       if (!built.ok) {
         log.debug('Leaving XacmlAdmin.proxyAction(). Route refused.');
@@ -1462,7 +1801,8 @@ class XacmlAdmin {
                     'the ordered routes. clear-pep-proxy removes one.' },
                'STS-XACML-0201');
     }
-    const checked = pepProxy.validate(given);
+    const checked = pepProxy.validate(this.withDefaultResources(name, given),
+                                      name);
     if (!checked.ok) {
       log.debug('Leaving XacmlAdmin.proxyAction(). Refused: ' + checked.code);
       return errorCodes.mark({ ok: false, why: checked.why }, checked.code);
@@ -1478,6 +1818,31 @@ class XacmlAdmin {
       return errorCodes.mark({ ok: false, why: unusable.why },
                              unusable.code);
     }
+    // EVERY ROUTE'S AUTHORIZATION MUST STAND NOW (#1760): an existing
+    // policy held, enabled and sent to a PEP; a simple route's roles
+    // configured; a generated name nobody else's. Then the simple and
+    // public routes' policies are written BEFORE the document, so a PEP
+    // that pulls the new route table already finds its policies.
+    const { routePolicies } = this.deps;
+    const choiceProblem = routePolicies.problem(checked.proxy.routes, name);
+    if (choiceProblem) {
+      log.debug('Leaving XacmlAdmin.proxyAction(). Choice: ' +
+                choiceProblem.code);
+      return errorCodes.mark({ ok: false, why: choiceProblem.why },
+                             choiceProblem.code);
+    }
+    const generated: string[] = [];
+    for (let i = 0; i < checked.proxy.routes.length; i++) {
+      const one = routePolicies.write(name, checked.proxy.routes[i]);
+      if (!one.ok) {
+        log.debug('Leaving XacmlAdmin.proxyAction(). Generation: ' +
+                  one.code);
+        return errorCodes.mark({ ok: false, why: one.why }, one.code);
+      }
+      if (one.written) {
+        generated.push(one.name);
+      }
+    }
     const written = peps.setProxy(name, JSON.stringify(checked.proxy));
     if (!written) {
       log.debug('Leaving XacmlAdmin.proxyAction(). Not written.');
@@ -1492,11 +1857,31 @@ class XacmlAdmin {
                           checked.proxy.routes.length + ' route(s), ' +
                           (checked.proxy.enabled ? 'enabled' : 'disabled') +
                           '.' });
+    const left = this.afterRouteSave(action, name, body || {},
+                                     before.ok ? before.proxy : null,
+                                     checked.proxy);
+    if (generated.length || left.removed.length) {
+      audit.audit({ action: 'xacml.policy.write', actor: '',
+                    protocol: 'XACML',
+                    detail: 'Reverse-proxy routes of remote PEP "' + name +
+                            '": generated ' + (generated.join(', ') || 'none') +
+                            '; removed ' + (left.removed.join(', ') || 'none') +
+                            '.' });
+    }
     log.debug('Leaving XacmlAdmin.proxyAction(). Saved.');
     return { ok: true, proxy: checked.proxy,
+             policies: { generated: generated, removed: left.removed,
+                         unreferenced: left.unreferenced },
              what: '"' + name + '"\'s reverse-proxy configuration is saved ' +
                    '(' + checked.proxy.routes.length + ' route(s)); the ' +
-                   'proxy picks it up on its next pull.' };
+                   'proxy picks it up on its next pull.' +
+                   (generated.length ? ' Generated: ' + generated.join(', ') +
+                     '.' : '') +
+                   (left.removed.length ? ' Removed: ' +
+                     left.removed.join(', ') + '.' : '') +
+                   (left.unreferenced.length ? ' No route references ' +
+                     left.unreferenced.join(', ') + ' any more; it is left ' +
+                     'in the repository.' : '') };
   }
 
   /**
@@ -2161,10 +2546,10 @@ class XacmlAdmin {
           log.debug("Leaving overview().");
           return self.overviewJson();
         },
-        policies: function () {
+        policies: function (req?: any) {
           log.debug("Entering policies().");
           log.debug("Leaving policies().");
-          return self.policiesJson();
+          return self.policiesJson(req && req.query ? req.query : undefined);
         },
         editor: function (name) {
           log.debug("Entering editor().");

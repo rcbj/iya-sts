@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5617** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5626** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,8 +86,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 183
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 115
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 190
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 117
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5047,9 +5047,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0194` | A reverse-proxy route's `match` is not prefix or exact. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0195` | A reverse-proxy route's `methods` is not a list of distinct methods from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0196` | A reverse-proxy route's `mechanisms` names an unknown or repeated mechanism, a public route names one, or a route that is not public names none. | HTTP 400 on /admin-api; configured: false at the pull |
-| `STS-XACML-0197` | A reverse-proxy route that is not public names no `application`, or a public route names one (#1760, D10). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0197` | A reverse-proxy route that is not public (authorization kind public) names no `application`, or a public route names one (#1760, D10). | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0198` | A reverse-proxy route's identity header name is not an RFC 9110 token, or names a header the proxy itself writes or strips (hop-by-hop, framing, Authorization, Cookie, Host, Forwarded, X-Forwarded-*). | HTTP 400 on /admin-api; configured: false at the pull |
-| `STS-XACML-0199` | A reverse-proxy route's `public`, `forwardCredentials`, `signals`, `resource` or `action` is of the wrong type or too long. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0199` | A reverse-proxy route's `forwardCredentials`, `signals`, `multipleAccounts` or `application` is of the wrong type or too long. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0200` | The reverse-proxy configuration stored on a remote PEP's entry (written by ldapmodify, or before a rule changed) does not validate; the pull answers configured: false and the proxy denies everything. | GET /xacml/pep/proxy answers 200 with configured: false |
 | `STS-XACML-0201` | set-pep-proxy was sent with no `proxy` document. | HTTP 400 on /admin-api |
 | `STS-XACML-0202` | The directory refused to write or remove a remote PEP's reverse-proxy configuration. | HTTP 400 on /admin-api |
@@ -5112,6 +5112,13 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0259` | A change nudge was not sent because the PEP's notify URL is plain http: a nudge is sent over https only, in every mode, since 2026-11-14. The PEP converges by polling. | none — the PEP's row and the registration reply say the URL is unusable |
 | `STS-XACML-0260` | A change nudge was refused at the handshake: the PEP's certificate chains to this service's Root but was not issued by the realm's Remote PEP listeners (pep-tls) Issuing CA. | none — the PEP's row records the failed nudge |
 | `STS-XACML-0261` | A remote PEP's registration or heartbeat was refused: the `hostname` it reported is not a DNS name (letters, digits and hyphens in labels of at most 63 characters, 253 in all, not an IP address), and it would be put in the realm's default listener certificate. | none — 400 invalid_request on POST /xacml/pep/register or /xacml/pep/heartbeat |
+| `STS-XACML-0262` | A reverse-proxy route has no `methods` member (#1760): every route states the methods it allows, the whole list for any method and an empty list for none (deny-all). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0263` | A reverse-proxy route has no `authorization`, or it is not an object, carries a member it does not have, or its `kind` is not policy, simple or public (#1760): every route makes exactly one authorization choice. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0264` | A reverse-proxy route's `authorization` holds a member of the wrong shape: a policy name that is not one, a resource that is not an absolute http(s) URL, an action model outside its set or not allowed for the kind, or `roles` that are not one to eight role names for an action of the model (#1760). | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0265` | A reverse-proxy route chooses an existing policy that this realm's repository does not hold, holds disabled, or never sends to a remote PEP (this service's own access and issuance policies, an application's fine-grained policy) (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0266` | A reverse-proxy route's simple policy names a role that is not a configured role of this realm (#1760): a role must exist, since the PIP answers configured roles only. | HTTP 400 on /admin-api |
+| `STS-XACML-0267` | The policy generated for a reverse-proxy route could not be written: its name is held by a policy that was not generated for that route, or the repository refused the document (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0268` | A reverse-proxy route whose policy was generated for it was removed without `removePolicy` confirming that the generated policy goes with it (#1760). | HTTP 400 on /admin-api |
 
 ## STS-XPEP
 
@@ -5236,6 +5243,8 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0113` | The remote PEP's notify URL (PEP_NOTIFY_URL, or the notifyUrl the service set) is not https, so it is REJECTED: the service nudges over https only and nothing allows http. The PEP advertises no notify URL, does not fall back to the one it would derive, reports the setting rejected in settingsInUse, and converges by polling until it is fixed or unset. Logged once per value. | none — an error in the PEP's log; settingsInUse rejected |
 | `STS-XPEP-0114` | A request reached the remote PEP's CRL-only plain-HTTP listener for something other than GET /crl/<name>; that listener serves its credential's CRLs and nothing else. | HTTP 404 not_found |
 | `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (bound when PEP_HTTP is off and the credential has a CRL directory). Logged once at start. | none; the listener keeps its default |
+| `STS-XPEP-0116` | A request on a remote PEP proxy route whose methods list is empty (deny-all) was refused after the route's policy was asked, whatever it decided; nothing reached the application (#1760). | HTTP 403 |
+| `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
 
 ## STS-AUTHZEN
 

@@ -160,14 +160,16 @@ interface ProxyRoute {
   id: string;
   path: string;
   match: string;
+  // The methods the route allows; EMPTY IS DENY-ALL (#1760, rcbj
+  // 2026-11-15: "None should mean no methods allowed"), never "any".
   methods: string[];
-  public: boolean;
   mechanisms: string[];
   // The application in the realm's registry the route fronts (D10): what
   // each mechanism needs is read from its entry at the pull, never stored.
   application: string;
-  resource: string;
-  action: string;
+  // The route's one authorization choice (#1760): the policy that decides
+  // every request on it, and what the PEP asks that policy.
+  authorization: Authorization;
   // How the identity reaches the application (D11).
   identity: Identity;
   forwardCredentials: boolean;
@@ -176,6 +178,21 @@ interface ProxyRoute {
   // A session route's sign-out reaches the proxy through CAEP/RISC (true)
   // or through `POST /xacml/pep/session` polling (false).
   signals: boolean;
+}
+
+// A ROUTE'S AUTHORIZATION (#1760, rcbj 2026-11-15: "force them to pick
+// one of these two policies or Public ... All authorization decisions are
+// made in XACML"). `kind` is the choice; `policy` is the policy entry that
+// decides — the one chosen, or the one generated for a simple or public
+// route; `resource` the resource-id sent (empty: the normalised path);
+// `actionModel` how a method becomes the action-id; `roles` a simple
+// route's roles by action.
+interface Authorization {
+  kind: string;
+  policy: string;
+  resource: string;
+  actionModel: string;
+  roles: Record<string, string[]>;
 }
 
 // How the identity reaches the application behind a route (D11).
@@ -279,10 +296,32 @@ interface PepProxyDeps {
 // The members a document may carry, and a route; anything else is refused.
 const DOCUMENT_MEMBERS = ['enabled', 'upstream', 'publicBaseUrl',
                           'upstreamTimeoutMs', 'maxBodyBytes', 'routes'];
-const ROUTE_MEMBERS = ['id', 'path', 'match', 'methods', 'public',
-                       'mechanisms', 'application', 'resource', 'action',
-                       'identity', 'forwardCredentials', 'signals',
-                       'multipleAccounts'];
+const ROUTE_MEMBERS = ['id', 'path', 'match', 'methods', 'mechanisms',
+                       'application', 'authorization', 'identity',
+                       'forwardCredentials', 'signals', 'multipleAccounts'];
+// The authorization choice's grammar (#1760).
+const AUTHORIZATION_KINDS = ['policy', 'simple', 'public'];
+const AUTHORIZATION_MEMBERS = ['kind', 'policy', 'resource', 'actionModel',
+                               'roles'];
+// Each action model and the actions it has; `method` sends the HTTP method
+// itself, so it has no fixed list.
+const ACTION_MODELS: Record<string, string[]> = {
+  'method': [],
+  'crud': ['create', 'read', 'update', 'delete'],
+  'read-write': ['read', 'write']
+};
+// How a method becomes an action under each model — the PEP's mapping
+// (`proxy.rs`), written here for the generated policy and the console.
+const METHOD_ACTIONS: Record<string, Record<string, string>> = {
+  'crud': { GET: 'read', HEAD: 'read', OPTIONS: 'read', POST: 'create',
+            PUT: 'update', PATCH: 'update', DELETE: 'delete' },
+  'read-write': { GET: 'read', HEAD: 'read', OPTIONS: 'read',
+                  POST: 'write', PUT: 'write', PATCH: 'write',
+                  DELETE: 'write' }
+};
+const MAX_ROLES_PER_ACTION = 8;
+// A policy entry's name, as `xacml_store.ts` holds it.
+const POLICY_NAME = /^[A-Za-z0-9._-]{1,128}$/;
 const IDENTITY_MODES = ['headers', 'saml', 'jwt'];
 const IDENTITY_MEMBERS = ['mode', 'headers', 'separator'];
 const IDENTITY_CLAIMS = ['sub', 'username', 'email', 'name', 'given_name',
@@ -321,6 +360,60 @@ class PepProxy {
   static readonly METHODS = METHODS;
   static readonly MECHANISMS = MECHANISMS;
   static readonly CALLBACK_PATH = CALLBACK_PATH;
+  static readonly AUTHORIZATION_KINDS = AUTHORIZATION_KINDS;
+  static readonly ACTION_MODELS = ACTION_MODELS;
+  static readonly METHOD_ACTIONS = METHOD_ACTIONS;
+  static readonly MAX_ROLES_PER_ACTION = MAX_ROLES_PER_ACTION;
+
+  /**
+   * Whether a normalised route is public: its authorization choice is
+   * Public, so it takes no credential and its policy decides an anonymous
+   * subject.
+   * @param route - the normalised route
+   * @returns true for a public route
+   */
+  static isPublic(route: { authorization?: { kind?: string } } | null):
+      boolean {
+    helpers.log.debug("Entering PepProxy.isPublic().");
+    const out = !!route && !!route.authorization &&
+      route.authorization.kind === 'public';
+    helpers.log.debug("Leaving PepProxy.isPublic(). " + out);
+    return out;
+  }
+
+  /**
+   * The name of the policy generated for one route of one PEP: `pep-`, the
+   * PEP's name and the route's id, each character a policy name may not
+   * hold as `_`, the PEP's part cut so the whole is at most 128.
+   * @param pep - the PEP's registered name
+   * @param route - the route's id
+   * @returns the policy entry's name
+   */
+  static generatedPolicyName(pep: string, route: string): string {
+    helpers.log.debug("Entering PepProxy.generatedPolicyName().");
+    const clean = function (text: string): string {
+      helpers.log.debug("Entering clean().");
+      helpers.log.debug("Leaving clean().");
+      return String(text || '').replace(/[^A-Za-z0-9._-]/g, '_');
+    };
+    const id = clean(route).slice(0, 64);
+    const room = 128 - 'pep-'.length - 1 - id.length;
+    helpers.log.debug("Leaving PepProxy.generatedPolicyName().");
+    return 'pep-' + clean(pep).slice(0, room) + '-' + id;
+  }
+
+  /**
+   * The action a method is sent as under a route's action model.
+   * @param model - `method`, `crud` or `read-write`
+   * @param method - the HTTP method
+   * @returns the action-id
+   */
+  static actionOf(model: string, method: string): string {
+    helpers.log.debug("Entering PepProxy.actionOf().");
+    const table = METHOD_ACTIONS[model];
+    helpers.log.debug("Leaving PepProxy.actionOf().");
+    return table && table[method] ? table[method] : method;
+  }
 
   /**
    * Builds it over its dependencies.
@@ -712,9 +805,140 @@ class PepProxy {
     return { mode: mode, headers: out, separator: separator };
   }
 
+  // ONE ROUTE'S AUTHORIZATION CHOICE (#1760), normalised, or a refusal
+  // naming it. The grammar only: whether the chosen policy exists and the
+  // roles are configured is the save's question (`xacml_admin.ts`), since
+  // a document is read again at every pull and a role deleted since must
+  // not take the whole route table down with it.
+  private authorizationOf(raw: unknown, where: string, id: string,
+                          pep: string): Authorization | Refusal {
+    const { log } = this.deps;
+    log.debug("Entering PepProxy.authorizationOf(). " + id);
+    const at = where + ' ("' + id + '")';
+    if (raw === undefined || raw === null) {
+      log.debug("Leaving PepProxy.authorizationOf(). Absent.");
+      return this.refuse(at + ' has no `authorization`: every route makes ' +
+        'one choice — an existing policy (kind policy), a simple ' +
+        'generated policy (kind simple) or Public (kind public) — and ' +
+        'every request on it is decided by that policy.', 'STS-XACML-0263');
+    }
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+      log.debug("Leaving PepProxy.authorizationOf(). Not an object.");
+      return this.refuse(at + ': `authorization` is an object with ' +
+        AUTHORIZATION_MEMBERS.join(', ') + '.', 'STS-XACML-0263');
+    }
+    const node = raw as Record<string, unknown>;
+    const stray = this.strayMember(node, AUTHORIZATION_MEMBERS);
+    if (stray) {
+      log.debug("Leaving PepProxy.authorizationOf(). Stray.");
+      return this.refuse(at + '\'s `authorization` carries "' + stray +
+        '", which it does not have. It has ' +
+        AUTHORIZATION_MEMBERS.join(', ') + '.', 'STS-XACML-0263');
+    }
+    const kind = node.kind;
+    if (typeof kind !== 'string' || AUTHORIZATION_KINDS.indexOf(kind) < 0) {
+      log.debug("Leaving PepProxy.authorizationOf(). Kind.");
+      return this.refuse(at + ': `authorization.kind` is one of ' +
+        AUTHORIZATION_KINDS.join(', ') + '.', 'STS-XACML-0263');
+    }
+    // THE POLICY: the one chosen, or the one generated for this route.
+    // A generated name is the PEP's and the route's, so a document loaded
+    // from another PEP's file names this PEP's policy once saved here.
+    let policy = node.policy === undefined ? '' : node.policy;
+    if (typeof policy !== 'string' ||
+        (policy !== '' && !POLICY_NAME.test(policy))) {
+      log.debug("Leaving PepProxy.authorizationOf(). Policy name.");
+      return this.refuse(at + ': `authorization.policy` is the name of a ' +
+        'policy in this realm\'s repository, 1 to 128 letters, digits, ' +
+        'dots, dashes or underscores.', 'STS-XACML-0264');
+    }
+    if (kind !== 'policy' && pep) {
+      policy = PepProxy.generatedPolicyName(pep, id);
+    }
+    if (kind === 'policy' && !policy) {
+      log.debug("Leaving PepProxy.authorizationOf(). No policy.");
+      return this.refuse(at + ' chooses an existing policy and names ' +
+        'none: `authorization.policy` is the policy\'s name.',
+        'STS-XACML-0264');
+    }
+    const resource = this.textOf(node.resource);
+    if (resource === null || (resource !== '' &&
+        !/^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/.test(resource))) {
+      log.debug("Leaving PepProxy.authorizationOf(). Resource.");
+      return this.refuse(at + ': `authorization.resource` is an absolute ' +
+        'URI of at most ' + TEXT_MAX + ' characters, or empty for the ' +
+        'request\'s normalised path.', 'STS-XACML-0264');
+    }
+    if (kind !== 'policy' && !/^https?:\/\/[^\s/?#]+/.test(resource)) {
+      log.debug("Leaving PepProxy.authorizationOf(). No URL resource.");
+      return this.refuse(at + '\'s generated policy decides one resource, ' +
+        'so `authorization.resource` is the absolute http or https URL ' +
+        'requests on it are sent as — by default the proxy\'s base URL ' +
+        'and the route\'s path.', 'STS-XACML-0264');
+    }
+    const model = node.actionModel === undefined || node.actionModel === ''
+      ? (kind === 'simple' ? 'read-write' : 'method') : node.actionModel;
+    if (typeof model !== 'string' || !Object.prototype.hasOwnProperty.call(
+          ACTION_MODELS, model)) {
+      log.debug("Leaving PepProxy.authorizationOf(). Model.");
+      return this.refuse(at + ': `authorization.actionModel` is one of ' +
+        Object.keys(ACTION_MODELS).join(', ') + '.', 'STS-XACML-0264');
+    }
+    if ((kind === 'simple' && model === 'method') ||
+        (kind === 'public' && model !== 'method')) {
+      log.debug("Leaving PepProxy.authorizationOf(). Model for kind.");
+      return this.refuse(at + ': a ' + kind + ' route\'s action model is ' +
+        (kind === 'simple' ? 'crud or read-write, which its roles are ' +
+          'given by' : 'method: its policy permits the route\'s methods to ' +
+          'anyone') + '.', 'STS-XACML-0264');
+    }
+    const roles: Record<string, string[]> = {};
+    const given = node.roles === undefined || node.roles === null
+      ? {} : node.roles;
+    if (typeof given !== 'object' || Array.isArray(given)) {
+      log.debug("Leaving PepProxy.authorizationOf(). Roles shape.");
+      return this.refuse(at + ': `authorization.roles` is an object of ' +
+        'action → role names.', 'STS-XACML-0264');
+    }
+    const actions = ACTION_MODELS[model];
+    const keys = Object.keys(given);
+    for (let i = 0; i < keys.length; i++) {
+      const action = keys[i];
+      const raw = (given as Record<string, unknown>)[action];
+      const list = (Array.isArray(raw) ? raw : [raw])
+        .map(function (one) {
+          return typeof one === 'string' ? one.trim() : one;
+        });
+      const bad = actions.indexOf(action) < 0 || !list.length ||
+        list.length > MAX_ROLES_PER_ACTION ||
+        new Set(list).size !== list.length ||
+        list.some(function (one) {
+          return typeof one !== 'string' || !one || one.length > 128 ||
+            /[\u0000-\u001f\u007f]/.test(one);
+        });
+      if (bad) {
+        log.debug("Leaving PepProxy.authorizationOf(). Roles.");
+        return this.refuse(at + ': `authorization.roles` names, for an ' +
+          'action of the ' + model + ' model (' + actions.join(', ') +
+          '), one to ' + MAX_ROLES_PER_ACTION + ' distinct role names; "' +
+          action + '" is not that.', 'STS-XACML-0264');
+      }
+      roles[action] = list as string[];
+    }
+    if (kind !== 'simple' && keys.length) {
+      log.debug("Leaving PepProxy.authorizationOf(). Roles off simple.");
+      return this.refuse(at + ': only a simple route names roles; a ' +
+        kind + ' route\'s `authorization.roles` is empty.',
+        'STS-XACML-0264');
+    }
+    log.debug("Leaving PepProxy.authorizationOf(). " + kind);
+    return { kind: kind, policy: policy as string, resource: resource,
+             actionModel: model, roles: roles };
+  }
+
   // One route, normalised, or a refusal naming it.
   private validateRoute(raw: unknown, index: number,
-                        seen: string[]): ProxyRoute | Refusal {
+                        seen: string[], pep: string): ProxyRoute | Refusal {
     const { log } = this.deps;
     log.debug("Entering PepProxy.validateRoute(). " + index);
     const where = 'Route ' + (index + 1);
@@ -753,21 +977,31 @@ class PepProxy {
       return this.refuse(where + ' ("' + id + '"): `match` is "prefix" or ' +
         '"exact".', 'STS-XACML-0194');
     }
-    const methods = route.methods === undefined ? [] : route.methods;
+    // EVERY ROUTE STATES ITS METHODS (#1760, rcbj 2026-11-15): an empty
+    // list is deny-all and the whole list is any, so a missing member
+    // could mean either and is refused.
+    if (route.methods === undefined) {
+      log.debug("Leaving PepProxy.validateRoute(). No methods.");
+      return this.refuse(where + ' ("' + id + '") has no `methods`: list ' +
+        'the methods it allows — every one of ' + METHODS.join(', ') +
+        ' for any, none for deny-all.', 'STS-XACML-0262');
+    }
+    const methods = route.methods;
     if (!Array.isArray(methods) || methods.some(function (one) {
       return typeof one !== 'string' || METHODS.indexOf(one) < 0;
     }) || new Set(methods).size !== methods.length) {
       log.debug("Leaving PepProxy.validateRoute(). Methods.");
       return this.refuse(where + ' ("' + id + '"): `methods` is a list of ' +
-        'distinct methods from ' + METHODS.join(', ') + ', or empty for ' +
-        'any.', 'STS-XACML-0195');
+        'distinct methods from ' + METHODS.join(', ') + ' — all of them ' +
+        'for any, empty for deny-all.', 'STS-XACML-0195');
     }
-    const isPublic = route.public === undefined ? false : route.public;
-    if (typeof isPublic !== 'boolean') {
-      log.debug("Leaving PepProxy.validateRoute(). Public.");
-      return this.refuse(where + ' ("' + id + '"): `public` is true or ' +
-        'false.', 'STS-XACML-0199');
+    const authorization = this.authorizationOf(route.authorization, where,
+                                               id, pep);
+    if ((authorization as Refusal).ok === false) {
+      log.debug("Leaving PepProxy.validateRoute(). Authorization.");
+      return authorization as Refusal;
     }
+    const isPublic = (authorization as Authorization).kind === 'public';
     const mechanisms = route.mechanisms === undefined ? [] : route.mechanisms;
     if (!Array.isArray(mechanisms) || mechanisms.some(function (one) {
       return typeof one !== 'string' || MECHANISMS.indexOf(one) < 0;
@@ -780,24 +1014,24 @@ class PepProxy {
     if (isPublic && mechanisms.length) {
       log.debug("Leaving PepProxy.validateRoute(). Public with mechanisms.");
       return this.refuse(where + ' ("' + id + '") is public and names ' +
-        'mechanisms: a public route takes no credential and asks no ' +
-        'policy, so it names none.', 'STS-XACML-0196');
+        'mechanisms: a public route takes no credential — its policy ' +
+        'decides an anonymous subject — so it names none.',
+        'STS-XACML-0196');
     }
     if (!isPublic && !mechanisms.length) {
       log.debug("Leaving PepProxy.validateRoute(). No mechanism.");
       return this.refuse(where + ' ("' + id + '") is not public and names ' +
         'no mechanism, so nobody could ever be let through it. Name at ' +
-        'least one of ' + MECHANISMS.join(', ') + ', or make it public.',
+        'least one of ' + MECHANISMS.join(', ') + ', or make its ' +
+        'authorization Public.',
         'STS-XACML-0196');
     }
     const application = this.textOf(route.application);
-    const resource = this.textOf(route.resource);
-    const action = this.textOf(route.action);
-    if (application === null || resource === null || action === null) {
+    if (application === null) {
       log.debug("Leaving PepProxy.validateRoute(). Text member.");
-      return this.refuse(where + ' ("' + id + '"): `application`, ' +
-        '`resource` and `action` are strings of at most ' + TEXT_MAX +
-        ' characters with no control character.', 'STS-XACML-0199');
+      return this.refuse(where + ' ("' + id + '"): `application` is a ' +
+        'string of at most ' + TEXT_MAX + ' characters with no control ' +
+        'character.', 'STS-XACML-0199');
     }
     // A ROUTE NAMES AN APPLICATION (D10): what a token's audience, an
     // assertion's Audience and the session's client are is read off that
@@ -856,9 +1090,10 @@ class PepProxy {
     log.debug("Leaving PepProxy.validateRoute(). Usable.");
     return {
       id: id, path: route.path as string, match: match,
-      methods: methods.slice() as string[], public: isPublic,
+      methods: methods.slice() as string[],
       mechanisms: mechanisms.slice() as string[],
-      application: application, resource: resource, action: action,
+      application: application,
+      authorization: authorization as Authorization,
       identity: identity as Identity,
       forwardCredentials: forward, signals: signals,
       multipleAccounts: multiple
@@ -873,9 +1108,11 @@ class PepProxy {
    * normalised, every member present, or refuses it by name with a code.
    *
    * @param input - the document, as an object or as JSON text
+   * @param pep - the PEP the document is for: a simple or public route's
+   *   policy is then the one generated for it (`generatedPolicyName()`)
    * @returns `{ ok: true, proxy }`, or `{ ok: false, why, code }`
    */
-  validate(input: unknown): Validated {
+  validate(input: unknown, pep?: string): Validated {
     const { log } = this.deps;
     log.debug("Entering PepProxy.validate().");
     let doc: unknown = input;
@@ -956,7 +1193,7 @@ class PepProxy {
     const seen: string[] = [];
     const routes: ProxyRoute[] = [];
     for (let i = 0; i < rawRoutes.length; i++) {
-      const one = this.validateRoute(rawRoutes[i], i, seen);
+      const one = this.validateRoute(rawRoutes[i], i, seen, pep || '');
       if ((one as Refusal).ok === false) {
         log.debug("Leaving PepProxy.validate(). A route was refused.");
         return one as Refusal;
@@ -1024,7 +1261,7 @@ class PepProxy {
       { resolved: Resolution; client: ClientFacts | null } {
     const { log } = this.deps;
     log.debug("Entering PepProxy.resolveRoute(). " + route.id);
-    if (route.public) {
+    if (PepProxy.isPublic(route)) {
       log.debug("Leaving PepProxy.resolveRoute(). Public.");
       return { resolved: { usable: true }, client: null };
     }
@@ -1203,12 +1440,12 @@ class PepProxy {
     const self = this;
     const out: Array<Record<string, unknown>> = [];
     this.deps.allPeps().forEach(function (row) {
-      const checked = row.proxy ? self.validate(row.proxy) : null;
+      const checked = row.proxy ? self.validate(row.proxy, row.name) : null;
       if (!checked || !checked.ok) {
         return;
       }
       checked.proxy.routes.forEach(function (route) {
-        if (!route.public && route.application === identifier) {
+        if (!PepProxy.isPublic(route) && route.application === identifier) {
           out.push({ pep: row.name, route: route.id, path: route.path,
                      mechanisms: route.mechanisms.slice() });
         }
@@ -1247,7 +1484,7 @@ class PepProxy {
         '/admin-api/xacml/set-pep-proxy. The proxy answers 404 to ' +
         'everything until then.';
     } else {
-      const checked = this.validate(row.proxy);
+      const checked = this.validate(row.proxy, row.name);
       if (checked.ok) {
         proxy = checked.proxy;
       } else {
@@ -1897,7 +2134,7 @@ class PepProxy {
     const route = proxy ? proxy.routes.filter(function (one) {
       return one.id === routeId;
     })[0] : null;
-    if (!proxy || !route || route.public) {
+    if (!proxy || !route || PepProxy.isPublic(route)) {
       log.debug("Leaving PepProxy.identity(). Not this PEP's route.");
       return this.identityRefusal(403, 'STS-XACML-0230', 'access_denied',
         'Route "' + routeId + '" is not a non-public route of this PEP\'s ' +
@@ -2118,6 +2355,13 @@ export = {
   METHODS: PepProxy.METHODS,
   MECHANISMS: PepProxy.MECHANISMS,
   CALLBACK_PATH: PepProxy.CALLBACK_PATH,
+  AUTHORIZATION_KINDS: PepProxy.AUTHORIZATION_KINDS,
+  ACTION_MODELS: PepProxy.ACTION_MODELS,
+  METHOD_ACTIONS: PepProxy.METHOD_ACTIONS,
+  MAX_ROLES_PER_ACTION: PepProxy.MAX_ROLES_PER_ACTION,
+  isPublic: PepProxy.isPublic,
+  generatedPolicyName: PepProxy.generatedPolicyName,
+  actionOf: PepProxy.actionOf,
   validate: slot.forward('validate'),
   usesSession: slot.forward('usesSession'),
   resolveRoute: slot.forward('resolveRoute'),

@@ -1914,6 +1914,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -1921,8 +1929,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -1938,13 +1953,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 
@@ -1954,6 +1968,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -1961,8 +1983,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -1978,13 +2007,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 ## POST /admin-api/xacml/clear-pep-settings
 
@@ -3382,6 +3410,141 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/generate-pep-route-policy
+
+`generateXacmlPepRoutePolicy`
+
+**Generate a route's simple or public policy again**
+
+Writes the policy a simple or public route of a registered remote PEP's reverse proxy generates (#1760), pep-&lt;pep>-&lt;route>, again from the route as stored: after it was edited in the policy editor or deleted. It is written as ALFA and stored through the repository's validating write, marked xacmlPepRoute = &lt;pep>/&lt;route>, never the root. A route choosing an existing policy has nothing to generate (STS-XACML-0264); a name held by a policy not generated for the route is STS-XACML-0267; an unknown route STS-XACML-0230. The answer's `written` is false when the policy already says what the route chooses.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
+| `route` | string | yes | The route's id. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
+
 ## POST /admin-api/xacml/import-alfa
 
 `importXacmlAlfa`
@@ -3898,8 +4061,15 @@ Scope: `admin:read`.
 | `peps[].proxy.maxBodyBytes` | integer |  |  |
 | `peps[].proxy.publicBaseUrl` | string |  |  |
 | `peps[].proxy.routes` | list |  |  |
-| `peps[].proxy.routes[].action` | string |  |  |
 | `peps[].proxy.routes[].application` | string |  |  |
+| `peps[].proxy.routes[].authorization` | object |  |  |
+| `peps[].proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `peps[].proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `peps[].proxy.routes[].authorization.policy` | string |  |  |
+| `peps[].proxy.routes[].authorization.resource` | string |  |  |
+| `peps[].proxy.routes[].authorization.roles` | map |  |  |
+| `peps[].proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `peps[].proxy.routes[].authorization.roles.{key}[]` | object |  | Nested deeper than this page draws. |
 | `peps[].proxy.routes[].forwardCredentials` | boolean |  |  |
 | `peps[].proxy.routes[].id` | string |  |  |
 | `peps[].proxy.routes[].identity` | object |  |  |
@@ -3915,14 +4085,19 @@ Scope: `admin:read`.
 | `peps[].proxy.routes[].methods[]` | string |  |  |
 | `peps[].proxy.routes[].multipleAccounts` | boolean |  |  |
 | `peps[].proxy.routes[].path` | string |  |  |
-| `peps[].proxy.routes[].public` | boolean |  |  |
-| `peps[].proxy.routes[].resource` | string |  |  |
 | `peps[].proxy.routes[].signals` | boolean |  |  |
 | `peps[].proxy.upstream` | string |  |  |
 | `peps[].proxy.upstreamTimeoutMs` | integer |  |  |
 | `peps[].proxyProblem` | string, or null |  |  |
+| `peps[].proxyResourceBase` | object |  | Where a simple or public route with no resource of its own is sent from (#1760): the proxy's public base URL, else the PEP's HTTPS proxy listener as https://&lt;hostname>:&lt;port>; the route's path follows it. |
+| `peps[].proxyResourceBase.base` | string |  |  |
+| `peps[].proxyResourceBase.resource` | string |  |  |
+| `peps[].proxyResourceBase.source` | one of `publicBaseUrl`, `listener` |  |  |
 | `peps[].proxyRoutes` | list |  |  |
 | `peps[].proxyRoutes[].application` | string |  |  |
+| `peps[].proxyRoutes[].authorization` | one of `policy`, `simple`, `public` |  |  |
+| `peps[].proxyRoutes[].policy` | string |  |  |
+| `peps[].proxyRoutes[].policyProblem` | string, or null |  |  |
 | `peps[].proxyRoutes[].route` | string |  |  |
 | `peps[].proxyRoutes[].usable` | boolean |  |  |
 | `peps[].proxyRoutes[].why` | string, or null |  |  |
@@ -4094,12 +4269,35 @@ Scope: `admin:read`.
 | `routeDetail.application.found` | boolean |  |  |
 | `routeDetail.application.identifier` | string |  |  |
 | `routeDetail.application.name` | string |  |  |
+| `routeDetail.authorization` | object |  |  |
+| `routeDetail.authorization.applicationUrl` | object |  |  |
+| `routeDetail.authorization.applicationUrl.attribute` | string |  |  |
+| `routeDetail.authorization.applicationUrl.mismatch` | boolean |  |  |
+| `routeDetail.authorization.applicationUrl.resource` | string |  |  |
+| `routeDetail.authorization.applicationUrl.url` | string |  |  |
+| `routeDetail.authorization.defaultResource` | string |  |  |
+| `routeDetail.authorization.defaultSource` | one of `publicBaseUrl`, `listener` |  |  |
+| `routeDetail.authorization.policy` | object |  |  |
+| `routeDetail.authorization.policy.enabled` | boolean |  |  |
+| `routeDetail.authorization.policy.found` | boolean |  |  |
+| `routeDetail.authorization.policy.generated` | boolean |  |  |
+| `routeDetail.authorization.policy.generatedFor` | string, or null |  |  |
+| `routeDetail.authorization.policy.name` | string |  |  |
+| `routeDetail.authorization.policy.problem` | string, or null |  |  |
+| `routeDetail.authorization.policy.withheld` | boolean |  |  |
 | `routeDetail.count` | integer |  |  |
 | `routeDetail.found` | boolean |  |  |
 | `routeDetail.position` | integer |  |  |
 | `routeDetail.route` | object, or null |  |  |
-| `routeDetail.route.action` | string |  |  |
 | `routeDetail.route.application` | string |  |  |
+| `routeDetail.route.authorization` | object |  |  |
+| `routeDetail.route.authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `routeDetail.route.authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `routeDetail.route.authorization.policy` | string |  |  |
+| `routeDetail.route.authorization.resource` | string |  |  |
+| `routeDetail.route.authorization.roles` | map |  |  |
+| `routeDetail.route.authorization.roles.{key}` | list |  |  |
+| `routeDetail.route.authorization.roles.{key}[]` | string |  |  |
 | `routeDetail.route.forwardCredentials` | boolean |  |  |
 | `routeDetail.route.id` | string |  |  |
 | `routeDetail.route.identity` | object |  |  |
@@ -4115,8 +4313,6 @@ Scope: `admin:read`.
 | `routeDetail.route.methods[]` | string |  |  |
 | `routeDetail.route.multipleAccounts` | boolean |  |  |
 | `routeDetail.route.path` | string |  |  |
-| `routeDetail.route.public` | boolean |  |  |
-| `routeDetail.route.resource` | string |  |  |
 | `routeDetail.route.signals` | boolean |  |  |
 | `routeDetail.servedBy` | list |  |  |
 | `routeDetail.servedBy[].id` | string |  |  |
@@ -4176,6 +4372,10 @@ Scope: `admin:read`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
+| `q` | query | string |  | A search (#1760, the reverse-proxy route forms' policy chooser): a substring of a policy's name, PolicyId or description, without case. With q, per, page or routable the answer is that page of the matching policies, with matched, page and pages; with none of them, the whole repository. |
+| `per` | query | integer |  | Policies per page of a search; 50 by default, capped at 300. |
+| `page` | query | integer |  | Which page of a search. CLAMPED rather than refused: a page past the end returns the last one. |
+| `routable` | query | one of `true`, `false` |  | true keeps only the policies a reverse-proxy route may choose: enabled, and sent to a remote PEP (not this service's own access or issuance policy, not an application's). |
 | `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
 | `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
@@ -4194,7 +4394,10 @@ Scope: `admin:read`.
 | `applicationPolicies[].policies[].policyId` | string, or null |  |  |
 | `applicationPolicies[].policies[].referenced` | boolean |  |  |
 | `applicationPolicies[].policies[].version` | string |  |  |
+| `matched` | integer |  | A search's: how many policies matched. |
 | `message` | string |  |  |
+| `page` | integer |  | A search's: the page these rows are, clamped. |
+| `pages` | integer |  | A search's: how many pages the match has. |
 | `policies` | list |  |  |
 | `policies[].application` | string, or null |  |  |
 | `policies[].combiningAlgId` | string |  |  |
@@ -4204,9 +4407,11 @@ Scope: `admin:read`.
 | `policies[].kind` | string |  |  |
 | `policies[].name` | string |  |  |
 | `policies[].orphanedAt` | string, or null |  |  |
+| `policies[].pepRoute` | string, or null |  | The remote PEP route, &lt;pep>/&lt;route>, this policy was generated for (#1760), or null. |
 | `policies[].policyId` | string, or null |  |  |
 | `policies[].problems` | list |  |  |
 | `policies[].problems[]` | string |  |  |
+| `policies[].routable` | boolean |  | Whether a reverse-proxy route may choose it: enabled, and sent to a remote PEP (#1760). |
 | `policies[].version` | string |  |  |
 | `protocolEndpoints` | list |  |  |
 | `protocolEndpoints[].listening` | boolean |  |  |
@@ -4217,6 +4422,9 @@ Scope: `admin:read`.
 | `protocolEndpoints[].route` | string |  |  |
 | `protocolEndpoints[].transport` | string |  |  |
 | `protocolEndpoints[].url` | string |  |  |
+| `query` | object |  | A search's: what was asked. |
+| `query.q` | string |  |  |
+| `query.routable` | boolean |  |  |
 | `root` | string, or null |  |  |
 | `serviceOwn` | list |  |  |
 | `serviceOwn[].asked` | string |  |  |
@@ -4382,7 +4590,7 @@ Scope: `admin:write`.
 
 **Remove one route of a remote PEP's reverse proxy**
 
-Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230.
+Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230. A route with a policy generated for it (its authorization simple or public) is removed only with `removePolicy: true`, and the policy goes with it (STS-XACML-0268 otherwise).
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -4401,6 +4609,7 @@ Scope: `admin:write`.
 |---|---|---|---|
 | `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
+| `removePolicy` | boolean, or string |  | true confirms that the policy generated for the route (a simple or public choice) is removed with it; without it such a route is refused (STS-XACML-0268). |
 | `route` | string | yes | The route's id. |
 
 **200**: The operation was applied.
@@ -4411,6 +4620,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -4418,8 +4635,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -4435,13 +4659,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 
@@ -4451,6 +4674,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -4458,8 +4689,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -4475,13 +4713,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 ## POST /admin-api/xacml/renew-pep-listener-certificate
 
@@ -4982,7 +5219,7 @@ Scope: `admin:write`.
 
 **Configure a registered remote PEP as a reverse proxy in front of an application**
 
-Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (empty for any), `public` (no credential and no XACML decision) or at least one of `mechanisms` `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), the XACML `resource` and `action` (empty for the path and the method), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).
+Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (required: all seven for any, empty for deny-all, STS-XACML-0262), its `authorization` (required, STS-XACML-0263: kind `policy` naming an existing policy, `simple` with a resource, an action model and roles per action, or `public`, anyone and no credential; simple and public generate the policy pep-&lt;pep>-&lt;route>; every request on the route is decided by that policy, never by the root), at least one of `mechanisms` unless it is public: `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).
 
 THE DOCUMENT IS VALIDATED WHOLE AND IS CLOSED: a member the grammar does not name is refused by name, and nothing is written unless all of it is right. What is stored is the document normalised, every member present, which is what the pull sends.
 
@@ -5018,6 +5255,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5025,8 +5270,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5042,13 +5294,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 
@@ -5058,6 +5309,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5065,8 +5324,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5082,13 +5348,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 ## POST /admin-api/xacml/set-pep-route
 
@@ -5096,7 +5361,7 @@ Scope: `admin:write`.
 
 **Add or replace one route of a remote PEP's reverse proxy**
 
-Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them; `from` renames the route it names to `id`. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
+Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them, and its authorization unless they carry `authzKind`; `from` renames the route it names to `id`, and a simple or public route's generated policy with it. Every route states `methods` (STS-XACML-0262; empty is deny-all) and one authorization choice (STS-XACML-0263): see set-pep-route-authorization. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -5114,6 +5379,25 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `application` | string |  | The identifier of the application in this realm's registry the route fronts. |
+| `authorization` | map, or string |  |  |
+| `authorization.{key}` | any JSON |  |  |
+| `authzActionModel` | one of `crud`, `read-write` |  | kind simple: the action model. |
+| `authzActions` | list, or string |  |  |
+| `authzActions[]` | string |  |  |
+| `authzKind` | one of `policy`, `simple`, `public`, empty |  | The form's authorization choice: an existing policy, a simple generated policy, or Public (anyone, a generated policy too). Empty is no choice, refused on a new route (STS-XACML-0263). |
+| `authzPolicy` | string |  | kind policy: the existing policy's name in this realm's repository. |
+| `authzPolicyActionModel` | one of `method`, `crud`, `read-write` |  | kind policy: what the PEP sends as the action-id; the method by default. |
+| `authzResource` | string |  | The resource-id sent, an absolute URI. Empty: for a simple or public route the proxy's base URL and the path; for an existing policy the request's path. |
+| `authzRole.create` | list, or string |  |  |
+| `authzRole.create[]` | string |  |  |
+| `authzRole.delete` | list, or string |  |  |
+| `authzRole.delete[]` | string |  |  |
+| `authzRole.read` | list, or string |  |  |
+| `authzRole.read[]` | string |  |  |
+| `authzRole.update` | list, or string |  |  |
+| `authzRole.update[]` | string |  |  |
+| `authzRole.write` | list, or string |  |  |
+| `authzRole.write[]` | string |  |  |
 | `forwardCredentials` | boolean, or string |  | Whether the caller's own credential is forwarded upstream. |
 | `from` | string |  | The route being edited, when it is not `id`: the route's own page renames a route by sending its current id here and the new one as `id`. An unknown route is STS-XACML-0230, and a new id another route holds is STS-XACML-0192. |
 | `headerClaim` | list, or string |  |  |
@@ -5126,17 +5410,15 @@ Scope: `admin:write`.
 | `mechanisms[]` | string |  |  |
 | `methods` | list, or string |  |  |
 | `methods[]` | string |  |  |
+| `methodsGiven` | boolean, or string |  | "true" when the form drew the method boxes, so that no `methods` is the empty list (deny-all) rather than not stated. |
 | `mode` | one of `headers`, `saml`, `jwt` |  | With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity. |
 | `multipleAccounts` | boolean, or string |  | true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257). |
 | `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `path` | string |  | The path the route matches. |
 | `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |
-| `public` | boolean, or string |  | true for a route that takes no credential and asks no policy; it names no mechanism and no application. |
-| `resource` | string |  | The XACML resource; the path when empty. |
 | `route` | map, or string |  |  |
 | `route.{key}` | any JSON |  |  |
-| `routeAction` | string |  | The XACML action (the route's `action`); the method when empty. |
 | `separator` | string |  | mode headers: the one character that joins a claim's several values; , when empty. |
 | `signals` | boolean, or string |  | Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session. |
 
@@ -5148,6 +5430,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5155,8 +5445,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5172,13 +5469,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 
@@ -5188,6 +5484,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5195,8 +5499,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5212,13 +5523,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 ## POST /admin-api/xacml/set-pep-route-application
 
@@ -5256,6 +5566,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5263,8 +5581,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5280,13 +5605,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 
@@ -5296,6 +5620,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5303,8 +5635,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5320,13 +5659,149 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
+
+## POST /admin-api/xacml/set-pep-route-authorization
+
+`setXacmlPepRouteAuthorization`
+
+**Set one route's authorization: an existing policy, a simple generated policy, or Public**
+
+Replaces the authorization of one route of a registered remote PEP's reverse proxy (#1760) and saves the WHOLE document through set-pep-proxy's checks. Every route makes exactly one choice and every request on it is decided by that policy in XACML, never by the realm's root: kind policy names an existing policy of this realm's repository, enabled and sent to a remote PEP (STS-XACML-0265); kind simple names a resource, an action model (crud or read-write) and, for each action permitted, one to eight configured roles (STS-XACML-0266), and generates the policy pep-&lt;pep>-&lt;route>; kind public lets anyone take the route's methods and generates that policy too, and clears the route's mechanisms, application and identity. An empty resource on a simple or public route is filled with the proxy's base URL and the path. A grammar refusal is STS-XACML-0263 or 0264, a generated name held by a hand-written policy STS-XACML-0267, an unknown route STS-XACML-0230. Switching a route to an existing policy leaves its generated policy in the repository, unreferenced, and the answer's `policies.unreferenced` says so.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `authorization` | map, or string |  |  |
+| `authorization.{key}` | any JSON |  |  |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
+| `route` | string | yes | The route's id. |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `proxy` | object |  |  |
+| `proxy.enabled` | boolean |  |  |
+| `proxy.maxBodyBytes` | integer |  |  |
+| `proxy.publicBaseUrl` | string |  |  |
+| `proxy.routes` | list |  |  |
+| `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
+| `proxy.routes[].forwardCredentials` | boolean |  |  |
+| `proxy.routes[].id` | string |  |  |
+| `proxy.routes[].identity` | object |  |  |
+| `proxy.routes[].identity.headers` | list |  |  |
+| `proxy.routes[].identity.headers[].claim` | one of `sub`, `username`, `email`, `name`, `given_name`, `family_name`, `groups`, `mechanism`, `acr`, `amr` |  |  |
+| `proxy.routes[].identity.headers[].name` | string |  |  |
+| `proxy.routes[].identity.mode` | one of `headers`, `saml`, `jwt` |  |  |
+| `proxy.routes[].identity.separator` | string |  |  |
+| `proxy.routes[].match` | one of `prefix`, `exact` |  |  |
+| `proxy.routes[].mechanisms` | list |  |  |
+| `proxy.routes[].mechanisms[]` | string |  |  |
+| `proxy.routes[].methods` | list |  |  |
+| `proxy.routes[].methods[]` | string |  |  |
+| `proxy.routes[].multipleAccounts` | boolean |  |  |
+| `proxy.routes[].path` | string |  |  |
+| `proxy.routes[].signals` | boolean |  |  |
+| `proxy.upstream` | string |  |  |
+| `proxy.upstreamTimeoutMs` | integer |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 ## POST /admin-api/xacml/set-pep-route-identity
 
@@ -5369,6 +5844,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5376,8 +5859,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5393,13 +5883,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 
@@ -5409,6 +5898,14 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `policies` | object |  | What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them. |
+| `policies.generated` | list |  |  |
+| `policies.generated[]` | string |  |  |
+| `policies.removed` | list |  |  |
+| `policies.removed[]` | string |  |  |
+| `policies.unreferenced` | list |  |  |
+| `policies.unreferenced[]` | string |  |  |
+| `policy` | string |  | generate-pep-route-policy: the policy's name. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `proxy` | object |  |  |
@@ -5416,8 +5913,15 @@ Scope: `admin:write`.
 | `proxy.maxBodyBytes` | integer |  |  |
 | `proxy.publicBaseUrl` | string |  |  |
 | `proxy.routes` | list |  |  |
-| `proxy.routes[].action` | string |  |  |
 | `proxy.routes[].application` | string |  |  |
+| `proxy.routes[].authorization` | object |  |  |
+| `proxy.routes[].authorization.actionModel` | one of `method`, `crud`, `read-write` |  |  |
+| `proxy.routes[].authorization.kind` | one of `policy`, `simple`, `public` |  |  |
+| `proxy.routes[].authorization.policy` | string |  |  |
+| `proxy.routes[].authorization.resource` | string |  |  |
+| `proxy.routes[].authorization.roles` | map |  |  |
+| `proxy.routes[].authorization.roles.{key}` | list |  |  |
+| `proxy.routes[].authorization.roles.{key}[]` | string |  |  |
 | `proxy.routes[].forwardCredentials` | boolean |  |  |
 | `proxy.routes[].id` | string |  |  |
 | `proxy.routes[].identity` | object |  |  |
@@ -5433,13 +5937,12 @@ Scope: `admin:write`.
 | `proxy.routes[].methods[]` | string |  |  |
 | `proxy.routes[].multipleAccounts` | boolean |  |  |
 | `proxy.routes[].path` | string |  |  |
-| `proxy.routes[].public` | boolean |  |  |
-| `proxy.routes[].resource` | string |  |  |
 | `proxy.routes[].signals` | boolean |  |  |
 | `proxy.upstream` | string |  |  |
 | `proxy.upstreamTimeoutMs` | integer |  |  |
 | `what` | string |  |  |
 | `why` | string |  |  |
+| `written` | boolean |  | generate-pep-route-policy: whether it was written; false when it already said what the route chooses. |
 
 ## POST /admin-api/xacml/set-pep-settings
 

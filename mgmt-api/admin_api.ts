@@ -7586,6 +7586,25 @@ class AdminApi {
       { method: 'GET', path: BASE + '/xacml/policies', tag: 'XACML',
         operationId: 'getXacmlPolicies',
         mirrors: 'GET /admin/xacml',
+        // THE REPOSITORY'S SEARCH (#1760): the reverse-proxy route forms'
+        // policy chooser asks it, five to a page, `routable` keeping what a
+        // route may choose. With none of these the answer is unchanged.
+        parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'A substring of a policy\'s name, PolicyId or ' +
+                         'description, without case.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 300 },
+            description: 'Policies per page of a search.' },
+          { name: 'page', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of a search, clamped.' },
+          { name: 'routable', in: 'query', required: false,
+            schema: { type: 'string', enum: ['true', 'false'] },
+            description: 'true keeps only what a reverse-proxy route may ' +
+                         'choose.' }
+        ],
         handler: function (req, res) {
           log.debug("Entering the management API XACML policies endpoint.");
           self.sendJson(res, 200, adminViews.xacmlPoliciesView(req));
@@ -7886,7 +7905,12 @@ class AdminApi {
           { action: 'set-pep-route', operationId: 'setXacmlPepRoute' },
           { action: 'remove-pep-route', operationId: 'removeXacmlPepRoute' },
           { action: 'set-pep-route-application',
-            operationId: 'setXacmlPepRouteApplication' }
+            operationId: 'setXacmlPepRouteApplication' },
+          // A route's authorization, and its generated policy (#1760).
+          { action: 'set-pep-route-authorization',
+            operationId: 'setXacmlPepRouteAuthorization' },
+          { action: 'generate-pep-route-policy',
+            operationId: 'generateXacmlPepRoutePolicy' }
         ] }),
 
       { method: 'GET', path: BASE + '/ssf', tag: 'Shared Signals',

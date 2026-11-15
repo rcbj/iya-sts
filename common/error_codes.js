@@ -23122,8 +23122,9 @@ const CODES = [
       'public names none.',
     spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   { code: 'STS-XACML-0197',
-    summary: 'A reverse-proxy route that is not public names no ' +
-      '`application`, or a public route names one (#1760, D10).',
+    summary: 'A reverse-proxy route that is not public (authorization ' +
+      'kind public) names no `application`, or a public route names one ' +
+      '(#1760, D10).',
     spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   { code: 'STS-XACML-0198',
     summary: 'A reverse-proxy route\'s identity header name is not an RFC ' +
@@ -23132,8 +23133,8 @@ const CODES = [
       'X-Forwarded-*).',
     spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   { code: 'STS-XACML-0199',
-    summary: 'A reverse-proxy route\'s `public`, `forwardCredentials`, ' +
-      '`signals`, `resource` or `action` is of the wrong type or too long.',
+    summary: 'A reverse-proxy route\'s `forwardCredentials`, `signals`, ' +
+      '`multipleAccounts` or `application` is of the wrong type or too long.',
     spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   { code: 'STS-XACML-0200',
     summary: 'The reverse-proxy configuration stored on a remote PEP\'s ' +
@@ -23438,6 +23439,45 @@ const CODES = [
       'certificate.',
     spec: 'none — 400 invalid_request on POST /xacml/pep/register or ' +
       '/xacml/pep/heartbeat' },
+  { code: 'STS-XACML-0262',
+    summary: 'A reverse-proxy route has no `methods` member (#1760): every ' +
+      'route states the methods it allows, the whole list for any method ' +
+      'and an empty list for none (deny-all).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0263',
+    summary: 'A reverse-proxy route has no `authorization`, or it is not an ' +
+      'object, carries a member it does not have, or its `kind` is not ' +
+      'policy, simple or public (#1760): every route makes exactly one ' +
+      'authorization choice.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0264',
+    summary: 'A reverse-proxy route\'s `authorization` holds a member of the ' +
+      'wrong shape: a policy name that is not one, a resource that is not ' +
+      'an absolute http(s) URL, an action model outside its set or not ' +
+      'allowed for the kind, or `roles` that are not one to eight role ' +
+      'names for an action of the model (#1760).',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0265',
+    summary: 'A reverse-proxy route chooses an existing policy that this ' +
+      'realm\'s repository does not hold, holds disabled, or never sends to ' +
+      'a remote PEP (this service\'s own access and issuance policies, an ' +
+      'application\'s fine-grained policy) (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0266',
+    summary: 'A reverse-proxy route\'s simple policy names a role that is ' +
+      'not a configured role of this realm (#1760): a role must exist, ' +
+      'since the PIP answers configured roles only.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0267',
+    summary: 'The policy generated for a reverse-proxy route could not be ' +
+      'written: its name is held by a policy that was not generated for ' +
+      'that route, or the repository refused the document (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0268',
+    summary: 'A reverse-proxy route whose policy was generated for it was ' +
+      'removed without `removePolicy` confirming that the generated policy ' +
+      'goes with it (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24070,6 +24110,17 @@ const CODES = [
       'the CRL-only listener keeps its default (bound when PEP_HTTP is off ' +
       'and the credential has a CRL directory). Logged once at start.',
     spec: 'none; the listener keeps its default' },
+  { code: 'STS-XPEP-0116',
+    summary: 'A request on a remote PEP proxy route whose methods list is ' +
+      'empty (deny-all) was refused after the route\'s policy was asked, ' +
+      'whatever it decided; nothing reached the application (#1760).',
+    spec: 'HTTP 403' },
+  { code: 'STS-XPEP-0117',
+    summary: 'A remote PEP proxy route names a policy (authorization.policy) ' +
+      'this PEP does not hold — never pulled, disabled, withheld or failed ' +
+      'to load — so its request was refused whatever the bias; nothing ' +
+      'reached the application (#1760).',
+    spec: 'HTTP 403' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
