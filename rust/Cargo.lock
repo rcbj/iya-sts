@@ -2872,7 +2872,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sts-core",
+ "sts-crypto",
+ "sts-directory",
+ "sts-ldap",
  "sts-model",
+ "sts-policy",
  "sts-xacml",
  "tracing",
 ]
