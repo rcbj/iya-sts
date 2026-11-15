@@ -24,12 +24,18 @@
 //   `tests/protocol/scep_client.js` builds one; `ScepCms.certsOnly()`
 //   byte for byte; and a CertRep Node's RA signs and envelopes to the
 //   requester.
+// * `rows`: the directory attributes the core wrote for an EAB key, a SCEP
+//   challenge and an EST certificate on one person — the store half, since
+//   every record the core keeps is an attribute of the holder's entry.
 //
 // What it checks of the Rust half: Rust's CertRep read by the same client
 // code a SCEP device test uses — the RA's signature, the digest, the echoed
 // nonce and transactionID, and the envelope opened with the requester's key
 // to Rust's certs-only bytes, which must be Node's for the same
-// certificates.
+// certificates. And the rows Rust wrote on another person, read by Node's
+// core: its EAB key found, its challenge accepted, its certificates listed.
+// (`findEnrolled()` starts at the authority's register of what a CA issued,
+// sts-pki's rows, which `pki-authority-vectors.js` proves both ways.)
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -50,6 +56,9 @@ const keyMaterial = require(path.join(ROOT, 'common', 'crypto_impl',
 const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509'));
 const errorCodes = require(path.join(ROOT, 'common', 'error_codes'));
 const core = require(path.join(ROOT, 'common', 'cert_enrollment'));
+const helpers = require(path.join(ROOT, 'common', 'helpers'));
+const pki = require(path.join(ROOT, 'common', 'pki'));
+const realms = require(path.join(ROOT, 'common', 'realms'));
 const model = require(path.join(ROOT, 'common', 'enrollment_model'));
 const estCodec = require(path.join(ROOT, 'est', 'est_codec'));
 const scepCms = require(path.join(ROOT, 'scep', 'scep_cms'));
@@ -303,6 +312,125 @@ async function scep(pems) {
            failure: hex(failure), recipientNonce: hex(nonce) };
 }
 
+// THE DIRECTORY ROWS (the store interop, both ways). Every record the core
+// keeps is an attribute of the holder's entry — the enrolled certificates,
+// the EAB keys, the SCEP challenges — so a 1.x directory read by the Rust
+// runtime, and an entry Rust wrote read by Node, are these values. The slot
+// is an in-memory map, and a person's subject is `urn:uuid:` and the name,
+// as the Rust test's directory answers it.
+const ENTRIES = new Map();
+
+/**
+ * The directory slot and the subject resolver, over `ENTRIES`.
+ */
+function installDirectory() {
+  log.debug("Entering installDirectory().");
+  const key = function (kind, id) {
+    return kind + '|' + id;
+  };
+  core.setDirectory({
+    read: function (kind, id) {
+      const held = ENTRIES.get(key(kind, id));
+      return held ? { dn: 'uid=' + id + ',ou=users,dc=test',
+                      attributes: Object.assign({}, held) } : null;
+    },
+    write: function (kind, id, name, values) {
+      const held = ENTRIES.get(key(kind, id));
+      if (!held) {
+        return false;
+      }
+      if (values.length) {
+        held[name] = values.slice();
+      } else {
+        delete held[name];
+      }
+      return true;
+    },
+    holders: function (kind, name) {
+      const out = [];
+      ENTRIES.forEach(function (held, k) {
+        if (k.startsWith(kind + '|') && held[name]) {
+          out.push(k.slice(kind.length + 1));
+        }
+      });
+      return out;
+    }
+  });
+  helpers.setSubjectResolver({
+    subjectFor: function (name) {
+      return ENTRIES.has(key('person', name)) ? 'urn:uuid:' + name : '';
+    },
+    nameFor: function (subject) {
+      return String(subject).replace(/^urn:uuid:/, '');
+    }
+  });
+  log.debug("Leaving installDirectory().");
+}
+
+/**
+ * Node's rows: an EAB key, a SCEP challenge and an EST certificate on one
+ * person, as the core wrote them.
+ *
+ * @returns {Promise<any>} the `rows` member
+ */
+async function rows() {
+  log.debug("Entering rows().");
+  installDirectory();
+  await pki.start({});
+  await pki.ensureScope(realms.currentId());
+  ENTRIES.set('person|alicew', { uid: ['alicew'],
+                                 mail: ['alicew@example.test'] });
+  const target = { kind: 'person', id: 'alicew' };
+  const eab = core.createEab({ target: target, createdBy: 'vector' });
+  const challenge = core.createScepChallenge({ target: target,
+                                               createdBy: 'vector' });
+  const pair = await keyMaterial.generateKeyPair('ec-p256');
+  const issued = await core.issue({
+    family: 'est', profile: 'tls-client',
+    principal: { kind: 'person', id: 'alicew', admin: false,
+                 hasEntry: true, via: 'vector' },
+    target: target, publicKeyPem: pair.publicPem, requested: {},
+    via: 'vector'
+  });
+  if (!eab.ok || !challenge.ok || !issued.ok) {
+    throw new Error('rows: ' + JSON.stringify([eab, challenge, issued]));
+  }
+  log.debug("Leaving rows().");
+  return { attributes: ENTRIES.get('person|alicew'), kid: eab.kid,
+           hmacKey: eab.hmacKey, challenge: challenge.challenge,
+           challengeProfile: challenge.profile, record: issued.record,
+           enrolled: core.enrolledOf(target) };
+}
+
+/**
+ * What Node reads of the rows Rust wrote on `bobw`.
+ *
+ * @param {any} r - enroll-rust.json's `rows`
+ * @param {Function} say - `(ok, what, detail)`
+ */
+function rowsFromRust(r, say) {
+  log.debug("Entering rowsFromRust().");
+  installDirectory();
+  ENTRIES.set('person|bobw', Object.assign({}, r.attributes));
+  const target = { kind: 'person', id: 'bobw' };
+  const found = core.findEab(r.kid);
+  // findEab() answers the MAC key as its bytes; createEab() showed it as
+  // base64url.
+  say(found && Buffer.from(found.hmacKey).toString('base64url') ===
+      r.hmacKey && found.entry &&
+      found.entry.id === 'bobw', "Node finds Rust's EAB key on its entry",
+      JSON.stringify(found));
+  const peek = core.redeemScepChallenge(r.challenge, { peek: true });
+  say(peek.ok && peek.profile === r.challengeProfile &&
+      peek.entry.id === 'bobw', "Node accepts Rust's SCEP challenge",
+      JSON.stringify(peek));
+  const enrolled = core.enrolledOf(target);
+  say(JSON.stringify(enrolled) === JSON.stringify(r.enrolled),
+      "Node reads Rust's enrolled certificates as Rust does",
+      JSON.stringify(enrolled));
+  log.debug("Leaving rowsFromRust().");
+}
+
 /**
  * The Node half.
  *
@@ -314,7 +442,7 @@ async function build() {
     return client.selfSigned(client.rsaKey(2048), 'enrollment vector ' + name);
   });
   const answer = { csrs: await csrs(), model: modelCases(), est: est(pems),
-                   scep: await scep(pems) };
+                   scep: await scep(pems), rows: await rows() };
   log.debug("Leaving build().");
   return answer;
 }
@@ -365,6 +493,7 @@ function check(v) {
       failure.failInfo === '2' && failure.failInfoName === 'badRequest',
       "Rust's FAILURE CertRep verifies and names badRequest",
       failure.pkiStatus + '/' + failure.failInfo);
+  rowsFromRust(v.rows, say);
   log.debug("Leaving check().");
   return out;
 }

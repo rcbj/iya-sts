@@ -23,9 +23,15 @@
 
 mod support;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine;
+
 use serde_json::{json, Value as Json};
+use sts_enroll::core::issue::IssueSpec;
+use sts_enroll::core::{Entry, Principal};
 use sts_enroll::est::codec;
 use sts_enroll::model::Body;
 use sts_enroll::scep::cms;
@@ -43,6 +49,10 @@ fn unhex(v: &Json) -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
         .collect()
+}
+
+fn b64u(bytes: &[u8]) -> String {
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -228,9 +238,78 @@ async fn node_enrollment_vectors() {
     assert_eq!((failure.pki_status.as_str(), failure.fail_info.as_str()), ("2", "4"));
     cms::verify_signer(&failure).unwrap();
 
+    // The rows: Node's attributes on alicew, read by Rust's core.
+    let r = &v["rows"];
+    let attrs: BTreeMap<String, Vec<String>> = r["attributes"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .map(|(k, v)| (k.clone(), strings(v)))
+        .collect();
+    w.directory.put("person", "alicew", &attrs);
+    let alice = Entry::new("person", "alicew");
+    let found = w.core.find_eab(text(&r["kid"])).expect("Node's EAB key");
+    assert_eq!(found.entry, alice);
+    assert_eq!(b64u(&found.hmac_key), text(&r["hmacKey"]));
+    assert!(!found.expired && found.bound_account.is_none());
+    let peek = w
+        .core
+        .redeem_scep_challenge(text(&r["challenge"]), true)
+        .expect("Node's SCEP challenge");
+    assert_eq!((peek.entry, peek.profile.as_str()), (alice.clone(), text(&r["challengeProfile"])));
+    assert_eq!(Json::from(w.core.enrolled_of(&alice)), r["enrolled"]);
+    // `findEnrolled()` starts at the authority's register of what each CA
+    // issued — sts-pki's rows, which `pki-authority-node.json` proves both
+    // ways — and this test's authority is not Node's, so it is not asked
+    // here; `enrolled_of()` above is the directory half it ends at.
+
     if std::env::var("STS_WRITE_VECTORS").is_err() {
         return;
     }
+    // Rust's rows on bobw, for Node's core to read.
+    let bob = Entry::new("person", "bobw");
+    let eab = w.core.create_eab(&bob, None, "vector").unwrap();
+    let challenge = w.core.create_scep_challenge(&bob, None, None, "vector").unwrap();
+    let key = sts_pki::authority::catalog::key_alg("ec-p256").unwrap();
+    let (_, public) = key.generate().unwrap();
+    let issued = w
+        .core
+        .issue(&IssueSpec {
+            family: "est".into(),
+            profile: "tls-client".into(),
+            principal: Some(Principal {
+                kind: "person".into(),
+                id: "bobw".into(),
+                via: "vector".into(),
+                has_entry: true,
+                ..Default::default()
+            }),
+            target: Some(bob.clone()),
+            public_key_pem: public,
+            key_source: "client".into(),
+            via: "vector".into(),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    // The names as the directory spells them, which Node's slot is asked by.
+    let canonical: BTreeMap<String, String> =
+        attrs.keys().map(|k| (k.to_lowercase(), k.clone())).collect();
+    let bob_attrs: serde_json::Map<String, Json> = w
+        .directory
+        .attributes("person", "bobw")
+        .into_iter()
+        .map(|(k, v)| (canonical.get(&k).cloned().unwrap_or(k), Json::from(v)))
+        .collect();
+    let rows = json!({
+        "attributes": bob_attrs,
+        "kid": eab.kid,
+        "hmacKey": eab.hmac_key,
+        "challenge": challenge.challenge,
+        "challengeProfile": challenge.profile,
+        "record": issued.record,
+        "enrolled": w.core.enrolled_of(&bob),
+    });
     // Rust's CertReps, for Node's requester.
     let nonce = unhex(&s["recipientNonce"]);
     let content = cms::certs_only(&pems, &[]);
@@ -261,6 +340,7 @@ async fn node_enrollment_vectors() {
             "failure": hex(&failure),
             "certsOnly": hex(&content),
             "estCertsOnly": hex(&codec::certs_only(&pems)),
+            "rows": rows,
         }))
         .unwrap(),
     )

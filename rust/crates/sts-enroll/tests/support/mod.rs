@@ -36,6 +36,28 @@ pub struct Directory {
 }
 
 impl Directory {
+    /// An entry with exactly these attributes (any case).
+    pub fn put(&self, kind: &str, id: &str, attrs: &BTreeMap<String, Vec<String>>) {
+        let held = attrs
+            .iter()
+            .map(|(k, v)| (k.to_lowercase(), v.clone()))
+            .collect();
+        self.entries
+            .lock()
+            .unwrap()
+            .insert((kind.into(), id.into()), held);
+    }
+
+    /// An entry's attributes, by lower-cased name.
+    pub fn attributes(&self, kind: &str, id: &str) -> BTreeMap<String, Vec<String>> {
+        self.entries
+            .lock()
+            .unwrap()
+            .get(&(kind.to_string(), id.to_string()))
+            .cloned()
+            .unwrap_or_default()
+    }
+
     fn add(&self, kind: &str, id: &str, attrs: &[(&str, &[&str])]) {
         let mut map = BTreeMap::new();
         for (k, v) in attrs {
@@ -213,6 +235,7 @@ impl sts_credentials::ports::Environment for Env {
 
 pub struct World {
     pub core: Arc<Core>,
+    pub directory: Arc<Directory>,
     pub acme: Arc<Acme>,
     pub est: Arc<Est>,
     pub scep: Arc<Scep>,
@@ -253,7 +276,7 @@ pub fn world() -> World {
         registry,
         lifecycle: Some(lifecycle.clone()),
         authority,
-        entries: directory,
+        entries: directory.clone(),
         applications: Arc::new(NoApplications),
         passwords: Arc::new(AnyPassword),
         roster: Arc::new(NoRoster),
@@ -273,6 +296,7 @@ pub fn world() -> World {
         est: Est::new(core.clone(), EstStore::declare(&lifecycle, &handles)),
         scep: Scep::new(core.clone(), ScepStore::declare(&lifecycle, &handles)),
         core,
+        directory,
     }
 }
 
