@@ -140,10 +140,6 @@ impl AuthnPort for SessionsPort {
         }
     }
 
-    fn rewrite_session(&self, session: &Value) {
-        self.note_session_changed(session);
-    }
-
     fn multiple_accounts(&self) -> bool {
         self.sessions.multiple_accounts()
     }

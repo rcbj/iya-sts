@@ -514,11 +514,15 @@ pub fn check(
         };
         if repeatable {
             let mut kept = Vec::new();
-            for (i, one) in value.as_array().into_iter().flatten().enumerate() {
+            // A LIST MEMBER IS NAMED BY ITS PARAMETER, not by its index
+            // (Node's `fromZod()` fix of 2026-11-14, #444 D12): a member of
+            // a repeated `resource` that was not an absolute URI was
+            // refused as "the query parameter '0'".
+            for one in value.as_array().into_iter().flatten() {
                 let text = one.as_str().unwrap_or("");
                 match check_value(param, text) {
                     Ok(v) => kept.push(v),
-                    Err(m) => return Err(invalid(&i.to_string(), m)),
+                    Err(m) => return Err(invalid(name, m)),
                 }
             }
             out.insert(name.to_string(), Json::Array(kept));

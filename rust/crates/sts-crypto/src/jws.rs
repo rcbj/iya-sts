@@ -1054,6 +1054,27 @@ pub fn verify_jws(
     checks: &ClaimChecks,
     policy: KeyPolicy,
 ) -> Result<Json, JwtError> {
+    verify_jws_under(token, key, algorithms, checks, policy, &AcceptAll)
+}
+
+/// [`verify_jws`] with the realm's signature policy asked.
+///
+/// THE LIBRARY PATH PASSES THE ACCEPT CHOKEPOINT TOO (Node's fix of
+/// 2026-11-14, #444 D12). `prepareVerification()` asked it for every
+/// algorithm the shared verifier checks, and `verifyJws()`'s jsonwebtoken
+/// path (RS, PS, ES and HS) never did: under
+/// `keys.acceptedSigningAlgorithms=RS256` an ES256 `private_key_jwt` was
+/// still accepted and STS-KEYS-0179 never recorded. Asked after the
+/// caller's own list, before the signature; with no list, for the token's
+/// own algorithm before anything else, as Node asks it.
+pub fn verify_jws_under(
+    token: &str,
+    key: &JwsKey,
+    algorithms: Option<&[&str]>,
+    checks: &ClaimChecks,
+    policy: KeyPolicy,
+    signature_policy: &dyn SignaturePolicy,
+) -> Result<Json, JwtError> {
     let peeked_alg = token
         .split('.')
         .next()
@@ -1072,12 +1093,16 @@ pub fn verify_jws(
         (Some(alg), true) => vec![alg.as_str()],
         _ => vec!["RS256"],
     };
+    if let (None, Some(alg)) = (algorithms, peeked_alg.as_deref()) {
+        refuse_unacceptable_jws(signature_policy, alg)
+            .map_err(JwtError::Signature)?;
+    }
     let allowed = algorithms.unwrap_or(&fallback);
     let policy = KeyPolicy {
         weak_rsa_allowed: policy.weak_rsa_allowed && own_signer,
         ..policy
     };
-    let verified = verify_compact(
+    let verified = verify_compact_under(
         token,
         key,
         &VerifyOptions {
@@ -1085,6 +1110,7 @@ pub fn verify_jws(
             empty_payload: false,
             policy,
         },
+        signature_policy,
     )
     .map_err(JwtError::Signature)?;
     let claims = verified.claims.unwrap_or(Json::Null);

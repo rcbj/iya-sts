@@ -560,11 +560,16 @@ impl Est {
             .unwrap_or_default()
     }
 
+    /// `enrollmentRequest(req, res, ctx, { template }, afterAuthentication)`:
+    /// `after_authentication` is asked once the caller is authenticated and
+    /// before the body is read, and answers the refusal it made itself
+    /// (`serverkeygen`'s switch, #36).
     async fn enrollment_request(
         &self,
         req: &Req,
         ctx: &mut Ctx,
         template: bool,
+        after_authentication: Option<&(dyn Fn(&Ctx) -> Option<Reply> + Sync)>,
     ) -> Result<Csr, Reply> {
         ctx.basic = Est::basic_of(req);
         ctx.identity = Est::identity_hint_of(req, &ctx.basic);
@@ -577,6 +582,9 @@ impl Est {
             .map_err(|r| self.refuse_with(req, ctx, &r))?;
         ctx.identity = format!("{}:{}", principal.kind, principal.id);
         ctx.principal = Some(principal);
+        if let Some(refused) = after_authentication.and_then(|ask| ask(ctx)) {
+            return Err(refused);
+        }
         let der = codec::decode_body(&req.body).map_err(|why| {
             self.error(req, ctx, 400, codes::STS_EST_0008, why, &[])
         })?;
@@ -620,7 +628,7 @@ impl Est {
     }
 
     async fn simpleenroll(&self, req: &Req, ctx: &mut Ctx) -> Reply {
-        let csr = match self.enrollment_request(req, ctx, false).await {
+        let csr = match self.enrollment_request(req, ctx, false, None).await {
             Ok(c) => c,
             Err(r) => return r,
         };
@@ -729,7 +737,7 @@ impl Est {
     }
 
     async fn simplereenroll(&self, req: &Req, ctx: &mut Ctx) -> Reply {
-        let csr = match self.enrollment_request(req, ctx, false).await {
+        let csr = match self.enrollment_request(req, ctx, false, None).await {
             Ok(c) => c,
             Err(r) => return r,
         };
@@ -858,18 +866,40 @@ impl Est {
     }
 
     async fn serverkeygen(&self, req: &Req, ctx: &mut Ctx) -> Reply {
-        // The asker before the template is read: an administrator, or an
-        // application whose own switch turns it on, may get past.
-        let asker = ctx.principal.clone().unwrap_or_default();
-        let may = (asker.kind == "person" && asker.admin)
-            || (asker.kind == "application"
-                && self
-                    .core
-                    .est_switch("serverKeyGeneration", Some(&asker.entry())));
-        if !self.core.setting_on("est.serverKeyGeneration") && !may {
-            return self.error(req, ctx, 501, codes::STS_EST_0005, "Server-side key generation is turned off for EST in this realm (est.serverKeyGeneration).", &[]);
-        }
-        let csr = match self.enrollment_request(req, ctx, true).await {
+        // Off for the realm refuses ONCE THE CALLER IS AUTHENTICATED, and
+        // before the template is read — unless the caller is an
+        // administrator, or an application whose own switch turns it on.
+        //
+        // AUTHENTICATED FIRST (Node's #36, 2026-11-15): the switch was asked
+        // before anybody was authenticated, so the asker was always empty:
+        // an anonymous caller learnt the realm's setting from a 501 where
+        // every other EST refusal asks for a credential first (RFC 7030
+        // section 3.2.3), and the two exceptions could never apply.
+        let switched_off = |ctx: &Ctx| -> Option<Reply> {
+            let asker = ctx.principal.clone().unwrap_or_default();
+            let may = (asker.kind == "person" && asker.admin)
+                || (asker.kind == "application"
+                    && self.core.est_switch(
+                        "serverKeyGeneration",
+                        Some(&asker.entry()),
+                    ));
+            if !self.core.setting_on("est.serverKeyGeneration") && !may {
+                return Some(self.error(
+                    req,
+                    ctx,
+                    501,
+                    codes::STS_EST_0005,
+                    "Server-side key generation is turned off for EST in \
+                     this realm (est.serverKeyGeneration).",
+                    &[],
+                ));
+            }
+            None
+        };
+        let csr = match self
+            .enrollment_request(req, ctx, true, Some(&switched_off))
+            .await
+        {
             Ok(c) => c,
             Err(r) => return r,
         };

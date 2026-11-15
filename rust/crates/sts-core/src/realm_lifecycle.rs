@@ -497,6 +497,39 @@ impl RealmLifecycle {
             .map(|r| (r.code, r.problem))
     }
 
+    /// `restorableOverrides(id, overrides)` (Node's #39, 2026-11-15): A
+    /// STORED REALM'S OVERRIDES, EACH RE-CHECKED AS THE PROCESS-WIDE ONES
+    /// ARE. A realm's went whole through [`Self::check_overrides`], which
+    /// refuses the REALM for one bad value, so a bound added to a row after
+    /// the value was written (the SAML assertion lifetimes' `min: 1`, where
+    /// 0 had been accepted and read as sixty) would cost a restored or
+    /// replicated realm itself. For a realm read back or arriving from
+    /// another process the one value is reported under STS-CORE-0008 and
+    /// left out, so the realm reads the row's default; the stored row is
+    /// not rewritten. A write made here is still refused whole.
+    fn restorable_overrides(
+        &self,
+        id: &str,
+        overrides: &Overrides,
+    ) -> Overrides {
+        let mut kept = Overrides::new();
+        for (key, raw) in overrides {
+            if let Some((_, problem)) = self.check_realm_override(key, raw) {
+                tracing::warn!(
+                    "{}realms: the saved override \"{}\" of the realm \
+                     \"{}\" was not applied: {} It is left in the store.",
+                    crate::log::tag(codes::STS_CORE_0008),
+                    key,
+                    id,
+                    problem
+                );
+                continue;
+            }
+            kept.insert(key.clone(), raw.clone());
+        }
+        kept
+    }
+
     /// Every key of an overrides object checked AS ONE WRITE, in the realm
     /// it lands in (cfa8ca851, D12): `create()` and `update()` replace a
     /// realm's overrides with the object, so a rule between settings sees
@@ -674,6 +707,15 @@ impl RealmLifecycle {
         overrides: &Overrides,
         restored: bool,
     ) -> Result<Arc<Realm>, Refused> {
+        // Read back or replicated: a stored value no longer valid is
+        // skipped, not the realm (restorable_overrides(), #39).
+        let restorable;
+        let overrides = if restored {
+            restorable = self.restorable_overrides(id.trim(), overrides);
+            &restorable
+        } else {
+            overrides
+        };
         let id = id.trim().to_lowercase();
         let errors = self.registry.validate_id(&id);
         if !errors.sentences.is_empty() {
@@ -853,6 +895,16 @@ impl RealmLifecycle {
             return Err(r);
         }
         let before = self.overrides(&realm.id).unwrap_or_default();
+        // Replicated: a stored value no longer valid is skipped, not the
+        // change (restorable_overrides(), #39).
+        let restorable;
+        let overrides = match overrides {
+            Some(next) if replicated => {
+                restorable = self.restorable_overrides(&realm.id, next);
+                Some(&restorable)
+            }
+            other => other,
+        };
         if let Some(next) = overrides {
             let errors = self.check_overrides(next);
             if !errors.sentences.is_empty() {

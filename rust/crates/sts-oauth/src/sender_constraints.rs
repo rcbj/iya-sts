@@ -126,6 +126,19 @@ pub fn access_token_refusal(
     settings: &Settings,
     o: &Presented,
 ) -> Option<Refusal> {
+    access_token_refusal_with(settings, o, access_token_dpop_required(settings))
+}
+
+/// `accessTokenRefusal({ dpopRequired })` (Node's #28, 2026-11-15): the
+/// management API asks `oauth2.accessTokenRequireDpop` in the realm that
+/// ISSUED the token, so a realm's switch does not refuse the service-wide
+/// API client's bearer; [`access_token_refusal`] leaves it to the ambient
+/// realm, as before.
+pub fn access_token_refusal_with(
+    settings: &Settings,
+    o: &Presented,
+    dpop_required: bool,
+) -> Option<Refusal> {
     let at = if o.where_.is_empty() {
         "this resource"
     } else {
@@ -142,7 +155,7 @@ pub fn access_token_refusal(
             "{} accepts an access token issued to the admin console only when it is DPoP-bound (RFC 9449), \
              because the console is a public client, and this token carries no cnf.jkt.", at) });
     }
-    if access_token_dpop_required(settings) {
+    if dpop_required {
         if o.bound_jkt.is_empty() {
             return Some(Refusal { error: "invalid_token", code: codes::STS_OAUTH_0528, setting: dpop, description: format!(
                 "{} is configured to accept only a DPoP-bound access token (RFC 9449), and this token carries no \

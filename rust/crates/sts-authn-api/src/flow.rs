@@ -2075,6 +2075,9 @@ impl SignIn {
             false,
         );
         self.stores.mfa.delete(id);
+        // A RECOVERY CODE IS A RECOVERY DOOR, AND IT IS RECORDED ON THE
+        // ENTRY (Node's fix of 2026-11-14, #444 D12) — before either way on.
+        self.note_recovery_door(&username, "recovery-code");
         if truthy(step.get("thenEnrol")) {
             return Outcome::Unported("thenEnrol");
         }
@@ -2083,6 +2086,49 @@ impl SignIn {
             step.clone(),
             Evidence::recovery_code_after(&step),
         ))
+    }
+
+    /// `noteRecoveryDoor(username, door)` (Node's fixes of 2026-11-14 and
+    /// 2026-11-15, #444 D12, #31).
+    ///
+    /// A SELF-SERVICE RECOVERY DOOR WAS PASSED, AND THE ENTRY SAYS SO. Under
+    /// a recoveryAssurance that holds a recovery to a passkey (3cq), the
+    /// administrator's password, a reset link and an activation link each
+    /// write `stsRecoveryPending`; a recovery code (and an emailed code or
+    /// link, whose acts are not ported here yet) wrote nothing: the sign-in
+    /// was held (STS-AUTHN-0381), but nothing said a recovery was under way
+    /// once the person left the set-up. The finisher calls this before
+    /// either way on. Nothing is written where no hold is required (no
+    /// passkey, or `any`), and nothing for a door the policy refuses
+    /// outright (`operator-only`, STS-AUTHN-0380), which is no recovery.
+    fn note_recovery_door(&self, username: &str, door: &str) {
+        let refused = self.webauthn.recovery_refusal(&json!({
+            "username": username, "door": door, "at": "door",
+            "covered": self.credentials.holds_passkey(username) }));
+        let outright = refused.is_some_and(|r| {
+            text(r.get("code")) == codes::STS_AUTHN_0380.as_str()
+        });
+        if !outright {
+            self.note_recovery(username, door);
+        }
+    }
+
+    /// `credentials.noteRecovery(username, door)` with
+    /// `recoveryHoldRequired()`: a pending recovery written only for a
+    /// person who holds a passkey under a passkey policy that is not
+    /// `any`; true when one was written.
+    fn note_recovery(&self, username: &str, door: &str) -> bool {
+        let name = username.trim();
+        if name.is_empty() || !self.credentials.holds_passkey(name) {
+            return false;
+        }
+        if !self.webauthn.has_selection() {
+            self.webauthn.select(name, "");
+        }
+        if self.webauthn.recovery_assurance(None) == "any" {
+            return false;
+        }
+        self.credentials.set_recovery_pending(name, door)
     }
 
     fn step_verdict_refused(

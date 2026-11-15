@@ -110,6 +110,9 @@ pub struct PasswordVerdict {
     pub ok: bool,
     /// The app password's name, where one was used.
     pub app_password: Option<String>,
+    /// The verifier's `reason` where it refused (`second-factor-required`
+    /// for a right password held back for want of a second factor).
+    pub reason: String,
 }
 
 /// `credentials.verifyAsync(name, password, { via, door })`, in the

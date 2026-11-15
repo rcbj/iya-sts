@@ -2178,6 +2178,24 @@ impl Sessions {
         1
     }
 
+    /// `realmAtSessionCap()`: whether the ambient realm holds
+    /// `authn.maxSessions` sessions now, with no side effect (Node's fix of
+    /// 2026-11-14, #444 D12). A browser arriving while the realm is full is
+    /// given no arrival session, so its sign-in screen's acts carry none and
+    /// were refused "Load the sign-in page again" — which no reload changes
+    /// while the realm stays full. `/authn-api` asks this to say what is
+    /// true instead. It counts as [`Self::make_room`] counts and frees
+    /// nothing, so the answer can be "full" a moment early, never "not
+    /// full" while it is.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn realm_at_session_cap(&self) -> bool {
+        let cap = js::number(Some(&self.setting("authn.maxSessions"))).floor();
+        if cap.is_nan() || cap < 1.0 {
+            return false;
+        }
+        self.here().len() as f64 >= cap
+    }
+
     /// `makeRoomForSession(store, session, replacingId)`: false at
     /// `authn.maxSessions` when the insert freed no row (`STS-AUTHN-0337`).
     fn make_room(&self, session: &Value, replacing: &str) -> bool {

@@ -101,12 +101,6 @@ pub trait AuthnPort: Send + Sync {
     fn end_session_by_id(&self, id: &str, via: &str, entity: &str) -> bool;
     /// `noteSessionChanged(session)`: the row written back as given.
     fn note_session_changed(&self, session: &Value);
-    /// The row written back WITHOUT Node's `noteSessionChanged()`: Node's
-    /// WS-Federation and SAML rows delete from the session object it holds
-    /// in memory and note nothing, so the change never reaches the store
-    /// (a Node defect, the report's). Rust writes it; the vectors do not
-    /// see the call, because Node makes none.
-    fn rewrite_session(&self, session: &Value);
     /// `multipleAccounts()` (#561).
     fn multiple_accounts(&self) -> bool;
     /// `hintAccountKey(req, key)`.

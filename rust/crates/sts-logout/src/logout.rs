@@ -1874,7 +1874,11 @@ impl Logout {
         }
         if let Some(Value::Object(list)) = session.get_mut(member) {
             list.shift_remove(&name);
-            self.deps.authn.rewrite_session(&session);
+            // AND THE STORE IS TOLD, through `noteSessionChanged()` as the
+            // `oidc-rp` row's forget always was — Node's fix of 2026-11-15
+            // (#444 D12); until then Node deleted from the object its store
+            // holds and noted nothing, and Rust wrote it without the call.
+            self.deps.authn.note_session_changed(&session);
             Logout::mirror(ctx, &session);
         }
         let sent = target.as_ref().is_some_and(|t| truthy(t.get("url")));

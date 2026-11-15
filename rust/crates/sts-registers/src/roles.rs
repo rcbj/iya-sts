@@ -1167,12 +1167,43 @@ impl Roles {
         out
     }
 
+    /// `memberNamesOf(kind, name, crossRealm)` (Node's 62c6081d2,
+    /// 2026-11-14): THE NAMES A DIRECT MEMBERSHIP IS MATCHED UNDER. A role
+    /// names its people by username (`roleMemberUser`), and a person also
+    /// arrives as their subject, `urn:uuid:<entryUUID>` — the `sub` a remote
+    /// PEP asks `POST /xacml/pip` about. The group half already found them,
+    /// the direct half compared the username list against the subject and
+    /// missed, so one person was Permit by name and Deny by subject. Only a
+    /// person: an application is named by its client_id, and a principal
+    /// that arrived through a Kerberos trust has no entry here to name.
+    fn member_names_of(&self, who: &Who) -> Vec<String> {
+        let mut out = vec![who.name.clone()];
+        let subject = who.name.trim().to_lowercase();
+        if !who.is_user()
+            || who.cross_realm
+            || !subject.starts_with("urn:uuid:")
+        {
+            return out;
+        }
+        let filed = self
+            .directory
+            .as_ref()
+            .map(|d| d.name_for_subject(&who.name))
+            .unwrap_or_default();
+        if !filed.is_empty() && filed.to_lowercase() != who.name.to_lowercase()
+        {
+            out.push(filed);
+        }
+        out
+    }
+
     /// `configuredRolesOf(context)`.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn configured_roles_of(&self, who: &Who) -> Vec<String> {
         if who.name.is_empty() {
             return Vec::new();
         }
+        let names = self.member_names_of(who);
         let groups = if !who.is_user() {
             Vec::new()
         } else if who.cross_realm {
@@ -1188,7 +1219,7 @@ impl Roles {
                 if !who.is_user() {
                     return contains(&role.applications, &who.name);
                 }
-                contains(&role.users, &who.name)
+                names.iter().any(|one| contains(&role.users, one))
                     || role
                         .groups
                         .iter()

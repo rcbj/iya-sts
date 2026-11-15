@@ -421,6 +421,20 @@ impl AuthnApi {
         }
         let expected = self.csrf_of(request);
         let presented = header_of(&arrived.headers, CSRF_HEADER);
+        // NO SESSION BECAUSE THE REALM IS FULL (Node's fix of 2026-11-14,
+        // #444 D12): a browser arriving at `authn.maxSessions` was given no
+        // session, so "Load the sign-in page again" was untrue — a reload
+        // is refused the same way until a session ends. Said as it is,
+        // under the cap's code, with the status every operation declares.
+        if expected.is_empty() && self.signin.sessions.realm_at_session_cap() {
+            return Err(refuse(
+                403,
+                "This realm is holding as many sign-in sessions as it \
+                 allows, so no new one can start in this browser now. Try \
+                 again later.",
+                codes::STS_AUTHN_0337,
+            ));
+        }
         if expected.is_empty()
             || presented.is_empty()
             || !sts_crypto::secrets::constant_time_equals(

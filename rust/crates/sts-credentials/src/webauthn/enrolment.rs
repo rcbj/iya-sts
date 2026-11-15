@@ -1056,16 +1056,20 @@ impl KeyDoors {
                 .map(|l| l.iter().map(js::string).collect())
                 .unwrap_or_default();
             tracing::info!(
-                "credentials: a security key enrolment for {} did not verify \
-                 — {}",
+                "credentials: a security key enrolment for {} did not verify; \
+                 failed: {}",
                 name,
                 failed.join("; ")
             );
             return Err(reasoned(
                 failure_code_for(verdict),
                 "invalid",
+                // WHAT FAILED, SAID AS FAILED (Node's fix of 2026-11-14,
+                // #444 D12): a check is named for what must hold, so a bare
+                // list read "did not verify — credential algorithm was
+                // offered" where it meant the algorithm was NOT offered.
                 &format!(
-                    "The registration did not verify — {}.",
+                    "The registration did not verify; this check failed: {}.",
                     failed.join("; ")
                 ),
             ));

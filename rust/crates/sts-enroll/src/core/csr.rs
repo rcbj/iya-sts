@@ -22,6 +22,11 @@ use sts_pki::x509::keys::{der_to_pem, describe_spki, KeyDesc};
 
 use super::{normal_host_name, Core, Outcome, Refusal};
 
+/// The smallest RSA modulus a certificate request may carry, in bits, in
+/// every mode (`cert_enrollment.ts`'s `MIN_RSA_BITS`, #35): the floor an
+/// ACME account key is held to.
+const MIN_RSA_BITS: usize = 2048;
+
 const UPN_OID: &str = "1.3.6.1.4.1.311.20.2.3";
 const ATTESTATION_OID: &str = "1.2.840.113549.1.9.16.2.59";
 const CHALLENGE_PASSWORD_OID: &str = "1.2.840.113549.1.9.7";
@@ -318,6 +323,28 @@ impl Core {
                  certify.",
             ));
         };
+        // AN RSA KEY OF AT LEAST 2048 BITS, IN EVERY MODE (Node's #35,
+        // 2026-11-15). ACME, EST and SCEP all read a request through here,
+        // and nothing here asked the size: a development realm certified an
+        // RSA-1024 key over EST. 2048 is the floor everything else in this
+        // service holds an RSA key to (an ACME account key, an uploaded
+        // signing key, the realm's own CA keys), and NIST SP 800-131A Rev. 2
+        // disallows less for a signature. Refused as a key this authority
+        // cannot certify, the code ACME answers `badPublicKey` for.
+        if let KeyDesc::Rsa { bits } = &desc {
+            if *bits < MIN_RSA_BITS {
+                return Err(Refusal::new(
+                    codes::STS_ENROLL_0031,
+                    400,
+                    format!(
+                        "The request carries a {}-bit RSA key, and this \
+                         certificate authority certifies an RSA key of at \
+                         least {} bits.",
+                        bits, MIN_RSA_BITS
+                    ),
+                ));
+            }
+        }
         let kem = is_kem(&desc);
         if kem && !template {
             let name = desc.pqc().unwrap_or("key-encapsulation");

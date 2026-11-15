@@ -757,7 +757,7 @@ impl SignIn {
                 &held,
                 code,
                 &format!(
-                    "the assertion did not verify — {}",
+                    "the assertion did not verify; this check failed: {}",
                     failed.join("; ")
                 ),
                 SAID,
@@ -1897,7 +1897,8 @@ impl SignIn {
             return Outcome::Answered(
                 SignIn::step_refused(
                     &format!(
-                        "The second factor did not verify — {}.",
+                        "The second factor did not verify; this check \
+                         failed: {}.",
                         failed.join("; ")
                     ),
                     400,
