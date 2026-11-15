@@ -812,6 +812,8 @@ async function theRecordedCodes() {
     assert.ok(!/^com\.example\.o21:/.test(privateUse.location),
               privateUse.status + " " + privateUse.location);
   });
+  const publicCcCode = (await facts.isProduct(base + PREFIX + "/admin-api"))
+    ? "STS-OAUTH-0552" : "STS-OAUTH-0289";
   const expected = [
     [BCP_PREFIX, "STS-OAUTH-0147", "RFC 9700 mode: the token request " +
      "omitted the redirect_uri the authorization request carried"],
@@ -842,7 +844,10 @@ async function theRecordedCodes() {
     [PREFIX, "STS-OAUTH-0286", "a sign-out address for a client that " +
      "registered none"],
     [PREFIX, "STS-OAUTH-0287", "a registration asking for saml2_bearer"],
-    [PREFIX, "STS-OAUTH-0289", "a registration asking for " +
+    // In product the mode's own rule refuses a public client the client
+    // credentials grant first (STS-OAUTH-0552, oauth2_bcp.js), so OAuth
+    // 2.1's STS-OAUTH-0289 is reached only in development (run #300).
+    [PREFIX, publicCcCode, "a registration asking for " +
      "client_credentials as a public client"],
     [PREFIX, "STS-OAUTH-0290", "a private-use sign-out address the client " +
      "never registered"]
