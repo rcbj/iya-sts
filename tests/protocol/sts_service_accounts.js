@@ -840,7 +840,11 @@ async function testBody() {
               JSON.stringify(still.body.serviceAccount));
   });
 
-  await aRealmWithClients(DEV, null);
+  // THE DEVELOPMENT REALM SAYS SO (run #300): section j asserts the
+  // development doors — the password grant among them, which product
+  // refuses as unsupported_grant_type — so in a product process its realm
+  // is put in development mode, as section k puts its own in product.
+  await aRealmWithClients(DEV, { "global.mode": "development" });
   await theRefusalsByCode();
   await thePolicy();
   await theDoorsInDevelopment();
