@@ -754,6 +754,19 @@ mod tests {
     }
 
     #[test]
+    fn a_renewal_late_or_slow_by_half_a_claim_is_warned() {
+        // `checkRenewalTiming()`: 15 s is half of the 30 s claim.
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        assert!(!check_renewal_timing(None, at(0), at(15_000)));
+        assert!(check_renewal_timing(None, at(0), at(15_001)));
+        assert!(!check_renewal_timing(Some(at(0)), at(25_000), at(25_010)));
+        assert!(check_renewal_timing(Some(at(0)), at(25_001), at(25_010)));
+        // A renewal that came EARLY is not late.
+        assert!(!check_renewal_timing(Some(at(0)), at(1_000), at(1_010)));
+    }
+
+    #[test]
     fn a_run_sorts_by_its_first_instant() {
         assert_eq!(
             run_sort_of(&json!({"kind":"run","queuedAt":5,"endedAt":9}), ""),

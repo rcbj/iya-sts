@@ -359,3 +359,27 @@ impl Origin {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)] // tests
+
+    use super::*;
+
+    #[test]
+    fn a_refused_write_is_reported_and_handed_back() {
+        let origin = Origin::new().unwrap();
+        let refusal = origin.lost(fenced("no hook, no report"));
+        assert!(refusal
+            .to_string()
+            .starts_with(&tag(codes::STS_CLUSTER_0001)));
+        let told: Arc<Mutex<Vec<String>>> = Arc::default();
+        let into = told.clone();
+        origin.set_lost(Some(Arc::new(move |m: &str| {
+            into.lock().unwrap().push(m.to_string());
+        })));
+        let refusal = origin.lost(fenced("the claim is gone"));
+        assert_eq!(*told.lock().unwrap(), vec![refusal.to_string()]);
+        assert!(refusal.to_string().contains("the claim is gone"));
+    }
+}
