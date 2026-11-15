@@ -263,6 +263,8 @@ impl Views {
         let body = match asked.operation_id {
             "getGroups" => self.groups_json(asked, setup),
             "getUsers" => self.users_json(asked)?,
+            "getDirectoryEntries" => self.directory_entries_json(asked),
+            "getDirectoryService" => self.directory_service_json(asked),
             "grantGlobalConsent" => return Some(self.grant_global(asked)),
             "grantAdminRole" | "revokeAdminRole" => {
                 return Some(self.rbac_action(asked))
@@ -812,5 +814,193 @@ impl Views {
             "subject": subject,
             "ldap": self.ldap_object(&wanted),
         }))
+    }
+}
+
+/// `MASK` (`ldap/directory_secrets.ts`).
+const MASK: &str = "(set — not returned)";
+
+/// `directoryRowOf(stored)`: the entry's attributes under their canonical
+/// names, the withheld values withheld; `masked` applies
+/// `DirectorySecrets.withoutSecrets()` too.
+fn directory_row_of(
+    stored: &sts_store::model::StoredEntry,
+    masked: bool,
+) -> Json {
+    let model = sts_directory::DirectoryModel::get();
+    let mut attributes = Map::new();
+    for (name, values) in &stored.attributes {
+        let shown =
+            sts_directory::directory::shown_values(name, values.clone());
+        let shown: Vec<Json> = if masked && model.is_secret(name) {
+            shown.iter().map(|_| json!(MASK)).collect()
+        } else {
+            shown.into_iter().map(Json::from).collect()
+        };
+        attributes.insert(model.canonical_name(name), Json::Array(shown));
+    }
+    json!({ "dn": stored.dn,
+            "origin": stored.origin.as_deref().unwrap_or("unstated"),
+            "attributes": attributes })
+}
+
+// `directoryEntryMatches(stored, needle)`: the DN, an attribute's name or
+// one of its values (as `directoryRowOf()` shows it, before masking).
+fn directory_entry_matches(
+    stored: &sts_store::model::StoredEntry,
+    needle: &str,
+) -> bool {
+    if stored.dn.to_lowercase().contains(needle) {
+        return true;
+    }
+    let row = directory_row_of(stored, false);
+    row["attributes"].as_object().is_some_and(|o| {
+        o.iter().any(|(name, values)| {
+            name.to_lowercase().contains(needle)
+                || values.as_array().is_some_and(|v| {
+                    v.iter().any(|x| {
+                        x.as_str().unwrap_or("").to_lowercase().contains(needle)
+                    })
+                })
+        })
+    })
+}
+
+impl Views {
+    /// `ldapDirectoryView(req)`'s JSON (`GET /admin-api/ldap/directory`):
+    /// every entry of the realm's directory sorted by DN as
+    /// `Intl.Collator` sorts it, filtered by `q` (a substring of the DN, an
+    /// attribute's name or a value, case-insensitive) and `origin`, paged,
+    /// each row with its secrets masked. Not the windowed process's
+    /// store-paged answer: this runtime holds the directory in memory.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn directory_entries_json(&self, asked: &Asked<'_>) -> Json {
+        let realm_id = realm::current_id();
+        let wanted_text = text_of(asked.query, "q").trim().to_string();
+        let wanted_origin = text_of(asked.query, "origin").trim().to_string();
+        let needle = wanted_text.to_lowercase();
+        self.dir.with(|t| {
+            let Some(r) = t.realms().iter().position(|x| x.id == realm_id)
+            else {
+                return json!({ "directory": false });
+            };
+            let mut listed: Vec<&sts_store::model::StoredEntry> =
+                t.realms()[r].entries.values().collect();
+            listed.sort_by(|a, b| {
+                sts_registers::js::locale_compare(&a.dn, &b.dn)
+            });
+            let origin_of = |e: &sts_store::model::StoredEntry| -> String {
+                e.origin.clone().unwrap_or_else(|| "unstated".into())
+            };
+            let filtered: Vec<&sts_store::model::StoredEntry> = listed
+                .iter()
+                .filter(|e| {
+                    (wanted_origin.is_empty() || origin_of(e) == wanted_origin)
+                        && (needle.is_empty()
+                            || directory_entry_matches(e, &needle))
+                })
+                .copied()
+                .collect();
+            let paging = Paging::of(
+                asked.query,
+                filtered.len(),
+                Options {
+                    noun: "entries",
+                    ..Options::default()
+                },
+            );
+            let shown: Vec<Json> = paging
+                .slice(&filtered)
+                .into_iter()
+                .map(|e| directory_row_of(e, true))
+                .collect();
+            let mut counted: std::collections::BTreeMap<String, i64> =
+                std::collections::BTreeMap::new();
+            for e in &listed {
+                *counted.entry(origin_of(e)).or_insert(0) += 1;
+            }
+            let origins: Vec<&String> = counted.keys().collect();
+            json!({
+                "baseDn": t.realms()[r].base,
+                "count": listed.len(),
+                "matched": filtered.len(),
+                "shown": shown.len(),
+                "filter": {
+                    "q": if wanted_text.is_empty() { Json::Null }
+                         else { json!(wanted_text) },
+                    "origin": if wanted_origin.is_empty() { Json::Null }
+                              else { json!(wanted_origin) },
+                },
+                "origins": origins,
+                "originCounts": counted,
+                "page": paging.page, "pages": paging.pages,
+                "perPage": paging.per_page,
+                "firstRow": paging.first_row, "lastRow": paging.last_row,
+                "paging": paging.to_json(),
+                "order": "dn",
+                "search": Json::Null,
+                "entries": shown,
+            })
+        })
+    }
+
+    /// `ldapServiceView(req)`'s JSON (`GET /admin-api/ldap/service`), IN
+    /// PART: the directory's names, its two sockets as they bound, the
+    /// limits and the operations. Absent rather than empty: the prose
+    /// members (`searchScope`, `bindPolicy`, `schema`, `autoCreateRule`,
+    /// `authenticationFacts`, `enforcedRules`, `specifications`,
+    /// `implementation`), `persistence`, `tls` and
+    /// `certificateProvenance`, whose sources are not ported here.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn directory_service_json(&self, asked: &Asked<'_>) -> Json {
+        let realm_id = realm::current_id();
+        let host = asked
+            .base
+            .split("://")
+            .nth(1)
+            .unwrap_or("localhost")
+            .split(['/', ':'])
+            .next()
+            .unwrap_or("localhost")
+            .to_string();
+        self.dir.with(|t| {
+            let Some(r) = t.realms().iter().position(|x| x.id == realm_id)
+            else {
+                return json!({ "directory": false });
+            };
+            let state = Groups { tree: t, r }.directory_state(&self.settings);
+            // `boundPort`: the configured port until a socket binds one.
+            let port = state["port"].clone();
+            let total: usize = t.realms().iter().map(|x| x.entries.len()).sum();
+            let auto = self.mode.predicate("autoCreates").unwrap_or(false)
+                && self.settings.value_of("ldap.autocreateUsers").as_bool();
+            json!({
+                "url": format!("ldap://{}:{}", host,
+                               port.as_i64().map_or("null".to_string(),
+                                                    |p| p.to_string())),
+                "port": port,
+                "listening": state["listening"],
+                "listenError": state["listenError"],
+                "baseDn": state["baseDn"],
+                "usersDn": state["usersDn"],
+                "groupsDn": state["groupsDn"],
+                "namingContexts": t.naming_contexts(),
+                "ldapVersion": 3,
+                "refusedPassword": "invalid",
+                "referentialIntegrity": false,
+                "autoCreateUsers": auto,
+                "limits": {
+                    "maxEntries": state["maxEntries"],
+                    "maxSearchResults":
+                        self.settings.value_of("ldap.sizeLimit").as_int(),
+                    "currentEntries": t.realms()[r].entries.len(),
+                    "currentEntriesEverywhere": total,
+                },
+                "operations": ["bind", "unbind", "add", "delete", "modify",
+                               "modifyDN", "compare", "search"],
+                "ldapPort": self.settings.value_of("ldap.port").as_int(),
+                "ldapsPort": self.settings.value_of("ldap.tlsPort").as_int(),
+            })
+        })
     }
 }

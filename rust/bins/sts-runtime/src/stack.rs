@@ -17,6 +17,9 @@
 //! family is served yet, so every path but the shells, `/web` and
 //! `/oauth2/jwks` answers the ordinary 404.
 
+#[path = "realm_chooser.rs"]
+mod realm_chooser;
+
 use std::sync::{Arc, OnceLock, Weak};
 
 use serde_json::Value as Json;
@@ -738,6 +741,15 @@ impl Stack {
                 records: Some(records),
             },
         );
+        // THE REALM CHOOSER in front of /admin, /portal and /report
+        // (`common/realm_chooser.ts`), which asks the session core whether
+        // the browser is signed in anywhere.
+        surfaces.set_gates(Arc::new(realm_chooser::RealmChooser {
+            registry: registry.clone(),
+            settings: settings.clone(),
+            sessions: signin.sessions.clone(),
+            surfaces: surfaces.shells().surfaces.clone(),
+        }));
         scheduler.register(sts_authn::job::session_expiry_job(
             signin.sessions.clone(),
         ))?;
