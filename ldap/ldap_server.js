@@ -6985,8 +6985,21 @@ function certificatePlan(info) {
         : null);
 
   let dn;
-  const already = naming ? existingUserEntry(naming.value) : null;
-  if (subject && isUnder(subject, baseDn()) && getEntry(parentDn(subject))) {
+  // A CERTIFICATE THIS SERVICE ISSUED NAMES ITS HOLDER, NOT A NAME (#33,
+  // 2026-11-15). `tls_server.js` passes `holder`, the person the issuance
+  // register's holder subject resolves to now (`tls_client_certificates.js`'s
+  // `currentHolderOf()`), because the CN is the name the person had when it
+  // was issued. Read off the CN, a certificate presented after an LDAP rename
+  // folded onto nobody and CREATED an entry under the old name — `origin:
+  // authentication`, a phantom an administrator could then not create the
+  // name over. With a holder, the holder's entry is the one, and it exists.
+  const holder = String(certificate.holder || '').trim();
+  const heldBy = holder ? existingUserEntry(holder) : null;
+  const already = heldBy || (naming ? existingUserEntry(naming.value) : null);
+  if (heldBy) {
+    dn = heldBy.dn;
+  } else if (subject && isUnder(subject, baseDn()) &&
+             getEntry(parentDn(subject))) {
     dn = subject;
   } else if (already) {
     // THE PERSON THIS CERTIFICATE NAMES IS ALREADY HERE, so this is not a new

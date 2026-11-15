@@ -5985,8 +5985,14 @@ function recordClientCertificate(socket, mode, revocation) {
   try {
     // IN THE CERTIFICATE'S REALM, so the directory entry the observer seeds is
     // in the subtree of the realm whose authority issued it.
+    // `holder` (#33): a person's certificate issued here is filed on the
+    // entry its holder subject names NOW, so a rename does not make the CN
+    // a new person (see certificatePlan() in ldap_server.js).
+    const holder = gated.issuedHere && gated.accepted &&
+      gated.kind === 'person' ? String(gated.username || '') : '';
     inCertificateRealm(gated, function () {
-      recordCertificateAuthentication(subject, common, cert, mode, revocation);
+      recordCertificateAuthentication(subject, common, cert, mode, revocation,
+                                      holder);
     });
   } catch (e) {
     // Same reason as the read above, and one more: the console and the
@@ -6011,7 +6017,7 @@ function recordClientCertificate(socket, mode, revocation) {
 // The authentication itself, split out of `recordClientCertificate()` so it
 // can run inside the certificate's realm. It may throw; its caller catches.
 function recordCertificateAuthentication(subject, common, cert, mode,
-                                         revocation) {
+                                         revocation, holder) {
   log.debug('Entering recordCertificateAuthentication().');
   stats.recordAuthentication({
     presented: subject,
@@ -6041,7 +6047,10 @@ function recordCertificateAuthentication(subject, common, cert, mode,
       validFrom: cert.valid_from || '',
       validTo: cert.valid_to || '',
       fingerprint256: cert.fingerprint256 || '',
-      email: emailOf(cert)
+      email: emailOf(cert),
+      // The entry this certificate's holder has now, by name (#33); empty
+      // for anything but a person's certificate issued here.
+      holder: String(holder || '')
     }
   });
   log.debug('Leaving recordCertificateAuthentication().');
