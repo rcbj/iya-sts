@@ -156,19 +156,20 @@
 // ---------------------------------------------------------------------------
 // THE ONE THING THIS JOB WILL NOT DO UNTIL SECTION 6.
 //
-// **THE NUDGE IS DELIBERATELY UNDELIVERABLE FOR SECTIONS 1–5**, because the
-// PULL is the contract and the nudge is an optimisation over it. The PEP
-// registers a plain-http notify URL while `xacml.pepNotifyAllowHttp` is
-// off, so the PDP refuses to dial it and says so in the registration reply —
-// which section 1 asserts rather than assumes. Every convergence up to section
-// 5 is therefore a POLL and nothing else.
+// **THE NUDGE IS DELIBERATELY OFF FOR SECTIONS 1–5**, because the PULL is the
+// contract and the nudge is an optimisation over it. The PEP registers its
+// HTTPS notify URL — the nudge is https only since 2026-11-14 — and this job
+// turns `xacml.pepNotify` OFF in its realm as soon as it creates it, so the
+// PDP dials nothing; section 1 asserts the registration reply calls the URL
+// usable, and that nothing is dialled. Every convergence up to section 5 is
+// therefore a POLL and nothing else.
 //
-// Section 6 then turns that setting on IN THIS REALM and measures the
-// difference, which is the only way to have both claims: that the PEP converges
-// without the nudge, and that the nudge works. **In product mode plain http
-// stays refused whatever that setting says (#171)** — section 6 asserts that
-// refusal, and then puts THIS REALM in development mode for the measurement,
-// because the PEP container's notify listener is plain http on the bridge.
+// Section 6 then turns the nudge on IN THIS REALM and measures the
+// difference, which is the only way to have both claims: that the PEP
+// converges without the nudge, and that the nudge works. **The nudge is
+// verified against this realm's `pep-tls` Issuing CA with nothing set**: the
+// PEP's HTTPS pair is the one section 1b issued, and no
+// `xacml.pepNotifyCaFile` is named — in product mode as in development.
 //
 // ---------------------------------------------------------------------------
 // WHAT WOULD FAIL HERE AND NOWHERE ELSE.
@@ -1050,8 +1051,9 @@ async function startThePep() {
     create.push("--publish", "127.0.0.1::9443");
     create.push("--publish", "127.0.0.1::9180");
     create.push("--publish", "127.0.0.1::9543");
-    // The PDP dials this across the bridge by the container's own name.
-    environment.PEP_NOTIFY_URL = "http://" + PEP_NAME + ":9090/notify";
+    // The PDP dials this across the bridge by the container's own name,
+    // over HTTPS: the nudge is https only (2026-11-14).
+    environment.PEP_NOTIFY_URL = "https://" + PEP_NAME + ":9443/notify";
   } else {
     pep.containerPort = await freePort();
     pep.hostPort = pep.containerPort;
@@ -1067,8 +1069,8 @@ async function startThePep() {
     // On the host network the service is a process on this same loopback, so
     // this is the address it dials — and it is still a real outbound request
     // made by the PDP to a listener it does not share a process with.
-    environment.PEP_NOTIFY_URL = "http://127.0.0.1:" + pep.containerPort +
-                                 "/notify";
+    environment.PEP_NOTIFY_URL = "https://127.0.0.1:" +
+                                 pep.httpsContainerPort + "/notify";
   }
   Object.keys(environment).forEach(function (key) {
     create.push("--env", key + "=" + environment[key]);
@@ -1554,21 +1556,21 @@ async function itRegistersAndPulls() {
              pdpIndex.body.version + " — the same release.");
   });
 
-  check("the PDP will NOT nudge this PEP yet, and said so in the " +
-        "registration reply", function () {
+  check("the PEP registered an HTTPS notify URL the PDP calls usable",
+        function () {
     assert.ok(seen.registration.notify,
       "the registration answer should carry the PDP's verdict on the notify " +
       "URL; the PEP recorded " + JSON.stringify(seen.registration));
-    assert.strictEqual(seen.registration.notify.usable, false,
-      "THIS IS THE PREMISE OF SECTIONS 4 AND 5. The PEP registered an http " +
-      "notify URL and xacml.pepNotifyAllowHttp is off, so the PDP will " +
-      "not dial it — which means the convergences up to section 5 happened " +
-      "by POLLING. Section 6 turns it on and measures the difference. The " +
-      "PDP said " + JSON.stringify(seen.registration.notify));
-    assert.ok(String(seen.registration.notify.why)
-                .indexOf("pepNotifyAllowHttp") > 0,
-      "and it should name the setting rather than merely refusing; it says " +
-      seen.registration.notify.why);
+    assert.ok(/^https:\/\//.test(String(seen.registration.notify.url)),
+      "the nudge is https only (2026-11-14), so the PEP advertises its " +
+      "HTTPS listener; it registered " +
+      JSON.stringify(seen.registration.notify));
+    assert.strictEqual(seen.registration.notify.usable, true,
+      "an https notify URL is usable. THE PREMISE OF SECTIONS 4 AND 5 is " +
+      "xacml.pepNotify OFF in this realm, so nothing is dialled and the " +
+      "convergences up to section 5 happen by POLLING; section 6 turns it on " +
+      "and measures the difference. The PDP said " +
+      JSON.stringify(seen.registration.notify));
   });
 
   check("the first pull loaded the policy that was deployed before it started",
@@ -1661,15 +1663,18 @@ async function itRegistersAndPulls() {
 // A TLS request to the PEP's HTTPS listener, trusting ONLY `anchorPem`, with
 // hostname checking left on. Answers the status, the parsed body, and what
 // the handshake saw of the chain.
-function pepHttpsGet(p, anchorPem) {
+function pepHttpsGet(p, anchorPem, post) {
   log.debug("Entering pepHttpsGet(). path=" + p);
   const target = new URL(pep.httpsUrl + p);
+  const sent = post ? JSON.stringify(post) : "";
   log.debug("Leaving pepHttpsGet().");
   return new Promise(function (resolve) {
     const request = https.request({
       host: target.hostname, port: target.port, path: target.pathname +
-      target.search, method: "GET", ca: [anchorPem],
-      servername: target.hostname, agent: false
+      target.search, method: post ? "POST" : "GET", ca: [anchorPem],
+      servername: target.hostname, agent: false,
+      headers: post ? { "Content-Type": "application/json",
+                        "Content-Length": Buffer.byteLength(sent) } : {}
     }, function (response) {
       const peer = response.socket.getPeerCertificate(true);
       let text = "";
@@ -1698,7 +1703,7 @@ function pepHttpsGet(p, anchorPem) {
     request.on("error", function (e) {
       resolve({ status: 0, error: e.message, authorized: false });
     });
-    request.end();
+    request.end(sent || undefined);
   });
 }
 
@@ -1759,6 +1764,8 @@ async function theListenerServesARealmCertificate() {
     ipAddresses: isIp ? [host] : []
   });
   const got = issued.body || {};
+  // Kept for section 9, which nudges the PEP itself over HTTPS.
+  pep.anchorPem = String(got.anchorPem || "");
   check("the realm issues the PEP a listener certificate and its key, once",
         function () {
     assert.strictEqual(issued.status, 200,
@@ -2490,33 +2497,26 @@ async function theNudgeIsDelivered(polledMs) {
   log.debug("Entering theNudgeIsDelivered().");
   log.info("=== The nudge, over the bridge, for real ===");
 
-  await setSetting("xacml.pepNotifyAllowHttp", true);
-  // PRODUCT MODE REFUSES PLAIN HTTP WHATEVER THE SETTING SAYS (#171). Asserted
-  // when this realm is in product mode, which the refusal itself says; the
-  // realm is then put in development mode for the delivery, and back after.
-  let restoreProduct = false;
-  const inProduct = await pepRow();
-  if (inProduct.row && inProduct.row.notifyProblem &&
-      /product mode/.test(inProduct.row.notifyProblem)) {
-    check("in product mode the PDP still refuses the plain-http notify URL, " +
-          "whatever xacml.pepNotifyAllowHttp says", function () {
-      assert.ok(/pepNotifyAllowHttp/.test(inProduct.row.notifyProblem),
-        "and the refusal should name the setting it overrides; it says " +
-        inProduct.row.notifyProblem);
-    });
-    await setSetting("global.mode", "development");
-    restoreProduct = true;
-  }
+  // THE NUDGE ON, IN THIS REALM, AND NOTHING ELSE (2026-11-14): the notify
+  // URL is the PEP's HTTPS listener, and no xacml.pepNotifyCaFile is named,
+  // so a delivery below proves the default trust — this realm's pep-tls
+  // Issuing CA, which issued the pair section 1b wrote — in whatever mode
+  // the realm is in. Plain http has no setting to turn on any more.
+  await setSetting("xacml.pepNotify", true);
   const readied = await pepRow();
-  check("with the setting on, the PDP now considers the PEP nudgeable",
+  check("with the nudge on, the PDP considers the PEP nudgeable over https",
         function () {
     assert.strictEqual(readied.row.notifyProblem, null,
-      "THE VERDICT IS COMPUTED RATHER THAN REMEMBERED, which is what lets a " +
-      "setting changed after a registration change what this page says about " +
-      "it. The row still reports: " + readied.row.notifyProblem);
-    assert.ok(readied.row.notifyUrl,
-      "and the row should carry the address the PEP registered; it has " +
-      readied.row.notifyUrl);
+      "an https notify URL raises no problem; the row reports: " +
+      readied.row.notifyProblem);
+    assert.ok(/^https:\/\//.test(String(readied.row.notifyUrl || "")),
+      "and the row should carry the HTTPS address the PEP registered; it " +
+      "has " + readied.row.notifyUrl);
+    assert.ok(!String((readied.register && readied.register.notify &&
+                       readied.register.notify.transport &&
+                       readied.register.notify.transport.caFile) || ""),
+      "and no CA file is named, so what verifies the PEP is the realm's own " +
+      "pep-tls chain");
     if (pep.mode === "bridge") {
       assert.ok(readied.row.notifyUrl.indexOf(PEP_NAME) > 0,
         "on the bridge that address is the PEP's container name, which only " +
@@ -2671,9 +2671,6 @@ async function theNudgeIsDelivered(polledMs) {
   log.info("[nudge] OK — the PDP dialled the PEP across the " + pep.network +
            " network, the PEP answered, and the change was enforced " +
            elapsed + "ms after it was made.");
-  if (restoreProduct) {
-    await setSetting("global.mode", "product");
-  }
   log.debug("Leaving theNudgeIsDelivered().");
 }
 
@@ -2783,14 +2780,22 @@ async function theNudgeCarriesNothing() {
 
   const before = await pepOverview();
 
+  // THE NUDGE IS HTTPS ONLY (2026-11-14): over plain HTTP the PEP refuses it.
+  const plain = await fetchJson(pep.url + "/notify", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: "{}" });
+  check("a nudge over plain HTTP is refused, naming the HTTPS listener",
+        function () {
+    assert.strictEqual(plain.status, 404,
+      "POST /notify over plain HTTP answered " + plain.status + " " +
+      String(plain.text).slice(0, 200));
+    assert.ok(/HTTPS listener only/.test(String(plain.text)),
+      "and it says where the nudge is answered: " +
+      String(plain.text).slice(0, 200));
+  });
+
   const started = Date.now();
-  const nudged = await fetchJson(pep.url + "/notify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    // A POLICY THAT PERMITS EVERYTHING, offered to the PEP by an
-    // unauthenticated caller. If any of this were read, the assertions below
-    // would fail — which is the whole reason to send it rather than `{}`.
-    body: JSON.stringify({
+  const nudged = await pepHttpsGet("/notify", pep.anchorPem, {
       changed: true,
       syncToken: "a-token-this-pep-should-not-adopt",
       policies: [{ name: "hostile", policyId: "urn:test:hostile", isRoot: true,
@@ -2801,8 +2806,10 @@ async function theNudgeCarriesNothing() {
                              "<Target/><Rule RuleId=\"urn:test:hostile:all\" " +
                              "Effect=\"Permit\"><Target/></Rule></Policy>" }],
       policiesUrl: "http://127.0.0.1:1/xacml/pep/policies"
-    })
   });
+  // A POLICY THAT PERMITS EVERYTHING, offered to the PEP by an
+  // unauthenticated caller. If any of this were read, the assertions below
+  // would fail — which is the whole reason to send it rather than `{}`.
   const answeredIn = Date.now() - started;
 
   check("a nudge is answered 204 and well inside the PDP's timeout",
@@ -5164,6 +5171,11 @@ async function test() {
   await mintTheCredential();
   await createTheRealm();
   try {
+    // THE NUDGE OFF UNTIL SECTION 6 (2026-11-14): the PEP's notify URL is
+    // its HTTPS listener, which the PDP could dial once section 1b has
+    // written the pair — so sections 1 to 5 would converge by nudge as well
+    // as by poll. Off in this realm, they converge by polling alone.
+    await setSetting("xacml.pepNotify", false);
     await createThePeople();
     await admit("xacml-user-1", "xacml-users", xacmlUser.leaf.pem);
     if (LAUNCHER_STARTED_IT) {

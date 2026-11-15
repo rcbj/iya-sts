@@ -22849,9 +22849,9 @@ const CODES = [
     spec: '' },
   { code: 'STS-XACML-0066',
     summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
-      'outside the outbound bounds (not a URL, wrong scheme, plain ' +
-      'http without xacml.pepNotifyAllowHttp, or a host not in ' +
-      'xacml.pepNotifyAllowedHosts).',
+      'outside the outbound bounds (not a URL, a scheme other than https, ' +
+      'or a host not in xacml.pepNotifyAllowedHosts). Plain http has its ' +
+      'own code since 2026-11-14, STS-XACML-0259.',
     spec: '' },
   { code: 'STS-XACML-0067',
     summary: 'A PEP\'s notify endpoint answered a change nudge with a ' +
@@ -22882,13 +22882,15 @@ const CODES = [
   { code: 'STS-XACML-0073',
     summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
       'plain http and the realm is in product mode, whatever ' +
-      'xacml.pepNotifyAllowHttp says (#171).',
-    spec: '' },
+      'xacml.pepNotifyAllowHttp says (#171). Retired 2026-11-14: plain http ' +
+      'is refused in every mode, STS-XACML-0259.',
+    spec: '', retired: true },
   { code: 'STS-XACML-0074',
     summary: 'Product mode ignored xacml.pepNotifySkipTlsVerification: a ' +
       'nudge verifies the PEP\'s certificate whatever it says. Logged once ' +
-      'per process (#171).',
-    spec: 'none — a warning in the log' },
+      'per process (#171). Retired 2026-11-14: the setting is retired in ' +
+      'every mode, STS-XACML-0258.',
+    spec: 'none — a warning in the log', retired: true },
   { code: 'STS-XACML-0075',
     summary: 'A write put a person or a group on ADMIN_READ or ADMIN_WRITE; ' +
       'their people are the console roster\'s, granted on /admin/rbac, and ' +
@@ -23299,7 +23301,7 @@ const CODES = [
     spec: 'HTTP 400 on /admin-api' },
   { code: 'STS-XACML-0239',
     summary: 'set-pep-settings: a remote PEP text setting is too long or ' +
-      'carries a control character, notifyUrl is not an absolute http(s) ' +
+      'carries a control character, notifyUrl is not an absolute https ' +
       'URL without user name or fragment, or authzenPdpIdentifier is not ' +
       'an https origin.',
     spec: 'HTTP 400 on /admin-api' },
@@ -23398,6 +23400,24 @@ const CODES = [
       'session mechanism: several accounts in one browser are several ' +
       'browser sign-ins, which only that mechanism makes (#1760).',
     spec: 'HTTP 400 on /admin-api; the console names why' },
+  { code: 'STS-XACML-0258',
+    summary: 'xacml.pepNotifyAllowHttp or ' +
+      'xacml.pepNotifySkipTlsVerification is on, and is ignored: both were ' +
+      'retired on 2026-11-14, and a nudge is https with the PEP\'s ' +
+      'certificate verified in every mode. Logged once per process per ' +
+      'setting.',
+    spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0259',
+    summary: 'A change nudge was not sent because the PEP\'s notify URL is ' +
+      'plain http: a nudge is sent over https only, in every mode, since ' +
+      '2026-11-14. The PEP converges by polling.',
+    spec: 'none — the PEP\'s row and the registration reply say the URL ' +
+      'is unusable' },
+  { code: 'STS-XACML-0260',
+    summary: 'A change nudge was refused at the handshake: the PEP\'s ' +
+      'certificate chains to this service\'s Root but was not issued by the ' +
+      'realm\'s Remote PEP listeners (pep-tls) Issuing CA.',
+    spec: 'none — the PEP\'s row records the failed nudge' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24007,6 +24027,26 @@ const CODES = [
     summary: 'A remote PEP proxy account act named an account the ' +
       'browser\'s set does not hold (#1760).',
     spec: 'HTTP 404' },
+  { code: 'STS-XPEP-0112',
+    summary: 'A remote PEP was nudged (POST /notify) over plain HTTP. The ' +
+      'nudge is answered on its HTTPS listener only since 2026-11-14.',
+    spec: 'HTTP 404 not_found, saying where the nudge is answered' },
+  { code: 'STS-XPEP-0113',
+    summary: 'The remote PEP\'s notify URL (PEP_NOTIFY_URL, or the ' +
+      'notifyUrl the service set) is not https, so it is not advertised: ' +
+      'the service nudges over https only. The PEP converges by polling. ' +
+      'Logged once per value.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0114',
+    summary: 'A request reached the remote PEP\'s CRL-only plain-HTTP ' +
+      'listener for something other than GET /crl/<name>; that listener ' +
+      'serves its credential\'s CRLs and nothing else.',
+    spec: 'HTTP 404 not_found' },
+  { code: 'STS-XPEP-0115',
+    summary: 'PEP_CRL_HTTP holds a value that is neither true nor false; ' +
+      'the CRL-only listener keeps its default (bound when PEP_HTTP is off ' +
+      'and the credential has a CRL directory). Logged once at start.',
+    spec: 'none; the listener keeps its default' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

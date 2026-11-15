@@ -2435,6 +2435,50 @@ function primaryUseCaseFor(scopeId) {
   return scopeKindOf(scopeId) === 'process' ? 'tls' : 'assertions';
 }
 
+// ---------------------------------------------------------------------------
+// ONE USE CASE'S ISSUING CA, WITH WHAT IS ABOVE IT: the trust a client of a
+// leaf from that use case needs, and nothing from the scope's other Issuing
+// CAs. Public certificates only. First asked for by the XACML nudge
+// (`xacml/xacml_pep_http.ts`, 2026-11-14): a remote PEP's notify listener
+// serves a `pep-tls` leaf of the realm it registered to, so that realm's
+// `pep-tls` chain is what the nudge verifies it against with no CA file
+// named. `issuing` is answered apart from the rest so a caller can PIN the
+// leaf's issuer to it — the Root would also verify a leaf from any other
+// Issuing CA of any realm, which is not what "issued to a PEP of this realm"
+// means.
+// ---------------------------------------------------------------------------
+/**
+ * Answers one use case's Issuing CA in a scope, and the Intermediate and
+ * Root above it, as PEM.
+ *
+ * @param scopeId - the realm (the ambient one when empty); ignored for a
+ *   process-scoped use case
+ * @param useCaseId - the use case, such as `pep-tls`
+ * @returns `{ issuing, intermediate, root }`, each a PEM, or null where the
+ *   scope holds no such Issuing CA (nothing has been issued from it yet)
+ */
+function useCaseChainPems(scopeId, useCaseId) {
+  log.debug("Entering useCaseChainPems(). use=" + useCaseId);
+  const uc = useCase(useCaseId);
+  if (!uc) {
+    log.debug("Leaving useCaseChainPems(). Unknown use case.");
+    return null;
+  }
+  const row = rawRowFor(uc.scope === 'process' ? PROCESS_SCOPE
+                                               : realmIdOf(scopeId));
+  const root = serviceRoot();
+  const issuing = row && row.issuing ? row.issuing[uc.id] : null;
+  if (!root || !row || !row.intermediate || !issuing ||
+      !issuing.certificatePem) {
+    log.debug("Leaving useCaseChainPems(). No such Issuing CA here.");
+    return null;
+  }
+  log.debug("Leaving useCaseChainPems().");
+  return { issuing: issuing.certificatePem,
+           intermediate: row.intermediate.certificatePem,
+           root: root.certificatePem };
+}
+
 /**
  * Answers whether a realm holds a whole hierarchy.
  *
@@ -14923,6 +14967,7 @@ module.exports = {
   chainPemFor: chainPemFor,
   chainThroughRoot: chainThroughRoot,
   trustAnchorsFor: trustAnchorsFor,
+  useCaseChainPems: useCaseChainPems,
   issueSigningKeyPair: issueSigningKeyPair,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
   FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,

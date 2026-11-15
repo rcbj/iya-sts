@@ -2139,17 +2139,29 @@
     "en": "739267abc67032d4",
     "text": "提示是一種優化，絕不是機制本身。遠端 PEP 依自己的間隔「拉取」；當原則變更時，此服務會額外向每個提供了通知 URL 的已註冊 PEP POST 幾個位元組，只說「有東西變了，現在拉取」。關閉它只會增加「延遲」，沒有其他代價——每個 PEP 仍會在下次輪詢時趨於一致——這使得在沒有對外連線的部署中關閉它是安全的。它是此服務中第三個對外要求，xacml/xacml_pep_http.ts 對其加以論證，而非引用另外兩個。"
   },
+  "xacml.pepNotifyAllowHttp|label": {
+    "en": "37d9db04e27a17a9",
+    "text": "允許提示使用 http://（已停用，忽略）"
+  },
+  "xacml.pepNotifyAllowHttp|description": {
+    "en": "f283479a0bedc4de",
+    "text": "已於 2026-11-14 停用並被忽略。在任何模式下提示都只透過 https 傳送，因此 http:// 提示 URL 會在 PEP 的列上回報為不可用，PEP 透過輪詢收斂。該設定仍被接受，因此提到它的設定仍能啟動；開啟後不會改變任何內容，並且每個程序記錄一次（STS-XACML-0258）。請將其刪除。"
+  },
+  "xacml.pepNotifySkipTlsVerification|label": {
+    "en": "da9e36587928e192",
+    "text": "提示略過 TLS 驗證（已停用，忽略）"
+  },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "警告——僅限開發模式。開啟時會向 https 通知 URL 推送提示而「不」驗證 PEP 的證書，因此任何能攔截連線的人都能代為回應。每個此類要求都會記錄為警告。在產品模式下會被忽略（STS-XACML-0074，記錄一次）且無法設定（STS-CORE-0103）：請改在 xacml.pepNotifyCaFile 中指名私人 CA。"
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "已於 2026-11-14 停用並被忽略。提示一律驗證 PEP 的證書：依據本領域的遠端 PEP 監聽器（pep-tls）簽發 CA（它簽發 PEP 的 HTTPS 監聽器證書），以及 xacml.pepNotifyCaFile 和 node 自己的儲存區。該設定仍被接受，因此提到它的設定仍能啟動；開啟後不會改變任何內容，並且每個程序記錄一次（STS-XACML-0258）。在產品模式下仍不能設定（STS-CORE-0103）。請將其刪除。"
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "推送提示用的 CA 證書"
+    "en": "ba76eb67fd7510d1",
+    "text": "提示的更多 CA 證書"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "一個 PEM 檔案，內含 PEP 通知接聽程式可鏈結至的 CA 證書，「附加於」node 自身的 CA 存放區之外——這是在開啟驗證的情況下，向由私人 CA 簽發證書之 PEP 推送提示的方式。每次推送提示時讀取；無法讀取或不含任何證書的檔案會拒絕該次提示（STS-CORE-0104）。"
+    "en": "69d21c555590f4c8",
+    "text": "一個 PEM 檔案，包含 PEP 提示監聽器可以鏈結到的 CA 證書，此外還有本領域的遠端 PEP 監聽器（pep-tls）簽發 CA 和 node 自己的 CA 儲存區。若 PEP 的 HTTPS 監聽器證書由本領域簽發，則不需要它：無需任何設定即可驗證。它用於由自身 CA 認證的 PEP。每次提示時讀取；無法讀取或不含證書的檔案會拒絕提示（STS-CORE-0104）。"
   },
   "ssf.enabled|description": {
     "en": "021bc1797758d38a",

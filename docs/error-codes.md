@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5609** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5614** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -86,8 +86,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 179
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 111
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 182
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 115
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -4992,15 +4992,15 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0063` | A decision was recorded against an asker the monitor's catalogue does not know, so it was not counted. | — |
 | `STS-XACML-0064` | A realm's remote PEP register could not be read (for the monitor or the other-realms hint); that part was reported as empty. | — |
 | `STS-XACML-0065` | The change-nudge dispatcher threw, which is a defect rather than an unreachable PEP; no policy change is lost. | — |
-| `STS-XACML-0066` | A change nudge was not sent because the PEP's notify URL is outside the outbound bounds (not a URL, wrong scheme, plain http without xacml.pepNotifyAllowHttp, or a host not in xacml.pepNotifyAllowedHosts). | — |
+| `STS-XACML-0066` | A change nudge was not sent because the PEP's notify URL is outside the outbound bounds (not a URL, a scheme other than https, or a host not in xacml.pepNotifyAllowedHosts). Plain http has its own code since 2026-11-14, STS-XACML-0259. | — |
 | `STS-XACML-0067` | A PEP's notify endpoint answered a change nudge with a redirect, which is not followed. | — |
 | `STS-XACML-0068` | A PEP's notify endpoint answered a change nudge with a non-2xx status. | — |
 | `STS-XACML-0069` | A PEP's notify endpoint did not answer a change nudge within xacml.pepNotifyTimeoutMs. | — |
 | `STS-XACML-0070` | A change nudge could not be delivered because the connection to the PEP's notify endpoint failed. | — |
 | `STS-XACML-0071` | An HTTPS listener certificate was asked for a PEP that is not registered in this realm, so there is no realm to issue it from. | console: a page saying so; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0072` | A remote PEP's HTTPS listener certificate could not be issued: the certificate authority refused it, or issuing threw. | console: a page saying so; /admin-api: HTTP 400 { ok: false, errors }, or 500 when issuing threw |
-| `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
-| `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-XACML-0073` *(retired)* | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). Retired 2026-11-14: plain http is refused in every mode, STS-XACML-0259. | — |
+| `STS-XACML-0074` *(retired)* | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). Retired 2026-11-14: the setting is retired in every mode, STS-XACML-0258. | none — a warning in the log |
 | `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN — which every realm keeps (#303, #309, #1030). | none (a console or management API refusal, HTTP 400) |
 | `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN) or one of its seeded groups could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309, #1030). | none — a warning in the log |
@@ -5087,7 +5087,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0236` | set-pep-settings: the settings are not an object, or name a member that is not a setting this service manages for a remote PEP (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0237` | set-pep-settings: a remote PEP setting has the wrong type (not an integer, not true or false, not a string) or is not one of its closed set (bias, logLevel). | HTTP 400 on /admin-api |
 | `STS-XACML-0238` | set-pep-settings: a remote PEP integer setting is outside its bounds. | HTTP 400 on /admin-api |
-| `STS-XACML-0239` | set-pep-settings: a remote PEP text setting is too long or carries a control character, notifyUrl is not an absolute http(s) URL without user name or fragment, or authzenPdpIdentifier is not an https origin. | HTTP 400 on /admin-api |
+| `STS-XACML-0239` | set-pep-settings: a remote PEP text setting is too long or carries a control character, notifyUrl is not an absolute https URL without user name or fragment, or authzenPdpIdentifier is not an https origin. | HTTP 400 on /admin-api |
 | `STS-XACML-0240` | set-pep-settings: product mode refuses proxyUpstreamInsecure or proxyRpAllowInsecure true, which turn a certificate or scheme check off at the remote PEP. | HTTP 400 on /admin-api |
 | `STS-XACML-0241` | set-pep-settings or clear-pep-settings: the directory refused writing the remote PEP's entry. | HTTP 400 on /admin-api |
 | `STS-XACML-0242` | The settings stored for a remote PEP (xacmlPepSettings) do not validate — an ldapmodify wrote them — so GET /xacml/pep/settings sends configured: false and the PEP uses its environment; the console names why. | none; logged at the pull |
@@ -5106,6 +5106,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0255` | A remote PEP's listener certificate could not be issued from the realm's pep-tls Issuing CA. | HTTP 500, server_error |
 | `STS-XACML-0256` | set-pep-route was sent no route object, or set-pep-route-application named no application; set-pep-route's position is outside the route list. | HTTP 400 on /admin-api; the console names why |
 | `STS-XACML-0257` | A remote PEP proxy route sets multipleAccounts without the session mechanism: several accounts in one browser are several browser sign-ins, which only that mechanism makes (#1760). | HTTP 400 on /admin-api; the console names why |
+| `STS-XACML-0258` | xacml.pepNotifyAllowHttp or xacml.pepNotifySkipTlsVerification is on, and is ignored: both were retired on 2026-11-14, and a nudge is https with the PEP's certificate verified in every mode. Logged once per process per setting. | none — a warning in the log |
+| `STS-XACML-0259` | A change nudge was not sent because the PEP's notify URL is plain http: a nudge is sent over https only, in every mode, since 2026-11-14. The PEP converges by polling. | none — the PEP's row and the registration reply say the URL is unusable |
+| `STS-XACML-0260` | A change nudge was refused at the handshake: the PEP's certificate chains to this service's Root but was not issued by the realm's Remote PEP listeners (pep-tls) Issuing CA. | none — the PEP's row records the failed nudge |
 
 ## STS-XPEP
 
@@ -5226,6 +5229,10 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0109` | A remote PEP proxy account act (switch, sign out) came from another site (Origin or Sec-Fetch-Site) and was refused (#1760). | HTTP 403 |
 | `STS-XPEP-0110` | A remote PEP proxy account page was asked for something it does not answer: no such page, or an add whose return path is not on a session route with multipleAccounts (#1760). | HTTP 404 |
 | `STS-XPEP-0111` | A remote PEP proxy account act named an account the browser's set does not hold (#1760). | HTTP 404 |
+| `STS-XPEP-0112` | A remote PEP was nudged (POST /notify) over plain HTTP. The nudge is answered on its HTTPS listener only since 2026-11-14. | HTTP 404 not_found, saying where the nudge is answered |
+| `STS-XPEP-0113` | The remote PEP's notify URL (PEP_NOTIFY_URL, or the notifyUrl the service set) is not https, so it is not advertised: the service nudges over https only. The PEP converges by polling. Logged once per value. | none — a warning in the PEP's log |
+| `STS-XPEP-0114` | A request reached the remote PEP's CRL-only plain-HTTP listener for something other than GET /crl/<name>; that listener serves its credential's CRLs and nothing else. | HTTP 404 not_found |
+| `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (bound when PEP_HTTP is off and the credential has a CRL directory). Logged once at start. | none; the listener keeps its default |
 
 ## STS-AUTHZEN
 

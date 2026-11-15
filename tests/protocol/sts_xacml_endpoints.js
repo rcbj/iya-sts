@@ -1404,10 +1404,10 @@ async function registeringAPep() {
   check("a plain http notify URL is reported unusable, with the reason",
         function () {
     assert.strictEqual(again.body.notify.usable, false,
-      "xacml.pepNotifyAllowHttp is off, so an http notify URL cannot be " +
+      "a nudge is https only (2026-11-14), so an http notify URL is never " +
       "dialled. The answer says " + JSON.stringify(again.body.notify));
-    assert.ok(String(again.body.notify.why).indexOf(
-        "pepNotifyAllowHttp") > 0,
+    assert.ok(/plain http/.test(String(again.body.notify.why)) &&
+              /https only/.test(String(again.body.notify.why)),
       "AND IT IS SAID BACK IMMEDIATELY rather than discovered the first time " +
       "a nudge is not delivered — a PEP whose notify URL this service will " +
       "never dial should find out while somebody is still looking at the " +

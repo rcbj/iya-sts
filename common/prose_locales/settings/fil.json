@@ -7836,28 +7836,28 @@
     "text": "Mga host name na ina-nudge ng serbisyong ito. ANG WALANG LAMAN AY NANGANGAHULUGANG KAHIT ALIN, na siyang default at eksaktong tumutugma sa ssf.pushAllowedHosts — ang deployment na naaabot ng sinumang hindi nito pinagkakatiwalaan ay nagtatakda ng listahan, at tinatanggihan AYON SA PANGALAN ang bawat ibang host sa sariling row ng PEP. Mga host sa halip na mga URL, sa dahilang ibinibigay ng SSF: lehitimong inililipat ng isang component ang path nito at hindi lehitimong lumilipat sa ibang host."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Payagan ang http:// para sa nudge (development lang)"
+    "en": "37d9db04e27a17a9",
+    "text": "Payagan ang http:// para sa nudge (retirado, binabalewala)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "NAKA-OFF bilang default, gaya ng mga katumbas ng federation at SSF — at ang dumadaan dito ay MAS MAHINA kaysa sa alinman sa mga iyon, na sulit sabihin sa halip na ipagpalagay. Walang dalang credential o event ang nudge: ang buong body nito ay nagsasabing nagbago ang repository, na malalaman din naman ng PEP. Naka-off pa rin ito bilang default, dahil ang URL ay kinonfigure ng isang tao at ang request na ginagawa ng serbisyong ito nang hindi naka-encrypt ay request na masasagot ng ibang tao. Pinapayagan ng ON ang http:// na notify URL sa development; sa product mode, tinatanggihan ang plain http anuman ang sinasabi nito (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "NIRETIRO NOONG 2026-11-14 AT BINABALEWALA. Sa https lang ipinapadala ang nudge, sa anumang mode, kaya iniuulat na hindi magagamit ang http:// na notify URL sa row ng PEP at nagko-converge ang PEP sa pamamagitan ng polling. Tinatanggap pa rin ang setting, kaya patuloy na nagsisimula ang configuration na nagpapangalan dito; kapag naka-on, wala itong binabago at isang beses itong itinatala bawat proseso (STS-XACML-0258). Alisin ito."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Laktawan ang TLS verification para sa nudge (development lang)"
+    "en": "da9e36587928e192",
+    "text": "Laktawan ang pag-verify ng TLS para sa nudge (retirado, binabalewala)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "BABALA — PARA SA DEVELOPMENT MODE LANG. Kapag naka-on, ina-nudge ang https na notify URL NANG HINDI vine-verify ang certificate ng PEP, kaya masasagot ito ng sinumang makaka-intercept ng connection. Naglo-log ng babala ang bawat ganitong request. Sa product mode, hindi ito pinapansin (STS-XACML-0074, naka-log nang isang beses) at hindi maitatakda (STS-CORE-0103): pangalanan na lang ang private CA sa xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "NIRETIRO NOONG 2026-11-14 AT BINABALEWALA. Palaging bine-verify ng nudge ang certificate ng PEP: laban sa Remote PEP listeners (pep-tls) Issuing CA ng realm, na nag-iisyu ng certificate ng HTTPS listener ng PEP, at laban sa xacml.pepNotifyCaFile at sa sariling store ng node. Tinatanggap pa rin ang setting, kaya patuloy na nagsisimula ang configuration na nagpapangalan dito; kapag naka-on, wala itong binabago at isang beses itong itinatala bawat proseso (STS-XACML-0258). Sa product mode, hindi pa rin ito maitatakda (STS-CORE-0103). Alisin ito."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "Mga CA certificate para sa nudge"
+    "en": "ba76eb67fd7510d1",
+    "text": "Karagdagang CA certificate para sa nudge"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "Isang PEM file ng mga CA certificate na maaaring pag-chain-an ng notify listener ng PEP, KATABI ng sariling CA store ng node — ganito ina-nudge nang naka-on ang verification ang PEP na sine-certify ng private CA. Binabasa sa bawat nudge; ang file na hindi mabasa o walang hawak na certificate ay tumatanggi sa nudge (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "Isang PEM file ng mga CA certificate na maaaring pagkadenahan ng notify listener ng PEP, BUKOD sa Remote PEP listeners (pep-tls) Issuing CA ng realm at sa sariling CA store ng node. Hindi kailangan para sa PEP na ang certificate ng HTTPS listener ay inisyu ng realm na ito: nabe-verify iyon nang walang anumang setting. Para ito sa PEP na sertipikado ng sarili nitong CA. Binabasa sa bawat nudge; tinatanggihan ang nudge ng file na hindi mabasa o walang certificate (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

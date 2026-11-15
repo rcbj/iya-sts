@@ -7836,28 +7836,28 @@
     "text": "Nombres de host a los que este servicio enviará avisos. VACÍO SIGNIFICA CUALQUIERA, que es el predeterminado y coincide exactamente con ssf.pushAllowedHosts — un despliegue alcanzable por cualquiera en quien no confíe define la lista, y todo otro host se rechaza POR NOMBRE en la propia fila del PEP. Hosts y no URL, por la razón que da SSF: un componente cambia legítimamente su ruta y no se traslada legítimamente a otro host."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Permitir http:// para un aviso (solo desarrollo)"
+    "en": "37d9db04e27a17a9",
+    "text": "Permitir http:// para un aviso (retirado, se ignora)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "DESACTIVADO por defecto, como los equivalentes de federación y de SSF — y lo que viaja aquí es MÁS DÉBIL que cualquiera de ellos, lo que vale la pena decir en lugar de dejarlo a la suposición. Un aviso no lleva credencial ni evento: todo su cuerpo dice que el repositorio cambió, cosa que el PEP está a punto de descubrir de todos modos. Aun así está desactivado por defecto, porque la URL es una que alguien configuró y una solicitud que este servicio hace en claro es una solicitud a la que alguien puede responder en su lugar. ACTIVADO permite una URL de notificación http:// en desarrollo; en modo producto se rechaza http sin cifrar diga lo que diga esto (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "RETIRADO EL 2026-11-14 Y SE IGNORA. Un aviso se envía solo por https, en cualquier modo, por lo que una URL de aviso http:// se indica como no utilizable en la fila del PEP y el PEP converge por sondeo. El ajuste se sigue aceptando, de modo que una configuración que lo nombra sigue arrancando; activado, no cambia nada y se registra una vez por proceso (STS-XACML-0258). Elimínelo."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Omitir la verificación TLS para un aviso (solo desarrollo)"
+    "en": "da9e36587928e192",
+    "text": "Omitir la verificación TLS para un aviso (retirado, se ignora)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "ADVERTENCIA — SOLO PARA MODO DESARROLLO. Activado, avisa a una URL de notificación https SIN verificar el certificado del PEP, así que cualquiera que pueda interceptar la conexión puede responder en su lugar. Cada una de esas solicitudes se registra como advertencia. En modo producto se ignora (STS-XACML-0074, registrado una vez) y no se puede definir (STS-CORE-0103): nombre en su lugar una CA privada en xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "RETIRADO EL 2026-11-14 Y SE IGNORA. Un aviso siempre verifica el certificado del PEP: con la CA emisora de receptores de PEP remotos (pep-tls) del dominio, que emite el certificado del receptor HTTPS de un PEP, y con xacml.pepNotifyCaFile y el almacén propio de node. El ajuste se sigue aceptando, de modo que una configuración que lo nombra sigue arrancando; activado, no cambia nada y se registra una vez por proceso (STS-XACML-0258). En modo producto sigue sin poder establecerse (STS-CORE-0103). Elimínelo."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "Certificados de CA para un aviso"
+    "en": "ba76eb67fd7510d1",
+    "text": "Más certificados de CA para un aviso"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "Un archivo PEM de certificados de CA a los que puede encadenarse la escucha de notificaciones de un PEP, ADEMÁS del propio almacén de CA de node — así se avisa con verificación activada a un PEP certificado por una CA privada. Se lee en cada aviso; un archivo que no se puede leer o que no contiene ningún certificado rechaza el aviso (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "Un archivo PEM de certificados de CA a los que puede encadenar el receptor de avisos de un PEP, ADEMÁS de la CA emisora de receptores de PEP remotos (pep-tls) del dominio y del almacén de CA propio de node. No es necesario para un PEP cuyo certificado de receptor HTTPS emitió este dominio: ese se verifica sin configurar nada. Es para un PEP certificado por una CA propia. Se lee en cada aviso; un archivo que no se puede leer o que no contiene ningún certificado rechaza el aviso (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

@@ -7836,28 +7836,28 @@
     "text": "Värdnamn som den här tjänsten knuffar. TOMT BETYDER VILKEN SOM HELST, vilket är standardvärdet och motsvarar ssf.pushAllowedHosts exakt — en driftsättning som kan nås av vem som helst den inte litar på ställer in listan, och varje annan värd avvisas MED NAMN på PEP:ens egen rad. Värdar snarare än URL:er, av det skäl som SSF anger: en komponent flyttar legitimt sin sökväg men flyttar inte legitimt till en annan värd."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Tillåt http:// för en knuff (endast utveckling)"
+    "en": "37d9db04e27a17a9",
+    "text": "Tillåt http:// för en notifiering (pensionerad, ignoreras)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "AV som standard, som federationens och SSF:s motsvarigheter — och det som skickas här är SVAGARE än någon av dem, vilket är värt att säga i stället för att lämna åt antaganden. En knuff bär ingen inloggningsuppgift och ingen händelse: hela dess innehåll säger att repositoryt har ändrats, vilket PEP:en ändå är på väg att få reda på. Den är ändå av som standard, eftersom URL:en är en som någon konfigurerat och en begäran som den här tjänsten gör i klartext är en begäran som någon annan kan svara på. PÅ tillåter en http://-notify-URL i utvecklingsläge; i produktläge vägras okrypterad http oavsett vad detta säger (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "PENSIONERAD 2026-11-14 OCH IGNORERAS. En notifiering skickas bara över https, i alla lägen, så en http://-notifierings-URL rapporteras som oanvändbar på PEP:ens rad och PEP:en konvergerar genom hämtning. Inställningen accepteras fortfarande, så en konfiguration som nämner den startar ändå; påslagen ändrar den ingenting och loggas en gång per process (STS-XACML-0258). Ta bort den."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Hoppa över TLS-verifiering för en knuff (endast utveckling)"
+    "en": "da9e36587928e192",
+    "text": "Hoppa över TLS-verifiering för en notifiering (pensionerad, ignoreras)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "VARNING — ENDAST I UTVECKLINGSLÄGE. På knuffar en https-notify-URL UTAN att verifiera PEP:ens certifikat, så att vem som helst som kan avlyssna anslutningen kan svara i dess ställe. Varje sådan begäran loggas som en varning. I produktläge ignoreras den (STS-XACML-0074, loggas en gång) och kan inte ställas in (STS-CORE-0103): ange i stället en privat CA i xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "PENSIONERAD 2026-11-14 OCH IGNORERAS. En notifiering verifierar alltid PEP:ens certifikat: mot sfärens utfärdande CA för fjärr-PEP-lyssnare (pep-tls), som utfärdar certifikatet för en PEP:s HTTPS-lyssnare, och mot xacml.pepNotifyCaFile och nodes egen lagring. Inställningen accepteras fortfarande, så en konfiguration som nämner den startar ändå; påslagen ändrar den ingenting och loggas en gång per process (STS-XACML-0258). I produktläge kan den fortfarande inte sättas (STS-CORE-0103). Ta bort den."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "CA-certifikat för en knuff"
+    "en": "ba76eb67fd7510d1",
+    "text": "Fler CA-certifikat för en notifiering"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "En PEM-fil med CA-certifikat som en PEP:s notify-lyssnare får kedja till, UTÖVER nodes eget CA-lager — så knuffas en PEP som certifierats av en privat CA med verifiering påslagen. Läses vid varje knuff; en fil som inte kan läsas eller inte innehåller något certifikat avvisar knuffen (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "En PEM-fil med CA-certifikat som en PEP:s notifieringslyssnare får kedja till, UTÖVER sfärens utfärdande CA för fjärr-PEP-lyssnare (pep-tls) och nodes egen CA-lagring. Behövs inte för en PEP vars HTTPS-lyssnarcertifikat den här sfären utfärdade: det verifieras utan någon inställning. Den är till för en PEP som certifierats av en egen CA. Läses vid varje notifiering; en fil som inte kan läsas eller saknar certifikat avvisar notifieringen (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

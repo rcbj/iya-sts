@@ -470,9 +470,9 @@ var config = {
     pepStaleAfterS: 300,                     // Seconds before a registered PEP is reported stale
     pepNotify: true,                         // Nudge a registered PEP when the repository changes
     pepNotifyAllowedHosts: "",               // Notify endpoint allowlist
-    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (development only)
-    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (development only)
-    pepNotifyCaFile: "",                     // CA certificates for a nudge
+    pepNotifyAllowHttp: false,               // Allow http:// for a nudge (retired, ignored)
+    pepNotifySkipTlsVerification: false,     // Skip TLS verification for a nudge (retired, ignored)
+    pepNotifyCaFile: "",                     // More CA certificates for a nudge
     pepNotifyTimeoutMs: 2000,                // Nudge timeout (ms)
     signalResponsePolicy: "signal-response", // The policy a received signal is answered with
     riskResponsePolicy: "risk-response",     // The policy a change of risk is answered with

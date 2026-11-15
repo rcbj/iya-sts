@@ -7836,28 +7836,28 @@
     "text": "Les noms d’hôte que ce service notifiera. VIDE SIGNIFIE N’IMPORTE LEQUEL, ce qui est la valeur par défaut et correspond exactement à ssf.pushAllowedHosts — un déploiement joignable par des parties auxquelles il ne fait pas confiance définit la liste, et tout autre hôte est refusé NOMMÉMENT sur la propre ligne du PEP. Des hôtes plutôt que des URL, pour la raison que donne SSF : un composant déplace légitimement son chemin, mais ne déménage pas légitimement vers un autre hôte."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Autoriser http:// pour une notification (développement uniquement)"
+    "en": "37d9db04e27a17a9",
+    "text": "Autoriser http:// pour une notification (retiré, ignoré)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "DÉSACTIVÉ par défaut, comme ses équivalents de la fédération et de SSF — et ce qui circule ici est PLUS ANODIN que dans ces deux cas, ce qu’il vaut mieux dire que laisser supposer. Une notification ne transporte ni identifiant ni événement : tout son corps dit que le dépôt a changé, ce que le PEP est sur le point de découvrir de toute façon. Elle reste désactivée par défaut, car l’URL est configurée par quelqu’un et une requête que ce service effectue en clair est une requête à laquelle quelqu’un peut répondre à sa place. ACTIVÉ autorise une URL de notification en http:// en développement ; en mode produit, le http simple est refusé quelle que soit cette valeur (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "RETIRÉ LE 2026-11-14 ET IGNORÉ. Une notification n’est envoyée qu’en https, dans tous les modes ; une URL de notification http:// est donc signalée inutilisable sur la ligne du PEP, et le PEP converge par interrogation. Le réglage est toujours accepté, si bien qu’une configuration qui le nomme démarre encore ; activé, il ne change rien et est journalisé une fois par processus (STS-XACML-0258). Supprimez-le."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Ignorer la vérification TLS pour une notification (développement uniquement)"
+    "en": "da9e36587928e192",
+    "text": "Ignorer la vérification TLS pour une notification (retiré, ignoré)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "AVERTISSEMENT — RÉSERVÉ AU MODE DÉVELOPPEMENT. Activé, notifie une URL https SANS vérifier le certificat du PEP ; quiconque peut intercepter la connexion peut donc répondre à sa place. Chacune de ces requêtes est journalisée comme avertissement. En mode produit, il est ignoré (STS-XACML-0074, journalisé une fois) et ne peut pas être défini (STS-CORE-0103) : nommez plutôt une AC privée dans xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "RETIRÉ LE 2026-11-14 ET IGNORÉ. Une notification vérifie toujours le certificat du PEP : avec l’AC émettrice des écouteurs de PEP distants (pep-tls) du domaine, qui émet le certificat de l’écouteur HTTPS d’un PEP, ainsi qu’avec xacml.pepNotifyCaFile et le magasin propre de node. Le réglage est toujours accepté, si bien qu’une configuration qui le nomme démarre encore ; activé, il ne change rien et est journalisé une fois par processus (STS-XACML-0258). En mode produit, il ne peut toujours pas être défini (STS-CORE-0103). Supprimez-le."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "Certificats d’AC pour les notifications"
+    "en": "ba76eb67fd7510d1",
+    "text": "Certificats d’AC supplémentaires pour les notifications"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "Un fichier PEM de certificats d’AC auxquels l’écouteur de notification d’un PEP peut remonter, EN PLUS du propre magasin d’AC de node — c’est ainsi qu’un PEP certifié par une AC privée est notifié avec la vérification activée. Lu à chaque notification ; un fichier illisible ou ne contenant aucun certificat fait refuser la notification (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "Un fichier PEM de certificats d’AC auxquels l’écouteur de notification d’un PEP peut remonter, EN PLUS de l’AC émettrice des écouteurs de PEP distants (pep-tls) du domaine et du propre magasin d’AC de node. Inutile pour un PEP dont ce domaine a émis le certificat de l’écouteur HTTPS : celui-ci se vérifie sans aucun réglage. Il sert à un PEP certifié par une AC qui lui est propre. Lu à chaque notification ; un fichier illisible ou sans certificat refuse la notification (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

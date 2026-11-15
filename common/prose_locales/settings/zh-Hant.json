@@ -7836,28 +7836,28 @@
     "text": "此服務會推送提示的主機名稱。「留空表示任何主機」，這是預設值，與 ssf.pushAllowedHosts 完全一致——可被任何它不信任之人連到的部署會設定此清單，而其他每個主機都會在該 PEP 自己的列上被「依名稱」拒絕。採用主機而非 URL，理由與 SSF 相同：元件合理地會移動其路徑，但不會合理地移到另一部主機。"
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "允許以 http:// 推送提示（僅限開發模式）"
+    "en": "37d9db04e27a17a9",
+    "text": "允許通知使用 http://（已停用，忽略）"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "預設關閉，如同聯盟與 SSF 的對應設定——而此處傳送的內容比這兩者都「更弱」，這點值得說明而不是留待推測。提示不攜帶任何認證也不攜帶事件：其整個主體只說存放庫已變更，而 PEP 反正即將得知此事。它仍預設關閉，因為 URL 是某人所設定的，而此服務以明文發出的要求，就是某人可以代為回應的要求。開啟時允許在開發模式下使用 http:// 通知 URL；在產品模式下，不論此處為何，一般 http 都會被拒絕（STS-XACML-0073）。"
+    "en": "f283479a0bedc4de",
+    "text": "已於 2026-11-14 停用並被忽略。在任何模式下通知都只透過 https 傳送，因此 http:// 通知 URL 會在 PEP 的列上回報為不可用，PEP 透過輪詢收斂。該設定仍被接受，因此提到它的設定仍能啟動；開啟後不會改變任何內容，並且每個程序記錄一次（STS-XACML-0258）。請將其刪除。"
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "推送提示時略過 TLS 驗證（僅限開發模式）"
+    "en": "da9e36587928e192",
+    "text": "通知略過 TLS 驗證（已停用，忽略）"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "警告——僅限開發模式。開啟時會向 https 通知 URL 推送提示而「不」驗證 PEP 的憑證，因此任何能攔截連線的人都能代為回應。每個此類要求都會記錄為警告。在產品模式下會被忽略（STS-XACML-0074，記錄一次）且無法設定（STS-CORE-0103）：請改在 xacml.pepNotifyCaFile 中指名私人 CA。"
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "已於 2026-11-14 停用並被忽略。通知一律驗證 PEP 的憑證：依據本領域的遠端 PEP 監聽器（pep-tls）簽發 CA（它簽發 PEP 的 HTTPS 監聽器憑證），以及 xacml.pepNotifyCaFile 和 node 自己的存放區。該設定仍被接受，因此提到它的設定仍能啟動；開啟後不會改變任何內容，並且每個程序記錄一次（STS-XACML-0258）。在產品模式下仍不能設定（STS-CORE-0103）。請將其刪除。"
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "推送提示用的 CA 憑證"
+    "en": "ba76eb67fd7510d1",
+    "text": "通知的更多 CA 憑證"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "一個 PEM 檔案，內含 PEP 通知接聽程式可鏈結至的 CA 憑證，「附加於」node 自身的 CA 存放區之外——這是在開啟驗證的情況下，向由私人 CA 簽發憑證之 PEP 推送提示的方式。每次推送提示時讀取；無法讀取或不含任何憑證的檔案會拒絕該次提示（STS-CORE-0104）。"
+    "en": "69d21c555590f4c8",
+    "text": "一個 PEM 檔案，包含 PEP 通知監聽器可以鏈結到的 CA 憑證，此外還有本領域的遠端 PEP 監聽器（pep-tls）簽發 CA 和 node 自己的 CA 存放區。若 PEP 的 HTTPS 監聽器憑證由本領域簽發，則不需要它：無需任何設定即可驗證。它用於由自身 CA 認證的 PEP。每次通知時讀取；無法讀取或不含憑證的檔案會拒絕通知（STS-CORE-0104）。"
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

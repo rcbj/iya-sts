@@ -192,7 +192,13 @@ const SETTINGS: SettingRow[] = [
     applies: 'nextReconcile', default: 5000 },
   { key: 'proxySignalsStaleMs', env: 'PEP_PROXY_SIGNALS_STALE_MS',
     type: 'integer', group: 'proxy', min: 1, max: DAY_MS,
-    applies: 'nextReconcile', default: 60000 }
+    applies: 'nextReconcile', default: 60000 },
+  // MORE COOKIES THE PROXY NEVER FORWARDS UPSTREAM (2026-11-14), beside
+  // this service's own, which the pull names: comma-separated names, a
+  // trailing `*` a prefix. An application's own cookies are never touched
+  // unless named here.
+  { key: 'proxyStripCookies', env: 'PEP_PROXY_STRIP_COOKIES', type: 'text',
+    group: 'proxy', maxLength: 1024, applies: 'now', default: '' }
 ];
 
 // THE ENVIRONMENT THAT STAYS THE PEP'S, with why (the console's catalog
@@ -412,13 +418,18 @@ class PepSettings {
       url = null;
     }
     if (row.type === 'url') {
-      if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      // HTTPS ONLY (2026-11-14): the one `url` row is `notifyUrl`, and a
+      // nudge is never sent over plain http, so an http value would be a
+      // setting that can only be reported unusable. A value stored before
+      // this is not rewritten; the PEP's row says it is unusable.
+      if (!url || url.protocol !== 'https:' ||
           url.username || url.password || url.hash ||
           given.length > URL_MAX || CONTROL.test(given)) {
         log.debug("Leaving PepSettings.one(). Not a usable URL.");
-        return this.refuse('`' + row.key + '` must be an absolute http or ' +
-                           'https URL with no user name, password or ' +
-                           'fragment.', 'STS-XACML-0239');
+        return this.refuse('`' + row.key + '` must be an absolute https ' +
+                           'URL with no user name, password or fragment: ' +
+                           'the nudge is sent over https only.',
+                           'STS-XACML-0239');
       }
       log.debug("Leaving PepSettings.one(). A URL.");
       return given;

@@ -448,7 +448,7 @@ async function run(t) {
   config.setOverride('xacml.pepNotifyAllowHttp', false);
   config.setOverride('xacml.pepNotifyAllowedHosts', '');
   t.check(!!pepHttp.urlProblem('http://pep/notify'),
-          'plain http is refused while pepNotifyAllowHttp is off');
+          'plain http is refused');
   t.equal(pepHttp.urlProblem('https://pep.example.com/notify'), null,
           'and https with an empty allowlist is fine — empty means ANY, ' +
           'which is the default and the one deliberate looseness here');
@@ -463,9 +463,14 @@ async function run(t) {
           'while the allowed host is fine at ANY path — hosts rather than ' +
           'URLs, because a component legitimately moves its path and does ' +
           'not legitimately move to another host');
+  // RETIRED ON 2026-11-14: the setting is accepted and IGNORED. A nudge is
+  // https only, in every mode, so plain http stays refused with it on.
   config.setOverride('xacml.pepNotifyAllowHttp', true);
-  t.equal(pepHttp.urlProblem('http://allowed.example.com/notify'), null,
-          'and http is allowed once the setting says so');
+  t.check(!!pepHttp.urlProblem('http://allowed.example.com/notify') &&
+          pepHttp.urlVerdict('http://allowed.example.com/notify').errorCode ===
+            'STS-XACML-0259',
+          'and http stays refused with the retired pepNotifyAllowHttp on ' +
+          '(STS-XACML-0259)');
   t.check(!!pepHttp.urlProblem('ftp://allowed.example.com/notify'),
           'a scheme that is neither http nor https is refused whatever the ' +
           'settings say');
