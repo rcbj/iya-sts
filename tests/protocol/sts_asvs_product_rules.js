@@ -9,8 +9,9 @@
 // WHAT PRODUCT MODE LIMITS FOR ASVS 5.0.0, AND A REFUSAL THAT LEAVES NOTHING
 // BEHIND, OVER THE WIRE.
 //
-// D12 (#444): carries the parts a client can see of `tests/asvs_product_limits.js`
-// (#1453–#1496), `tests/asvs_protocol_rules.js` and `tests/asvs_all_or_nothing.js`,
+// D12 (#444): carries the parts a client can see of
+// `tests/asvs_product_limits.js` (#1453–#1496), `tests/asvs_protocol_rules.js`
+// and `tests/asvs_all_or_nothing.js`,
 // in a development realm and a product realm of this job's own, every
 // opt-out written on the REALM through `/admin-api/realms/set`:
 //

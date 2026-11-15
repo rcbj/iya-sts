@@ -21,7 +21,8 @@
 //   B. THE WAIVER (`oauth2.allowImplicitTokenResponses`): off, each of the
 //      four token response types is refused at the authorization endpoint
 //      (unsupported_response_type, STS-OAUTH-0163) and at registration
-//      beside the implicit grant (STS-OAUTH-0133), and neither discovery document advertises them;
+//      beside the implicit grant (STS-OAUTH-0133), and neither discovery
+//      document advertises them;
 //      on, both advertise every response type and `implicit` and still not
 //      `password`, an application listing the type
 //      (`oauthAllowedTokenResponseTypes`) may use it, one that does not is

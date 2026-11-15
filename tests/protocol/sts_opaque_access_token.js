@@ -219,7 +219,8 @@ async function test() {
   // NODE DEFECT, PINNED: the token endpoint does not catch the store's
   // refusal. It answers 500 and records STS-OAUTH-0228 ("the token
   // endpoint failed"), with the store's error in the log line, and no row
-  // carries STS-OAUTH-0979. The design (opaque_access_token.ts) says the mint is refused
+  // carries STS-OAUTH-0979. The design (opaque_access_token.ts) says the
+  // mint is refused
   // STS-OAUTH-0979. This check holds today's answer so a change is seen.
   check("6c. PINNED: it is answered 500 and recorded STS-OAUTH-0228, not " +
         "STS-OAUTH-0979",
