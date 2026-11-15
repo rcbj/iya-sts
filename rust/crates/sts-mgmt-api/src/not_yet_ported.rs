@@ -76,7 +76,6 @@ macro_rules! not_yet_ported {
         | Operation::RotateSigningKeys
         | Operation::RotateSigningKeysEmergency
         | Operation::GetMetrics
-        | Operation::GetUsers
         | Operation::GetUserAppPasswords
         | Operation::GetUserCertificates
         | Operation::GetUserDevices

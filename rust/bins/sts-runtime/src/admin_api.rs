@@ -1787,6 +1787,7 @@ impl AdminStack {
                     credentials: parts.credentials.clone(),
                 }),
                 views: Arc::new(views::Views {
+                    mode: mode.clone(),
                     roster: roster.clone(),
                     apps: apps.clone(),
                     dir: dir.clone(),

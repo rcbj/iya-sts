@@ -99,6 +99,7 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::DisableUserAccount
         | Operation::EnableUserAccount => Some(Handler::UsersAction),
         Operation::GetGroups
+        | Operation::GetUsers
         | Operation::GrantGlobalConsent
         | Operation::GrantAdminRole
         | Operation::RevokeAdminRole => Some(Handler::View),

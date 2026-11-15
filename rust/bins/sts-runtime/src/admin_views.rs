@@ -9,6 +9,7 @@
 //! |---|---|---|
 //! | `getGroups` | `groupsJson()`, `groupsListJson()`, `groupDetailJson()` | the directory's groups ([`super::groups::Groups`]), the identity register |
 //! | `grantAdminRole`, `revokeAdminRole` | `adminActions.rbacAction()` | `sts-registers`' `Rbac` over the roster, whose group writes are the directory's ([`super::groups::write_group_json`]) |
+//! | `getUsers` with `?user=` | `usersJson()`, `userDetailJson()` (in part), `stats.userDetail()`, `ldapObjectJson()` | the identity register, the token register, the directory |
 //! | `grantGlobalConsent` | `consentAction()`'s `grant-global-consent`, `consent.grantGlobal()` | the application register |
 //!
 //! THE IDENTITY REGISTER (`common/admin_stats.js`'s `users`, persisted as
@@ -20,6 +21,15 @@
 //! (`collectUserKeys()`). This runtime's own sign-ins do not record there
 //! yet (`recordAuthentication()` is another slice's), so a person known
 //! only from a Rust sign-in is known through their tokens alone.
+//!
+//! `getUsers` IS PORTED FOR ONE PERSON, IN PART: `known`, `user` (the
+//! register's row as `buildUserRowsResolved()` builds it — its record, the
+//! tokens it holds, counted by state; the artifacts it was issued are not
+//! counted, `admin_stats.artifacts` not being read here), `subject` and
+//! `ldap` (`objectFor()`, its secrets masked), or `known: false` with
+//! `registryKeeps` for nobody. Every other member of the drill-down is
+//! absent rather than empty. The LIST (no `user`) is not ported and answers
+//! as an operation not yet ported.
 //!
 //! NOT YET IN `getGroups`' drill-down, and absent rather than empty:
 //! `policyReferences` (the policy kinds' declared group references —
@@ -35,6 +45,7 @@ use sts_core::realm;
 use sts_core::realm_lifecycle::RealmLifecycle;
 use sts_core::realm_store::{Merge, RealmMap, StoreHandles, StoreSpec};
 use sts_core::settings::Settings;
+use sts_directory::EntryExt;
 use sts_mgmt_api::families::Asked;
 use sts_mgmt_api::paging::{Options, Paging};
 use sts_mgmt_api::setup::Answered;
@@ -50,7 +61,7 @@ pub const USERS_HANDLE: &str = "admin_stats.users";
 pub struct IdentityRegister {
     users: RealmMap<Json>,
     persistence: Arc<Persistence>,
-    tokens: Arc<sts_oauth::minted::TokenRegister>,
+    pub tokens: Arc<sts_oauth::minted::TokenRegister>,
     dir: Arc<LiveDir>,
 }
 
@@ -189,7 +200,41 @@ impl IdentityRegister {
 }
 
 /// The views.
+/// `MAX_USERS`, the identity register's cap (`registryKeeps`).
+const MAX_USERS: i64 = 2000;
+
+/// `countedRows(counts, nameKey)`: one row per name, by count, highest
+/// first (a stable sort, as `Array.prototype.sort` is).
+fn counted_rows(counts: &Json, name_key: &str) -> Json {
+    let mut rows: Vec<Json> = counts
+        .as_object()
+        .map(|o| {
+            o.iter()
+                .map(|(name, count)| {
+                    let mut row = Map::new();
+                    row.insert("count".into(), count.clone());
+                    row.insert(name_key.into(), json!(name));
+                    Json::Object(row)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    rows.sort_by(|a, b| {
+        let n = |v: &Json| v["count"].as_f64().unwrap_or(0.0);
+        n(b).partial_cmp(&n(a)).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Json::Array(rows)
+}
+
+fn bump(map: &mut Json, key: &str) {
+    if let Some(o) = map.as_object_mut() {
+        let n = o.get(key).and_then(Json::as_f64).unwrap_or(0.0) + 1.0;
+        o.insert(key.into(), json!(n as i64));
+    }
+}
+
 pub struct Views {
+    pub mode: Arc<sts_core::mode::Mode>,
     pub roster: Arc<super::RosterRoles>,
     pub apps: Arc<sts_registers::applications::ApplicationRegistry>,
     pub dir: Arc<LiveDir>,
@@ -224,6 +269,7 @@ impl Views {
         let setup = asked.setup?;
         let body = match asked.operation_id {
             "getGroups" => self.groups_json(asked, setup),
+            "getUsers" => self.users_json(asked)?,
             "grantGlobalConsent" => return Some(self.grant_global(asked)),
             "grantAdminRole" | "revokeAdminRole" => {
                 return Some(self.rbac_action(asked))
@@ -499,5 +545,279 @@ impl Views {
             },
             body: outcome.answer,
         }
+    }
+
+    /// `tokenStateOf(record, now)`.
+    fn token_state(&self, record: &Json, now_ms: f64) -> &'static str {
+        let skew = self.settings.value_of("oauth2.clockSkewS").as_int() as f64
+            * 1000.0;
+        let num = |k: &str| record.get(k).and_then(Json::as_f64).unwrap_or(0.0);
+        if record
+            .get("revoked")
+            .is_some_and(|v| !matches!(v, Json::Null | Json::Bool(false)))
+            || record
+                .get("jti")
+                .and_then(Json::as_str)
+                .is_some_and(|j| self.register.tokens.is_revoked(j))
+        {
+            return "revoked";
+        }
+        let (exp, nbf) = (num("exp"), num("nbf"));
+        if exp != 0.0 && exp * 1000.0 + skew <= now_ms {
+            return "expired";
+        }
+        if nbf != 0.0 && nbf * 1000.0 - skew > now_ms {
+            return "not yet valid";
+        }
+        if exp == 0.0 {
+            return "no expiry stated";
+        }
+        "valid"
+    }
+
+    /// `userRow(key)` (`buildUserRowsResolved(key)`): the register's record
+    /// and the tokens it holds, or None for nobody either names.
+    fn user_row(&self, wanted: &str) -> Option<Json> {
+        let record = self
+            .register
+            .records()
+            .into_iter()
+            .map(|(_, v)| v)
+            .find(|v| v.get("key").and_then(Json::as_str) == Some(wanted));
+        let blank = |key: &str, name: &str| {
+            json!({ "key": key, "name": name, "forms": {}, "realms": {},
+                    "protocols": {}, "authentications": 0, "firstAt": 0,
+                    "lastAt": 0, "isClient": false, "authenticated": false,
+                    "events": [], "eventsForgotten": 0,
+                    "tokens": { "issued": 0, "valid": 0, "expired": 0,
+                                "revoked": 0, "other": 0 },
+                    "artifactKinds": {}, "artifacts": 0,
+                    "lastActivityAt": 0 })
+        };
+        let mut row: Option<Json> = record.map(|r| {
+            let name = r["name"].as_str().unwrap_or(wanted).to_string();
+            let mut row = blank(wanted, &name);
+            for k in [
+                "forms",
+                "realms",
+                "protocols",
+                "authentications",
+                "firstAt",
+                "lastAt",
+                "isClient",
+                "eventsForgotten",
+            ] {
+                if let Some(v) = r.get(k) {
+                    row[k] = v.clone();
+                }
+            }
+            let known_by = r
+                .get("knownBy")
+                .and_then(Json::as_str)
+                .filter(|k| !k.is_empty());
+            row["authenticated"] = json!(known_by.is_none());
+            row["knownBy"] = json!(known_by.unwrap_or("authentication"));
+            row["events"] = r.get("events").cloned().unwrap_or(json!([]));
+            row["lastActivityAt"] =
+                r.get("lastAt").cloned().unwrap_or(json!(0));
+            row
+        });
+        let now_ms = chrono::Utc::now().timestamp_millis() as f64;
+        for record in self.register.tokens.records_in(&realm::current_id()) {
+            let text = |k: &str| {
+                record
+                    .get(k)
+                    .and_then(Json::as_str)
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let holder =
+                self.register.holder_key_of(&text("username"), &text("sub"));
+            let (key, _) = self.register.identity_of(&holder);
+            if key.is_empty() || key != wanted {
+                continue;
+            }
+            let row = row.get_or_insert_with(|| blank(&key, &key));
+            bump(&mut row["forms"], holder.trim());
+            if !text("sub").is_empty() && !text("username").is_empty() {
+                bump(&mut row["forms"], &text("sub"));
+            }
+            if text("grant") == "client_credentials" {
+                row["isClient"] = json!(true);
+            }
+            bump(&mut row["tokens"], "issued");
+            let state = match self.token_state(&record, now_ms) {
+                "valid" => "valid",
+                "expired" => "expired",
+                "revoked" => "revoked",
+                _ => "other",
+            };
+            bump(&mut row["tokens"], state);
+            let issued =
+                record.get("issuedAt").and_then(Json::as_f64).unwrap_or(0.0);
+            if issued > row["lastActivityAt"].as_f64().unwrap_or(0.0) {
+                row["lastActivityAt"] = record["issuedAt"].clone();
+            }
+        }
+        let mut row = row?;
+        let forms = counted_rows(&row["forms"], "form");
+        let realms = counted_rows(&row["realms"], "realm");
+        let kinds = counted_rows(&row["artifactKinds"], "kind");
+        let mut protocols: Vec<Json> = row["protocols"]
+            .as_object()
+            .map(|o| {
+                o.values()
+                    .map(|f| {
+                        json!({ "protocol": f["protocol"],
+                                     "count": f["count"],
+                                     "firstAt": f["firstAt"],
+                                     "lastAt": f["lastAt"],
+                                     "methods": counted_rows(&f["methods"],
+                                                             "method") })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        protocols.sort_by(|a, b| {
+            let n = |v: &Json| v["lastAt"].as_f64().unwrap_or(0.0);
+            n(b).partial_cmp(&n(a)).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        row["forms"] = forms;
+        row["realms"] = realms;
+        row["artifactKinds"] = kinds;
+        row["protocols"] = json!(protocols);
+        Some(row)
+    }
+
+    /// `ldapObjectJson(key)` (`withoutSecrets(objectFor(name))`): where the
+    /// name is, or would be, filed, the entry with its secrets masked, and
+    /// the directory's state.
+    fn ldap_object(&self, wanted: &str) -> Json {
+        let key = wanted.trim();
+        let realm_id = realm::current_id();
+        self.dir.with(|t| {
+            let Some(r) = t.realms().iter().position(|x| x.id == realm_id)
+            else {
+                return Json::Null;
+            };
+            let model = sts_directory::DirectoryModel::get();
+            let stored = if key.is_empty() {
+                None
+            } else {
+                t.locate(r, key)
+            };
+            let dn = match stored {
+                Some(e) => e.dn.clone(),
+                None if key.is_empty() => String::new(),
+                None => format!("uid={},{}", key, t.users_dn(r)),
+            };
+            let plain = !key.is_empty()
+                && !key.contains('=')
+                && !key.to_lowercase().starts_with("did:")
+                && !key.to_lowercase().starts_with("spiffe://");
+            let mut also: Vec<String> = Vec::new();
+            if plain {
+                let here = sts_ldap::service_dn::normalize_dn(Some(&dn));
+                for e in t.realms()[r].entries.values() {
+                    if sts_ldap::service_dn::normalize_dn(Some(&e.dn)) != here
+                        && e.values("uid").iter().any(|v| v == key)
+                    {
+                        also.push(e.dn.clone());
+                    }
+                }
+            }
+            also.sort();
+            let reads = Groups { tree: t, r };
+            let state = reads.directory_state(&self.settings);
+            let max = state["maxEntries"].as_i64().unwrap_or(0);
+            let total: usize = t.realms().iter().map(|x| x.entries.len()).sum();
+            let entry = stored.map(|e| {
+                let mut names: Vec<&String> = e.attributes.keys().collect();
+                names.sort();
+                let mut attributes = Map::new();
+                for name in names {
+                    let values = sts_enroll::core::Core::withheld_values(
+                        name,
+                        e.values(name),
+                    );
+                    let values: Vec<Json> = if model.is_secret(name) {
+                        values
+                            .iter()
+                            .map(|_| json!("(set — not returned)"))
+                            .collect()
+                    } else {
+                        values.into_iter().map(Json::from).collect()
+                    };
+                    attributes.insert(
+                        model.canonical_name(name),
+                        Json::Array(values),
+                    );
+                }
+                json!({ "dn": e.dn,
+                        "origin": e.origin.as_deref().unwrap_or("unstated"),
+                        "createdAt": e.created_at, "modifiedAt": e.modified_at,
+                        "operational": sts_directory::directory::OPERATIONAL
+                            .iter().map(|n| model.canonical_name(n))
+                            .collect::<Vec<_>>(),
+                        "attributes": attributes })
+            });
+            let auto = self.mode.predicate("autoCreates").unwrap_or(false)
+                && self.settings.value_of("ldap.autocreateUsers").as_bool();
+            json!({
+                "dn": dn, "found": stored.is_some(),
+                "entry": entry.unwrap_or(Json::Null),
+                "alsoNamed": also,
+                "baseDn": state["baseDn"], "usersDn": state["usersDn"],
+                "port": state["port"], "listening": state["listening"],
+                "listenError": state["listenError"],
+                "ldapsPort": state["ldapsPort"],
+                "ldapsListening": state["ldapsListening"],
+                "autoCreateUsers": auto,
+                "entryCount": state["entryCount"],
+                "maxEntries": max,
+                "full": total as i64 >= max,
+            })
+        })
+    }
+
+    /// `usersJson(req)` for one person (`?user=`); None for the list.
+    #[tracing::instrument(level = "debug", skip_all)]
+    fn users_json(&self, asked: &Asked<'_>) -> Option<Json> {
+        let wanted = text_of(asked.query, "user").trim().to_string();
+        if wanted.is_empty() {
+            return None;
+        }
+        let realm_id = realm::current_id();
+        let row = self.user_row(&wanted).or_else(|| {
+            let in_directory = self.dir.with(|t| {
+                t.realms()
+                    .iter()
+                    .position(|x| x.id == realm_id)
+                    .and_then(|r| t.locate(r, &wanted).map(|_| ()))
+                    .is_some()
+            });
+            in_directory.then(|| {
+                json!({ "key": wanted, "name": wanted, "forms": [],
+                        "realms": [], "protocols": [], "authentications": 0,
+                        "firstAt": 0, "lastAt": 0, "isClient": false,
+                        "authenticated": false, "knownBy": "directory",
+                        "events": [], "eventsForgotten": 0,
+                        "tokens": { "issued": 0, "valid": 0, "expired": 0,
+                                    "revoked": 0, "other": 0 },
+                        "artifactKinds": [], "artifacts": 0,
+                        "lastActivityAt": 0 })
+            })
+        });
+        let Some(row) = row else {
+            return Some(json!({ "user": wanted, "known": false,
+                                "registryKeeps": MAX_USERS }));
+        };
+        let subject = self.dir.with(|t| t.subject_for_name(&realm_id, &wanted));
+        Some(json!({
+            "known": true,
+            "user": row,
+            "subject": subject,
+            "ldap": self.ldap_object(&wanted),
+        }))
     }
 }
