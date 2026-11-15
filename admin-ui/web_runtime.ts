@@ -2346,6 +2346,10 @@ class ConsoleRuntime extends SpaClient {
         await this.groupOwnerSearch(fields, 'page', 'applicationOwners');
         return;
       }
+      if (page === WebAnswers.PEP_ROUTES_PAGE) {
+        await this.pepRouteSearch(fields);
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -2707,6 +2711,50 @@ class ConsoleRuntime extends SpaClient {
     const attribute = asked.attribute;
     const refocus = function () {
       const box = doc.getElementById('fgq-' + attribute);
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
+  // A REMOTE PEP'S ROUTE FORM'S APPLICATION CHOOSER (#1760): the field
+  // search's Find, Previous, Next and Use, and Clear, for Create a New Route
+  // and the route's own page. A Find asks the Applications page's own list
+  // (`GET /admin-api/applications`, rule 7) for a page of FIND_PER_PAGE; a
+  // Use or a Clear asks nothing and fills the form's `application`. The
+  // form is drawn again from its draft (`WebAnswers.pepRouteState()`), so
+  // nothing typed is lost, and nothing is written until the form's button.
+  /**
+   * Runs a route form's Application search or choice and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async pepRouteSearch(fields: Json): Promise<void> {
+    const before = (this.view.json && this.view.json.state) || {};
+    let found = null;
+    if (!WebAnswers.has(fields, 'fgadd')) {
+      const asked = WebAnswers.fieldSearchOf(fields);
+      const answer = await this.apiJson('GET',
+        WebAnswers.fieldSearchPath('applications', asked, []));
+      found = WebAnswers.fieldSearchFound('applications', asked,
+        answer && answer.status === 200 ? answer.json : null);
+    }
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, {
+        pepRoute: WebAnswers.pepRouteState(fields, before.pepRoute || null,
+                                           found) }) });
+    this.drawView(null, '');
+    if (!found) {
+      return;
+    }
+    const doc = this.env.document;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-application');
       if (box && box.focus) {
         box.focus({ preventScroll: true });
       }

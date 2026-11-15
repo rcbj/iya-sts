@@ -1237,9 +1237,7 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   the PEP's upstream, and the reverse-proxy listeners that serve it, each
   with what the PEP last reported. Every proxy listener serves every route.
 * **One form for every value**: the id, path and match, methods, public, the
-  mechanisms, the application (a chooser of the realm's applications; a
-  route that checks credentials must front one, so making the route public
-  is how to clear it), the XACML resource and action, credential
+  mechanisms, the application, the XACML resource and action, credential
   forwarding, signals, the position, and the identity (its mode, headers and
   claims, separator), one field per line, grouped under *Matching*,
   *Authentication*, *Authorization*, *Order* and *Identity sent to the
@@ -1247,6 +1245,15 @@ The page answers `GET /admin-api/xacml/peps?pep=<name>&route=<id>`, whose
   without the identity. **Save** sends `set-pep-route` with the route's current
   id in `from` and every member of the form. The save goes through the same
   checks as the document editor and the other forms.
+* **The application is chosen by a search**, on this form and on Create a
+  New Route alike. The chosen application is shown linked to its page. Type
+  part of an application's identifier or name in the box and press **Find**
+  (or Enter): the realm's applications are listed five to a page, with
+  **Previous** and **Next**, each with **Use**, which makes it the route's
+  application. **Clear** empties it. A public route names no application,
+  and a route that checks credentials must name one, so the save refuses
+  either mismatch (`STS-XACML-0197`). Find, Use and Clear save nothing and
+  keep everything else typed in the form; only the form's own button saves.
 * **Renaming is allowed.** Change the id and save. The page then opens at
   the new id. A new id that another route already holds is refused
   (`STS-XACML-0192`). Until the PEP's next poll, it holds the old document,

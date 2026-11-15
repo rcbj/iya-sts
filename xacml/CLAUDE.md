@@ -1551,7 +1551,24 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
   since `action` is the API's), replaces a route of the same id where it
   stands keeping its `identity`, and inserts at `position`. A missing route
   object, a missing application or a position outside the list is
-  `STS-XACML-0256`. The page carries `applicationChoices` for the chooser.
+  `STS-XACML-0256`. The page carries `applicationChoices`, which names the
+  chosen application and `routeDetailOf()` resolves against.
+* **THE APPLICATION FIELD IS A SEARCH** (rcbj 2026-11-15: "an application
+  name search field, results field, and the ability to choose a search
+  result"), on Create a New Route and the route's page alike
+  (`XacmlPage.applicationChooser()`), where it was a text box over a
+  `<datalist>` of every application. It is the field search (#459) in a
+  plain form, the person page's push destination's arrangement (#602,
+  `admin-ui/CLAUDE.md`): a hidden `application` shown as a link, Clear, a
+  box and Find asking `GET /admin-api/applications` five to a page (rule 7:
+  no new operation), each result a Use. The presses (`fgsearch`, `fgadd`
+  on `/admin/xacml/peps`, `WebAnswers.isFieldSearch()`) are answered in the
+  browser by `ConsoleRuntime.pepRouteSearch()` and never sent; the form is
+  drawn again from its draft in `state.pepRoute`
+  (`WebAnswers.pepRouteState()`, `XacmlPage.routeOfDraft()`), keyed by the
+  form (`new`, `page-<from>`), so nothing typed is lost. Each form's first
+  button is a hidden default save, so Enter in a box saves and Enter in the
+  search box is a Find. `tests/xacml_pep_console.js` A1–A8.
 * **A ROUTE'S OWN PAGE** (rcbj 2026-11-14: "click on a route name and go to
   another page and be able to update all the configuration values"),
   `/admin/xacml/pep/route?pep=&route=`: `getXacmlPeps` with `route` adds

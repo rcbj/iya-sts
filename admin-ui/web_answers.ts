@@ -85,6 +85,11 @@ const NODE_HEALTH_PAGE = '/admin/node-health';
 // itself, and a press is told apart from their Save by `fgsearch` and
 // `fgadd` alone — neither is a field any policy form carries.
 const POLICIES_PAGE = '/admin/policies';
+// A REMOTE PEP'S ROUTE FORMS (#1760): Create a New Route and the route's own
+// page both post to `/admin/xacml/peps`, and their Application chooser's
+// Find, Previous, Next, Use and Clear are told apart from the save by
+// `fgsearch` and `fgadd` alone, which no other form posting there carries.
+const PEP_ROUTES_PAGE = '/admin/xacml/peps';
 // The reason `common/ownership.ts` gives for an administrator's mark (#607),
 // to the letter: the in-place redraw after the Owners tab's checkbox adds or
 // takes it off the reasons the page holds.
@@ -130,6 +135,7 @@ class WebAnswers {
   static readonly ROLE_OWNERS_PAGE = ROLE_OWNERS_PAGE;
   static readonly APPLICATION_OWNERS_PAGE = APPLICATION_OWNERS_PAGE;
   static readonly POLICIES_PAGE = POLICIES_PAGE;
+  static readonly PEP_ROUTES_PAGE = PEP_ROUTES_PAGE;
 
   /**
    * Every non-empty value of a form field, in the order posted.
@@ -400,7 +406,8 @@ class WebAnswers {
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
             page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE ||
-            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE) &&
+            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE ||
+            page === PEP_ROUTES_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -436,6 +443,54 @@ class WebAnswers {
       page: adding ? shown : Math.max(1, Math.floor(Number(rest)) || 1),
       add: adding ? rest : ''
     };
+  }
+
+  // A REMOTE PEP'S ROUTE FORM'S APPLICATION CHOOSER (#1760): which form was
+  // pressed — the route page's carries `from`, the route it edits — and
+  // what the press leaves in the page's state (`state.pepRoute`), which
+  // `XacmlPage.applicationChooser()` and `routeOfDraft()` draw from. A Use
+  // or a Clear (`fgadd`, `application|<identifier>`, empty for Clear) puts
+  // its value in the draft's `application` and closes the results; a Find,
+  // Previous or Next keeps the draft and carries the page found.
+  /**
+   * The key of the route form a press came from.
+   *
+   * @param fields - the form's fields
+   * @returns `new`, or `page-<route id>`
+   */
+  static pepRouteKeyOf(fields: Json): string {
+    const from = WebAnswers.one(fields, 'from');
+    return from ? 'page-' + from : 'new';
+  }
+
+  /**
+   * What a route form's Application chooser press leaves in the page's
+   * state.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @param prior - the page's `state.pepRoute` before the press, or null
+   * @param found - a Find's, Previous's or Next's results
+   *   (`fieldSearchFound()`), or null for a Use or a Clear
+   * @returns `{ key, draft, find, chosen, label }`
+   */
+  static pepRouteState(fields: Json, prior: Json, found: Json): Json {
+    const key = WebAnswers.pepRouteKeyOf(fields);
+    const before = prior && prior.key === key ? prior : null;
+    if (!WebAnswers.has(fields, 'fgadd')) {
+      return { key: key, draft: fields, find: found,
+               chosen: before ? before.chosen : '',
+               label: before ? before.label : '' };
+    }
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const picked = asked.attribute === 'application' ? asked.add : '';
+    const row = before && before.find && (before.find.rows || [])
+      .filter(function (one: Json) {
+        return one.value === picked;
+      })[0];
+    return { key: key,
+             draft: Object.assign({}, fields, { application: picked }),
+             find: null, chosen: picked,
+             label: row ? String(row.label || '') : '' };
   }
 
   // A SINGLE-VALUED FIELD (#461) is one box, `field.<attribute>` with no

@@ -1775,18 +1775,24 @@ class XacmlPage {
   static routeForm(t: Json, json: Json, name: string,
                    count: number): string {
     const self = this;
-    const r = { id: '', path: '/', match: 'prefix', methods: [],
-                public: false, mechanisms: ['session'], application: '',
-                resource: '', action: '', forwardCredentials: false,
-                signals: true };
+    // WHAT THE READER TYPED SURVIVES A SEARCH of the Application chooser:
+    // each Find, Previous, Next, Use and Clear draws the form again from
+    // its draft (`routeOfDraft()`), as the grid's field search does.
+    const drafted = self.routeOfDraft({ id: '', path: '/', match: 'prefix',
+      methods: [], public: false, mechanisms: ['session'], application: '',
+      resource: '', action: '', forwardCredentials: false, signals: true },
+      self.routeSearchOf(json, 'new'));
+    const r = drafted.route;
     const when = 'consoleXacml.tip.route.when';
     return '<form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
+      self.defaultSubmit(t.text('consoleXacml.routeForm.add')) +
       self.formRow(self.labelled(t, 'consoleXacml.routeForm.id',
         'consoleXacml.tip.route.id', '<input type="text" name="id" ' +
-        'size="16" maxlength="64" placeholder="orders-api" required>',
+        'size="16" maxlength="64" placeholder="orders-api" required' +
+        (drafted.id ? ' value="' + esc(drafted.id) + '"' : '') + '>',
         when)) +
-      self.routeFields(t, json, r, count, 'new', true) +
+      self.routeFields(t, json, r, count, 'new', true, drafted.position) +
       self.formRow('<button type="submit">' +
         t.html('consoleXacml.routeForm.add') + '</button>') + '</form>';
   }
@@ -1800,7 +1806,7 @@ class XacmlPage {
   // legends Matching, Authentication, Authorization and Order.
   static routeFields(t: Json, json: Json, r: Json, count: number,
                      listKey: string, isNew: boolean,
-                     position?: number): string {
+                     position?: number | string): string {
     const self = this;
     const when = 'consoleXacml.tip.route.when';
     const box = function (field: string, value: string,
@@ -1861,11 +1867,7 @@ class XacmlPage {
           self.yesNo('multipleAccounts', r.multipleAccounts === true, t),
           when))) +
       group('consoleXacml.routeForm.legend.authorization',
-        row(self.labelled(t, 'consoleXacml.routeForm.application',
-          'consoleXacml.tip.route.application', '<input type="text" ' +
-          'name="application" size="24" placeholder="orders-app" list="' +
-          listId + '" value="' + esc(r.application) + '">', when) +
-          self.applicationList(json, listId)) +
+        self.applicationChooser(t, json, r, listKey) +
         row(self.labelled(t, 'consoleXacml.routeForm.resource',
           'consoleXacml.tip.route.resource', '<input type="text" ' +
           'name="resource" size="20" ' +
@@ -1931,16 +1933,194 @@ class XacmlPage {
       '</fieldset>';
   }
 
-  // The realm's applications as a datalist: the chooser SUGGESTS, and the
-  // save resolves what was typed (D10), refusing one that does not qualify.
-  static applicationList(json: Json, id: string): string {
-    return '<datalist id="' + esc(id) + '">' +
-      (json.applicationChoices || []).map(function (one: Json) {
-        return '<option value="' + esc(one.identifier) + '">' +
-          esc(one.name && one.name !== one.identifier
-            ? one.name + ' — ' + one.identifier : one.identifier) +
-          '</option>';
-      }).join('') + '</datalist>';
+  // ---------------------------------------------------------------------------
+  // THE ROUTE'S APPLICATION IS CHOSEN BY A SEARCH (#1760, rcbj 2026-11-15:
+  // "an application name search field, results field, and the ability to
+  // choose a search result. we've implemented this pattern many times in
+  // the admin console"). It was a text box over a `<datalist>` of every
+  // application in the realm, which a registry of thousands cannot be.
+  //
+  // IT IS THE FIELD SEARCH (#459) IN A PLAIN FORM, the person page's push
+  // destination's arrangement (#602, `web_users.ts`): the value is a hidden
+  // `application`, shown as a link to its application's page; a box and
+  // Find ask `GET /admin-api/applications` (rule 7: the Applications page's
+  // own list operation, `per` FIND_PER_PAGE, paged), each result has a Use
+  // and the page Previous / Next. Every one of those buttons is a submit
+  // button the runtime answers in the browser and never sends
+  // (`ConsoleRuntime.pepRouteSearch()`, `WebAnswers.isFieldSearch()`): the
+  // form is drawn again from what it holds, with the result chosen in the
+  // hidden field, and nothing is written until the form's own button.
+  // Clear empties it — what a public route must name (STS-XACML-0197); a
+  // route that checks credentials and names none is refused by the save.
+  // The box and the results are always shown (`.sa-find`), being one field
+  // of a form rather than a cell of a grid.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws a route form's Application field: the chosen application, Clear,
+   * and its search.
+   *
+   * @param t - the page's translator
+   * @param json - the page's answer, `state.pepRoute` among it after a press
+   * @param r - the route as the form draws it
+   * @param listKey - the form's key, `new` or `page-<route id>`
+   * @returns the field as HTML
+   */
+  static applicationChooser(t: Json, json: Json, r: Json,
+                            listKey: string): string {
+    const self = this;
+    const search = self.routeSearchOf(json, listKey);
+    const found = search && search.find;
+    const chosen = String(r.application || '');
+    const labelId = 'pep-route-apps-' + listKey + '-application-label';
+    const button = function (name: string, value: string, label: string,
+                             tipText: string, cls: string,
+                             off?: boolean): string {
+      return '<button type="submit" class="secondary ' + cls + '" name="' +
+        name + '" value="' + esc(value) + '" formnovalidate' +
+        kit.tip(tipText, Infinity) + (off ? ' disabled' : '') + '>' +
+        esc(label) + '</button>';
+    };
+    // What the chosen application is called: the result it was chosen
+    // from, else the realm's register as the answer carries it.
+    const nameOf = function (identifier: string): string {
+      if (search && search.chosen === identifier && search.label) {
+        return String(search.label);
+      }
+      const listed = (json.applicationChoices || []).filter(function (one:
+                                                                   Json) {
+        return one.identifier === identifier;
+      })[0];
+      return listed && listed.name ? String(listed.name) : '';
+    };
+    const name = chosen ? nameOf(chosen) : '';
+    const current = chosen
+      ? '<a href="/admin/applications?application=' +
+        encodeURIComponent(chosen) + '"><code>' + esc(chosen) +
+        '</code></a>' + (name && name !== chosen ? ' ' + esc(name) : '') +
+        ' ' + button('fgadd', 'application|',
+                     t.text('consoleXacml.routeForm.appClear'),
+                     t.text('consoleXacml.tip.route.appClear'), 'fg-add')
+      : '<span class="state-none">' +
+        t.html('consoleXacml.routeForm.appNone') + '</span>';
+    const use = function (one: Json): string {
+      if (one.value === chosen) {
+        return '<span class="state-none"' +
+          kit.tip(t.text('consoleXacml.tip.route.appChosen'), Infinity) +
+          '>' + t.html('consoleXacml.routeForm.appChosen') + '</span>';
+      }
+      return button('fgadd', 'application|' + one.value,
+                    t.text('consoleKit.find.use'),
+                    t.text('consoleXacml.tip.route.appUse',
+                           { value: one.value }), 'fg-add', !one.value);
+    };
+    const pager = !found || found.failed || found.pages <= 1 ? ''
+      : '<div class="fg-pager">' +
+        button('fgsearch', 'application|' + (found.page - 1),
+               t.text('consoleKit.find.previous'),
+               t.text('consoleKit.find.previous.tip',
+                      { n: kit.FIND_PER_PAGE }),
+               'fg-prev', found.page <= 1) +
+        '<span class="fg-pageof">' + t.html('consoleKit.find.pageOf', {
+          page: found.page, pages: found.pages, matched: found.matched }) +
+        '</span>' +
+        button('fgsearch', 'application|' + (found.page + 1),
+               t.text('consoleKit.find.next'),
+               t.text('consoleKit.find.next.tip', { n: kit.FIND_PER_PAGE }),
+               'fg-next', found.page >= found.pages) + '</div>';
+    const results = !found ? ''
+      : '<div class="fg-found" aria-live="polite">' +
+        self.hidden('fgpage.application', String(found.page || 1)) +
+        (found.failed
+          // A FAILURE, and failures stay English (#539).
+          ? '<span class="state-none">The search could not be run: ' +
+            '/admin-api did not answer it.</span>'
+          : !found.rows.length
+            ? '<span class="state-none fg-none">' + (found.query
+              ? t.html('consoleKit.find.noMatches', { query: found.query })
+              : t.html('consoleXacml.routeForm.appNoneInRealm')) + '</span>'
+            : found.rows.map(function (one: Json) {
+              return '<div class="fg-hit"><span class="fg-hit-name">' +
+                '<code>' + esc(one.value) + '</code>' +
+                (one.label ? ' ' + esc(one.label) : '') + '</span>' +
+                use(one) + '</div>';
+            }).join('')) + pager + '</div>';
+    const placeholder = t.text('consoleXacml.routeForm.appFindPlaceholder');
+    const findTip = t.text('consoleXacml.tip.route.appFind',
+                           { n: kit.FIND_PER_PAGE });
+    return self.formRow('<span class="formlabel tipword" id="' +
+        esc(labelId) + '"' +
+        self.tipOf(t, 'consoleXacml.tip.route.application') + '>' +
+        t.html('consoleXacml.routeForm.application') + '</span>' +
+        '<span class="pep-route-app" aria-labelledby="' + esc(labelId) +
+        '">' + self.hidden('application', chosen) + current + '</span>') +
+      '<div class="sa-find" id="fgc-application" role="search" ' +
+      'aria-labelledby="' + esc(labelId) + '">' +
+      '<div class="fg-item fg-findrow"><input type="search" ' +
+      'id="fgq-application" name="fgfind.application" ' +
+      'data-fg-find="application" value="' +
+      esc(found ? found.query : '') + '" placeholder="' + esc(placeholder) +
+      '" aria-label="' + esc(placeholder) + '"' + kit.tip(findTip, Infinity) +
+      '>' + button('fgsearch', 'application', t.text('consoleKit.find.find'),
+                   findTip, 'fg-findbtn') + '</div>' + results + '</div>';
+  }
+
+  // The Application chooser's last press for the form `listKey`, from the
+  // page's state (`ConsoleRuntime.pepRouteSearch()`), or null.
+  static routeSearchOf(json: Json, listKey: string): Json {
+    const search = json && json.state && json.state.pepRoute;
+    return search && search.key === listKey ? search : null;
+  }
+
+  // A ROUTE FORM DRAWN AGAIN FROM ITS DRAFT: the fields the form held when a
+  // chooser button was pressed, over the route it was first drawn from, so
+  // nothing typed is lost to a search. Without a draft, the route as given.
+  static routeOfDraft(base: Json, search: Json): Json {
+    const fields = search && search.draft;
+    if (!fields) {
+      return { route: base, id: String(base.id || ''), position: undefined,
+               identity: base.identity };
+    }
+    const one = function (name: string): string {
+      const value = fields[name];
+      const last = Array.isArray(value) ? value[value.length - 1] : value;
+      return last === undefined || last === null ? '' : String(last);
+    };
+    const all = function (name: string): string[] {
+      return ([] as Json[]).concat(fields[name] === undefined ? []
+        : fields[name]).map(String).filter(Boolean);
+    };
+    const route = Object.assign({}, base, {
+      path: one('path'), match: one('match') || base.match,
+      methods: all('methods'), public: one('public') === 'true',
+      mechanisms: all('mechanisms'),
+      forwardCredentials: one('forwardCredentials') === 'true',
+      signals: one('signals') !== 'false',
+      multipleAccounts: one('multipleAccounts') === 'true',
+      application: one('application'), resource: one('resource'),
+      action: one('routeAction') });
+    const names = ([] as Json[]).concat(fields.headerName === undefined
+      ? [] : fields.headerName);
+    const claims = ([] as Json[]).concat(fields.headerClaim === undefined
+      ? [] : fields.headerClaim);
+    const identity = fields.mode === undefined ? base.identity
+      : { mode: one('mode'), separator: one('separator'),
+          headers: names.map(function (name: unknown, i: number) {
+            return { name: String(name || ''),
+                     claim: String(claims[i] || '') };
+          }).filter(function (header: Json) {
+            return header.name || header.claim;
+          }) };
+    return { route: route, id: one('id'),
+             position: one('position') === '' ? undefined : one('position'),
+             identity: identity };
+  }
+
+  // THE FORM'S DEFAULT BUTTON, first in it: Enter in a box presses the first
+  // submit button, which would otherwise be the chooser's Clear or Find.
+  // Enter in the search box is a Find (the runtime reads `data-fg-find`).
+  static defaultSubmit(label: string): string {
+    return '<button type="submit" class="default-submit" tabindex="-1" ' +
+      'aria-hidden="true">' + esc(label) + '</button>';
   }
 
   // Each managed setting's label, by its own key so the catalogs' check
@@ -2339,25 +2519,33 @@ class XacmlPage {
         '</span>', false) + back;
     }
     const when = 'consoleXacml.tip.route.when';
-    const identity = r.identity || { mode: 'headers', headers: [],
-                                     separator: ',' };
+    // The form as the reader left it at the chooser's last press, else the
+    // route as stored (`routeOfDraft()`).
+    const drafted = self.routeOfDraft(r, self.routeSearchOf(json,
+                                                            'page-' + r.id));
+    const edited = drafted.route;
+    const identity = drafted.identity || { mode: 'headers', headers: [],
+                                           separator: ',' };
     const editor = '<h3>' + t.html('consoleXacml.routePage.editHeading') +
       '</h3><form method="post" action="/admin/xacml/peps">' +
       self.hidden('action', 'set-pep-route') + self.hidden('name', name) +
       self.hidden('from', r.id) +
+      self.defaultSubmit(t.text('consoleXacml.routeForm.update')) +
       self.formRow(self.labelled(t, 'consoleXacml.routeForm.id',
         'consoleXacml.tip.routePage.rename', '<input type="text" name="id" ' +
         'size="20" maxlength="64" required ' +
-        'value="' + esc(r.id) + '">', when)) +
-      self.routeFields(t, json, r, Math.max(detail.count - 1, 0),
-                       'page-' + r.id, false, detail.position) +
+        'value="' + esc(drafted.id) + '">', when)) +
+      self.routeFields(t, json, edited, Math.max(detail.count - 1, 0),
+                       'page-' + r.id, false,
+                       drafted.position === undefined ? detail.position
+                                                      : drafted.position) +
       // THE APPLICATION IS MAPPED HERE (rcbj, 2026-11-14): the Reverse
       // proxy tab's "Map an application to a route" form left for this
       // field, the same chooser, saved through the same validator.
       '<div class="sub">' + t.html('consoleXacml.routePage.applicationNote') +
       '</div>' +
       self.fieldGroup(t, 'consoleXacml.routeForm.legend.identity',
-        (r.public
+        (edited.public
           ? '<p class="sub">' +
             t.html('consoleXacml.routePage.publicIdentity') + '</p>'
           : self.identityFields(t, identity))) +

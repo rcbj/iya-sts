@@ -38,6 +38,10 @@
 //      page and the route page scrolls sideways in `.wide` at phone width;
 //      Methods and Mechanisms are `.formlabel` row labels naming a
 //      role="group", drawn like the other `.formrow` labels.
+//   A. THE APPLICATION FIELD IS A SEARCH CHOOSER (rcbj, 2026-11-15) on
+//      both route forms: the chosen application linked, Clear, a box and
+//      Find over GET /admin-api/applications, each result a Use that fills
+//      the hidden `application`, the rest of the form kept as typed.
 //   T. THE TRAILS (rcbj): a PEP's page is Admin console › XACML › Remote
 //      PEPs › the PEP, and a route's adds › Reverse proxy › the route, each
 //      tab a crumb linking to that tab, built by the runtime's drawView().
@@ -301,18 +305,166 @@ async function run(t) {
   t.check(page.indexOf('<a href="/admin/applications?application=' +
                        'orders-app"><code>orders-app</code></a>') >= 0,
           'R5. the route page links the application it fronts', page);
-  t.check(/<input type="text" name="application"[^>]* list="pep-route-apps-page-orders-api" value="orders-app">/
-            .test(form) &&
-          form.indexOf('<datalist id="pep-route-apps-page-orders-api">' +
-                       '<option value="orders-app">') >= 0 &&
-          form.indexOf('<option value="billing-app">') >= 0 &&
+  t.check(form.indexOf('<input type="hidden" name="application" ' +
+                       'value="orders-app">') >= 0 &&
+          form.indexOf('<datalist') < 0 &&
+          form.indexOf('list="pep-route-apps') < 0 &&
           form.indexOf('set-pep-route-application') < 0,
-          'R6. its set-pep-route form edits the application with the ' +
-          'realm\'s applications as the chooser', form);
+          'R6. its set-pep-route form holds the application in the ' +
+          'chooser\'s hidden field, no datalist', form);
   t.check(form.indexOf('make the route public') >= 0 &&
           /name="public"/.test(form),
           'R7. the form says a public route clears the application, and ' +
           'offers public', form);
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== A. the Application field is a search chooser ===');
+  // -------------------------------------------------------------------------
+  // rcbj (2026-11-15): "an application name search field, results field,
+  // and the ability to choose a search result" on Create a New Route and
+  // on the route page — the field search (#459) in a plain form, the push
+  // destination's arrangement (#602): the chosen application linked, a box
+  // and Find, a page of results each with a Use, and Clear.
+  const chooserParts = function (html) {
+    log.debug("Entering chooserParts().");
+    log.debug("Leaving chooserParts().");
+    return {
+      hidden: (html.match(/<input type="hidden" name="application" value="([^"]*)">/) || [])[1],
+      box: /<input type="search" id="fgq-application" name="fgfind\.application" data-fg-find="application"[^>]*title="[^"]+"/.test(html),
+      find: /<button type="submit" class="secondary fg-findbtn" name="fgsearch" value="application" formnovalidate title="[^"]+">Find<\/button>/.test(html),
+      results: html.indexOf('<div class="fg-found"') >= 0,
+      uses: (html.match(/name="fgadd" value="application\|[^"]+"/g) || [])
+        .map(function (one) {
+          return one.replace(/^.*\|/, '').replace(/"$/, '');
+        }),
+      clear: html.indexOf('name="fgadd" value="application|"') >= 0,
+      link: (html.match(/<a href="\/admin\/applications\?application=([^"]+)"><code>/) || [])[1],
+      defaultFirst: /^[\s\S]*?<button type="submit" class="default-submit" tabindex="-1" aria-hidden="true">[^<]+<\/button>[\s\S]*$/.test(html) &&
+        html.indexOf('class="default-submit"') <
+          html.indexOf('<button type="submit" class="secondary')
+    };
+  };
+  const pageForm = chooserParts(form);
+  const newForm = chooserParts(newPanel);
+  t.check(pageForm.box && pageForm.find && pageForm.hidden === 'orders-app' &&
+          pageForm.link === 'orders-app' && pageForm.clear &&
+          pageForm.defaultFirst && form.indexOf(' Orders ') >= 0,
+          'A1. the route page: the application linked with its name and ' +
+          'Clear, a search box and Find, the save the default button',
+          JSON.stringify(pageForm));
+  t.check(newForm.box && newForm.find && newForm.hidden === '' &&
+          !newForm.link && !newForm.clear && newForm.defaultFirst &&
+          newPanel.indexOf('none chosen') >= 0,
+          'A2. Create a New Route: the same chooser, nothing chosen yet',
+          JSON.stringify(newForm));
+
+  // A Find, then a Use, as the runtime answers them in the browser: the
+  // Applications list asked for a page of five, the results drawn under
+  // the box, and the Use filling the hidden field with the rest of the
+  // form kept as typed.
+  const Runtime = require('../admin-ui/web_runtime');
+  const asked = [];
+  const pepJson = { pep: 'pep-1', found: true,
+                    peps: [{ name: 'pep-1', proxy: proxy }],
+                    applicationChoices: [] };
+  const fakeRuntime = {
+    view: { json: pepJson },
+    apiJson: async function (method, path) {
+      asked.push(method + ' ' + path);
+      return { status: 200, json: {
+        applications: [{ identifier: 'billing-app', name: 'Billing' },
+                       { identifier: 'orders-app', name: 'Orders' }],
+        page: 1, pages: 3, matched: 12 } };
+    },
+    drawView: function () {
+      return null;
+    },
+    env: { document: { getElementById: function () {
+      return null;
+    } } }
+  };
+  const typed = { action: 'set-pep-route', name: 'pep-1', id: 'typed-id',
+                  path: '/typed', match: 'exact', methods: ['GET', 'POST'],
+                  public: 'false', mechanisms: 'oauth2',
+                  application: '', resource: 'urn:typed',
+                  routeAction: 'write', position: '1',
+                  'fgfind.application': 'bill' };
+  const WebAnswersModule = require('../admin-ui/web_answers');
+  t.check(WebAnswersModule.isFieldSearch('/admin/xacml/peps',
+            Object.assign({ fgsearch: 'application' }, typed)) &&
+          !WebAnswersModule.isFieldSearch('/admin/xacml/peps', typed),
+          'A3. a chooser press on a route form is a field search; the ' +
+          'save is not');
+  await Runtime.prototype.pepRouteSearch.call(fakeRuntime,
+    Object.assign({ fgsearch: 'application' }, typed));
+  t.equal(asked.join(' ; '),
+          'GET /admin-api/applications?q=bill&per=5&page=1',
+          'A4. Find asks the Applications list operation, five to a page');
+  writer.json = fakeRuntime.view.json;
+  const searched = panelOf(XacmlPage.proxySection(writer,
+    { name: 'pep-1', proxy: proxy, proxyRoutes: [] }),
+    'xacml-pep-proxy-new-route');
+  const afterFind = chooserParts(searched);
+  t.check(afterFind.results &&
+          afterFind.uses.join(',') === 'billing-app,orders-app' &&
+          searched.indexOf('<code>billing-app</code> Billing') >= 0 &&
+          searched.indexOf('page 1 of 3') >= 0 &&
+          searched.indexOf('value="typed-id"') >= 0 &&
+          searched.indexOf('value="/typed"') >= 0 &&
+          afterFind.hidden === '',
+          'A5. the results drawn, each with a Use, paged, and the typed ' +
+          'fields kept', searched);
+  await Runtime.prototype.pepRouteSearch.call(fakeRuntime,
+    Object.assign({}, typed, { fgadd: 'application|billing-app',
+                               'fgpage.application': '1' }));
+  writer.json = fakeRuntime.view.json;
+  const chosenHtml = panelOf(XacmlPage.proxySection(writer,
+    { name: 'pep-1', proxy: proxy, proxyRoutes: [] }),
+    'xacml-pep-proxy-new-route');
+  const afterUse = chooserParts(chosenHtml);
+  t.check(asked.length === 1 && afterUse.hidden === 'billing-app' &&
+          afterUse.link === 'billing-app' &&
+          chosenHtml.indexOf('</code></a> Billing') >= 0 &&
+          !afterUse.results && afterUse.clear &&
+          chosenHtml.indexOf('value="typed-id"') >= 0 &&
+          chosenHtml.indexOf('value="urn:typed"') >= 0 &&
+          /<option value="exact" selected>/.test(chosenHtml) &&
+          /name="methods" value="POST" checked/.test(chosenHtml) &&
+          /name="mechanisms" value="oauth2" checked/.test(chosenHtml) &&
+          !/name="mechanisms" value="session" checked/.test(chosenHtml),
+          'A6. Use fills the application, links it with its name, and ' +
+          'keeps every typed field', chosenHtml);
+  await Runtime.prototype.pepRouteSearch.call(fakeRuntime,
+    Object.assign({}, fakeRuntime.view.json.state.pepRoute.draft,
+                  { fgadd: 'application|' }));
+  writer.json = fakeRuntime.view.json;
+  const cleared = chooserParts(panelOf(XacmlPage.proxySection(writer,
+    { name: 'pep-1', proxy: proxy, proxyRoutes: [] }),
+    'xacml-pep-proxy-new-route'));
+  t.check(cleared.hidden === '' && !cleared.link && !cleared.clear,
+          'A7. Clear empties the application', JSON.stringify(cleared));
+  // The route page's draft is its own: a press there carries `from`.
+  const pageState = WebAnswersModule.pepRouteState(
+    { from: 'orders-api', fgadd: 'application|billing-app' }, null, null);
+  const pageAfter = XacmlPage.routeDetail(writer, {
+    pep: 'pep-1', route: 'orders-api', found: true,
+    peps: [{ name: 'pep-1', proxy: proxy }], applicationChoices: [],
+    state: { pepRoute: Object.assign(pageState, {
+      draft: Object.assign({}, proxy.routes[0], pageState.draft,
+                           { id: 'orders-api', public: 'false',
+                             mechanisms: ['session'], methods: ['GET'] }) }) },
+    routeDetail: { found: true, route: proxy.routes[0], usable: true,
+                   position: 0, count: 2, servedBy: [],
+                   application: { identifier: 'orders-app', name: 'Orders',
+                                  found: true } } });
+  const pageChosen = chooserParts(pageAfter.split(
+    'name="action" value="set-pep-route"')[1] || '');
+  t.check(pageState.key === 'page-orders-api' &&
+          pageChosen.hidden === 'billing-app' &&
+          pageChosen.link === 'billing-app',
+          'A8. the route page\'s Use fills its own form\'s application',
+          JSON.stringify(pageChosen));
+  writer.json = {};
 
   // -------------------------------------------------------------------------
   t.log.info('=== W. the route page keeps the PEP page\'s tabs ===');
