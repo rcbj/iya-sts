@@ -261,8 +261,11 @@ pub fn said_name(name: &str) -> String {
     }))
 }
 
-/// `checkQueryDeclared()`.
-fn check_declared(
+/// `checkQueryDeclared()`: a query name the parameters do not declare
+/// (STS-API-0142), or a value its type does not hold (0143). `/authn-api`
+/// asks it too (`RequestHeaders.checkRequest()`).
+#[tracing::instrument(level = "debug", skip_all)]
+pub fn check_declared(
     parameters: &[Json],
     query: &Query,
 ) -> Option<(ErrorCode, String)> {
