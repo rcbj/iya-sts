@@ -22,6 +22,7 @@
 pub mod answer;
 pub mod bcp;
 pub mod client_auth;
+pub mod clients;
 pub mod dpop;
 pub mod dpop_reservation;
 pub mod dpop_stores;
