@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# GENERATED from models/api/ (#1390, #444) by models/lib/rust_lib.mjs.
+# Do not edit: change the model and run
+# tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails when
+# this differs.
+
+[package]
+name = "sts-model-report"
+version = "0.1.0"
+description = "The requests and answers of the IYA STS reports (#444, D15)."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sts-model-base = { path = "../sts-model-base" }
+
+[lints]
+workspace = true

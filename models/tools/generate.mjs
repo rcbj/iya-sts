@@ -125,8 +125,17 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
   fs.writeFileSync(path.join(out, 'domain_classes.txt'),
     renderClasses(concepts));
-  // The same concepts as Rust data types, for the Rust runtime (#444, D15).
-  fs.writeFileSync(path.join(out, 'domain.rs'), renderRustDomain(concepts));
+  // The same concepts as Rust data types, for the Rust runtime (#444, D15),
+  // in `rust/`, a tree laid out as rust/crates/ is.
+  const rustTree = path.join(out, 'rust');
+  fs.rmSync(rustTree, { recursive: true, force: true });
+  const writeRust = function (rel, text) {
+    log.debug("Entering writeRust(). " + rel);
+    fs.mkdirSync(path.dirname(path.join(rustTree, rel)), { recursive: true });
+    fs.writeFileSync(path.join(rustTree, rel), text);
+    log.debug("Leaving writeRust().");
+  };
+  writeRust('sts-model/src/generated/domain.rs', renderRustDomain(concepts));
   const scim = readScim(program);
   const scimProblems = checkScim(scim, objects);
   if (scimProblems.length > 0) {
@@ -217,10 +226,14 @@ async function generate() {
       JSON.stringify(served[name]));
   });
   fs.writeFileSync(path.join(out, 'api.d.ts'), renderApiTypes(served));
-  // The same requests and answers as Rust data types (#444, D15).
+  // The same requests and answers as Rust data types (#444, D15), across
+  // the crates the emitter plans, and what each crate holds.
   const rust = renderRustApi(served);
-  fs.writeFileSync(path.join(out, 'api.rs'), rust.api);
-  fs.writeFileSync(path.join(out, 'unions.rs'), rust.unions);
+  Object.keys(rust.files).sort().forEach(function (rel) {
+    writeRust(rel, rust.files[rel]);
+  });
+  fs.writeFileSync(path.join(out, 'rust.crates.json'),
+    JSON.stringify(rust.crates));
   const projected = projections(program);
   const conceptNames = new Set(concepts.map(function (one) {
     return one.name;

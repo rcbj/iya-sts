@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# GENERATED from models/api/ (#1390, #444) by models/lib/rust_lib.mjs.
+# Do not edit: change the model and run
+# tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails when
+# this differs.
+
+[package]
+name = "sts-model-management-operations-3"
+version = "0.1.0"
+description = "Operations of the IYA STS management API (#444, D15)."
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sts-model-base = { path = "../sts-model-base" }
+sts-model-management-components-1 = { path = "../sts-model-management-components-1" }
+sts-model-management-components-2 = { path = "../sts-model-management-components-2" }
+sts-model-management-components-3 = { path = "../sts-model-management-components-3" }
+sts-model-management-components-4 = { path = "../sts-model-management-components-4" }
+
+[lints]
+workspace = true
