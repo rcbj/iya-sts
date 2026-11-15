@@ -124,10 +124,10 @@ async function test() {
   log.debug("Entering test().");
   await setUp();
   log.info("=== C. an application's own SAML attribute rows ===");
-  await api("/saml-attributes/replace", { set: "saml2",
-                                 claims: [{ name: "tenant", value: "realm" }] });
-  await api("/saml-attributes/replace", { set: "saml11",
-                                 claims: [{ name: "tenant", value: "realm" }] });
+  for (const set of ["saml2", "saml11"]) {
+    await api("/saml-attributes/replace", { set: set,
+      claims: [{ name: "tenant", value: "realm" }] });
+  }
   await api("/applications/set-custom-claim", { application: SP,
     set: "saml2", name: "tenant", value: "sp",
     nameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic" });
