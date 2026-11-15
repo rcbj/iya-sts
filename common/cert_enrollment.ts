@@ -985,6 +985,13 @@ class CertEnrollment {
                                       hasEntry: false } };
     }
     log.debug("Leaving CertEnrollment.authenticatePerson(). Refused.");
+    // A RIGHT PASSWORD REFUSED FOR WANT OF A SECOND FACTOR is recorded as the
+    // verifier's STS-AUTHN-0213, as LDAP and SCIM record it; the answer is the
+    // same (2026-11-14, found by #444's D12).
+    if (local.ok && verified && verified.reason === 'second-factor-required') {
+      return self.refuse('STS-AUTHN-0213', 401,
+                         'The password was not accepted.');
+    }
     return self.refuse(local.ok ? 'STS-ENROLL-0014' : 'STS-ENROLL-0015', 401,
                        local.ok
                          ? 'The password was not accepted.'

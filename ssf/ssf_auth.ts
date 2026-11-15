@@ -957,8 +957,13 @@ class SsfAuth {
     if (!checked.ok) {
       websecurity.doorFailed('ssf-basic', req, user);
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
+      // A RIGHT PASSWORD REFUSED FOR WANT OF A SECOND FACTOR is recorded as
+      // the verifier's STS-AUTHN-0213, as LDAP and SCIM record it; the
+      // answer is the same (2026-11-14, found by #444's D12).
       return this.refusal(checked.reason === 'reserved-refusal'
-        ? 'STS-SSF-0008' : 'STS-SSF-0009', 401,
+        ? 'STS-SSF-0008'
+        : (checked.reason === 'second-factor-required' ? 'STS-AUTHN-0213'
+                                                       : 'STS-SSF-0009'), 401,
         checked.reason === 'reserved-refusal'
         ? 'The password "' + REFUSED_PASSWORD + '" is reserved and always ' +
           'refused, so that a wrong-credential path exists at all. In ' +

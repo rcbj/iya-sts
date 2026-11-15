@@ -17501,6 +17501,13 @@ class Authn {
                  'recovery; nothing is signed in until it is used',
         detail: { requiredBy: 'recovery' }
       });
+      // THE SIGN-IN IS STILL REFUSED, AND IT IS RECORDED SO (2026-11-14,
+      // found by #444's D12): no session starts here, because a key
+      // registered on the strength of the recovery is not a passkey that
+      // signed the person in (#901). The act answered `next: redirect` with
+      // no STS-AUTHN-0381 anywhere, as if the sign-in had gone through; the
+      // code is marked on the act, so its call-log row names it.
+      this.deps.errorCodes.mark(res, 'STS-AUTHN-0381');
       this.returnToCaller(res, step.authn, null, null);
       log.debug("Leaving Authn.finishWebauthn(). A recovery passkey " +
                 "registered; back to sign in with it.");
