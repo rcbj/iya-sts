@@ -366,6 +366,25 @@ fn js_json(v: Option<&Json>) -> String {
 }
 
 /// The operation at a method and a path: its id and its entry.
+/// The members an operation's JSON body may hold: its schema's
+/// `properties`, the schema followed through one `$ref`; None where it
+/// declares no object shape or admits any member.
+fn body_fields(entry: &Json) -> Option<Vec<String>> {
+    let mut schema =
+        entry.pointer("/requestBody/content/application~1json/schema")?;
+    if let Some(r) = schema.get("$ref").and_then(Json::as_str) {
+        schema = DOCUMENT.pointer(r.strip_prefix('#')?)?;
+    }
+    if schema
+        .get("additionalProperties")
+        .is_some_and(|a| a != &Json::Bool(false))
+    {
+        return None;
+    }
+    let props = schema.get("properties")?.as_object()?;
+    Some(props.keys().cloned().collect())
+}
+
 fn operation_of(method: &str, path: &str) -> Option<(String, &'static Json)> {
     let verb = if method.eq_ignore_ascii_case("HEAD") {
         "get".to_string()
@@ -1120,6 +1139,38 @@ async fn serve(
             &trimmed,
             refuse(400, codes::STS_ACCOUNT_0022, sentence, json!({})),
         );
+    }
+    // A FIELD THE OPERATION DOES NOT TAKE IS REFUSED, NOT DROPPED
+    // (`AccountApi.run()`'s `unknownFields()`): asked of the operation's
+    // declared object shape; one that admits any member is left alone.
+    if let (Some(body), Some(fields)) = (posted.as_ref(), body_fields(entry)) {
+        let mut unknown: Vec<&String> = body
+            .as_object()
+            .map(|o| o.keys().filter(|k| !fields.contains(k)).collect())
+            .unwrap_or_default();
+        unknown.sort();
+        if !unknown.is_empty() {
+            let named: Vec<String> =
+                unknown.iter().map(|n| format!("\"{n}\"")).collect();
+            return send(
+                &parts.method,
+                &trimmed,
+                refuse(
+                    400,
+                    codes::STS_ACCOUNT_0018,
+                    format!(
+                        "body: {} {} this operation takes.",
+                        named.join(", "),
+                        if unknown.len() == 1 {
+                            "is not a field"
+                        } else {
+                            "are not fields"
+                        }
+                    ),
+                    json!({}),
+                ),
+            );
+        }
     }
     if let ("getPseudonyms" | "postPseudonyms", Some(c)) =
         (id.as_str(), caller.as_ref())
