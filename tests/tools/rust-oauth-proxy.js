@@ -10,7 +10,11 @@
 // slice): the protocol jobs that exercise the authorization server set
 // themselves up through `/admin-api`, which the Rust runtime does not serve
 // yet. This proxy, run on the host by tests/tools/rust-oauth-jobs.sh, sends
-// `/admin-api/*` to a Node service and everything else to the Rust one —
+// `/admin-api/*` — and the few OAuth endpoints this slice does not port
+// (dynamic registration, introspection, revocation, the consent screen,
+// RP-initiated logout, WebFinger) — to a Node service and everything else,
+// the authorization and token endpoints, discovery, the JWKS and the
+// sign-in screens, to the Rust one —
 // both on the SAME store, coordinating through its change log — so a job
 // sees one service whose authorization server is Rust's.
 //
@@ -37,9 +41,12 @@ const key = fs.readFileSync(path.join(dir, 'key.pem'));
 const cert = fs.readFileSync(path.join(dir, 'cert.pem'));
 fs.rmSync(dir, { recursive: true, force: true });
 
+const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/admin-api|' +
+  '/oauth2/(register|introspect|revoke|consent|logout)|' +
+  '/\\.well-known/webfinger)(/|\\?|$)');
 const counts = { rust: 0, node: 0 };
 https.createServer({ key: key, cert: cert }, function (req, res) {
-  const toNode = /^(\/realm\/[^/]+)?\/admin-api(\/|$)/.test(req.url);
+  const toNode = NODE_PATHS.test(req.url);
   const target = new URL(toNode ? nodeBase : rustBase);
   counts[toNode ? 'node' : 'rust'] += 1;
   const upstream = https.request({ host: target.hostname, port: target.port,
