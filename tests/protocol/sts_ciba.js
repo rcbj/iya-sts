@@ -177,6 +177,35 @@ async function ok(url, payload, what) {
   return r.json;
 }
 
+// `oauth2.ciba-sweep` run now, through the scheduler (202 and a run id),
+// and its run waited for until the scheduler records it ended. A manual run
+// held behind another run of the job waits for it (STS-SCHED-0024), so the
+// bound is the run's, not a guess at the schedule.
+async function sweepNow() {
+  log.debug("Entering sweepNow().");
+  const queued = await hop(null, "POST", api + "/scheduler/run",
+                           { json: { job: "oauth2.ciba-sweep" } });
+  assert.ok((queued.status === 200 || queued.status === 202) &&
+            queued.json && queued.json.runId,
+            "oauth2.ciba-sweep did not run: " + queued.status + " " +
+            queued.text.slice(0, 300));
+  let detail = null;
+  for (let i = 0; i < 600; i += 1) {
+    const d = await hop(null, "GET", api + "/scheduler?run=" +
+                        encodeURIComponent(queued.json.runId));
+    detail = (d.json && d.json.detail) || null;
+    if (detail && (detail.state === "succeeded" ||
+                   detail.state === "failed")) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 200); });
+  }
+  assert.ok(detail && detail.state === "succeeded",
+            "oauth2.ciba-sweep did not succeed: " +
+            JSON.stringify(detail).slice(0, 400));
+  log.debug("Leaving sweepNow().");
+}
+
 // THE PERSON'S PORTAL (#568): the static portal's own sign-in — the public
 // client `sts-user-portal`, PKCE and a DPoP-bound token — with the password,
 // once, and kept: the page is `/account-api`'s answer drawn by the portal's
@@ -392,8 +421,21 @@ async function lifeSection(product, browser) {
     const pushed = await authorize("ciba-push2", { login_hint: HOLDER,
       client_notification_token: "nt-push2", requested_expiry: "10" });
     const pushedId = pushed.json.auth_req_id;
-    for (let i = 0; i < 60 && !posted("/push").length; i += 1) {
+    // THE SWEEP IS RUN, NOT WAITED FOR (run #300): the scheduled sweep could
+    // be held behind another run of it (STS-SCHED-0024) past any fixed
+    // wait, so once the request's ten seconds are over this job runs
+    // `oauth2.ciba-sweep` itself and waits on that run's own state; a run
+    // that ends after the expiry has expired the request and pushed.
+    const asked = Date.now();
+    for (let i = 0; i < 30 && !posted("/push").length &&
+         Date.now() - asked < 11000; i += 1) {
       await new Promise(function (resolve) { setTimeout(resolve, 500); });
+    }
+    for (let round = 0; round < 3 && !posted("/push").length; round += 1) {
+      await sweepNow();
+      for (let i = 0; i < 20 && !posted("/push").length; i += 1) {
+        await new Promise(function (resolve) { setTimeout(resolve, 250); });
+      }
     }
     const told = posted("/push")[0];
     check("7.5a. the sweep expires an unanswered request, and a push client " +

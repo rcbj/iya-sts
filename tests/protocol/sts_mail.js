@@ -312,8 +312,13 @@ async function deadLetter(code, what, pattern) {
 async function refusals() {
   log.debug("Entering refusals().");
   log.info("=== 7. the channel's refusals and dead letters ===");
+  // THE REALM STARTS IN DEVELOPMENT, SAID SO (run #300): the section
+  // creates a person with no address, captures messages and only at its
+  // end puts the realm in product itself; in a product process a realm made
+  // without the override would refuse the first two from the start.
   await ok(base + "/admin-api/realms/create", { id: REFUSALS,
-    domain: REFUSALS + ".example.net", name: "Mail refusals" },
+    domain: REFUSALS + ".example.net", name: "Mail refusals",
+    overrides: { "global.mode": "development" } },
     "created the realm " + REFUSALS);
   await ok(refusalsApi("/users/create"), { username: "mr-one",
     invent: false, credential: "none", attributes: { cn: "Mail One",

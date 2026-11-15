@@ -303,6 +303,16 @@ async function externalHierarchy() {
 async function certificate(cn, publicPem, issuer, options) {
   log.debug("Entering certificate(). " + cn);
   const opts = options || {};
+  const extensions = Object.assign({}, opts.extensions || {
+    basicConstraints: { present: true, critical: true, ca: false },
+    keyUsage: { present: true, critical: true,
+                usages: ["digitalSignature"] }
+  });
+  const list = issuer.certificatePem ? LISTS[issuer.certificatePem] : null;
+  if (list) {
+    extensions.cRLDistributionPoints = { present: true, critical: false,
+                                         urls: [list] };
+  }
   const made = await x509.issueCertificate(Object.assign({
     subject: [{ name: "CN", value: cn }],
     subjectPublicKey: publicPem,
@@ -310,14 +320,27 @@ async function certificate(cn, publicPem, issuer, options) {
                                                : "sha256-rsa",
     profile: opts.profile || "digital-signature",
     issuer: issuer,
-    extensions: opts.extensions || {
-      basicConstraints: { present: true, critical: true, ca: false },
-      keyUsage: { present: true, critical: true,
-                  usages: ["digitalSignature"] }
-    }
+    extensions: extensions
   }, opts.validity || {}));
   log.debug("Leaving certificate().");
   return made.pem;
+}
+
+// THE LIST EACH OF SECTION 6'S AUTHORITIES PUBLISHES (run #300), keyed by
+// the authority's certificate: a certificate `certificate()` issues under
+// one names it. Product refuses, under hard-fail and
+// pki.revocationRequireDistributionPoint=auto, a foreign certificate naming
+// no list — nobody could ever revoke it — which is not the rule section 6
+// asks about, so its authorities publish an empty list as
+// externalHierarchy()'s do (#174).
+const LISTS = {};
+
+async function publishesAList(pem, privateKeyPem, label) {
+  log.debug("Entering publishesAList(). " + label);
+  const list = await require("./test_crl_host.js").reserve(label);
+  await list.publish({ pem: pem, privateKeyPem: privateKeyPem });
+  LISTS[pem] = list.url;
+  log.debug("Leaving publishesAList().");
 }
 
 function caExtensions(pathLen, usages) {
@@ -380,11 +403,14 @@ async function chainRules() {
   const rootPem = await certificate("Chains Foreign Root",
     rootPair.publicPem, rootSigner,
     { profile: "root-ca", extensions: caExtensions(null) });
+  await publishesAList(rootPem, rootPair.privatePem, "chains-root");
   const interPair = await keys.generateKeyPair("rsa-2048");
   const interPem = await certificate("Chains Foreign Intermediate",
     interPair.publicPem,
     Object.assign({ certificatePem: rootPem }, rootSigner),
     { profile: "intermediate-ca", extensions: caExtensions(0) });
+  await publishesAList(interPem, interPair.privatePem,
+                       "chains-intermediate");
   const interSigner = { certificatePem: interPem,
                         privateKeyPem: interPair.privatePem,
                         keyAlg: "rsa-2048" };
