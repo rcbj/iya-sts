@@ -153,8 +153,22 @@ impl Default for BuiltInAccess {
 
 impl AccessPolicy for BuiltInAccess {
     fn check(&self, question: &Question, held: &[String], required: &[String]) -> Answer {
+        // The embedded PEP's `rolesOf()` for the subject first — the gate
+        // names no kind, so the built-ins of an authenticated user — then
+        // the roles the caller established, unioned in
+        // (`xacml_access_pep.ts`). The register's configured roles of that
+        // name are the policy register's, which a later slice wires.
+        let mut all: Vec<String> = vec!["EVERYBODY".into()];
+        if question.authenticated {
+            all.push("ALL_AUTHENTICATED_USERS".into());
+        }
+        for one in held {
+            if !all.contains(one) {
+                all.push(one.clone());
+            }
+        }
         match &self.policy {
-            Some(policy) => sts_xacml::access::decide(policy, question, held, required),
+            Some(policy) => sts_xacml::access::decide(policy, question, &all, required),
             None => Answer {
                 allowed: false,
                 decision: sts_xacml::model::Decision::Indeterminate,
@@ -384,9 +398,10 @@ impl Gate<'_> {
     }
 
     fn verify(&self, keys: &KeySet, token: &str, now: i64) -> Option<Json> {
-        // `verifyOwnJws()` checks the signature and the key, not the clock:
-        // an expired token is the gate's own refusal (STS-API-0003).
-        let checks = ClaimChecks::default();
+        // `verifyOwnJws()` checks the clock too, so an expired token is
+        // refused here as not verifying (STS-API-0002), as in Node; the
+        // gate's own expiry check (0003) stands behind it.
+        let checks = ClaimChecks { now: Some(now), ..Default::default() };
         keys.verify_own_jws(token, None, &checks, KeyPolicy::STRICT, self.eddsa_curve, now as f64 * 1000.0)
             .ok()
     }
