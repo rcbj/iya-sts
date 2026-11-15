@@ -33067,6 +33067,18 @@ op `removeTrustAnchor`(@js(#{
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_tls_connection_r200_application_json_clientCertificate_revocation_h2870 {}
 
+@js(#{
+    `additionalProperties`:false,
+    `properties`:#{
+      `status`:#{`type`:"string"},
+      `refused`:#{`type`:"boolean"},
+      `checked`:#{`type`:"boolean"},
+      `policy`:#{`type`:"string"},
+      `source`:#{`type`:"string"}
+    },
+    `$types`:#["object","null"]
+  }) @hoisted model get_admin_api_tls_connection_r200_application_json_clientCertificate_revocationStatus {}
+
 @endpoint("/admin-api/tls-connection",
   "get",
   #{
@@ -33099,11 +33111,13 @@ op `getTlsConnection`(`responses/200/content/application~1json/schema`: {
     `clientCertificate`?: {
       `presented`?: boolean;
       `verified`?: boolean;
+      `handshakeVerified`?: boolean;
       `authorizationError`?: NullableString;
       `certificate`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_certificate_h2867;
       `thumbprint`?: NullableString;
       `identity`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_identity_h2869;
       `revocation`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_revocation_h2870;
+      `revocationStatus`?: get_admin_api_tls_connection_r200_application_json_clientCertificate_revocationStatus;
       `signIn`?: string;
       `note`?: string
     };

@@ -2084,7 +2084,15 @@ Admin Read, drawn by `web_tls_connection.ts` from `GET
   certificate as `describeCertificate()` describes a sighting, its RFC 8705
   thumbprint, the identity gate's answer (`issuedIdentityOf()`), and the
   revocation verdict `GET /tls/sign-in` would act on (`checkedSocket()`). It
-  starts no session and records no sighting;
+  starts no session and records no sighting. **`verified` IS NOT TRUE FOR A
+  CERTIFICATE REFUSED ON REVOCATION (#37, 2026-11-15)**: it was the
+  handshake's `socket.authorized` alone, which on the main port carries no
+  revocation by design, so a revoked certificate every door refuses read
+  `verified: true`. It is the handshake's verdict and not `refused` now; the
+  handshake's own answer is `handshakeVerified`, and `revocationStatus` is
+  the verdict in brief — `status`, `refused`, `checked`, `policy` and the
+  `source` that decided (`revocationStatusOf()`). Both members were added;
+  none was removed;
 * `forwarded` — `/tls/forwarded`'s object, extended: `global.trustProxy`,
   `global.trustedProxies`, whether the peer is a trusted proxy and whether the
   headers were `believed` (`client_address.js`'s own answer, not a second

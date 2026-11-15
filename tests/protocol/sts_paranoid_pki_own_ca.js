@@ -21,8 +21,9 @@
 //   A. THE MAIN PORT (`GET /admin-api/tls-connection` asked over the
 //      connection presenting it): with `pki.paranoid` off a revoked client
 //      certificate still verifies (OpenSSL reads no list); with it on the
-//      view still reports the handshake's verdict, which carries no
-//      revocation on this port by design, and the DOOR refuses it:
+//      view reports it NOT verified (#37: `verified` holds the revocation
+//      verdict, `handshakeVerified` the handshake's, which carries no
+//      revocation on this port by design), and the DOOR refuses it:
 //      /tls/sign-in starts no session, refusedOnRevocation, STS-PKI-0118
 //      on the realm's audit log (#38);
 //      an unrevoked one verifies;
@@ -233,9 +234,20 @@ async function test(realm) {
   // the DOOR's verdict, through `checkedSocket()`. Revocation before the
   // first byte (listener_path_rules C) is `holdConnectionsOn()`'s, for LDAPS,
   // the debugger and the cells' channel — not this port.
-  check("A2. with it on, the main port's view still reports the handshake's " +
-        "verdict (revocation is not part of it)", function () {
-    assert.strictEqual(verified(on), true, JSON.stringify(on));
+  // #37 (2026-11-15): `verified` no longer reads true for a certificate the
+  // doors refuse on revocation; the handshake's own verdict is
+  // `handshakeVerified`, and the revocation verdict is in brief at
+  // `revocationStatus`. Until #37 this check pinned `verified: true`.
+  check("A2. with it on, the main port's view reports the revoked " +
+        "certificate NOT verified, its handshake verdict apart (#37)",
+        function () {
+    const cc = (on && on.clientCertificate) || {};
+    const rs = cc.revocationStatus || {};
+    assert.strictEqual(verified(on), false, JSON.stringify(on));
+    assert.strictEqual(cc.handshakeVerified, true, JSON.stringify(cc));
+    assert.strictEqual(rs.status, "revoked", JSON.stringify(rs));
+    assert.strictEqual(rs.refused, true, JSON.stringify(rs));
+    assert.ok(rs.source, JSON.stringify(rs));
   });
   const realmBefore = await K.codeCount(realm, "STS-PKI-0118");
   const defBefore = await K.codeCount(null, "STS-PKI-0118");

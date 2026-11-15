@@ -7041,7 +7041,13 @@ function connectionView(req) {
     },
     clientCertificate: {
       presented: presented,
+      // `verified` is the handshake's verdict AND NOT REFUSED ON REVOCATION
+      // (#37, 2026-11-15) — settled once the revocation verdict is in,
+      // below. It was the handshake's alone, so a revoked certificate the
+      // main port's doors refuse read `verified: true` here.
+      // `handshakeVerified` keeps the handshake's own answer.
       verified: presented && socket.authorized === true,
+      handshakeVerified: presented && socket.authorized === true,
       authorizationError: presented && socket.authorizationError
         ? String(socket.authorizationError) : null,
       certificate: presented ? describeCertificate(peer, 0) : null,
@@ -7055,6 +7061,7 @@ function connectionView(req) {
         why: identity.why || null
       } : null,
       revocation: null,
+      revocationStatus: null,
       signIn: '/tls/sign-in',
       note: presented
         ? 'What this connection carried. Verified means a chain to an anchor ' +
@@ -7128,8 +7135,39 @@ function connectionView(req) {
   log.debug('Leaving connectionView(). The revocation verdict follows.');
   return checkedSocket(socket).then(function (verdict) {
     view.clientCertificate.revocation = verdict || null;
+    view.clientCertificate.revocationStatus = revocationStatusOf(verdict);
+    if (verdict && verdict.refused) {
+      view.clientCertificate.verified = false;
+    }
     return view;
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE REVOCATION VERDICT IN THREE WORDS (#37, 2026-11-15), beside the whole
+// verdict at `revocation`: its `status`, whether the policy `refused` the
+// certificate on it — what `GET /tls/sign-in` and every door reading the
+// certificate act on — the `policy`, and the `source` that decided: the
+// list or responder that named it revoked, else the leaf's own link's
+// (`crl`, `ocsp`, `register`, ...), and `''` where nothing was consulted.
+// ---------------------------------------------------------------------------
+function revocationStatusOf(verdict) {
+  log.debug('Entering revocationStatusOf().');
+  if (!verdict) {
+    log.debug('Leaving revocationStatusOf(). No verdict.');
+    return null;
+  }
+  const links = Array.isArray(verdict.links) ? verdict.links : [];
+  const decided = verdict.revoked && verdict.revoked.source
+    ? String(verdict.revoked.source)
+    : (links.length && links[0] && links[0].source
+      ? String(links[0].source) : '');
+  log.debug('Leaving revocationStatusOf(). ' + verdict.status);
+  return { status: String(verdict.status || ''),
+           refused: verdict.refused === true,
+           checked: verdict.checked === true,
+           policy: String(verdict.policy || ''),
+           source: verdict.status === 'unchecked' ? '' : decided };
 }
 
 // ---------------------------------------------------------------------------

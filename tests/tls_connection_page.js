@@ -189,6 +189,16 @@ function childMain() {
            cc.identity.accepted === false && 'revocation' in cc,
            '2c. the identity gate says it was not issued here, and the ' +
            'revocation verdict is carried', JSON.stringify(cc.identity));
+      // #37 (2026-11-15): the verdict in brief beside it, and the
+      // handshake's own answer kept apart from `verified`.
+      const rs = cc.revocationStatus || {};
+      note(cc.handshakeVerified === true && typeof rs.status === 'string' &&
+           rs.refused === false && typeof rs.source === 'string' &&
+           typeof rs.policy === 'string',
+           '2c-ii. the revocation status is carried in brief (status, ' +
+           'refused, policy, source), and handshakeVerified beside ' +
+           'verified (#37)', JSON.stringify({ handshake: cc.handshakeVerified,
+                                               status: rs }));
       note(!(r.headers['set-cookie'] || []).some(function (c) {
         return /^sts_session=/.test(c);
       }), '2d. and no session was started',
