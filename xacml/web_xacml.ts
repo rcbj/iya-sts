@@ -851,19 +851,61 @@ class XacmlPage {
 
   // The address the nudge dials: the one set on the PEP's page, else the
   // one it registered with (#1760).
+  //
+  // A SHORT STATUS, AND THE LONG SENTENCES FOLDED (rcbj, 2026-11-14: "for
+  // the very large block of text about it in the notify column … make that
+  // collapsable"). The cell says usable, unusable with a one-line reason,
+  // or not set, and how the last nudge went in two words; the service's own
+  // sentences — why a URL is refused, what the PEP answered — go in a
+  // `<details>`, collapsed, which needs no script. The reason is read from
+  // the URL itself where it can be (plain http, another scheme) and from
+  // the sentence where only the service knows (the host allowlist), so the
+  // API's answer did not have to grow a member for it.
+  static notifyReason(url: string, problem: string): string {
+    if (/^http:\/\//i.test(url)) {
+      return 'http';
+    }
+    if (!/^https:\/\//i.test(url)) {
+      return 'scheme';
+    }
+    if (/pepNotifyAllowedHosts/.test(problem)) {
+      return 'host';
+    }
+    return 'other';
+  }
+
   static pepNotify(t: Json, row: Json): string {
     const url = row.effectiveNotifyUrl || row.notifyUrl;
-    return url
-      ? '<code>' + esc(url) + '</code>' +
-        (row.notifyProblem
-          ? '<div class="sub xacml-alert">' + esc(row.notifyProblem) +
-            '</div>'
-          : '') +
-        (row.lastNotify
-          ? '<div class="sub">' + esc(row.lastNotify) + '</div>'
-          : '')
-      : '<span class="sub">' + t.html('consoleXacml.pep.noNotify') +
+    if (!url) {
+      return '<span class="sub">' + t.html('consoleXacml.pep.noNotify') +
         '</span>';
+    }
+    const problem = String(row.notifyProblem || '');
+    // Each reason by its own key, so the catalogs' check finds them.
+    const reasons: Json = {
+      http: t.html('consoleXacml.pep.notifyUnusable.http'),
+      scheme: t.html('consoleXacml.pep.notifyUnusable.scheme'),
+      host: t.html('consoleXacml.pep.notifyUnusable.host'),
+      other: t.html('consoleXacml.pep.notifyUnusable.other')
+    };
+    const status = problem
+      ? '<div class="sub xacml-alert">' +
+        reasons[this.notifyReason(String(url), problem)] + '</div>'
+      : '<div class="sub">' + t.html('consoleXacml.pep.notifyUsable') +
+        '</div>';
+    const last = String(row.lastNotify || '');
+    const lastLine = last
+      ? '<div class="sub">' + t.html(/answered 2\d\d/.test(last)
+          ? 'consoleXacml.pep.lastNudgeDelivered'
+          : 'consoleXacml.pep.lastNudgeFailed') + '</div>'
+      : '';
+    const details = problem || last
+      ? '<details class="sub"><summary>' +
+        t.html('consoleXacml.pep.notifyDetails') + '</summary>' +
+        (problem ? '<div>' + esc(problem) + '</div>' : '') +
+        (last ? '<div>' + esc(last) + '</div>' : '') + '</details>'
+      : '';
+    return '<code>' + esc(url) + '</code>' + status + lastLine + details;
   }
 
   // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
@@ -1174,72 +1216,6 @@ class XacmlPage {
       '</tr>' + rows + '</table>';
   }
 
-  // ONE ROUTE'S IDENTITY, AS A FORM (D11): the mode, and for mode headers
-  // a table of header and claim — the route's rows and enough empty ones to
-  // add to, up to the sixteen the grammar allows — and the separator. It
-  // posts set-pep-route-identity, which saves the whole document through
-  // the same checks as set-pep-proxy.
-  static identityForm(t: Json, name: string, route: Json): string {
-    const self = this;
-    const identity = route.identity || { mode: 'headers', headers: [],
-                                         separator: ',' };
-    const claims = ['sub', 'username', 'email', 'name', 'given_name',
-                    'family_name', 'groups', 'mechanism', 'acr', 'amr'];
-    const rows = (identity.headers || []).slice();
-    const blank = Math.min(16 - rows.length, 2);
-    for (let i = 0; i < blank; i++) {
-      rows.push({ name: '', claim: '' });
-    }
-    // Each label by its own key, so the catalogs' check finds them.
-    const labels: Json = {
-      headers: t.html('consoleXacml.proxy.identity.mode.headers'),
-      saml: t.html('consoleXacml.proxy.identity.mode.saml'),
-      jwt: t.html('consoleXacml.proxy.identity.mode.jwt')
-    };
-    const modes = ['headers', 'saml', 'jwt'].map(function (mode) {
-      return '<option value="' + mode + '"' +
-        (identity.mode === mode ? ' selected' : '') + '>' + labels[mode] +
-        '</option>';
-    }).join('');
-    const table = rows.map(function (one: Json) {
-      const options = ['<option value="">' +
-        t.html('consoleXacml.proxy.identity.none') + '</option>']
-        .concat(claims.map(function (claim) {
-          return '<option value="' + claim + '"' +
-            (one.claim === claim ? ' selected' : '') + '>' + claim +
-            '</option>';
-        })).join('');
-      return '<tr><td><input type="text" name="headerName" value="' +
-        esc(one.name || '') + '" placeholder="X-Remote-User"' +
-        self.tipOf(t, 'consoleXacml.tip.identity.headerName') +
-        '></td><td><select name="headerClaim"' +
-        self.tipOf(t, 'consoleXacml.tip.identity.claim') + '>' +
-        options + '</select></td></tr>';
-    }).join('');
-    return '<form method="post" action="/admin/xacml/peps">' +
-      self.hidden('action', 'set-pep-route-identity') +
-      self.hidden('name', name) + self.hidden('route', route.id) +
-      '<h4>' + t.html('consoleXacml.proxy.identity.heading',
-                      { route: route.id }) + '</h4>' +
-      self.labelled(t, 'consoleXacml.proxy.identity.mode',
-                    'consoleXacml.tip.identity.mode',
-                    '<select name="mode">' + modes + '</select>') +
-      '<table><tr>' +
-      self.th(t, 'consoleXacml.proxy.identity.thName',
-              'consoleXacml.tip.identity.headerName') +
-      self.th(t, 'consoleXacml.proxy.identity.thClaim',
-              'consoleXacml.tip.identity.claim') +
-      '</tr>' + table + '</table>' +
-      self.labelled(t, 'consoleXacml.proxy.identity.separator',
-                    'consoleXacml.tip.identity.separator',
-                    '<input type="text" name="separator" maxlength="1" ' +
-                    'size="2" value="' + esc(identity.separator || ',') +
-                    '">') +
-      '<div class="sub">' + t.html('consoleXacml.proxy.identity.note') +
-      '</div><button type="submit">' +
-      t.html('consoleXacml.proxy.identity.save') + '</button></form>';
-  }
-
   // THE SIGNAL STREAMS' HEALTH (#1760), as the PEP last reported it on a
   // heartbeat. A PEP that never sent it (one older than this service, or
   // one with no proxy) is "not reported" rather than zero, because zero
@@ -1395,13 +1371,10 @@ class XacmlPage {
             '</button></form>'
           : '')
       : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
-    const identities = ctx.write && proxy
-      ? proxy.routes.filter(function (route: Json) {
-          return !route.public;
-        }).map(function (route: Json) {
-          return self.identityForm(t, row.name, route);
-        }).join('')
-      : '';
+    // HOW EACH ROUTE FORWARDS THE IDENTITY IS ON THAT ROUTE'S OWN PAGE
+    // (rcbj, 2026-11-14), in its edit form's identity part, which the
+    // route id in the table above links to: one form per route here
+    // repeated what the route page already edits.
     // THE ROUTES ONE AT A TIME (#1760): add, edit and map an application,
     // beside the document editor — both write the same stored document.
     const json = ctx.json || {};
@@ -1419,7 +1392,7 @@ class XacmlPage {
     return kit.note('<p>' + t.html('consoleXacml.proxy.p1') + '</p>',
                     t.text('consoleXacml.proxy.label')) +
       '<h3>' + t.html('consoleXacml.proxy.heading', { name: row.name }) +
-      '</h3>' + state + problem + routeForms + identities +
+      '</h3>' + state + problem + routeForms +
       '<h3>' + t.html('consoleXacml.proxy.documentHeading') + '</h3>' +
       editor;
   }
@@ -1465,6 +1438,7 @@ class XacmlPage {
         'proxy-off': t.html('consoleXacml.listeners.reason.proxyOff'),
         'http-off': t.html('consoleXacml.listeners.reason.httpOff'),
         'not-configured': t.html('consoleXacml.listeners.reason.notConfigured'),
+        'crl-only': t.html('consoleXacml.listeners.reason.crlOnly'),
         other: t.html('consoleXacml.listeners.reason.other')
       }
     };
@@ -1576,6 +1550,58 @@ class XacmlPage {
         : t.html('consoleXacml.listeners.form.add')) + '</button></form>';
   }
 
+  // WHAT ONE LISTENER IS DOING, AS THE STATE CELL DRAWS IT (2026-11-14).
+  // A STATE THE PEP DID NOT REPORT IS NEVER DRAWN AS LISTENING: no report,
+  // or a report whose state is missing or not one of the four, reads "not
+  // reported" (8081 drew both plain-HTTP listeners as listening while they
+  // were off and nothing had been reported). An environment plain-HTTP
+  // listener with no report reads as its DEFAULT, off unless its switch is
+  // true, labelled as the default rather than as a fact; reported `off`
+  // (`http-off`) it reads "off (PEP_HTTP=false)". `crl-only` is the API's
+  // plain port serving its credential's CRLs alone (PEP_CRL_HTTP).
+  static listenerState(t: Json, words: Json, one: Json): string {
+    const said = one.reported;
+    const known = !!said && typeof said.state === 'string' &&
+      Object.prototype.hasOwnProperty.call(words.state, said.state);
+    const switched = one.source === 'environment' && one.protocol === 'http'
+      ? (one.enable || 'PEP_HTTP') : '';
+    const renew = known && one.definition && one.protocol === 'https' &&
+      said.renew !== one.definition.renew
+      ? '<div class="sub">' + t.html('consoleXacml.listeners.renewPending') +
+        '</div>' : '';
+    if (!known) {
+      return (switched
+        ? words.state.off + ' <span class="sub">' +
+          t.html('consoleXacml.listeners.offByDefault',
+                 { enable: switched }) + '</span>'
+        : '') +
+        '<div class="sub">' + t.html('consoleXacml.listeners.notReported') +
+        '</div>';
+    }
+    const httpOff = said.reason === 'http-off';
+    if (httpOff || (switched && said.state === 'off')) {
+      return words.state.off + ' <span class="sub">' +
+        t.html('consoleXacml.listeners.offSwitched', { enable: switched ||
+                                                       'PEP_HTTP' }) +
+        '</span><div class="sub">' +
+        t.html('consoleXacml.listeners.httpOffHow', {
+          enable: switched || 'PEP_HTTP',
+          port: said.port || one.defaultPort }) + '</div>';
+    }
+    if (said.state === 'listening') {
+      return words.state.listening +
+        (said.reason === 'crl-only'
+          ? '<div class="sub">' + words.reason['crl-only'] + '</div>' : '') +
+        renew;
+    }
+    return '<strong class="xacml-alert">' + words.state[said.state] +
+      '</strong>' +
+      (said.reason && said.reason !== 'none'
+        ? '<div class="sub">' + (words.reason[said.reason] ||
+                                 esc(said.reason)) + '</div>'
+        : '') + renew;
+  }
+
   /**
    * Draws a remote PEP's Listener tab (#1760): every listener it has —
    * the environment's four, read-only, and the ones defined here — with its
@@ -1601,30 +1627,7 @@ class XacmlPage {
         : (one.definition
             ? one.definition.address + ':' + one.definition.port
             : '');
-      // PLAIN HTTP OFF BY DEFAULT (#1760) is a choice, not a fault: it is
-      // drawn as `off` without the alert, with the line that turns it on.
-      const httpOff = !!said && said.reason === 'http-off';
-      const state = said
-        ? (said.state === 'listening' ? words.state.listening
-            : (httpOff ? words.state.off
-                : '<strong class="xacml-alert">' +
-                  (words.state[said.state] || esc(said.state)) +
-                  '</strong>')) +
-          (httpOff
-            ? '<div class="sub">' +
-              t.html('consoleXacml.listeners.httpOffHow', {
-                enable: one.enable || 'PEP_HTTP',
-                port: said.port || one.defaultPort }) + '</div>'
-            : (said.reason && said.reason !== 'none'
-                ? '<div class="sub">' + (words.reason[said.reason] ||
-                                         esc(said.reason)) + '</div>'
-                : '')) +
-          (one.definition && one.protocol === 'https' &&
-           said.renew !== one.definition.renew
-            ? '<div class="sub">' +
-              t.html('consoleXacml.listeners.renewPending') + '</div>' : '')
-        : '<span class="sub">' + t.html('consoleXacml.listeners.notReported') +
-          '</span>';
+      const state = self.listenerState(t, words, one);
       const actions = one.source === 'environment'
         ? '<span class="sub">' + t.html('consoleXacml.listeners.envOnly',
             { env: one.env }) + '</span>'
@@ -1900,7 +1903,9 @@ class XacmlPage {
       proxySignalsPollMs:
         t.html('consoleXacml.pepSettings.key.proxySignalsPollMs'),
       proxySignalsStaleMs:
-        t.html('consoleXacml.pepSettings.key.proxySignalsStaleMs')
+        t.html('consoleXacml.pepSettings.key.proxySignalsStaleMs'),
+      proxyStripCookies:
+        t.html('consoleXacml.pepSettings.key.proxyStripCookies')
     };
     return Object.prototype.hasOwnProperty.call(labels, key)
       ? labels[key] : esc(key);
@@ -1945,7 +1950,9 @@ class XacmlPage {
       proxySignalsPollMs:
         t.text('consoleXacml.tip.setting.proxySignalsPollMs'),
       proxySignalsStaleMs:
-        t.text('consoleXacml.tip.setting.proxySignalsStaleMs')
+        t.text('consoleXacml.tip.setting.proxySignalsStaleMs'),
+      proxyStripCookies:
+        t.text('consoleXacml.tip.setting.proxyStripCookies')
     };
     const values = row.type === 'integer'
       ? t.text('consoleXacml.pepSettings.range',
@@ -2312,8 +2319,9 @@ class XacmlPage {
   }
 
   // A route's identity as form members (`mode`, header rows, separator),
-  // the route page's half of `identityForm()`'s fields: the same names,
-  // read by the same `identityFromForm()` on the service.
+  // the identity part of the route page's edit form — the one place the
+  // console edits it since 2026-11-14 — read by `identityFromForm()` on the
+  // service.
   static identityFields(t: Json, identity: Json): string {
     const self = this;
     const claims = ['sub', 'username', 'email', 'name', 'given_name',
