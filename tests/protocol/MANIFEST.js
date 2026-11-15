@@ -2501,6 +2501,11 @@ const JOBS = [
   // tests/saml_model_wire.snapshot.json's development AND product passes,
   // over the wire (saml_model_wire).
   { file: 'sts_saml_model_wire.js', browser: false, local: true },
+  // D12 (#444): a service provider's LogoutRequest whose NameID is
+  // encrypted to the realm — rsa-1_5 refused in product before any key
+  // operation (STS-KEYS-0070), rsa-oaep decrypted, development unwrapping
+  // it, another key's STS-SAML-0020.
+  { file: 'sts_saml_encrypted_logout.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
