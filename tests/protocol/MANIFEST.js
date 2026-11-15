@@ -2555,6 +2555,11 @@ const JOBS = [
   // another client, the grant lifetime and the per-person revoke, by code
   // (gnap_person_grants). Waits a minute for gnap.grantLifetimeS 60.
   { file: 'sts_gnap_person_grants_codes.js', browser: false, local: true },
+  // D12 (#444): GNAP's interaction pages as a static surface over
+  // /gnap-api — the shell, the index, the protocol's answers, the view,
+  // the binding of an act, the answer and the user code — with grants made
+  // at /gnap (gnap_interact_api).
+  { file: 'sts_gnap_interact_api_wire.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required

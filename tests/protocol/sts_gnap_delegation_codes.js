@@ -30,8 +30,11 @@
 //        (0776), and one whose appAllowedToDelegateTo names it allowed.
 //
 // (d), with the reason: I12 and I13 (STS-GNAP-0774) need a `may_act` claim
-// in the user assertion, and this service mints none into an ID Token —
-// the in-process file signs its own; IV's map is the console's drawing.
+// in the user assertion, and this service's ID Token carries none — a
+// person's `users/set-may-act` was tried: the token issued after it is
+// granted (I13's other delegate) and refused (I12's client), the policy
+// reading no may_act from the assertion; the in-process file signs its
+// own assertion. IV's map is the console's drawing.
 //
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
 // ===========================================================================
@@ -68,8 +71,9 @@ function claimsOf(value) {
 async function party(identifier, kind, fields) {
   log.debug("Entering party(). " + identifier);
   keys[identifier] = G.client();
-  await G.entry(h, identifier, kind, keys[identifier], fields);
+  const made = await G.entry(h, identifier, kind, keys[identifier], fields);
   log.debug("Leaving party().");
+  return (made.application && made.application.dn) || "";
 }
 
 // An ID Token about `who` issued to `client`, from an approved grant.
