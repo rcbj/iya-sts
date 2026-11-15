@@ -697,14 +697,15 @@ impl Authenticator {
         }
     }
 
-    /// `POST validation.session { sid }`: `Ok(Some(identity))` when live,
-    /// `Ok(None)` when the service says it is not.
+    /// `POST validation.session { sid }`: `Ok(Some((sub, username,
+    /// name)))` when live, `Ok(None)` when the service says it is not.
+    /// `name` is the person's display name where the service gives one.
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn session_live(
         &self,
         sid: &str,
         pulled: &Pulled,
-    ) -> Result<Option<(String, String)>, Refusal> {
+    ) -> Result<Option<(String, String, String)>, Refusal> {
         let url = &pulled.validation.session;
         if url.is_empty() {
             return Err(Refusal::new(
@@ -736,6 +737,7 @@ impl Authenticator {
         Ok(Some((
             said["sub"].as_str().unwrap_or("").to_string(),
             said["username"].as_str().unwrap_or("").to_string(),
+            said["name"].as_str().unwrap_or("").to_string(),
         )))
     }
 }

@@ -48,6 +48,10 @@ pub struct Options {
     /// 2026-11-14): `PEP_HTTP=true` binds it on `port`. See
     /// [`plain_http`] for the precedence and the notices.
     pub http: PlainHttp,
+    /// `PEP_CRL_HTTP` (2026-11-14): `Some(true)` or `Some(false)` as set,
+    /// `None` unset (the default: bind the CRL-only listener when `http`
+    /// is off and `crl_dir` exists), and the unreadable text, if any.
+    pub crl_http: (Option<bool>, Option<String>),
     pub poll_interval_ms: u64,
     pub heartbeat_interval_ms: u64,
     /// The longest a poll or a heartbeat waits while the PDP refuses it.
@@ -125,6 +129,10 @@ pub struct Options {
     /// signals stop deciding session liveness (never less than three
     /// polls).
     pub proxy_signals_stale_ms: u64,
+    /// `PEP_PROXY_STRIP_COOKIES` (2026-11-14): more cookie names (a
+    /// trailing `*` is a prefix) the proxy never forwards upstream, beside
+    /// the service's own the pull names.
+    pub proxy_strip_cookies: String,
     /// `PEP_LOG_LEVEL` as given; the level in force is `now().log_level`.
     pub log_level: String,
     /// What the service set (#1760), shared by every clone.
@@ -161,6 +169,7 @@ pub struct Now {
     pub proxy_rp_allow_insecure: bool,
     pub proxy_signals_poll_ms: u64,
     pub proxy_signals_stale_ms: u64,
+    pub proxy_strip_cookies: String,
 }
 
 impl Now {
@@ -186,7 +195,8 @@ impl Now {
             "proxyUpstreamInsecure": self.proxy_upstream_insecure,
             "proxyRpAllowInsecure": self.proxy_rp_allow_insecure,
             "proxySignalsPollMs": self.proxy_signals_poll_ms,
-            "proxySignalsStaleMs": self.proxy_signals_stale_ms
+            "proxySignalsStaleMs": self.proxy_signals_stale_ms,
+            "proxyStripCookies": self.proxy_strip_cookies
         });
         match value {
             serde_json::Value::Object(map) => map,
@@ -415,6 +425,75 @@ pub fn plain_http(
     }
 }
 
+/// THE NOTIFY URL THIS PEP ADVERTISES (2026-11-14): only an https one. The
+/// service nudges over https alone, so an `http://` value — an old
+/// `PEP_NOTIFY_URL` — is not sent on the registration or the heartbeat, and
+/// the PEP converges by polling; said once per value (`STS-XPEP-0113`).
+pub fn advertised_notify_url(url: &str) -> String {
+    static SAID: std::sync::Mutex<Vec<String>> =
+        std::sync::Mutex::new(Vec::new());
+    let trimmed = url.trim();
+    if trimmed.is_empty()
+        || trimmed.get(..8).is_some_and(|s| s.eq_ignore_ascii_case("https://"))
+    {
+        return trimmed.to_string();
+    }
+    let mut said = SAID.lock().unwrap_or_else(|e| e.into_inner());
+    if !said.iter().any(|one| one == trimmed) {
+        said.push(trimmed.to_string());
+        tracing::warn!(
+            "{}xacml-pep: the notify URL {} is not https, so it is not \
+             advertised: the service nudges over https only. Set \
+             PEP_NOTIFY_URL to this PEP's HTTPS listener, \
+             https://<host>:<PEP_HTTPS_PORT>/notify. Until then it \
+             converges by polling.",
+            sts_core::log::tag("STS-XPEP-0113"),
+            trimmed
+        );
+    }
+    String::new()
+}
+
+/// `PEP_CRL_HTTP` read: `true`, `false`, or unset (`None`); anything else
+/// is unset with the text kept, so it is said once (`STS-XPEP-0115`).
+pub fn crl_http_switch(said: Option<&str>) -> (Option<bool>, Option<String>) {
+    match said.map(str::trim) {
+        Some("true") => (Some(true), None),
+        Some("false") => (Some(false), None),
+        Some("") | None => (None, None),
+        Some(other) => (None, Some(other.to_string())),
+    }
+}
+
+/// THE CRL-ONLY PLAIN-HTTP LISTENER (2026-11-14), on `PEP_PORT` when the
+/// decision API's plain HTTP is off. A CRL is fetched in the clear by
+/// convention (RFC 5280 section 4.2.1.13: one behind TLS would have to be
+/// validated with itself), and the credential tool points a PEP's
+/// credential's CRL distribution point at `http://<pep>:9090/crl`, which
+/// the service fetches under hard-fail in product — so with plain HTTP off
+/// by default (#1760) and nothing on 9090, the credential stopped
+/// verifying and every pull was refused as unauthenticated. Bound when
+/// `PEP_CRL_HTTP=true`, or by default when there is a CRL directory to
+/// serve; `PEP_CRL_HTTP=false` never. With `PEP_HTTP=true` the API's own
+/// listener serves `/crl/` as it always did, and this is not bound.
+pub fn crl_listener(options: &Options) -> bool {
+    if let Some(text) = &options.crl_http.1 {
+        tracing::error!(
+            "{}xacml-pep: PEP_CRL_HTTP is \"{}\", which is neither true nor \
+             false, so the CRL-only listener keeps its default.",
+            sts_core::log::tag("STS-XPEP-0115"),
+            text
+        );
+    }
+    if options.http.on {
+        return false;
+    }
+    match options.crl_http.0 {
+        Some(on) => on,
+        None => options.crl_dir.as_ref().is_some_and(|dir| dir.is_dir()),
+    }
+}
+
 /// [`plain_http`] over the environment.
 pub fn plain_http_from_env(switch: &'static str,
                            port_var: &'static str) -> PlainHttp {
@@ -555,6 +634,10 @@ impl Options {
                 "proxySignalsStaleMs",
                 self.proxy_signals_stale_ms,
             ),
+            proxy_strip_cookies: text(
+                "proxyStripCookies",
+                &self.proxy_strip_cookies,
+            ),
         }
     }
 
@@ -592,6 +675,8 @@ impl Options {
             },
             port: int_from_env("PEP_PORT", 9090),
             http: plain_http_from_env("PEP_HTTP", "PEP_PORT"),
+            crl_http: crl_http_switch(
+                std::env::var("PEP_CRL_HTTP").ok().as_deref()),
             poll_interval_ms: int_from_env("PEP_POLL_INTERVAL_MS", 15000),
             heartbeat_interval_ms: int_from_env(
                 "PEP_HEARTBEAT_INTERVAL_MS",
@@ -678,6 +763,8 @@ impl Options {
                 60000u64,
             )
             .max(1),
+            proxy_strip_cookies: std::env::var("PEP_PROXY_STRIP_COOKIES")
+                .unwrap_or_default(),
             log_level: std::env::var("PEP_LOG_LEVEL").unwrap_or_default(),
             managed: Arc::new(Held::from_env()),
         }
@@ -827,5 +914,49 @@ mod tests {
         assert!(pdp_identifier_of("http://pdp.example").is_none());
         assert!(pdp_identifier_of("https://pdp.example/realm/x").is_none());
         assert!(pdp_identifier_of("not a url").is_none());
+    }
+
+    /// The CRL-only listener: bound by default where there is a CRL
+    /// directory and the API's plain HTTP is off, never alongside it, and
+    /// as `PEP_CRL_HTTP` says otherwise.
+    #[test]
+    fn the_crl_point_stays_up_with_http_off() {
+        assert_eq!(crl_http_switch(None), (None, None));
+        assert_eq!(crl_http_switch(Some("true")), (Some(true), None));
+        assert_eq!(crl_http_switch(Some(" false ")), (Some(false), None));
+        assert_eq!(crl_http_switch(Some("yes")),
+                   (None, Some("yes".to_string())));
+        let dir = std::env::temp_dir().join(format!(
+            "pep-crl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut options = Options::from_env("0.0.0");
+        options.http.on = false;
+        options.crl_dir = Some(dir.clone());
+        options.crl_http = (None, None);
+        assert!(crl_listener(&options), "a CRL directory binds it");
+        options.crl_dir = Some(dir.join("absent"));
+        assert!(!crl_listener(&options), "nothing to serve, nothing bound");
+        options.crl_http = (Some(true), None);
+        assert!(crl_listener(&options), "PEP_CRL_HTTP=true binds it");
+        options.crl_dir = Some(dir.clone());
+        options.crl_http = (Some(false), None);
+        assert!(!crl_listener(&options), "PEP_CRL_HTTP=false never");
+        options.crl_http = (None, None);
+        options.http.on = true;
+        assert!(!crl_listener(&options),
+                "with PEP_HTTP=true the API's listener serves /crl/");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Only an https notify URL is advertised.
+    #[test]
+    fn only_an_https_notify_url_is_advertised() {
+        assert_eq!(advertised_notify_url(""), "");
+        assert_eq!(advertised_notify_url("https://pep:9443/notify"),
+                   "https://pep:9443/notify");
+        assert_eq!(advertised_notify_url("HTTPS://pep:9443/notify"),
+                   "HTTPS://pep:9443/notify");
+        assert_eq!(advertised_notify_url("http://pep:9090/notify"), "");
+        assert_eq!(advertised_notify_url("ftp://pep/notify"), "");
     }
 }

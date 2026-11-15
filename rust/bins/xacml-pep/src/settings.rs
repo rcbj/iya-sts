@@ -167,6 +167,11 @@ pub const SETTINGS: &[Row] = &[
         env: "PEP_PROXY_SIGNALS_STALE_MS",
         kind: Kind::Int(1, DAY_MS),
     },
+    Row {
+        key: "proxyStripCookies",
+        env: "PEP_PROXY_STRIP_COOKIES",
+        kind: Kind::Text(1024),
+    },
 ];
 
 /// The row of a member, or `None` for one this PEP does not know.
@@ -184,7 +189,9 @@ fn url_ok(text: &str) -> bool {
         return true;
     }
     reqwest::Url::parse(text).is_ok_and(|url| {
-        (url.scheme() == "http" || url.scheme() == "https")
+        // HTTPS ONLY (2026-11-14): the one URL row is `notifyUrl`, and
+        // the service nudges over https alone.
+        url.scheme() == "https"
             && url.host_str().is_some()
             && url.username().is_empty()
             && url.password().is_none()
@@ -226,8 +233,8 @@ pub fn check(row: &Row, value: &Value) -> Result<Value, String> {
         Kind::Url => match value.as_str() {
             Some(s) if url_ok(s) => Ok(json!(s)),
             _ => Err(format!(
-                "{} must be an absolute http or https URL with no user name \
-                 or fragment",
+                "{} must be an absolute https URL with no user name or \
+                 fragment: the nudge is sent over https only",
                 row.key
             )),
         },

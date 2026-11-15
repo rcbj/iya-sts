@@ -134,11 +134,27 @@ fn install_fault_handler() {
     }));
 }
 
-async fn serve_http(pep: Arc<Pep>, port: u16, status: Arc<PlainStatus>) {
+async fn serve_http(pep: Arc<Pep>, port: u16, status: Arc<PlainStatus>,
+                    crl_only: bool) {
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
         Ok(listener) => {
-            status.set("listening", "none");
+            status.set("listening", if crl_only { "crl-only" } else { "none" });
             listener
+        }
+        Err(error) if crl_only => {
+            // THE CRL POINT IS AUXILIARY: a PEP that cannot bind it still
+            // enforces, so this is a failed listener on the tab, not an
+            // exit. The service will fail to fetch the CRL and say so.
+            tracing::error!(
+                "{}xacml-pep: the CRL-only plain-HTTP listener cannot listen \
+                 on {}: {}. The service cannot fetch this PEP's \
+                 credential's CRLs from it.",
+                tag("STS-XPEP-0013"),
+                port,
+                error
+            );
+            status.set("failed", "other");
+            return;
         }
         Err(error) => {
             tracing::error!(
@@ -151,18 +167,29 @@ async fn serve_http(pep: Arc<Pep>, port: u16, status: Arc<PlainStatus>) {
             std::process::exit(1);
         }
     };
-    tracing::info!(
-        "xacml-pep: listening on {}. The protected resource is \
-                    GET /protected.",
-        port
-    );
+    if crl_only {
+        tracing::info!(
+            "xacml-pep: listening on {} in plain HTTP for GET /crl/<name> \
+             ONLY — this PEP's credential's CRLs, which the service fetches \
+             in the clear as RFC 5280 expects. PEP_CRL_HTTP=false turns it \
+             off; PEP_HTTP=true serves the whole decision API here instead.",
+            port
+        );
+    } else {
+        tracing::info!(
+            "xacml-pep: listening on {}. The protected resource is \
+                        GET /protected.",
+            port
+        );
+    }
     loop {
         let Ok((stream, _)) = listener.accept().await else {
             continue;
         };
         let pep = pep.clone();
         tokio::spawn(async move {
-            let service = tower_service(pep, Transport::default());
+            let transport = Transport { crl_only, ..Transport::default() };
+            let service = tower_service(pep, transport);
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(TokioIo::new(stream), service)
                 .await;
@@ -225,6 +252,7 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
                 https: true,
                 peer: peer_of(tls.ssl()),
                 remote: None,
+                crl_only: false,
             };
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(
@@ -347,8 +375,18 @@ async fn start(options: Options, info: version::VersionInfo) {
     // the console can say how to turn it on (`options::plain_http`).
     let api_http = Arc::new(PlainStatus::default());
     options.http.announce("decision API", options.port);
+    // THE CRL POINT STAYS REACHABLE WITH HTTP OFF (2026-11-14): a client
+    // credential minted with `--crl-base=http://<pep>:9090/crl` names this
+    // port, and the service fetches it under hard-fail in product, so with
+    // the API's plain HTTP off by default the PEP could no longer
+    // authenticate. The port serves the CRLs alone (`crl_listener`).
+    let crl_only = options::crl_listener(&options);
     listener_set.environment("api-http", options.port,
-                             plain_kind(options.http.on, api_http.clone()));
+                             if crl_only {
+                                 EnvKind::Plain(api_http.clone())
+                             } else {
+                                 plain_kind(options.http.on, api_http.clone())
+                             });
     listener_set.environment("api-https", options.https_port,
                              EnvKind::Tls(https.clone()));
     let reporting = listener_set.clone();
@@ -542,8 +580,9 @@ async fn start(options: Options, info: version::VersionInfo) {
                                  EnvKind::Off("proxy-off"));
     }
     install_fault_handler();
-    if options.http.on {
-        serve_http(pep, options.port, api_http).await;
+    if options.http.on || crl_only {
+        serve_http(pep, options.port, api_http, crl_only).await;
+        std::future::pending::<()>().await;
     } else {
         // Nothing left to await but the tasks above: the process lives as
         // long as they do, and a signal ends it as before.

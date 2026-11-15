@@ -86,6 +86,8 @@ pub struct Account {
     pub client_id: String,
     pub sub: String,
     pub username: String,
+    /// The person's display name where the service gave one (2026-11-14).
+    pub name: String,
 }
 
 /// A browser's account set: its accounts in the order they joined, and,
@@ -303,13 +305,45 @@ impl Stores {
 
     /// The service said the session is live now.
     pub fn checked(&self, id: &str, sub: &str, username: &str) {
-        if let Some(s) = self.lock().sessions.get_mut(id) {
-            s.last_checked = Instant::now();
-            if !sub.is_empty() {
-                s.sub = sub.to_string();
+        {
+            let mut inner = self.lock();
+            if let Some(s) = inner.sessions.get_mut(id) {
+                s.last_checked = Instant::now();
+                if !sub.is_empty() {
+                    s.sub = sub.to_string();
+                }
             }
-            if !username.is_empty() {
+        }
+        self.named(id, username, "");
+    }
+
+    /// WHO A SESSION IS, BY NAME, WHEREVER IT IS HELD (2026-11-14): the
+    /// session and the account of a browser's set it backs. The account
+    /// was filled only from the ID Token's `preferred_username`, which the
+    /// service's ID Token does not carry, so the chooser labelled every
+    /// account by its `urn:uuid` subject; a username learned later (the
+    /// session check) reached the session and never the account. Empty
+    /// values change nothing.
+    pub fn named(&self, id: &str, username: &str, name: &str) {
+        let mut inner = self.lock();
+        if !username.is_empty() {
+            if let Some(s) = inner.sessions.get_mut(id) {
                 s.username = username.to_string();
+            }
+        }
+        let Some(set_id) = inner.set_of_session.get(id).cloned() else {
+            return;
+        };
+        if let Some(set) = inner.sets.get_mut(&set_id) {
+            for account in set.accounts.iter_mut() {
+                if account.session_id == id {
+                    if !username.is_empty() {
+                        account.username = username.to_string();
+                    }
+                    if !name.is_empty() {
+                        account.name = name.to_string();
+                    }
+                }
             }
         }
     }
@@ -384,7 +418,9 @@ impl Stores {
                     &mut one.session_id,
                     session_id.to_string(),
                 );
-                one.username = username.to_string();
+                if !username.is_empty() {
+                    one.username = username.to_string();
+                }
                 (one.account.clone(), Some(old))
             }
             None => {
@@ -403,6 +439,7 @@ impl Stores {
                     client_id: client_id.to_string(),
                     sub: sub.to_string(),
                     username: username.to_string(),
+                    name: String::new(),
                 });
                 (account, None)
             }
@@ -616,5 +653,30 @@ mod tests {
         stores.create("one", session()).unwrap();
         std::thread::sleep(Duration::from_millis(5));
         assert!(stores.get("one").is_none());
+    }
+
+    /// A username learned after the sign-in reaches the account the
+    /// session backs, not only the session (2026-11-14).
+    #[test]
+    fn a_learned_username_names_the_account() {
+        let stores = Stores::new(5, 60_000);
+        stores.create("s1", session()).unwrap();
+        let added = stores
+            .add_account("", "s1", "c", "urn:uuid:1", "", 5)
+            .unwrap();
+        let set = stores.account_set(&added.set_id).unwrap();
+        assert_eq!(set.accounts[0].username, "");
+        stores.checked("s1", "", "alice");
+        let set = stores.account_set(&added.set_id).unwrap();
+        assert_eq!(set.accounts[0].username, "alice");
+        assert_eq!(stores.get("s1").unwrap().username, "alice");
+        stores.named("s1", "", "Alice Example");
+        let set = stores.account_set(&added.set_id).unwrap();
+        assert_eq!((set.accounts[0].username.as_str(),
+                    set.accounts[0].name.as_str()),
+                   ("alice", "Alice Example"));
+        stores.named("s1", "", "");
+        let set = stores.account_set(&added.set_id).unwrap();
+        assert_eq!(set.accounts[0].username, "alice", "empty keeps it");
     }
 }

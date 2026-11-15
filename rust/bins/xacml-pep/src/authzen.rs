@@ -1098,6 +1098,7 @@ mod tests {
         Transport {
             https: true,
             remote: None,
+            crl_only: false,
             peer: Some(Peer {
                 sha256: sha256.to_string(),
                 subject: "CN=pep".into(),

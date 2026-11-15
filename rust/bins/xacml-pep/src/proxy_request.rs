@@ -131,22 +131,6 @@ fn is_hop_by_hop(name: &str, listed: &[String]) -> bool {
     name.starts_with("proxy-") || listed.iter().any(|l| l == name)
 }
 
-/// The `Cookie` header without the proxy's own cookie, or `None` when
-/// nothing is left.
-pub fn cookie_without(value: &str, name: &str) -> Option<String> {
-    let kept: Vec<&str> = value
-        .split(';')
-        .map(str::trim)
-        .filter(|pair| !pair.is_empty())
-        .filter(|pair| pair.split('=').next().map(str::trim) != Some(name))
-        .collect();
-    if kept.is_empty() {
-        None
-    } else {
-        Some(kept.join("; "))
-    }
-}
-
 /// A cookie's value, from every `Cookie` header.
 pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     for value in headers.get_all("cookie") {
@@ -165,20 +149,82 @@ pub fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
     None
 }
 
+/// THE IDENTITY PROVIDER'S COOKIES NEVER REACH THE APPLICATION (2026-11-14).
+/// A browser sends cookies by HOST, not by port, so where the service and
+/// the proxy share a host (`localhost` on the demo) every request carried
+/// `__Host-sts_session`, `__Host-sts_accounts` and the rest upstream — a
+/// sign-on session's handle handed to an application that has no business
+/// holding it. `strip` names what goes: the service's own names, which the
+/// pull publishes (`realm.serviceCookiePrefixes`), and the managed
+/// `proxyStripCookies`. An entry ending in `*` is a prefix; anything else
+/// is a whole name. Nothing else is touched: the application's own
+/// cookies are its own.
+pub fn cookie_stripped(name: &str, strip: &[String]) -> bool {
+    strip.iter().any(|one| match one.strip_suffix('*') {
+        Some(prefix) => !prefix.is_empty() && name.starts_with(prefix),
+        None => one == name,
+    })
+}
+
+/// The `Cookie` header without the named cookies, or `None` when nothing
+/// is left.
+pub fn cookie_without_any(value: &str, strip: &[String]) -> Option<String> {
+    let kept: Vec<&str> = value
+        .split(';')
+        .map(str::trim)
+        .filter(|pair| !pair.is_empty())
+        .filter(|pair| {
+            let name = pair.split('=').next().map(str::trim).unwrap_or("");
+            !cookie_stripped(name, strip)
+        })
+        .collect();
+    if kept.is_empty() {
+        None
+    } else {
+        Some(kept.join("; "))
+    }
+}
+
+/// The names `strip` reads: `prefixes` from the pull, and the managed
+/// setting's comma-separated list.
+pub fn strip_list(prefixes: &[String], managed: &str) -> Vec<String> {
+    let mut out: Vec<String> = prefixes
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "*")
+        .collect();
+    for one in managed.split(',') {
+        let one = one.trim();
+        if !one.is_empty() && one != "*" && !out.iter().any(|o| o == one) {
+            out.push(one.to_string());
+        }
+    }
+    out
+}
+
 /// The request headers that may reach the application: hop-by-hop gone,
 /// every forwarding header the CLIENT sent gone (they are set fresh by the
 /// caller), `Host` gone (the upstream's is the client library's), every
 /// header named like an identity header of ANY route gone — whatever its
 /// case (a header name is case-insensitive and arrives lower-cased) and
-/// however many times it came (D11) — and, unless the route forwards
-/// credentials, `Authorization` and the proxy's own cookie.
+/// however many times it came (D11) — the identity provider's cookies gone
+/// (`strip`, above), and, unless the route forwards credentials,
+/// `Authorization` and the proxy's own cookie.
 pub fn forward_headers(
     incoming: &HeaderMap,
     forward_credentials: bool,
     identity: &[HeaderName],
+    strip: &[String],
 ) -> HeaderMap {
     let listed = hop_by_hop(incoming);
     let identity: Vec<&str> = identity.iter().map(HeaderName::as_str).collect();
+    // The account set never goes; the proxy session's cookie goes unless
+    // the route forwards credentials.
+    let mut dropped: Vec<String> = strip.to_vec();
+    dropped.push(ACCOUNTS_COOKIE.to_string());
+    if !forward_credentials {
+        dropped.push(SESSION_COOKIE.to_string());
+    }
     let mut out = HeaderMap::new();
     for (name, value) in incoming {
         let n = name.as_str();
@@ -190,30 +236,14 @@ pub fn forward_headers(
         {
             continue;
         }
-        if !forward_credentials {
-            if n == "authorization" {
-                continue;
-            }
-            if n == "cookie" {
-                let rest = value
-                    .to_str()
-                    .ok()
-                    .and_then(|v| cookie_without(v, SESSION_COOKIE))
-                    .and_then(|v| cookie_without(&v, ACCOUNTS_COOKIE));
-                if let Some(v) =
-                    rest.and_then(|r| HeaderValue::from_str(&r).ok())
-                {
-                    out.append(name.clone(), v);
-                }
-                continue;
-            }
+        if !forward_credentials && n == "authorization" {
+            continue;
         }
         if n == "cookie" {
-            // Forwarded credentials still never carry the account set.
             let rest = value
                 .to_str()
                 .ok()
-                .and_then(|v| cookie_without(v, ACCOUNTS_COOKIE));
+                .and_then(|v| cookie_without_any(v, &dropped));
             if let Some(v) = rest.and_then(|r| HeaderValue::from_str(&r).ok())
             {
                 out.append(name.clone(), v);
@@ -326,17 +356,17 @@ mod tests {
                 HeaderValue::from_static(v),
             );
         }
-        let out = forward_headers(&h, false, &identity_names());
+        let out = forward_headers(&h, false, &identity_names(), &[]);
         let names: Vec<&str> = out.keys().map(HeaderName::as_str).collect();
         assert_eq!(names, ["cookie", "accept", "content-length"], "{:?}", out);
         assert_eq!(out["cookie"], "a=1; b=2");
-        let kept = forward_headers(&h, true, &identity_names());
+        let kept = forward_headers(&h, true, &identity_names(), &[]);
         assert_eq!(kept["authorization"], "Bearer secret");
         assert!(kept["cookie"].to_str().unwrap().contains("iya_pep_session"));
         assert!(kept.get("x-remote-user").is_none());
         let mut only = HeaderMap::new();
         only.insert("cookie", HeaderValue::from_static("iya_pep_session=1"));
-        assert!(forward_headers(&only, false, &identity_names())
+        assert!(forward_headers(&only, false, &identity_names(), &[])
             .get("cookie")
             .is_none());
     }
@@ -364,5 +394,36 @@ mod tests {
         assert!(!is_browser("POST", &h));
         h.insert("accept", HeaderValue::from_static("application/json"));
         assert!(!is_browser("GET", &h));
+    }
+
+    /// The identity provider's cookies are stripped by name and prefix,
+    /// whatever forwardCredentials says, and nothing else is (2026-11-14).
+    #[test]
+    fn the_identity_providers_cookies_never_go_upstream() {
+        let strip = strip_list(
+            &["sts_*".to_string(), "__Host-sts_*".to_string(),
+              "*".to_string(), "".to_string()],
+            " idp_session , sso_*,,*");
+        assert_eq!(strip, ["sts_*", "__Host-sts_*", "idp_session", "sso_*"],
+                   "a bare * or an empty entry strips nothing");
+        let mut h = HeaderMap::new();
+        h.insert("cookie", HeaderValue::from_static(
+            "__Host-sts_session=a; sts_lang=fr; idp_session=b; \
+             sso_x=c; app=1; idp_session_other=2; xsts_y=3"));
+        for credentials in [false, true] {
+            let out = forward_headers(&h, credentials, &[], &strip);
+            assert_eq!(out["cookie"],
+                       "app=1; idp_session_other=2; xsts_y=3");
+        }
+        assert!(cookie_stripped("sts_a", &strip));
+        assert!(!cookie_stripped("xsts_a", &strip), "a prefix, not a match");
+        let only = {
+            let mut m = HeaderMap::new();
+            m.insert("cookie", HeaderValue::from_static("sts_session=1"));
+            m
+        };
+        assert!(forward_headers(&only, false, &[], &strip)
+                    .get("cookie").is_none(),
+                "nothing left, no Cookie header");
     }
 }

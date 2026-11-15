@@ -703,6 +703,7 @@ async fn serve(
                     https: false,
                     peer: None,
                     remote: if proxy { Some(remote) } else { None },
+                    crl_only: false,
                 };
                 let _ = Builder::new(TokioExecutor::new())
                     .serve_connection(TokioIo::new(stream), make(transport))
@@ -726,6 +727,7 @@ async fn serve(
                 https: true,
                 peer: peer_of(tls.ssl()),
                 remote: if proxy { Some(remote) } else { None },
+                crl_only: false,
             };
             let _ = Builder::new(TokioExecutor::new())
                 .serve_connection(TokioIo::new(tls), make(transport))

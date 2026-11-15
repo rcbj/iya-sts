@@ -110,6 +110,9 @@ pub struct Transport {
     /// The address the connection came from: the reverse proxy's
     /// `X-Forwarded-For` (#1760). Never a header a client sent.
     pub remote: Option<std::net::SocketAddr>,
+    /// The CRL-only plain-HTTP listener (2026-11-14): it answers
+    /// `GET /crl/<name>` and nothing else (`STS-XPEP-0114`).
+    pub crl_only: bool,
 }
 
 /// The caller's certificate on an accepted connection, read with the

@@ -8,7 +8,7 @@
 //! ```text
 //! GET  /              what this PEP is, what it holds, what it has enforced
 //! GET  /protected     THE RESOURCE. 200 or 403, decided here
-//! POST /notify        the PDP's nudge: pull now
+//! POST /notify        the PDP's nudge: pull now (HTTPS only)
 //! GET  /healthcheck   liveness, never whether the policy is current
 //! GET  /crl/<name>    this PEP's own credential's CRLs (#174)
 //! POST /access/v1/evaluation, /access/v1/evaluations,
@@ -154,6 +154,30 @@ impl Pep {
             .get::<Transport>()
             .cloned()
             .unwrap_or_default();
+        if transport.crl_only
+            && !(method == Method::GET && path.starts_with("/crl/"))
+        {
+            // THE CRL-ONLY LISTENER (2026-11-14) answers this PEP's own
+            // credential's lists and nothing else: the decision API, the
+            // nudge and the AuthZEN edge PDP are on HTTPS.
+            tracing::info!(
+                "{}xacml-pep: {} {} reached the CRL-only plain-HTTP \
+                 listener, which serves GET /crl/<name> alone.",
+                tag("STS-XPEP-0114"),
+                method,
+                path
+            );
+            return json_response(
+                StatusCode::NOT_FOUND,
+                &json!({
+                    "error": "not_found",
+                    "error_description": "This plain-HTTP port serves only \
+                        this PEP's own credential's CRLs, GET /crl/<name>. \
+                        The decision API, POST /notify and the AuthZEN edge \
+                        PDP answer on the HTTPS listener."
+                }),
+            );
+        }
         if method == Method::POST
             && (path == authzen::EVALUATION_PATH
                 || path == authzen::EVALUATIONS_PATH)
@@ -251,6 +275,26 @@ impl Pep {
                     }
                 };
             }
+        }
+        if method == Method::POST && path == "/notify" && !transport.https {
+            // THE NUDGE IS HTTPS ONLY (2026-11-14, rcbj: "Let's assume
+            // always HTTPS"). The service never dials an http:// notify
+            // URL, so a nudge over plain HTTP is not the PDP's; refused
+            // where a PEP that still answered it would be answering anybody
+            // on the network.
+            tracing::info!(
+                "{}xacml-pep: POST /notify over plain HTTP was refused; the \
+                 nudge is answered on the HTTPS listener only.",
+                tag("STS-XPEP-0112")
+            );
+            return json_response(
+                StatusCode::NOT_FOUND,
+                &json!({
+                    "error": "not_found",
+                    "error_description": "POST /notify is answered on this \
+                        PEP's HTTPS listener only; the PDP nudges over https."
+                }),
+            );
         }
         if method == Method::POST && path == "/notify" {
             // THE NUDGE: answered 204 IMMEDIATELY and pulled after, and its
@@ -671,8 +715,11 @@ impl Pep {
             "staleAfterMs": stale_after_ms,
             "registration": self.sync.registration_json(),
             "enforced": self.sync.counters_json(),
-            "notify": if now.notify_url.is_empty() { Value::Null }
-                      else { Value::from(now.notify_url.clone()) },
+            "notify": match crate::options::advertised_notify_url(
+                &now.notify_url) {
+                url if url.is_empty() => Value::Null,
+                url => Value::from(url),
+            },
             "poll": { "intervalMs": now.poll_interval_ms,
                       "heartbeatMs": now.heartbeat_interval_ms },
             // EVERY SETTING IN FORCE AND WHERE IT CAME FROM (#1760): the
@@ -728,5 +775,73 @@ mod tests {
         assert!(pep.pip.enabled());
         options.managed.apply(Managed::default());
         assert!(!pep.enforcer().enforce(na, &[]).allowed);
+    }
+
+    fn a_pep() -> Arc<Pep> {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.pip_enabled = false;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+        Arc::new(Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            RemotePip::new(client, false).governed_by(options.clone()),
+            Arc::new(HttpsListener::new("", "", 0, 1000, None)),
+        ))
+    }
+
+    fn ask(pep: &Arc<Pep>, method: Method, path: &str,
+           transport: Transport) -> (StatusCode, String) {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let mut request = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(transport);
+            let response = pep.clone().handle(request).await;
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap_or_default();
+            (status, String::from_utf8_lossy(&bytes).to_string())
+        })
+    }
+
+    /// THE NUDGE IS HTTPS ONLY (2026-11-14): over plain HTTP it is refused
+    /// with a sentence naming the HTTPS listener; over HTTPS it is 204.
+    #[test]
+    fn the_nudge_is_answered_on_https_only() {
+        let pep = a_pep();
+        let (plain, body) = ask(&pep, Method::POST, "/notify",
+                                Transport::default());
+        assert_eq!(plain, StatusCode::NOT_FOUND);
+        assert!(body.contains("HTTPS listener only"), "{}", body);
+        let https = Transport { https: true, ..Transport::default() };
+        let (secure, _) = ask(&pep, Method::POST, "/notify", https);
+        assert_eq!(secure, StatusCode::NO_CONTENT);
+    }
+
+    /// THE CRL-ONLY LISTENER answers GET /crl/<name> and nothing else.
+    #[test]
+    fn the_crl_only_listener_serves_crls_alone() {
+        let pep = a_pep();
+        let crl = Transport { crl_only: true, ..Transport::default() };
+        for (method, path) in [(Method::GET, "/"),
+                               (Method::GET, "/protected"),
+                               (Method::GET, "/healthcheck"),
+                               (Method::POST, "/notify")] {
+            let (status, body) = ask(&pep, method, path, crl.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "{}", path);
+            assert!(body.contains("only this PEP's own credential's CRLs"),
+                    "{}: {}", path, body);
+        }
+        let (status, body) = ask(&pep, Method::GET, "/crl/root.crl", crl);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(!body.contains("only this PEP's own credential's CRLs"),
+                "a CRL path is the CRL lookup's to answer: {}", body);
     }
 }

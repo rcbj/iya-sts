@@ -70,12 +70,20 @@ pub fn value_of(
     if text.contains(['\r', '\n', '\0']) {
         return Err("a claim value holds CR, LF or NUL");
     }
+    // AN EMPTY VALUE IS NO VALUE (2026-11-14): a person in no group sent
+    // `X-Iya-Groups:` with nothing after it (found on the 8081 demo), which
+    // an application reads as a group list that is present and empty —
+    // or, worse, as a header it may trust being there. An empty string or
+    // an empty list sends no header, as an absent claim never did.
+    if text.is_empty() {
+        return Ok(None);
+    }
     Ok(Some(text))
 }
 
 /// The identity headers of mode `headers`, from `claims` (the subject's,
-/// `mechanism` among them). A claim the subject has no value for sends no
-/// header.
+/// `mechanism` among them). A claim the subject has no value for — absent,
+/// null, an empty string or an empty list — sends no header.
 pub fn render(
     spec: &IdentitySpec,
     claims: &Map<String, Value>,
@@ -336,6 +344,20 @@ mod tests {
             ],
             separator: sep,
         }
+    }
+
+    /// An empty list or string sends no header at all (2026-11-14).
+    #[test]
+    fn an_empty_claim_sends_no_header() {
+        let claims = json!({ "sub": "urn:uuid:1", "groups": [],
+                             "mechanism": "session", "email": "" });
+        let out = render(&spec(','), claims.as_object().unwrap()).unwrap();
+        let names: Vec<&str> = out.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["x-iya-user", "x-iya-how"]);
+        assert!(value_of(&json!([]), ',').unwrap().is_none());
+        assert!(value_of(&json!(""), ',').unwrap().is_none());
+        assert_eq!(value_of(&json!(["a"]), ',').unwrap().as_deref(),
+                   Some("a"));
     }
 
     #[test]

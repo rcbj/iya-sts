@@ -684,7 +684,9 @@ impl Sync {
                 Method::POST,
                 "/xacml/pep/register",
                 Some(Body::Json(json!({
-                    "name": o.name, "notifyUrl": now.notify_url,
+                    "name": o.name,
+                    "notifyUrl":
+                        crate::options::advertised_notify_url(&now.notify_url),
                     "bias": now.bias.as_str(), "resource": now.resource,
                     "version": o.version, "description": now.description
                 }))),
@@ -1847,7 +1849,8 @@ impl Sync {
             "refused": c.refused,
             "undischargeable": c.undischargeable,
             "bias": now.bias.as_str(), "resource": now.resource,
-            "version": o.version, "notifyUrl": now.notify_url,
+            "version": o.version,
+            "notifyUrl": crate::options::advertised_notify_url(&now.notify_url),
             "settings": o.settings_report()
         });
         if let Some(mut signals) = signals {

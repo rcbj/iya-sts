@@ -69,7 +69,7 @@ use crate::proxy_config::{
 };
 use crate::proxy_request::{
     cookie_value, forward_headers, is_browser, normalise_path,
-    response_headers, ACCOUNTS_COOKIE, SESSION_COOKIE,
+    response_headers, strip_list, ACCOUNTS_COOKIE, SESSION_COOKIE,
 };
 use crate::rp_session::{self, Pending, Session};
 use crate::rp_set::{self, RpLimits, RpSet};
@@ -733,7 +733,16 @@ impl Proxy {
         {
             Ok(delivery) => delivery,
             Err(refusal) => {
-                return (self.refuse(&refusal, &asked, &pulled), false)
+                if let Some(ended) = self
+                    .ended_behind(&refusal, route, &pulled, config,
+                                  identity.as_ref(), &parts.headers,
+                                  &transport, &method, &path,
+                                  query.as_deref())
+                    .await
+                {
+                    return (ended, false);
+                }
+                return (self.refuse(&refusal, &asked, &pulled), false);
             }
         };
         let replayable = !parts.headers.contains_key(header::CONTENT_LENGTH)
@@ -930,10 +939,19 @@ impl Proxy {
         // route's: the proxy session is the application's sign-in.
         let held = held.filter(|s| s.client_id == route.resolved.client_id);
         let Some(session) = held else {
+            // A COOKIE NAMING A SESSION THIS PROXY NO LONGER HOLDS IS
+            // CLEARED (2026-11-14). A CAEP session-revoked removes the
+            // session before the browser's next request arrives, so that
+            // request found no session and was sent to sign in with the
+            // dead `iya_pep_session` still set — the clearing `ended`
+            // gives was only reached when THIS request found the session
+            // ended. A cookie of another application's client is that
+            // client's and is left alone.
+            let stale = !id.is_empty() && stores.get(&id).is_none();
             return self
                 .no_session(
                     route, pulled, config, transport, browser, path, query,
-                    false, None, AuthorizeOptions::default(),
+                    stale, None, AuthorizeOptions::default(),
                 )
                 .await;
         };
@@ -1001,11 +1019,10 @@ impl Proxy {
             return Ok((true, false));
         }
         match self.auth.session_live(&session.sid, pulled).await? {
-            Some((sub, username)) => {
-                self.pep
-                    .sync
-                    .proxy_sessions
-                    .checked(id, &sub, &username);
+            Some((sub, username, name)) => {
+                let stores = &self.pep.sync.proxy_sessions;
+                stores.checked(id, &sub, &username);
+                stores.named(id, "", &name);
                 Ok((true, false))
             }
             None => Ok((false, false)),
@@ -1105,6 +1122,83 @@ impl Proxy {
         );
         who.session_id = Some(account.session_id.clone());
         Established::Who(who)
+    }
+
+    /// THE WINDOW BEFORE THE SIGNAL (2026-11-14). A sign-out at the service
+    /// revokes the session's access tokens at once, while the CAEP
+    /// session-revoked that ends the proxy session arrives up to a second
+    /// later — so in between, the identity door refused the token and a
+    /// browser got a 403 "the service refused the identity" where it
+    /// should have been sent to sign in. When the identity door refuses a
+    /// PROXY SESSION's identity, the service is asked whether that sign-on
+    /// session is still live; if it is not, the proxy session ends here as
+    /// a signal would have ended it: a browser is sent to sign in with the
+    /// cookie cleared, anything else is a 401. Any other refusal is
+    /// answered as it was.
+    #[allow(clippy::too_many_arguments)]
+    async fn ended_behind(
+        &self,
+        refusal: &Refusal,
+        route: &Route,
+        pulled: &Pulled,
+        config: &ProxyConfig,
+        identity: Option<&Identity>,
+        headers: &HeaderMap,
+        transport: &Transport,
+        method: &str,
+        path: &str,
+        query: Option<&str>,
+    ) -> Option<Response<Body>> {
+        if refusal.status != 403 || refusal.code != "STS-XPEP-0095" {
+            return None;
+        }
+        let who = identity?;
+        if who.mechanism != Mechanism::Session {
+            return None;
+        }
+        let id = who.session_id.clone()?;
+        let stores = &self.pep.sync.proxy_sessions;
+        let session = stores.get(&id)?;
+        match self.auth.session_live(&session.sid, pulled).await {
+            Ok(None) => {}
+            _ => return None,
+        }
+        self.end_session(&id, &session.client_id);
+        tracing::info!(
+            "{}xacml-pep: proxy: the identity endpoint refused a proxy \
+             session's identity and its sign-on session has ended at the \
+             service (route {}); the proxy session is ended before the \
+             signal arrives.",
+            tag("STS-XPEP-0084"),
+            route.id
+        );
+        let browser = is_browser(method, headers);
+        if route.multiple_accounts && browser {
+            let here = match query {
+                Some(q) => format!("{}?{}", path, q),
+                None => path.to_string(),
+            };
+            return Some(redirect(&format!(
+                "{}?return={}",
+                ACCOUNTS_PATH,
+                encode(&here)
+            )));
+        }
+        let ended = self
+            .no_session(
+                route, pulled, config, transport, browser, path, query, true,
+                None, AuthorizeOptions::default(),
+            )
+            .await;
+        match ended {
+            Established::Answer(response) => Some(response),
+            Established::Refused(refused) => Some(self.refuse(
+                &refused,
+                &Asked { method, path, route: Some(route) },
+                pulled,
+            )),
+            Established::Who(_) => None,
+        }
     }
 
     /// Ends a proxy session here and in the library (its cache, and the
@@ -1295,6 +1389,7 @@ impl Proxy {
         } else {
             login.preferred_username.clone()
         };
+        let unnamed = username.is_empty();
         let now = Instant::now();
         let created = self.pep.sync.proxy_sessions.create(
             &id,
@@ -1320,6 +1415,32 @@ impl Proxy {
                 pulled,
             );
         }
+        // WHO SIGNED IN, BY NAME (2026-11-14). The service's ID Token
+        // carries no `preferred_username` (#395), so a session made from it
+        // alone was labelled by its `urn:uuid` subject on the account
+        // chooser. The ID Token's `name` is taken where it has one, and the
+        // service's session endpoint — asked once, here — names the person.
+        let display = login
+            .claims
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let learned = if unnamed && !login.sid.is_empty() {
+            self.auth
+                .session_live(&login.sid, pulled)
+                .await
+                .ok()
+                .flatten()
+        } else {
+            None
+        };
+        let (learned_name, learned_display) = learned
+            .map(|(_, u, n)| (u, n))
+            .unwrap_or_default();
+        self.pep.sync.proxy_sessions.named(&id, &learned_name, "");
+        let display = if display.is_empty() { learned_display } else {
+            display };
         // The receiver finds a session by the service's session id (a
         // CAEP session-revoked names it), by the person, or by the mail.
         if let Some(receiver) = &party.receiver {
@@ -1348,6 +1469,7 @@ impl Proxy {
             match stores.add_account(set_id, &id, &pending.client_id,
                                      &login.subject, &username, max) {
                 Ok(added) => {
+                    stores.named(&id, "", &display);
                     if let Some(old) = &added.replaced {
                         self.end_session(old, &pending.client_id);
                     }
@@ -1455,6 +1577,7 @@ impl Proxy {
                             json!({
                                 "account": a.account,
                                 "username": a.username,
+                                "name": a.name,
                                 "application": application_of(&a.client_id),
                                 "active": set.active.get(&a.client_id)
                                     == Some(&a.account)
@@ -1572,13 +1695,19 @@ impl Proxy {
                 let active = set.active.get(&a.client_id) == Some(&a.account);
                 let name = if a.username.is_empty() { &a.sub } else {
                     &a.username };
+                let shown = if a.name.is_empty() || a.name == *name {
+                    html_escape(name)
+                } else {
+                    format!("{} — {}", html_escape(name),
+                            html_escape(&a.name))
+                };
                 format!(
                     "<li><strong>{}</strong> ({}){}{} <form method=\"post\" \
                      action=\"{}\"><input \
                      type=\"hidden\" name=\"account\" value=\"{}\"><input \
                      type=\"hidden\" name=\"return\" value=\"{}\"><button \
                      type=\"submit\">Sign out</button></form></li>",
-                    html_escape(name),
+                    shown,
                     html_escape(&application_of(&a.client_id)),
                     if active { " — active" } else { "" },
                     if active { String::new() } else {
@@ -2002,10 +2131,15 @@ impl Proxy {
         {
             return Err(off_origin());
         }
+        let strip = strip_list(
+            &pulled.realm.service_cookie_prefixes,
+            &self.pep.options.now().proxy_strip_cookies,
+        );
         let mut headers = forward_headers(
             &parts.headers,
             route.forward_credentials,
             &config.identity_header_names(),
+            &strip,
         );
         if let Some(remote) = transport.remote.map(|r: SocketAddr| r.ip()) {
             if let Ok(v) = HeaderValue::from_str(&remote.to_string()) {
@@ -2182,6 +2316,7 @@ pub async fn serve_on(proxy: Arc<Proxy>, listener: TcpListener) {
                 https: false,
                 peer: None,
                 remote: Some(remote),
+                crl_only: false,
             };
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(
@@ -2230,6 +2365,7 @@ pub async fn serve_https(proxy: Arc<Proxy>, https: Arc<HttpsListener>) {
                 https: true,
                 peer: peer_of(tls.ssl()),
                 remote: Some(remote),
+                crl_only: false,
             };
             let served = Builder::new(TokioExecutor::new())
                 .serve_connection(

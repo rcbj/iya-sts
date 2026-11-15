@@ -341,7 +341,19 @@ pub struct RealmFacts {
     pub clients: BTreeMap<String, RpClient>,
     /// The PEM chain of the service's listener: the library's `tlsCa`.
     pub tls_ca_chain: String,
+    /// The service's own cookie names and prefixes (a trailing `*`), which
+    /// the proxy never forwards upstream (2026-11-14). A service older than
+    /// the member sends none, and `SERVICE_COOKIE_PREFIXES` stands in.
+    pub service_cookie_prefixes: Vec<String>,
 }
+
+/// WHAT A SERVICE THAT PUBLISHES NO COOKIE NAMES IS TAKEN TO USE: every
+/// cookie it writes is `sts_…` inside and `__Host-sts_…` or `__Secure-sts_…`
+/// on the wire (`common/cookie_wire.ts`). Used only when the pull carries no
+/// `realm.serviceCookiePrefixes` — an older service — so a name the service
+/// adds tomorrow is still the service's to publish, not this table's.
+pub const SERVICE_COOKIE_PREFIXES: &[&str] =
+    &["sts_*", "__Host-sts_*", "__Secure-sts_*"];
 
 /// What the relying party of one application needs (D5). The secret's
 /// `Debug` is redacted, so no `{:?}` of a pull can log it.
@@ -841,6 +853,13 @@ fn realm_of(said: &Value) -> Result<RealmFacts, String> {
         signing_certificates: certificates,
         clients,
         tls_ca_chain: string_member(said, "tlsCaChain", "realm")?,
+        service_cookie_prefixes: match said.get("serviceCookiePrefixes") {
+            None | Some(Value::Null) => SERVICE_COOKIE_PREFIXES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            Some(list) => strings_of(list, "realm.serviceCookiePrefixes")?,
+        },
     })
 }
 

@@ -79,6 +79,9 @@ struct ServiceState {
     heartbeats: Vec<Value>,
     /// Who the next ID Token names, (sub, username); carol when unset.
     who: Option<(String, String)>,
+    /// Sessions signed out at the service whose access tokens the identity
+    /// endpoint now refuses (403), before any signal says so.
+    ended: HashSet<String>,
 }
 
 /// What the application has seen of its SAML sessions.
@@ -524,6 +527,14 @@ async fn service(
                     t.trim_start_matches("tk-").to_string()
                 }
                 (Some("access_token"), Some(t)) if !t.is_empty() => {
+                    // A sign-out at the service revokes the session's
+                    // access tokens at once (#1449).
+                    if g.ended.contains(t.trim_start_matches("at-")) {
+                        return (
+                            StatusCode::FORBIDDEN,
+                            Json(json!({ "error": "access_denied" })),
+                        );
+                    }
                     "carol".into()
                 }
                 _ => {
@@ -540,6 +551,10 @@ async fn service(
                 );
             }
             match route.as_str() {
+                "livehdr" => (
+                    StatusCode::OK,
+                    Json(json!({ "claims": { "groups": ["g1", "g2"] } })),
+                ),
                 "hdr" => {
                     let email = if who == "evil" {
                         "x\r\nX-Injected: 1".to_string()
@@ -695,6 +710,11 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
                   "application": "sso-app",
                   "resolved": resolved_for(false, false, ""),
                   "identity": { "mode": "saml" } },
+                { "id": "livehdr", "path": "/livehdr",
+                  "mechanisms": ["session"], "application": LIVE_CLIENT,
+                  "resolved": resolved_for(false, false, LIVE_CLIENT),
+                  "identity": { "mode": "headers", "headers": [
+                    { "name": "X-Iya-Groups", "claim": "groups" } ] } },
                 { "id": "multi", "path": "/multi", "mechanisms": ["session"],
                   "application": LIVE_CLIENT, "multipleAccounts": true,
                   "resolved": resolved_for(false, false, LIVE_CLIENT),
@@ -1367,6 +1387,20 @@ async fn the_session_flow_through_the_library_and_a_sign_out_at_the_service() {
     .await;
     assert_eq!(said["headers"]["x-remote-user"], "carol");
     assert_eq!(said["headers"]["cookie"], "other=1");
+    // THE IDENTITY PROVIDER'S COOKIES NEVER GO UPSTREAM (2026-11-14): the
+    // service's names, inside and on the wire, by the default prefixes a
+    // pull that names none stands on; the application's own are kept.
+    let said = echoed(
+        h.get("/app/page")
+            .header("cookie", format!(
+                "__Host-sts_session=s; {}; sts_lang=fr; \
+                 __Secure-sts_session_bound=b; other=1; ists_x=2", pair))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["headers"]["cookie"], "other=1; ists_x=2");
     // The proxy session is the application's: another session route,
     // another application, does not take it.
     let r = h
@@ -1480,6 +1514,24 @@ async fn a_caep_session_revoked_ends_access() {
         }
     }
     assert_eq!(status, 401, "the signal ended the proxy session");
+    // AND A BROWSER STILL HOLDING THE COOKIE IS SENT TO SIGN IN WITH IT
+    // CLEARED (2026-11-14): the signal removed the session before this
+    // request, which therefore found none to end.
+    let r = h
+        .get("/live/page")
+        .header("cookie", pair.clone())
+        .header("accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 302);
+    assert!(
+        r.headers()
+            .get("set-cookie")
+            .map(|v| v.to_str().unwrap().contains("Max-Age=0"))
+            .unwrap_or(false),
+        "the dead iya_pep_session is cleared"
+    );
     assert!(h.service.lock().unwrap().polls > 0);
     assert!(
         h.sync.proxy_json()["answered"]["sessionsEnded"].as_u64() >= Some(1)
@@ -1710,7 +1762,7 @@ async fn the_configuration_is_pulled_with_its_token_and_etag() {
         overview["active"], true,
         "kept through a 304, a 500 and a document refused whole"
     );
-    assert_eq!(overview["routes"], 14);
+    assert_eq!(overview["routes"], 15);
     assert_eq!(overview["lastPullOk"], false);
     assert!(overview["lastPullWhy"]
         .as_str()
@@ -2193,4 +2245,101 @@ async fn the_account_set_is_bounded() {
     assert!(r.headers()["set-cookie"].to_str().unwrap().contains("Max-Age=0"));
     assert!(h.accounts_of(&set).await["accounts"].as_array().unwrap()
               .is_empty());
+}
+
+/// THE WINDOW BEFORE THE SIGNAL (2026-11-14): a sign-out at the service
+/// revokes the session's access token at once, and the identity endpoint
+/// refuses it before the CAEP event arrives. A browser is then sent to sign
+/// in with its cookie cleared — not shown a 403 — and anything else gets a
+/// 401; a refusal while the session is still live stays a 403.
+#[tokio::test]
+async fn a_refused_identity_of_an_ended_session_sends_the_browser_to_sign_in() {
+    let h = harness().await;
+    let q = h.send_to_sign_in("/livehdr/x", "sid-win").await;
+    h.service.lock().unwrap().live.insert("sid-win".into());
+    let pair = cookie_of(&h.come_back("win-1", &member(&q, "state")).await);
+    let said = echoed(
+        h.get("/livehdr/x")
+            .header("cookie", pair.clone())
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(said["headers"]["x-iya-groups"], "g1,g2");
+    // Refused while the session is live: the service's 403 stands.
+    h.service.lock().unwrap().ended.insert("sid-win".into());
+    let r = h
+        .get("/livehdr/x")
+        .header("cookie", pair.clone())
+        .header("accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403, "a live session's refusal is a refusal");
+    // Signed out at the service: the session endpoint says dead too.
+    h.service.lock().unwrap().live.remove("sid-win");
+    let r = h
+        .get("/livehdr/x")
+        .header("cookie", pair.clone())
+        .header("accept", "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 302, "a browser is sent to sign in");
+    assert!(r.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .contains("Max-Age=0"));
+    let r = h
+        .get("/livehdr/x")
+        .header("cookie", pair)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401, "the proxy session is gone");
+    // A non-browser in the same window: 401, not 403.
+    let q = h.send_to_sign_in("/livehdr/y", "sid-win2").await;
+    h.service.lock().unwrap().live.insert("sid-win2".into());
+    let pair = cookie_of(&h.come_back("win-2", &member(&q, "state")).await);
+    {
+        let mut g = h.service.lock().unwrap();
+        g.ended.insert("sid-win2".into());
+        g.live.remove("sid-win2");
+    }
+    let r = h
+        .get("/livehdr/y")
+        .header("cookie", pair)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+}
+
+/// AN ACCOUNT IS LABELLED BY ITS USERNAME (2026-11-14): the service's ID
+/// Token carries no `preferred_username`, so the chooser labelled the
+/// account by its `urn:uuid` subject; the sign-in now asks the service's
+/// session endpoint, which names the person.
+#[tokio::test]
+async fn an_account_without_a_username_claim_is_named_by_the_service() {
+    let h = harness().await;
+    let (status, to) = h.location_of("/multi/page", "").await;
+    assert_eq!(status, 302);
+    h.service.lock().unwrap().live.insert("sid-u".into());
+    let r = h.sign_in_as(&to, ("urn:uuid:carol", ""), "sid-u", "mu").await;
+    assert_eq!(r.status(), 302);
+    let set = cookie_of(&r);
+    let list = h.accounts_of(&set).await;
+    assert_eq!(list["accounts"][0]["username"], "carol", "{}", list);
+    let page = h
+        .get("/.iya-pep/accounts?return=%2Fmulti%2Fpage")
+        .header("cookie", set)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(page.contains("<strong>carol</strong>"), "{}", page);
+    assert!(!page.contains("urn:uuid:carol"), "{}", page);
 }
