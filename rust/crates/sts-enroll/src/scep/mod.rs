@@ -391,6 +391,23 @@ impl Scep {
         })
     }
 
+    /// `ra.ensure(realm, { force: true })`, the console's *Re-issue the RA
+    /// certificate*: a new RA whatever the held one's state, the old one
+    /// superseded on the SCEP Issuing CA's CRL.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub async fn reissue_ra(&self) -> Result<Json, Refusal> {
+        if self.core.ensure_authority("scep").is_none() {
+            return Err(Refusal::new(
+                codes::STS_SCEP_0005,
+                503,
+                "This realm has no certificate authority yet, so it has no SCEP Issuing CA and no RA certificate. Build the hierarchy on /admin/pki.",
+            ));
+        }
+        let _one = self.building.lock().await;
+        let held = self.ra_record();
+        self.issue_ra(held, "requested").await
+    }
+
     // -----------------------------------------------------------------
     // THE TRANSACTION STORE.
     // -----------------------------------------------------------------
@@ -1479,9 +1496,26 @@ impl Scep {
             return json!({ "present": false, "status": "missing", "keyAlgorithm": format!("rsa-{}", self.wanted_bits()) });
         };
         let why = self.staleness(Some(&held));
+        // `'rsa-' + modulusLength` of the certificate's key, '' where it
+        // cannot be read (Node's catch).
+        let key_alg =
+            sts_pki::x509::keys::pem_to_der(str_of(&held, "certificatePem"))
+                .ok()
+                .and_then(|der| {
+                    sts_pki::x509::read::Certificate::from_der(&der).ok()
+                })
+                .and_then(|cert| sts_pki::x509::keys::describe_spki(&cert.spki))
+                .and_then(|desc| match desc {
+                    sts_pki::x509::keys::KeyDesc::Rsa { bits } => {
+                        Some(format!("rsa-{}", bits))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_default();
         json!({
             "present": true, "status": if why.is_empty() { "current" } else { why },
             "subject": held["subject"], "serialHex": held["serialHex"],
+            "keyAlgorithm": key_alg,
             "wantedKeyAlgorithm": format!("rsa-{}", self.wanted_bits()),
             "notBefore": held["notBefore"], "notAfter": held["notAfter"],
             "thumbprint": held["thumbprint"], "certificatePem": held["certificatePem"],

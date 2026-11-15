@@ -76,6 +76,144 @@ function frameOf(api, spec, kind, authRequired) {
 }
 
 /**
+ * `GET /admin-api/pki`'s `revocationNote` as a product-mode process writes
+ * it under the default revocation policy.
+ *
+ * @returns {string} the sentence
+ */
+function productRevocationNote() {
+  log.debug("Entering productRevocationNote().");
+  const program = [
+    'require(' + JSON.stringify(path.join(ROOT, 'common',
+                                          'protocol_stack')) + ');',
+    'const v = require(' + JSON.stringify(path.join(ROOT, 'admin-ui',
+      'pki_admin')) + ').pkiView({ query: {} });',
+    'process.stdout.write("\\n@@NOTE@@" + JSON.stringify(v.revocationNote));',
+    'process.exit(0);'
+  ].join('\n');
+  const out = require('child_process').execFileSync(process.execPath,
+    ['-e', program], { env: Object.assign({}, process.env,
+      { STS_MODE: 'product', STS_LOG_LEVEL: 'fatal' }),
+    maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
+  const at = out.lastIndexOf('@@NOTE@@');
+  log.debug("Leaving productRevocationNote().");
+  return JSON.parse(out.slice(at + '@@NOTE@@'.length));
+}
+
+/**
+ * The constant tables `GET /admin-api/acme`, `/est`, `/scep` and their
+ * monitors draw (#444, phase 5, the `apis2` slice), read off the modules
+ * that hold them so the Rust views carry Node's words rather than a copy.
+ *
+ * @returns {any} the tables
+ */
+function familyViewTables() {
+  log.debug("Entering familyViewTables().");
+  const mod = function (rel) {
+    return require(path.join(ROOT, rel));
+  };
+  const core = mod('common/cert_enrollment');
+  const acme = mod('acme/acme');
+  const acmeConsole = mod('acme/acme_console');
+  const estConsole = mod('est/est_console');
+  const scep = mod('scep/scep');
+  const scepConsole = mod('scep/scep_console');
+  const cms = mod('scep/scep_cms');
+  const requirement = mod('common/mode').REQUIREMENTS.filter(function (one) {
+    return one.id === 'certificate-enrollment';
+  })[0] || null;
+  const out = {
+    profileIds: core.PROFILE_IDS.slice(),
+    deviceProfile: core.DEVICE_PROFILE,
+    profileNeeds: core.PROFILE_NEEDS,
+    refusedProfiles: core.REFUSED_PROFILES,
+    requirement: requirement,
+    revocationReasonIds: mod('common/pki_revocation').REASONS.map(
+      function (one) {
+        return one.id;
+      }),
+    acme: {
+      challengeType: acme.CHALLENGE_TYPE,
+      identifierTypes: acme.IDENTIFIER_TYPES,
+      profileDescriptions: acme.PROFILE_DESCRIPTIONS,
+      actions: acmeConsole.ACME_ACTIONS.slice()
+    },
+    est: {
+      operations: estConsole.OPERATIONS,
+      revocationReasons: estConsole.REVOCATION_REASONS,
+      actions: estConsole.EST_ACTIONS.slice(),
+      keyAlgorithms: mod('common/crypto_impl/key_material').keyAlgIds(),
+      signatureAlgorithms: mod('est/est_codec').SIGNATURE_ALGORITHMS
+    },
+    scep: {
+      capabilities: scep.CAPABILITIES.slice(),
+      operations: scep.OPERATIONS.slice(),
+      messageTypes: cms.MESSAGE_TYPES,
+      algorithms: cms.algorithms(),
+      exceptions: scepConsole.EXCEPTIONS.slice(),
+      revokeReasons: scepConsole.REVOKE_REASONS.slice(),
+      actions: scepConsole.SCEP_ACTIONS.slice()
+    }
+  };
+  // `GET /admin-api/pki`'s constant members, taken from Node's own answer
+  // in a realm with nothing built: the vocabularies, the tiers, the
+  // report's sentences and the published action list. What varies with
+  // the hierarchy, the entries or the settings is computed in Rust.
+  const view = mod('admin-ui/pki_admin').pkiView({ query: {} });
+  out.pki = {
+    keyAlgorithms: view.keyAlgorithms,
+    signatureAlgorithms: view.signatureAlgorithms,
+    tiers: view.tiers,
+    revocationNote: view.revocationNote,
+    // The same sentence in product mode, whose default revocation policy
+    // hard-fails (`revocation_status.describePolicy()`), from a child
+    // started in that mode: the mode is read once, at start.
+    revocationNoteProduct: productRevocationNote(),
+    residency: view.residency,
+    encoder: view.encoder,
+    actions: view.actions,
+    personSigningKeyMax: view.personSigningKeyMax,
+    personRevocationReasons: view.personRevocationReasons,
+    personAttributes: view.personAttributes,
+    personIssuerAttribute: view.personIssuerAttribute,
+    subjectKinds: view.subjectKinds,
+    purposes: view.purposes,
+    tierLabels: view.tierLabels,
+    serviceScope: view.serviceScope,
+    reasons: view.revocation.reasons,
+    crlLifetimeMinutes: view.revocation.crlLifetimeMinutes
+  };
+  // `protocolEndpoints` (`admin-core/protocol_endpoints.ts`'s `forPage()`),
+  // which the management API appends to a GET mirroring a Protocols page:
+  // each family view's HTTP rows, built against a marker base the Rust view
+  // replaces with the request's realm base. A socket row reports a live
+  // listener and is not a table, so none is kept here.
+  const endpoints = mod('admin-core/protocol_endpoints');
+  const api = mod('mgmt-api/admin_api');
+  const marker = { headers: { host: 'marker.invalid' }, protocol: 'https',
+                   secure: true, socket: {}, connection: {},
+                   get: function (name) {
+                     return this.headers[String(name).toLowerCase()];
+                   } };
+  out.protocolEndpoints = {};
+  ['getPki', 'getAcme', 'getEst', 'getScep'].forEach(function (id) {
+    const row = api.ROUTES.filter(function (one) {
+      return one.operationId === id;
+    })[0];
+    const page = /^GET (\/admin\S*)$/.exec(String(row.mirrors || ''));
+    out.protocolEndpoints[id] = (endpoints.forPage(marker, page[1]) || [])
+      .filter(function (one) {
+        return !one.transport;
+      }).map(function (one) {
+        return Object.assign({}, one, {
+          url: String(one.url).replace('https://marker.invalid', '') });
+      });
+  });
+  log.debug("Leaving familyViewTables().");
+  return out;
+}
+
+/**
  * The tables, as the Rust crate reads them.
  *
  * @returns {any} the export
@@ -148,6 +286,17 @@ function tables() {
       sharedWith: block.sharedWith
     };
   });
+  // The certificate enrollment tab's settings blocks (#444, phase 5, the
+  // `apis2` slice): one page, each family's group alone.
+  ['/admin/cert-issuance', '/admin/pki'].forEach(function (page) {
+    const block = admin.configSettingsJson(page);
+    pageSettings[page] = {
+      groups: block.groups.map(function (group) {
+        return group.group;
+      }),
+      sharedWith: block.sharedWith
+    };
+  });
   // The frame drawn for nobody in particular: every section.
   const frame = admin.shellJson(null, null, null);
   const out = {
@@ -173,10 +322,17 @@ function tables() {
     navLabels: frame.navLabels,
     servicePages: require(path.join(ROOT, 'admin-ui',
                                     'admin_scope')).SERVICE_PAGES,
+    // The settings a realm administrator may not write (#444, the `apis2`
+    // slice): `admin_scope.ts`'s two lists, beside the per-process keys.
+    serviceSettingKeys: require(path.join(ROOT, 'admin-ui',
+                                          'admin_scope')).SERVICE_SETTING_KEYS,
+    serviceSettingPrefixes: require(path.join(ROOT, 'admin-ui',
+      'admin_scope')).SERVICE_SETTING_PREFIXES,
     // The Account API's Overview draws a person's entry against the
     // inetOrgPerson schema's fixed list (`common/inetorgperson.ts`, 3z).
     inetOrgPersonClasses: require(path.join(ROOT, 'common',
-                                            'inetorgperson')).CLASSES
+                                            'inetorgperson')).CLASSES,
+    familyViews: familyViewTables()
   };
   log.debug("Leaving tables(). " + rows.length + " row(s).");
   return out;

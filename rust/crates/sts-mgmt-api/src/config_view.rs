@@ -472,9 +472,27 @@ impl ConfigView<'_> {
     /// `configSettingsJson(page)`: a page's settings block.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn settings_block(&self, page: &str) -> Json {
+        self.settings_block_only(page, None)
+    }
+
+    /// `configSettingsJson(page, only)`: a page's settings block, its
+    /// groups narrowed to `only` where given — a tab of a page that draws
+    /// several families' groups (`/admin/cert-issuance`'s ACME, EST and
+    /// SCEP). `sharedWith` is computed per group in Node, so it narrows
+    /// with them.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn settings_block_only(
+        &self,
+        page: &str,
+        only: Option<&[&str]>,
+    ) -> Json {
         let home = tables().page_settings.get(page);
-        let wanted: Vec<String> =
-            home.map(|h| h.groups.clone()).unwrap_or_default();
+        let wanted: Vec<String> = home
+            .map(|h| h.groups.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|g| only.is_none_or(|o| o.contains(&g.as_str())))
+            .collect();
         let groups: Vec<Json> = self
             .groups()
             .into_iter()
@@ -520,11 +538,15 @@ impl ConfigView<'_> {
             Json::from("POST /admin-api/config/set-many"),
         );
         out.insert("context".into(), self.context());
-        out.insert(
-            "sharedWith".into(),
-            home.map(|h| h.shared_with.clone())
-                .unwrap_or(Json::Object(Map::new())),
-        );
+        let mut shared = Map::new();
+        if let Some(Json::Object(all)) = home.map(|h| &h.shared_with) {
+            for (group, pages) in all {
+                if wanted.iter().any(|w| w == group) {
+                    shared.insert(group.clone(), pages.clone());
+                }
+            }
+        }
+        out.insert("sharedWith".into(), Json::Object(shared));
         Json::Object(out)
     }
 

@@ -37,6 +37,7 @@ pub mod core;
 pub mod est;
 pub mod http;
 pub mod model;
+pub mod monitor;
 pub mod ports;
 pub mod scep;
 pub mod wiring;

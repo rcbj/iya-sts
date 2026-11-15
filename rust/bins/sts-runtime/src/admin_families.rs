@@ -17,19 +17,30 @@
 //! unknown action of the three enrollment routes is refused in its
 //! family's words.
 //!
-//! NOT PORTED, and what is left out of a ported act's answer: the
-//! enrollment monitors' rows (`monitor.record()`), the Shared Signals a
-//! revocation sends (`accountSignals`, `serviceSignals.caRevoked()`), the
-//! re-minting of a realm's own signing-key certificates after a build
-//! (`recertifyScope()`: the answer says none were), and the console's form
-//! fields beyond a build's organisation, country, algorithms and years.
+//! ACME's `deactivate-account`, EST's `issue-server-key` and SCEP's
+//! `reissue-ra` are ported too, and every act records its row in the
+//! enrollment monitor where Node's does (`monitor.record()`). The views —
+//! `GET /admin-api/acme`, `/est`, `/scep` and their monitors — are
+//! [`views`].
+//!
+//! NOT PORTED, and what is left out of a ported act's answer: the Shared
+//! Signals a revocation sends (`accountSignals`,
+//! `serviceSignals.caRevoked()` — this runtime has no transmitter, so the
+//! core's signals port is quiet), the re-minting of a realm's own
+//! signing-key certificates after a build (`recertifyScope()`: the answer
+//! says none were), and the console's form fields beyond a build's
+//! organisation, country, algorithms and years.
 
 use std::sync::{Arc, OnceLock};
+
+#[path = "admin_family_views.rs"]
+mod views;
 
 use serde_json::{json, Value as Json};
 use sts_core::errors::{codes, ErrorCode};
 use sts_core::realm;
 use sts_enroll::core::{Entry, Refusal};
+use sts_enroll::ports::Monitor;
 use sts_mgmt_api::families::{Asked, FamilyPorts};
 use sts_mgmt_api::setup::Answered;
 use sts_pki::authority::hierarchy::BuildOptions;
@@ -77,14 +88,12 @@ fn entry_of(body: &Json) -> Entry {
     Entry::new(&text(body, "kind"), &text(body, "identifier"))
 }
 
-/// `actorOf()` / `consoleActorOf()`: the caller the gate let in, or
-/// `admin-api` where no token was asked for.
+/// `actorOf()` / the actor `acmeAction()` takes: over the management API
+/// (`via: 'api'`) it is `admin-api` whoever the caller is — that is who an
+/// EAB key or a challenge is `createdBy`, and who a revocation is by.
 fn actor_of(asked: &Asked<'_>) -> String {
-    asked
-        .caller
-        .map(|c| c.name.clone())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "admin-api".to_string())
+    let _ = asked;
+    "admin-api".to_string()
 }
 
 impl AdminFamilies {
@@ -232,6 +241,14 @@ impl AdminFamilies {
                 match core.create_eab(&target, lifetime, &actor) {
                     Err(r) => handed_on(&r),
                     Ok(made) => {
+                        f.monitor.record(
+                            "acme",
+                            &json!({
+                            "operation": "create-eab",
+                            "outcome": "credential", "status": 200,
+                            "principal": actor,
+                            "target": made.target.uri() }),
+                        );
                         let directory =
                             format!("{}/enroll/acme/directory", asked.base);
                         ok(json!({
@@ -303,11 +320,22 @@ impl AdminFamilies {
                     false,
                 ) {
                     Err(r) => handed_on(&r),
-                    Ok(_) => ok(json!({ "ok": true, "serialHex": serial_hex,
+                    Ok(done) => {
+                        f.monitor.record(
+                            "acme",
+                            &json!({
+                            "operation": "revoke-certificate",
+                            "outcome": "revoked", "status": 200,
+                            "principal": actor,
+                            "target": done.entry.uri(),
+                            "serialHex": serial_hex }),
+                        );
+                        ok(json!({ "ok": true, "serialHex": serial_hex,
                         "reason": reason,
                         "message": format!(
                             "The certificate {} is revoked ({}) and on the ACME Issuing CA's CRL.",
-                            serial_hex, reason) })),
+                            serial_hex, reason) }))
+                    }
                 }
             }
             "add-host-name" | "remove-host-name" => {
@@ -326,7 +354,7 @@ impl AdminFamilies {
                             else { names.join(", ") }) })),
                 }
             }
-            "deactivate-account" => return None,
+            "deactivate-account" => Self::deactivate_account(f, body, &actor),
             other => refused(
                 codes::STS_ACME_0090,
                 vec![format!(
@@ -352,7 +380,7 @@ impl AdminFamilies {
         let body = asked.body;
         let actor = actor_of(asked);
         let core = &f.core;
-        Some(match asked.action {
+        let answered = match asked.action {
             "revoke-certificate" => {
                 let reason = match text(body, "reason") {
                     r if r.is_empty() => "unspecified".to_string(),
@@ -390,7 +418,7 @@ impl AdminFamilies {
                             entry.uri()) })),
                 }
             }
-            "issue-server-key" => return None,
+            "issue-server-key" => Self::issue_server_key(f, body, &actor),
             other => refused(
                 codes::STS_EST_0032,
                 vec![format!(
@@ -399,7 +427,34 @@ impl AdminFamilies {
                     ACTIONS.join(", ")
                 )],
             ),
-        })
+        };
+        // `monitor.record()` after every act that succeeded, as
+        // `estAction()` records it.
+        if answered.status == 200 && answered.body["ok"] == json!(true) {
+            let action = asked.action;
+            let record = &answered.body["record"];
+            let serial = [&answered.body["serialHex"], &record["serialHex"]]
+                .into_iter()
+                .find(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+                .cloned()
+                .unwrap_or(Json::Null);
+            f.monitor.record(
+                "est",
+                &json!({
+                    "operation": action,
+                    "outcome": match action {
+                        "revoke-certificate" => "revoked",
+                        "issue-server-key" => "issued",
+                        _ => "answered",
+                    },
+                    "status": 200, "principal": actor,
+                    "profile": record.get("profile").cloned()
+                        .unwrap_or(Json::Null),
+                    "serialHex": serial,
+                }),
+            );
+        }
+        Some(answered)
     }
 
     fn scep(
@@ -417,7 +472,9 @@ impl AdminFamilies {
             "remove-host-name",
         ];
         let body = asked.body;
-        let actor = asked.caller.map(|c| c.name.clone()).unwrap_or_default();
+        // `scep_api.ts` hands `scepAction()` the actor `admin-api` whoever
+        // the caller is: that is who a challenge is `createdBy`.
+        let actor = "admin-api".to_string();
         let core = &f.core;
         Some(match asked.action {
             "create-challenge" => {
@@ -432,6 +489,15 @@ impl AdminFamilies {
                 ) {
                     Err(r) => refused(r.code, vec![r.sentence.clone()]),
                     Ok(made) => {
+                        f.monitor.record(
+                            "scep",
+                            &json!({
+                            "operation": "create-challenge",
+                            "outcome": "credential", "status": 200,
+                            "profile": made.profile,
+                            "principal": actor,
+                            "target": made.target.uri() }),
+                        );
                         let url = format!(
                             "{}/enroll/scep/{}",
                             asked.base, made.profile
@@ -510,6 +576,15 @@ impl AdminFamilies {
                     Err(r) => refused(r.code, vec![r.sentence.clone()]),
                     Ok(found) => {
                         let serial_hex = text(&found.record, "serialHex");
+                        f.monitor.record(
+                            "scep",
+                            &json!({
+                            "operation": "revoke-certificate",
+                            "outcome": "revoked", "status": 200,
+                            "principal": actor,
+                            "target": found.entry.uri(),
+                            "serialHex": serial_hex }),
+                        );
                         ok(json!({ "ok": true, "serialHex": serial_hex,
                             "entryUri": found.entry.uri(), "reason": reason,
                             "message": format!(
@@ -536,7 +611,7 @@ impl AdminFamilies {
                             else { names.join(", ") }) })),
                 }
             }
-            "reissue-ra" => return None,
+            "reissue-ra" => Self::reissue_ra(f),
             other => refused(
                 codes::STS_SCEP_0062,
                 vec![format!(
@@ -547,6 +622,187 @@ impl AdminFamilies {
                 )],
             ),
         })
+    }
+}
+
+/// Runs one of the families' async acts to its end on this request's
+/// thread, as `kid_of()` makes a key set: the router's handler is
+/// synchronous, and the runtime is multi-threaded.
+fn finish<T>(work: impl std::future::Future<Output = T>) -> T {
+    tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(work)
+    })
+}
+
+impl AdminFamilies {
+    /// ACME's `deactivate-account` (`acmeAction()`): the account is
+    /// `deactivated` and authorizes nothing more; one already not `valid`
+    /// is left as it is.
+    fn deactivate_account(
+        f: &sts_enroll::wiring::Families,
+        body: &Json,
+        actor: &str,
+    ) -> Answered {
+        let id = text(body, "account");
+        let store = f.acme.store();
+        let Some(mut account) = store.get_account(&id) else {
+            return refused(
+                codes::STS_ACME_0092,
+                vec![format!(
+                    "There is no ACME account \"{}\" in this realm.",
+                    id
+                )],
+            );
+        };
+        let status = text(&account, "status");
+        let already = status != "valid";
+        if !already {
+            account["status"] = json!("deactivated");
+            account["deactivatedAt"] = json!(chrono::Utc::now()
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+            store.save_account(&account);
+            let target = account
+                .get("entry")
+                .and_then(Entry::from_json)
+                .map(|e| e.uri())
+                .unwrap_or_default();
+            f.core.audit().record(&json!({
+                "category": "configuration",
+                "action": "enrollment.acme.account.deactivate",
+                "protocol": "ACME", "outcome": "success", "actor": actor,
+                "target": target,
+                "summary": "an administrator deactivated an ACME account",
+                "detail": { "account": account["id"], "via": "api" },
+            }));
+        }
+        let message = if already {
+            format!("The account was already {}; nothing changed.", status)
+        } else {
+            format!(
+                "The ACME account {} is deactivated and authorizes nothing \
+                 more.",
+                text(&account, "id")
+            )
+        };
+        ok(json!({ "ok": true,
+                   "account": views::acme_account_row(&account),
+                   "message": message }))
+    }
+
+    /// EST's `issue-server-key` (`issueServerKey()`): a certificate with a
+    /// key pair this service generates, the private key answered once.
+    fn issue_server_key(
+        f: &sts_enroll::wiring::Families,
+        body: &Json,
+        actor: &str,
+    ) -> Answered {
+        let core = &f.core;
+        let entry = entry_of(body);
+        if !core.est_switch("serverKeyGeneration", Some(&entry)) {
+            return refused(
+                codes::STS_EST_0005,
+                vec!["Server-side key generation is turned off for EST for \
+                      this entry (est.serverKeyGeneration, or the \
+                      application's own estServerKeyGeneration)."
+                    .into()],
+            );
+        }
+        let profile = match text(body, "profile") {
+            p if p.is_empty() => core.default_profile("est", Some(&entry)),
+            p => p,
+        };
+        let key_alg = match text(body, "keyAlg") {
+            k if k.is_empty() => "ec-p256".to_string(),
+            k => k,
+        };
+        let kem = sts_pki::authority::catalog::key_alg(&key_alg)
+            .is_some_and(|a| a.kind == "pqc" && !a.signs());
+        if kem && profile != "key-encipherment" {
+            return refused(
+                codes::STS_EST_0017,
+                vec![format!(
+                    "A {} key is a key-encapsulation key and can be \
+                     certified only for key-encipherment.",
+                    key_alg
+                )],
+            );
+        }
+        let spec = sts_enroll::core::issue::IssueSpec {
+            family: "est".into(),
+            profile: profile.clone(),
+            principal: Some(core.session_principal(
+                actor,
+                "est-api",
+                Some(true),
+            )),
+            target: Some(entry),
+            key_alg: key_alg.clone(),
+            via: "est:api".into(),
+            ..Default::default()
+        };
+        match finish(core.issue_with_server_key(&spec)) {
+            Err(r) => refused(r.code, vec![r.sentence.clone()]),
+            Ok(issued) => {
+                let mut record = json!({ "entry": issued.target.to_json(),
+                                         "entryUri": issued.target.uri() });
+                if let (Some(o), Some(more)) =
+                    (record.as_object_mut(), issued.record.as_object())
+                {
+                    for (k, v) in more {
+                        o.insert(k.clone(), v.clone());
+                    }
+                }
+                ok(json!({
+                    "ok": true,
+                    "message": format!(
+                        "A {} certificate with a {} key was issued for {}. \
+                         The private key is shown ONCE; a sealed copy is \
+                         kept on the entry.",
+                        profile, key_alg, issued.target.uri()),
+                    "target": issued.target.to_json(),
+                    "keyAlg": key_alg,
+                    "record": views::est_certificate_row(&record),
+                    "certificatePem": issued.record["certificatePem"],
+                    "chainPem": match &issued.record["chainPem"] {
+                        Json::Array(a) => Json::Array(a.clone()),
+                        _ => json!([]),
+                    },
+                    "privateKeyPem": issued.private_key_pem,
+                }))
+            }
+        }
+    }
+
+    /// SCEP's `reissue-ra` (`ra.ensure(realm, { force: true })`).
+    fn reissue_ra(f: &sts_enroll::wiring::Families) -> Answered {
+        match finish(f.scep.reissue_ra()) {
+            Err(r) => refused(r.code, vec![r.sentence.clone()]),
+            Ok(_) => ok(json!({
+                "ok": true,
+                "ra": f.scep.describe_ra(),
+                "message": "The SCEP RA certificate was re-issued; the one \
+                            it replaces is on the SCEP Issuing CA's CRL as \
+                            superseded. Clients fetch it again with \
+                            GetCACert.",
+            })),
+        }
+    }
+
+    /// The families' views, by operation (`views`).
+    fn view(&self, asked: &Asked<'_>) -> Option<Answered> {
+        let f = self.enroll.get()?;
+        let registry = self.registry.get()?;
+        let body = match asked.operation_id {
+            "getPki" => views::pki_view(self.authority.get()?, f, asked),
+            "getAcme" => views::acme_view(f, asked),
+            "getAcmeMonitor" => views::acme_monitor_view(f, asked),
+            "getEst" => views::est_view(f, registry, asked),
+            "getEstMonitor" => views::est_monitor_view(f, asked),
+            "getScep" => views::scep_view(f, asked),
+            "getScepMonitor" => views::scep_monitor_view(f, asked),
+            _ => return None,
+        };
+        Some(ok(views::with_protocol_endpoints(body, asked)))
     }
 }
 
@@ -609,6 +865,11 @@ fn describe_chain(a: &Authority, scope: &str) -> Json {
 impl FamilyPorts for AdminFamilies {
     fn answer(&self, asked: &Asked<'_>) -> Option<Answered> {
         let authority = self.authority.get()?;
+        if asked.action.is_empty() {
+            if let Some(answered) = self.view(asked) {
+                return Some(answered);
+            }
+        }
         match asked.family {
             "pki" => self.pki(authority, asked),
             "acme" => self.acme(self.enroll.get()?, asked),

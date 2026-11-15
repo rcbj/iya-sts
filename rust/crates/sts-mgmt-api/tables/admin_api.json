@@ -17546,6 +17546,21 @@
     "Trust realms"
    ],
    "sharedWith": {}
+  },
+  "/admin/cert-issuance": {
+   "groups": [
+    "ACME",
+    "EST",
+    "SCEP",
+    "SPIFFE"
+   ],
+   "sharedWith": {}
+  },
+  "/admin/pki": {
+   "groups": [
+    "PKI"
+   ],
+   "sharedWith": {}
   }
  },
  "consolePages": [
@@ -18592,6 +18607,44 @@
   "/admin/ldap/service",
   "/admin/api-explorer"
  ],
+ "serviceSettingKeys": [
+  "global.logLevel",
+  "global.mode",
+  "global.trustProxy",
+  "global.publicBaseUrl",
+  "pki.revocationCrlIssuersFile",
+  "pki.revocationLdapCaFile",
+  "pki.revocationHttpsCaFile",
+  "gnap.pushCaFile",
+  "ssf.pushCaFile",
+  "federation.outboundCaFile",
+  "xacml.pepNotifyCaFile",
+  "pki.revocationLdapDirectory",
+  "pki.distributionPort",
+  "pki.distributionBaseUrl",
+  "pki.distributionLdapHost",
+  "pki.distributionLdapPort",
+  "pki.httpPort",
+  "spiffe.workloadSocket",
+  "spiffe.serverSocket",
+  "spiffe.grpcHost",
+  "spiffe.workloadPort",
+  "spiffe.serverPort",
+  "krb5.kdcPort"
+ ],
+ "serviceSettingPrefixes": [
+  "admin.",
+  "adminApi.",
+  "realms.",
+  "workers.",
+  "persistence.",
+  "debugger.",
+  "tls.",
+  "keys.",
+  "security.passwordHash",
+  "risk.",
+  "attributeSources.hostPatterns"
+ ],
  "inetOrgPersonClasses": [
   {
    "id": "person",
@@ -18951,5 +19004,1756 @@
     }
    ]
   }
- ]
+ ],
+ "familyViews": {
+  "profileIds": [
+   "tls-server",
+   "tls-client",
+   "tls-server-client",
+   "digital-signature",
+   "key-encipherment",
+   "code-signing",
+   "email",
+   "timestamping",
+   "smartcard-logon"
+  ],
+  "deviceProfile": "device",
+  "profileNeeds": {
+   "tls-server": "at least one dNSName or iPAddress registered on the entry",
+   "tls-server-client": "at least one dNSName or iPAddress registered on the entry",
+   "email": "a person entry with a mail attribute (the rfc822Name)",
+   "smartcard-logon": "a person entry with userPrincipalName or mail (the UPN otherName)"
+  },
+  "refusedProfiles": [
+   {
+    "id": "root-ca",
+    "why": "A Root CA is a trust anchor. Its holder could issue a certificate for anybody and be believed by everything that trusts this service's Root — and it is self-signed, so it would not even chain to this authority."
+   },
+   {
+    "id": "intermediate-ca",
+    "why": "An Intermediate CA may sign further CAs. Its holder could build a branch of this hierarchy nobody operates."
+   },
+   {
+    "id": "issuing-ca",
+    "why": "An Issuing CA signs certificates. Its holder could issue a certificate naming any person or application in the realm, which is exactly the rule this whole module exists to enforce."
+   },
+   {
+    "id": "ocsp-responder",
+    "why": "An OCSP Responder certificate issued by this realm's CA is a DELEGATED responder (RFC 6960 section 4.2.2.2): its holder could sign \"good\" about a certificate this service revoked, and a relying party would believe it."
+   },
+   {
+    "id": "kdc",
+    "why": "A Kerberos KDC certificate lets its holder answer PKINIT as the realm's KDC and impersonate it to every client that trusts this authority."
+   }
+  ],
+  "requirement": {
+   "id": "certificate-enrollment",
+   "what": "ACME and EST require TLS; an enrollment credential is verified",
+   "development": "ACME (/enroll/acme) and EST (/.well-known/est) answer over plain HTTP as well and log that they did. An EST password is not checked (the credentials row) and an application's client secret is not required. An ACME External Account Binding MAC and a SCEP challenge password ARE verified, and who a certificate may be issued for is enforced exactly as in product: yourself, or anybody in the realm if you hold Admin Write.",
+   "product": "A request that did not arrive over TLS is refused (STS-ENROLL-0060). EST verifies the directory password and requires the client secret. Everything else is as in development.",
+   "where": "common/cert_enrollment.ts, acme/, est/, scep/"
+  },
+  "revocationReasonIds": [
+   "unspecified",
+   "keyCompromise",
+   "cACompromise",
+   "affiliationChanged",
+   "superseded",
+   "cessationOfOperation",
+   "certificateHold",
+   "privilegeWithdrawn",
+   "aACompromise"
+  ],
+  "acme": {
+   "challengeType": "sts-entry-binding-01",
+   "identifierTypes": [
+    "dns",
+    "ip",
+    "email",
+    "permanent-identifier"
+   ],
+   "profileDescriptions": {
+    "tls-server": "A TLS server certificate (serverAuth) for host names registered on the account's entry.",
+    "tls-client": "A TLS client certificate (clientAuth) naming the entry.",
+    "tls-server-client": "serverAuth and clientAuth, for host names registered on the entry.",
+    "digital-signature": "A signing certificate (digitalSignature, nonRepudiation) naming the entry.",
+    "key-encipherment": "A key-encipherment certificate naming the entry.",
+    "code-signing": "A code-signing certificate (codeSigning) naming the entry.",
+    "email": "An S/MIME certificate (emailProtection) for the person's own mail address.",
+    "timestamping": "A time-stamping authority certificate (timeStamping).",
+    "smartcard-logon": "A smartcard logon certificate carrying the person's user principal name (userPrincipalName, else mail)."
+   },
+   "actions": [
+    "create-eab",
+    "delete-eab",
+    "deactivate-account",
+    "revoke-certificate",
+    "add-host-name",
+    "remove-host-name"
+   ]
+  },
+  "est": {
+   "operations": [
+    {
+     "name": "cacerts",
+     "method": "GET",
+     "section": "4.1",
+     "what": "the CA certificates (unauthenticated)"
+    },
+    {
+     "name": "simpleenroll",
+     "method": "POST",
+     "section": "4.2.1",
+     "what": "a certificate for a key the client holds"
+    },
+    {
+     "name": "simplereenroll",
+     "method": "POST",
+     "section": "4.2.2",
+     "what": "renew a certificate; the old one is superseded"
+    },
+    {
+     "name": "serverkeygen",
+     "method": "POST",
+     "section": "4.4",
+     "what": "a key pair this service generates, returned once"
+    },
+    {
+     "name": "csrattrs",
+     "method": "GET",
+     "section": "4.5",
+     "what": "what a request should carry (unauthenticated)"
+    },
+    {
+     "name": "fullcmc",
+     "method": "POST",
+     "section": "4.3",
+     "what": "not implemented: answers 501"
+    },
+    {
+     "name": "nonce",
+     "method": "GET, POST",
+     "section": "draft-ietf-lamps-attestation-freshness 5.1",
+     "what": "a freshness nonce for the TPM key attestation in the next device simpleenroll, bound to the caller and a cookie (authenticated); empty under a label that reads no attestation"
+    }
+   ],
+   "revocationReasons": [
+    "unspecified",
+    "keyCompromise",
+    "cACompromise",
+    "affiliationChanged",
+    "superseded",
+    "cessationOfOperation",
+    "certificateHold",
+    "privilegeWithdrawn",
+    "aACompromise"
+   ],
+   "actions": [
+    "issue-server-key",
+    "revoke-certificate",
+    "add-host-name",
+    "remove-host-name"
+   ],
+   "keyAlgorithms": [
+    "rsa-2048",
+    "rsa-3072",
+    "rsa-4096",
+    "ec-p256",
+    "ec-p384",
+    "ec-p521",
+    "ed25519",
+    "ml-dsa-44",
+    "ml-dsa-65",
+    "ml-dsa-87",
+    "slh-dsa-sha2-128s",
+    "slh-dsa-sha2-128f",
+    "slh-dsa-sha2-192s",
+    "slh-dsa-sha2-192f",
+    "slh-dsa-sha2-256s",
+    "slh-dsa-sha2-256f",
+    "slh-dsa-shake-128s",
+    "slh-dsa-shake-128f",
+    "slh-dsa-shake-192s",
+    "slh-dsa-shake-192f",
+    "slh-dsa-shake-256s",
+    "slh-dsa-shake-256f",
+    "mldsa44-rsa2048-pss-sha256",
+    "mldsa44-rsa2048-pkcs15-sha256",
+    "mldsa44-ed25519-sha512",
+    "mldsa44-ecdsa-p256-sha256",
+    "mldsa65-rsa3072-pss-sha512",
+    "mldsa65-rsa3072-pkcs15-sha512",
+    "mldsa65-rsa4096-pss-sha512",
+    "mldsa65-rsa4096-pkcs15-sha512",
+    "mldsa65-ecdsa-p256-sha512",
+    "mldsa65-ecdsa-p384-sha512",
+    "mldsa65-ed25519-sha512",
+    "mldsa87-ecdsa-p384-sha512",
+    "mldsa87-ed448-shake256",
+    "mldsa87-rsa3072-pss-sha512",
+    "mldsa87-rsa4096-pss-sha512",
+    "mldsa87-ecdsa-p521-sha512",
+    "ml-kem-512",
+    "ml-kem-768",
+    "ml-kem-1024"
+   ],
+   "signatureAlgorithms": [
+    {
+     "oid": "1.2.840.10045.4.3.2",
+     "name": "ecdsa-with-SHA256"
+    },
+    {
+     "oid": "1.2.840.10045.4.3.3",
+     "name": "ecdsa-with-SHA384"
+    },
+    {
+     "oid": "1.2.840.113549.1.1.11",
+     "name": "sha256WithRSAEncryption"
+    },
+    {
+     "oid": "1.3.101.112",
+     "name": "Ed25519"
+    },
+    {
+     "oid": "2.16.840.1.101.3.4.3.17",
+     "name": "ML-DSA-44"
+    },
+    {
+     "oid": "2.16.840.1.101.3.4.3.18",
+     "name": "ML-DSA-65"
+    },
+    {
+     "oid": "2.16.840.1.101.3.4.3.19",
+     "name": "ML-DSA-87"
+    }
+   ]
+  },
+  "scep": {
+   "capabilities": [
+    "POSTPKIOperation",
+    "SHA-256",
+    "SHA-512",
+    "AES",
+    "SCEPStandard",
+    "Renewal"
+   ],
+   "operations": [
+    "GetCACaps",
+    "GetCACert",
+    "GetNextCACert",
+    "PKIOperation"
+   ],
+   "messageTypes": {
+    "3": "CertRep",
+    "17": "RenewalReq",
+    "19": "PKCSReq",
+    "20": "CertPoll",
+    "21": "GetCert",
+    "22": "GetCRL"
+   },
+   "algorithms": {
+    "digests": [
+     "SHA-256",
+     "SHA-384",
+     "SHA-512"
+    ],
+    "signatures": [
+     "RSA",
+     "sha256WithRSAEncryption",
+     "sha384WithRSAEncryption",
+     "sha512WithRSAEncryption",
+     "ecdsa-with-SHA256",
+     "ecdsa-with-SHA384",
+     "ecdsa-with-SHA512"
+    ],
+    "ciphers": [
+     "AES-128-CBC",
+     "AES-192-CBC",
+     "AES-256-CBC"
+    ],
+    "keyTransports": [
+     "RSAES-PKCS1-v1_5 (rsaEncryption)",
+     "RSAES-OAEP (SHA-1, SHA-256, SHA-384, SHA-512)"
+    ],
+    "refusedDigests": [
+     "SHA-1",
+     "MD5"
+    ],
+    "refusedCiphers": [
+     "DES-EDE3-CBC",
+     "DES-CBC"
+    ],
+    "replySignature": "sha256WithRSAEncryption (sha384/sha512 when the request used them)",
+    "replyKeyTransport": "RSAES-PKCS1-v1_5",
+    "replyCipher": "the AES-CBC key size the request used"
+   },
+   "exceptions": [
+    {
+     "what": "An ECDSA, EdDSA or post-quantum requester key",
+     "why": "A CertRep is encrypted to the requester with RSA key transport (RFC 8894 section 3.2.2), so a request or a signer that is not RSA is refused badAlg. Every one of the nine profiles is issued over SCEP for an RSA key; use ACME or EST for any other key."
+    },
+    {
+     "what": "PENDING (manual approval)",
+     "why": "Nothing in this service approves a request by hand. A request is issued or refused in the exchange that makes it, and CertPoll answers what a completed transaction produced."
+    },
+    {
+     "what": "GetNextCACert",
+     "why": "There is no pre-announced CA rollover to hand out: a rebuilt hierarchy is published at once. It answers HTTP 501 and is not in GetCACaps."
+    },
+    {
+     "what": "SHA-1 and MD5 signatures, DES and DES-EDE3 content encryption",
+     "why": "Refused badAlg. SHA-256/384/512 and AES-128/192/256-CBC are accepted; configure a client with `-S sha256 -E aes`."
+    },
+    {
+     "what": "The requester's keyUsage, extendedKeyUsage and basicConstraints",
+     "why": "Taken from the profile the challenge names, never from the request — as for every enrollment protocol here."
+    },
+    {
+     "what": "A profile other than the challenge's",
+     "why": "The challenge names ONE profile; a URL naming another is refused, and a renewal keeps the profile of the certificate it renews."
+    }
+   ],
+   "revokeReasons": [
+    "unspecified",
+    "keyCompromise",
+    "affiliationChanged",
+    "superseded",
+    "cessationOfOperation",
+    "privilegeWithdrawn"
+   ],
+   "actions": [
+    "create-challenge",
+    "delete-challenge",
+    "reissue-ra",
+    "revoke-certificate",
+    "add-host-name",
+    "remove-host-name"
+   ]
+  },
+  "pki": {
+   "keyAlgorithms": [
+    {
+     "id": "rsa-2048",
+     "label": "RSA 2048",
+     "kind": "rsa",
+     "tlsUsable": true
+    },
+    {
+     "id": "rsa-3072",
+     "label": "RSA 3072",
+     "kind": "rsa",
+     "tlsUsable": true
+    },
+    {
+     "id": "rsa-4096",
+     "label": "RSA 4096",
+     "kind": "rsa",
+     "tlsUsable": true
+    },
+    {
+     "id": "ec-p256",
+     "label": "ECDSA P-256",
+     "kind": "ec",
+     "tlsUsable": true
+    },
+    {
+     "id": "ec-p384",
+     "label": "ECDSA P-384",
+     "kind": "ec",
+     "tlsUsable": true
+    },
+    {
+     "id": "ec-p521",
+     "label": "ECDSA P-521",
+     "kind": "ec",
+     "tlsUsable": true
+    },
+    {
+     "id": "ed25519",
+     "label": "Ed25519 (EdDSA)",
+     "kind": "okp",
+     "tlsUsable": true
+    },
+    {
+     "id": "ml-dsa-44",
+     "label": "ML-DSA-44",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "ml-dsa-65",
+     "label": "ML-DSA-65",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "ml-dsa-87",
+     "label": "ML-DSA-87",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-sha2-128s",
+     "label": "SLH-DSA-SHA2-128s",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-sha2-128f",
+     "label": "SLH-DSA-SHA2-128f",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-sha2-192s",
+     "label": "SLH-DSA-SHA2-192s",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-sha2-192f",
+     "label": "SLH-DSA-SHA2-192f",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-sha2-256s",
+     "label": "SLH-DSA-SHA2-256s",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-sha2-256f",
+     "label": "SLH-DSA-SHA2-256f",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-shake-128s",
+     "label": "SLH-DSA-SHAKE-128s",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-shake-128f",
+     "label": "SLH-DSA-SHAKE-128f",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-shake-192s",
+     "label": "SLH-DSA-SHAKE-192s",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-shake-192f",
+     "label": "SLH-DSA-SHAKE-192f",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-shake-256s",
+     "label": "SLH-DSA-SHAKE-256s",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "slh-dsa-shake-256f",
+     "label": "SLH-DSA-SHAKE-256f",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "mldsa44-rsa2048-pss-sha256",
+     "label": "MLDSA44-RSA2048-PSS-SHA256 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa44-rsa2048-pkcs15-sha256",
+     "label": "MLDSA44-RSA2048-PKCS15-SHA256 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa44-ed25519-sha512",
+     "label": "MLDSA44-Ed25519-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa44-ecdsa-p256-sha256",
+     "label": "MLDSA44-ECDSA-P256-SHA256 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-rsa3072-pss-sha512",
+     "label": "MLDSA65-RSA3072-PSS-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-rsa3072-pkcs15-sha512",
+     "label": "MLDSA65-RSA3072-PKCS15-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-rsa4096-pss-sha512",
+     "label": "MLDSA65-RSA4096-PSS-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-rsa4096-pkcs15-sha512",
+     "label": "MLDSA65-RSA4096-PKCS15-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-ecdsa-p256-sha512",
+     "label": "MLDSA65-ECDSA-P256-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-ecdsa-p384-sha512",
+     "label": "MLDSA65-ECDSA-P384-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa65-ed25519-sha512",
+     "label": "MLDSA65-Ed25519-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa87-ecdsa-p384-sha512",
+     "label": "MLDSA87-ECDSA-P384-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa87-ed448-shake256",
+     "label": "MLDSA87-Ed448-SHAKE256 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa87-rsa3072-pss-sha512",
+     "label": "MLDSA87-RSA3072-PSS-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa87-rsa4096-pss-sha512",
+     "label": "MLDSA87-RSA4096-PSS-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "mldsa87-ecdsa-p521-sha512",
+     "label": "MLDSA87-ECDSA-P521-SHA512 (composite, draft)",
+     "kind": "pqc",
+     "tlsUsable": false
+    },
+    {
+     "id": "ml-kem-512",
+     "label": "ML-KEM-512 (key establishment)",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "ml-kem-768",
+     "label": "ML-KEM-768 (key establishment)",
+     "kind": "pqc",
+     "tlsUsable": true
+    },
+    {
+     "id": "ml-kem-1024",
+     "label": "ML-KEM-1024 (key establishment)",
+     "kind": "pqc",
+     "tlsUsable": true
+    }
+   ],
+   "signatureAlgorithms": [
+    {
+     "id": "sha256-rsa",
+     "label": "RSASSA-PKCS1-v1_5 with SHA-256",
+     "weak": false,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha384-rsa",
+     "label": "RSASSA-PKCS1-v1_5 with SHA-384",
+     "weak": false,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha512-rsa",
+     "label": "RSASSA-PKCS1-v1_5 with SHA-512",
+     "weak": false,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha256-rsapss",
+     "label": "RSASSA-PSS with SHA-256",
+     "weak": false,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha384-rsapss",
+     "label": "RSASSA-PSS with SHA-384",
+     "weak": false,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha512-rsapss",
+     "label": "RSASSA-PSS with SHA-512",
+     "weak": false,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha1-rsa",
+     "label": "RSASSA-PKCS1-v1_5 with SHA-1 (legacy, weak)",
+     "weak": true,
+     "kind": "rsa"
+    },
+    {
+     "id": "sha256-ecdsa",
+     "label": "ECDSA with SHA-256",
+     "weak": false,
+     "kind": "ec"
+    },
+    {
+     "id": "sha384-ecdsa",
+     "label": "ECDSA with SHA-384",
+     "weak": false,
+     "kind": "ec"
+    },
+    {
+     "id": "sha512-ecdsa",
+     "label": "ECDSA with SHA-512",
+     "weak": false,
+     "kind": "ec"
+    },
+    {
+     "id": "sha1-ecdsa",
+     "label": "ECDSA with SHA-1 (legacy, weak)",
+     "weak": true,
+     "kind": "ec"
+    },
+    {
+     "id": "ed25519",
+     "label": "Ed25519 (EdDSA)",
+     "weak": false,
+     "kind": "okp"
+    }
+   ],
+   "tiers": [
+    {
+     "id": "root",
+     "label": "Root CA",
+     "profile": "root-ca",
+     "what": "The trust anchor. Self-signed, the longest-lived of the three, and the only certificate in the hierarchy a relying party has to be given out of band — everything below it travels in the chain.",
+     "pathLen": null,
+     "keyUsage": [
+      "keyCertSign",
+      "cRLSign",
+      "digitalSignature"
+     ],
+     "years": 20
+    },
+    {
+     "id": "intermediate",
+     "label": "Intermediate CA",
+     "profile": "intermediate-ca",
+     "what": "Signed by the Root. It exists so that the Root's key can be used once and then left alone: a compromise here is repaired by reissuing this tier, and a compromise of the Root is not repaired at all. pathLen is 1, so it may sign one more CA and no deeper.",
+     "pathLen": 1,
+     "keyUsage": [
+      "keyCertSign",
+      "cRLSign",
+      "digitalSignature"
+     ],
+     "years": 10
+    },
+    {
+     "id": "issuing",
+     "label": "Issuing CA",
+     "profile": "issuing-ca",
+     "what": "Signed by the Intermediate, and the only tier that signs anything this service hands out. pathLen is 0 — it signs LEAVES and no further CA, which is what makes \"an application certificate cannot be used to mint another\" a property of the encoding rather than of this service's manners.",
+     "pathLen": 0,
+     "keyUsage": [
+      "keyCertSign",
+      "cRLSign",
+      "digitalSignature"
+     ],
+     "years": 5
+    }
+   ],
+   "revocationNote": "PUBLISHED AND CONSULTED. Every certificate authority here signs a CRL (RFC 5280 section 5) and answers OCSP (RFC 6960), at /pki/crl/{scope}/{ca} and /pki/ocsp/{scope}/{ca}, and every certificate this service issues names its own over http and ldap. Anything replaced or rotated is put on the issuer's list as `superseded` automatically. WHAT A PRESENTED CERTIFICATE IS HELD TO: CONSULTED, SOFT-FAIL (pki.revocationCheck is auto, so the mode decides: development mode soft-fails). A presented certificate this service issued is looked up in its own register — the whole chain, including the tiers it did not send — and one from another authority, for a chain that verified, by the OCSP responder it names, falling back to the CRL it names, over http, https or ldaps, with delta CRLs merged, indirect CRLs read per issuer, a list's signer fetched from its caIssuers address where nothing here holds it, and a delegated responder's own status asked of its CRL. A REGISTERED certificate is checked the same way when it verifies a signature. A revoked certificate is refused; one whose status could not be established is accepted and reported. LDAPS 636 requests no client certificate. Removing the key pair from an application's entry is a THIRD thing again — it stops this service trusting an assertion signed with that key, and puts nothing on any list.",
+   "revocationNoteProduct": "PUBLISHED AND CONSULTED. Every certificate authority here signs a CRL (RFC 5280 section 5) and answers OCSP (RFC 6960), at /pki/crl/{scope}/{ca} and /pki/ocsp/{scope}/{ca}, and every certificate this service issues names its own over http and ldap. Anything replaced or rotated is put on the issuer's list as `superseded` automatically. WHAT A PRESENTED CERTIFICATE IS HELD TO: CONSULTED, HARD-FAIL (pki.revocationCheck is auto, so the mode decides: product mode hard-fails). A presented certificate this service issued is looked up in its own register — the whole chain, including the tiers it did not send — and one from another authority, for a chain that verified, by the OCSP responder it names, falling back to the CRL it names, over http, https or ldaps, with delta CRLs merged, indirect CRLs read per issuer, a list's signer fetched from its caIssuers address where nothing here holds it, and a delegated responder's own status asked of its CRL. A REGISTERED certificate is checked the same way when it verifies a signature. A revoked certificate is refused; so is one whose status could not be fetched, verified or trusted as fresh, or that the responder does not know, and one whose only list or responder is at an address this service is configured not to dial (STS-PKI-0188 — the issuer published a list, and this service's own policy is what stopped it being read); and one — issued by a CA, without RFC 9608 noRevAvail — whose issuer names no list and no responder at all, which nobody could ever revoke (STS-PKI-0190, pki.revocationRequireDistributionPoint is auto). LDAPS 636 requests no client certificate. Removing the key pair from an application's entry is a THIRD thing again — it stops this service trusting an assertion signed with that key, and puts nothing on any list.",
+   "residency": "The CA private keys are held in memory only. This service is in development mode, where key material is generated per start — a hierarchy built now is gone when this process exits.",
+   "encoder": "common/crypto_impl/x509.js — the parent project's own PKI code, byte-identical, over pkijs and asn1js. One encoder for this service and for that project's PKI / X.509 page.",
+   "actions": [
+    "build",
+    "clear",
+    "issue",
+    "revoke",
+    "upload-certificate",
+    "apply-profile",
+    "generate-keys",
+    "generate-alt-keys",
+    "issue-certificate",
+    "use-key",
+    "remove-object",
+    "clear-store",
+    "export",
+    "build-root",
+    "build-scope",
+    "reissue-use-case",
+    "recertify",
+    "import-ca",
+    "pin-key",
+    "unpin-key",
+    "revoke-certificate",
+    "release-hold"
+   ],
+   "personSigningKeyMax": 5,
+   "personRevocationReasons": [
+    "cessationOfOperation",
+    "keyCompromise"
+   ],
+   "personAttributes": [
+    "stsAssertionIssuer",
+    "stsAssertionKeyPair",
+    "stsAssertionPrivateKey",
+    "stsSamlAssertionIssuer",
+    "stsSamlAssertionKeyPair",
+    "stsSamlAssertionPrivateKey"
+   ],
+   "personIssuerAttribute": "stsAssertionIssuer",
+   "subjectKinds": [
+    {
+     "id": "application",
+     "label": "an application",
+     "what": "A registered OAuth client or relying party. Its key pair is written onto its own entry in ou=applications."
+    },
+    {
+     "id": "person",
+     "label": "a person",
+     "what": "Somebody in ou=users. Their key pair signs an RFC 7523 section 2.1 assertion ABOUT THEMSELVES and about nobody else — see common/person_assertions.js, which is where the refusal is argued."
+    }
+   ],
+   "purposes": [
+    {
+     "id": "jwt",
+     "label": "RFC 7523 — a JWT assertion",
+     "what": "A JWS signing key. Its public half is written onto the application as a JWKS (oauthAssertionJwks) carrying the certificate chain in x5c, which is how RFC 7523 registers a key.",
+     "attributes": [
+      "oauthAssertionJwks",
+      "oauthAssertionCertificate",
+      "oauthAssertionCertificateChain",
+      "oauthAssertionPrivateKey",
+      "oauthAssertionKid",
+      "oauthAssertionExpiresAt",
+      "oauthAssertionKeySource"
+     ],
+     "issuerAttribute": "oauthAssertionIssuer"
+    },
+    {
+     "id": "saml",
+     "label": "RFC 7522 — a SAML 2.0 assertion",
+     "what": "An XML Signature key. Its certificate is written onto the application as a PEM (oauthSamlAssertionCertificate), because SAML has no JWKS and what a party registers for that profile IS a certificate.",
+     "attributes": [
+      "oauthSamlAssertionCertificate",
+      "oauthSamlAssertionCertificateChain",
+      "oauthSamlAssertionPrivateKey",
+      "oauthSamlAssertionThumbprint",
+      "oauthSamlAssertionExpiresAt",
+      "oauthSamlAssertionKeySource"
+     ],
+     "issuerAttribute": "oauthSamlAssertionIssuer"
+    }
+   ],
+   "tierLabels": [
+    {
+     "id": "root",
+     "label": "Root CA"
+    },
+    {
+     "id": "intermediate",
+     "label": "Intermediate CA"
+    },
+    {
+     "id": "issuing",
+     "label": "Issuing CA"
+    }
+   ],
+   "serviceScope": "*service",
+   "reasons": [
+    {
+     "id": "unspecified",
+     "code": 0,
+     "what": "No reason given. RFC 5280 section 5.3.1 says the reason code extension SHOULD be omitted for this value, so an entry revoked this way carries no reason at all — which is what \"unspecified\" means on the wire."
+    },
+    {
+     "id": "keyCompromise",
+     "code": 1,
+     "what": "The private key is known or suspected to be in somebody else's hands. The one reason that says the certificate was never safe rather than merely no longer wanted."
+    },
+    {
+     "id": "cACompromise",
+     "code": 2,
+     "what": "The CA's own key is compromised. Used on an Intermediate or an Issuing CA, and everything below it should be treated as compromised too."
+    },
+    {
+     "id": "affiliationChanged",
+     "code": 3,
+     "what": "The subject's name or affiliation changed, so the certificate no longer says something true."
+    },
+    {
+     "id": "superseded",
+     "code": 4,
+     "what": "A replacement was issued. **This is what this service uses when a certificate is rotated or reissued**, which is the commonest entry on any of these lists."
+    },
+    {
+     "id": "cessationOfOperation",
+     "code": 5,
+     "what": "The subject has stopped doing whatever the certificate was for."
+    },
+    {
+     "id": "certificateHold",
+     "code": 6,
+     "what": "Temporarily suspended. **The only reason that can be UNDONE** — everything else is permanent, and a validator is entitled to cache a permanent revocation for as long as the CRL says it is fresh."
+    },
+    {
+     "id": "privilegeWithdrawn",
+     "code": 9,
+     "what": "The subject is no longer entitled to what the certificate asserts."
+    },
+    {
+     "id": "aACompromise",
+     "code": 10,
+     "what": "An attribute authority's key is compromised. Here for completeness: this service issues no attribute certificates."
+    }
+   ],
+   "crlLifetimeMinutes": 60
+  },
+  "protocolEndpoints": {
+   "getPki": [
+    {
+     "name": "Every CRL and OCSP responder this service publishes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/revocation",
+     "route": "/pki/revocation"
+    },
+    {
+     "name": "One certificate authority's own certificate",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/ca/{scope}/{ca}",
+     "route": "/pki/ca/:scope/:ca"
+    },
+    {
+     "name": "The certificate revocation list of one authority",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/crl/{scope}/{ca}",
+     "route": "/pki/crl/:scope/:ca"
+    },
+    {
+     "name": "The OCSP responder of one authority (POST)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/pki/ocsp/{scope}/{ca}",
+     "route": "/pki/ocsp/:scope/:ca"
+    },
+    {
+     "name": "The certificate chain a signed token's x5u names",
+     "methods": [
+      "GET"
+     ],
+     "url": "/pki/chain/{scope}/{certificate}",
+     "route": "/pki/chain/:scope/:certificate"
+    }
+   ],
+   "getAcme": [
+    {
+     "name": "The ACME directory",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/directory",
+     "route": "/enroll/acme/directory"
+    },
+    {
+     "name": "A fresh Replay-Nonce",
+     "methods": [
+      "GET",
+      "HEAD"
+     ],
+     "url": "/enroll/acme/new-nonce",
+     "route": "/enroll/acme/new-nonce"
+    },
+    {
+     "name": "Create or find an account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-account",
+     "route": "/enroll/acme/new-account"
+    },
+    {
+     "name": "Create an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-order",
+     "route": "/enroll/acme/new-order"
+    },
+    {
+     "name": "An account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}",
+     "route": "/enroll/acme/account/:id"
+    },
+    {
+     "name": "An account's orders",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}/orders",
+     "route": "/enroll/acme/account/:id/orders"
+    },
+    {
+     "name": "An order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}",
+     "route": "/enroll/acme/order/:id"
+    },
+    {
+     "name": "Finalize an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}/finalize",
+     "route": "/enroll/acme/order/:id/finalize"
+    },
+    {
+     "name": "An authorization",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/authz/{id}",
+     "route": "/enroll/acme/authz/:id"
+    },
+    {
+     "name": "A challenge",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/challenge/{id}",
+     "route": "/enroll/acme/challenge/:id"
+    },
+    {
+     "name": "Download a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/cert/{id}",
+     "route": "/enroll/acme/cert/:id"
+    },
+    {
+     "name": "Revoke a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/revoke-cert",
+     "route": "/enroll/acme/revoke-cert"
+    },
+    {
+     "name": "Roll an account over to a new key",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/key-change",
+     "route": "/enroll/acme/key-change"
+    },
+    {
+     "name": "Renewal information",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/renewal-info/{id}",
+     "route": "/enroll/acme/renewal-info/:id"
+    },
+    {
+     "name": "CA certificates",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/cacerts",
+     "route": "/.well-known/est/cacerts"
+    },
+    {
+     "name": "Simple enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simpleenroll",
+     "route": "/.well-known/est/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simplereenroll",
+     "route": "/.well-known/est/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/serverkeygen",
+     "route": "/.well-known/est/serverkeygen"
+    },
+    {
+     "name": "CSR attributes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/csrattrs",
+     "route": "/.well-known/est/csrattrs"
+    },
+    {
+     "name": "Full CMC",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/fullcmc",
+     "route": "/.well-known/est/fullcmc"
+    },
+    {
+     "name": "CA certificates (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/cacerts",
+     "route": "/.well-known/est/:label/cacerts"
+    },
+    {
+     "name": "Simple enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simpleenroll",
+     "route": "/.well-known/est/:label/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simplereenroll",
+     "route": "/.well-known/est/:label/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/serverkeygen",
+     "route": "/.well-known/est/:label/serverkeygen"
+    },
+    {
+     "name": "CSR attributes (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/csrattrs",
+     "route": "/.well-known/est/:label/csrattrs"
+    },
+    {
+     "name": "Full CMC (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/fullcmc",
+     "route": "/.well-known/est/:label/fullcmc"
+    },
+    {
+     "name": "Attestation freshness nonce",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/nonce",
+     "route": "/.well-known/est/nonce"
+    },
+    {
+     "name": "Attestation freshness nonce (labelled)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/nonce",
+     "route": "/.well-known/est/:label/nonce"
+    },
+    {
+     "name": "The SCEP server",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep",
+     "route": "/enroll/scep"
+    },
+    {
+     "name": "The SCEP server (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/pkiclient.exe",
+     "route": "/enroll/scep/pkiclient.exe"
+    },
+    {
+     "name": "The SCEP server for one profile",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}",
+     "route": "/enroll/scep/:profile"
+    },
+    {
+     "name": "The SCEP server for one profile (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}/pkiclient.exe",
+     "route": "/enroll/scep/:profile/pkiclient.exe"
+    },
+    {
+     "name": "What the SPIFFE surfaces are",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe",
+     "route": "/spiffe"
+    },
+    {
+     "name": "The trust bundle",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/bundle",
+     "route": "/spiffe/bundle"
+    },
+    {
+     "name": "A federated trust domain's bundle, as held",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/federated/{trustDomain}",
+     "route": "/spiffe/federated/:trustDomain"
+    }
+   ],
+   "getEst": [
+    {
+     "name": "The ACME directory",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/directory",
+     "route": "/enroll/acme/directory"
+    },
+    {
+     "name": "A fresh Replay-Nonce",
+     "methods": [
+      "GET",
+      "HEAD"
+     ],
+     "url": "/enroll/acme/new-nonce",
+     "route": "/enroll/acme/new-nonce"
+    },
+    {
+     "name": "Create or find an account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-account",
+     "route": "/enroll/acme/new-account"
+    },
+    {
+     "name": "Create an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-order",
+     "route": "/enroll/acme/new-order"
+    },
+    {
+     "name": "An account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}",
+     "route": "/enroll/acme/account/:id"
+    },
+    {
+     "name": "An account's orders",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}/orders",
+     "route": "/enroll/acme/account/:id/orders"
+    },
+    {
+     "name": "An order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}",
+     "route": "/enroll/acme/order/:id"
+    },
+    {
+     "name": "Finalize an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}/finalize",
+     "route": "/enroll/acme/order/:id/finalize"
+    },
+    {
+     "name": "An authorization",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/authz/{id}",
+     "route": "/enroll/acme/authz/:id"
+    },
+    {
+     "name": "A challenge",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/challenge/{id}",
+     "route": "/enroll/acme/challenge/:id"
+    },
+    {
+     "name": "Download a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/cert/{id}",
+     "route": "/enroll/acme/cert/:id"
+    },
+    {
+     "name": "Revoke a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/revoke-cert",
+     "route": "/enroll/acme/revoke-cert"
+    },
+    {
+     "name": "Roll an account over to a new key",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/key-change",
+     "route": "/enroll/acme/key-change"
+    },
+    {
+     "name": "Renewal information",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/renewal-info/{id}",
+     "route": "/enroll/acme/renewal-info/:id"
+    },
+    {
+     "name": "CA certificates",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/cacerts",
+     "route": "/.well-known/est/cacerts"
+    },
+    {
+     "name": "Simple enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simpleenroll",
+     "route": "/.well-known/est/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simplereenroll",
+     "route": "/.well-known/est/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/serverkeygen",
+     "route": "/.well-known/est/serverkeygen"
+    },
+    {
+     "name": "CSR attributes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/csrattrs",
+     "route": "/.well-known/est/csrattrs"
+    },
+    {
+     "name": "Full CMC",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/fullcmc",
+     "route": "/.well-known/est/fullcmc"
+    },
+    {
+     "name": "CA certificates (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/cacerts",
+     "route": "/.well-known/est/:label/cacerts"
+    },
+    {
+     "name": "Simple enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simpleenroll",
+     "route": "/.well-known/est/:label/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simplereenroll",
+     "route": "/.well-known/est/:label/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/serverkeygen",
+     "route": "/.well-known/est/:label/serverkeygen"
+    },
+    {
+     "name": "CSR attributes (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/csrattrs",
+     "route": "/.well-known/est/:label/csrattrs"
+    },
+    {
+     "name": "Full CMC (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/fullcmc",
+     "route": "/.well-known/est/:label/fullcmc"
+    },
+    {
+     "name": "Attestation freshness nonce",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/nonce",
+     "route": "/.well-known/est/nonce"
+    },
+    {
+     "name": "Attestation freshness nonce (labelled)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/nonce",
+     "route": "/.well-known/est/:label/nonce"
+    },
+    {
+     "name": "The SCEP server",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep",
+     "route": "/enroll/scep"
+    },
+    {
+     "name": "The SCEP server (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/pkiclient.exe",
+     "route": "/enroll/scep/pkiclient.exe"
+    },
+    {
+     "name": "The SCEP server for one profile",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}",
+     "route": "/enroll/scep/:profile"
+    },
+    {
+     "name": "The SCEP server for one profile (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}/pkiclient.exe",
+     "route": "/enroll/scep/:profile/pkiclient.exe"
+    },
+    {
+     "name": "What the SPIFFE surfaces are",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe",
+     "route": "/spiffe"
+    },
+    {
+     "name": "The trust bundle",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/bundle",
+     "route": "/spiffe/bundle"
+    },
+    {
+     "name": "A federated trust domain's bundle, as held",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/federated/{trustDomain}",
+     "route": "/spiffe/federated/:trustDomain"
+    }
+   ],
+   "getScep": [
+    {
+     "name": "The ACME directory",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/directory",
+     "route": "/enroll/acme/directory"
+    },
+    {
+     "name": "A fresh Replay-Nonce",
+     "methods": [
+      "GET",
+      "HEAD"
+     ],
+     "url": "/enroll/acme/new-nonce",
+     "route": "/enroll/acme/new-nonce"
+    },
+    {
+     "name": "Create or find an account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-account",
+     "route": "/enroll/acme/new-account"
+    },
+    {
+     "name": "Create an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/new-order",
+     "route": "/enroll/acme/new-order"
+    },
+    {
+     "name": "An account",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}",
+     "route": "/enroll/acme/account/:id"
+    },
+    {
+     "name": "An account's orders",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/account/{id}/orders",
+     "route": "/enroll/acme/account/:id/orders"
+    },
+    {
+     "name": "An order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}",
+     "route": "/enroll/acme/order/:id"
+    },
+    {
+     "name": "Finalize an order",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/order/{id}/finalize",
+     "route": "/enroll/acme/order/:id/finalize"
+    },
+    {
+     "name": "An authorization",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/authz/{id}",
+     "route": "/enroll/acme/authz/:id"
+    },
+    {
+     "name": "A challenge",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/challenge/{id}",
+     "route": "/enroll/acme/challenge/:id"
+    },
+    {
+     "name": "Download a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/cert/{id}",
+     "route": "/enroll/acme/cert/:id"
+    },
+    {
+     "name": "Revoke a certificate",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/revoke-cert",
+     "route": "/enroll/acme/revoke-cert"
+    },
+    {
+     "name": "Roll an account over to a new key",
+     "methods": [
+      "POST"
+     ],
+     "url": "/enroll/acme/key-change",
+     "route": "/enroll/acme/key-change"
+    },
+    {
+     "name": "Renewal information",
+     "methods": [
+      "GET"
+     ],
+     "url": "/enroll/acme/renewal-info/{id}",
+     "route": "/enroll/acme/renewal-info/:id"
+    },
+    {
+     "name": "CA certificates",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/cacerts",
+     "route": "/.well-known/est/cacerts"
+    },
+    {
+     "name": "Simple enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simpleenroll",
+     "route": "/.well-known/est/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/simplereenroll",
+     "route": "/.well-known/est/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/serverkeygen",
+     "route": "/.well-known/est/serverkeygen"
+    },
+    {
+     "name": "CSR attributes",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/csrattrs",
+     "route": "/.well-known/est/csrattrs"
+    },
+    {
+     "name": "Full CMC",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/fullcmc",
+     "route": "/.well-known/est/fullcmc"
+    },
+    {
+     "name": "CA certificates (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/cacerts",
+     "route": "/.well-known/est/:label/cacerts"
+    },
+    {
+     "name": "Simple enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simpleenroll",
+     "route": "/.well-known/est/:label/simpleenroll"
+    },
+    {
+     "name": "Simple re-enrollment (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/simplereenroll",
+     "route": "/.well-known/est/:label/simplereenroll"
+    },
+    {
+     "name": "Server-side key generation (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/serverkeygen",
+     "route": "/.well-known/est/:label/serverkeygen"
+    },
+    {
+     "name": "CSR attributes (labelled)",
+     "methods": [
+      "GET"
+     ],
+     "url": "/.well-known/est/{label}/csrattrs",
+     "route": "/.well-known/est/:label/csrattrs"
+    },
+    {
+     "name": "Full CMC (labelled)",
+     "methods": [
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/fullcmc",
+     "route": "/.well-known/est/:label/fullcmc"
+    },
+    {
+     "name": "Attestation freshness nonce",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/nonce",
+     "route": "/.well-known/est/nonce"
+    },
+    {
+     "name": "Attestation freshness nonce (labelled)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/.well-known/est/{label}/nonce",
+     "route": "/.well-known/est/:label/nonce"
+    },
+    {
+     "name": "The SCEP server",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep",
+     "route": "/enroll/scep"
+    },
+    {
+     "name": "The SCEP server (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/pkiclient.exe",
+     "route": "/enroll/scep/pkiclient.exe"
+    },
+    {
+     "name": "The SCEP server for one profile",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}",
+     "route": "/enroll/scep/:profile"
+    },
+    {
+     "name": "The SCEP server for one profile (CGI name)",
+     "methods": [
+      "GET",
+      "POST"
+     ],
+     "url": "/enroll/scep/{profile}/pkiclient.exe",
+     "route": "/enroll/scep/:profile/pkiclient.exe"
+    },
+    {
+     "name": "What the SPIFFE surfaces are",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe",
+     "route": "/spiffe"
+    },
+    {
+     "name": "The trust bundle",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/bundle",
+     "route": "/spiffe/bundle"
+    },
+    {
+     "name": "A federated trust domain's bundle, as held",
+     "methods": [
+      "GET"
+     ],
+     "url": "/spiffe/federated/{trustDomain}",
+     "route": "/spiffe/federated/:trustDomain"
+    }
+   ]
+  }
+ }
 }

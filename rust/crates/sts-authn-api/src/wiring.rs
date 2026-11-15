@@ -359,6 +359,11 @@ impl authn_ports::People for DirectoryPorts {
     }
 }
 
+/// `ADMINISTRATIVE_LOCK` (`ldap_server.js`): the `pwdAccountLockedTime`
+/// value of an account an administrator disabled, as RFC draft-behera's
+/// "locked until an administrator unlocks it".
+const ADMINISTRATIVE_LOCK: &str = "000001010000Z";
+
 impl authn_ports::Accounts for DirectoryPorts {
     fn is_disabled(&self, who: &str) -> bool {
         self.person(who).is_some_and(|(_, _, e)| {
@@ -419,6 +424,20 @@ impl cred_ports::CredentialDirectory for DirectoryPorts {
 
     fn read_account_disabled(&self, name: &str) -> Hook<bool> {
         Ok(authn_ports::Accounts::is_disabled(self, name))
+    }
+
+    /// `writeAccountDisabled(key, value)`: `writePersonFlag(key,
+    /// 'pwdAccountLockedTime', value ? ADMINISTRATIVE_LOCK : '')`.
+    fn write_account_disabled(
+        &self,
+        name: &str,
+        disabled: bool,
+    ) -> Option<Hook<bool>> {
+        Some(self.write(
+            name,
+            "pwdAccountLockedTime",
+            disabled.then(|| vec![ADMINISTRATIVE_LOCK.to_string()]),
+        ))
     }
 
     fn read_mfa_required(&self, name: &str) -> Hook<bool> {

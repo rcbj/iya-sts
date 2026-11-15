@@ -125,6 +125,9 @@ pub struct AdminParts {
     pub facts: Arc<dyn sts_authn_api::ports::SignInFacts>,
     pub catalogs: Arc<sts_http::i18n::Catalogs>,
     pub version: sts_core::version::VersionInfo,
+    /// The protocol-independent sign-out (`logout/logout.ts`), which a
+    /// disable ends everything the person holds through.
+    pub logout: Arc<sts_logout::Logout>,
 }
 
 /// The journal of a request's writes: `(realm, key)` of every entry the
@@ -942,12 +945,18 @@ impl rp::Credentials for PeopleCredentials {
     }
     fn set_account_disabled(
         &self,
-        _name: &str,
-        _disabled: bool,
+        name: &str,
+        disabled: bool,
         _options: &Json,
     ) -> rp::Marked {
-        rp::Marked::plain(json!({ "ok": false,
-            "errors": ["The account lock is not ported to this runtime yet."] }))
+        // `credentials.setAccountDisabled()`: the lock on the entry. The
+        // RISC reason in `options` is the signal's, and this runtime has no
+        // transmitter to carry it.
+        let v = self.0.set_account_disabled(name, disabled);
+        rp::Marked {
+            value: v.value,
+            code: v.code,
+        }
     }
     fn generate_password(&self, _name: &str) -> String {
         // `generatePassword()` is the password policy's; until it is in the
@@ -1027,6 +1036,43 @@ impl rp::IdentityKeys for Names {
     }
 }
 
+/// `logout.terminate(key, selection, options)` over the runtime's
+/// sign-out: what a disable ends (`endEverything()`).
+struct EndEverything(Arc<sts_logout::Logout>);
+
+impl rp::Logout for EndEverything {
+    fn terminate(&self, key: &str, selection: &Json, options: &Json) -> Json {
+        let text = |k: &str| {
+            options
+                .get(k)
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        let opts = sts_logout::TerminateOptions {
+            actor: text("actor"),
+            by: text("by"),
+            channel: text("channel"),
+            initiating_entity: text("initiatingEntity"),
+            no_provider_command: options.get("providerCommand")
+                == Some(&Json::Bool(false)),
+            ..Default::default()
+        };
+        let chosen: Vec<String> = selection
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        match self.0.terminate(key, &chosen, &opts) {
+            Ok(v) => v,
+            Err(e) => json!({ "message": e }),
+        }
+    }
+}
+
 /// The side effects of an account change outside the register.
 struct NoEffects;
 
@@ -1044,6 +1090,8 @@ struct Gate {
     clients: Arc<dyn Clients>,
     scopes: Arc<sts_oauth::scopes::ScopePolicy>,
     roles: Arc<sts_registers::role_permissions::RolePermissions>,
+    /// The console roster, for `holdsSecurity()`.
+    roster: Arc<RosterRoles>,
 }
 
 impl Gate {
@@ -1172,13 +1220,54 @@ impl GatePorts for Gate {
             }
         })
     }
+    /// `SecurityOperations.classify()`'s HOLDER rule (#645): an act on the
+    /// account of a person who holds the Security Administrator's role —
+    /// a disable, an enable, a second factor cleared, a person's key pair —
+    /// is a Security Administrator's (`holderChange()`, over
+    /// `holdsSecurity()`: the roster's `security`, not merely `open`).
+    /// NOT PORTED: the reference rules — a write naming a policy in a
+    /// policy-reference attribute (`changedReferences()`) — which rest on
+    /// the policy kinds' registry.
     fn security_change(
         &self,
-        _realm: &str,
-        _operation: &ConsoleOperation,
-        _body: &Json,
+        realm: &str,
+        operation: &ConsoleOperation,
+        body: &Json,
     ) -> Option<String> {
-        None
+        let text = |k: &str| {
+            body.get(k)
+                .and_then(Json::as_str)
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        };
+        let who = match operation.path.trim_end_matches('/') {
+            "/admin/users" if operation.action != "create" => {
+                match text("user") {
+                    u if u.is_empty() => text("username"),
+                    u => u,
+                }
+            }
+            "/admin/mfa" => match text("user") {
+                u if u.is_empty() => text("username"),
+                u => u,
+            },
+            "/admin/pki" if text("target") == "person" => text("identifier"),
+            _ => return None,
+        };
+        if who.is_empty() {
+            return None;
+        }
+        let held = rp::RosterRoles::roles_of(self.roster.as_ref(), &who, realm);
+        let holds = held.get("security") == Some(&Json::Bool(true))
+            && held.get("open") != Some(&Json::Bool(true));
+        holds.then(|| {
+            format!(
+                "{} holds the Security Administrator's role, so their \
+                 account is a Security Administrator's to act on",
+                who
+            )
+        })
     }
     fn realm_refusal(
         &self,
@@ -1300,13 +1389,14 @@ impl SetupPorts for Setup {
 }
 
 impl Setup {
+    /// `snap.tokens.held` and `snap.tokens.revoked`: the realm's token
+    /// register and its revoked list.
     fn tokens_held(&self, realm_id: &str) -> (usize, usize) {
-        let _ = (&self.tokens, realm_id);
-        (0, 0)
+        self.tokens.held_in(realm_id)
     }
+    /// `sessions.size`: the ambient realm's sign-on sessions.
     fn sessions_held(&self) -> usize {
-        let _ = &self.sessions;
-        0
+        self.sessions.store().len()
     }
 }
 
@@ -1623,7 +1713,7 @@ impl AdminStack {
             Arc::new(sts_registers::people::AccountState::new(
                 credentials,
                 Arc::new(Names),
-                None,
+                Some(Arc::new(EndEverything(parts.logout.clone()))),
                 Arc::new(NoEffects),
                 Arc::new(LogAudit),
             )),
@@ -1658,6 +1748,7 @@ impl AdminStack {
                 clients,
                 scopes,
                 roles: permissions,
+                roster: roster.clone(),
             }),
             access: Arc::new(sts_mgmt_api::gate::BuiltInAccess::new()),
             dpop,
@@ -1682,8 +1773,16 @@ impl AdminStack {
             }),
             families: families.clone(),
             facts: ProcessFacts {
-                config_file: std::env::var("CONFIG_FILE").ok(),
-                defaults_file: "./env/defaults.js".to_string(),
+                // `resolveConfigFile()` and `DEFAULTS_FILE`: absolute, as
+                // Node reports them (`path.join(ROOT, ...)`).
+                config_file: std::env::var("CONFIG_FILE").ok().map(|f| {
+                    std::path::absolute(&f)
+                        .map_or(f, |p| p.to_string_lossy().replace("/./", "/"))
+                }),
+                defaults_file: std::path::absolute("./env/defaults.js")
+                    .map_or("./env/defaults.js".to_string(), |p| {
+                        p.to_string_lossy().replace("/./", "/")
+                    }),
                 persists_appconfig: parts.persistence.mode().is_database(),
                 persists_realms: parts.persistence.mode().is_database(),
                 persistence_mode: store["mode"]

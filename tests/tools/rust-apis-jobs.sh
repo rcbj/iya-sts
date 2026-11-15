@@ -172,12 +172,62 @@ cid="$(docker create "$NODE_IMAGE")"
 docker cp "$cid:/usr/src/sts/version.json" "$OUT/version.json" >/dev/null
 docker rm "$cid" >/dev/null; chmod 0644 "$OUT/version.json"
 
+# VIEWS=1 (the `apis2` slice): after the Node-alone jobs, every realm's
+# certificate authority and enrollment views are read from Node, Node is
+# stopped, the Rust runtime is started on THAT store under the same base
+# URL, and the same views are read from it and held to Node's, member for
+# member. `since` and `processes` are left out: they say when and in how
+# many processes the counters were kept, which a restart changes.
+VIEWS_READ=(pki acme acme/monitor est est/monitor scep scep/monitor)
+read_views() {
+  local label="$1" base="$2" token dir="$OUT/views-$1"
+  rm -rf "$dir"; mkdir -p "$dir"
+  token="$(docker run --rm --network host \
+    -e STS_ADMIN_API_CLIENT_SECRET="$SECRET" -e NODE_TLS_REJECT_UNAUTHORIZED=0 \
+    "$JOB_IMAGE" node tests/tools/admin-api-token.js "$base" 2>/dev/null)"
+  curl -sk -H "Authorization: Bearer $token" "$base/admin-api/realms?per=300" \
+    | jq -r '.realms[] | (.pathPrefix // "")' > "$dir/realms.txt"
+  while read -r prefix; do
+    for v in "${VIEWS_READ[@]}"; do
+      curl -sk -o "$dir/raw" -w '%{http_code}' \
+        -H "Authorization: Bearer $token" \
+        "$base$prefix/admin-api/$v?per=100" > "$dir/status"
+      jq -S 'del(.since, .processes)' "$dir/raw" \
+        > "$dir/$(echo "${prefix:-/default}$v" | tr '/' '_').json" \
+        2>/dev/null || cp "$dir/raw" "$dir/$(echo "${prefix:-/default}$v" \
+        | tr '/' '_').json"
+      printf '%s %s\n' "$(cat "$dir/status")" "${prefix:-}/$v" \
+        >> "$dir/statuses.txt"
+    done
+  done < "$dir/realms.txt"
+  rm -f "$dir/raw" "$dir/status"
+}
+
 say "== Node alone =="
 fresh_db
 env_for "https://localhost:$PN" node-alone
 run_svc "$SVCN" "$NODE_IMAGE" "$PN" node-alone
 for j in "${JOBS[@]}"; do job node "https://localhost:$PN" "$j"; done
-docker rm -f "$SVCN" >/dev/null
+if [ -n "${VIEWS:-}" ]; then
+  read_views node "https://localhost:$PN"
+  docker stop -t 30 "$SVCN" >/dev/null; docker rm "$SVCN" >/dev/null
+  run_svc "$SVCR" "$RUST_IMAGE" "$PN" node-alone
+  read_views rust "https://localhost:$PN"
+  docker rm -f "$SVCR" >/dev/null
+  for f in "$OUT"/views-node/*.json; do
+    one="$(basename "$f")"
+    if diff -q "$f" "$OUT/views-rust/$one" >/dev/null 2>&1; then
+      pass "the same view from Rust on Node's store: $one"
+    else
+      fail "the view differs from Rust on Node's store: $one" \
+        "($(diff <(jq -c 'paths(scalars) as $p | [$p, getpath($p)]' "$f" \
+        2>/dev/null) <(jq -c 'paths(scalars) as $p | [$p, getpath($p)]' \
+        "$OUT/views-rust/$one" 2>/dev/null) | grep -c '^[<>]') leaf diff(s))"
+    fi
+  done
+else
+  docker rm -f "$SVCN" >/dev/null
+fi
 
 say "== Rust's /admin-api on a store Node seeded =="
 fresh_db

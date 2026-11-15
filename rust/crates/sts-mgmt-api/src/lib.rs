@@ -11,7 +11,8 @@
 //! * [`request`], [`schema`] — what a request may name and hold, with
 //!   Node's refusals and ajv's words.
 //! * [`answer`] — every answer held to its closed model (#1353).
-//! * [`gate`] — the access-token gate, whole.
+//! * [`gate`] — the access-token gate, whole; [`admin_scope`] — what a
+//!   realm administrator may not do.
 //! * [`config_view`], [`setup`] — the configuration, mode, realm and status
 //!   operations over `sts-core`.
 //! * [`applications`] — the application registry's list and its own
@@ -20,6 +21,7 @@
 //!   dashboard and the announcements.
 //! * [`families`] — the certificate authority's and the enrollment
 //!   protocols' acts, answered by their own crates.
+//! * [`paging`] — one list's paging, as every view pages.
 //! * [`router`] — the axum router the HTTP layer mounts.
 //! * [`account`] — `/account-api`, the user portal's door, over the same
 //!   services.
@@ -27,6 +29,7 @@
 #![forbid(unsafe_code)]
 
 pub mod account;
+pub mod admin_scope;
 pub mod answer;
 pub mod applications;
 pub mod config_view;
@@ -35,6 +38,7 @@ pub mod document;
 pub mod families;
 pub mod gate;
 pub mod operations;
+pub mod paging;
 pub mod request;
 pub mod router;
 pub mod routing;

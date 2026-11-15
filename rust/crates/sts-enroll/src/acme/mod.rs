@@ -118,6 +118,13 @@ fn account_entry(account: &Json) -> Entry {
 }
 
 impl Acme {
+    /// The server's stores, for the console's views and acts
+    /// (`acme_console.ts` reads `acme_store` directly).
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn store(&self) -> &AcmeStore {
+        &self.store
+    }
+
     /// Builds the server over the core and its stores.
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn new(core: Arc<Core>, store: AcmeStore) -> Arc<Acme> {

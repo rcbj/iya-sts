@@ -249,6 +249,65 @@ impl Credentials {
         directory.read_account_disabled(&name).unwrap_or(false)
     }
 
+    /// `setAccountDisabled(username, disabled)`: the administrative lock
+    /// written onto the entry or taken off it. The audit row, the ended
+    /// sessions and the signals are `account_state.ts`'s, the caller's.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn set_account_disabled(
+        &self,
+        username: &str,
+        disabled: bool,
+    ) -> Verdict {
+        let name = trimmed(username);
+        let no_store = || {
+            errors(
+                codes::STS_AUTHN_0059,
+                "No credential store is installed.".to_string(),
+            )
+        };
+        let Some(directory) = &self.d.directory else {
+            return no_store();
+        };
+        if name.is_empty() {
+            return no_store();
+        }
+        if !self.entry_exists(&name) {
+            return errors(
+                codes::STS_AUTHN_0061,
+                format!(
+                    "There is nobody called \"{}\" in this realm's \
+                     directory.",
+                    name
+                ),
+            );
+        }
+        let written = match directory.write_account_disabled(&name, disabled) {
+            None => return no_store(),
+            Some(Ok(done)) => done,
+            Some(Err(e)) => {
+                tracing::error!(
+                    "{}credentials: pwdAccountLockedTime for {} could not be \
+                     written: {}",
+                    sts_core::log::tag(codes::STS_AUTHN_0202.as_str()),
+                    name,
+                    e
+                );
+                false
+            }
+        };
+        if !written {
+            return errors(
+                codes::STS_AUTHN_0202,
+                format!(
+                    "The account lock could not be written onto {}'s entry.",
+                    name
+                ),
+            );
+        }
+        Verdict::of(json!({ "ok": true, "username": name,
+                            "disabled": disabled }))
+    }
+
     /// `disabledRefusal(username, via)`: STS-AUTHN-0200.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn disabled_refusal(&self, username: &str, via: &str) -> Verdict {

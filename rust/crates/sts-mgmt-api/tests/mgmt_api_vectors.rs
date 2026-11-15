@@ -130,15 +130,17 @@ impl GatePorts for Fake {
     ) -> Option<String> {
         None
     }
+    // No answer here: the gate's own port of `refusalFor()`
+    // (`admin_scope.rs`) decides, and the vectors hold it to Node's —
+    // `a_realm_refusal_is_nodes()` holds its sentence for the pages the
+    // builder asked Node about.
     fn realm_refusal(
         &self,
         _realm: &str,
-        operation: &ConsoleOperation,
+        _operation: &ConsoleOperation,
         _body: Option<&Json>,
     ) -> Option<String> {
-        self.port("realmRefusal", &operation.path)
-            .as_str()
-            .map(str::to_string)
+        None
     }
 }
 
@@ -335,6 +337,15 @@ async fn admin_api_answers_as_node_does() {
         None,
         "tables/admin_api.json differs from Node's table: run tests/tools/export-admin-api-tables.js"
     );
+
+    // `refusalFor()` for a realm administrator of `acme`, as Node answered
+    // it for the pages the builder asked about (`ports.realmRefusal`).
+    for (page, want) in v["ports"]["realmRefusal"].as_object().unwrap() {
+        let got =
+            sts_mgmt_api::admin_scope::refusal_for("acme", page, None, None)
+                .map(|r| r.detail);
+        assert_eq!(got.as_deref(), want.as_str(), "realm refusal of {}", page);
+    }
 
     let env: HashMap<String, String> = v["env"]
         .as_object()

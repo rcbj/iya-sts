@@ -100,10 +100,23 @@ pub struct Tables {
     /// may not reach.
     #[serde(default)]
     pub service_pages: Vec<String>,
+    /// `admin_scope.ts`'s `SERVICE_SETTING_KEYS` and
+    /// `SERVICE_SETTING_PREFIXES`: what a realm administrator may not write.
+    #[serde(default)]
+    pub service_setting_keys: Vec<String>,
+    #[serde(default)]
+    pub service_setting_prefixes: Vec<String>,
     /// `common/inetorgperson.ts`'s `CLASSES`: the schema's fixed list the
     /// Account API's Overview draws an entry against.
     #[serde(default)]
     pub inet_org_person_classes: Json,
+    /// The constant tables the certificate enrollment views draw
+    /// (`GET /admin-api/acme`, `/est`, `/scep`): the core's profiles and
+    /// refusals, the mode's requirement row, each family's operations,
+    /// actions and vocabularies — read off Node's modules by the exporter
+    /// (#444, phase 5, the `apis2` slice).
+    #[serde(default)]
+    pub family_views: Json,
 }
 
 /// What the frames write for the base URL and the version.
@@ -138,7 +151,10 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
             console_sections: Json::Array(Vec::new()),
             nav_labels: Json::Object(Default::default()),
             service_pages: Vec::new(),
+            service_setting_keys: Vec::new(),
+            service_setting_prefixes: Vec::new(),
             inet_org_person_classes: Json::Array(Vec::new()),
+            family_views: Json::Object(Default::default()),
         }
     })
 });

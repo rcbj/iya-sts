@@ -208,6 +208,13 @@ impl Setup<'_> {
         self.view().settings_block(page)
     }
 
+    /// `adminViews.settingsBlockOf(page, only)`: a page's settings block,
+    /// narrowed to the groups named.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn page_settings_only(&self, page: &str, only: &[&str]) -> Json {
+        self.view().settings_block_only(page, Some(only))
+    }
+
     fn view(&self) -> ConfigView<'_> {
         ConfigView {
             settings: self.settings,

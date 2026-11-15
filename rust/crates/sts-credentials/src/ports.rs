@@ -92,6 +92,17 @@ pub trait CredentialDirectory: Send + Sync {
     fn read_recovery_pending(&self, name: &str) -> Hook<Option<String>>;
     /// `writeRecoveryPending(name, value)`; empty clears it.
     fn write_recovery_pending(&self, name: &str, value: &str) -> Hook<bool>;
+    /// `writeAccountDisabled(name, disabled)`: `pwdAccountLockedTime`, the
+    /// administrative lock (`000001010000Z`) or none. `None` where the
+    /// directory offers no such hook — Node's `typeof … !== 'function'`.
+    fn write_account_disabled(
+        &self,
+        name: &str,
+        disabled: bool,
+    ) -> Option<Hook<bool>> {
+        let _ = (name, disabled);
+        None
+    }
 }
 
 /// What the passkey policy and its neighbours decide at a session's start
