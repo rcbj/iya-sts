@@ -51,6 +51,8 @@ pub struct Replay {
     /// Methods Rust does inline (pure functions ported into the crate):
     /// their recorded calls need not be made.
     inline: HashSet<String>,
+    /// The role entries Rust wrote, for `registers-rust.json`.
+    pub written: Mutex<Vec<Value>>,
 }
 
 impl Replay {
@@ -62,6 +64,7 @@ impl Replay {
             used: Mutex::new(vec![false; n]),
             problems: Mutex::new(Vec::new()),
             inline: inline.iter().map(|s| s.to_string()).collect(),
+            written: Mutex::new(Vec::new()),
         }
     }
 
@@ -168,6 +171,10 @@ impl RoleDirectory for Replay {
         a.as_array().cloned().unwrap_or_default()
     }
     fn write_role(&self, name: &str, attributes: &Value) -> Marked {
+        self.written
+            .lock()
+            .unwrap()
+            .push(json!({"name": name, "attributes": attributes}));
         self.marked("roles.directory", "writeRole", json!([name, attributes]))
     }
     fn delete_role(&self, name: &str) -> bool {

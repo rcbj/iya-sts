@@ -161,6 +161,7 @@ fn every_register_answers_as_node_does() {
     let mut failures: Vec<String> = Vec::new();
     let mut checked = 0;
     let mut skipped = std::collections::BTreeMap::<String, usize>::new();
+    let mut written: Vec<Value> = Vec::new();
     for (i, step) in steps.iter().enumerate() {
         let register = step["register"].as_str().unwrap_or("");
         // The application register's pure helpers are ported into the
@@ -317,6 +318,7 @@ fn every_register_answers_as_node_does() {
             continue;
         };
         checked += 1;
+        written.extend(replay.written.lock().unwrap().drain(..));
         let mut wrong = replay.finish();
         let (mine, theirs) = pinned(register, step, answer.answer.clone());
         if mine != theirs {
@@ -346,6 +348,9 @@ fn every_register_answers_as_node_does() {
         }
     }
     eprintln!("{checked} steps checked; not ported here: {skipped:?}");
+    if std::env::var("STS_WRITE_VECTORS").is_ok_and(|v| v == "1") {
+        write_rust_vectors(&written);
+    }
     assert!(
         failures.is_empty(),
         "{} of {checked} steps differ from Node:\n{}",
@@ -357,4 +362,61 @@ fn every_register_answers_as_node_does() {
             .collect::<Vec<_>>()
             .join("\n")
     );
+}
+
+/// One role entry as the directory would hand it back: Rust's write.
+struct OneRole(Value);
+
+impl sts_registers::port::RoleDirectory for OneRole {
+    fn all_roles(&self) -> Vec<Value> {
+        vec![self.0.clone()]
+    }
+    fn write_role(&self, _: &str, _: &Value) -> sts_registers::port::Marked {
+        sts_registers::port::Marked::plain(json!(true))
+    }
+    fn delete_role(&self, _: &str) -> bool {
+        false
+    }
+    fn resolve_owner(&self, _: &str) -> Value {
+        json!({"kind": "", "dn": "", "name": ""})
+    }
+    fn groups_of_user(&self, _: &str) -> Vec<String> {
+        Vec::new()
+    }
+    fn ensure_group(&self, _: &str, _: &Value) -> Value {
+        json!({"ok": true})
+    }
+}
+
+/// Settings for the read-back: the console groups Node's run held.
+struct FixedSettings;
+
+impl sts_registers::port::Settings for FixedSettings {
+    fn value(&self, key: &str) -> Value {
+        match key {
+            "admin.readGroup" => json!("admin-read"),
+            "admin.writeGroup" => json!("admin-write"),
+            "admin.securityGroup" => json!("security-admin"),
+            _ => Value::Null,
+        }
+    }
+}
+
+/// `registers-rust.json`: every role entry Rust wrote, and the row Rust
+/// reads back from it, for `tests/rust_crypto_vectors.js` to read with
+/// Node's `roles.read()`.
+fn write_rust_vectors(written: &[Value]) {
+    let dir = std::env::var("STS_CRYPTO_VECTORS").unwrap();
+    let mut roles_out = Vec::new();
+    for one in written {
+        let name = one["name"].as_str().unwrap_or("").to_string();
+        let entry = json!({"name": name,
+            "dn": format!("cn={name},ou=roles,dc=example,dc=com"),
+            "attributes": one["attributes"]});
+        let r = Roles::new(Some(Arc::new(OneRole(entry.clone()))),
+                           Arc::new(FixedSettings));
+        roles_out.push(json!({"entry": entry, "row": r.read(&name)}));
+    }
+    let path = std::path::Path::new(&dir).join("registers-rust.json");
+    std::fs::write(path, json!({"roles": roles_out}).to_string()).unwrap();
 }

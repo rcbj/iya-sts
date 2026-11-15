@@ -53,6 +53,11 @@ function read(name) {
  */
 function run(t) {
   log.debug("Entering run().");
+  // The registers' role entries (#444, phase 4), which need no other set.
+  if (fs.existsSync(path.join(VECTORS, 'registers-rust.json'))) {
+    registersFromRust(t, JSON.parse(fs.readFileSync(path.join(VECTORS,
+      'registers-rust.json'), 'utf8')));
+  }
   // The directory's wire layer (sts-ldap): synchronous, and it needs no
   // other Rust vector.
   if (fs.existsSync(path.join(VECTORS, 'ldap-wire-rust.json'))) {
@@ -71,6 +76,53 @@ function run(t) {
     .then(function () {
       return runSigned(t);
     });
+}
+
+/**
+ * THE ROLE ENTRIES `sts-registers` WROTE (#444, phase 4), read back by
+ * Node's own role register: each entry is handed to `common/roles.js` as
+ * the whole of `ou=roles`, and Node's row for it must be the row Rust read
+ * from it — so an entry the Rust runtime writes is one the Node service
+ * (and an upgrade's either side) reads the same.
+ *
+ * @param {any} t - the runner's check collector
+ * @param {any} v - registers-rust.json
+ */
+function registersFromRust(t, v) {
+  log.debug("Entering registersFromRust().");
+  const roles = require('../common/roles');
+  const before = roles.directoryInstalled();
+  try {
+    (v.roles || []).forEach(function (one) {
+      roles.setDirectory({
+        allRoles: function () {
+          return [one.entry];
+        },
+        writeRole: function () {
+          return true;
+        },
+        deleteRole: function () {
+          return false;
+        },
+        resolveOwner: function () {
+          return { kind: '', dn: '', name: '' };
+        },
+        groupsOfUser: function () {
+          return [];
+        },
+        ensureGroup: function () {
+          return { ok: true };
+        }
+      });
+      const row = roles.read(one.entry.name);
+      t.check(JSON.stringify(row) === JSON.stringify(one.row),
+              'the role entry sts-registers wrote for "' + one.entry.name +
+              '" reads back in Node as Rust read it');
+    });
+  } finally {
+    roles.setDirectory(before);
+  }
+  log.debug("Leaving registersFromRust().");
 }
 
 /**
