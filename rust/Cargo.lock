@@ -2387,6 +2387,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-authn"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "openssl",
+ "postgres-openssl",
+ "serde",
+ "serde_json",
+ "sts-cluster",
+ "sts-core",
+ "sts-crypto",
+ "sts-model",
+ "sts-store",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+]
+
+[[package]]
 name = "sts-cache"
 version = "0.1.0"
 dependencies = [

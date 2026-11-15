@@ -260,7 +260,12 @@ rust/
     sts-registers/               the registers over the directory: roles, the console
                                  roster, role and application permissions, ownership,
                                  the groups claim, account state, the user and group acts
-    sts-authn/                   the session, sign-in, second factors, WebAuthn
+    sts-authn/                   the session, sign-in, second factors, WebAuthn;
+                                 phase 5's session core first: the record,
+                                 the cookie, the clocks, the merge and the
+                                 doors, held to Node by
+                                 tests/tools/session-vectors.js and over a
+                                 real store by tests/tools/session-interop.js
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/
