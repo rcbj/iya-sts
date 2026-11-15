@@ -256,6 +256,14 @@ async function build(ROOT) {
   await ask('realm token outside it', 'GET', '/admin-api/mode', 'realmToken');
   await ask('service token in a realm', 'GET',
             '/realm/acme/admin-api/config', 'service');
+  await ask('set in a realm', 'POST', '/realm/acme/admin-api/config/set',
+            'service', { key: 'saml.organizationName', value: 'Acme Org' });
+  await ask('config in a realm', 'GET', '/realm/acme/admin-api/config',
+            'service');
+  await ask('realms in a realm', 'GET', '/realm/acme/admin-api/realms',
+            'service');
+  await ask('reset-all in a realm', 'POST',
+            '/realm/acme/admin-api/config/reset-all', 'service', {});
   await ask('remove the realm from inside it', 'POST',
             '/realm/acme/admin-api/realms/remove', 'service', { id: 'acme' });
   // --- an answer its model refuses ----------------------------------------
@@ -361,4 +369,57 @@ async function build(ROOT) {
   return out;
 }
 
-module.exports = { build: build };
+/**
+ * Holds what sts-mgmt-api answered (`mgmt-api-rust.json`) to what Node
+ * answered, and each answer to Node's own response models (#1353), the
+ * check `common/response_models.ts` makes before an answer leaves.
+ *
+ * @param {string} ROOT - the repository root
+ * @param {any} rust - mgmt-api-rust.json
+ * @param {any} node - mgmt-api-node.json
+ * @param {Function} check - `(ok, what, detail)`
+ */
+function checkRust(ROOT, rust, node, check) {
+  log.debug("Entering checkRust().");
+  const req = function (rel) {
+    return require(path.join(ROOT, rel));
+  };
+  req('common/protocol_stack');
+  const api = req('mgmt-api/admin_api');
+  const spec = req('mgmt-api/admin_api_spec');
+  const models = req('common/response_models');
+  const checker = new models.ResponseModels({
+    log: log, mark: function () {}, tag: function () {
+      return '';
+    } });
+  const installed = checker.installed(function () {
+    return spec.buildSpec(api.ROUTES, { authRequired: true });
+  }, spec.refusalSchema());
+  check(rust.cases.length === node.cases.length,
+        'sts-mgmt-api answered every case of the /admin-api corpus',
+        rust.cases.length + ' / ' + node.cases.length);
+  rust.cases.forEach(function (mine, i) {
+    const theirs = node.cases[i] || { answer: {} };
+    check(mine.name === theirs.name && mine.status === theirs.answer.status &&
+          mine.code === theirs.answer.code &&
+          mine.body === theirs.answer.body,
+          'sts-mgmt-api answers "' + mine.name + '" as Node does',
+          mine.status + ' ' + mine.code + ' / ' + theirs.answer.status +
+          ' ' + theirs.answer.code);
+    const url = String(theirs.url || '').split('?')[0]
+      .replace(/^\/realm\/[^/]+/, '');
+    const res = { statusCode: mine.status, get: function () {
+      return mine.contentType || '';
+    } };
+    const problem = checker.problemOf(installed,
+                                      { method: theirs.method, path: url },
+                                      res, mine.body);
+    const violation = theirs.name === 'an answer its model refuses';
+    check(violation ? mine.status === 500 : !problem,
+          'Node\'s response models accept sts-mgmt-api\'s answer to "' +
+          mine.name + '"', problem ? problem.where : '');
+  });
+  log.debug("Leaving checkRust().");
+}
+
+module.exports = { build: build, checkRust: checkRust };
