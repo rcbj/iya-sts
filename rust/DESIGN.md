@@ -277,6 +277,14 @@ rust/
                                  statements, the rate limit, and what each earns;
                                  sts-authn's CredentialChecks. Held to Node by
                                  tests/tools/credentials-vectors.js, both ways
+    sts-authn-api/               /authn-api (phase 5): the 46 operations held to
+                                 the model, the binding of an act, the pending
+                                 sign-ins and steps, the screen, the password,
+                                 the second-factor steps, the forced password
+                                 change, the shells; wired into the runtime.
+                                 Held to Node by authn-api-vectors.js, and over
+                                 the wire by rust-signin-e2e.sh (the unchanged
+                                 bundle in Chrome on a store Node wrote)
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/

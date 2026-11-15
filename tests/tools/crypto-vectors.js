@@ -5619,6 +5619,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'kms-node.json',
                    build: function () {
                      return require('./kms-vectors.js').build(ROOT);
+                   } },
+                 // `/authn-api` and the sign-in shells (#444, phase 5,
+                 // sts-authn-api): tests/tools/authn-api-vectors.js.
+                 { file: 'authn-api-node.json',
+                   build: function () {
+                     return require('./authn-api-vectors.js').build(ROOT);
                    } }];
 
 // THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and

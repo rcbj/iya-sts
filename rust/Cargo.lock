@@ -4212,6 +4212,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-authn-api"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "indexmap 2.14.2",
+ "jsonschema",
+ "regex",
+ "serde",
+ "serde_json",
+ "sts-authn",
+ "sts-core",
+ "sts-credentials",
+ "sts-crypto",
+ "sts-http",
+ "sts-mgmt-api",
+ "sts-model",
+ "sts-store",
+ "tokio",
+ "tower",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "sts-cache"
 version = "0.1.0"
 dependencies = [
@@ -4756,6 +4781,8 @@ dependencies = [
  "hyper-util",
  "openssl",
  "serde_json",
+ "sts-authn",
+ "sts-authn-api",
  "sts-cache",
  "sts-cluster",
  "sts-core",
