@@ -235,6 +235,22 @@ async fn rust_answers_every_step_as_node_did() {
                         .collect(),
                     one => vec![one.as_str().unwrap_or("").to_string()],
                 };
+                let values = if k == "ststotpcredential" {
+                    values
+                        .into_iter()
+                        .map(|v| {
+                            let mut t: Json = serde_json::from_str(&v).unwrap();
+                            t["lastCounter"] = json!(
+                                (sts_core::time::now_ms_f64() / 30_000.0)
+                                    .floor()
+                                    as i64
+                            );
+                            t.to_string()
+                        })
+                        .collect()
+                } else {
+                    values
+                };
                 attributes.insert(k.to_ascii_lowercase(), values);
             }
             built.directory.put(
@@ -262,26 +278,17 @@ async fn rust_answers_every_step_as_node_did() {
         let secret =
             case["person"]["secret"].as_str().unwrap_or("").to_string();
         let signin = built.stack.signin.clone();
-        // `{totp}` is the code the enrolment spent (its step, from the
-        // entry), refused as a replay; `{totpnext}` one inside the window
-        // now. Node's were made at its own clock; these are the same codes'
-        // meaning at this one.
-        let spent = case["person"]["entry"]["attributes"]["ststotpcredential"]
-            [0]
-        .as_str()
-        .and_then(|t| serde_json::from_str::<Json>(t).ok())
-        .and_then(|t| t["lastCounter"].as_f64())
-        .unwrap_or(0.0);
+        // `{totp}` is the code the enrolment just spent, refused as a
+        // replay; `{totpnext}` the next step's, accepted. Node's were made at
+        // its clock; the entry's spent step is moved to this one, as the
+        // record's expiry is, so the two codes mean here what they meant
+        // there.
+        let now_ms = sts_core::time::now_ms_f64();
         let totp = move |ahead: f64| {
-            let at = if ahead > 0.0 {
-                sts_core::time::now_ms_f64().max((spent + 1.0) * 30_000.0 + 1.0)
-            } else {
-                spent * 30_000.0 + 1.0
-            };
             signin
                 .credentials
                 .totp()
-                .code_at(&secret, Some(at), None, None, None)
+                .code_at(&secret, Some(now_ms + ahead), None, None, None)
                 .unwrap_or_default()
         };
         let mut mine = Bound::default();

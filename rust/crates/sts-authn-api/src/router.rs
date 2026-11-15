@@ -89,8 +89,8 @@ pub fn base_of(
     let trust = settings.value_of("global.trustProxy").as_bool();
     let first =
         |v: String| v.split(',').next().unwrap_or("").trim().to_string();
-    let scheme = Some(header_of(headers, "x-forwarded-proto"))
-        .filter(|_| trust)
+    let scheme = trust
+        .then(|| header_of(headers, "x-forwarded-proto"))
         .map(first)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
@@ -100,8 +100,8 @@ pub fn base_of(
                 "http".into()
             }
         });
-    let host = Some(header_of(headers, "x-forwarded-host"))
-        .filter(|_| trust)
+    let host = trust
+        .then(|| header_of(headers, "x-forwarded-host"))
         .map(first)
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
@@ -384,15 +384,13 @@ impl SignInShells {
             .sessions
             .cookie_session(Some(&request), crate::door::SESSION_COOKIE)
             .is_none()
-        {
-            if self
+            && self
                 .signin
                 .sessions
                 .start_arrival_session(&request, &mut response, "arrival")
                 .is_none()
-            {
-                tracing::debug!("authn: no arrival session was started.");
-            }
+        {
+            tracing::debug!("authn: no arrival session was started.");
         }
         response.cookies
     }
