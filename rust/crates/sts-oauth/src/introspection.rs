@@ -65,6 +65,15 @@ pub struct EndpointAsk {
     pub peer: Option<PeerCertificate>,
 }
 
+/// How an endpoint words its refusal of a caller that did not
+/// authenticate: the code, the status, whether the Basic challenge goes
+/// with it, and the description — from the verifier's code and why.
+type Refuse = dyn Fn(
+        Option<sts_core::errors::ErrorCode>,
+        &str,
+    ) -> (sts_core::errors::ErrorCode, u16, bool, String)
+    + Sync;
+
 /// `authenticateEndpointCaller()`'s answer.
 struct Caller {
     client_id: String,
@@ -130,11 +139,7 @@ impl TokenEndpoint {
         path: &str,
         allow_public: bool,
         lenient: bool,
-        refuse: &(dyn Fn(
-            Option<sts_core::errors::ErrorCode>,
-            &str,
-        ) -> (sts_core::errors::ErrorCode, u16, bool, String)
-              + Sync),
+        refuse: &Refuse,
     ) -> Result<Caller, Answer> {
         let client = client_from(&ask.authorization, body);
         let registered = self.clients.client_config_of(&client.client_id);
@@ -426,7 +431,8 @@ impl TokenEndpoint {
         let mut client_id = client_from(&ask.authorization, &body).client_id;
         let mut authenticated = false;
         if jwt || !self.mode.opens_introspection() {
-            let refuse = |_: Option<sts_core::errors::ErrorCode>, why: &str| {
+            let refuse = move |_: Option<sts_core::errors::ErrorCode>,
+                               why: &str| {
                 if !jwt {
                     (
                         codes::STS_OAUTH_0292,
@@ -696,8 +702,8 @@ impl TokenEndpoint {
             identified: false,
         };
         if !opens || presented_credential {
-            let refuse = |code: Option<sts_core::errors::ErrorCode>,
-                          why: &str| {
+            let refuse = move |code: Option<sts_core::errors::ErrorCode>,
+                               why: &str| {
                 let unknown = code == Some(codes::STS_OAUTH_0193);
                 (
                     if unknown {
