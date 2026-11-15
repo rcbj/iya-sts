@@ -5098,7 +5098,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./xacml-vectors.js').build(ROOT);
                    } },
-                 { file: 'krb5-codec-node.json', build: krb5Codec }];
+                 { file: 'krb5-codec-node.json', build: krb5Codec },
+                 // The named policies' (#444 phase 4):
+                 // tests/tools/policy-vectors.js.
+                 { file: 'policy-node.json',
+                   build: function () {
+                     return require('./policy-vectors.js').build(ROOT);
+                   } }];
 
 // THE KEYSTORE'S DATA KEYS (#444): values sealed by `common/keystore.js`
 // under a durable key-encryption key — with the data-key rows it wrote to
