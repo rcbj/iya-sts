@@ -86,6 +86,11 @@ pub trait Clients: Send + Sync {
             vec![client_id.trim().to_string()]
         }
     }
+    /// `consent.globalConsentsOf(clientId)`: the scopes the application
+    /// holds global consent to (`oauthGlobalConsent`), without repeats.
+    fn global_consents_of(&self, _client_id: &str) -> Vec<String> {
+        Vec::new()
+    }
     /// The entry's display name (`entry.name`), or the client_id.
     fn name_of(&self, client_id: &str) -> String {
         client_id.to_string()
@@ -419,6 +424,20 @@ impl Clients for RegisterClients {
             add(crate::js::string_of(e.get("identifier")));
         }
         all
+    }
+
+    #[tracing::instrument(level = "debug", skip(self))]
+    fn global_consents_of(&self, client_id: &str) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        if let Some(entry) = self.registry.get(client_id.trim()) {
+            for one in values_of(entry["fields"].get("oauthGlobalConsent")) {
+                let t = one.trim().to_string();
+                if !t.is_empty() && !out.contains(&t) {
+                    out.push(t);
+                }
+            }
+        }
+        out
     }
 
     #[tracing::instrument(level = "debug", skip(self))]

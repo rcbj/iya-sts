@@ -37,6 +37,7 @@
 #![forbid(unsafe_code)]
 
 pub mod answer;
+pub mod authorize;
 pub mod bcp;
 pub mod client_auth;
 pub mod clients;

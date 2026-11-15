@@ -244,6 +244,13 @@ impl TokenRegister {
         record
     }
 
+    /// `stats.isRevoked(jti)`: in the ambient realm's revoked-token
+    /// register.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn is_revoked(&self, jti: &str) -> bool {
+        self.revoked.is_revoked(jti)
+    }
+
     /// One record.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn get(&self, realm: &str, jti: &str) -> Option<Json> {
