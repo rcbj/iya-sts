@@ -134,6 +134,7 @@ pub fn access_token_refusal(
 /// ISSUED the token, so a realm's switch does not refuse the service-wide
 /// API client's bearer; [`access_token_refusal`] leaves it to the ambient
 /// realm, as before.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn access_token_refusal_with(
     settings: &Settings,
     o: &Presented,

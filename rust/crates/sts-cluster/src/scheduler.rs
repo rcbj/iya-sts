@@ -342,6 +342,13 @@ struct State {
     /// A global job's run another cell holds the claim of: its runId, and
     /// the instant that claim cannot outlast (`claimedByAnotherCell`).
     claimed_by_another_cell: HashMap<String, f64>,
+    /// ONE RUN OF A JOB IN A REALM AT A TIME (Node's #1757): `job|realm` →
+    /// the runId this process is attempting or running for it, so a second
+    /// attempt here waits without a round trip (`exclusiveHolders`).
+    exclusive_holders: HashMap<String, String>,
+    /// The runIds already recorded as waiting (STS-SCHED-0024), so a run
+    /// that waits through many ticks says so once (`exclusiveNoted`).
+    exclusive_noted: std::collections::HashSet<String>,
 }
 
 /// A refusal of a request to the scheduler, for a 4xx answer.
@@ -457,6 +464,8 @@ impl Scheduler {
                 held_since: HashMap::new(),
                 deferred_ms: HashMap::new(),
                 claimed_by_another_cell: HashMap::new(),
+                exclusive_holders: HashMap::new(),
+                exclusive_noted: std::collections::HashSet::new(),
             }),
             tick_lock: tokio::sync::Mutex::new(()),
             me: me.clone(),
@@ -992,6 +1001,9 @@ impl Scheduler {
             st.deferred_ms
                 .retain(|id, _| seen.contains(id) || in_flight.contains(id));
             st.claimed_by_another_cell.retain(|id, _| seen.contains(id));
+            let in_flight: Vec<String> = st.in_flight.keys().cloned().collect();
+            st.exclusive_noted
+                .retain(|id| seen.contains(id) || in_flight.contains(id));
         }
         self.abandon_orphans(at);
         Ok(())
@@ -1540,11 +1552,29 @@ impl Scheduler {
     fn attempt(&self, job: JobSpec, realm_id: String, row: Json) {
         let run_id = text(&row, "runId").to_string();
         let timeout_ms = self.schedules().timeout_ms_of(&job);
+        // ONE RUN OF A JOB IN A REALM AT A TIME (Node's #1757, rcbj
+        // 2026-11-15). A manual run and the scheduled run of the same job in
+        // the same realm have different ids, so each won its own claim and
+        // the two bodies overlapped. Beside the run's own claim a run holds
+        // one more of the same kind, `exclusive|<job>|<realm>`, for its time
+        // limit, and gives it back when it ends. A run that cannot have it
+        // WAITS: it is not claimed, so it is still due at the next tick.
+        // Here first, with no round trip, for a run this process is already
+        // attempting or running; the claim decides between nodes.
+        let exclusive_key = format!("{}|{}", job.id, realm_id);
         {
             let mut st = self.state();
             if st.in_flight.contains_key(&run_id) {
                 return;
             }
+            let holder = st.exclusive_holders.get(&exclusive_key).cloned();
+            if let Some(holder) = holder.filter(|h| *h != run_id) {
+                drop(st);
+                self.note_exclusive_wait(&job, &realm_id, &row, &holder);
+                return;
+            }
+            st.exclusive_holders
+                .insert(exclusive_key.clone(), run_id.clone());
             // Held while the claim is asked, so the next tick does not ask.
             st.in_flight
                 .insert(run_id.clone(), Arc::new(Flight::new(&realm_id)));
@@ -1559,8 +1589,15 @@ impl Scheduler {
                 .claims
                 .claim(scope, &run_id, &realm_id, timeout_ms + 1000.0)
                 .await;
+            let drop_holder = |me: &Scheduler| {
+                let mut st = me.state();
+                if st.exclusive_holders.get(&exclusive_key) == Some(&run_id) {
+                    st.exclusive_holders.remove(&exclusive_key);
+                }
+            };
             match answer {
                 Err(refused) => {
+                    drop_holder(&me);
                     me.state().in_flight.remove(&run_id);
                     // THE CELL THAT LOSES A GLOBAL JOB'S CLAIM NEVER SEES THE
                     // RUN END (#98): the winner writes the run's row in its
@@ -1588,10 +1625,134 @@ impl Scheduler {
                     }
                 }
                 Ok(claim) => {
-                    me.run_claimed(job, realm_id, row, claim, timeout_ms).await
+                    let exclusive = me
+                        .deps
+                        .claims
+                        .claim(
+                            scope,
+                            &format!("exclusive|{}", exclusive_key),
+                            &realm_id,
+                            timeout_ms + 1000.0,
+                        )
+                        .await;
+                    match exclusive {
+                        Err(refused) => {
+                            // The run's own claim goes back, so the run can
+                            // be attempted again once the other one ended.
+                            drop_holder(&me);
+                            me.state().in_flight.remove(&run_id);
+                            me.deps.claims.release(&claim.handle).await;
+                            if let ClaimRefused::Store(why) = refused {
+                                tracing::warn!(
+                                    "{}scheduler: the claim store could not \
+                                     be asked about run {} of {} ({}). It is \
+                                     not started until it can be.",
+                                    tag(codes::STS_SCHED_0008),
+                                    run_id,
+                                    job.id,
+                                    why
+                                );
+                            } else {
+                                me.note_exclusive_wait(
+                                    &job, &realm_id, &row, "",
+                                );
+                            }
+                        }
+                        Ok(held) => {
+                            me.run_claimed(
+                                job,
+                                realm_id,
+                                row,
+                                claim,
+                                timeout_ms,
+                                Some(held.handle),
+                            )
+                            .await
+                        }
+                    }
                 }
             }
         });
+    }
+
+    /// `noteExclusiveWait(job, realm, row, holder)` (Node's #1757): a run
+    /// that waits for another run of its job in its realm, recorded once
+    /// per run — one info line with STS-SCHED-0024, and on a manual run's
+    /// queued row the code and the reason, until it runs. A scheduled run's
+    /// row is not written while it waits: it is not stored until it starts.
+    fn note_exclusive_wait(
+        &self,
+        job: &JobSpec,
+        realm_id: &str,
+        row: &Json,
+        holder: &str,
+    ) {
+        let run_id = text(row, "runId").to_string();
+        self.state().waiting = true;
+        let why = format!(
+            "Another run of {}{}{} was still running; this run waits until \
+             it ends.",
+            job.id,
+            if realm_id != DEFAULT_ID {
+                format!(" in \"{}\"", realm_id)
+            } else {
+                String::new()
+            },
+            if holder.is_empty() {
+                " on another node".to_string()
+            } else {
+                format!(" ({})", holder)
+            }
+        );
+        if text(row, "trigger") == "manual" && text(row, "state") == "queued" {
+            if let Some(stored) = self.deps.rows.get(realm_id, &run_id) {
+                if text(&stored, "state") == "queued"
+                    && text(&stored, "errorCode")
+                        != codes::STS_SCHED_0024.as_str()
+                {
+                    self.write_row(
+                        realm_id,
+                        assign(
+                            &stored,
+                            json!({ "errorCode": codes::STS_SCHED_0024.as_str(),
+                                    "why": why }),
+                        ),
+                    );
+                }
+            }
+        }
+        if self.state().exclusive_noted.insert(run_id.clone()) {
+            tracing::info!(
+                "{}scheduler: run {} of {} waits: {}",
+                tag(codes::STS_SCHED_0024),
+                run_id,
+                job.id,
+                why
+            );
+        }
+    }
+
+    /// The run's hold on its job in its realm (#1757), given back however
+    /// the run ends, so the run that waited for it starts at the next tick.
+    async fn give_back_exclusive(
+        &self,
+        job: &JobSpec,
+        realm_id: &str,
+        run_id: &str,
+        handle: &Option<Json>,
+    ) {
+        let key = format!("{}|{}", job.id, realm_id);
+        {
+            let mut st = self.state();
+            if st.exclusive_holders.get(&key).map(String::as_str)
+                == Some(run_id)
+            {
+                st.exclusive_holders.remove(&key);
+            }
+        }
+        if let Some(h) = handle {
+            self.deps.claims.release(h).await;
+        }
     }
 
     async fn run_claimed(
@@ -1601,6 +1762,7 @@ impl Scheduler {
         row: Json,
         claim: Claim,
         timeout_ms: f64,
+        exclusive: Option<Json>,
     ) {
         let run_id = text(&row, "runId").to_string();
         // A realm removed between the tick and the claim: nothing is run
@@ -1608,6 +1770,8 @@ impl Scheduler {
         if !self.realm_defined(&realm_id) {
             self.state().in_flight.remove(&run_id);
             self.deps.claims.release(&claim.handle).await;
+            self.give_back_exclusive(&job, &realm_id, &run_id, &exclusive)
+                .await;
             tracing::info!(
                 "{}scheduler: run {} of {} was not started: the realm \"{}\" has been removed.",
                 tag(codes::STS_SCHED_0018),
@@ -1719,6 +1883,8 @@ impl Scheduler {
             .unwrap_or_else(|| Arc::new(Realm::default_realm()));
         let Some(run) = job.run.clone() else {
             self.state().in_flight.remove(&run_id);
+            self.give_back_exclusive(&job, &realm_id, &run_id, &exclusive)
+                .await;
             return;
         };
         // Its own task: a run past its time limit is fenced out, not
@@ -1772,9 +1938,13 @@ impl Scheduler {
         if outcome.is_err() {
             flight.timed_out.store(true, Ordering::SeqCst);
         }
+        {
+            self.state().in_flight.remove(&run_id);
+        }
+        self.give_back_exclusive(&job, &realm_id, &run_id, &exclusive)
+            .await;
         let waiting = {
-            let mut st = self.state();
-            st.in_flight.remove(&run_id);
+            let st = self.state();
             st.waiting && st.leading
         };
         // A place is free: start what the last tick left waiting, now.

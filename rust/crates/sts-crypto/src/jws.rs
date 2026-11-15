@@ -1067,6 +1067,7 @@ pub fn verify_jws(
 /// still accepted and STS-KEYS-0179 never recorded. Asked after the
 /// caller's own list, before the signature; with no list, for the token's
 /// own algorithm before anything else, as Node asks it.
+#[tracing::instrument(level = "debug", skip_all)]
 pub fn verify_jws_under(
     token: &str,
     key: &JwsKey,

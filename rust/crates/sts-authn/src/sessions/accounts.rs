@@ -274,11 +274,13 @@ impl Sessions {
         if js::or_empty(held.get("id")) != sid {
             return;
         }
-        let mut session = held.clone();
-        if let Some(o) = session.as_object_mut() {
-            o.insert("accountSetId".into(), json!(set_id));
-        }
-        if !self.note_session_copy_changed(&session) {
+        // Node's held object IS the store's row, stamped in place, so its
+        // noteSessionChanged() writes it as it stands; here the stored row
+        // is edited in place, and only while it is held.
+        let id = set_id.to_string();
+        if !self.note_session_changed(sid, |o| {
+            o.insert("accountSetId".into(), json!(id));
+        }) {
             tracing::debug!(
                 "authn: session {} is gone; its set stamp not written",
                 sid
