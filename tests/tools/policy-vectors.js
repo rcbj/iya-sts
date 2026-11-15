@@ -35,7 +35,7 @@
 //              acts, in the default realm and in `acme`, for applications,
 //              groups and people, each with its tape, mutations, answer and
 //              error code
-//   passwords  `problemsWith()` over passwords and profiles
+//   fields     every kind's `FIELDS`, bound and computed rows included
 //
 // The service-account register (`common/service_accounts.ts`) and the
 // destination register are another slice's, so their answers here are a
@@ -1039,7 +1039,13 @@ async function build(ROOT) {
     mechanisms: req('federation/federation').MECHANISM_IDS.slice(0),
     secondFactors: req('common/mfa_mechanisms').IDS.slice(0)
   };
-  return { setup: SETUP, selection: SELECTION, kinds: kinds,
+  // Every kind's FIELDS as its module holds them: the model's rows with
+  // what the code binds and the rows it computes (ModelTables.fields()).
+  const fields = {};
+  Object.keys(MODULES).forEach(function (kind) {
+    fields[kind] = clone(MODULES[kind].FIELDS);
+  });
+  return { setup: SETUP, selection: SELECTION, kinds: kinds, fields: fields,
            vocabularies: vocabularies, cases: CASES };
 }
 

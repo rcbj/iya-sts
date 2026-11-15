@@ -247,6 +247,9 @@ rust/
                                  STS_WEB_ROOT, /web), held to Node by
                                  tests/tools/http-differential.js
     sts-directory/               the embedded directory model and the LDAP server
+    sts-policy/                  the named policies (rule 3cx) and the seven kinds on
+                                 Directory > Policies, over ports to the directory and
+                                 the registers (phase 4, held to 321 Node cases)
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/

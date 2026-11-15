@@ -782,6 +782,46 @@ fn selection_answer(row: &Value) -> Value {
     }
 }
 
+fn field_json(f: &sts_policy::tables::Field) -> Map<String, Value> {
+    let mut o = Map::new();
+    o.insert("key".into(), s(&f.key));
+    o.insert("attribute".into(), s(&f.attribute));
+    o.insert("type".into(), s(&f.kind));
+    o.insert("dflt".into(), f.dflt.clone());
+    if let Some(n) = f.min {
+        o.insert("min".into(), json!(n));
+    }
+    if let Some(n) = f.max {
+        o.insert("max".into(), json!(n));
+    }
+    if !f.values.is_empty() {
+        o.insert("values".into(), json!(f.values));
+    }
+    o.insert("optional".into(), json!(f.optional));
+    o.insert("label".into(), s(&f.label));
+    if let Some(u) = &f.unit {
+        o.insert("unit".into(), s(u));
+    }
+    o.insert("what".into(), s(&f.what));
+    if let Some(e) = &f.empty {
+        o.insert("empty".into(), s(e));
+    }
+    if let Some(n) = f.max_items {
+        o.insert("maxItems".into(), json!(n));
+    }
+    if let Some(m) = &f.mechanism {
+        o.insert("mechanism".into(), s(m));
+    }
+    if let Some(r) = &f.role {
+        o.insert("role".into(), s(r));
+    }
+    o.insert("email".into(), json!(f.email));
+    if let Some(d) = &f.door {
+        o.insert("door".into(), s(d));
+    }
+    o
+}
+
 fn canonical(v: &Value) -> Value {
     match v {
         Value::Object(o) => {
@@ -872,6 +912,32 @@ fn every_policy_answer_is_nodes() {
         || unknown.code.map(|c| c.as_str()) != kinds["unknown"]["code"].as_str()
     {
         wrong.push(format!("unknown action: {}", unknown.value));
+    }
+
+    // EVERY KIND'S FIELDS, member by member as Node holds them.
+    let mine_fields: Vec<(&str, &[sts_policy::tables::Field])> = vec![
+        ("password", PasswordPolicy::fields()),
+        ("authn", AuthnPolicy::fields()),
+        ("serviceAccount", ServiceAccountPolicy::fields()),
+        ("passkey", PasskeyPolicy::fields()),
+        ("locale", LocalePolicy::fields()),
+        ("attributes", AttributePolicy::fields()),
+        ("postLogin", PostLoginPolicy::fields()),
+    ];
+    for (kind, rows) in mine_fields {
+        let theirs = node["fields"][kind].as_array().cloned().unwrap_or_default();
+        if theirs.len() != rows.len() {
+            wrong.push(format!("{kind}: {} rows, Node {}", rows.len(), theirs.len()));
+            continue;
+        }
+        for (f, t) in rows.iter().zip(theirs.iter()) {
+            let mine = field_json(f);
+            for (k, v) in t.as_object().unwrap() {
+                if mine.get(k) != Some(v) {
+                    wrong.push(format!("{kind}.{}.{k}: Rust {:?} Node {v}", f.key, mine.get(k)));
+                }
+            }
+        }
     }
 
     // THE CASES.
