@@ -228,7 +228,9 @@ function declarations(t) {
   [['mgmt_operations.rs', 'operations.rs'],
    ['openapi.management.json', 'openapi.management.json'],
    ['openapi.console.json', 'openapi.console.json'],
-   ['openapi.every.json', 'openapi.every.json']].forEach(function (pair) {
+   ['openapi.every.json', 'openapi.every.json'],
+   // and /account-api's (#444, phase 5), which it serves too.
+   ['openapi.account.json', 'openapi.account.json']].forEach(function (pair) {
     const built = fs.readFileSync(path.join(ROOT, 'models', 'generated',
       pair[0]), 'utf8');
     t.check(fs.readFileSync(path.join(ROOT, 'rust', 'crates', 'sts-mgmt-api',

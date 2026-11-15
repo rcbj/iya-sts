@@ -279,8 +279,21 @@ async function build(ROOT) {
   await ask('an answer its model refuses', 'GET', '/admin-api/status',
             'service');
   admin.dashboardJsonAsync = realStatus;
+  // --- the console's first screen (#444 phase 5, the `apis` slice) --------
+  await ask('me, the service credential', 'GET', '/admin-api/me', 'service');
+  await ask('me, read only', 'GET', '/admin-api/me', 'readOnly');
+  await ask('the dashboard without admin:console', 'GET',
+            '/admin-api/console/dashboard', 'service');
+  await ask('announcements', 'GET', '/admin-api/announcements?since=1',
+            'service');
   // --- the open API of development (authRequired off) ----------------------
   config.setOverride('adminApi.authRequired', false);
+  await ask('open: me', 'GET', '/admin-api/me');
+  await ask('open: the console frame, catalogs as files', 'GET',
+            '/admin-api/console?catalogs=files', undefined, undefined,
+            { 'accept-language': 'en-GB, en;q=0.5' });
+  await ask('open: the console frame', 'GET', '/admin-api/console');
+  await ask('open: the dashboard', 'GET', '/admin-api/console/dashboard');
   await ask('open: console operations', 'GET',
             '/admin-api/console/operations');
   await ask('open: console document', 'GET',
@@ -348,8 +361,18 @@ async function build(ROOT) {
       kids[r.id] = helpers.stsKeysFor().kid;
     });
   });
+  // What the console's screens read outside sts-mgmt-api (#444 phase 5).
+  const consoleFacts = {
+    runtime: admin.shellJson(null, null, null).runtime,
+    persistence: (function () {
+      const st = persistence.status();
+      return { enabled: !!st.enabled, mode: String(st.mode || '') };
+    })(),
+    rosterAvailable: !!req('admin-ui/admin_rbac').available()
+  };
   const out = {
     port: port,
+    consoleFacts: consoleFacts,
     now: now,
     tables: tables,
     operator: operator,

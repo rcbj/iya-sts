@@ -145,9 +145,9 @@ impl Signer for RealmSigner {
 /// secret was refused. The register only READS through this one — this
 /// runtime writes no application yet — so `seal()` is the keystore's as well
 /// for when it does.
-struct SealingEnv {
-    core: sts_registers::applications::env::CoreEnv,
-    persistence: Arc<Persistence>,
+pub(crate) struct SealingEnv {
+    pub(crate) core: sts_registers::applications::env::CoreEnv,
+    pub(crate) persistence: Arc<Persistence>,
 }
 
 impl AppEnv for SealingEnv {

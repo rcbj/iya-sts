@@ -21,7 +21,6 @@ macro_rules! not_yet_ported {
         | Operation::RehomePerson
         | Operation::GetBroadcast
         | Operation::SendBroadcast
-        | Operation::GetConsoleAnnouncements
         | Operation::GetAccountApi
         | Operation::GetListeners
         | Operation::SetListeners
@@ -76,7 +75,6 @@ macro_rules! not_yet_ported {
         | Operation::ExportKey
         | Operation::RotateSigningKeys
         | Operation::RotateSigningKeysEmergency
-        | Operation::GetMe
         | Operation::GetMetrics
         | Operation::GetUsers
         | Operation::GetUserAppPasswords
@@ -87,8 +85,9 @@ macro_rules! not_yet_ported {
         | Operation::GetUserVerifications
         | Operation::GetNewUserForm
         | Operation::IssueActivationLink
-        | Operation::CreateUser
         | Operation::SetUserPassword
+        | Operation::DisableUserAccount
+        | Operation::EnableUserAccount
         | Operation::ClearUserAuthenticatorApp
         | Operation::ClearUserBackupCodes
         | Operation::ClearUserEmailFactor
@@ -127,8 +126,6 @@ macro_rules! not_yet_ported {
         | Operation::DeactivateUserPublishedDid
         | Operation::RecordUserVerification
         | Operation::RemoveUserVerification
-        | Operation::DisableUserAccount
-        | Operation::EnableUserAccount
         | Operation::LinkUserFederation
         | Operation::UnlinkUserFederation
         | Operation::CreateUserAppPassword
@@ -415,7 +412,6 @@ macro_rules! not_yet_ported {
         | Operation::RemoveSignerTrustAnchor
         | Operation::RecheckPinnedCertificates
         | Operation::SetParanoidPkiRow
-        | Operation::BuildPkiChain
         | Operation::IssuePkiKeyPair
         | Operation::RevokePkiKeyPair
         | Operation::UploadPkiCertificate
@@ -431,8 +427,6 @@ macro_rules! not_yet_ported {
         | Operation::ImportPkiCa
         | Operation::PinPkiKeyPair
         | Operation::UnpinPkiKeyPair
-        | Operation::RevokePkiCertificate
-        | Operation::ReleasePkiCertificateHold
         | Operation::GetScimMonitor
         | Operation::GetSignals
         | Operation::ClearSignalsInbox
@@ -537,26 +531,13 @@ macro_rules! not_yet_ported {
         | Operation::CreateSpiffeJoinToken
         | Operation::GetAcme
         | Operation::GetAcmeMonitor
-        | Operation::CreateAcmeEab
-        | Operation::DeleteAcmeEab
         | Operation::DeactivateAcmeAccount
-        | Operation::RevokeAcmeCertificate
-        | Operation::AddAcmeHostName
-        | Operation::RemoveAcmeHostName
         | Operation::GetEst
         | Operation::GetEstMonitor
         | Operation::IssueEstServerKey
-        | Operation::RevokeEstCertificate
-        | Operation::AddEstHostName
-        | Operation::RemoveEstHostName
         | Operation::GetScep
         | Operation::GetScepMonitor
-        | Operation::CreateScepChallenge
-        | Operation::DeleteScepChallenge
         | Operation::ReissueScepRa
-        | Operation::RevokeScepCertificate
-        | Operation::AddScepHostName
-        | Operation::RemoveScepHostName
         | Operation::GetOidfed
         | Operation::AddOidfedSubordinate
         | Operation::RemoveOidfedSubordinate
@@ -660,7 +641,6 @@ macro_rules! not_yet_ported {
         | Operation::EndAllSessions
         | Operation::GetAuditIntegrity
         | Operation::GetApiExplorer
-        | Operation::GetConsoleShell
         | Operation::SetConsoleLanguage
         | Operation::GetDelegationMap
         | Operation::GetFederationMap
@@ -668,7 +648,6 @@ macro_rules! not_yet_ported {
         | Operation::GetDelegationAllowed
         | Operation::GetDelegationSettings
         | Operation::GetDelegationChain
-        | Operation::GetConsoleDashboard
         | Operation::GetConsoleNewApplicationForm
         | Operation::GetConsoleDelegationUser
         | Operation::GetConsoleDelegationApplication

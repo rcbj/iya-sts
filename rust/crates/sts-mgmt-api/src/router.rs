@@ -74,6 +74,10 @@ pub struct Services {
     pub access: Arc<dyn AccessPolicy>,
     pub dpop: Arc<dyn ProofContext + Send + Sync>,
     pub setup_ports: Arc<dyn SetupPorts>,
+    /// What the console's first screen reads (`console.rs`).
+    pub console: Arc<dyn crate::console::ConsolePorts>,
+    /// The families' own acts (`families.rs`).
+    pub families: Arc<dyn crate::families::FamilyPorts>,
     pub facts: ProcessFacts,
     pub version: VersionInfo,
     pub eddsa_curve: String,
@@ -549,6 +553,35 @@ fn unknown_action(
         Some(Handler::RealmsAction) => {
             setup(services, &realm_id).realms_action(action, body)
         }
+        Some(Handler::Family) => {
+            let root = base_of(services, headers, false);
+            let realm_base =
+                format!("{}{}", root, services.registry.current_prefix());
+            let asked = crate::families::Asked {
+                operation_id: "",
+                family: crate::families::family_of(&path),
+                action,
+                query,
+                body,
+                caller: None,
+                base: &realm_base,
+            };
+            match services.families.answer(&asked) {
+                Some(a) => a,
+                None => return express_404(method, &path),
+            }
+        }
+        Some(Handler::UsersAction) => {
+            match crate::setup::users_action(
+                &setup(services, &realm_id),
+                action,
+                body,
+                None,
+            ) {
+                Some(a) => a,
+                None => return express_404(method, &path),
+            }
+        }
         Some(Handler::ApplicationsAction) => {
             match crate::applications::action(
                 &setup(services, &realm_id),
@@ -710,6 +743,98 @@ fn run(
                 None => return express_404(method, row.path),
             }
         }
+        Handler::Family => {
+            let asked = crate::families::Asked {
+                operation_id: row.id,
+                family: crate::families::family_of(row.path),
+                action: &action,
+                query,
+                body,
+                caller,
+                base: &realm_base,
+            };
+            match services.families.answer(&asked) {
+                Some(a) => a,
+                None => {
+                    tracing::info!(
+                        "admin-api: {} {} ({}) has no family to answer it \
+                         in this process.",
+                        method,
+                        row.path,
+                        row.id
+                    );
+                    return express_404(method, row.path);
+                }
+            }
+        }
+        Handler::UsersAction => {
+            match crate::setup::users_action(&s, &action, body, caller) {
+                Some(a) => a,
+                None => return express_404(method, row.path),
+            }
+        }
+        Handler::Me => Answered {
+            status: 200,
+            body: crate::console::me_json(services, caller),
+            code: None,
+        },
+        Handler::ConsoleShell => {
+            let me = crate::console::me_json(services, caller);
+            let gate = crate::console::console_gate_of(&me);
+            let username = caller
+                .filter(|c| c.kind == "person")
+                .map(|c| c.name.clone())
+                .unwrap_or_default();
+            Answered {
+                status: 200,
+                body: crate::console::shell_json(
+                    services,
+                    &gate,
+                    root,
+                    headers,
+                    &username,
+                    query.get("catalogs").and_then(Json::as_str)
+                        == Some("files"),
+                ),
+                code: None,
+            }
+        }
+        Handler::ConsoleDashboard => {
+            let status = s.status_json();
+            let authority = caller.map(|c| {
+                if c.realm == gate::DEFAULT_REALM {
+                    "service"
+                } else {
+                    "realm"
+                }
+            });
+            Answered {
+                status: status.status,
+                body: crate::console::dashboard_json(
+                    services,
+                    status.body,
+                    &realm_base,
+                    authority,
+                ),
+                code: status.code,
+            }
+        }
+        Handler::Announcements => Answered {
+            status: 200,
+            body: services.console.announcements(
+                "admin-console",
+                query
+                    .get("since")
+                    .and_then(|v| match v {
+                        Json::Number(n) => n.as_f64(),
+                        Json::String(t) => t.trim().parse::<f64>().ok(),
+                        _ => None,
+                    })
+                    .filter(|n| n.is_finite())
+                    .map_or(0, |n| n as i64),
+            ),
+            code: None,
+        },
     };
     send(method, row.path, Some(row), answered)
 }

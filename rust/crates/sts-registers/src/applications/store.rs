@@ -36,8 +36,9 @@ pub struct StoredApplication {
 }
 
 impl StoredApplication {
-    // `entryObject()`.
-    fn of(stored: &Entry) -> StoredApplication {
+    /// `entryObject()`. A hot path: once per entry of every listing, so it
+    /// carries no span.
+    pub fn of(stored: &Entry) -> StoredApplication {
         let model = DirectoryModel::get();
         let mut names: Vec<&String> = stored.attributes.keys().collect();
         names.sort();

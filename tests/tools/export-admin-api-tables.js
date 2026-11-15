@@ -148,6 +148,8 @@ function tables() {
       sharedWith: block.sharedWith
     };
   });
+  // The frame drawn for nobody in particular: every section.
+  const frame = admin.shellJson(null, null, null);
   const out = {
     rows: rows,
     routes: routes,
@@ -161,7 +163,20 @@ function tables() {
     homeProblems: config.homeProblems,
     pageSettings: pageSettings,
     consolePages: admin.consolePages(),
-    realmSupport: realms.realmSupport()
+    realmSupport: realms.realmSupport(),
+    // THE CONSOLE'S FRAME (#444, the `apis` slice): `SECTIONS` as the
+    // sidebar draws them for a service administrator, every page's nav
+    // label, and the pages a realm administrator may not reach
+    // (`admin_scope.ts`'s `SERVICE_PAGES`) — what `GET /admin-api/console`
+    // and the dashboard filter `sections` by.
+    consoleSections: frame.sections,
+    navLabels: frame.navLabels,
+    servicePages: require(path.join(ROOT, 'admin-ui',
+                                    'admin_scope')).SERVICE_PAGES,
+    // The Account API's Overview draws a person's entry against the
+    // inetOrgPerson schema's fixed list (`common/inetorgperson.ts`, 3z).
+    inetOrgPersonClasses: require(path.join(ROOT, 'common',
+                                            'inetorgperson')).CLASSES
   };
   log.debug("Leaving tables(). " + rows.length + " row(s).");
   return out;

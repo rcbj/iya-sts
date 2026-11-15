@@ -97,6 +97,34 @@ pub trait SetupPorts: Send + Sync {
     {
         std::sync::Arc::new(sts_registers::applications::actions::NoActionPorts)
     }
+    /// The users acts (`adminActions.usersAction()`, `sts-registers`'
+    /// `People`); None until the composition root hands it over, when they
+    /// answer as operations not yet ported.
+    fn people(&self) -> Option<std::sync::Arc<sts_registers::people::People>> {
+        None
+    }
+}
+
+/// `realms.retiringState(id)`: a realm being removed, as the realm's row
+/// and the console's frame show it, or `null`.
+#[tracing::instrument(level = "debug", skip(lifecycle))]
+pub fn retiring_json(lifecycle: &RealmLifecycle, id: &str) -> Json {
+    lifecycle
+        .retiring_state(id)
+        .map(|s| {
+            serde_json::json!({
+                "since": s.since, "sinceIso": s.since_iso, "inProgress": s.in_progress,
+                "interrupted": !s.in_progress, "finishesBy": s.finishes_by,
+                "refusing": format!(
+                    "every new sign-in and every new token, assertion, ticket, credential, certificate and \
+                     SVID in this realm ({}); sign-out, revocation, introspection, UserInfo, metadata and the \
+                     SSF poll endpoint still answer",
+                    codes::STS_CORE_0121
+                ),
+                "why": s.why, "finish": s.finish
+            })
+        })
+        .unwrap_or(Json::Null)
 }
 
 /// What the setup operations read.
@@ -481,23 +509,7 @@ impl Setup<'_> {
             },
             prefix
         );
-        let retiring = self
-            .lifecycle
-            .retiring_state(&realm.id)
-            .map(|s| {
-                serde_json::json!({
-                    "since": s.since, "sinceIso": s.since_iso, "inProgress": s.in_progress,
-                    "interrupted": !s.in_progress, "finishesBy": s.finishes_by,
-                    "refusing": format!(
-                        "every new sign-in and every new token, assertion, ticket, credential, certificate and \
-                         SVID in this realm ({}); sign-out, revocation, introspection, UserInfo, metadata and the \
-                         SSF poll endpoint still answer",
-                        codes::STS_CORE_0121
-                    ),
-                    "why": s.why, "finish": s.finish
-                })
-            })
-            .unwrap_or(Json::Null);
+        let retiring = retiring_json(self.lifecycle, &realm.id);
         serde_json::json!({
             "id": realm.id,
             "name": realm.name,
@@ -751,4 +763,33 @@ fn js_parse_int(text: &str) -> Option<i64> {
 #[tracing::instrument(level = "debug")]
 pub fn setting_keys() -> Vec<&'static str> {
     rows().iter().map(|r| r.key).collect()
+}
+
+/// `POST /admin-api/users/{action}` (`adminActions.usersAction()`): the
+/// acts `sts-registers`' `People` ports, 200 for `ok` and 400 otherwise,
+/// marked with the act's code or STS-API-0030, as the route marks it.
+/// None where there is no register, or for an action Node has and the
+/// register does not port.
+#[tracing::instrument(level = "debug", skip(setup, body, caller))]
+pub fn users_action(
+    setup: &Setup<'_>,
+    action: &str,
+    body: &Json,
+    caller: Option<&crate::gate::Caller>,
+) -> Option<Answered> {
+    let people = setup.ports.people()?;
+    let mut asked = body.as_object().cloned().unwrap_or_default();
+    asked.insert("action".into(), Json::from(action));
+    let actor = caller.map(|c| c.name.clone()).unwrap_or_default();
+    let outcome = people.users(&Json::Object(asked), "api", &actor)?;
+    let ok = outcome.answer.get("ok") == Some(&Json::Bool(true));
+    Some(Answered {
+        status: if ok { 200 } else { 400 },
+        code: if ok {
+            None
+        } else {
+            Some(outcome.code.unwrap_or(codes::STS_API_0030))
+        },
+        body: outcome.answer,
+    })
 }

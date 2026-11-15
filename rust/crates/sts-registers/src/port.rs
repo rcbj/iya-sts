@@ -100,6 +100,15 @@ pub trait RosterDirectory: Send + Sync {
     /// A person's console flags (`bootstrapAdministrator`,
     /// `consoleClaimedAt`, `dn`), read with remembered user names.
     fn read_person_flags(&self, name: &str) -> Value;
+    /// `groupsOfUser(name)`: `{dn, entryFound, groups: [{dn, cn, via,
+    /// viaMemberOf}]}`, both group rules — the group listing the person
+    /// and the person's own `memberOf` naming the group. What the roster's
+    /// READ asks ([`crate::rbac::Rbac::roles_of`]); the writes never do,
+    /// so a directory that cannot answer it answers no group.
+    fn groups_of_user(&self, name: &str) -> Value {
+        let _ = name;
+        serde_json::json!({ "groups": [] })
+    }
 }
 
 /// The audit log (`common/audit.js`): rows written, never read here.

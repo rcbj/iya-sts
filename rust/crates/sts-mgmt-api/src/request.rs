@@ -223,6 +223,12 @@ fn fits(schema: Option<&Json>, raw: &Json) -> bool {
 }
 
 /// `encodeURIComponent()`.
+/// `encodeURIComponent()`. A hot path: every URL a view builds, so it
+/// carries no span.
+pub fn encode_component(text: &str) -> String {
+    encode_uri_component(text)
+}
+
 fn encode_uri_component(text: &str) -> String {
     let mut out = String::new();
     for b in text.as_bytes() {

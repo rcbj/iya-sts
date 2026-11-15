@@ -28,6 +28,21 @@ pub enum Handler {
     Applications,
     /// `POST /admin-api/applications/{action}`, the register's own acts.
     ApplicationsAction,
+    /// `GET /admin-api/me` (`console.rs`).
+    Me,
+    /// `GET /admin-api/console`, the console's frame.
+    ConsoleShell,
+    /// `GET /admin-api/console/dashboard`, the console twin of the status.
+    ConsoleDashboard,
+    /// `GET /admin-api/announcements`.
+    Announcements,
+    /// `POST /admin-api/users/{action}`: `create`, through
+    /// `sts-registers`' `People` (its `disable` and `enable` are not routed
+    /// here yet: the account lock's writes are not in the runtime).
+    UsersAction,
+    /// A family's own act (`families.rs`): the certificate authority's and
+    /// the enrollment protocols'.
+    Family,
 }
 
 include!("not_yet_ported.rs");
@@ -68,6 +83,27 @@ pub fn handler_of(operation: Operation) -> Option<Handler> {
         | Operation::AddApplicationClientSecret
         | Operation::RemoveApplicationClientSecret
         | Operation::DeleteApplication => Some(Handler::ApplicationsAction),
+        Operation::GetMe => Some(Handler::Me),
+        Operation::GetConsoleShell => Some(Handler::ConsoleShell),
+        Operation::GetConsoleDashboard => Some(Handler::ConsoleDashboard),
+        Operation::GetConsoleAnnouncements => Some(Handler::Announcements),
+        Operation::CreateUser => Some(Handler::UsersAction),
+        Operation::BuildPkiChain
+        | Operation::RevokePkiCertificate
+        | Operation::ReleasePkiCertificateHold
+        | Operation::CreateAcmeEab
+        | Operation::DeleteAcmeEab
+        | Operation::RevokeAcmeCertificate
+        | Operation::AddAcmeHostName
+        | Operation::RemoveAcmeHostName
+        | Operation::RevokeEstCertificate
+        | Operation::AddEstHostName
+        | Operation::RemoveEstHostName
+        | Operation::CreateScepChallenge
+        | Operation::DeleteScepChallenge
+        | Operation::RevokeScepCertificate
+        | Operation::AddScepHostName
+        | Operation::RemoveScepHostName => Some(Handler::Family),
         not_yet_ported!() => None,
     }
 }
@@ -80,6 +116,10 @@ pub fn handler_of_route(route: &str) -> Option<Handler> {
         "/admin-api/config/:action" => Some(Handler::ConfigAction),
         "/admin-api/realms/:action" => Some(Handler::RealmsAction),
         "/admin-api/applications/:action" => Some(Handler::ApplicationsAction),
+        "/admin-api/users/:action" => Some(Handler::UsersAction),
+        "/admin-api/acme/:action"
+        | "/admin-api/est/:action"
+        | "/admin-api/scep/:action" => Some(Handler::Family),
         _ => None,
     }
 }

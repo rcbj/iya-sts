@@ -535,6 +535,164 @@ impl Rbac {
         }))
     }
 
+    /// `available()`: whether a directory is installed, and so whether the
+    /// roles can be read at all.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn available(&self) -> bool {
+        self.directory.is_some()
+    }
+
+    /// `boundRealmId()`: the realm the directory's view is bound to.
+    fn bound_realm(&self) -> String {
+        self.directory
+            .as_ref()
+            .and_then(|d| d.realm_id())
+            .filter(|r| !r.is_empty())
+            .unwrap_or_else(|| sts_core::realm::DEFAULT_ID.to_string())
+    }
+
+    /// `rolesOf(username)`: every role a person holds, Admin Write and the
+    /// Security Administrator expanded to Admin Read, membership asked of
+    /// the directory both ways (`groupsOfUser()`), and the open-console
+    /// rule applied HERE so the banner, the API's answer and the refusal
+    /// cannot disagree about whether the door is open: while the bootstrap
+    /// administrator has not claimed the console (or, with none seeded,
+    /// while the roster is empty) a person holding nothing is let in with
+    /// the window's roles — in development only (#103), where
+    /// `admin.openWhenEmpty` is on. `claimPending` is that account before
+    /// its claim in product; `withheld` a person product refuses where
+    /// development would have let them in.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn roles_of(&self, username: &str) -> Value {
+        let name = js::trim(username).to_string();
+        let mut out = Map::new();
+        out.insert("username".into(), json!(name));
+        out.insert("roles".into(), json!([]));
+        out.insert("read".into(), json!(false));
+        out.insert("write".into(), json!(false));
+        out.insert("security".into(), json!(false));
+        out.insert("groups".into(), json!([]));
+        out.insert("open".into(), json!(false));
+        out.insert("openable".into(), json!(false));
+        out.insert("available".into(), json!(self.directory.is_some()));
+        out.insert("empty".into(), json!(false));
+        let Some(d) = self.directory.as_deref() else {
+            return Value::Object(out);
+        };
+        if name.is_empty() {
+            return Value::Object(out);
+        }
+        let mut wanted: Vec<(String, &'static RosterRole)> = Vec::new();
+        for role in ROSTER_ROLES {
+            let cn = self.cn_for(role);
+            if !cn.is_empty() {
+                wanted.push((js::lower(&cn), role));
+                wanted.push((d.normalize_dn(&self.dn_for(d, role)), role));
+            }
+        }
+        let mut held: Vec<&str> = Vec::new();
+        let mut groups: Vec<Value> = Vec::new();
+        let membership = d.groups_of_user(&name);
+        for group in membership
+            .get("groups")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            let cn = js::lower(js::trim(&js::or_empty(group.get("cn"))));
+            let dn = d.normalize_dn(&js::or_empty(group.get("dn")));
+            let role = wanted
+                .iter()
+                .find(|(k, _)| *k == cn)
+                .or_else(|| wanted.iter().find(|(k, _)| *k == dn))
+                .map(|(_, r)| *r);
+            let Some(role) = role else {
+                continue;
+            };
+            groups.push(json!({
+                "role": role.id, "cn": group.get("cn").cloned()
+                    .unwrap_or(Value::Null),
+                "dn": group.get("dn").cloned().unwrap_or(Value::Null),
+                "via": group.get("via").cloned().unwrap_or(Value::Null),
+                "viaMemberOf": group.get("viaMemberOf").cloned()
+                    .unwrap_or(Value::Null),
+            }));
+            if !held.contains(&role.id) {
+                held.push(role.id);
+            }
+            for implied in role.implies {
+                if !held.contains(implied) {
+                    held.push(implied);
+                }
+            }
+        }
+        out.insert("groups".into(), Value::Array(groups));
+        let empty = self.roster_empty(d);
+        out.insert("empty".into(), json!(empty));
+        let bootstrap_name = self.bootstrap.current();
+        let mut seeded = false;
+        let mut claimed_at = String::new();
+        if !bootstrap_name.is_empty() {
+            let flags = d.read_person_flags(&bootstrap_name);
+            if js::truthy(&flags) {
+                seeded =
+                    flags.get("bootstrapAdministrator").is_some_and(js::truthy);
+                claimed_at = js::or_empty(flags.get("consoleClaimedAt"));
+            }
+        }
+        out.insert(
+            "bootstrap".into(),
+            json!({ "username": bootstrap_name, "seeded": seeded,
+                    "claimedAt": claimed_at }),
+        );
+        let unclaimed = if seeded { claimed_at.is_empty() } else { empty };
+        let realm = self.bound_realm();
+        let opens = self.mode.opens_console_to_anyone(&realm);
+        out.insert("windowOpens".into(), json!(opens));
+        if unclaimed && held.is_empty() {
+            out.insert("openable".into(), json!(true));
+            if opens && js::truthy(&self.settings.value("admin.openWhenEmpty"))
+            {
+                out.insert("open".into(), json!(true));
+                let window: &[&str] = if realm == sts_core::realm::DEFAULT_ID {
+                    &["read", "write", "security"]
+                } else {
+                    &["read", "write"]
+                };
+                for id in window {
+                    if !held.contains(id) {
+                        held.push(id);
+                    }
+                }
+            }
+        }
+        out.insert(
+            "claimPending".into(),
+            json!(
+                !opens
+                    && seeded
+                    && claimed_at.is_empty()
+                    && !bootstrap_name.is_empty()
+                    && js::lower(&name) == js::lower(&bootstrap_name)
+                    && !held.is_empty()
+            ),
+        );
+        out.insert(
+            "withheld".into(),
+            json!(!opens && unclaimed && held.is_empty()),
+        );
+        let roles: Vec<&str> = ROSTER_ROLES
+            .iter()
+            .map(|r| r.id)
+            .filter(|id| held.contains(id))
+            .collect();
+        out.insert("roles".into(), json!(roles));
+        out.insert("read".into(), json!(held.contains(&"read")));
+        out.insert("write".into(), json!(held.contains(&"write")));
+        out.insert("security".into(), json!(held.contains(&"security")));
+        Value::Object(out)
+    }
+
     /// `rbacAction(body, context)`: `grant` and `revoke`; a code the roster
     /// put on its refusal wins over this door's `STS-ADMIN-0539`.
     #[tracing::instrument(level = "debug", skip(self, body))]

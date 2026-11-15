@@ -94,6 +94,8 @@ pub struct Stack {
     /// The certificate authority (#444 phase 6), made once the store is
     /// open: its rows are the keystore's.
     pub pki: OnceLock<Arc<sts_pki::authority::Authority>>,
+    /// `/admin-api` and `/account-api` (#444 phase 5's `apis` slice).
+    pub admin: Arc<crate::admin_api::AdminStack>,
     /// `tls.listenerKeys` (#162, #264): each node's own listener key, kept
     /// where minted state persists, keyed `<unit>@<node>`.
     pub listener_keys: SharedMap<Json>,
@@ -762,6 +764,32 @@ impl Stack {
             },
         );
         let authn_routes = authn_routes.merge(logout.mount(&signin.api));
+        // THE MANAGEMENT API (`19`, #444 phase 5's `apis` slice): phase 4's
+        // router over the runtime's registers, its one store declared
+        // before the store opens.
+        let admin = crate::admin_api::AdminStack::declare(
+            crate::admin_api::AdminParts {
+                settings: settings.clone(),
+                mode: mode.clone(),
+                registry: registry.clone(),
+                lifecycle: lifecycle.clone(),
+                handles: handles.clone(),
+                persistence: persistence.clone(),
+                live: directory.clone(),
+                oauth: oauth.clone(),
+                sessions: signin.sessions.clone(),
+                credentials: signin.signin.credentials.clone(),
+                facts: signin.signin.facts.clone(),
+                catalogs: Arc::new(sts_http::i18n::Catalogs::load(
+                    &sts_http::i18n::Catalogs::dir_in(
+                        &sts_http::files::WebRoot::from_env().0,
+                    ),
+                )),
+                version: version_info,
+            },
+        );
+        let authn_routes = authn_routes.merge(admin.router());
+        let admin_stack = admin;
         let enroll =
             sts_enroll::wiring::EnrollStack::declare(&lifecycle, &handles);
         let barrier_settings = settings.clone();
@@ -804,6 +832,7 @@ impl Stack {
             enroll,
             claims: enroll_claims,
             pki: OnceLock::new(),
+            admin: admin_stack,
             listener_keys,
             node_name,
         })
@@ -914,6 +943,12 @@ impl Stack {
                     http: self.http.clone(),
                 },
                 authority.clone(),
+            );
+            // The families' acts on `/admin-api`, once they exist.
+            self.admin.families.install(
+                authority.clone(),
+                families.clone(),
+                self.registry.clone(),
             );
             routes = routes.merge(families.router());
         }
