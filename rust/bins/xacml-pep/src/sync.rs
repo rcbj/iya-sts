@@ -1541,6 +1541,19 @@ impl Sync {
     // -----------------------------------------------------------------------
     #[tracing::instrument(level = "debug", skip_all)]
     pub async fn heartbeat(&self) -> HeartbeatResult {
+        // THE REVERSE PROXY'S SIGNAL-STREAM HEALTH (#1760): the same counts
+        // and ages `GET /`'s `proxy.signals` reports, so the service can
+        // draw them on the PEP's row. Only when a proxy built the reporter;
+        // a PEP with no proxy sends no `signals` member at all, and the
+        // service keeps the row's "not reported". An older service ignores
+        // a member it does not read, so this costs it nothing. Asked before
+        // this module's lock is taken, as `proxy_json()` does.
+        let signals = self
+            .signals_reporter
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .map(|report| report());
         let (token, count, c) = {
             let state = self.lock();
             (
@@ -1550,20 +1563,20 @@ impl Sync {
             )
         };
         let o = &self.options;
+        let mut body = json!({
+            "name": o.name, "syncToken": token, "policyCount": count,
+            "decisions": c.decisions, "allowed": c.allowed,
+            "refused": c.refused,
+            "undischargeable": c.undischargeable,
+            "bias": o.bias.as_str(), "resource": o.resource,
+            "version": o.version, "notifyUrl": o.notify_url
+        });
+        if let Some(signals) = signals {
+            body["signals"] = signals;
+        }
         let answer = self
             .client
-            .call(
-                Method::POST,
-                "/xacml/pep/heartbeat",
-                Some(Body::Json(json!({
-                    "name": o.name, "syncToken": token, "policyCount": count,
-                    "decisions": c.decisions, "allowed": c.allowed,
-                    "refused": c.refused,
-                    "undischargeable": c.undischargeable,
-                    "bias": o.bias.as_str(), "resource": o.resource,
-                    "version": o.version, "notifyUrl": o.notify_url
-                }))),
-            )
+            .call(Method::POST, "/xacml/pep/heartbeat", Some(Body::Json(body)))
             .await;
         if answer.error.is_some() || answer.status != 200 {
             // Debug, not warn: a PEP that cannot REPORT is still enforcing.

@@ -161,8 +161,36 @@ interface PepRow {
   // The reverse-proxy configuration (#1760) as stored: the JSON text, or ''
   // when none was ever set. Read and validated by `xacml_pep_proxy.ts`.
   proxy: string;
+  // The reverse proxy's CAEP/RISC signal-stream health as the PEP last
+  // reported it on a heartbeat (#1760), normalised by `signalsOf()`; null
+  // when it never reported any (an older PEP, or one with no proxy).
+  signals: PepSignals | null;
   current: boolean;
   stale: boolean;
+}
+
+// What a remote PEP reports about its reverse proxy's CAEP/RISC receivers
+// (#1760): COUNTS AND AGES ONLY, and only these members. `at` is when this
+// service received the report, so the ages are as of that instant.
+interface PepSignals {
+  at: string;
+  receivers: number;
+  healthy: number;
+  stale: number;
+  staleAfterMs: number;
+  pollIntervalMs: number;
+  oldestSuccessAgeMs: number | null;
+  mostConsecutiveFailures: number;
+  setsAccepted: number;
+  setsRefused: number;
+  sessionsEnded: number;
+  librarySessions: {
+    held: number;
+    max: number;
+    ttlSec: number;
+    evicted: number;
+    expired: number;
+  };
 }
 
 // What a register or heartbeat answers. A refusal carries its code under a
@@ -455,6 +483,84 @@ class PepRegistry {
   // (RFC 4512), which cost a boot in phase two — `xacml/CLAUDE.md` records it
   // as the first of four silent defects.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // A REVERSE PROXY'S SIGNAL-STREAM HEALTH (#1760), held to its members.
+  //
+  // **ONLY COUNTS AND AGES ARE KEPT, WHATEVER THE PEP SENT.** The PEP's own
+  // `GET /` reports the same numbers and promises no client id, URL or error
+  // text, because an error can carry the service's address; this is the
+  // other end of that promise, so a member this function does not name is
+  // dropped rather than stored, and a value that is not a non-negative
+  // integer is 0. A REMOTE_PEPS holder cannot use the row to put text on an
+  // administrator's page. The same function reads the stored value back, so
+  // an ldapmodify that wrote something else is drawn as these members too,
+  // and text that is not JSON as "not reported".
+  // -------------------------------------------------------------------------
+  /**
+   * Normalises a reported (or stored) signal-health document.
+   * @param raw - the heartbeat's `signals` member, or the stored JSON text
+   * @param at - when it was received; the stored `at` when omitted
+   * @returns the members this service keeps, or null when there is no
+   * object to read
+   */
+  static signalsOf(raw: unknown, at?: string): PepSignals | null {
+    const { log } = helpers;
+    log.debug('Entering PepRegistry.signalsOf().');
+    let said: any = raw;
+    if (typeof said === 'string') {
+      try {
+        said = said ? JSON.parse(said) : null;
+      } catch (e) {
+        // Not JSON: nothing a person could be shown as health.
+        log.debug('Caught in PepRegistry.signalsOf(): ' +
+                  ((e && (e as Error).message) || e));
+        said = null;
+      }
+    }
+    if (!said || typeof said !== 'object' || Array.isArray(said)) {
+      log.debug('Leaving PepRegistry.signalsOf(). Nothing to read.');
+      return null;
+    }
+    // No Entering/Leaving pair on `count`: it runs fifteen times for every
+    // report and every row drawn, and a pair would drown the log.
+    const count = function (value: unknown): number {
+      return typeof value === 'number' && Number.isSafeInteger(value) &&
+        value >= 0 ? value : 0;
+    };
+    const library = said.librarySessions &&
+      typeof said.librarySessions === 'object' ? said.librarySessions : {};
+    const stamp = at !== undefined ? at
+      : (typeof said.at === 'string' && !isNaN(Date.parse(said.at))
+          ? new Date(Date.parse(said.at)).toISOString() : '');
+    const signals: PepSignals = {
+      at: stamp,
+      receivers: count(said.receivers),
+      healthy: count(said.healthy),
+      stale: count(said.stale),
+      staleAfterMs: count(said.staleAfterMs),
+      pollIntervalMs: count(said.pollIntervalMs),
+      // Null, not 0, when no receiver has polled or started: "no age" and
+      // "polled just now" are different facts.
+      oldestSuccessAgeMs: said.oldestSuccessAgeMs === null ||
+        said.oldestSuccessAgeMs === undefined
+        ? null : count(said.oldestSuccessAgeMs),
+      mostConsecutiveFailures: count(said.mostConsecutiveFailures),
+      setsAccepted: count(said.setsAccepted),
+      setsRefused: count(said.setsRefused),
+      sessionsEnded: count(said.sessionsEnded),
+      librarySessions: {
+        held: count(library.held),
+        max: count(library.max),
+        ttlSec: count(library.ttlSec),
+        evicted: count(library.evicted),
+        expired: count(library.expired)
+      }
+    };
+    log.debug('Leaving PepRegistry.signalsOf(). ' + signals.receivers +
+              ' receiver(s).');
+    return signals;
+  }
+
   private number(value: unknown): number {
     const { log } = this.deps;
     log.debug("Entering PepRegistry.number().");
@@ -580,6 +686,7 @@ class PepRegistry {
         undischargeable: pep.undischargeable || 0,
         lastNotify: pep.lastNotify || '',
         proxy: pep.proxy || '',
+        signals: PepRegistry.signalsOf(pep.signals || ''),
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
@@ -717,6 +824,9 @@ class PepRegistry {
     if (existing && existing.proxy) {
       attributes.xacmlPepProxy = existing.proxy;
     }
+    // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
+    // when its process starts, so the last snapshot describes receivers that
+    // no longer exist. The next heartbeat reports the new ones.
     if (given.description) {
       attributes.description = String(given.description);
     } else if (existing && existing.description) {
@@ -783,8 +893,16 @@ class PepRegistry {
                     'PEP nobody could nudge.' }, 'STS-XACML-0021');
     }
     const said = report || {};
-    const attributes = this.attributesOf(existing, {
-      xacmlPepLastSeen: new Date().toISOString(),
+    // THE SIGNAL HEALTH (#1760): an absent member keeps the last snapshot,
+    // as every member here does (the pull's own `heartbeat(name, {})` sends
+    // none), null clears it (a PEP whose proxy is off), and an object
+    // replaces it, normalised and stamped with when it arrived.
+    const now = new Date().toISOString();
+    const signals = said.signals === undefined ? existing.signals
+      : PepRegistry.signalsOf(said.signals, now);
+    const attributes = this.attributesOf(
+      Object.assign({}, existing, { signals: signals }), {
+      xacmlPepLastSeen: now,
       xacmlPepNotifyUrl: said.notifyUrl === undefined
         ? existing.notifyUrl : String(said.notifyUrl || ''),
       xacmlPepBias: said.bias === undefined
@@ -951,6 +1069,10 @@ class PepRegistry {
     if (row.proxy) {
       attributes.xacmlPepProxy = row.proxy;
     }
+    // Only when reported, for the same reason (#1760).
+    if (row.signals) {
+      attributes.xacmlPepSignals = JSON.stringify(row.signals);
+    }
     log.debug("Leaving PepRegistry.attributesOf().");
     return Object.assign(attributes, overrides || {});
   }
@@ -1041,6 +1163,7 @@ export = {
   read: slot.forward('read'),
   register: slot.forward('register'),
   heartbeat: slot.forward('heartbeat'),
+  signalsOf: PepRegistry.signalsOf,
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
   setProxy: slot.forward('setProxy'),

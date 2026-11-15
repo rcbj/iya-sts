@@ -124,6 +124,12 @@ model XacmlPep {
   })
   xacmlPepProxy?: string;
   @attr(#{
+    kind: "single",
+    jsonBlob: true,
+    what: "The reverse proxy's CAEP/RISC signal-stream health as the remote PEP last reported it on a heartbeat (#1760): one JSON document of counts and ages only — the receivers, how many are healthy and stale, the stale threshold and poll interval, the oldest last-success age, the most failures in a row, the SETs accepted and refused, the sessions ended, and the library session stores' held, max, TTL, evicted and expired — with when it arrived. Every other member is dropped and every value that is not a non-negative integer is 0, so no client id, URL or error text is ever held. A heartbeat without it keeps it, one with null clears it, and a registration drops it, since a registration is a new process. Absent on a PEP that never reported it, which the console draws as not reported."
+  })
+  xacmlPepSignals?: string;
+  @attr(#{
     what: "Whatever the PEP said about itself when it registered."
   })
   description?: (string)[];

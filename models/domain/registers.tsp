@@ -72,6 +72,9 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepProxy"})
   `proxy`?: string;
 
+  @fromAttr(#{attr: "xacmlPepSignals"})
+  `signals`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }

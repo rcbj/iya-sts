@@ -359,5 +359,15 @@
   "proxy.identity.note": "In headers mode, each row that names a header sends that claim (at most 16); leave a row empty to leave it unused. The SAML mode needs the application’s SAML entity ID and assertion consumer service; the token mode needs an audience. The whole configuration is checked again when it is saved.",
   "proxy.identity.save": "Save the identity",
   "proxy.identity.cell.saml": "SAML Response",
-  "proxy.identity.cell.jwt": "access token"
+  "proxy.identity.cell.jwt": "access token",
+  "proxy.signals.label": "CAEP/RISC signal streams",
+  "proxy.signals.notReported": "Signal-stream health: not reported. A PEP older than this service, or one whose proxy is off, sends none.",
+  "proxy.signals.none": "No signal streams: no session route has signals on.",
+  "proxy.signals.summary": "{receivers} stream(s): {healthy} healthy, {stale} stale (stale after {staleAfterMs} ms without a successful poll; polled every {pollIntervalMs} ms).",
+  "proxy.signals.staleNote": "A stale stream’s routes ask this service’s session endpoint until it polls again.",
+  "proxy.signals.oldest": "Oldest successful poll {age} ms before the report; at most {failures} failure(s) in a row.",
+  "proxy.signals.neverPolled": "No stream has polled yet; at most {failures} failure(s) in a row.",
+  "proxy.signals.sets": "{accepted} SET(s) accepted, {refused} refused; {ended} session(s) ended by a signal.",
+  "proxy.signals.library": "Library session stores: {held} held of {max} ({ttlSec} s lifetime), {evicted} evicted, {expired} expired.",
+  "proxy.signals.reported": "Reported on the heartbeat of {at}."
 }

@@ -359,5 +359,15 @@
   "proxy.identity.note": "Sa mode ng mga header, bawat hilerang may pangalan ng header ay nagpapadala ng claim na iyon (hanggang 16); iwanang walang laman ang hilera para hindi ito gamitin. Kailangan ng SAML mode ang SAML entity ID at assertion consumer service ng application; kailangan ng token mode ang isang audience. Sinusuri muli ang buong configuration kapag sine-save.",
   "proxy.identity.save": "I-save ang pagkakakilanlan",
   "proxy.identity.cell.saml": "SAML Response",
-  "proxy.identity.cell.jwt": "access token"
+  "proxy.identity.cell.jwt": "access token",
+  "proxy.signals.label": "Mga CAEP/RISC signal stream",
+  "proxy.signals.notReported": "Kalagayan ng mga signal stream: hindi iniulat. Ang PEP na mas luma kaysa sa serbisyong ito, o ang may naka-off na proxy, ay hindi nagpapadala nito.",
+  "proxy.signals.none": "Walang signal stream: walang session route na naka-on ang signals.",
+  "proxy.signals.summary": "{receivers} stream: {healthy} malusog, {stale} luma (luma pagkalipas ng {staleAfterMs} ms nang walang matagumpay na poll; pinopoll kada {pollIntervalMs} ms).",
+  "proxy.signals.staleNote": "Ang mga route ng lumang stream ay nagtatanong sa session endpoint ng serbisyong ito hanggang makapag-poll itong muli.",
+  "proxy.signals.oldest": "Pinakalumang matagumpay na poll {age} ms bago ang ulat; hanggang {failures} sunud-sunod na pagkabigo.",
+  "proxy.signals.neverPolled": "Wala pang stream na nakapag-poll; hanggang {failures} sunud-sunod na pagkabigo.",
+  "proxy.signals.sets": "{accepted} SET ang tinanggap, {refused} ang tinanggihan; {ended} session ang tinapos ng signal.",
+  "proxy.signals.library": "Mga session store ng library: {held} hawak sa {max} ({ttlSec} s na buhay), {evicted} pinaalis, {expired} nag-expire.",
+  "proxy.signals.reported": "Iniulat sa heartbeat noong {at}."
 }

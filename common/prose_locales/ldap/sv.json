@@ -2030,5 +2030,9 @@
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "Konfigurationen för omvänd proxy som fjärr-PEP:en hämtar från GET /xacml/pep/proxy (#1760): ett JSON-dokument — enabled, uppströmsprogrammets bas-URL, den publika bas-URL som en webbläsare når proxyn på, tidsgränserna och den ordnade vägtabellen, varje väg med sin sökväg, sina metoder, sina autentiseringsmekanismer, programmet i realmens register som den står framför samt XACML-resurs och åtgärd. Skrivs av åtgärden set-pep-proxy i konsolen och hanterings-API:et, valideras helt där och igen när hämtningen byggs, så ett värde som ldapmodify skrev och som inte validerar hämtas som configured: false. Behålls vid en registrering och ett hjärtslag; tas bort med raden."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "8e6cc7739c2c3ce3",
+    "text": "Den omvända proxyns hälsa för CAEP/RISC-signalströmmarna som den fjärranslutna PEP:en senast rapporterade den i ett hjärtslag (#1760): ett JSON-dokument med enbart antal och åldrar — mottagarna, hur många som är friska och inaktuella, gränsen för inaktualitet och avfrågningsintervallet, åldern på den äldsta senaste lyckade avfrågningen, flest misslyckanden i rad, godtagna och avvisade SET, avslutade sessioner, och för bibliotekets sessionslager hållna, max, livslängd, utkastade och utgångna — med när det kom. Varje annan medlem tas bort och varje värde som inte är ett icke-negativt heltal blir 0, så inget klient-id, ingen URL och ingen feltext hålls någonsin. Ett hjärtslag utan det behåller det, ett med null rensar det, och en registrering tar bort det, eftersom en registrering är en ny process. Saknas på en PEP som aldrig rapporterat det, vilket konsolen visar som inte rapporterat."
   }
 }

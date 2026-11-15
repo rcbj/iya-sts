@@ -1145,8 +1145,12 @@ with `id_token_hint` and `client_id`).
   receivers, healthy, stale, the oldest last-success age, the most failures
   in a row, SETs accepted and refused, sessions ended, and the library
   stores' held / max / evicted / expired. Counts and ages only, no client
-  id, URL or error text. The service does not record it yet: that needs a
-  directory attribute on the PEP's row, its model and a console column.
+  id, URL or error text. **The heartbeat carries the same document as
+  `signals`** (`Sync::heartbeat()`, only when a proxy built the reporter;
+  a PEP with no proxy sends no member at all), and the service records it
+  on the PEP's row as `xacmlPepSignals` and draws it on the console
+  (`xacml/CLAUDE.md`). An older service ignores the member, so a newer PEP
+  loses nothing against it.
 * **Log integration.** `ReceiverOptions::on_error` takes the library's own
   lines (a failed poll, a refused SET), written to this log at debug; the
   state change that matters is the one `STS-XPEP-0099` line.

@@ -520,6 +520,129 @@ async function childBody() {
           String(row.proxy).slice(0, 120));
 
   // -------------------------------------------------------------------------
+  // B'. THE SIGNAL-STREAM HEALTH (#1760). An older PEP sends none and is
+  // "not reported"; a newer one's is kept as counts and ages only, whatever
+  // else it sent; a heartbeat without it keeps it, null clears it, and a
+  // registration (a new process) drops it.
+  // -------------------------------------------------------------------------
+  t.check(row && row.signals === null,
+          'B3. a PEP that never reported signal health is null (not ' +
+          'reported), not zero', row && JSON.stringify(row.signals));
+  const reported = {
+    receivers: 2, healthy: 1, stale: 1, staleAfterMs: 60000,
+    pollIntervalMs: 5000, oldestSuccessAgeMs: 73000,
+    mostConsecutiveFailures: 4, setsAccepted: 9, setsRefused: 1,
+    sessionsEnded: 3,
+    librarySessions: { held: 5, max: 20000, ttlSec: 28800, evicted: 0,
+                       expired: 2, lastError: 'connect ECONNREFUSED ' +
+                       'https://sts.internal.example:8081/ssf/poll' },
+    // What the PEP promises never to send, sent anyway.
+    clientId: 'ppx-secret-client', lastError: 'refused by ' +
+      'https://sts.internal.example:8081', url: 'https://evil.example/',
+    at: '1999-01-01T00:00:00Z'
+  };
+  const tampered = Object.assign({}, reported,
+    { healthy: -3, setsAccepted: '12', sessionsEnded: 1.5 });
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { decisions: 4, signals: tampered });
+  let health = inRealm(function () {
+    return peps.read(NAME);
+  });
+  const held = health && health.signals;
+  const keys = held ? Object.keys(held).sort().join(',') : '';
+  t.check(r.status === 200 && held && keys ===
+            'at,healthy,librarySessions,mostConsecutiveFailures,' +
+            'oldestSuccessAgeMs,pollIntervalMs,receivers,sessionsEnded,' +
+            'setsAccepted,setsRefused,stale,staleAfterMs' &&
+          Object.keys(held.librarySessions).sort().join(',') ===
+            'evicted,expired,held,max,ttlSec' &&
+          !/ppx-secret-client|https?:|ECONNREFUSED|evil/
+            .test(JSON.stringify(held)),
+          'B4. only the counts and ages are kept: no client id, URL or ' +
+          'error text, at either level', JSON.stringify(held));
+  t.check(held && held.receivers === 2 && held.stale === 1 &&
+          held.oldestSuccessAgeMs === 73000 &&
+          held.mostConsecutiveFailures === 4 &&
+          held.librarySessions.held === 5 &&
+          held.librarySessions.max === 20000 &&
+          held.healthy === 0 && held.setsAccepted === 0 &&
+          held.sessionsEnded === 0,
+          'B5. each value is a non-negative integer or 0 (a negative, a ' +
+          'string and a fraction are 0)', JSON.stringify(held));
+  t.check(held && held.at !== '1999-01-01T00:00:00.000Z' &&
+          Math.abs(Date.parse(held.at) - Date.now()) < 60000,
+          'B6. `at` is when this service received it, not what the PEP ' +
+          'said', held && held.at);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { decisions: 5 });
+  health = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(r.status === 200 && health && health.signals &&
+          health.signals.receivers === 2 && health.decisions === 5,
+          'B7. a heartbeat without signals (an older PEP, or the pull\'s ' +
+          'own) keeps the last snapshot', JSON.stringify(health &&
+          health.signals));
+  const listedSignals = inRealm(function () {
+    return require(ROOT + '/xacml/xacml_admin').pepsJson();
+  });
+  const mineSignals = (listedSignals.peps || []).filter(function (one) {
+    return one.name === NAME;
+  })[0];
+  t.check(mineSignals && mineSignals.signals &&
+          mineSignals.signals.stale === 1 &&
+          mineSignals.signals.librarySessions.expired === 2,
+          'B8. GET /admin-api/xacml/peps\' row carries the snapshot',
+          JSON.stringify(mineSignals && mineSignals.signals));
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                    { signals: null });
+  health = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(r.status === 200 && health && health.signals === null &&
+          health.proxy,
+          'B9. a heartbeat with signals: null clears it, and keeps the ' +
+          'proxy', JSON.stringify(health && health.signals));
+  await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
+                { signals: reported });
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pepCred,
+                    { version: 'restarted' });
+  health = inRealm(function () {
+    return peps.read(NAME);
+  });
+  t.check(health && health.signals === null && health.proxy,
+          'B10. a re-registration (a new process) drops the snapshot and ' +
+          'keeps the proxy', JSON.stringify(health && health.signals));
+  // The stored value is read through the same function, so text an
+  // ldapmodify wrote is "not reported" and an object is held to the members.
+  const fromStore = peps.signalsOf('{"receivers":3,"lastError":"x://y",' +
+                                   '"at":"2026-11-14T00:00:00Z"}');
+  t.check(peps.signalsOf('not json') === null &&
+          peps.signalsOf('[1,2]') === null && peps.signalsOf('') === null &&
+          fromStore && fromStore.receivers === 3 &&
+          fromStore.at === '2026-11-14T00:00:00.000Z' &&
+          fromStore.lastError === undefined,
+          'B11. a stored value that is not a JSON object is not reported, ' +
+          'and one that is is held to the members', JSON.stringify(fromStore));
+  // The console's panel, drawn from the row as `/admin-api` answers it.
+  const XacmlPage = require(ROOT + '/xacml/web_xacml');
+  const consoleT = require(ROOT + '/admin-ui/web_kit').context({}, true).t;
+  const notReported = XacmlPage.signalsPanel(consoleT, null);
+  const drawn = XacmlPage.signalsPanel(consoleT,
+    peps.signalsOf(reported, '2026-11-14T12:00:00.000Z'));
+  const quiet = XacmlPage.signalsPanel(consoleT,
+    peps.signalsOf({ receivers: 0 }, '2026-11-14T12:00:00.000Z'));
+  t.check(/not reported/.test(notReported) &&
+          /CAEP\/RISC signal streams/.test(notReported) &&
+          /2 stream\(s\): 1 healthy, 1 stale/.test(drawn) &&
+          /xacml-alert/.test(drawn) && /73000 ms/.test(drawn) &&
+          /20000/.test(drawn) && /2026-11-14T12:00:00.000Z/.test(drawn) &&
+          !/xacml-alert/.test(quiet) && /No signal streams/.test(quiet) &&
+          !/consoleXacml\./.test(notReported + drawn + quiet),
+          'B12. the console draws "not reported", a stale stream as an ' +
+          'alert with its counts, and a proxy with no streams', drawn);
+
+  // -------------------------------------------------------------------------
   // C. THE PULL.
   // -------------------------------------------------------------------------
   let since = marks.length;

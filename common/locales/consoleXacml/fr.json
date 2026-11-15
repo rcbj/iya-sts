@@ -359,5 +359,15 @@
   "proxy.identity.note": "En mode en-têtes, chaque ligne qui nomme un en-tête envoie cette revendication (16 au plus) ; laissez une ligne vide pour ne pas l’utiliser. Le mode SAML exige l’identifiant d’entité SAML et le service consommateur d’assertions de l’application ; le mode jeton exige une audience. Toute la configuration est vérifiée à nouveau à l’enregistrement.",
   "proxy.identity.save": "Enregistrer l’identité",
   "proxy.identity.cell.saml": "réponse SAML",
-  "proxy.identity.cell.jwt": "jeton d’accès"
+  "proxy.identity.cell.jwt": "jeton d’accès",
+  "proxy.signals.label": "Flux de signaux CAEP/RISC",
+  "proxy.signals.notReported": "État des flux de signaux : non communiqué. Un PEP plus ancien que ce service, ou dont le proxy est désactivé, n’en envoie pas.",
+  "proxy.signals.none": "Aucun flux de signaux : aucune route de session n’a les signaux activés.",
+  "proxy.signals.summary": "{receivers} flux : {healthy} sains, {stale} périmés (périmé après {staleAfterMs} ms sans interrogation réussie ; interrogé toutes les {pollIntervalMs} ms).",
+  "proxy.signals.staleNote": "Les routes d’un flux périmé interrogent le point de terminaison de session de ce service jusqu’à ce qu’il interroge de nouveau avec succès.",
+  "proxy.signals.oldest": "Plus ancienne interrogation réussie {age} ms avant le rapport ; au plus {failures} échec(s) consécutif(s).",
+  "proxy.signals.neverPolled": "Aucun flux n’a encore interrogé ; au plus {failures} échec(s) consécutif(s).",
+  "proxy.signals.sets": "{accepted} SET acceptés, {refused} refusés ; {ended} session(s) terminée(s) par un signal.",
+  "proxy.signals.library": "Magasins de sessions de la bibliothèque : {held} détenues sur {max} (durée de vie {ttlSec} s), {evicted} évincées, {expired} expirées.",
+  "proxy.signals.reported": "Communiqué lors du battement de cœur du {at}."
 }

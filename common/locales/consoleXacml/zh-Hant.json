@@ -359,5 +359,15 @@
   "proxy.identity.note": "在標頭模式下，每個指定了標頭的列都會傳送該宣告（最多 16 個）；留空的列不使用。SAML 模式需要應用程式的 SAML 實體 ID 與判斷提示取用者服務；權杖模式需要一個對象。儲存時會再次檢查整個組態。",
   "proxy.identity.save": "儲存身分設定",
   "proxy.identity.cell.saml": "SAML 回應",
-  "proxy.identity.cell.jwt": "存取權杖"
+  "proxy.identity.cell.jwt": "存取權杖",
+  "proxy.signals.label": "CAEP/RISC 訊號串流",
+  "proxy.signals.notReported": "訊號串流健康狀況：未回報。比本服務舊的 PEP，或代理已關閉的 PEP，不會傳送。",
+  "proxy.signals.none": "沒有訊號串流：沒有啟用訊號的工作階段路由。",
+  "proxy.signals.summary": "{receivers} 個串流：{healthy} 個健康，{stale} 個過時（{staleAfterMs} 毫秒內沒有成功輪詢即過時；每 {pollIntervalMs} 毫秒輪詢一次）。",
+  "proxy.signals.staleNote": "過時串流的路由會詢問本服務的工作階段端點，直到它再次輪詢成功。",
+  "proxy.signals.oldest": "最早的成功輪詢在回報前 {age} 毫秒；最多連續失敗 {failures} 次。",
+  "proxy.signals.neverPolled": "尚無串流完成輪詢；最多連續失敗 {failures} 次。",
+  "proxy.signals.sets": "已接受 {accepted} 個 SET，拒絕 {refused} 個；{ended} 個工作階段被訊號結束。",
+  "proxy.signals.library": "程式庫工作階段儲存區：持有 {held} / {max}（存留期 {ttlSec} 秒），逐出 {evicted} 個，過期 {expired} 個。",
+  "proxy.signals.reported": "於 {at} 的心跳中回報。"
 }

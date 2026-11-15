@@ -75,6 +75,8 @@ struct ServiceState {
     jwt_lifetime: u64,
     /// Where the application's ACS is.
     acs_url: String,
+    /// The heartbeats the PEP sent, as their bodies.
+    heartbeats: Vec<Value>,
 }
 
 /// What the application has seen of its SAML sessions.
@@ -572,7 +574,18 @@ async fn service(
             }
         }
     };
+    let heartbeat = {
+        let state = state.clone();
+        move |Json(body): Json<Value>| {
+            let state = state.clone();
+            async move {
+                state.lock().unwrap().heartbeats.push(body);
+                Json(json!({ "acknowledged": true, "current": true }))
+            }
+        }
+    };
     let router = axum::Router::new()
+        .route("/xacml/pep/heartbeat", post(heartbeat))
         .route("/identity", post(identity))
         .route("/.well-known/openid-configuration", get(discovery))
         .route("/.well-known/ssf-configuration", get(ssf_configuration))
@@ -1507,6 +1520,25 @@ async fn a_stream_that_stops_answering_falls_back_to_the_session_endpoint() {
         !signals.to_string().contains("127.0.0.1"),
         "no URL or error text on GET /"
     );
+    // THE HEARTBEAT CARRIES THE SAME NUMBERS (#1760), so the service can
+    // draw a stale stream on the PEP's row.
+    assert!(h.sync.heartbeat().await.ok, "the heartbeat was delivered");
+    let sent = h
+        .service
+        .lock()
+        .unwrap()
+        .heartbeats
+        .last()
+        .cloned()
+        .unwrap();
+    assert_eq!(sent["signals"]["receivers"], 1, "{}", sent);
+    assert_eq!(sent["signals"]["stale"], 1, "{}", sent);
+    assert_eq!(sent["signals"]["staleAfterMs"], 2000, "{}", sent);
+    assert!(sent["signals"]["mostConsecutiveFailures"].as_u64() >= Some(1));
+    assert!(
+        !sent["signals"].to_string().contains("127.0.0.1"),
+        "no URL or error text on the heartbeat either"
+    );
     h.service.lock().unwrap().poll_down = false;
     let mut healthy = 0;
     for _ in 0..200 {
@@ -1519,6 +1551,29 @@ async fn a_stream_that_stops_answering_falls_back_to_the_session_endpoint() {
         }
     }
     assert_eq!(healthy, 1, "the stream answers again");
+}
+
+/// A PEP WITH NO PROXY sends no `signals` member on its heartbeat (#1760):
+/// the service then keeps the row's "not reported", which is a different
+/// fact from a proxy holding no streams.
+#[tokio::test]
+async fn a_pep_without_a_proxy_reports_no_signals() {
+    let h = harness().await;
+    let mut options = Options::from_env("0.0.0");
+    options.pdp_url = h.service_base.clone();
+    options.pip_enabled = false;
+    let bare = Sync::new(PdpClient::new(&options).unwrap(), options);
+    assert!(bare.heartbeat().await.ok, "the heartbeat was delivered");
+    let sent = h
+        .service
+        .lock()
+        .unwrap()
+        .heartbeats
+        .last()
+        .cloned()
+        .unwrap();
+    assert!(sent.get("signals").is_none(), "{}", sent);
+    assert!(sent.get("version").is_some(), "the fixed fields still go");
 }
 
 /// SIGNALS ON: each access asks the LIBRARY whether the session is still

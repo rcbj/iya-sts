@@ -3699,6 +3699,24 @@ Scope: `admin:read`.
 | `peps[].refused` | number, or null |  |  |
 | `peps[].registeredAt` | string |  |  |
 | `peps[].resource` | string |  |  |
+| `peps[].signals` | object |  |  |
+| `peps[].signals.at` | string |  |  |
+| `peps[].signals.healthy` | integer |  |  |
+| `peps[].signals.librarySessions` | object |  |  |
+| `peps[].signals.librarySessions.evicted` | integer |  |  |
+| `peps[].signals.librarySessions.expired` | integer |  |  |
+| `peps[].signals.librarySessions.held` | integer |  |  |
+| `peps[].signals.librarySessions.max` | integer |  |  |
+| `peps[].signals.librarySessions.ttlSec` | integer |  |  |
+| `peps[].signals.mostConsecutiveFailures` | integer |  |  |
+| `peps[].signals.oldestSuccessAgeMs` | integer, or null |  |  |
+| `peps[].signals.pollIntervalMs` | integer |  |  |
+| `peps[].signals.receivers` | integer |  |  |
+| `peps[].signals.sessionsEnded` | integer |  |  |
+| `peps[].signals.setsAccepted` | integer |  |  |
+| `peps[].signals.setsRefused` | integer |  |  |
+| `peps[].signals.stale` | integer |  |  |
+| `peps[].signals.staleAfterMs` | integer |  |  |
 | `peps[].stale` | boolean |  |  |
 | `peps[].syncToken` | string |  |  |
 | `peps[].thumbprint` | string |  |  |

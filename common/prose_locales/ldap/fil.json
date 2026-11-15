@@ -2030,5 +2030,9 @@
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "Ang reverse-proxy configuration na kinukuha ng remote PEP mula sa GET /xacml/pep/proxy (#1760): isang JSON document — enabled, ang base URL ng upstream application, ang public base URL na inaabot ng browser ang proxy, ang mga timeout at ang nakaayos na route table, bawat route kasama ang path, mga method, mga mekanismo ng authentication, ang application sa registry ng realm na pinoprotektahan nito, at ang XACML resource at action. Isinusulat ng set-pep-proxy action ng console at ng management API, bina-validate nang buo roon at muli kapag binubuo ang pull, kaya ang value na isinulat ng ldapmodify na hindi pumapasa ay kinukuha bilang configured: false. Pinapanatili sa registration at heartbeat; inaalis kasama ng row."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "8e6cc7739c2c3ce3",
+    "text": "Ang kalagayan ng mga CAEP/RISC signal stream ng reverse proxy ayon sa huling iniulat ng remote PEP sa isang heartbeat (#1760): isang JSON na dokumento ng mga bilang at edad lamang — ang mga receiver, ilan ang malusog at luma, ang hangganan ng pagkaluma at ang pagitan ng poll, ang edad ng pinakalumang huling tagumpay, ang pinakamaraming sunud-sunod na pagkabigo, ang mga SET na tinanggap at tinanggihan, ang mga session na tinapos, at para sa mga session store ng library ang hawak, max, TTL, pinaalis at nag-expire — kasama kung kailan ito dumating. Itinatapon ang ibang miyembro at 0 ang anumang halagang hindi di-negatibong integer, kaya walang client id, URL o teksto ng error na iniingatan kailanman. Pinapanatili ito ng heartbeat na wala nito, binubura ng may null, at inaalis ng registration, dahil ang registration ay bagong proseso. Wala sa PEP na hindi kailanman nag-ulat nito, na ipinapakita ng console bilang hindi iniulat."
   }
 }

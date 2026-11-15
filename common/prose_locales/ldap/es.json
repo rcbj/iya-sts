@@ -2030,5 +2030,9 @@
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "La configuración de proxy inverso que el PEP remoto obtiene de GET /xacml/pep/proxy (#1760): un documento JSON — enabled, la URL base de la aplicación de destino, la URL base pública por la que un navegador llega al proxy, los tiempos de espera y la tabla ordenada de rutas, cada ruta con su ruta de acceso, sus métodos, sus mecanismos de autenticación, la aplicación del registro del reino que protege, y el recurso y la acción XACML. Lo escribe la acción set-pep-proxy de la consola y de la API de gestión, se valida entero allí y de nuevo al construir la obtención, de modo que un valor escrito con ldapmodify que no es válido se obtiene como configured: false. Se conserva en un registro y un latido; se elimina con la fila."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "8e6cc7739c2c3ce3",
+    "text": "El estado de los flujos de señales CAEP/RISC del proxy inverso tal como el PEP remoto lo informó por última vez en un latido (#1760): un documento JSON solo de recuentos y edades — los receptores, cuántos están sanos y obsoletos, el umbral de obsolescencia y el intervalo de sondeo, la edad del último éxito más antiguo, el mayor número de fallos seguidos, los SET aceptados y rechazados, las sesiones terminadas, y de los almacenes de sesiones de la biblioteca las retenidas, el máximo, la vida, las desalojadas y las caducadas — con cuándo llegó. Cualquier otro miembro se descarta y todo valor que no sea un entero no negativo es 0, así que nunca se guarda un identificador de cliente, una URL ni un texto de error. Un latido sin él lo conserva, uno con null lo borra, y un registro lo descarta, porque un registro es un proceso nuevo. Ausente en un PEP que nunca lo informó, que la consola muestra como no informado."
   }
 }

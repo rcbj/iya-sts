@@ -359,5 +359,15 @@
   "proxy.identity.note": "I huvudläget skickar varje rad som namnger ett huvud det anspråket (högst 16); lämna en rad tom för att inte använda den. SAML-läget kräver programmets SAML-entitets-ID och tjänst för mottagning av intyg; tokenläget kräver en målgrupp. Hela konfigurationen kontrolleras igen när den sparas.",
   "proxy.identity.save": "Spara identiteten",
   "proxy.identity.cell.saml": "SAML-svar",
-  "proxy.identity.cell.jwt": "åtkomsttoken"
+  "proxy.identity.cell.jwt": "åtkomsttoken",
+  "proxy.signals.label": "CAEP/RISC-signalströmmar",
+  "proxy.signals.notReported": "Signalströmmarnas hälsa: inte rapporterad. En PEP som är äldre än den här tjänsten, eller vars proxy är avstängd, skickar ingen.",
+  "proxy.signals.none": "Inga signalströmmar: ingen sessionsväg har signaler påslagna.",
+  "proxy.signals.summary": "{receivers} ström(mar): {healthy} friska, {stale} inaktuella (inaktuell efter {staleAfterMs} ms utan en lyckad avfrågning; avfrågas var {pollIntervalMs} ms).",
+  "proxy.signals.staleNote": "En inaktuell ströms vägar frågar den här tjänstens sessionsslutpunkt tills den avfrågar igen.",
+  "proxy.signals.oldest": "Äldsta lyckade avfrågning {age} ms före rapporten; högst {failures} misslyckande(n) i rad.",
+  "proxy.signals.neverPolled": "Ingen ström har avfrågat ännu; högst {failures} misslyckande(n) i rad.",
+  "proxy.signals.sets": "{accepted} SET godtagna, {refused} avvisade; {ended} session(er) avslutade av en signal.",
+  "proxy.signals.library": "Bibliotekets sessionslager: {held} hållna av {max} ({ttlSec} s livslängd), {evicted} utkastade, {expired} utgångna.",
+  "proxy.signals.reported": "Rapporterad i hjärtslaget {at}."
 }

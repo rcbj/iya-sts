@@ -4504,6 +4504,51 @@ async function theProxyHoldsASession() {
       "and the application saw nothing");
   });
 
+  // THE STREAMS' HEALTH ON THE PDP'S ROW (#1760). The PEP reports
+  // `GET /`'s `proxy.signals` on every heartbeat, and
+  // `/admin-api/xacml/peps` carries it as counts and ages only. Waited for
+  // on the beat rather than a clock, like section 7's counters: the
+  // session-revoked above was a SET the receiver accepted, so the row
+  // catches up once a heartbeat after it arrives.
+  const SIGNAL_MEMBERS = "at,healthy,librarySessions," +
+    "mostConsecutiveFailures,oldestSuccessAgeMs,pollIntervalMs,receivers," +
+    "sessionsEnded,setsAccepted,setsRefused,stale,staleAfterMs";
+  await until("the PDP's row to carry the PEP's signal-stream health",
+              async function () {
+    const there = (await pepRow()).row;
+    const held = there && there.signals;
+    return { ok: !!held && held.receivers >= 1 && held.setsAccepted >= 1,
+             note: "the row's signals say " + JSON.stringify(held) };
+  }, CONVERGE_MS);
+  const signalRow = (await pepRow()).row;
+  const signalHere = ((await pepOverview()).proxy || {}).signals;
+  check("the PDP's row carries the proxy's CAEP/RISC stream health, " +
+        "counts and ages only", function () {
+    const held = signalRow.signals;
+    assert.strictEqual(Object.keys(held).sort().join(","), SIGNAL_MEMBERS,
+      "the row's signals should hold exactly these members; it holds " +
+      JSON.stringify(held));
+    assert.strictEqual(Object.keys(held.librarySessions).sort().join(","),
+      "evicted,expired,held,max,ttlSec",
+      "and the library stores' five counts");
+    assert.ok(!/https?:|127\.0\.0\.1|sts-pep|pep-app|Error/i
+                .test(JSON.stringify(held)),
+      "no URL, client id or error text may reach the row: " +
+      JSON.stringify(held));
+    assert.ok(held.healthy >= 1 && held.stale === 0,
+      "the stream that just delivered the session-revoked is healthy: " +
+      JSON.stringify(held) + pepLog());
+    assert.ok(!isNaN(Date.parse(held.at)) &&
+              Math.abs(Date.parse(held.at) - Date.parse(signalRow.lastSeen))
+                < CONVERGE_MS,
+      "`at` is the heartbeat it came on (" + held.at + ", last seen " +
+      signalRow.lastSeen + ")");
+    assert.ok(signalHere && signalHere.receivers === held.receivers &&
+              signalHere.staleAfterMs === held.staleAfterMs &&
+              signalHere.pollIntervalMs === held.pollIntervalMs,
+      "and it agrees with the PEP's own GET /: " + JSON.stringify(signalHere));
+  });
+
   // THE FALLBACK (`signals: false`): no poll stream; the PEP asks
   // `POST /xacml/pep/session` before each access
   // (PEP_PROXY_SESSION_RECHECK_MS=0 in this stack), so the very next access

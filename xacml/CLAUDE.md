@@ -1142,6 +1142,23 @@ Three decisions on the row that each prevent a specific wrong reading:
 * **A failed nudge does not move `lastSeen`.** A nudge that failed is evidence
   the PEP is NOT reachable, and letting it stamp liveness would make an
   unreachable PEP look freshly seen.
+* **The reverse proxy's signal-stream health is a SNAPSHOT, held to counts and
+  ages (#1760).** A PEP whose proxy built CAEP/RISC receivers sends `GET /`'s
+  `proxy.signals` on each heartbeat as `signals`; the row keeps it in
+  `xacmlPepSignals` (OID 753, a JSON document; the concept's `signals`).
+  `PepRegistry.signalsOf()` keeps ONLY the twelve members and the library
+  stores' five, each a non-negative integer or 0, and stamps `at` with when
+  it arrived, whatever the PEP said: the PEP promises no client id, URL or
+  error text, and this is the end that makes a `REMOTE_PEPS` holder unable
+  to put text on an administrator's page. The same function reads the stored
+  value, so an `ldapmodify` cannot get round it. **An absent member keeps the
+  snapshot** (an older PEP, and the pull's own `heartbeat(name, {})`), `null`
+  clears it, and a registration drops it, because a registration is a new
+  process whose receivers the old numbers do not describe. A row with none
+  answers `signals: null` and the console draws "not reported", which is a
+  different fact from a proxy with no streams. Backwards compatibility both
+  ways: an older PEP sends no member, and an older service's heartbeat reads
+  the members it names and ignores this one.
 
 ## The sync token is a digest of what would be SENT
 

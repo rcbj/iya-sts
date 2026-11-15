@@ -359,5 +359,15 @@
   "proxy.identity.note": "En el modo de cabeceras, cada fila que nombra una cabecera envía esa notificación (16 como máximo); deje una fila vacía para no usarla. El modo SAML necesita el ID de entidad SAML y el servicio consumidor de aserciones de la aplicación; el modo de token necesita una audiencia. Toda la configuración se vuelve a comprobar al guardarla.",
   "proxy.identity.save": "Guardar la identidad",
   "proxy.identity.cell.saml": "respuesta SAML",
-  "proxy.identity.cell.jwt": "token de acceso"
+  "proxy.identity.cell.jwt": "token de acceso",
+  "proxy.signals.label": "Flujos de señales CAEP/RISC",
+  "proxy.signals.notReported": "Estado de los flujos de señales: no informado. Un PEP anterior a este servicio, o uno con el proxy desactivado, no lo envía.",
+  "proxy.signals.none": "Sin flujos de señales: ninguna ruta de sesión tiene las señales activadas.",
+  "proxy.signals.summary": "{receivers} flujo(s): {healthy} sanos, {stale} obsoletos (obsoleto tras {staleAfterMs} ms sin un sondeo correcto; se sondea cada {pollIntervalMs} ms).",
+  "proxy.signals.staleNote": "Las rutas de un flujo obsoleto consultan el punto de conexión de sesión de este servicio hasta que vuelva a sondear.",
+  "proxy.signals.oldest": "Sondeo correcto más antiguo {age} ms antes del informe; como máximo {failures} fallo(s) seguidos.",
+  "proxy.signals.neverPolled": "Ningún flujo ha sondeado todavía; como máximo {failures} fallo(s) seguidos.",
+  "proxy.signals.sets": "{accepted} SET aceptados, {refused} rechazados; {ended} sesión(es) terminada(s) por una señal.",
+  "proxy.signals.library": "Almacenes de sesiones de la biblioteca: {held} retenidas de {max} (vida de {ttlSec} s), {evicted} desalojadas, {expired} caducadas.",
+  "proxy.signals.reported": "Informado en el latido de {at}."
 }

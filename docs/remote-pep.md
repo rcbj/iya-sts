@@ -844,6 +844,19 @@ mutual TLS pull. It is never on a console page or in an `/admin-api` answer.
    asks `POST /xacml/pep/session` instead, at most every
    `PEP_PROXY_SESSION_RECHECK_MS`.
 
+**Watching the streams.** The PEP's `GET /` shows each stream's state under
+`proxy.signals`, and the PEP sends the same numbers on its heartbeat. The
+console draws them under **CAEP/RISC signal streams** in the PEP's reverse
+proxy section of **Remote PEPs**, and `GET /admin-api/xacml/peps` carries them
+as the row's `signals`: how many streams there are, how many are healthy and
+how many stale, the oldest successful poll, the most failures in a row, the
+events accepted and refused, the sessions ended, and the library's session
+stores. There are only counts and ages, never a client id, a URL or an error
+message. A PEP from before this change sends none, and its row shows **not
+reported**. A newer PEP works with an older service, which ignores the extra
+heartbeat member. A stale stream shows when the stream stopped answering;
+its routes then ask the service's session endpoint until it polls again.
+
 `/.iya-pep/logout` ends the proxy session and sends the browser to the realm's
 end-session endpoint. A request that is not from a browser and has no proxy
 session gets `401`.

@@ -359,5 +359,15 @@
   "proxy.identity.note": "在请求头模式下，每个指定了请求头的行都会发送该声明（最多 16 个）；留空的行不使用。SAML 模式需要应用程序的 SAML 实体 ID 和断言使用者服务；令牌模式需要一个受众。保存时会再次检查整个配置。",
   "proxy.identity.save": "保存身份设置",
   "proxy.identity.cell.saml": "SAML 响应",
-  "proxy.identity.cell.jwt": "访问令牌"
+  "proxy.identity.cell.jwt": "访问令牌",
+  "proxy.signals.label": "CAEP/RISC 信号流",
+  "proxy.signals.notReported": "信号流健康状况：未报告。比本服务旧的 PEP，或代理已关闭的 PEP，不会发送。",
+  "proxy.signals.none": "没有信号流：没有启用信号的会话路由。",
+  "proxy.signals.summary": "{receivers} 个流：{healthy} 个健康，{stale} 个过时（{staleAfterMs} 毫秒内没有成功轮询即过时；每 {pollIntervalMs} 毫秒轮询一次）。",
+  "proxy.signals.staleNote": "过时流的路由会询问本服务的会话端点，直到它再次轮询成功。",
+  "proxy.signals.oldest": "最早的成功轮询在报告前 {age} 毫秒；最多连续失败 {failures} 次。",
+  "proxy.signals.neverPolled": "尚无流完成轮询；最多连续失败 {failures} 次。",
+  "proxy.signals.sets": "已接受 {accepted} 个 SET，拒绝 {refused} 个；{ended} 个会话被信号结束。",
+  "proxy.signals.library": "库会话存储：持有 {held} / {max}（生存期 {ttlSec} 秒），驱逐 {evicted} 个，过期 {expired} 个。",
+  "proxy.signals.reported": "于 {at} 的心跳中报告。"
 }

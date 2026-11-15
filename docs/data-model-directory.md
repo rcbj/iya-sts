@@ -55,7 +55,7 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
-| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 20 |
+| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 21 |
 | [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 10 |
 
 ## Application
@@ -1306,6 +1306,7 @@ Recorded in `../xacml/xacml_pep_registry`.
 | `xacmlPepRefused` | one | this service | `1.3.6.1.4.1.67607.1.1.733` | How many it REFUSED, including Permits refused for an obligation it could not discharge (section 7.2). |
 | `xacmlPepRegisteredAt` | one | this service | `1.3.6.1.4.1.67607.1.1.734` | When this PEP first registered. Kept across a re-registration, because a component that restarts hourly is a fact worth seeing and an entry whose age reset on every restart could never show it. |
 | `xacmlPepResource` | one | this service | `1.3.6.1.4.1.67607.1.1.735` | What the remote PEP says it is guarding. Free text from the PEP, shown as its own claim about itself. |
+| `xacmlPepSignals` | one | this service | `1.3.6.1.4.1.67607.1.1.753` | The reverse proxy's CAEP/RISC signal-stream health as the remote PEP last reported it on a heartbeat (#1760): one JSON document of counts and ages only — the receivers, how many are healthy and stale, the stale threshold and poll interval, the oldest last-success age, the most failures in a row, the SETs accepted and refused, the sessions ended, and the library session stores' held, max, TTL, evicted and expired — with when it arrived. Every other member is dropped and every value that is not a non-negative integer is 0, so no client id, URL or error text is ever held. A heartbeat without it keeps it, one with null clears it, and a registration drops it, since a registration is a new process. Absent on a PEP that never reported it, which the console draws as not reported. |
 | `xacmlPepSyncToken` | one | this service | `1.3.6.1.4.1.67607.1.1.736` | The repository digest this PEP last reported holding. Compared against syncToken() to decide whether it is CURRENT, so that being up to date is something this service works out rather than something the PEP asserts. |
 | `xacmlPepThumbprint` | one | this service | `1.3.6.1.4.1.67607.1.1.737` | RFC 8705 x5t#S256 of that certificate — the SHA-256 of its DER, base64url. The same computation the token endpoint binds a certificate-bound access token with, through the same function, so the two spellings cannot drift. |
 | `xacmlPepUndischargeable` | one | this service | `1.3.6.1.4.1.67607.1.1.738` | How many of those refusals were an undischargeable obligation on a Permit. Counted separately because it is the one enforcement outcome that looks like a bug from the client side and is the specification working. |

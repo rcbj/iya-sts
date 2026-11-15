@@ -2992,7 +2992,11 @@ class XacmlSurface {
         resource: body.resource,
         version: body.version,
         notifyUrl: body.notifyUrl === undefined ? body.notify_url
-                                                : body.notifyUrl
+                                                : body.notifyUrl,
+        // The reverse proxy's CAEP/RISC stream health (#1760). Absent from
+        // an older PEP, which keeps the row's "not reported"; the registry
+        // keeps only its counts and ages, whatever arrives.
+        signals: body.signals
       });
       if (!result.ok) {
         log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');

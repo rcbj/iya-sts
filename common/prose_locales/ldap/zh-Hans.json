@@ -2030,5 +2030,9 @@
   "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
     "en": "1d8edee3c551082e",
     "text": "远程 PEP 从 GET /xacml/pep/proxy 拉取的反向代理配置（#1760）：一个 JSON 文档——enabled、上游应用程序的基本 URL、浏览器访问代理的公共基本 URL、超时以及有序的路由表，每条路由包含其路径、方法、身份验证机制、它所保护的领域注册表中的应用程序，以及 XACML 资源和操作。由控制台和管理 API 的 set-pep-proxy 操作写入，在那里整体验证，并在构建拉取时再次验证，因此 ldapmodify 写入的未通过验证的值会以 configured: false 被拉取。在注册和心跳中保留；随该行一起删除。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "8e6cc7739c2c3ce3",
+    "text": "远程 PEP 在心跳中最后报告的反向代理 CAEP/RISC 信号流健康状况（#1760）：一个只含计数和时长的 JSON 文档——接收器数量、健康和过时的数量、过时阈值和轮询间隔、最早的最近成功时长、最多连续失败次数、接受和拒绝的 SET、结束的会话，以及库会话存储的持有数、最大值、生存期、驱逐数和过期数——以及它到达的时间。其他成员一律丢弃，任何不是非负整数的值都记为 0，因此从不保存客户端 ID、URL 或错误文本。不带它的心跳保留它，带 null 的心跳清除它，注册会丢弃它，因为注册意味着新进程。从未报告过的 PEP 上没有该属性，控制台显示为未报告。"
   }
 }

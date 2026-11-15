@@ -1096,6 +1096,54 @@ class XacmlPage {
       t.html('consoleXacml.proxy.identity.save') + '</button></form>';
   }
 
+  // THE SIGNAL STREAMS' HEALTH (#1760), as the PEP last reported it on a
+  // heartbeat: counts and ages only, which is all the row holds. A PEP that
+  // never sent it (one older than this service, or one with no proxy) is
+  // "not reported" rather than zero, because zero streams and an unknown
+  // number of streams want different fixes.
+  static signalsPanel(t: Json, signals: Json): string {
+    const heading = '<h4>' + t.html('consoleXacml.proxy.signals.label') +
+      '</h4>';
+    if (!signals) {
+      return heading + '<p class="sub">' +
+        t.html('consoleXacml.proxy.signals.notReported') + '</p>';
+    }
+    const reported = '<div class="sub">' +
+      t.html('consoleXacml.proxy.signals.reported',
+             { at: signals.at || t.text('consoleXacml.pep.never') }) +
+      '</div>';
+    if (!signals.receivers) {
+      return heading + '<p>' + t.html('consoleXacml.proxy.signals.none') +
+        '</p>' + reported;
+    }
+    const library = signals.librarySessions || {};
+    return heading +
+      '<p' + (signals.stale ? ' class="xacml-alert"' : '') + '>' +
+      t.html('consoleXacml.proxy.signals.summary', {
+        receivers: signals.receivers, healthy: signals.healthy,
+        stale: signals.stale, staleAfterMs: signals.staleAfterMs,
+        pollIntervalMs: signals.pollIntervalMs }) +
+      (signals.stale
+        ? ' ' + t.html('consoleXacml.proxy.signals.staleNote') : '') +
+      '</p><div class="sub">' +
+      (signals.oldestSuccessAgeMs === null ||
+       signals.oldestSuccessAgeMs === undefined
+        ? t.html('consoleXacml.proxy.signals.neverPolled',
+                 { failures: signals.mostConsecutiveFailures })
+        : t.html('consoleXacml.proxy.signals.oldest', {
+            age: signals.oldestSuccessAgeMs,
+            failures: signals.mostConsecutiveFailures })) +
+      '</div><div class="sub">' +
+      t.html('consoleXacml.proxy.signals.sets', {
+        accepted: signals.setsAccepted, refused: signals.setsRefused,
+        ended: signals.sessionsEnded }) +
+      '</div><div class="sub">' +
+      t.html('consoleXacml.proxy.signals.library', {
+        held: library.held, max: library.max, ttlSec: library.ttlSec,
+        evicted: library.evicted, expired: library.expired }) +
+      '</div>' + reported;
+  }
+
   static proxySections(ctx: Json, json: Json): string {
     const t = ctx.t;
     const self = this;
@@ -1143,7 +1191,7 @@ class XacmlPage {
         : '';
       return '<h3>' + t.html('consoleXacml.proxy.heading',
                              { name: row.name }) + '</h3>' + state + problem +
-        identities + editor;
+        self.signalsPanel(t, row.signals) + identities + editor;
     }).join('');
     if (!sections) {
       return '';
