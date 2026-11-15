@@ -23826,8 +23826,9 @@ const CODES = [
     spec: 'HTTP 400, invalid_request' },
   { code: 'STS-XPEP-0065',
     summary: 'The reverse proxy answered a path no route matches, or any ' +
-      'path while it holds no configuration that is switched on: deny by ' +
-      'default, the application is not reached (#1760).',
+      'path while the configuration it received holds none that is ' +
+      'switched on: deny by default, the application is not reached ' +
+      '(#1760). Before any configuration is received it is STS-XPEP-0118.',
     spec: 'HTTP 404, not_found' },
   { code: 'STS-XPEP-0066',
     summary: 'The reverse proxy refused a method the matched route does not ' +
@@ -24121,6 +24122,16 @@ const CODES = [
       'to load — so its request was refused whatever the bias; nothing ' +
       'reached the application (#1760).',
     spec: 'HTTP 403' },
+  { code: 'STS-XPEP-0118',
+    summary: 'The remote PEP\'s reverse proxy has received no configuration ' +
+      'since it started — its first pull has not succeeded yet — so every ' +
+      'path, its own /.iya-pep/* included, is answered "try again later" ' +
+      'rather than "not found". Logged when first met, then as a count at ' +
+      'most once a minute, and once more when the first configuration ' +
+      'arrives; a configuration received empty or switched off is ' +
+      'STS-XPEP-0065 (#1760).',
+    spec: 'HTTP 503, temporarily_unavailable, with Retry-After (the poll ' +
+      'interval in seconds, at least 1)' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

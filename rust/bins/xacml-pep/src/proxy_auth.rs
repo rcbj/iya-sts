@@ -92,7 +92,7 @@ impl Identity {
 
 /// A refusal, ready to answer: the status, the code it is logged under,
 /// the sentence for the log and the body, whether a token was refused
-/// (`error="invalid_token"`), and a `Retry-After` for a 429.
+/// (`error="invalid_token"`), and a `Retry-After` for a 429 or a 503.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Refusal {
     pub status: u16,

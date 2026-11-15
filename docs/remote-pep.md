@@ -1130,12 +1130,36 @@ certificate names.
 * **A request is never forwarded without the identity its route sends.** When
   the service will not issue it, the request is refused: `403` when the
   policy refused, `502` otherwise.
-* The status codes: `404` for no route, `405` with `Allow` for a method the
+* The status codes: `503` with `Retry-After` before the first configuration
+  (below), `404` for no route, `405` with `Allow` for a method the
   route does not take, `401` with a challenge for each mechanism the route
   accepts, `403` for a refusal and for a route whose application no longer
   qualifies, `413` over `maxBodyBytes`, `502` when the upstream cannot be
   reached, and `504` after `upstreamTimeoutMs`.
 * WebSockets are not proxied, because `Upgrade` is a hop-by-hop header.
+
+### Just after the PEP starts
+
+Until the PEP has received its first proxy configuration since it started,
+which takes until its registration and first pull succeed, every proxy path
+answers `503` with a `Retry-After` header. That includes the proxy's own
+`/.iya-pep/` pages. `Retry-After` is the poll interval (`PEP_POLL_INTERVAL_MS`,
+or the managed `pollIntervalMs`) in whole seconds, at least 1. A browser
+sees the **Try again later** page, and any other client gets
+`{"error": "temporarily_unavailable", "error_description": …}`. Once a
+configuration has been received, a configuration that is empty or switched
+off answers `404`, as does a path no route matches:
+
+| The PEP holds | A browser sees | Status |
+|---|---|---|
+| no configuration yet since it started | Try again later | `503`, with `Retry-After` |
+| a configuration that is empty or switched off | Page not found | `404` |
+| routes, none matching the path | Page not found | `404` |
+
+The PEP's log says when it starts waiting, gives a count at most once a
+minute while requests go on arriving, and says how many requests were
+answered `503` when the first configuration arrives. It does not log a line
+for each request, except at the `debug` level.
 
 ### What a person sees when the proxy refuses them
 
@@ -1147,7 +1171,7 @@ gets the JSON answer it always got: `{"error": …, "error_description": …}`.
 The page has a title and a sentence saying what went wrong: no access under
 the policy, the page closed to every request (a route with no methods), the
 policy not available, a sign-in that failed, the application not reachable,
-and so on. A collapsed note explains why the page appeared, and a link goes
+the proxy not configured yet (**Try again later**), and so on. A collapsed note explains why the page appeared, and a link goes
 to the start page. When the policy refused the person signed in on a
 `session` route, the page also offers another account. On a route with
 **Several accounts** that is *Use a different account* and *Sign in with
@@ -1617,7 +1641,7 @@ environment's, then the default.
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at — *managed*: `authzenPdpIdentifier` |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` — *managed*: `authzenForwardTimeoutMs` |
-| `PEP_PROXY` | `true` | the reverse proxy. Until the service sends a configuration, it answers `404` to everything |
+| `PEP_PROXY` | `true` | the reverse proxy. Until it has received its first configuration since it started, it answers `503` with `Retry-After` to everything; while the configuration it received is empty or switched off, `404` |
 | `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP port, bound only with `PEP_PROXY_HTTP=true` |
 | `PEP_PROXY_HTTP` | `false` | `true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT` |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | the proxy's HTTPS listener, with the pair 9443 serves. It asks a client for a certificate and never requires one |

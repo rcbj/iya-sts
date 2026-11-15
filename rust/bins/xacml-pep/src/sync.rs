@@ -228,6 +228,25 @@ pub struct ProxyHolding {
     pub last_pull_why: String,
 }
 
+/// THE PROXY BEFORE ITS FIRST CONFIGURATION (rcbj, 2026-11-15): every
+/// request is answered 503 with `Retry-After`, and the log carries the state
+/// change and a summary at most once per [`WAITING_SUMMARY_EVERY`], never a
+/// line per request (`STS-XPEP-0118`).
+#[derive(Debug, Clone, Default)]
+struct ProxyWaiting {
+    /// Answered 503 since the start.
+    refused: u64,
+    /// Of those, since the last line about them.
+    unreported: u64,
+    /// When the last line about them was written.
+    last_line: Option<std::time::Instant>,
+}
+
+/// How often, at most, the proxy says it is still waiting for its first
+/// configuration while requests go on arriving.
+pub const WAITING_SUMMARY_EVERY: std::time::Duration =
+    std::time::Duration::from_secs(60);
+
 /// The settings pull's state (#1760).
 #[derive(Debug, Clone, Default)]
 struct SettingsHolding {
@@ -435,6 +454,9 @@ struct State {
     proxy: ProxyHolding,
     last_proxy_kept_why: String,
     proxy_counters: ProxyCounters,
+    /// The requests the proxy answered 503 because no configuration has
+    /// been received since this process started (`STS-XPEP-0118`).
+    proxy_waiting: ProxyWaiting,
     /// (relying parties, CAEP/RISC receivers) the proxy holds, as of its
     /// last reconcile.
     relying_parties: (usize, usize),
@@ -509,6 +531,7 @@ impl Sync {
                 },
                 last_proxy_kept_why: String::new(),
                 proxy_counters: ProxyCounters::default(),
+                proxy_waiting: ProxyWaiting::default(),
                 relying_parties: (0, 0),
                 settings: SettingsHolding {
                     last_pull_why: "No pull has been attempted yet.".into(),
@@ -1654,6 +1677,19 @@ impl Sync {
         let mut state = self.lock();
         state.last_proxy_kept_why.clear();
         tracing::info!("xacml-pep: {} Token {}.", why, pulled.sync_token);
+        // THE STATE CHANGE: the first configuration since the start ends
+        // the 503s of STS-XPEP-0118, said once with their count.
+        if !state.proxy.loaded && state.proxy_waiting.refused > 0 {
+            let line = format!(
+                "xacml-pep: the reverse proxy received its first \
+                 configuration since it started; {} request(s) were \
+                 answered 503 (STS-XPEP-0118) while it waited.",
+                state.proxy_waiting.refused
+            );
+            tracing::info!("{}", line);
+            #[cfg(test)]
+            crate::proxy::logged::note(&line);
+        }
         state.proxy = ProxyHolding {
             loaded: true,
             sync_token: pulled.sync_token.clone(),
@@ -1678,8 +1714,8 @@ impl Sync {
             )
         } else {
             format!(
-                "{} NO CONFIGURATION IS HELD, so the proxy answers 404 to \
-                 everything.",
+                "{} NO CONFIGURATION HAS BEEN RECEIVED since the start, so \
+                 the proxy answers 503 with Retry-After to everything.",
                 why
             )
         };
@@ -1696,6 +1732,64 @@ impl Sync {
     /// The configuration in force now.
     pub fn proxy(&self) -> Arc<Pulled> {
         self.lock().proxy.pulled.clone()
+    }
+
+    /// The configuration in force now, and whether ANY configuration
+    /// answer has been loaded since this process started — read under one
+    /// lock, so a pull landing between the two cannot be half seen. Not
+    /// received yet is the 503 of `STS-XPEP-0118`; received and empty or
+    /// switched off is the 404 of `STS-XPEP-0065`.
+    pub fn proxy_received(&self) -> (Arc<Pulled>, bool) {
+        let state = self.lock();
+        (state.proxy.pulled.clone(), state.proxy.loaded)
+    }
+
+    /// One request answered 503 before the first configuration. Logged
+    /// when the state is first met, then as a count at most once per
+    /// [`WAITING_SUMMARY_EVERY`] — a browser retrying, a health probe of
+    /// the application or a crawler would otherwise write a line each.
+    /// No `instrument`: it runs on every such request.
+    pub fn note_waiting(&self) {
+        let mut state = self.lock();
+        let why = state.proxy.last_pull_why.clone();
+        let w = &mut state.proxy_waiting;
+        w.refused += 1;
+        w.unreported += 1;
+        let now = std::time::Instant::now();
+        let first = w.last_line.is_none();
+        if !first
+            && w.last_line
+                .is_some_and(|at| now.duration_since(at) < WAITING_SUMMARY_EVERY)
+        {
+            return;
+        }
+        let line = if first {
+            format!(
+                "{}xacml-pep: the reverse proxy has received no \
+                 configuration since it started, so it answers 503 with \
+                 Retry-After to every request until the first pull \
+                 succeeds. A count follows at most once a minute. The \
+                 last pull: {}",
+                tag("STS-XPEP-0118"),
+                why
+            )
+        } else {
+            format!(
+                "{}xacml-pep: the reverse proxy is still waiting for its \
+                 first configuration: {} request(s) answered 503 in the \
+                 last {}s, {} since the start. The last pull: {}",
+                tag("STS-XPEP-0118"),
+                w.unreported,
+                w.last_line.map_or(0, |at| now.duration_since(at).as_secs()),
+                w.refused,
+                why
+            )
+        };
+        w.unreported = 0;
+        w.last_line = Some(now);
+        tracing::warn!("{}", line);
+        #[cfg(test)]
+        crate::proxy::logged::note(&line);
     }
 
     /// One answer of the reverse proxy, counted.

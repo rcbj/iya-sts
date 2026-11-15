@@ -410,6 +410,13 @@ pub fn wording(
              or did not answer usably. Try again later.",
             "",
         ),
+        (503, "STS-XPEP-0118") => (
+            "Try again later",
+            "The enforcement point in front of this application has just \
+             started and is still receiving its settings from the identity \
+             service. Try again in a few seconds.",
+            "",
+        ),
         (503, _) => (
             "Try again later",
             "This application cannot take the request right now. Try again \

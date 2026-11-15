@@ -240,6 +240,9 @@ fn shown_description(refusal: &Refusal) -> String {
         (502, _) => "The application or the identity service could not be \
                      reached, or did not answer usably."
             .to_string(),
+        (503, "STS-XPEP-0118") => "This proxy has not yet received its \
+                                   configuration since it started."
+            .to_string(),
         (503, _) => "This proxy cannot take the request now.".to_string(),
         (504, _) => "The application did not answer in time.".to_string(),
         (_, "STS-XPEP-0093") => "This route cannot be used now.".to_string(),
@@ -569,7 +572,13 @@ impl Proxy {
                 refusal.why
             )
         };
-        if warn {
+        if refusal.code == "STS-XPEP-0118" {
+            // One line per request would flood the log while the PEP waits
+            // for its first pull: `Sync::note_waiting()` writes the state
+            // change and a count a minute at warn, and this line, with the
+            // page's incident ID, is at debug.
+            tracing::debug!("{}", line);
+        } else if warn {
             tracing::warn!("{}", line);
         } else {
             tracing::info!("{}", line);
@@ -703,7 +712,7 @@ impl Proxy {
         let method = parts.method.as_str().to_string();
         let raw_path = parts.uri.path().to_string();
         let query = parts.uri.query().map(str::to_string);
-        let pulled = self.pep.sync.proxy();
+        let (pulled, received) = self.pep.sync.proxy_received();
         let mut asked = Asked {
             method: &method,
             path: &raw_path,
@@ -720,6 +729,25 @@ impl Proxy {
             }
         };
         asked.path = &path;
+        // NOT CONFIGURED YET IS NOT "NOTHING HERE" (rcbj, 2026-11-15): until
+        // the first configuration answer since the start is loaded, every
+        // path — `/.iya-pep/*` included, which needs the configuration's
+        // realm and routes — is 503 with Retry-After, the poll interval,
+        // so a browser and a client try again rather than conclude the page
+        // does not exist. A configuration RECEIVED and empty or switched
+        // off is the deny-by-default 404 below.
+        if !received {
+            let mut refusal = Refusal::new(
+                503,
+                "STS-XPEP-0118",
+                "no proxy configuration has been received since this PEP \
+                 started",
+            );
+            let poll = self.pep.options.now().poll_interval_ms;
+            refusal.retry_after = Some(poll.div_ceil(1000).max(1).to_string());
+            self.pep.sync.note_waiting();
+            return (self.refuse(&refusal, &asked, &pulled), false);
+        }
         let Some(config) = pulled.active() else {
             let refusal = Refusal::new(
                 404,

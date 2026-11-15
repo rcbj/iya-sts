@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5626** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5627** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 190
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 117
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 118
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5192,7 +5192,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0062` | The reverse proxy configuration the remote PEP pulled did not validate under the configuration document's own rules (an upstream that is not an absolute http(s) URL without userinfo, query or fragment, a route path with a dot segment, //, % or a backslash, an unknown method or mechanism, a duplicate route id, more than 64 routes, a missing audience or publicBaseUrl, a signing certificate that is not PEM, and the like). It is refused WHOLE and the one held is kept: a route table loaded in part would forward what nobody configured (#1760). | none; the proxy keeps what it holds |
 | `STS-XPEP-0063` | The remote PEP's reverse proxy could not listen on PEP_PROXY_PORT (commonly the port is taken). The PEP's own endpoints and enforcement are unaffected (#1760). | — |
 | `STS-XPEP-0064` | The reverse proxy refused a request whose path does not normalise: a . or .. segment, //, a backslash, a NUL or control character, an invalid percent-escape, or an encoded ., /, \\ or NUL (%2e, %2f, %5c, %00). The application is not reached (#1760). | HTTP 400, invalid_request |
-| `STS-XPEP-0065` | The reverse proxy answered a path no route matches, or any path while it holds no configuration that is switched on: deny by default, the application is not reached (#1760). | HTTP 404, not_found |
+| `STS-XPEP-0065` | The reverse proxy answered a path no route matches, or any path while the configuration it received holds none that is switched on: deny by default, the application is not reached (#1760). Before any configuration is received it is STS-XPEP-0118. | HTTP 404, not_found |
 | `STS-XPEP-0066` | The reverse proxy refused a method the matched route does not take (#1760). | HTTP 405, method_not_allowed, with Allow |
 | `STS-XPEP-0067` | The reverse proxy refused a request body larger than the configuration's maxBodyBytes — declared by Content-Length, or counted as it streamed to the application (#1760). | HTTP 413, payload_too_large |
 | `STS-XPEP-0068` | The application behind the reverse proxy did not answer within the configuration's upstreamTimeoutMs (#1760). | HTTP 504, gateway_timeout |
@@ -5245,6 +5245,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (bound when PEP_HTTP is off and the credential has a CRL directory). Logged once at start. | none; the listener keeps its default |
 | `STS-XPEP-0116` | A request on a remote PEP proxy route whose methods list is empty (deny-all) was refused after the route's policy was asked, whatever it decided; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
+| `STS-XPEP-0118` | The remote PEP's reverse proxy has received no configuration since it started — its first pull has not succeeded yet — so every path, its own /.iya-pep/* included, is answered "try again later" rather than "not found". Logged when first met, then as a count at most once a minute, and once more when the first configuration arrives; a configuration received empty or switched off is STS-XPEP-0065 (#1760). | HTTP 503, temporarily_unavailable, with Retry-After (the poll interval in seconds, at least 1) |
 
 ## STS-AUTHZEN
 

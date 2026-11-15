@@ -673,7 +673,7 @@ keys, variables and bounds); the table below marks them.
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). *Managed* (`authzenPdpIdentifier`). |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. *Managed* (`authzenForwardTimeoutMs`). |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). *Managed* (`resource`, `description`, `timeoutMs`, `maxBodyBytes`, `logLevel`; `PEP_BACKOFF_MAX_MS` too, `backoffMaxMs`). |
-| `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 404 to everything until the service sends this PEP a configuration. |
+| `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 503 with `Retry-After` to everything until its first pull since the start succeeds (`STS-XPEP-0118`), and 404 to everything while the configuration it received is empty or switched off. |
 | `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener, bound only with `PEP_PROXY_HTTP=true` (#1760). A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
 | `PEP_PROXY_HTTP` | `false` | **`true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT`.** Off by default since #1760, as `PEP_HTTP`. |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | Its HTTPS listener: the SAME `PEP_HTTPS_CERT`/`KEY` pair 9443 serves, re-read on the same interval, and a client is ASKED for a certificate (never required to present one) so a certificate-bound token's `cnf.x5t#S256` can be checked. No pair, no listener. |
@@ -1117,7 +1117,8 @@ poll, with the same client certificate, its own sync token (`?since=`) and
 `If-None-Match` with the `ETag` it was last given. 304 is unchanged; a
 failure keeps the configuration held (`STS-XPEP-0060`, `-0061`, a PDP older
 than #1760 answering 404); `configured: false` holds nothing, and the proxy
-then answers 404 to everything. **Every member is read again by D2's rules**
+then answers 404 to everything. **Before the first answer is loaded the
+proxy answers 503, not 404** (below). **Every member is read again by D2's rules**
 (`proxy_config.rs`): the upstream an absolute http(s) URL with no userinfo,
 query or fragment; at most 64 routes with unique ids; a route path with no
 dot segment, `//`, `%`, backslash or control character; the mechanisms and
@@ -1187,6 +1188,8 @@ whole. The pair is upgraded together.
    segment boundary (`/api` is `/api` and `/api/…`, never `/apix`; a
    configured trailing `/` is dropped). No route, or no configuration
    switched on: 404 (`STS-XPEP-0065`), and the application is never reached.
+   **Before any configuration answer has been loaded since the start** this
+   step is not reached: every path, `/.iya-pep/*` included, is 503 (below).
 4. **The method**: a NON-EMPTY `methods` without it is 405 with `Allow`
    (`STS-XPEP-0066`); the next route is NOT tried. That is route matching,
    not authorization. **An EMPTY list is not a 405** — there is nothing to
@@ -1227,6 +1230,39 @@ whole. The pair is upgraded together.
    request is refused.
 9. **The forward**, below.
 
+### Not configured YET is 503, not 404 (rcbj, 2026-11-15)
+
+**On 8081 a recreated PEP container answered every proxy path 404
+`STS-XPEP-0065` for 56 seconds** — from its start at 19:03:59Z until
+registration succeeded on its third attempt and the first pull loaded the
+settings, the policies and 4 routes at 19:04:55 — and a browser was shown
+"Page not found" for pages that existed. **rcbj's decision: until the
+proxy has received its first configuration since the start it says "try
+again later".** `Sync::proxy_received()` hands `answer()` the configuration
+and `ProxyHolding::loaded` under one lock, and the rule is ahead of
+everything, the callback, the sign-out and the account chooser included
+(each needs the configuration's realm and routes):
+
+| The proxy holds | Answered | Code |
+|---|---|---|
+| no configuration answer loaded since the start (a pull not yet made, refused, or failed) | **503** `temporarily_unavailable`, `Retry-After` the poll interval in whole seconds rounded up, at least 1; the page's "Try again later" | `STS-XPEP-0118` |
+| an answer, `configured: false` or `enabled: false` | **404** `not_found`, deny by default | `STS-XPEP-0065` |
+| an answer with routes, and the path matches none | **404** `not_found` | `STS-XPEP-0065` |
+
+`loaded` never goes back to false: a later pull that fails keeps what was
+received and its 404 or its routes. **The JSON is the other 503s' shape**
+(`0085`, `0090`): `{error: "temporarily_unavailable", error_description}`,
+the description a fixed sentence of its own (`shown_description()`), never
+the code. **The log is the state change, not a line per request**
+(`Sync::note_waiting()`): one warn line tagged `0118` when the first such
+request arrives, a count at most once per `WAITING_SUMMARY_EVERY` (60 s)
+while they go on, and one info line with the total when the first
+configuration loads (`load_proxy()`). The per-request line, with the page's
+incident ID, is at debug — the one refusal whose line is. The health check
+and the decision API are untouched: `/protected` before its first policy
+pull is decided by the bias (`0005`), and the AuthZEN endpoints already
+answer 503 until their catalogue is pulled — neither had this 404.
+
 ### What a refused PERSON sees: the service's error page (2026-11-15)
 
 **rcbj: the proxy's refusals are standardised on iya-sts's error page and
@@ -1239,7 +1275,8 @@ else gets the JSON it always got, byte for byte** (the
 `error_description` of `STS-XPEP-0093` and `0117` now chosen in
 `shown_description()` rather than written over the body afterwards). The
 status and the headers are the refusal's either way: a 401's
-`WWW-Authenticate`, a 405's `Allow`, a 429's `Retry-After`. A browser on a
+`WWW-Authenticate`, a 405's `Allow`, a 429's and `0118`'s 503's
+`Retry-After`. A browser on a
 `session` route with no session is still REDIRECTED to sign in, not shown a
 page; `0108` is always the page (the callback is a navigation).
 
@@ -1769,7 +1806,8 @@ validation; `0076`–`0078` SAML; `0079`, `0080` Basic; `0081`–`0085`,
 `0090` and `0094` the session mechanism; `0086` the decision; `0116` a
 route whose `methods` is empty (deny-all), refused after its decision;
 `0117` a route whose `authorization.policy` this PEP does not hold, refused
-without one; `0087`
+without one; `0118` every path before the first configuration since the
+start (503, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
 says is not usable (D10); `0095`–`0098` the identity (D11). **No log line carries
@@ -1795,7 +1833,7 @@ contained and throttled as before. **0035–0046 are the AuthZEN edge PDP's**
 **0055–0059 the forward of a fine-grained authorization evaluation and the
 catalogue's `fgaApplications`** (#564, P7); a request it refuses under the mapping contract is logged with the
 `STS-AUTHZEN-*` code the service gives the same request. **0060–0092 are the
-reverse proxy's** (#1760), with 0093–0099, 0108–0111, 0116 and 0117, listed
+reverse proxy's** (#1760), with 0093–0099, 0108–0111 and 0116–0118, listed
 in *THE REVERSE PROXY*. **0103–0105 are the
 defined listeners'** (#1760): a refused bind, a certificate not obtained, a
 definition left out.

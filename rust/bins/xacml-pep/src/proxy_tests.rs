@@ -918,6 +918,19 @@ async fn harness() -> Harness {
 }
 
 async fn harness_with(edit: impl FnOnce(&mut Options)) -> Harness {
+    harness_of(edit, true).await
+}
+
+/// A PEP that has received NO proxy configuration since it started: what a
+/// recreated container is until its first pull succeeds.
+async fn harness_unconfigured(edit: impl FnOnce(&mut Options)) -> Harness {
+    harness_of(edit, false).await
+}
+
+async fn harness_of(
+    edit: impl FnOnce(&mut Options),
+    configured: bool,
+) -> Harness {
     let key = Arc::new(rsa_key());
     let state = Arc::new(Mutex::new(ServiceState {
         jwks: json!({ "keys": [jwk_of(&key, "k1")] }),
@@ -946,10 +959,12 @@ async fn harness_with(edit: impl FnOnce(&mut Options)) -> Harness {
     sync.load_for_test(&policy_rows("t"));
     let saml_signer = saml::signer();
     let cert_pem = String::from_utf8(saml_signer.1.to_pem().unwrap()).unwrap();
-    sync.receive_proxy(
-        &configuration(&upstream_base, &service_base, &cert_pem),
-        Some("\"e1\"".into()),
-    );
+    if configured {
+        sync.receive_proxy(
+            &configuration(&upstream_base, &service_base, &cert_pem),
+            Some("\"e1\"".into()),
+        );
+    }
     let pep = Arc::new(Pep::new(
         options,
         sts_core::version::load(Path::new(".")),
@@ -3070,4 +3085,114 @@ async fn the_pages_incident_id_finds_the_log_line() {
         .unwrap();
     assert_ne!(incident_of(&the_page(r, 403, "This page is closed").await),
                incident);
+}
+
+// ===== BEFORE THE FIRST CONFIGURATION: TRY AGAIN LATER ====================
+
+/// The lines `Sync::note_waiting()` writes when the state is first met.
+fn waiting_announced() -> usize {
+    proxy::logged::holding("has received no configuration since it started")
+        .len()
+}
+
+/// NOT CONFIGURED YET IS NOT "PAGE NOT FOUND" (rcbj, 2026-11-15). After a
+/// start and before the first configuration answer, every path — the
+/// proxy's own `/.iya-pep/*` too — is 503 with `Retry-After` (the poll
+/// interval, rounded up to whole seconds): the standard page's "Try again
+/// later" for a browser, the `{error, error_description}` of the other
+/// 503s for anything else. Once a configuration arrives the routes answer;
+/// one received EMPTY or SWITCHED OFF is the 404 of STS-XPEP-0065, as
+/// before. The log has the state change, not a line per request.
+#[tokio::test]
+async fn before_its_first_configuration_the_proxy_says_try_again_later() {
+    let h = harness_unconfigured(|o| o.poll_interval_ms = 1500).await;
+    // A browser: the standard page at 503, with Retry-After.
+    let r = as_browser(h.get("/public/page")).send().await.unwrap();
+    assert_eq!(r.headers()["retry-after"], "2", "1500 ms, rounded up");
+    let html = the_page(r, 503, "Try again later").await;
+    assert!(
+        html.contains("<dt>error</dt><dd><code>temporarily_unavailable"),
+        "{}",
+        html
+    );
+    assert!(html.contains("still receiving its settings"), "{}", html);
+    // An API client: the JSON of the proxy's other 503s, no code in it.
+    let r = h.get("/api/x").send().await.unwrap();
+    assert_eq!(r.status(), 503);
+    assert_eq!(r.headers()["retry-after"], "2");
+    assert_eq!(r.headers()["content-type"], "application/json");
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(
+        body,
+        json!({ "error": "temporarily_unavailable",
+                "error_description": "This proxy has not yet received its \
+                                      configuration since it started." })
+    );
+    // The proxy's own paths are not configured yet either.
+    for path in [
+        "/.iya-pep/accounts",
+        "/.iya-pep/accounts/add",
+        "/.iya-pep/logout",
+        "/.iya-pep/callback?code=c&state=s",
+        "/nowhere",
+    ] {
+        let r = h.get(path).send().await.unwrap();
+        assert_eq!(r.status(), 503, "{}", path);
+        assert_eq!(r.headers()["retry-after"], "2", "{}", path);
+    }
+    assert_eq!(hits(&h), 0, "nothing reached the application");
+    // Seven requests, one line saying so — not seven.
+    assert_eq!(waiting_announced(), 1);
+    // The first configuration: the routes answer.
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    h.sync.receive_proxy(
+        &configuration(&h.upstream_base, &h.service_base, &cert),
+        None,
+    );
+    h.proxied.reconcile().await;
+    let r = h.get("/public/page").send().await.unwrap();
+    assert!(r.headers().get("retry-after").is_none());
+    echoed(r).await;
+    assert_eq!(hits(&h), 1);
+    assert_eq!(
+        proxy::logged::holding("received its first configuration since it \
+                                started; 7 request(s)")
+            .len(),
+        1,
+        "the state change, with its count"
+    );
+    let r = h.get("/nowhere").send().await.unwrap();
+    assert_eq!(r.status(), 404, "no route is 404 again");
+    // A configuration switched off: received, so 404 — not 503.
+    let mut off = configuration(&h.upstream_base, &h.service_base, &cert);
+    off["proxy"]["enabled"] = json!(false);
+    h.sync.receive_proxy(&off, None);
+    let r = as_browser(h.get("/public/page")).send().await.unwrap();
+    assert!(r.headers().get("retry-after").is_none());
+    let html = the_page(r, 404, "Page not found").await;
+    assert!(html.contains("no configuration that is switched on"), "{}",
+            html);
+    // None at all for this PEP: received, and empty — 404.
+    h.sync
+        .receive_proxy(&json!({ "configured": false, "pep": "pep-1" }), None);
+    let r = h.get("/.iya-pep/accounts").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error"], "not_found");
+    assert_eq!(waiting_announced(), 1, "no 503 after the first answer");
+}
+
+/// A FIRST answer that is empty is an answer: 404 from the start, never a
+/// 503 the client would wait out for nothing.
+#[tokio::test]
+async fn a_first_answer_that_holds_nothing_is_404_not_503() {
+    let h = harness_unconfigured(|_| {}).await;
+    h.sync
+        .receive_proxy(&json!({ "configured": false, "pep": "pep-1" }), None);
+    let r = h.get("/public/page").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    assert!(r.headers().get("retry-after").is_none());
+    // A failed later pull keeps what was received: still 404.
+    h.sync.receive_proxy(&json!({ "configured": true }), None);
+    assert_eq!(h.get("/public/page").send().await.unwrap().status(), 404);
 }
