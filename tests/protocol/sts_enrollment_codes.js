@@ -26,6 +26,9 @@
 //   C. THE CORE: a CA profile named as an EST label (STS-ENROLL-0002);
 //      a development realm refuses an RSA-1024 key (STS-ENROLL-0031,
 //      #35; it was certified, which this job pinned);
+//   F. /serverkeygen with `est.serverKeyGeneration` off: an anonymous
+//      caller is asked for a credential (401) and not told the switch; an
+//      authenticated person is refused by it (501, STS-EST-0005) (#36);
 //   D. AN APPLICATION IN A PRODUCT REALM: a wrong client secret
 //      (STS-ENROLL-0016), Basic authentication its own
 //      `estBasicAuthentication` turns off (STS-ENROLL-0096);
@@ -56,7 +59,7 @@ const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
 const keys = require(path.join(REPO, "common", "crypto_impl",
                                "key_material.js"));
 
-const FLOOR = 14;
+const FLOOR = 16;
 
 function check(what, fn) {
   log.debug("Entering check().");
@@ -228,6 +231,45 @@ async function core(realm, E, alice) {
   log.debug("Leaving core().");
 }
 
+// F (#36, 2026-11-15): /serverkeygen asks for a credential BEFORE it says
+// the realm turned server-side key generation off. Until #36 the switch was
+// asked first, so an anonymous caller was answered 501 STS-EST-0005.
+async function serverKeyOff(realm, E, alice) {
+  log.debug("Entering serverKeyOff().");
+  log.info("=== F. /serverkeygen with est.serverKeyGeneration off ===");
+  const template = await csr(alice[0]);
+  await K.set(realm, "est.serverKeyGeneration", false);
+  let anonymous;
+  let known;
+  try {
+    anonymous = await K.coded(realm, "STS-EST-0005", function () {
+      return send(E + "/tls-client/serverkeygen", template.der, {});
+    });
+    known = await refusedBy(realm, "STS-EST-0005", function () {
+      return send(E + "/tls-client/serverkeygen", template.der,
+                  { basic: alice });
+    });
+  } finally {
+    await K.unset(realm, "est.serverKeyGeneration");
+  }
+  check("F1. an anonymous /serverkeygen is asked for a credential (401), " +
+        "and the switch is not named to it (#36)", function () {
+    assert.strictEqual(anonymous.answer.status, 401,
+                       anonymous.answer.status + " " +
+                       String(anonymous.answer.body).slice(0, 200));
+    assert.strictEqual(anonymous.rose, 0, "STS-EST-0005 rows: " +
+                       anonymous.rose);
+  });
+  check("F2. an authenticated person is then refused by the switch, 501 " +
+        "(STS-EST-0005)", function () {
+    assert.strictEqual(known.status, 501, known.status + " " +
+                       known.text.slice(0, 200));
+    assert.ok(known.rose >= 1, "STS-EST-0005 rows: " + known.rose);
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(known.text), "a code was sent");
+  });
+  log.debug("Leaving serverKeyOff().");
+}
+
 async function applications() {
   log.debug("Entering applications().");
   log.info("=== D. an application in a product realm ===");
@@ -306,6 +348,7 @@ async function test() {
   await door(realm, E, alice);
   await withCertificate(realm, E, alice);
   await core(realm, E, alice);
+  await serverKeyOff(realm, E, alice);
   await acme(realm, alice);
   await applications();
   log.debug("Leaving test().");
