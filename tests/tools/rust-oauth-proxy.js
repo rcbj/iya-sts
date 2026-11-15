@@ -54,14 +54,28 @@ const NODE_PATHS = new RegExp('^(/realm/[^/]+)?(/[^/]+)?(/admin-api|' +
   '/\\.well-known/webfinger)(/|\\?|$)');
 // THE GRANTS THE RUST TOKEN ENDPOINT DOES NOT ISSUE YET (#444 phase 5,
 // the `oauth6` slice): a token request is routed by its `grant_type` as
-// well as its path — RFC 8693's token exchange, and the device and CIBA
-// grants whose endpoints are Node's above — so a job reaches the grants
-// after them. Both runtimes verify the other's tokens: one store, one key.
+// well as its path — the device and CIBA grants whose endpoints are Node's
+// above — so a job reaches the grants after them. Both runtimes verify the other's tokens: one store, one key.
 const TOKEN_PATH = new RegExp('^(/realm/[^/]+)?(/[^/]+)?/oauth2/token' +
   '(\\?|$)');
-const NODE_GRANTS = ['urn:ietf:params:oauth:grant-type:token-exchange',
-  'urn:ietf:params:oauth:grant-type:device_code',
+const NODE_GRANTS = ['urn:ietf:params:oauth:grant-type:device_code',
   'urn:openid:params:grant-type:ciba'];
+// RFC 8693's TOKEN EXCHANGE IS RUST'S since the `oauth8` slice, except an
+// exchange presenting or asking for a type whose verifier is not ported:
+// an RFC 7522 SAML assertion, a Kerberos ticket (#658) and Native SSO's
+// device secret (#130). Rust refuses those as types it does not take; the
+// jobs that exercise them reach Node.
+const EXCHANGE = 'urn:ietf:params:oauth:grant-type:token-exchange';
+const NODE_EXCHANGE_TYPES = new RegExp('^(urn:ietf:params:oauth:' +
+  'token-type:saml[12]|urn:openid:params:token-type:device-secret|' +
+  'http://docs\\.oasis-open\\.org/wss/oasis-wss-kerberos-token-' +
+  'profile-1\\.1#.*)$');
+function exchangeToNode(params) {
+  return ['subject_token_type', 'actor_token_type', 'requested_token_type']
+    .some(function (name) {
+      return NODE_EXCHANGE_TYPES.test(String(params.get(name) || '').trim());
+    });
+}
 const counts = { rust: 0, node: 0 };
 function forward(req, res, toNode, body) {
   const target = new URL(toNode ? nodeBase : rustBase);
@@ -90,9 +104,10 @@ https.createServer({ key: key, cert: cert }, function (req, res) {
     });
     req.on('end', function () {
       const body = Buffer.concat(chunks);
-      const grant = new URLSearchParams(body.toString('utf8'))
-        .get('grant_type') || '';
-      forward(req, res, NODE_GRANTS.indexOf(grant) >= 0, body);
+      const params = new URLSearchParams(body.toString('utf8'));
+      const grant = params.get('grant_type') || '';
+      forward(req, res, NODE_GRANTS.indexOf(grant) >= 0 ||
+              (grant === EXCHANGE && exchangeToNode(params)), body);
     });
     return;
   }
