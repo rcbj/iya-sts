@@ -30,6 +30,7 @@ use sts_registers::ownership::{Ownership, OwnershipDeps};
 use sts_registers::people::{AccountChange, AccountState, People, PeopleDeps};
 use sts_registers::rbac::Rbac;
 use sts_registers::role_actions::RoleActions;
+use sts_registers::role_permissions::{RolePermissions, RolePermissionsDeps, Subject};
 use sts_registers::roles::{self, Roles, Who};
 
 fn vectors() -> Option<Value> {
@@ -266,6 +267,38 @@ fn every_register_answers_as_node_does() {
                     "revoke" => got(p.revoke(&arg(0), &arg(1), &arg(2))),
                     _ => got(p.set_base_uri(&arg(0), &arg(1), &arg(2))),
                 })
+            }
+            "rolePermissions" => {
+                let rp = RolePermissions::new(RolePermissionsDeps {
+                    roles: Arc::new(roles_over(&replay)),
+                    applications: replay.clone(),
+                    audit: replay.clone(),
+                    roster: replay.clone(),
+                    ownership: replay.clone(),
+                    gate: replay.clone(),
+                    subjects: replay.clone(),
+                    mode: replay.clone(),
+                });
+                let input = &step["input"];
+                let text = |k: &str| input[k].as_str().unwrap_or("").to_string();
+                let who = Subject::from_json(&input["subject"]);
+                Some(plain(match step["op"].as_str().unwrap_or("") {
+                    "isGated" => json!({"gated": rp.is_gated(&text("value")),
+                        "application": rp.is_application_permission(&text("value"))}),
+                    "heldRoles" => rp.held_roles(&who).to_json(),
+                    "asksFor" => json!({"asks": rp.asks_for(&text("scope"), &who)}),
+                    "conferredOn" => json!(rp.conferred_on(&who, &text("clientId"))),
+                    "narrowScope" => {
+                        rp.narrow_scope(&text("scope"), &who, &input["context"])
+                    }
+                    _ => {
+                        let carried: Vec<String> = input["carried"]
+                            .as_array()
+                            .map(|l| l.iter().map(|v| v.as_str().unwrap_or("").to_string()).collect())
+                            .unwrap_or_default();
+                        rp.effective_roles(&input["claims"], &carried)
+                    }
+                }))
             }
             "rbac" => {
                 let rbac = Rbac::new(

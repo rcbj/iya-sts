@@ -33,6 +33,9 @@ const PURE: &[&str] = &[
     "bootstrap.current",
     "mode.opensConsoleToAnyone",
     "mode.verifiesCredentials",
+    "mode.refusesTokenForGoneSubject",
+    "helpers.subjectIsGone",
+    "helpers.nameForSubject",
     "stats.identityKeyOf",
     "applications.settingFor",
     "stats.RESERVED_JWT_CLAIMS",
@@ -326,6 +329,9 @@ impl Mode for Replay {
     fn verifies_credentials(&self) -> bool {
         self.answer("mode", "verifiesCredentials", json!([])) == json!(true)
     }
+    fn refuses_token_for_gone_subject(&self) -> bool {
+        self.answer("mode", "refusesTokenForGoneSubject", json!([])) == json!(true)
+    }
 }
 
 impl BootstrapName for Replay {
@@ -506,6 +512,47 @@ impl ClaimTables for Replay {
     }
     fn default_saml11_namespace(&self) -> String {
         self.answer("stats", "DEFAULT_SAML11_NAMESPACE", json!([]))
+            .as_str()
+            .unwrap_or("")
+            .to_string()
+    }
+}
+
+impl RosterRoles for Replay {
+    fn roles_of(&self, name: &str, realm: &str) -> Value {
+        self.answer("rbac", "rolesOf", json!([name, realm]))
+    }
+}
+
+impl OwnsAnything for Replay {
+    fn owns_anything(&self, name: &str) -> bool {
+        self.answer("ownership", "ownsAnything", json!([name])) == json!(true)
+    }
+}
+
+impl IssuanceGate for Replay {
+    fn check_scopes(&self, request: &Value) -> Vec<ScopeVerdict> {
+        let a = self.answer("gate", "checkScopes", json!([request]));
+        a["verdicts"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|v| ScopeVerdict {
+                scope: v["scope"].as_str().unwrap_or("").to_string(),
+                verdict: v["verdict"].as_str().unwrap_or("").to_string(),
+                code: v["code"].as_str().and_then(code_named),
+            })
+            .collect()
+    }
+}
+
+impl Subjects for Replay {
+    fn subject_is_gone(&self, sub: &str) -> bool {
+        self.answer("helpers", "subjectIsGone", json!([sub])) == json!(true)
+    }
+    fn name_for_subject(&self, sub: &str) -> String {
+        self.answer("helpers", "nameForSubject", json!([sub]))
             .as_str()
             .unwrap_or("")
             .to_string()

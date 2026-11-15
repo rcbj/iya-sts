@@ -145,6 +145,8 @@ pub trait Mode: Send + Sync {
     fn opens_console_to_anyone(&self, realm: &str) -> bool;
     /// `mode.verifiesCredentials()`.
     fn verifies_credentials(&self) -> bool;
+    /// `mode.refusesTokenForGoneSubject()`.
+    fn refuses_token_for_gone_subject(&self) -> bool;
 }
 
 /// `common/bootstrap_name.ts`: the bootstrap administrator's username.
@@ -288,4 +290,42 @@ pub trait ClaimTables: Send + Sync {
     fn claim_set_ids(&self) -> Vec<String>;
     /// `DEFAULT_SAML11_NAMESPACE`.
     fn default_saml11_namespace(&self) -> String;
+}
+
+/// The console roster's question role permissions ask
+/// (`admin_rbac.rolesOf(name, realm)`): `{read, write, security,
+/// claimPending, …}`, or null when it cannot be read. [`crate::rbac`]
+/// ports the roster's writes; its reads are the API slice's.
+pub trait RosterRoles: Send + Sync {
+    fn roles_of(&self, name: &str, realm: &str) -> Value;
+}
+
+/// `ownership.ownsAnything(name)`, which [`crate::ownership::Ownership`]
+/// answers.
+pub trait OwnsAnything: Send + Sync {
+    fn owns_anything(&self, name: &str) -> bool;
+}
+
+/// One scope's verdict from the issuance gate.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScopeVerdict {
+    pub scope: String,
+    /// `keep`, `drop` or `refuse`.
+    pub verdict: String,
+    pub code: Option<ErrorCode>,
+}
+
+/// `common/issuance_gate.js`'s `checkScopes(request)`: the per-scope
+/// `issue-scope` verdicts (rule 3bs), decided by the XACML policy when the
+/// XACML family is loaded and by the built-in policy otherwise — the
+/// policy slice's.
+pub trait IssuanceGate: Send + Sync {
+    fn check_scopes(&self, request: &Value) -> Vec<ScopeVerdict>;
+}
+
+/// `helpers.subjectIsGone(sub)` and `helpers.nameForSubject(sub)`: a
+/// token's `sub` resolved to a person (the session slice's).
+pub trait Subjects: Send + Sync {
+    fn subject_is_gone(&self, sub: &str) -> bool;
+    fn name_for_subject(&self, sub: &str) -> String;
 }
