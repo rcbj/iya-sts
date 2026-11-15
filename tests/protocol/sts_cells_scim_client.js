@@ -83,6 +83,8 @@ const PEOPLE = { alice: "csa-" + STAMP, bob: "csb-" + STAMP,
 // How long one propagation may take: an act sends at once, and the
 // scim-client.deliver sweep (scimClient.sweepS, 15 s) is the net.
 const WAIT_MS = 150000;
+// How often a wait that sends through `deliver-now` asks for it again.
+const NUDGE_MS = 10000;
 
 let checks = 0;
 function check(what, fn) {
@@ -478,9 +480,41 @@ async function run(cells, provider) {
            { group: GROUP, member: PEOPLE.dan }, "dan into the group");
   uuids.carol = await uuidOf(realm.a, PEOPLE.carol);
   uuids.dan = await uuidOf(realm.b, PEOPLE.dan);
+  // THE DELIVERY IS TRIGGERED, NOT WAITED FOR (CI run #300). Every step
+  // before this one sent through an act; this one is the only wait that
+  // rested on the scim-client.deliver sweep alone, and that sweep is a
+  // scheduler job whose 15 s is a slot, not a promise: run #250 saw the four
+  // after 43 s, and run #300, with the directory bulk loads running in cell
+  // A beside it, not within 150 s — with no warning, no dead letter and no
+  // retry in either cell. What this asserts is that the two writes QUEUED
+  // the right rows in the right cells and that sending them keeps both
+  // cells' members; `deliver-now` (every cell, no `cell` member) sends what
+  // is queued and nothing else, so a change that was never queued, or a
+  // requeue that was lost, still fails here. It is asked again every
+  // NUDGE_MS because the group goes twice: once with the person not there
+  // yet, and again once their create links them (syncUser()).
+  let nudgedAt = 0;
   await kit.until("the group holds all four", WAIT_MS, async function () {
-    return userBy(uuids.carol) && userBy(uuids.dan) &&
-           memberIds().length === 4;
+    if (userBy(uuids.carol) && userBy(uuids.dan) &&
+        memberIds().length === 4) {
+      return true;
+    }
+    if (Date.now() - nudgedAt >= NUDGE_MS) {
+      nudgedAt = Date.now();
+      const sent = await act(realm.a, "deliver-now");
+      log.debug("deliver-now answered " + sent.status);
+    }
+    return false;
+  }).catch(async function (e) {
+    log.info("carol at the provider: " + JSON.stringify(userBy(uuids.carol)) +
+             "; dan: " + JSON.stringify(userBy(uuids.dan)));
+    log.info("the group the provider holds: " + JSON.stringify(groupHeld()));
+    log.info("the provider's requests: " + JSON.stringify(sp.requests));
+    const queues = await kit.api(realm.a, "GET", "/scim/clients?client=" +
+                                 encodeURIComponent(CLIENT));
+    log.info("the client's queues in every cell: " +
+             queues.raw.slice(0, 20000));
+    throw e;
   });
   check("a change in either cell keeps every member of the other",
         function () {
