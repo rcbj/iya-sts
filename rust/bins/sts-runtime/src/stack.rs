@@ -265,7 +265,7 @@ impl Stack {
 
         let chosen = store_mode(&settings)?;
         // A database store: postgres, or the same store on MariaDB (#677).
-        let database = open_database(&settings, chosen)?;
+        let database = open_database(&settings, &mode, chosen)?;
         let driver: Option<Arc<dyn Driver>> = match chosen {
             StoreMode::Postgres | StoreMode::Mariadb => {
                 database.as_ref().map(|d| d.driver())

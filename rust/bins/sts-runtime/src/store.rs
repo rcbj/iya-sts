@@ -40,6 +40,7 @@ use sts_cluster::schedule::BoxFuture;
 use sts_cluster::scheduler::{RunHistory, Scheduler};
 use sts_core::errors::codes;
 use sts_core::log::tag;
+use sts_core::mode::Mode;
 use sts_core::realm_store::{partition_id, Reconcile, StoreHandles};
 use sts_core::settings::{Settings, Source};
 use sts_store::mariadb::MariadbDriver;
@@ -126,24 +127,36 @@ pub fn store_mode(settings: &Settings) -> Result<StoreMode, String> {
     }
 }
 
+/// The database's own trust anchors (`databaseTlsCa()`): their PEM, and
+/// the files they were read from.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DatabaseCa {
+    pub pem: String,
+    pub files: Vec<std::path::PathBuf>,
+}
+
 /// `databaseTlsCa()`: the PEM certificates `persistence.databaseTlsCaFile`
 /// names (a file, or a directory whose `.crt` and `.pem` files are read in
-/// name order), each block that parses kept; '' when none is named. A file
-/// named and unreadable, or holding no certificate, is `STS-STORE-0079`.
+/// name order), each block that parses kept; none when none is named. A
+/// file named and unreadable, or holding no certificate, is
+/// `STS-STORE-0079`.
 #[tracing::instrument(level = "debug", skip_all)]
-pub fn database_tls_ca(settings: &Settings) -> Result<String, String> {
+pub fn database_tls_ca(settings: &Settings) -> Result<DatabaseCa, String> {
     let file = settings
         .value_of("persistence.databaseTlsCaFile")
         .as_str()
         .trim()
         .to_string();
     if file.is_empty() {
-        return Ok(String::new());
+        return Ok(DatabaseCa::default());
     }
-    let read = || -> std::io::Result<String> {
+    let read = || -> std::io::Result<(String, Vec<std::path::PathBuf>)> {
         let path = std::path::Path::new(&file);
         if !path.is_dir() {
-            return std::fs::read_to_string(path);
+            return Ok((
+                std::fs::read_to_string(path)?,
+                vec![path.to_path_buf()],
+            ));
         }
         let mut names: Vec<String> = std::fs::read_dir(path)?
             .filter_map(Result::ok)
@@ -157,12 +170,14 @@ pub fn database_tls_ca(settings: &Settings) -> Result<String, String> {
             .collect();
         names.sort();
         let mut texts = Vec::new();
+        let mut files = Vec::new();
         for name in names {
-            texts.push(std::fs::read_to_string(path.join(name))?);
+            texts.push(std::fs::read_to_string(path.join(&name))?);
+            files.push(path.join(name));
         }
-        Ok(texts.join("\n"))
+        Ok((texts.join("\n"), files))
     };
-    let text = read().map_err(|e| {
+    let (text, files) = read().map_err(|e| {
         format!(
             "{}persistence: persistence.databaseTlsCaFile names {}, which cannot be read ({}), so the database \
              connection has no trust anchor anybody chose. Fix the path, or empty the setting to use the \
@@ -188,9 +203,10 @@ pub fn database_tls_ca(settings: &Settings) -> Result<String, String> {
         }
         rest = &after[end + END.len()..];
     }
-    let good: Vec<&String> = blocks
+    let good: Vec<&str> = blocks
         .iter()
         .filter(|pem| sts_pki::x509::Certificate::from_pem(pem).is_ok())
+        .map(String::as_str)
         .collect();
     if good.is_empty() {
         return Err(format!(
@@ -201,51 +217,42 @@ pub fn database_tls_ca(settings: &Settings) -> Result<String, String> {
             blocks.len()
         ));
     }
-    Ok(good
-        .iter()
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n")
+    Ok(DatabaseCa {
+        pem: good.join("\n") + "\n",
+        files,
+    })
 }
 
-/// The database `persistence.mode` names, its pool not yet dialled.
+/// The database `persistence.mode` names, its pool not yet dialled. Whether
+/// the server's certificate is verified is the setting AS THE MODE LETS IT
+/// BE: product reads `persistence.databaseTlsRejectUnauthorized=false` as
+/// true, and says so once (`STS-CORE-0106`), as Node's `config.value()`
+/// does.
 #[tracing::instrument(level = "debug", skip_all)]
 pub fn open_database(
     settings: &Settings,
-    mode: StoreMode,
+    mode: &Mode,
+    store: StoreMode,
 ) -> Result<Option<Database>, String> {
-    if !mode.is_database() {
+    if !store.is_database() {
         return Ok(None);
     }
     let url = settings.value_of("persistence.databaseUrl");
-    let verify = settings
-        .value_of("persistence.databaseTlsRejectUnauthorized")
+    let verify = mode
+        .value_in_force("persistence.databaseTlsRejectUnauthorized")
         .as_bool();
     // Read once, before the pool exists, so an unusable file is the fatal
     // refusal its message is written for (`openStore()`).
     let ca = database_tls_ca(settings)?;
-    Ok(Some(match mode {
+    Ok(Some(match store {
         StoreMode::Mariadb => Database::Mariadb(Arc::new(
-            MariadbDriver::new(url.as_str(), verify, &ca, 10)
+            MariadbDriver::new(url.as_str(), verify, &ca.pem, 10)
                 .map_err(|e| e.to_string())?,
         )),
-        _ => {
-            // The postgres driver dials with the platform's trust store:
-            // its constructor takes no anchors of the database's own yet.
-            if !ca.is_empty() {
-                tracing::warn!(
-                    "persistence: persistence.databaseTlsCaFile is read, and the postgres driver of this \
-                     runtime does not take it yet: the connection is verified against the platform's trust \
-                     store (persistence.databaseTlsRejectUnauthorized={}).",
-                    verify
-                );
-            }
-            Database::Postgres(Arc::new(
-                PostgresDriver::new(url.as_str(), verify, 10)
-                    .map_err(|e| e.to_string())?,
-            ))
-        }
+        _ => Database::Postgres(Arc::new(
+            PostgresDriver::with_ca_files(url.as_str(), verify, &ca.files, 10)
+                .map_err(|e| e.to_string())?,
+        )),
     }))
 }
 
@@ -657,6 +664,9 @@ mod tests {
             "databaseTlsCaFile": "/nonexistent/ca.pem" }})))
         .unwrap_err();
         assert!(err.contains("STS-STORE-0079"));
-        assert_eq!(database_tls_ca(&settings(json!({}))).unwrap(), "");
+        assert_eq!(
+            database_tls_ca(&settings(json!({}))).unwrap(),
+            DatabaseCa::default()
+        );
     }
 }
