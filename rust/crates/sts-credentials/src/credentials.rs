@@ -264,7 +264,34 @@ impl Credentials {
         )
     }
 
-    fn entry_exists(&self, name: &str) -> bool {
+    /// The directory slot, for the WebAuthn key doors
+    /// ([`crate::webauthn::enrolment`]), which write through it.
+    /// A hot path (an accessor), so it carries no span.
+    pub fn directory(&self) -> Option<&Arc<dyn CredentialDirectory>> {
+        self.d.directory.as_ref()
+    }
+
+    /// `hasPassword(username)`: whether the entry holds a password at all;
+    /// a read that throws is no password.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn has_password(&self, username: &str) -> bool {
+        self.d.directory.as_ref().is_some_and(|d| {
+            d.read_password(&trimmed(username))
+                .ok()
+                .flatten()
+                .is_some_and(|p| !p.is_empty())
+        })
+    }
+
+    /// `!!backupCodesOf(username)`: whether a usable set is held.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn holds_backup_codes(&self, username: &str) -> bool {
+        self.backup_codes_of(username).is_some()
+    }
+
+    /// `entryExists(name)`: the person's entry is there; no store is yes.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn entry_exists(&self, name: &str) -> bool {
         match &self.d.directory {
             None => true,
             Some(d) => d.person_exists(name).unwrap_or(false),
@@ -493,7 +520,7 @@ impl Credentials {
 
     /// `rewriteKey(username, credentialId, mutate)`: `Ok(Some(result))`
     /// written, `Ok(None)` no store, no such key or unchanged, `Err` threw.
-    fn rewrite_key(
+    pub(crate) fn rewrite_key(
         &self,
         username: &str,
         credential_id: &str,

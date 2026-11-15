@@ -113,6 +113,12 @@ pub fn describe(code: &str) -> Option<&'static Row> {
     BY_CODE.get(code).copied()
 }
 
+/// The constant for a code given as text — what a policy answer or a
+/// stored row carries — or none for a code the table does not hold.
+pub fn known(code: &str) -> Option<ErrorCode> {
+    describe(code).map(|row| ErrorCode(row.code))
+}
+
 pub fn is_known(code: &str) -> bool {
     describe(code).is_some()
 }
