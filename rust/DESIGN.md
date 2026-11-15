@@ -246,7 +246,14 @@ rust/
                                  read from the TypeScript build's tree at
                                  STS_WEB_ROOT, /web), held to Node by
                                  tests/tools/http-differential.js
-    sts-directory/               the embedded directory model and the LDAP server
+    sts-directory/               the embedded directory's model and operations
+                                 (phase 4): per-realm trees, the generated
+                                 schema and name lists, add/modify/delete/
+                                 modify DN/compare/search with Node's
+                                 refusals, entryUUID and the subject, an entry
+                                 as its domain concept; the wire is sts-ldap,
+                                 the store sts-store's StoredEntry and driver.
+                                 Held to Node by tests/tools/directory-vectors.js
     sts-authn/                   the session, sign-in, second factors, WebAuthn
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
