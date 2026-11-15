@@ -889,6 +889,15 @@ class AuditExport {
   /**
    * Sends one UDP datagram. The callback accepting it is transmission.
    *
+   * The bound is a timer of this send's own around that callback, cleared
+   * when it settles. A `dgram.Socket` has no `setTimeout()` — that is
+   * `net.Socket`'s idle timer — and until the Rust conversion found it
+   * (#444) calling one here threw on every send: each datagram was
+   * recorded `STS-AUDIT-0006`, nothing was ever transmitted and the
+   * cursor never moved. `tests/audit_export.js` Y2 receives one on a
+   * real loopback socket. The timer is a per-send timeout, not periodic
+   * work, so it is not a scheduler job.
+   *
    * @param message - the RFC 5424 line
    * @param ip - the resolved address
    * @param port - the port
@@ -902,11 +911,16 @@ class AuditExport {
     return new Promise(function (resolve, reject) {
       const sock = udp.createSocket(family);
       let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
       const finish = function (err: Error | null): void {
         if (settled) {
           return;
         }
         settled = true;
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
         try {
           sock.close();
         } catch (e) {
@@ -919,9 +933,9 @@ class AuditExport {
         }
         resolve();
       };
-      sock.setTimeout(timeout, function (): void {
+      timer = setTimeout(function (): void {
         finish(new Error('the syslog send timed out'));
-      });
+      }, timeout);
       sock.once('error', function (err: Error): void {
         finish(err);
       });
@@ -962,24 +976,41 @@ class AuditExport {
     ]);
     const sock = pipe.socket;
     const timeout = Number(cfg.value('auditExport.timeoutMs'));
+    // The tick's socket carries every frame of the tick, so this write's
+    // listeners are removed when it settles. `setTimeout(0)` stops the
+    // idle timer and leaves its callback attached, and the `error` and
+    // `drain` listeners stayed too, so a batch above ten frames drew
+    // node's MaxListenersExceededWarning and every frame's `finish`
+    // waited on the socket until it closed.
     await new Promise(function (resolve, reject) {
       let settled = false;
+      const onTimeout = function (): void {
+        finish(new Error('the syslog write timed out'));
+      };
+      const onError = function (err: Error): void {
+        finish(err);
+      };
+      const onDrain = function (): void {
+        finish(null);
+      };
       const finish = function (err: Error | null): void {
         if (settled) {
           return;
         }
         settled = true;
         sock.setTimeout(0);
+        sock.removeListener('timeout', onTimeout);
+        sock.removeListener('error', onError);
+        sock.removeListener('drain', onDrain);
         if (err) {
           reject(err);
           return;
         }
         resolve(null);
       };
-      sock.setTimeout(timeout, function (): void {
-        finish(new Error('the syslog write timed out'));
-      });
-      sock.once('error', finish);
+      sock.setTimeout(timeout);
+      sock.on('timeout', onTimeout);
+      sock.once('error', onError);
       const flushed = sock.write(frame, function (err: Error | null): void {
         if (err) {
           finish(err);
@@ -989,15 +1020,19 @@ class AuditExport {
         finish(null);
         return;
       }
-      sock.once('drain', function (): void {
-        finish(null);
-      });
+      sock.once('drain', onDrain);
     });
     logger.debug("Leaving AuditExport.sendFramed().");
   }
 
   /**
    * Opens one syslog TCP or TLS socket to an address already checked.
+   *
+   * The connect bound's `timeout` listener is removed once connected: the
+   * socket lives for the tick and `sendFramed()` arms the idle timer
+   * again, which would otherwise also fire this one and destroy it. The
+   * `error` listener stays, so an error between two frames destroys the
+   * socket rather than being thrown unhandled.
    *
    * @param dest - the destination
    * @param ip - the resolved address
@@ -1020,12 +1055,15 @@ class AuditExport {
           sock.destroy();
           reject(err);
         };
-        sock.setTimeout(timeout, function (): void {
+        const onTimeout = function (): void {
           fail(new Error('the syslog connect timed out'));
-        });
+        };
+        sock.setTimeout(timeout);
+        sock.on('timeout', onTimeout);
         sock.once('error', fail);
         sock.once('connect', function (): void {
           sock.setTimeout(0);
+          sock.removeListener('timeout', onTimeout);
           resolve(sock);
         });
       });
@@ -1055,12 +1093,15 @@ class AuditExport {
         sock.destroy();
         reject(err);
       };
-      sock.setTimeout(timeout, function (): void {
+      const onTimeout = function (): void {
         fail(new Error('the syslog connect timed out'));
-      });
+      };
+      sock.setTimeout(timeout);
+      sock.on('timeout', onTimeout);
       sock.once('error', fail);
       sock.once('secureConnect', function (): void {
         sock.setTimeout(0);
+        sock.removeListener('timeout', onTimeout);
         resolve(sock);
       });
     });
