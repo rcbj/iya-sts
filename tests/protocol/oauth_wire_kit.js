@@ -291,21 +291,56 @@ function kit(name) {
 
   // THE SIGN-IN SCREEN, AS ITS PAGE WALKS IT, then the redirects up to the
   // first that leaves this service (or a page it answers).
-  async function signIn(id, b, first, username, password) {
+  //
+  // `o.follow === false` answers the screen's own answer (the 303 back to
+  // the authorization endpoint) without following it, so a job can hold a
+  // flow half way; the walk stops at the consent screen (`r.consent` is
+  // then its address), and `r.view` is the sign-in screen's view.
+  async function signIn(id, b, first, username, password, o) {
     log.debug("Entering signIn().");
+    const opts = o || {};
     if (!toSignIn(first)) {
       log.debug("Leaving signIn(). Not sent to sign in.");
       return first;
     }
-    let r = await authnSignin.signInWithJar(rb(id), first.location,
+    const at = /^https?:/.test(first.location) ? first.location
+                                                : base + first.location;
+    let r = await authnSignin.signInWithJar(rb(id), at,
       { action: "login", username: username, password: password }, b.jar);
+    const view = r.answer && r.answer.view;
+    if (opts.follow === false) {
+      log.debug("Leaving signIn(). Held.");
+      return Object.assign(r, { view: view });
+    }
+    let consent = "";
+    for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
+         (/^\//.test(r.location) ||
+          String(r.location).indexOf(base) === 0); hops++) {
+      if (authnSignin.isConsent(r.location)) {
+        consent = /^https?:/.test(r.location) ? r.location
+                                               : base + r.location;
+        break;
+      }
+      r = await b.go(r.location);
+    }
+    log.debug("Leaving signIn(). " + r.status);
+    return Object.assign(r, { view: view, consent: consent });
+  }
+
+  // The consent screen answered for `b` (allow by default), then the
+  // redirects followed as signIn() follows them.
+  async function consent(b, where, decision) {
+    log.debug("Entering consent().");
+    let r = await authnSignin.consentWithJar(where, decision || "allow",
+                                             b.jar);
+    const opened = r.opened;
     for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
          (/^\//.test(r.location) ||
           String(r.location).indexOf(base) === 0); hops++) {
       r = await b.go(r.location);
     }
-    log.debug("Leaving signIn(). " + r.status);
-    return r;
+    log.debug("Leaving consent(). " + r.status);
+    return Object.assign(r, { opened: opened });
   }
 
   // The authorization response's parameters, where it went to `target`.
@@ -429,6 +464,117 @@ function kit(name) {
                       htm: htm, htu: htu,
                       iat: Math.floor(Date.now() / 1000) }, extra || {}),
       key);
+  }
+
+  // ------------------------------------------------------------------ JWE
+  // THIS FILE'S OWN JWE (RFC 7516, RFC 7518): the content ciphers
+  // A128CBC-HS256, A256CBC-HS512, A128GCM and A256GCM, and the key
+  // managements RSA-OAEP-256, ECDH-ES (direct), A128KW/A256KW, A128GCMKW
+  // and dir. `o` names `alg`, `enc`, and `jwk` (RSA-OAEP-256, ECDH-ES) or
+  // `key` (the symmetric ones), plus header members (`kid`, `cty`).
+  function contentEncrypt(enc, cek, aad, plaintext) {
+    log.debug("Entering contentEncrypt(). " + enc);
+    let out;
+    if (/GCM$/.test(enc)) {
+      const iv = nodeCrypto.randomBytes(12);
+      const c = nodeCrypto.createCipheriv("aes-" + (cek.length * 8) + "-gcm",
+                                          cek, iv);
+      c.setAAD(aad);
+      const ct = Buffer.concat([c.update(plaintext), c.final()]);
+      out = { iv: iv, ct: ct, tag: c.getAuthTag() };
+    } else {
+      const half = cek.length / 2;
+      const iv = nodeCrypto.randomBytes(16);
+      const c = nodeCrypto.createCipheriv("aes-" + (half * 8) + "-cbc",
+                                          cek.subarray(half), iv);
+      const ct = Buffer.concat([c.update(plaintext), c.final()]);
+      const al = Buffer.alloc(8);
+      al.writeBigUInt64BE(BigInt(aad.length * 8));
+      const hash = half === 16 ? "sha256" : "sha512";
+      const tag = nodeCrypto.createHmac(hash, cek.subarray(0, half))
+        .update(Buffer.concat([aad, iv, ct, al])).digest()
+        .subarray(0, half);
+      out = { iv: iv, ct: ct, tag: tag };
+    }
+    log.debug("Leaving contentEncrypt().");
+    return out;
+  }
+
+  function cekBytes(enc) {
+    log.debug("Entering cekBytes().");
+    log.debug("Leaving cekBytes().");
+    return { "A128CBC-HS256": 32, "A256CBC-HS512": 64, "A128GCM": 16,
+             "A256GCM": 32 }[enc];
+  }
+
+  function concatKdf(z, algId, bits) {
+    log.debug("Entering concatKdf().");
+    const len = function (b) {
+      const out = Buffer.alloc(4);
+      out.writeUInt32BE(b.length);
+      return Buffer.concat([out, b]);
+    };
+    const id = Buffer.from(algId);
+    const keyLen = Buffer.alloc(4);
+    keyLen.writeUInt32BE(bits);
+    let derived = Buffer.alloc(0);
+    for (let i = 1; derived.length * 8 < bits; i++) {
+      const counter = Buffer.alloc(4);
+      counter.writeUInt32BE(i);
+      derived = Buffer.concat([derived, nodeCrypto.createHash("sha256")
+        .update(Buffer.concat([counter, z, len(id), len(Buffer.alloc(0)),
+                               len(Buffer.alloc(0)), keyLen])).digest()]);
+    }
+    log.debug("Leaving concatKdf().");
+    return derived.subarray(0, bits / 8);
+  }
+
+  function jwe(plaintext, o) {
+    log.debug("Entering jwe(). " + o.alg + " " + o.enc);
+    const header = Object.assign({ alg: o.alg, enc: o.enc },
+                                 o.header || {});
+    let cek;
+    let wrapped = Buffer.alloc(0);
+    if (o.alg === "RSA-OAEP-256") {
+      cek = nodeCrypto.randomBytes(cekBytes(o.enc));
+      const pub = nodeCrypto.createPublicKey({ key: { kty: "RSA",
+        n: o.jwk.n, e: o.jwk.e }, format: "jwk" });
+      wrapped = nodeCrypto.publicEncrypt({ key: pub, oaepHash: "sha256",
+        padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING }, cek);
+    } else if (o.alg === "ECDH-ES") {
+      const curve = { "P-256": "prime256v1", "P-384": "secp384r1" }[
+        o.jwk.crv];
+      const eph = nodeCrypto.generateKeyPairSync("ec", { namedCurve: curve });
+      const epk = eph.publicKey.export({ format: "jwk" });
+      header.epk = { kty: "EC", crv: epk.crv, x: epk.x, y: epk.y };
+      const pub = nodeCrypto.createPublicKey({ key: { kty: "EC",
+        crv: o.jwk.crv, x: o.jwk.x, y: o.jwk.y }, format: "jwk" });
+      const z = nodeCrypto.diffieHellman({ privateKey: eph.privateKey,
+                                           publicKey: pub });
+      cek = concatKdf(z, o.enc, cekBytes(o.enc) * 8);
+    } else if (o.alg === "A128KW" || o.alg === "A256KW") {
+      cek = nodeCrypto.randomBytes(cekBytes(o.enc));
+      const c = nodeCrypto.createCipheriv("id-aes" + o.alg.slice(1, 4) +
+        "-wrap", o.key, Buffer.from("A6A6A6A6A6A6A6A6", "hex"));
+      wrapped = Buffer.concat([c.update(cek), c.final()]);
+    } else if (/GCMKW$/.test(o.alg)) {
+      cek = nodeCrypto.randomBytes(cekBytes(o.enc));
+      const iv = nodeCrypto.randomBytes(12);
+      const c = nodeCrypto.createCipheriv("aes-" + o.alg.slice(1, 4) +
+        "-gcm", o.key, iv);
+      wrapped = Buffer.concat([c.update(cek), c.final()]);
+      header.iv = iv.toString("base64url");
+      header.tag = c.getAuthTag().toString("base64url");
+    } else {
+      cek = o.key;
+    }
+    const encoded = b64u(header);
+    const sealed = contentEncrypt(o.enc, cek, Buffer.from(encoded, "ascii"),
+                                  Buffer.from(String(plaintext)));
+    log.debug("Leaving jwe().");
+    return [encoded, wrapped.toString("base64url"),
+            sealed.iv.toString("base64url"), sealed.ct.toString("base64url"),
+            sealed.tag.toString("base64url")].join(".");
   }
 
   function pkce() {
@@ -561,8 +707,9 @@ function kit(name) {
            coded: coded, setProcess: setProcess,
            resetProcess: resetProcess, app: app, appSet: appSet,
            person: person, browser: browser, toSignIn: toSignIn,
-           signIn: signIn, answerAt: answerAt, basic: basic, b64u: b64u,
-           keyPair: keyPair, jws: jws, decode: decode,
+           signIn: signIn, consent: consent, answerAt: answerAt,
+           basic: basic, b64u: b64u,
+           keyPair: keyPair, jws: jws, jwe: jwe, decode: decode,
            thumbprint: thumbprint, dpop: dpop, pkce: pkce, rand: rand,
            codeCount: codeCount, codeAfter: codeAfter, listener: listener,
            removeRealms: removeRealms, main: main };
