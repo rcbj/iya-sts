@@ -14755,6 +14755,32 @@ class OAuth2Server {
         return self.oauthError(res, Number(e.refusal.status) || 400,
                                e.refusal.error, e.refusal.description);
       }
+      // AN OPAQUE MINT REFUSED (#501), answered as itself (2026-11-14, found
+      // by #444's D12). A full store (STS-OAUTH-0979) or three colliding
+      // handles (STS-OAUTH-0984) threw out of the mint and reached the
+      // wrapper's fault handler: a 500 recorded as STS-OAUTH-0228 with a
+      // stack, and the module's own code never recorded. A full store is a
+      // capacity the client may wait out, so it is 503 with Retry-After and
+      // RFC 6749's `temporarily_unavailable`; a collision stays a fault,
+      // `server_error`, under its own code. No token was issued either way.
+      const minted = String(errorCodes.codeOf(e) || '');
+      if (minted === 'STS-OAUTH-0979' || minted === 'STS-OAUTH-0984') {
+        log.debug("Leaving the token endpoint's refusal wrapper. The opaque " +
+                  "mint was refused (" + minted + ").");
+        errorCodes.mark(res, minted);
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        if (minted === 'STS-OAUTH-0979') {
+          res.set('Retry-After', '30');
+          // error-code: none — marked above, STS-OAUTH-0979.
+          return self.oauthError(res, 503, 'temporarily_unavailable',
+            'No access token could be issued now: this realm holds as many ' +
+            'opaque access tokens as it allows. Try again later.');
+        }
+        // error-code: none — marked above, STS-OAUTH-0984.
+        return self.oauthError(res, 500, 'server_error',
+          'No access token could be issued: a fresh handle could not be ' +
+          'drawn.');
+      }
       log.debug("Leaving the token endpoint's refusal wrapper. Rethrowing.");
       throw e;
     }
