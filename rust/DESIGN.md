@@ -268,6 +268,12 @@ rust/
                                  doors, held to Node by
                                  tests/tools/session-vectors.js and over a
                                  real store by tests/tools/session-interop.js
+    sts-credentials/             the credentials a sign-in step checks (phase 5):
+                                 passwords, app passwords, TOTP, recovery codes,
+                                 emailed codes, WebAuthn ceremonies and attestation
+                                 statements, the rate limit, and what each earns;
+                                 sts-authn's CredentialChecks. Held to Node by
+                                 tests/tools/credentials-vectors.js, both ways
     sts-oauth/                   authorization server and OpenID provider
     sts-saml/  sts-wstrust/  sts-wsfed/  sts-federation/  sts-oidfed/
     sts-kerberos/  sts-scim/  sts-ssf/  sts-spiffe/  sts-oid4vc/  sts-gnap/

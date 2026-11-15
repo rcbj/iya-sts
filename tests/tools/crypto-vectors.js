@@ -5590,6 +5590,12 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                    build: function () {
                      return require('./applications-vectors.js').build(ROOT);
                    } },
+                 // The credentials' (#444 phase 5, sts-credentials):
+                 // tests/tools/credentials-vectors.js.
+                 { file: 'credentials-node.json',
+                   build: function () {
+                     return require('./credentials-vectors.js').build(ROOT);
+                   } },
                  // The session core (#444, phase 5, sts-authn):
                  // tests/tools/session-vectors.js.
                  { file: 'session-node.json',
