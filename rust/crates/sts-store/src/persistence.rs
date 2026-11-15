@@ -1636,6 +1636,23 @@ impl MemoryDirectory {
         Some(out)
     }
 
+    /// The first entry of a realm a test holds, in its order, without
+    /// copying the others (as `realm_entries()` would).
+    #[tracing::instrument(level = "debug", skip(self, test))]
+    pub fn find_in(
+        &self,
+        realm: &str,
+        test: &dyn Fn(&str, &StoredEntry) -> bool,
+    ) -> Option<(String, StoredEntry)> {
+        self.realms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(realm)?
+            .iter()
+            .find(|(k, e)| test(k, e))
+            .map(|(k, e)| (k.clone(), e.clone()))
+    }
+
     /// Puts an entry under its DN, lower-cased as its key.
     pub fn put(&self, realm: &str, entry: StoredEntry) {
         let key = entry.dn.to_lowercase();

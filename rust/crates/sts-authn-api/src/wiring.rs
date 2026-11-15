@@ -225,9 +225,7 @@ impl DirectoryPorts {
             })
         };
         self.directory
-            .realm_entries(&realm)
-            .into_iter()
-            .find(|(k, e)| {
+            .find_in(&realm, &|k: &str, e: &StoredEntry| {
                 k.ends_with(&users)
                     && !k[..k.len() - users.len()].contains(',')
                     && (named(e, "uid") || named(e, "stspseudonym"))
