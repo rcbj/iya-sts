@@ -77,6 +77,19 @@ mode, and always verifies the PEP's certificate.
 * **Admin console**: the Notify column of the Remote PEPs tab, and the PEP's
   Overview, show *usable*, *unusable* with a one-line reason, or *none*, and
   two words about the last nudge; the full sentences are under *Details*.
+* **The PEP derives its notify URL when none is set.** With neither the
+  PEP's Settings tab `notifyUrl` nor `PEP_NOTIFY_URL` set, the PEP advertises
+  `https://<host>:<PEP_HTTPS_PORT>/notify`. `<host>` is the first DNS name in
+  the HTTPS listener certificate it serves, or `PEP_NAME` if that is a DNS
+  name, or the container's hostname. A PEP with no HTTPS certificate yet
+  advertises none until it has one, and a new certificate derives the URL
+  again. The PEP logs the derived URL at INFO, and reports its source as
+  `derived` (`GET /admin-api/xacml/peps`'
+  `peps[].settingsInUse.values.notifyUrl.source`). The Notify column says
+  *derived by the PEP from its HTTPS listener certificate*. The service still
+  checks the URL as before: https only, the certificate verified, and the
+  host checked against it. `docker-compose.yml` and the test stack still set
+  `PEP_NOTIFY_URL` explicitly.
 
 ### The reverse proxy's fixes from the 8081 demonstration
 

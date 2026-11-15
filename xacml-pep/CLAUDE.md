@@ -79,11 +79,47 @@ URL (`xacml/CLAUDE.md`), so a nudge in the clear is not the PDP's. And the PEP
 never ADVERTISES one: `options::advertised_notify_url()` sends an `http://`
 `PEP_NOTIFY_URL` (or a managed `notifyUrl` an older service set) as empty on
 the registration, the heartbeat and `GET /`, logged once per value
-(`STS-XPEP-0113`); the managed `notifyUrl` row takes https alone. The PEP's
-default stays EMPTY rather than a derived `https://<host>:9443/notify`: it
-cannot know the name the service reaches it by, and a guess the certificate
-does not name is a nudge refused at every policy change. The compose files
-and the job set it.
+(`STS-XPEP-0113`); the managed `notifyUrl` row takes https alone.
+
+**THE NOTIFY URL IS DERIVED WHEN NOBODY SET ONE (2026-11-14, rcbj: "The PEP
+should attempt to derive the notify URL").** It read EMPTY by default until
+then, on the argument that the PEP cannot know the name the service reaches
+it by. The answer to that argument is the certificate: the service checks
+the notify host against the PEP's HTTPS listener certificate
+(`xacml/CLAUDE.md`), so a host taken FROM that certificate is one the check
+can pass. `options::derive_notify_url()` builds
+`https://<host>:<PEP_HTTPS_PORT>/notify`, `<host>` the first that is a DNS
+name (`is_dns_name()`: no wildcard, no IP address) of:
+
+1. the first subjectAltName DNS name of the certificate the 9443 listener
+   serves (`HttpsListener::dns_names()`, recorded at every `reload()` and
+   `install()`);
+2. `PEP_NAME` as SET — its default `pep-1` is not read, being a name no
+   resolver knows;
+3. the hostname (`HOSTNAME`, `/proc/sys/kernel/hostname`, `/etc/hostname`).
+
+* **No certificate served, no URL**: `POST /notify` is HTTPS only, so there
+  is nothing to advertise. Only the environment's `api-https` listener
+  counts, because the URL names `PEP_HTTPS_PORT`; a listener the service
+  defined is on another port.
+* **The precedence is managed `notifyUrl`, `PEP_NOTIFY_URL`, derived, none**
+  (`Options::notify_in_force()`), reported as `service`, `environment`,
+  `derived`, `default` (`Held::source()`). `derived` is a source of
+  `notifyUrl` ALONE: the service reads it for that row only
+  (`xacml_pep_settings.ts`'s `DERIVED_KEYS`), its model's enum has it on
+  that member only, and the catalogue's `precedence` stays the three every
+  row has. An empty managed value is not set (the service never sends one),
+  so it cannot hide the derived URL. **An explicit `http://` value still
+  wins** and is still not advertised: the order is rcbj's, and a value
+  somebody set is not overridden by a guess.
+* **When it is derived**: once before the registration — `main.rs` reads
+  the pair once before `register()` so the registration carries it — and
+  after every reload of the pair. `Held::set_derived_notify()` answers
+  whether it changed; a change is logged at INFO with its source, and when
+  it changes the URL IN FORCE the reload loop sends a heartbeat at once,
+  because the heartbeat's `notifyUrl` replaces the row's.
+* **The compose files and `sts_xacml_remote_pep.js` still set
+  `PEP_NOTIFY_URL`** explicitly; nothing was removed.
 
 **It replaced a Node container with the same contract** — the same
 environment variables and defaults, ports, endpoints, JSON bodies, log lines
@@ -548,7 +584,7 @@ keys, variables and bounds); the table below marks them.
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate. Without it the PDP refuses the registration unless `xacml.pepRequireCertificate` is off. Enforcement is unaffected either way. |
 | `PEP_TLS_CA` | — | An anchor for the PDP's certificate. |
 | `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, whose listener certificate is issued by a service Root that development mode regenerates on every start — so there is no fixed anchor to verify against (`tls/CLAUDE.md`). Logged on every start, for `federation_http.ts`'s reason. |
-| `PEP_NOTIFY_URL` | — | Where the PDP should nudge. *Managed* (`notifyUrl`). |
+| `PEP_NOTIFY_URL` | derived | Where the PDP should nudge; unset, derived from the HTTPS certificate (*THE NOTIFY URL IS DERIVED*). *Managed* (`notifyUrl`). |
 | `PEP_BIAS` | `deny-biased` | This PEP's own. *Managed* (`bias`). |
 | `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. *Managed* (`pip`). |
 | `PEP_POLL_INTERVAL_MS` | `15000` | **The contract**, and since 2026-09-06 also the interval a FAILED REGISTRATION is retried on. *Managed* (`pollIntervalMs`). |

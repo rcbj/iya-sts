@@ -85,6 +85,23 @@ async function run(t) {
       '(other.test).' });
   t.check(host.split('<details')[0].indexOf('AllowedHosts') >= 0,
           'N6. a host off the allowlist says so in one line', host);
+  const derivedUrl = 'https://pep.example:9443/notify';
+  const derived = XacmlPage.pepNotify(tr, {
+    notifyUrl: derivedUrl, notifyProblem: null,
+    settingsInUse: { values: { notifyUrl: { value: derivedUrl,
+                                            source: 'derived' } } } });
+  t.check(derived.indexOf('derived by the PEP') >= 0 &&
+          derived.indexOf('usable') >= 0 &&
+          quiet.indexOf('derived') < 0,
+          'N8. a notify URL the PEP derived says so in the cell, and one ' +
+          'it did not derive does not', derived);
+  const stale = XacmlPage.pepNotify(tr, {
+    effectiveNotifyUrl: 'https://set-here:9443/notify', notifyProblem: null,
+    settingsInUse: { values: { notifyUrl: { value: derivedUrl,
+                                            source: 'derived' } } } });
+  t.check(stale.indexOf('derived') < 0,
+          'N9. a URL set here is not called derived when the PEP last ' +
+          'reported a derived one', stale);
   const none = XacmlPage.pepNotify(tr, {});
   t.check(none.indexOf('never nudged') >= 0 && none.indexOf('<details') < 0,
           'N7. no notify URL is "none"', none);

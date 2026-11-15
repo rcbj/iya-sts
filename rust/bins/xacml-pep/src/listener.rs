@@ -51,6 +51,9 @@ struct Status {
     digest: String,
     loaded_at: Option<String>,
     certificate: Option<Value>,
+    /// The served certificate's subjectAltName DNS names, in its order —
+    /// what the notify URL is derived from (`options::derive_notify_url`).
+    dns_names: Vec<String>,
     last_problem: Option<String>,
     last_checked_at: Option<String>,
     last_logged_problem: String,
@@ -202,6 +205,18 @@ fn alt_names(x509: &X509) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// A certificate's subjectAltName DNS names, in the certificate's order.
+fn dns_names_of(x509: &X509) -> Vec<String> {
+    x509.subject_alt_names()
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(|name| name.dnsname().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// What `GET /` says about the certificate being served — read with the
@@ -514,7 +529,15 @@ impl HttpsListener {
             );
         }
         status.certificate = Some(served);
+        status.dns_names = dns_names_of(&leaf);
         first
+    }
+
+    /// The DNS names of the certificate being served, or `None` while it
+    /// serves none.
+    pub fn dns_names(&self) -> Option<Vec<String>> {
+        let status = self.status();
+        status.certificate.as_ref().map(|_| status.dns_names.clone())
     }
 
     pub fn mark_listening(&self, port: u16) {
@@ -605,6 +628,7 @@ impl HttpsListener {
         status.loaded_at = Some(sts_core::time::iso_now());
         status.last_problem = None;
         status.certificate = Some(served.clone());
+        status.dns_names = dns_names_of(&leaf);
         Ok(served)
     }
 
@@ -653,6 +677,11 @@ mod tests {
     use openssl::x509::{X509Builder, X509NameBuilder};
 
     fn pair() -> (Vec<u8>, Vec<u8>) {
+        pair_naming(&[])
+    }
+
+    /// A self-signed pair whose subjectAltName names `dns`, in order.
+    fn pair_naming(dns: &[&str]) -> (Vec<u8>, Vec<u8>) {
         let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
         let key = PKey::from_ec_key(EcKey::generate(&group).unwrap()).unwrap();
         let mut name = X509NameBuilder::new().unwrap();
@@ -672,6 +701,16 @@ mod tests {
         builder
             .set_not_after(&Asn1Time::days_from_now(1).unwrap())
             .unwrap();
+        if !dns.is_empty() {
+            let mut san =
+                openssl::x509::extension::SubjectAlternativeName::new();
+            for name in dns {
+                san.dns(name);
+            }
+            let extension =
+                san.build(&builder.x509v3_context(None, None)).unwrap();
+            builder.append_extension(extension).unwrap();
+        }
         builder.sign(&key, MessageDigest::sha256()).unwrap();
         (
             builder.build().to_pem().unwrap(),
@@ -717,6 +756,61 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("not the key"));
+        std::fs::remove_file(&cert_path).unwrap();
+        std::fs::remove_file(&key_path).unwrap();
+    }
+
+    /// THE NOTIFY URL FOLLOWS THE SERVED CERTIFICATE (2026-11-14): nothing
+    /// is derived before a pair is served; the first served certificate's
+    /// first DNS name is the host; a reload to a certificate naming
+    /// another host derives again, and the same certificate again changes
+    /// nothing. An installed pair (a listener the service defined) is read
+    /// the same way.
+    #[test]
+    fn a_certificate_change_derives_the_notify_url_again() {
+        let (cert_path, key_path) = (temp("dcert"), temp("dkey"));
+        let listener = HttpsListener::new(
+            cert_path.to_str().unwrap(),
+            key_path.to_str().unwrap(),
+            0,
+            100,
+            None,
+        );
+        let mut options = crate::options::Options::from_env("0.0.0");
+        options.https_port = 9443;
+        options.notify_url = String::new();
+        options.managed = Arc::new(crate::settings::Held::default());
+        assert!(!listener.reload());
+        assert_eq!(listener.dns_names(), None, "no certificate, no names");
+        assert!(!options.refresh_derived_notify(
+            listener.dns_names().as_deref()));
+        assert_eq!(options.now().notify_url, "", "no listener, none");
+        let (cert, key) = pair_naming(&["*.pep.example", "pep-a.example",
+                                        "pep-b.example"]);
+        std::fs::write(&cert_path, &cert).unwrap();
+        std::fs::write(&key_path, &key).unwrap();
+        assert!(listener.reload());
+        assert!(options.refresh_derived_notify(
+            listener.dns_names().as_deref()));
+        assert_eq!(options.now().notify_url,
+                   "https://pep-a.example:9443/notify",
+                   "the first DNS name a host can be; the wildcard is not");
+        assert!(!options.refresh_derived_notify(
+            listener.dns_names().as_deref()), "the same certificate");
+        let (cert, key) = pair_naming(&["pep-c.example"]);
+        std::fs::write(&cert_path, &cert).unwrap();
+        std::fs::write(&key_path, &key).unwrap();
+        assert!(!listener.reload(), "a reload, not a first start");
+        assert!(options.refresh_derived_notify(
+            listener.dns_names().as_deref()), "a new name derives again");
+        assert_eq!(options.now().notify_url,
+                   "https://pep-c.example:9443/notify");
+        let installed = HttpsListener::in_memory(0, None, false);
+        assert_eq!(installed.dns_names(), None);
+        let (cert, key) = pair_naming(&["pep-d.example"]);
+        installed.install(&cert, &key).unwrap();
+        assert_eq!(installed.dns_names(),
+                   Some(vec!["pep-d.example".to_string()]));
         std::fs::remove_file(&cert_path).unwrap();
         std::fs::remove_file(&key_path).unwrap();
     }

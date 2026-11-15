@@ -454,6 +454,115 @@ pub fn advertised_notify_url(url: &str) -> String {
     String::new()
 }
 
+/// Where a derived notify URL's host came from, best first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DerivedFrom {
+    /// The first DNS name of the HTTPS listener certificate: the name the
+    /// service's host check can pass, since it checks the notify host
+    /// against that certificate.
+    Certificate,
+    /// `PEP_NAME`, being a DNS name.
+    Name,
+    /// The container's or system's hostname.
+    Hostname,
+}
+
+impl DerivedFrom {
+    fn describe(self) -> &'static str {
+        match self {
+            DerivedFrom::Certificate =>
+                "the first DNS name of the HTTPS listener certificate",
+            DerivedFrom::Name => "PEP_NAME",
+            DerivedFrom::Hostname => "the hostname",
+        }
+    }
+}
+
+/// A derived notify URL and where its host came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerivedNotify {
+    pub url: String,
+    pub from: DerivedFrom,
+}
+
+/// Whether `text` is a DNS host name a URL may carry: dot-separated labels
+/// of letters, digits and hyphens, each 1–63 long and not starting or
+/// ending with a hyphen, 253 at most in all, and not all digits at the end
+/// (an IPv4 address is not a DNS name). A wildcard is not a host.
+pub fn is_dns_name(text: &str) -> bool {
+    let name = text.strip_suffix('.').unwrap_or(text);
+    if name.is_empty() || name.len() > 253 {
+        return false;
+    }
+    let labels: Vec<&str> = name.split('.').collect();
+    let good = labels.iter().all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    });
+    good && labels
+        .last()
+        .is_some_and(|tld| !tld.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// THE NOTIFY URL THIS PEP DERIVES (2026-11-14, rcbj: "The PEP should
+/// attempt to derive the notify URL"): `https://<host>:<https_port>/notify`,
+/// or `None` while the HTTPS listener serves no certificate (`served` is
+/// its DNS names, `None` for no certificate) — `POST /notify` is answered
+/// on HTTPS alone, so there is nothing to advertise without one. The host,
+/// best first: the certificate's first DNS name, `PEP_NAME` where it is a
+/// DNS name, the hostname. A name that is not a DNS name is passed over.
+pub fn derive_notify_url(
+    served: Option<&[String]>,
+    pep_name: Option<&str>,
+    hostname: Option<&str>,
+    https_port: u16,
+) -> Option<DerivedNotify> {
+    let names = served?;
+    let pick = names
+        .iter()
+        .map(|n| n.trim())
+        .find(|n| is_dns_name(n))
+        .map(|n| (n.to_string(), DerivedFrom::Certificate))
+        .or_else(|| {
+            pep_name
+                .map(str::trim)
+                .filter(|n| is_dns_name(n))
+                .map(|n| (n.to_string(), DerivedFrom::Name))
+        })
+        .or_else(|| {
+            hostname
+                .map(str::trim)
+                .filter(|n| is_dns_name(n))
+                .map(|n| (n.to_string(), DerivedFrom::Hostname))
+        })?;
+    let host = pick.0.strip_suffix('.').unwrap_or(&pick.0).to_ascii_lowercase();
+    Some(DerivedNotify {
+        url: format!("https://{}:{}/notify", host, https_port),
+        from: pick.1,
+    })
+}
+
+/// The container's or system's hostname: `HOSTNAME`, else the kernel's,
+/// else `/etc/hostname`.
+fn system_hostname() -> Option<String> {
+    std::env::var("HOSTNAME")
+        .ok()
+        .filter(|h| !h.trim().is_empty())
+        .or_else(|| {
+            ["/proc/sys/kernel/hostname", "/etc/hostname"]
+                .iter()
+                .find_map(|path| {
+                    std::fs::read_to_string(path)
+                        .ok()
+                        .map(|h| h.trim().to_string())
+                        .filter(|h| !h.is_empty())
+                })
+        })
+}
+
 /// `PEP_CRL_HTTP` read: `true`, `false`, or unset (`None`); anything else
 /// is unset with the text kept, so it is said once (`STS-XPEP-0115`).
 pub fn crl_http_switch(said: Option<&str>) -> (Option<bool>, Option<String>) {
@@ -571,7 +680,7 @@ impl Options {
         Now {
             description: text("description", &self.description),
             resource: text("resource", &self.resource),
-            notify_url: text("notifyUrl", &self.notify_url),
+            notify_url: self.notify_in_force(&m),
             bias: match m.str("bias").as_deref() {
                 Some("permit-biased") => Bias::PermitBiased,
                 Some("deny-biased") => Bias::DenyBiased,
@@ -639,6 +748,65 @@ impl Options {
                 &self.proxy_strip_cookies,
             ),
         }
+    }
+
+    /// THE NOTIFY URL IN FORCE: the service's, then `PEP_NOTIFY_URL`, then
+    /// the one derived from the served HTTPS certificate, then none — the
+    /// order `Held::source()` reports. An explicit `http://` value still
+    /// wins and is still not advertised (`advertised_notify_url`): the
+    /// precedence is rcbj's, and a value somebody set is not overridden
+    /// by a guess.
+    fn notify_in_force(&self, m: &settings::Managed) -> String {
+        if let Some(set) = m.str(settings::DERIVED_KEY)
+            .filter(|s| !s.trim().is_empty())
+        {
+            return set;
+        }
+        if !self.notify_url.trim().is_empty() {
+            return self.notify_url.clone();
+        }
+        self.managed.derived_notify()
+    }
+
+    /// Derives the notify URL again from what the HTTPS listener serves
+    /// now (`served`: its certificate's DNS names, `None` while it serves
+    /// no certificate), records it, and logs it at INFO the first time and
+    /// whenever it changes. Answers whether it changed. Called after every
+    /// reload of the pair, which is cheap: nothing is logged or replaced
+    /// when the URL is the same.
+    pub fn refresh_derived_notify(&self, served: Option<&[String]>) -> bool {
+        let name = std::env::var("PEP_NAME").ok();
+        let host = system_hostname();
+        let derived = derive_notify_url(served, name.as_deref(),
+                                        host.as_deref(), self.https_port);
+        let url = derived.as_ref().map(|d| d.url.as_str()).unwrap_or("");
+        if !self.managed.set_derived_notify(url) {
+            return false;
+        }
+        let in_force = self.now().notify_url == url;
+        match &derived {
+            Some(d) => tracing::info!(
+                "xacml-pep: the derived notify URL is {} (from {}). {}",
+                d.url,
+                d.from.describe(),
+                if in_force {
+                    "It is advertised: neither the service's notifyUrl nor \
+                     PEP_NOTIFY_URL is set. The service checks its host \
+                     against the listener certificate, so set \
+                     PEP_NOTIFY_URL if the service reaches this PEP by \
+                     another name."
+                } else {
+                    "It is not advertised: the service's notifyUrl or \
+                     PEP_NOTIFY_URL is set and wins."
+                }
+            ),
+            None => tracing::info!(
+                "xacml-pep: no notify URL is derived: the HTTPS listener \
+                 serves no certificate yet{}.",
+                if in_force { "" } else { " (an explicit one is in force)" }
+            ),
+        }
+        true
     }
 
     /// `now()` as `GET /` and the heartbeat report it (`settings::report`).
@@ -946,6 +1114,103 @@ mod tests {
         assert!(!crl_listener(&options),
                 "with PEP_HTTP=true the API's listener serves /crl/");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// THE DERIVED NOTIFY URL'S HOST, best first: the served certificate's
+    /// first DNS name, `PEP_NAME` where it is one, the hostname — and
+    /// nothing at all while no certificate is served.
+    #[test]
+    fn the_notify_host_is_derived_best_first() {
+        let names = |list: &[&str]| -> Vec<String> {
+            list.iter().map(|n| n.to_string()).collect()
+        };
+        let url = |d: Option<DerivedNotify>| d.map(|d| (d.url, d.from));
+        // From the certificate: the first name a host can be.
+        let served = names(&["*.example", "10.0.0.1", "PEP.Example.",
+                             "other.example"]);
+        assert_eq!(
+            url(derive_notify_url(Some(&served), Some("pep-1"),
+                                  Some("abc123"), 9443)),
+            Some(("https://pep.example:9443/notify".to_string(),
+                  DerivedFrom::Certificate)));
+        // From PEP_NAME, when the certificate names no DNS host.
+        let none: Vec<String> = Vec::new();
+        assert_eq!(
+            url(derive_notify_url(Some(&none), Some("xacml-pep"),
+                                  Some("abc123"), 9443)),
+            Some(("https://xacml-pep:9443/notify".to_string(),
+                  DerivedFrom::Name)));
+        // From the hostname, when PEP_NAME is not a DNS name or unset.
+        for name in [Some("pep_1"), Some("a pep"), Some(""), None] {
+            assert_eq!(
+                url(derive_notify_url(Some(&none), name, Some("4f1c0de"),
+                                      9555)),
+                Some(("https://4f1c0de:9555/notify".to_string(),
+                      DerivedFrom::Hostname)), "{:?}", name);
+        }
+        // Nothing usable at all, and no listener at all.
+        assert_eq!(derive_notify_url(Some(&none), Some("-x"), None, 9443),
+                   None);
+        assert_eq!(derive_notify_url(None, Some("xacml-pep"),
+                                     Some("host"), 9443), None,
+                   "no HTTPS certificate served, nothing advertised");
+    }
+
+    #[test]
+    fn a_dns_name_is_a_dns_name() {
+        for good in ["a", "xacml-pep", "pep.example.com", "pep.example.",
+                     "x1.y2"] {
+            assert!(is_dns_name(good), "{}", good);
+        }
+        for bad in ["", "*.example", "-a", "a-", "a..b", "a_b", "1.2.3.4",
+                    "a b", "pep:9443", "a".repeat(64).as_str()] {
+            assert!(!is_dns_name(bad), "{}", bad);
+        }
+    }
+
+    /// THE PRECEDENCE: the service's notifyUrl, then PEP_NOTIFY_URL, then
+    /// the derived one, then none — reported as service, environment,
+    /// derived and default.
+    #[test]
+    fn an_explicit_notify_url_wins_over_the_derived_one() {
+        use crate::settings::{row_of, Managed};
+        let row = row_of("notifyUrl").unwrap();
+        let mut options = Options::from_env("0.0.0");
+        options.https_port = 9443;
+        options.notify_url = String::new();
+        options.managed = Arc::new(Held::default());
+        assert_eq!(options.now().notify_url, "");
+        assert_eq!(options.managed.source(row), "default");
+        let derived = vec!["pep.example".to_string()];
+        assert!(options.refresh_derived_notify(Some(&derived)));
+        assert_eq!(options.now().notify_url,
+                   "https://pep.example:9443/notify");
+        assert_eq!(options.managed.source(row), "derived");
+        assert_eq!(options.settings_report()["values"]["notifyUrl"],
+                   serde_json::json!({
+                       "value": "https://pep.example:9443/notify",
+                       "source": "derived" }));
+        // PEP_NOTIFY_URL wins over the derived one.
+        options.notify_url = "https://by-env:9443/notify".to_string();
+        options.managed = Arc::new(Held::with_env_set(&["PEP_NOTIFY_URL"]));
+        options.managed.set_derived_notify("https://pep.example:9443/notify");
+        assert_eq!(options.now().notify_url, "https://by-env:9443/notify");
+        assert_eq!(options.managed.source(row), "environment");
+        // And the service's wins over both.
+        options.managed.apply(Managed::parse("t", true, &serde_json::json!({
+            "notifyUrl": "https://by-service:9443/notify" })));
+        assert_eq!(options.now().notify_url,
+                   "https://by-service:9443/notify");
+        assert_eq!(options.managed.source(row), "service");
+        // An empty one from the service is not set: the next one down.
+        options.managed.apply(Managed::parse("t", true, &serde_json::json!({
+            "notifyUrl": "" })));
+        assert_eq!(options.now().notify_url, "https://by-env:9443/notify");
+        assert_eq!(options.managed.source(row), "environment");
+        // An explicit http one still wins, and is still not advertised.
+        options.notify_url = "http://old:9090/notify".to_string();
+        assert_eq!(options.now().notify_url, "http://old:9090/notify");
+        assert_eq!(advertised_notify_url(&options.now().notify_url), "");
     }
 
     /// Only an https notify URL is advertised.

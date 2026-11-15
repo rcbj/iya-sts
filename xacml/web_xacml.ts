@@ -905,7 +905,18 @@ class XacmlPage {
         (problem ? '<div>' + esc(problem) + '</div>' : '') +
         (last ? '<div>' + esc(last) + '</div>' : '') + '</details>'
       : '';
-    return '<code>' + esc(url) + '</code>' + status + lastLine + details;
+    // DERIVED BY THE PEP (2026-11-14): with neither the value set here nor
+    // `PEP_NOTIFY_URL`, the PEP advertises one built from its HTTPS
+    // listener certificate, and says so in the settings it reports.
+    const inUse = row.settingsInUse && row.settingsInUse.values
+      ? row.settingsInUse.values.notifyUrl : null;
+    const derived = inUse && inUse.source === 'derived' &&
+      inUse.value === url
+      ? '<div class="sub">' + t.html('consoleXacml.pep.notifyDerived') +
+        '</div>'
+      : '';
+    return '<code>' + esc(url) + '</code>' + derived + status + lastLine +
+      details;
   }
 
   // THE HTTPS LISTENER CERTIFICATE (2026-09-13). What this realm ISSUED,
@@ -1990,6 +2001,7 @@ class XacmlPage {
       source: {
         service: t.html('consoleXacml.pepSettings.source.service'),
         environment: t.html('consoleXacml.pepSettings.source.environment'),
+        derived: t.html('consoleXacml.pepSettings.source.derived'),
         default: t.html('consoleXacml.pepSettings.source.default')
       },
       applies: {

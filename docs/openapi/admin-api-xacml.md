@@ -3982,7 +3982,7 @@ Scope: `admin:read`.
 | `peps[].settingsInUse.values.maxBodyBytes.source` | one of `service`, `environment`, `default` |  |  |
 | `peps[].settingsInUse.values.maxBodyBytes.value` | integer |  |  |
 | `peps[].settingsInUse.values.notifyUrl` | object |  |  |
-| `peps[].settingsInUse.values.notifyUrl.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.notifyUrl.source` | one of `service`, `environment`, `derived`, `default` |  |  |
 | `peps[].settingsInUse.values.notifyUrl.value` | string |  |  |
 | `peps[].settingsInUse.values.pip` | object |  |  |
 | `peps[].settingsInUse.values.pip.source` | one of `service`, `environment`, `default` |  |  |

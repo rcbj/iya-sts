@@ -444,6 +444,8 @@ always verifies the PEP's certificate** (since 2026-11-14):
   reason, and the registration reply says the same. The PEP converges on its
   poll. The PEP itself does not advertise an `http://` `PEP_NOTIFY_URL`
   (`STS-XPEP-0113`), and the PEP's Settings tab refuses one.
+* **The PEP derives its notify URL when none is set** (*The PEP derives its
+  notify URL*, below).
 * **Retired settings.** `xacml.pepNotifyAllowHttp` and
   `xacml.pepNotifySkipTlsVerification` are still accepted, so a
   configuration naming them starts, and they are ignored: one that is on logs
@@ -453,6 +455,40 @@ So the compose service's nudge is delivered once the PEP holds the pair the
 realm issued it (*Its HTTPS listener certificate*, below), in development and
 product alike. Until then the dial fails, the PDP records why on the PEP's
 row, and the PEP converges on its poll anyway.
+
+### The PEP derives its notify URL
+
+**With neither the Settings tab's `notifyUrl` nor `PEP_NOTIFY_URL` set, the
+PEP derives a notify URL** and advertises it on the registration, the
+heartbeat and its own `GET /`:
+
+```
+https://<host>:<PEP_HTTPS_PORT>/notify
+```
+
+`<host>` is the first of these that is a DNS name:
+
+1. **the first DNS name in the HTTPS listener certificate the PEP serves.**
+   The service checks the notify URL's host against that certificate, so a
+   name taken from it can pass the check. A wildcard is passed over;
+2. **`PEP_NAME`**;
+3. **the container's or system's hostname** (`HOSTNAME`, else the kernel's).
+
+* **No HTTPS certificate, no URL.** `POST /notify` is answered on HTTPS only,
+  so a PEP with no pair yet advertises nothing and converges by polling. The
+  URL is derived again on every reload of the pair. A new certificate that
+  names another host changes it, and the PEP sends a heartbeat at once so the
+  service holds the new one.
+* **The precedence** is the Settings tab's `notifyUrl`, then
+  `PEP_NOTIFY_URL`, then the derived URL, then none. An explicit `http://`
+  value still wins and is still not advertised. The Settings tab shows the
+  source as *derived by the PEP*. The Notify column says *derived by the PEP
+  from its HTTPS listener certificate*.
+* **The log** names the derived URL and where its host came from at INFO,
+  once, and again whenever it changes.
+* **Set `PEP_NOTIFY_URL`** when the service reaches the PEP by a name its
+  certificate does not list first, for example behind a load balancer.
+  `docker-compose.yml` and the test stack still set it explicitly.
 
 ## When the PDP goes away
 
@@ -1286,7 +1322,7 @@ environment's, then the default.
 | `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | the client certificate. The leaf followed by the issuing CA |
 | `PEP_TLS_CA` | — | an anchor for the PDP's certificate |
 | `PEP_TLS_INSECURE` | `false` | do not verify the PDP. The ordinary setting against this service in development |
-| `PEP_NOTIFY_URL` | — | where the PDP should nudge: this PEP's HTTPS listener, `https://<host>:<PEP_HTTPS_PORT>/notify`. An `http://` value is not advertised (`STS-XPEP-0113`) — *managed*: `notifyUrl`, https only |
+| `PEP_NOTIFY_URL` | derived | where the PDP should nudge: this PEP's HTTPS listener, `https://<host>:<PEP_HTTPS_PORT>/notify`. Unset, the PEP derives it (*The PEP derives its notify URL*). An `http://` value is not advertised (`STS-XPEP-0113`) — *managed*: `notifyUrl`, https only |
 | `PEP_BIAS` | `deny-biased` | this PEP's own. `permit-biased` is the other — *managed*: `bias` |
 | `PEP_PIP` | `true` | resolve designators the request did not carry against the PDP's directory — *managed*: `pip` |
 | `PEP_POLL_INTERVAL_MS` | `15000` | **the contract**, and the interval a failed registration is retried on — *managed*: `pollIntervalMs` |

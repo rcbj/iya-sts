@@ -1637,7 +1637,11 @@ async function childBody() {
       logLevel: { value: 'loud', source: 'default' },
       pip: { value: true, source: 'invented' },
       description: { value: 'two\nlines', source: 'environment' },
-      aNewerSetting: { value: 1, source: 'service' }
+      aNewerSetting: { value: 1, source: 'service' },
+      // `derived` is a source of the notify URL alone (2026-11-14).
+      notifyUrl: { value: 'https://pep.example:9443/notify',
+                   source: 'derived' },
+      resource: { value: 'r', source: 'derived' }
     }, secret: 'nope' };
   r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pepCred,
                     { decisions: 1, settings: report });
@@ -1648,7 +1652,8 @@ async function childBody() {
   t.check(r.status === 200 && row2 && row2.settings &&
           JSON.parse(row2.settings).pollIntervalMs === 8000 && inUse &&
           Object.keys(inUse.values).sort().join(',') ===
-            'bias,pollIntervalMs' &&
+            'bias,notifyUrl,pollIntervalMs' &&
+          inUse.values.notifyUrl.source === 'derived' &&
           inUse.token === tokenNow && !('secret' in inUse) &&
           Math.abs(Date.parse(inUse.at) - Date.now()) < 60000,
           'S11. a registration keeps the settings; the report keeps only ' +

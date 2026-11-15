@@ -120,6 +120,13 @@ const DAY_MS = 86400000;
 const BIASES = ['deny-biased', 'permit-biased'];
 const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'];
 const SOURCES = ['service', 'environment', 'default'];
+// THE ONE SETTING A PEP MAY DERIVE (2026-11-14, rcbj: "The PEP should
+// attempt to derive the notify URL"): with neither the value set here nor
+// `PEP_NOTIFY_URL`, the PEP advertises `https://<host>:<PEP_HTTPS_PORT>
+// /notify`, the host taken from its HTTPS listener certificate, and reports
+// the source `derived` — between the environment and the default. Read as
+// a source of that row alone; `precedence` stays the three every row has.
+const DERIVED_KEYS = ['notifyUrl'];
 // No C0 control character and no DEL.
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const URL_MAX = 2048;
@@ -640,8 +647,10 @@ class PepSettings {
       ? said.values : {};
     SETTINGS.forEach(function (row) {
       const one = reported[row.key];
+      const derived = one && one.source === 'derived' &&
+        DERIVED_KEYS.indexOf(row.key) >= 0;
       if (!one || typeof one !== 'object' ||
-          SOURCES.indexOf(one.source) < 0) {
+          (SOURCES.indexOf(one.source) < 0 && !derived)) {
         return;
       }
       const v = one.value;

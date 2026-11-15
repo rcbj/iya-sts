@@ -309,7 +309,17 @@ pub struct Held {
     /// The variables that were set (non-empty) when this process started,
     /// so a value can say whether it is the environment's or the default.
     env_set: HashSet<&'static str>,
+    /// THE NOTIFY URL THIS PEP DERIVED (2026-11-14, rcbj: "The PEP should
+    /// attempt to derive the notify URL"): `https://<host>:<PEP_HTTPS_PORT>
+    /// /notify` from the HTTPS listener certificate it serves, empty while
+    /// it serves none. In force only where neither the service nor
+    /// `PEP_NOTIFY_URL` set one (`options::derive_notify_url`).
+    derived_notify: RwLock<String>,
 }
+
+/// The one setting a value may be DERIVED for, below the environment and
+/// above the default.
+pub const DERIVED_KEY: &str = "notifyUrl";
 
 impl Held {
     /// Records which of the variables were set.
@@ -324,6 +334,50 @@ impl Held {
         Held {
             current: RwLock::new(Arc::new(Managed::default())),
             env_set,
+            derived_notify: RwLock::new(String::new()),
+        }
+    }
+
+    /// A holder as `from_env()` would make it with exactly these variables
+    /// set, for a test.
+    #[cfg(test)]
+    pub fn with_env_set(envs: &[&'static str]) -> Held {
+        Held {
+            env_set: envs.iter().copied().collect(),
+            ..Held::default()
+        }
+    }
+
+    /// The notify URL derived from the served certificate, empty for none.
+    pub fn derived_notify(&self) -> String {
+        match self.derived_notify.read() {
+            Ok(guard) => guard.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// Replaces the derived notify URL; answers whether it changed.
+    pub fn set_derived_notify(&self, url: &str) -> bool {
+        let mut guard = match self.derived_notify.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if *guard == url {
+            return false;
+        }
+        *guard = url.to_string();
+        true
+    }
+
+    /// Whether the service set a (non-empty) value for this row. The
+    /// service never sends an empty one (an empty box is "not set"
+    /// there), and an empty `notifyUrl` read as set would hide the
+    /// derived one behind nothing.
+    fn service_sets(&self, row: &Row) -> bool {
+        match self.current().values.get(row.key) {
+            None => false,
+            Some(value) => row.key != DERIVED_KEY
+                || value.as_str().is_some_and(|s| !s.trim().is_empty()),
         }
     }
 
@@ -360,11 +414,17 @@ impl Held {
     }
 
     /// Where a setting's value comes from now.
+    /// The precedence is service, environment, then — for `notifyUrl`
+    /// alone — derived, then default.
     pub fn source(&self, row: &Row) -> &'static str {
-        if self.current().values.contains_key(row.key) {
+        if self.service_sets(row) {
             "service"
         } else if self.env_set.contains(row.env) {
             "environment"
+        } else if row.key == DERIVED_KEY
+            && !self.derived_notify().is_empty()
+        {
+            "derived"
         } else {
             "default"
         }

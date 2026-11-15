@@ -392,6 +392,13 @@ async fn start(options: Options, info: version::VersionInfo) {
     let reporting = listener_set.clone();
     sync.set_listeners_reporter(Arc::new(move || reporting.report()));
 
+    // THE PAIR IS READ ONCE BEFORE THE REGISTRATION (2026-11-14), so a
+    // notify URL derived from the certificate it serves goes out on the
+    // registration rather than a heartbeat later (`refresh_derived_notify`).
+    // The reload loop below goes on from there.
+    let https_first = https.is_configured() && https.reload();
+    options.refresh_derived_notify(https.dns_names().as_deref());
+
     // REGISTER FIRST, PULL REGARDLESS — and both retried on the poll timer.
     sync.register().await;
     sync.pull("start").await;
@@ -469,12 +476,29 @@ async fn start(options: Options, info: version::VersionInfo) {
         );
         let (watcher, served) = (https.clone(), pep.clone());
         let reload_options = options.clone();
+        let reload_sync = sync.clone();
+        if https_first {
+            tokio::spawn(serve_https(served.clone(), watcher.clone()));
+        }
         tokio::spawn(async move {
             loop {
+                tokio::time::sleep(reload_interval(&reload_options)).await;
                 if watcher.reload() {
                     tokio::spawn(serve_https(served.clone(), watcher.clone()));
                 }
-                tokio::time::sleep(reload_interval(&reload_options)).await;
+                // A NEW CERTIFICATE MAY NAME ANOTHER HOST: derive the notify
+                // URL again, and when the one in force changed, tell the
+                // service now rather than at the next heartbeat.
+                let before = reload_options.now().notify_url;
+                if reload_options
+                    .refresh_derived_notify(watcher.dns_names().as_deref())
+                    && reload_options.now().notify_url != before
+                {
+                    let sync = reload_sync.clone();
+                    tokio::spawn(async move {
+                        sync.heartbeat().await;
+                    });
+                }
             }
         });
     }
