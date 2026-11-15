@@ -4370,7 +4370,37 @@ class OAuth2Server {
       return claims[name] === undefined;
     });
     if (rest.length) {
-      Object.assign(claims, self.claimsNamed(user, rest));
+      // FROM THE PERSON'S ENTRY, NEVER THE PERSONA (2026-11-14, found by
+      // #444's D12). In development `helpers.userFor()` adds an invented
+      // persona (`name` "<user> (mock)", an `email` at the realm's invented
+      // domain, `email_verified`) to every person object, and `claimsNamed()`
+      // prefers the object's value — so a resource server's declared claims
+      // carried the persona while the same claims mapped by a permission
+      // carried the directory's. `mode.inventsClaimValues()` is "where the
+      // store holds NONE": here the declared claims are read without the
+      // persona, so the entry answers them, and one it does not hold is
+      // omitted, as the permission-mapped ones are.
+      const asFiled = Object.assign({}, user || {});
+      if (this.deps.mode.inventsClaimValues() && asFiled.username) {
+        // Only a value that IS the persona `userFor()` invents is dropped; a
+        // caller that handed a person object holding real values keeps them.
+        // `email_verified` goes with an invented `email`: a verified flag
+        // beside the entry's own address would be invented too.
+        const invented: Json = this.deps.userFor(String(asFiled.username)) ||
+          {};
+        const inventedMail = invented.email !== undefined &&
+          asFiled.email === invented.email;
+        DIRECTORY_PERSONA_CLAIMS.forEach(function (name: string): void {
+          if (invented[name] !== undefined &&
+              asFiled[name] === invented[name]) {
+            delete asFiled[name];
+          }
+        });
+        if (inventedMail) {
+          delete asFiled.email_verified;
+        }
+      }
+      Object.assign(claims, self.claimsNamed(asFiled, rest));
     }
     const mode = scopeClaims.agreedResourceMode(modes);
     log.debug("Leaving OAuth2Server.resourceServerClaims(). " +
