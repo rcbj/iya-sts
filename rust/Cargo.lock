@@ -4687,7 +4687,7 @@ dependencies = [
 name = "sts-registers"
 version = "0.1.0"
 dependencies = [
- "indexmap",
+ "indexmap 2.14.2",
  "jsonschema",
  "regex",
  "serde",
