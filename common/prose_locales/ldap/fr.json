@@ -1947,6 +1947,10 @@
     "en": "eb941b100ed53ed4",
     "text": "Le moment où l’application propriétaire a été supprimée. La politique est conservée, désactivée, pour l’audit, jusqu’à ce qu’un administrateur la supprime."
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "Le PEP distant et la route, sous la forme du nom du PEP, d’une barre oblique et de l’id de la route, pour lesquels cette politique a été GÉNÉRÉE par le choix d’autorisation de la route (simple ou publique) dans les formulaires de routes du proxy inverse ou par l’action generate-pep-route-policy (#1760). Une telle politique est réécrite quand la route est enregistrée, renommée avec la route et retirée avec elle ; elle n’est jamais la racine. Elle peut être modifiée dans l’éditeur de politiques, et le prochain enregistrement du choix simple ou public de la route la réécrit : choisis une politique existante sur la route pour en garder une écrite à la main."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Un Policy Enforcement Point distant qui s’est enregistré auprès de ce Policy Decision Point. LA LIGNE EST UN ENREGISTREMENT ET NON UNE PERMISSION — un PEP qui ne s’enregistre jamais peut tout de même récupérer le référentiel et appliquer les décisions. Ce qu’une ligne apporte, c’est une place sur la console et une adresse pour la notification de changement."

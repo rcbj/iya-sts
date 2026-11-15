@@ -1180,6 +1180,7 @@ declare namespace IyaDomain {
     description?: string[];
     application?: string;
     orphanedAt?: string;
+    pepRoute?: string;
   }
 
   interface Concepts {

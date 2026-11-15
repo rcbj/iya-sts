@@ -79,4 +79,12 @@ model XacmlPolicy {
     what: "When the owning application was deleted. The policy is kept, disabled, for audit, until an administrator removes it."
   })
   xacmlOrphanedAt?: DirectoryTime;
+  // #1760: THE REVERSE-PROXY ROUTE A POLICY WAS GENERATED FOR. A fact about
+  // the deployment, like xacmlApplication, so an edit of the document
+  // through any door keeps it.
+  @attr(#{
+    kind: "single",
+    what: "The remote PEP and route, as the PEP's name, a slash and the route's id, this policy was GENERATED for by the route's Authorization choice (simple or public) on the reverse-proxy route forms or by the generate-pep-route-policy action (#1760). Such a policy is rewritten when the route is saved, renamed with the route and removed with it; it is never the root. It may be edited in the policy editor, and the next save of the route's simple or public choice writes it again — choose an existing policy on the route to keep a hand-written one."
+  })
+  xacmlPepRoute?: string;
 }

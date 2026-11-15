@@ -56,7 +56,7 @@ Do not edit it by hand.
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
 | [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 26 |
-| [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 10 |
+| [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 11 |
 
 ## Application
 
@@ -1336,6 +1336,7 @@ Recorded in `../xacml/xacml_store`.
 | `xacmlIsRoot` | one | this service | `1.3.6.1.4.1.67607.1.1.719` | "TRUE" on the policy the PDP starts from. A repository with no root decides nothing and says so; a repository with two is refused at write time rather than picking one. |
 | `xacmlKind` | one | this service | `1.3.6.1.4.1.67607.1.1.720` | "Policy" or "PolicySet". Derived. |
 | `xacmlOrphanedAt` | one | this service | `1.3.6.1.4.1.67607.1.1.721` | When the owning application was deleted. The policy is kept, disabled, for audit, until an administrator removes it. |
+| `xacmlPepRoute` | one | this service | `1.3.6.1.4.1.67607.1.1.759` | The remote PEP and route, as the PEP's name, a slash and the route's id, this policy was GENERATED for by the route's Authorization choice (simple or public) on the reverse-proxy route forms or by the generate-pep-route-policy action (#1760). Such a policy is rewritten when the route is saved, renamed with the route and removed with it; it is never the root. It may be edited in the policy editor, and the next save of the route's simple or public choice writes it again — choose an existing policy on the route to keep a hand-written one. |
 | `xacmlPolicyDocument` | one | this service | `1.3.6.1.4.1.67607.1.1.740` | The XACML 3.0 XML. THIS IS THE POLICY. Everything else on the entry is derived from it. |
 | `xacmlPolicyId` | one | this service | `1.3.6.1.4.1.67607.1.1.741` | The PolicyId or PolicySetId inside the document. DERIVED at write time and used for listing and for resolving a PolicyIdReference; the document is the truth. |
 | `xacmlVersion` | one | this service | `1.3.6.1.4.1.67607.1.1.742` | The Version attribute of the document. Derived. |
