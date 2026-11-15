@@ -1156,7 +1156,42 @@ impl AuthorizationEndpoint {
         }
         let confidential = crate::bcp::is_confidential(client);
         let challenge = s(q.get("code_challenge"));
-        if types.iter().any(|t| t == "code") && challenge.is_empty() {
+        let oauth21 = self.settings.value_of("oauth2.oauth21").as_bool();
+        // OAUTH 2.1 — PKCE FOR CONFIDENTIAL CLIENTS TOO, and the method
+        // REQUIRED (`oauth21.pkceDecision()`): asked first and only in that
+        // mode; "confidential" is a credential this service can check.
+        if oauth21 && types.iter().any(|t| t == "code") {
+            if !challenge.is_empty() {
+                if s(q.get("code_challenge_method")).is_empty() {
+                    return Some((codes::STS_OAUTH_0276, "invalid_request", format!(
+                        "OAuth 2.1 ({}) section 4.1.1: code_challenge_method is REQUIRED — send code_challenge_method=S256. RFC 7636 read an absent method as plain; OAuth 2.1 removed that default and forbids plain (section 7.5.2).",
+                        OAUTH21_DRAFT)));
+                }
+            } else {
+                let checked = confidential
+                    && crate::bcp::credential_on_file(client, None);
+                let openid =
+                    words(&s(q.get("scope"))).iter().any(|w| w == "openid");
+                let nonce = !s(q.get("nonce")).is_empty();
+                if !(checked && openid && nonce) {
+                    let mut missing: Vec<&str> = Vec::new();
+                    if !checked {
+                        missing.push("the client is not confidential with a credential on file");
+                    }
+                    if !openid {
+                        missing.push("the request is not OpenID Connect (no openid scope)");
+                    }
+                    if !nonce {
+                        missing.push("the request carries no nonce");
+                    }
+                    return Some((codes::STS_OAUTH_0275, "invalid_request", format!(
+                        "OAuth 2.1 ({}) section 7.5.1.1: code_challenge and code_verifier are REQUIRED for every client, confidential ones included, unless a confidential client is relying on the OpenID Connect nonce instead — and here {}. Send code_challenge with code_challenge_method=S256.",
+                        OAUTH21_DRAFT, missing.join(", and "))));
+                }
+            }
+        }
+        if types.iter().any(|t| t == "code") && challenge.is_empty() && !oauth21
+        {
             if !confidential {
                 return Some((codes::STS_OAUTH_0127, "invalid_request", "RFC 9700 section 2.1.1: public clients must use PKCE (RFC 7636). Send code_challenge and code_challenge_method=S256. A client registered here with a token_endpoint_auth_method other than \"none\" is treated as confidential, for which PKCE is RECOMMENDED rather than required.".into()));
             }
@@ -2128,7 +2163,7 @@ impl AuthorizationEndpoint {
                 "acr": view.assurance_level,
                 "session_id": session_id,
                 "session_authenticated": signed_in,
-                "authorization_server": "default",
+                "authorization_server": crate::authorization_servers::current(),
                 "resources": resources,
                 "code_challenge": q.get("code_challenge").cloned().unwrap_or(Json::Null),
                 "code_challenge_method": if method.is_empty() { "plain".to_string() } else { method },
@@ -2136,7 +2171,15 @@ impl AuthorizationEndpoint {
                 "attested_jkt": "",
                 "authorization_details": null,
                 "claims": null,
-                "pkce_exempt": "",
+                // `oauth21.codeRecordFields()`: a code with no challenge
+                // got past `pkceDecision()` only by the nonce exemption.
+                "pkce_exempt": if self.settings.value_of("oauth2.oauth21").as_bool()
+                    && s(q.get("code_challenge")).is_empty()
+                {
+                    "oidc-nonce"
+                } else {
+                    ""
+                },
                 "granted_at": now as i64,
                 "ttlMs": ttl as i64,
                 "expires": (now + ttl) as i64,

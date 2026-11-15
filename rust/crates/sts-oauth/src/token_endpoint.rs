@@ -1063,10 +1063,11 @@ impl TokenEndpoint {
             a if a.is_empty() => "default".to_string(),
             a => a,
         };
-        if server != "default" {
+        let here = crate::authorization_servers::current();
+        if server != here {
             return self.refusal(codes::STS_OAUTH_0200, 400, "invalid_grant", &format!(
-                "This authorization code was issued by the \"{}\" authorization server and is being redeemed at the \"default\" one. They are separate authorization servers that happen to share a process: they publish different capabilities and a credential does not cross between them. Redeem it at /{}/oauth2/token.",
-                server, server));
+                "This authorization code was issued by the \"{}\" authorization server and is being redeemed at the \"{}\" one. They are separate authorization servers that happen to share a process: they publish different capabilities and a credential does not cross between them. Redeem it at {}/oauth2/token.",
+                server, here, crate::authorization_servers::path_of(&server)));
         }
         let asked_redirect = s(body.get("redirect_uri"));
         if !asked_redirect.is_empty()
