@@ -43,6 +43,7 @@
 //!
 //! The ambient realm (`realms.current()`) is `sts_core::realm::current_id()`.
 
+pub mod actions;
 pub mod checks;
 pub mod read;
 pub mod record;
