@@ -58,6 +58,9 @@
 // (#335). The realm and its listener are the job's own; the listener is
 // removed again so the port is free for the next job.
 //
+// Its realms are removed at the end only under STS_TEST_REMOVE_REALMS=1
+// (a hand run on a shared probe); the suite leaves them standing.
+//
 // OWNED HERE (local: true): this repository's own listeners and management
 // API.
 // ---------------------------------------------------------------------------
@@ -688,7 +691,32 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-test().then(function () {
+// THE REALMS THIS JOB MADE, REMOVED AT ITS END ONLY WHEN ASKED
+// (STS_TEST_REMOVE_REALMS=1, a hand run against a probe that many jobs
+// share and whose directory would otherwise fill). The suite does not ask:
+// no job removes a realm on a shared run (tests/CLAUDE.md).
+async function removeRealms() {
+  log.debug("Entering removeRealms().");
+  if (process.env.STS_TEST_REMOVE_REALMS !== "1") {
+    log.debug("Leaving removeRealms(). Not asked.");
+    return;
+  }
+  for (const id of [REALM]) {
+    try {
+      const r = await fetch(base + "/admin-api/realms/remove", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }) });
+      log.info("removed the realm " + id + ": " + r.status);
+    } catch (e) {
+      log.debug("Caught in removeRealms(): " + ((e && e.message) || e));
+      // A realm left behind is litter, not a failure of what was tested.
+      log.warn("could not remove the realm " + id);
+    }
+  }
+  log.debug("Leaving removeRealms().");
+}
+
+test().finally(removeRealms).then(function () {
   log.info("Test completed successfully.");
 }).catch(function (e) {
   log.error("sts_listener_tls_policy FAILED: " + ((e && e.stack) || e));
