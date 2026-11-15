@@ -29,8 +29,8 @@
 //   passkeys <base> <id,id,id> <user> <password>
 //                                  the passkey person, in one browser with a
 //                                  virtual authenticator (CDP's WebAuthn
-//                                  domain): a passkey registered at the
-//                                  set-up step, then used as the second
+//                                  domain): a passkey registered at sign-in
+//                                  (the security-key box), then the second
 //                                  factor, then with no username; prints the
 //                                  three sessions.
 //   honours <base> <cookie>        Node reads the session the cookie names:
@@ -310,7 +310,14 @@ async function openChrome() {
   };
   const close = function () {
     chrome.kill('SIGKILL');
-    fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      // Chrome may still be writing its profile as it dies.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10,
+                       retryDelay: 200 });
+    } catch (e) {
+      console.error('the browser profile ' + dir + ' was left: ' +
+                    String((e && e.message) || e));
+    }
   };
   try {
     let target = null;
@@ -428,8 +435,8 @@ async function browser(base, id, user, password, secret) {
  * keys, user verification), so the passkey registered by the first
  * sign-in is the one the next two use:
  *
- *   1. `enrol` — the password, then the set-up step product asks for, its
- *      passkey button, and the passkey page's registration;
+ *   1. `enrol` — the password with the screen's security-key box, and
+ *      the passkey page's registration;
  *   2. `second` — the password, then the passkey as the second factor;
  *   3. `usernameless` — the screen's *Sign in with a passkey* button, no
  *      username typed.
@@ -464,6 +471,16 @@ async function passkeys(base, ids, user, password) {
     if (!added.result || !added.result.authenticatorId) {
       throw new Error('no virtual authenticator: ' + JSON.stringify(added));
     }
+    // NO AUTOFILL: the screen arms conditional mediation as it loads, and
+    // a virtual authenticator holding a discoverable credential answers it
+    // unasked — every screen would be a usernameless sign-in. Each sign-in
+    // here is the one its step names, so the page is told the browser has
+    // none; the button's own ceremony is unaffected.
+    await c.send('Page.enable');
+    await c.send('Page.addScriptToEvaluateOnNewDocument', { source:
+      'if (window.PublicKeyCredential) { PublicKeyCredential.' +
+      'isConditionalMediationAvailable = function () { return ' +
+      'Promise.resolve(false); }; }' });
     const [enrolId, secondId, discoverId] = String(ids).split(',');
     const screen = async function (id) {
       await c.send('Network.clearBrowserCookies');
@@ -487,26 +504,39 @@ async function passkeys(base, ids, user, password) {
       out[what] = { steps: steps, location: await c.evaluate('location.href'),
                     cookie: held.cookie };
     };
-    // 1. Registered at the set-up step.
+    // 1. Registered at sign-in: the password with the screen's "use a
+    //    security key" box, which a person holding none answers with the
+    //    passkey page's registration (the set-up step's own door is proved
+    //    by the vectors: product with authn.allowOptionalSecondFactor
+    //    offers it to nobody here).
     await screen(enrolId);
-    await withPassword();
-    if (!await c.waitFor("!!document.getElementById('mfa-setup-webauthn')")) {
-      throw new Error('the set-up step did not offer a passkey: ' +
+    if (!await c.evaluate("(function(){var b=document.getElementById(" +
+        "'use_webauthn');if(!b){return 0;}b.checked=true;return 1;})()")) {
+      throw new Error('the screen offered no security key box: ' +
                       await page());
     }
-    await click('mfa-setup-webauthn');
+    await withPassword();
     if (!await c.waitFor("!!document.getElementById('wa-go')")) {
       throw new Error('the passkey page was not drawn: ' + await page());
     }
     await click('wa-go');
-    await settle('enrol', ['the screen', 'the set-up step',
+    await settle('enrol', ['the screen with a security key',
                            'the passkey registered']);
-    // 2. The passkey as the second factor.
+    // 2. The passkey as the second factor. The authenticator answers
+    //    nothing while the screen is drawn (an autofill the page armed
+    //    anyway would sign in with no username), and the passkey page's
+    //    own ceremony once its button is pressed.
+    const presence = function (on) {
+      return c.send('WebAuthn.setAutomaticPresenceSimulation',
+        { authenticatorId: added.result.authenticatorId, enabled: on });
+    };
+    await presence(false);
     await screen(secondId);
     await withPassword();
     if (!await c.waitFor("!!document.getElementById('wa-go')")) {
       throw new Error('the passkey was not asked for: ' + await page());
     }
+    await presence(true);
     await click('wa-go');
     await settle('second', ['the screen', 'the passkey as the second ' +
                             'factor']);
@@ -515,6 +545,8 @@ async function passkeys(base, ids, user, password) {
     if (!await c.waitFor("!!document.getElementById('wa-passkey-go')")) {
       throw new Error('the screen offered no passkey: ' + await page());
     }
+    // The button, unless the screen's autofill answered first: either is
+    // a sign-in with no username.
     await click('wa-passkey-go');
     await settle('usernameless', ['the screen', 'a passkey and no ' +
                                   'username']);

@@ -35,10 +35,10 @@
 #      longer honours the one Rust signed out (401, nobody).
 #   6. The same two sign-ins against Node, for the comparison.
 #
-#   THE PASSKEY PERSON (the `passkeys` slice): `e2e.key` is left at the
-#   set-up step by Node, and in step 3 one browser holding a virtual
+#   THE PASSKEY PERSON (the `passkeys` slice): `e2e.key` holds a password
+#   and no second factor, and in step 3 one browser holding a virtual
 #   authenticator (CDP's WebAuthn domain) registers a passkey at Rust's
-#   set-up step, signs in with it as the second factor, and with no
+#   screen (the security-key box), signs in with it as the second factor, and with no
 #   username; Node honours all three sessions in step 4, and `e2e.key2`
 #   does the same against Node in step 5.
 #
