@@ -2497,6 +2497,10 @@ const JOBS = [
   // request object of an automatic RP (oidfed_entity, oidfed_extensions,
   // oidfed_registration, oidcc_conformance_findings 4).
   { file: 'sts_oidfed_codes.js', browser: false, local: true },
+  // D12 (#444): what both SAML identity providers answer, held to
+  // tests/saml_model_wire.snapshot.json's development AND product passes,
+  // over the wire (saml_model_wire).
+  { file: 'sts_saml_model_wire.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
