@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 pub mod attestation;
+pub mod authority;
 pub mod der;
 pub mod error;
 pub mod fields;

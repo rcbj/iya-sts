@@ -34,7 +34,7 @@ use sts_core::log::tag;
 use sts_core::mode::Mode;
 use sts_core::realm::{RealmRegistry, SettingsEnvironment};
 use sts_core::realm_lifecycle::RealmLifecycle;
-use sts_core::realm_store::{RealmMap, StoreHandles, StoreSpec};
+use sts_core::realm_store::{RealmMap, SharedMap, StoreHandles, StoreSpec};
 use sts_core::settings::Settings;
 use sts_crypto::random::random_uuid;
 use sts_store::ldif_driver::LdifDriver;
@@ -82,6 +82,14 @@ pub struct Stack {
     pub signin: sts_authn_api::wiring::SignInStack,
     /// `/authn-api`'s router, put behind the HTTP layer.
     pub authn_routes: axum::Router,
+    /// The certificate authority (#444 phase 6), made once the store is
+    /// open: its rows are the keystore's.
+    pub pki: OnceLock<Arc<sts_pki::authority::Authority>>,
+    /// `tls.listenerKeys` (#162, #264): each node's own listener key, kept
+    /// where minted state persists, keyed `<unit>@<node>`.
+    pub listener_keys: SharedMap<Json>,
+    /// `cluster.nodeName`, else the host name.
+    pub node_name: String,
 }
 
 /// The change-log pull the read barrier waits on: `syncNow()`, a pull that
@@ -347,6 +355,9 @@ impl Stack {
             Some(Arc::new(RunsReconcile(scheduler_slot.clone()))),
         );
         let run_store = Arc::new(RunStore { rows: runs });
+        // Declared before the store opens, so its rows are restored.
+        let listener_keys =
+            SharedMap::new(&handles, StoreSpec::persisted("tls.listenerKeys"));
         let host = std::env::var("HOSTNAME")
             .unwrap_or_else(|_| "localhost".to_string());
         let node_name = {
@@ -696,6 +707,9 @@ impl Stack {
             cluster_mode: resolved,
             signin,
             authn_routes,
+            pki: OnceLock::new(),
+            listener_keys,
+            node_name,
         })
     }
 
@@ -710,6 +724,30 @@ impl Stack {
         // not persist, made for this run.
         if let Some(sets) = self.persistence.key_sets() {
             sets.open_or_make("").await?;
+        }
+        // THE CERTIFICATE AUTHORITY (`pki.start()`, after the keystore and
+        // before anything binds): the stored hierarchy read, or built where
+        // there is none — off the async threads, a key being a tenth of a
+        // second.
+        let realms = self.registry.list();
+        let authority = crate::pki::authority(
+            &self.settings,
+            &self.mode,
+            self.persistence.key_sets(),
+            realms
+                .iter()
+                .filter(|r| !r.domain.is_empty())
+                .map(|r| (r.id.clone(), r.domain.clone()))
+                .collect(),
+        );
+        let realm_ids: Vec<String> =
+            realms.iter().map(|r| r.id.clone()).collect();
+        let starting = authority.clone();
+        tokio::task::spawn_blocking(move || starting.start(&realm_ids))
+            .await
+            .map_err(|e| e.to_string())?;
+        if self.pki.set(authority).is_err() {
+            tracing::debug!("pki: the authority was already made.");
         }
         let (cluster_mode, why) = self.cluster_mode.clone();
         tracing::debug!("cluster: {:?} ({})", cluster_mode, why);
@@ -734,7 +772,7 @@ impl Stack {
     pub fn router(&self) -> axum::Router {
         let persistence = Arc::downgrade(&self.persistence);
         let (settings, mode) = (self.settings.clone(), self.mode.clone());
-        let routes = self.authn_routes.clone().route(
+        let mut routes = self.authn_routes.clone().route(
             "/oauth2/jwks",
             axum::routing::get(move || {
                 let persistence = persistence.clone();
@@ -742,6 +780,15 @@ impl Stack {
                 async move { jwks(persistence, settings, mode).await }
             }),
         );
+        // `pki/pki_service.ts` (17b): the public revocation surface.
+        if let Some(authority) = self.pki.get() {
+            routes = routes.merge(crate::pki::routes(
+                authority.clone(),
+                self.settings
+                    .value_of("pki.publishCrlToDirectory")
+                    .as_bool(),
+            ));
+        }
         // OUTSIDE everything else, as Node's request pool and cluster
         // barrier sit in front of the app: the request counts as in flight
         // (#408), waits for what was committed before it (rule 1), and its

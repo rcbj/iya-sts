@@ -5625,6 +5625,13 @@ const VECTORS = [{ file: 'jws-node.json', build: jws },
                  { file: 'authn-api-node.json',
                    build: function () {
                      return require('./authn-api-vectors.js').build(ROOT);
+                   } },
+                 // The certificate authority (#444, phase 6, sts-pki):
+                 // tests/tools/pki-authority-vectors.js.
+                 { file: 'pki-authority-node.json',
+                   build: function () {
+                     return require('./pki-authority-vectors.js')
+                       .build(ROOT, OUT);
                    } }];
 
 // THE AUDIT LOG AND THE MAIL CHANNEL (#444, phase 4): `sts-audit`'s and
