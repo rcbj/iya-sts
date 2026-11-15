@@ -153,6 +153,14 @@ impl TokenRegister {
 
     /// `recordJwt(payload, signed, context)`: the record, filed under its
     /// `jti`. `now_ms` is `issuedAt`.
+    /// `tokens.size` and `revokedJtis.size` (`admin_stats.js`'s snapshot):
+    /// the tokens the register holds in a realm, and the jtis on the
+    /// AMBIENT realm's revoked list — the realm the dashboard is asked in.
+    #[tracing::instrument(level = "debug", skip(self))]
+    pub fn held_in(&self, realm: &str) -> (usize, usize) {
+        (self.tokens.in_realm(realm).len(), self.revoked.len())
+    }
+
     #[tracing::instrument(level = "debug", skip_all)]
     pub fn record_jwt(
         &self,

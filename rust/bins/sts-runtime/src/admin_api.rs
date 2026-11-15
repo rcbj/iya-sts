@@ -1346,13 +1346,14 @@ impl SetupPorts for Setup {
 }
 
 impl Setup {
+    /// `snap.tokens.held` and `snap.tokens.revoked`: the realm's token
+    /// register and its revoked list.
     fn tokens_held(&self, realm_id: &str) -> (usize, usize) {
-        let _ = (&self.tokens, realm_id);
-        (0, 0)
+        self.tokens.held_in(realm_id)
     }
+    /// `sessions.size`: the ambient realm's sign-on sessions.
     fn sessions_held(&self) -> usize {
-        let _ = &self.sessions;
-        0
+        self.sessions.store().len()
     }
 }
 
