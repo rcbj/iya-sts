@@ -21500,8 +21500,9 @@ server.del('', function (req, res, next) {
   if (isBootstrapAdministratorEntry(stored)) {
     log.debug('Leaving the LDAP delete handler. The bootstrap administrator.');
     return next(ldapRefusal(req, 'STS-LDAP-0077', 'a delete of ' + dn +
-      ' was refused: it is the default realm\'s bootstrap administrator, ' +
-      'which cannot be deleted', new ldap.UnwillingToPerformError(dn), dn));
+      ' was refused: it is ' + bootstrapAdministratorOwner() + ' bootstrap ' +
+      'administrator, which cannot be deleted',
+      new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
     log.debug('Leaving the LDAP delete handler. It is not a leaf.');
@@ -21935,8 +21936,9 @@ server.modifyDN('', function (req, res, next) {
   if (isBootstrapAdministratorEntry(stored)) {
     log.debug('Leaving the LDAP modifyDN handler. The bootstrap administrator.');
     return next(ldapRefusal(req, 'STS-LDAP-0077', 'a rename of ' + dn +
-      ' was refused: it is the default realm\'s bootstrap administrator, ' +
-      'and a rename would delete that account under another name',
+      ' was refused: it is ' + bootstrapAdministratorOwner() + ' bootstrap ' +
+      'administrator, and a rename would delete that account under another ' +
+      'name',
       new ldap.UnwillingToPerformError(dn), dn));
   }
   if (hasChildren(dn)) {
@@ -28108,6 +28110,16 @@ function isBootstrapAdministratorEntry(stored) {
   return answer;
 }
 
+// Whose bootstrap administrator it is, for a refusal's words: the realm the
+// directory is answering in (2026-11-14, #444's D12 — a trust realm's seeded
+// account was called "the default realm's bootstrap administrator").
+function bootstrapAdministratorOwner() {
+  log.debug('Entering bootstrapAdministratorOwner().');
+  log.debug('Leaving bootstrapAdministratorOwner().');
+  return realms.isDefault() ? 'the default realm\'s'
+                            : 'the "' + realms.currentId() + '" realm\'s';
+}
+
 // ---------------------------------------------------------------------------
 // DELETING PEOPLE IN BULK (#351, 2026-09-29).
 //
@@ -28823,8 +28835,8 @@ function deletePerson(dn, options) {
   }
   if (isBootstrapAdministratorEntry(stored)) {
     log.warn(errorCodes.tag('STS-LDAP-0077') + 'ldap: refused to delete ' +
-             stored.dn + ' — it is its realm\'s bootstrap ' +
-             'administrator (admin.bootstrapUsername).');
+             stored.dn + ' — it is ' + bootstrapAdministratorOwner() +
+             ' bootstrap administrator.');
     log.debug('Leaving deletePerson(). The bootstrap administrator.');
     return coded('STS-LDAP-0077', { ok: false, reason: 'protected',
                                     dn: stored.dn });

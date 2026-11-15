@@ -473,6 +473,26 @@ async function sectionA(ctx) {
     assert.ok(defaultRows.length > 0, "no STS-LDAP-0077 row in the default " +
               "realm");
   });
+  // A NODE DEFECT, FIXED (2026-11-14, #444's D12): the trust realm's refusal
+  // called its account "the default realm's bootstrap administrator".
+  check("A11b. each refusal names the realm whose bootstrap administrator " +
+        "it is", function () {
+    const said = function (rows) {
+      return rows.map(function (row) {
+        return String(row.summary || "");
+      }).join(" | ");
+    };
+    assert.ok(protectedRows.some(function (row) {
+      return String(row.summary || "").indexOf("the \"" + OTHER +
+        "\" realm's bootstrap administrator") >= 0;
+    }), said(protectedRows));
+    assert.ok(!/default realm's/.test(said(protectedRows)),
+              said(protectedRows));
+    assert.ok(defaultRows.some(function (row) {
+      return /the default realm's bootstrap administrator/
+        .test(String(row.summary || ""));
+    }), said(defaultRows));
+  });
   log.debug("Leaving sectionA().");
 }
 

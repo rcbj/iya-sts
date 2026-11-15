@@ -15842,9 +15842,10 @@ const CODES = [
       'modifyTimestamp or entryDN, which the directory maintains itself.',
     spec: 'LDAP result code 19, constraintViolation' },
   { code: 'STS-LDAP-0077',
-    summary: 'A delete or rename of the default realm\'s bootstrap ' +
-      'administrator (admin.bootstrapUsername) was refused — over LDAP or ' +
-      'SCIM — because that account cannot be removed.',
+    summary: 'A delete or rename of a realm\'s bootstrap administrator ' +
+      '(admin.bootstrapUsername, or the name product mode generates) was ' +
+      'refused — over LDAP or SCIM — because that account cannot be ' +
+      'removed.',
     spec: 'LDAP result code 53, unwillingToPerform; SCIM 403' },
   { code: 'STS-LDAP-0078',
     summary: 'A flag of the bootstrap administrator (pwdReset, ' +
