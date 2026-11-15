@@ -20228,9 +20228,37 @@ class OAuth2Server {
     return answer;
   }
 
-  private introspectionOf(token: Json): Json {
+  // HOW THE PERSON BEHIND AN ACTIVE TOKEN AUTHENTICATED (2026-11-14), for
+  // the remote PEP's identity door: the token's own `amr` (RFC 9068 section
+  // 2.2.1 carries it beside `auth_time`), read by `introspectionOf()`'s same
+  // checks. Not added to the RFC 7662 answer, whose members the
+  // introspection endpoint and the PEP's introspection door both send.
+  /**
+   * The authentication methods an active access token of this realm states.
+   *
+   * @param token - the presented token
+   * @returns `{ active, amr }`; `amr` empty where the token states none
+   */
+  authenticationOf(token: Json): { active: boolean; amr: string[] } {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.authenticationOf().");
+    const answer = this.introspectionOf(token, function (claims: Json) {
+      return { active: true,
+               amr: Array.isArray(claims.amr) ? claims.amr.map(String) : [] };
+    });
+    log.debug("Leaving OAuth2Server.authenticationOf().");
+    return { active: answer.active === true,
+             amr: Array.isArray(answer.amr) ? answer.amr : [] };
+  }
+
+  private introspectionOf(token: Json,
+                          shape?: (claims: Json) => Json): Json {
     const { log, stats, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.introspectionOf().");
+    const self = this;
+    const answerOf = shape || function (claims: Json): Json {
+      return self.introspectionAnswer(claims);
+    };
     const inactive = { active: false };
     if (!token) {
       log.debug("Leaving OAuth2Server.introspectionOf(). No token.");
@@ -20250,7 +20278,7 @@ class OAuth2Server {
           return inactive;
         }
         log.debug("Leaving OAuth2Server.introspectionOf(). Opaque, active.");
-        return this.introspectionAnswer(found.claims);
+        return answerOf(found.claims);
       }
       if (found.kind === 'inactive' ||
           (found.kind === 'unknown' && opaqueAccessToken.issuesOpaque())) {
@@ -20296,7 +20324,7 @@ class OAuth2Server {
       return inactive;
     }
     log.debug("Leaving OAuth2Server.introspectionOf(). Active.");
-    return this.introspectionAnswer(claims);
+    return answerOf(claims);
   }
 
   // ---------------------------------------------------------------------------
@@ -23311,6 +23339,7 @@ export = {
   sessionIsLive: slot.forward('sessionIsLive'),
   // The remote PEP's introspection door (#1760).
   introspectionFor: slot.forward('introspectionFor'),
+  authenticationOf: slot.forward('authenticationOf'),
   // CIBA (#131): a push's tokens, for `ciba.ts`.
   cibaPushTokens: slot.forward('cibaPushTokens'),
   ownTokenKind: slot.forward('ownTokenKind'),

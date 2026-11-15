@@ -241,6 +241,8 @@ interface PepProxyDeps {
     doorSucceeded(what: string, req: any, identity: unknown): any;
   };
   loadOauth2(): { introspectionFor(token: string): any;
+                  authenticationOf?(token: string): { active: boolean;
+                                                      amr: string[] };
                   sessionIsLive(sid: unknown, username?: unknown): boolean;
                   issuerOf(base: string): string;
                   accessTokenAsync(base: string, opts: any): Promise<any> };
@@ -1319,7 +1321,12 @@ class PepProxy {
       signingCertificates: this.deps.xmlSigningCertificates(),
       // The listener's chain, leaf to Root, for the relying party's TLS.
       tlsCaChain: this.deps.listenerChainPem(),
-      clients: clients
+      clients: clients,
+      // THIS SERVICE'S COOKIES, which the proxy never forwards upstream
+      // (2026-11-14): published rather than written into the PEP, so a
+      // cookie added here is stripped there with no PEP release.
+      serviceCookiePrefixes: require('../common/cookie_wire')
+        .servicePrefixes()
     };
     log.debug("Leaving PepProxy.realmFacts().");
     return facts;
@@ -1747,12 +1754,23 @@ class PepProxy {
               : 'The access token was issued neither to nor for the ' +
                 'route\'s application "' + route.application + '".'));
       }
+      // HOW THEY AUTHENTICATED, FROM THE TOKEN ITSELF (2026-11-14). This
+      // answered `amr: []` for every access token, so a route mapping `amr`
+      // never sent `X-Iya-Amr` (found on the 8081 demo): the RFC 7662
+      // reading above carries no `amr`, while the token, issued off the
+      // sign-on session, does (RFC 9068 section 2.2.1). `acr` and
+      // `auth_time` the reading does carry, so they are taken from it.
+      const oauth2 = this.deps.loadOauth2();
+      const how = typeof oauth2.authenticationOf === 'function'
+        ? oauth2.authenticationOf(evidence.value) : { active: false, amr: [] };
       log.debug("Leaving PepProxy.subjectOf(). Token.");
       return { username: String(read.username), sub: String(read.sub || ''),
                mechanism: String(read.client_id || '') === clientId &&
                  route.mechanisms.indexOf('session') >= 0
                  ? 'session' : 'oauth2',
-               amr: [], acr: '', authTime: Number(read.iat) || 0 };
+               amr: how.active ? how.amr : [],
+               acr: String(read.acr || ''),
+               authTime: Number(read.auth_time) || Number(read.iat) || 0 };
     }
     // A SAML assertion, held to `saml()`'s rules with the application's own
     // entity ID as the audience.
@@ -2031,7 +2049,7 @@ class PepProxy {
    * Whether the sign-on session an ID Token's `sid` names is still live.
    *
    * @param body - `{ sid }`
-   * @returns the status and `{ live, sub?, username? }`
+   * @returns the status and `{ live, sub?, username?, name? }`
    */
   async session(body: any): Promise<DoorAnswer> {
     const { log } = this.deps;
@@ -2065,6 +2083,11 @@ class PepProxy {
     }
     if (user.username) {
       answer.username = String(user.username);
+    }
+    // THE DISPLAY NAME (2026-11-14), for the proxy's account chooser, which
+    // labelled an account by its subject when nothing named the person.
+    if (user.name && String(user.name) !== String(user.username || '')) {
+      answer.name = String(user.name);
     }
     log.debug("Leaving PepProxy.session(). Live.");
     return { status: 200, actor: String(user.username || ''),

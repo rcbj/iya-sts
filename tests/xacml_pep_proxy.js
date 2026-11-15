@@ -155,12 +155,12 @@ const CLOSED = {
                'iss', 'exp', 'iat', 'token_type', 'cnf'],
   saml: ['valid', 'subject', 'username', 'issuer', 'notOnOrAfter',
          'sessionIndex'],
-  session: ['live', 'sub', 'username'],
+  session: ['live', 'sub', 'username', 'name'],
   pull: ['syncToken', 'pep', 'configured', 'proxy', 'realm', 'validation',
          'note'],
   realm: ['issuer', 'jwksUri', 'authorizationEndpoint', 'tokenEndpoint',
           'endSessionEndpoint', 'samlIssuer', 'signingCertificates',
-          'tlsCaChain', 'clients'],
+          'tlsCaChain', 'clients', 'serviceCookiePrefixes'],
   error: ['error', 'error_description']
 };
 
@@ -659,6 +659,11 @@ async function childBody() {
           '(STS-XACML-0007)', brief(r));
   const pulled = await request(port, 'GET', PULL, pepCred);
   const body = pulled.json || {};
+  t.check(JSON.stringify((body.realm || {}).serviceCookiePrefixes) ===
+            JSON.stringify(['sts_*', '__Host-sts_*', '__Secure-sts_*']),
+          'C1b. the pull names this service\'s cookies, which the proxy ' +
+          'never forwards upstream', JSON.stringify(body.realm &&
+            body.realm.serviceCookiePrefixes));
   t.check(pulled.status === 200 && body.configured === true &&
           body.proxy && body.proxy.upstream === example().upstream &&
           closedTo(body, 'pull') && closedTo(body.realm, 'realm') &&
@@ -1434,6 +1439,36 @@ async function childBody() {
           errorCodes.codeOf(noRoute) === 'STS-XACML-0230',
           'H28. a route the PEP does not have is refused (STS-XACML-0230)',
           JSON.stringify(noRoute).slice(0, 300));
+  // H29 (2026-11-14). THE PEP NAMED `pep`, AS GET /admin-api/xacml/peps
+  // NAMES IT, and the `amr` the access token carries: the identity door
+  // answered every access token `amr: []`, so X-Iya-Amr was never sent.
+  const byPep = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-route-identity',
+      pep: NAME, route: 'api', mode: 'headers',
+      headerName: ['X-Iya-Amr', 'X-Iya-User'],
+      headerClaim: ['amr', 'username'] });
+  });
+  t.check(byPep && byPep.ok,
+          'H29. a PEP act takes `pep` as well as `name`',
+          JSON.stringify(byPep).slice(0, 300));
+  const both = inRealm(function () {
+    return adminActions.xacmlAction({ action: 'set-pep-route-identity',
+      pep: 'somebody-else', name: NAME, route: 'api', mode: 'jwt' });
+  });
+  t.check(both && !both.ok && errorCodes.codeOf(both) === 'STS-XACML-0038',
+          'H30. `pep` and `name` naming two PEPs is refused (STS-XACML-0038)',
+          JSON.stringify(both).slice(0, 300));
+  const how = inRealm(function () {
+    return require(ROOT + '/oauth-oidc/oauth2').authenticationOf(issued);
+  });
+  r = await request(port, 'POST', IDENTITY, pepCred,
+    { route: 'api', evidence: { kind: 'access_token', value: issued },
+      claims: ['amr'] });
+  t.check(how.active === true && how.amr.length > 0 &&
+          r.status === 200 && r.json && r.json.claims &&
+          JSON.stringify(r.json.claims.amr) === JSON.stringify(how.amr),
+          'H31. an access token\'s own amr is the claim the identity door ' +
+          'answers', brief(r) + ' ' + JSON.stringify(how));
   inRealm(function () {
     adminActions.xacmlAction({ action: 'set-pep-proxy', name: NAME,
                                proxy: example() });
@@ -1495,6 +1530,11 @@ async function childBody() {
     [{ settings: [] }, 'STS-XACML-0236'],
     [{ settings: { description: 'a\nb' } }, 'STS-XACML-0239'],
     [{ settings: { notifyUrl: 'https://u:p@pep.example/' } },
+     'STS-XACML-0239'],
+    // HTTPS ONLY (2026-11-14): the nudge is never sent over plain http.
+    [{ settings: { notifyUrl: 'http://pep.example/notify' } },
+     'STS-XACML-0239'],
+    [{ settings: { proxyStripCookies: 'x'.repeat(1025) } },
      'STS-XACML-0239'],
     [{ settings: { authzenPdpIdentifier: 'https://pdp.example/x' } },
      'STS-XACML-0239'],
@@ -1574,12 +1614,12 @@ async function childBody() {
   t.check(refusedIn(productCatalogue) ===
             'proxyUpstreamInsecure,proxyRpAllowInsecure' &&
           refusedIn(devCatalogue) === '' &&
-          devCatalogue.settings.length === 24 &&
+          devCatalogue.settings.length === 25 &&
           devCatalogue.bootstrap.map(function (one) {
             return one.env;
           }).indexOf('PEP_PDP_URL') >= 0 &&
           devCatalogue.precedence.join(',') === 'service,environment,default',
-          'S10. the catalogue names the 24 settings, the bootstrap ' +
+          'S10. the catalogue names the 25 settings, the bootstrap ' +
           'environment and the precedence; refusedInProduct follows the mode',
           refusedIn(productCatalogue) + ' / ' + refusedIn(devCatalogue));
   // Kept across a registration and a heartbeat; the report held to its

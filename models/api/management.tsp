@@ -30231,7 +30231,8 @@ op `disableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/conten
 op `enableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, which is the one its client certificate gave it."
-    }) `name`: string
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors107`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors107`,
@@ -30313,7 +30314,8 @@ op `issueXacmlPepCertificate`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
-    }) `name`: string;
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     `dnsNames`?: post_admin_api_xacml_issue_pep_certificate_b_application_json_dnsNames_h2783;
     `ipAddresses`?: post_admin_api_xacml_issue_pep_certificate_b_application_json_ipAddresses_h2784;
     @js(#{
@@ -30356,7 +30358,8 @@ op `issueXacmlPepCertificate`(@js(#{
 op `setXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1",`proxy`:#{`enabled`:true,`upstream`:"http://companion:8090/pep-app",`upstreamTimeoutMs`:10000,`maxBodyBytes`:1048576,`routes`:#[#{`id`:"public",`path`:"/public",`match`:"prefix",`methods`:#["GET","HEAD"],`public`:true},#{`id`:"api",`path`:"/api",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["oauth2","basic"],`application`:"my-api",`identity`:#{`mode`:"headers",`headers`:#[#{`name`:"X-Remote-User",`claim`:"username"},#{`name`:"X-Remote-Groups",`claim`:"groups"}],`separator`:","},`forwardCredentials`:false}]}}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
-    }) `name`: string;
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{
       `description`:"The configuration document. Validated whole by the handler, which refuses a member it does not name, so this schema leaves its shape to that refusal."
     }) `proxy`: Record<unknown>
@@ -30422,7 +30425,8 @@ op `clearXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/con
 op `setXacmlPepRouteIdentity`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"api",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:","}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
-    }) `name`: string;
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{
       `description`:"The route's `id` in that PEP's configuration."
     }) `route`: string;
@@ -30472,7 +30476,8 @@ op `setXacmlPepRouteIdentity`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"api",
 op `setXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1",`bias`:"deny-biased",`pollIntervalMs`:10000,`logLevel`:"info",`proxySessionRecheckMs`:2000},#{`name`:"pep-1",`settings`:#{`description`:"In front of the orders API",`timeoutMs`:4000}}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
-    }) `name`: string;
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{
       `description`:"The settings as one object, in place of the members below. Validated whole by the handler, which refuses a member that is not a setting by name."
     }) `settings`?: Record<unknown>;
@@ -30499,7 +30504,8 @@ op `setXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1",`bias`:"deny-biased
     @js(#{`description`:"Sets `proxyUpstreamInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyUpstreamInsecure`?: boolean;
     @js(#{`description`:"Sets `proxyRpAllowInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyRpAllowInsecure`?: boolean;
     @js(#{`minimum`:100,`maximum`:3600000,`description`:"Sets `proxySignalsPollMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsPollMs`?: integer;
-    @js(#{`minimum`:1,`maximum`:86400000,`description`:"Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsStaleMs`?: integer
+    @js(#{`minimum`:1,`maximum`:86400000,`description`:"Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsStaleMs`?: integer;
+    @js(#{`maxLength`:1024,`description`:"Sets `proxyStripCookies` at the PEP: more cookie names the reverse proxy never forwards upstream, beside this service's own, separated by commas, a trailing `*` a prefix; absent, null or empty is not set, so the PEP uses PEP_PROXY_STRIP_COOKIES or its default, none."}) `proxyStripCookies`?: string
   },
   `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
@@ -30559,7 +30565,8 @@ op `clearXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `setXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"public-https",`protocol`:"https",`purpose`:"proxy",`address`:"0.0.0.0",`port`:8443,`dnsNames`:#["app.example.test"]},#{`name`:"pep-1",`listener`:#{`id`:"internal-api",`protocol`:"http",`purpose`:"api",`port`:9091}}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`description`:"The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler."}) `listener`?: Record<unknown>;
     @js(#{`maxLength`:64,`description`:"The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four (api-http, api-https, proxy-http, proxy-https). An id already defined is replaced."}) `id`?: string;
     @js(#{`enum`:#["http","https"],`description`:"http or https."}) `protocol`?: string;
@@ -30599,7 +30606,8 @@ op `setXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"public-https"
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"public-https"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`maxLength`:64,`description`:"The listener's id."}) `listener`: string;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
@@ -30631,7 +30639,8 @@ op `removeXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"publ
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"public-https"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`maxLength`:64,`description`:"The listener's id."}) `listener`: string;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
@@ -30663,7 +30672,8 @@ op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`liste
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app"},#{`name`:"pep-1",`from`:"orders",`id`:"orders-api",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session","oauth2"],`application`:"orders-app",`resource`:"https://orders.example.test",`routeAction`:"",`forwardCredentials`:"false",`signals`:"true",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:",",`position`:1},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`public`:true},`position`:0}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`description`:"The route as one object (id, path, match, methods, public, mechanisms, application, resource, action, identity, forwardCredentials, signals), or its JSON, in place of the members below."}) `route`?: Record<unknown> | string;
     @js(#{`maxLength`:64,`description`:"The route's id; one already in the list is replaced where it stands, keeping its identity."}) `id`?: string;
     @js(#{`maxLength`:2048,`description`:"The path the route matches."}) `path`?: string;
@@ -30713,7 +30723,8 @@ op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
@@ -30745,7 +30756,8 @@ op `removeXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders"}]}
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `setXacmlPepRouteApplication`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`application`:"orders-app"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`: string;
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
     @js(#{`maxLength`:256,`description`:"The application's identifier in this realm's registry."}) `application`: string;
   },

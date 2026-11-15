@@ -889,14 +889,31 @@ class XacmlAdmin {
    * Applies one remote-PEP action: enable, disable, forget, or issue a
    * listener certificate.
    *
-   * @param body - the form or API body, with `action` and the PEP's `name`
+   * @param given - the form or API body, with `action` and the PEP's `name`
+   *   (or `pep`, the name `GET /admin-api/xacml/peps` takes)
    * @returns a result with `ok` and `what` or `why`, or a promise of one for
    * `issue-pep-certificate`
    */
-  pepAction(body?: any): any {
+  pepAction(given?: any): any {
     const { log, audit, errorCodes, peps, pepTls } = this.deps;
-    log.debug('Entering XacmlAdmin.pepAction(). action=' + (body || {}).action);
-    const action = String((body || {}).action || '');
+    log.debug('Entering XacmlAdmin.pepAction(). action=' + (given || {}).action);
+    const action = String((given || {}).action || '');
+    // `pep` AS WELL AS `name` (2026-11-14). `GET /admin-api/xacml/peps` names
+    // a PEP with `?pep=` and every act took `name` in its body, so a caller
+    // that read one and wrote the other was refused for a member it did
+    // send. Both are accepted, `name` as it always was; both given and
+    // different is refused, rather than guessing which was meant.
+    const named = String((given || {}).name || '');
+    const aliased = String((given || {}).pep || '');
+    if (named && aliased && named !== aliased) {
+      log.debug('Leaving XacmlAdmin.pepAction(). pep and name differ.');
+      return errorCodes.mark({ ok: false,
+               why: '`pep` and `name` name two different PEPs ("' + aliased +
+                    '" and "' + named + '"). Send one of them.' },
+               'STS-XACML-0038');
+    }
+    const body = named || !aliased ? given
+      : Object.assign({}, given, { name: aliased });
     if (action === 'issue-pep-certificate') {
       log.debug('Leaving XacmlAdmin.pepAction(). Issuing a listener ' +
                 'certificate.');
@@ -906,7 +923,8 @@ class XacmlAdmin {
     if (!name) {
       log.debug('Leaving XacmlAdmin.pepAction(). No name.');
       return errorCodes.mark({ ok: false,
-                               why: 'Which registered PEP? Send `name`.' },
+                               why: 'Which registered PEP? Send `name` ' +
+                                    '(or `pep`).' },
                              'STS-XACML-0038');
     }
     const row = peps.read(name);

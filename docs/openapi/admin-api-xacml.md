@@ -1903,7 +1903,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name. |
+| `name` | string |  | The registered PEP's name. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -2008,7 +2009,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name. |
+| `name` | string |  | The registered PEP's name. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -2042,6 +2044,7 @@ Scope: `admin:write`.
 | `settings.proxySessionTtlMs` | integer |  |  |
 | `settings.proxySignalsPollMs` | integer |  |  |
 | `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
 | `settings.proxyUpstreamInsecure` | boolean |  |  |
 | `settings.resource` | string |  |  |
 | `settings.timeoutMs` | integer |  |  |
@@ -2080,6 +2083,7 @@ Scope: `admin:write`.
 | `settings.proxySessionTtlMs` | integer |  |  |
 | `settings.proxySignalsPollMs` | integer |  |  |
 | `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
 | `settings.proxyUpstreamInsecure` | boolean |  |  |
 | `settings.resource` | string |  |  |
 | `settings.timeoutMs` | integer |  |  |
@@ -2352,7 +2356,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name. |
+| `name` | string |  | The registered PEP's name. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -3296,7 +3301,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name, which is the one its client certificate gave it. |
+| `name` | string |  | The registered PEP's name, which is the one its client certificate gave it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -3347,7 +3353,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name. |
+| `name` | string |  | The registered PEP's name. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -3470,7 +3477,8 @@ Scope: `admin:write`.
 | `ipAddresses` | list, or string |  |  |
 | `ipAddresses[]` | string |  |  |
 | `keyAlg` | one of `ec-p256`, `ec-p384`, `ec-p521`, `rsa-2048`, `rsa-3072`, `rsa-4096` |  | The key algorithm. Defaults to `ec-p256`. Only the RSA and NIST-curve ECDSA keys a TLS stack serves are offered. |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -3834,7 +3842,7 @@ Scope: `admin:read`.
 | `peps[].listenerRows[].reported.port` | integer |  |  |
 | `peps[].listenerRows[].reported.protocol` | one of `http`, `https` |  |  |
 | `peps[].listenerRows[].reported.purpose` | one of `api`, `proxy` |  |  |
-| `peps[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `other` |  |  |
+| `peps[].listenerRows[].reported.reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `crl-only`, `other` |  |  |
 | `peps[].listenerRows[].reported.renew` | integer |  |  |
 | `peps[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
 | `peps[].listenerRows[].reported.state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
@@ -3867,7 +3875,7 @@ Scope: `admin:read`.
 | `peps[].listenersInUse.listeners[].port` | integer |  |  |
 | `peps[].listenersInUse.listeners[].protocol` | one of `http`, `https` |  |  |
 | `peps[].listenersInUse.listeners[].purpose` | one of `api`, `proxy` |  |  |
-| `peps[].listenersInUse.listeners[].reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `other` |  |  |
+| `peps[].listenersInUse.listeners[].reason` | one of `none`, `address-in-use`, `permission-denied`, `address-unavailable`, `no-certificate`, `certificate-refused`, `certificate-request-refused`, `proxy-off`, `http-off`, `not-configured`, `crl-only`, `other` |  |  |
 | `peps[].listenersInUse.listeners[].renew` | integer |  |  |
 | `peps[].listenersInUse.listeners[].source` | one of `environment`, `service` |  |  |
 | `peps[].listenersInUse.listeners[].state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
@@ -3934,6 +3942,7 @@ Scope: `admin:read`.
 | `peps[].settings.proxySessionTtlMs` | integer |  |  |
 | `peps[].settings.proxySignalsPollMs` | integer |  |  |
 | `peps[].settings.proxySignalsStaleMs` | integer |  |  |
+| `peps[].settings.proxyStripCookies` | string |  |  |
 | `peps[].settings.proxyUpstreamInsecure` | boolean |  |  |
 | `peps[].settings.resource` | string |  |  |
 | `peps[].settings.timeoutMs` | integer |  |  |
@@ -4005,6 +4014,9 @@ Scope: `admin:read`.
 | `peps[].settingsInUse.values.proxySignalsStaleMs` | object |  |  |
 | `peps[].settingsInUse.values.proxySignalsStaleMs.source` | one of `service`, `environment`, `default` |  |  |
 | `peps[].settingsInUse.values.proxySignalsStaleMs.value` | integer |  |  |
+| `peps[].settingsInUse.values.proxyStripCookies` | object |  |  |
+| `peps[].settingsInUse.values.proxyStripCookies.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.proxyStripCookies.value` | string |  |  |
 | `peps[].settingsInUse.values.proxyUpstreamInsecure` | object |  |  |
 | `peps[].settingsInUse.values.proxyUpstreamInsecure.source` | one of `service`, `environment`, `default` |  |  |
 | `peps[].settingsInUse.values.proxyUpstreamInsecure.value` | boolean |  |  |
@@ -4301,7 +4313,8 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `listener` | string | yes | The listener's id. |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -4376,7 +4389,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `route` | string | yes | The route's id. |
 
 **200**: The operation was applied.
@@ -4483,7 +4497,8 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `listener` | string | yes | The listener's id. |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 
 **200**: The operation was applied.
 
@@ -4895,7 +4910,8 @@ Scope: `admin:write`.
 | `keyAlg` | one of `ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072` |  | HTTPS only: the key the PEP generates, ec-p256 by default. |
 | `listener` | map |  | The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler. |
 | `listener.{key}` | any JSON |  |  |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `port` | integer |  | The port, 1 to 65535. |
 | `protocol` | one of `http`, `https` |  | http or https. |
 | `purpose` | one of `api`, `proxy` |  | api (the PEP's decision API: /protected, GET / and the AuthZEN endpoints) or proxy (the reverse proxy). |
@@ -4979,7 +4995,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `proxy` | map | yes | The configuration document. Validated whole by the handler, which refuses a member it does not name, so this schema leaves its shape to that refusal. |
 | `proxy.{key}` | any JSON |  |  |
 
@@ -5101,8 +5118,9 @@ Scope: `admin:write`.
 | `methods[]` | string |  |  |
 | `mode` | one of `headers`, `saml`, `jwt` |  | With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity. |
 | `multipleAccounts` | boolean, or string |  | true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257). |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `path` | string |  | The path the route matches. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `position` | integer |  | Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given. |
 | `public` | boolean, or string |  | true for a route that takes no credential and asks no policy; it names no mechanism and no application. |
 | `resource` | string |  | The XACML resource; the path when empty. |
@@ -5216,7 +5234,8 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `application` | string | yes | The application's identifier in this realm's registry. |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `route` | string | yes | The route's id. |
 
 **200**: The operation was applied.
@@ -5327,7 +5346,8 @@ Scope: `admin:write`.
 | `headerName` | list |  | Mode headers: the header names, one per row of the console's table. |
 | `headerName[]` | string |  |  |
 | `mode` | one of `headers`, `saml`, `jwt` | yes | How the identity reaches the application. |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `route` | string | yes | The route's `id` in that PEP's configuration. |
 | `separator` | string |  | Mode headers: the one character a list claim (groups, amr) is joined with. |
 
@@ -5444,8 +5464,9 @@ Scope: `admin:write`.
 | `httpsReloadIntervalMs` | integer |  | Sets `httpsReloadIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `logLevel` | one of `trace`, `debug`, `info`, `warn`, `error`, `fatal` |  | Sets `logLevel` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `maxBodyBytes` | integer |  | Sets `maxBodyBytes` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
-| `name` | string | yes | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
 | `notifyUrl` | string |  | Sets `notifyUrl` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
 | `pip` | boolean |  | Sets `pip` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `pollIntervalMs` | integer |  | Sets `pollIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `proxyJwksTtlMs` | integer |  | Sets `proxyJwksTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
@@ -5456,6 +5477,7 @@ Scope: `admin:write`.
 | `proxySessionTtlMs` | integer |  | Sets `proxySessionTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `proxySignalsPollMs` | integer |  | Sets `proxySignalsPollMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `proxySignalsStaleMs` | integer |  | Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
+| `proxyStripCookies` | string |  | Sets `proxyStripCookies` at the PEP: more cookie names the reverse proxy never forwards upstream, beside this service's own, separated by commas, a trailing `*` a prefix; absent, null or empty is not set, so the PEP uses PEP_PROXY_STRIP_COOKIES or its default, none. |
 | `proxyUpstreamInsecure` | boolean |  | Sets `proxyUpstreamInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `resource` | string |  | Sets `resource` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `settings` | map |  | The settings as one object, in place of the members below. Validated whole by the handler, which refuses a member that is not a setting by name. |
@@ -5494,6 +5516,7 @@ Scope: `admin:write`.
 | `settings.proxySessionTtlMs` | integer |  |  |
 | `settings.proxySignalsPollMs` | integer |  |  |
 | `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
 | `settings.proxyUpstreamInsecure` | boolean |  |  |
 | `settings.resource` | string |  |  |
 | `settings.timeoutMs` | integer |  |  |
@@ -5532,6 +5555,7 @@ Scope: `admin:write`.
 | `settings.proxySessionTtlMs` | integer |  |  |
 | `settings.proxySignalsPollMs` | integer |  |  |
 | `settings.proxySignalsStaleMs` | integer |  |  |
+| `settings.proxyStripCookies` | string |  |  |
 | `settings.proxyUpstreamInsecure` | boolean |  |  |
 | `settings.resource` | string |  |  |
 | `settings.timeoutMs` | integer |  |  |

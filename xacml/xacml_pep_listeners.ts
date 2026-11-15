@@ -150,7 +150,8 @@ const STATES = ['listening', 'waiting', 'failed', 'off'];
 const REASONS = ['none', 'address-in-use', 'permission-denied',
                  'address-unavailable', 'no-certificate',
                  'certificate-refused', 'certificate-request-refused',
-                 'proxy-off', 'http-off', 'not-configured', 'other'];
+                 'proxy-off', 'http-off', 'not-configured', 'crl-only',
+                 'other'];
 const MEMBERS = ['id', 'protocol', 'purpose', 'address', 'port', 'dnsNames',
                  'ipAddresses', 'keyAlg', 'renew'];
 const ID = /^[A-Za-z0-9._-]{1,64}$/;
