@@ -249,6 +249,25 @@ module.exports = {
       }) === 'STS-KEYS-0186', 'an unlisted COSE signature is not made');
       config.clearOverride('cose.algorithms');
 
+      // JOSE THROUGH THE LIBRARY PATH (2026-11-14, #444's D12): an ES256 JWS
+      // — which jsonwebtoken verifies, not the shared verifier — is refused
+      // under keys.acceptedSigningAlgorithms=RS256 with STS-KEYS-0179, as the
+      // shared verifier's algorithms are. A client's private_key_jwt goes
+      // this way.
+      const jwtLib = require('jsonwebtoken');
+      const es256 = jwtLib.sign({ iss: 'c', sub: 'c', aud: 'a' },
+        ec.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+        { algorithm: 'ES256', expiresIn: 60 });
+      const ecPub = ec.publicKey.export({ type: 'spki', format: 'pem' });
+      t.check(!!stsCrypto.verifyJws(es256, ecPub, { algorithms: ['ES256'] }),
+        'an ES256 JWS verifies by default');
+      config.setOverride('keys.acceptedSigningAlgorithms', 'RS256');
+      t.check(codeThrownBy(function () {
+        return stsCrypto.verifyJws(es256, ecPub, { algorithms: ['ES256'] });
+      }) === 'STS-KEYS-0179', 'and is refused, STS-KEYS-0179, when the ' +
+        'accepted list leaves ES256 out');
+      config.clearOverride('keys.acceptedSigningAlgorithms');
+
       // XML: the verdict, and digests as a second list.
       const RSA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
       const SHA256 = 'http://www.w3.org/2001/04/xmlenc#sha256';
