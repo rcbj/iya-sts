@@ -49,9 +49,9 @@
 //      any cryptography with saml.allowSha1Signatures off, its sentence
 //      saying so (the door records its own STS-OAUTH-0067; the verifier's
 //      STS-KEYS-0062 reaches no audit row), accepted in development with it
-//      on, and refused again in product with it still on; a certificate authority build naming
-//      sha1-rsa is accepted in development and refused in product
-//      (STS-PKI-0191 on the audit row).
+//      on, and refused again in product with it still on; a certificate
+//      authority build naming sha1-rsa is accepted in development and
+//      refused in product (STS-PKI-0191 on the audit row).
 //
 // What no HTTP request reaches without a partner — an rsa-1_5 EncryptedKey
 // unwrapped (STS-KEYS-0070, a LogoutRequest's EncryptedID: the SAML
