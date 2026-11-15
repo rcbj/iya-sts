@@ -2491,6 +2491,12 @@ const JOBS = [
   // account-disabled's block (STS-FED-0156) and its lifting
   // (ssf_transmitters B-G, I).
   { file: 'sts_ssf_transmitters.js', browser: false, local: true },
+  // D12 (#444): OpenID Federation's refusals by code — an unresolved
+  // entity, the current key, a suspended subordinate, the extensions'
+  // parameters, automatic and explicit registration, and every later
+  // request object of an automatic RP (oidfed_entity, oidfed_extensions,
+  // oidfed_registration, oidcc_conformance_findings 4).
+  { file: 'sts_oidfed_codes.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required
