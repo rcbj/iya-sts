@@ -59,6 +59,7 @@ tokio::task_local! {
 }
 
 /// Runs `work` for the authorization server `id` (`req.__asProfile`).
+#[tracing::instrument(level = "debug", skip(work))]
 pub async fn run<F: Future>(id: String, work: F) -> F::Output {
     PROFILE.scope(id, work).await
 }
