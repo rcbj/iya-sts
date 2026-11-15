@@ -577,6 +577,371 @@ async function tokenVectors(ROOT, port, mods) {
   return out;
 }
 
+// A GET, as a browser sends one.
+function getWith(port, urlPath, headers) {
+  return new Promise(function (resolve) {
+    http.get({ host: '127.0.0.1', port: port, path: urlPath,
+               headers: headers || {} },
+      function (res) {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', function (c) {
+          text += c;
+        });
+        res.on('end', function () {
+          resolve({ status: res.statusCode, headers: res.headers,
+                    text: text });
+        });
+      }).on('error', function (e) {
+      resolve({ status: 0, headers: {}, text: String(e && e.message) });
+    });
+  });
+}
+
+// A DPoP proof (RFC 9449 section 4.2) by the key `pair`.
+function dpopProof(pair, htu, nonce) {
+  const jwk = pair.publicKey.export({ format: 'jwk' });
+  const claims = { jti: nodeCrypto.randomUUID(), htm: 'POST', htu: htu,
+                   iat: Math.floor(Date.now() / 1000) };
+  if (nonce) {
+    claims.nonce = nonce;
+  }
+  return signJws({ typ: 'dpop+jwt', alg: 'ES256',
+                   jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } },
+                 claims, pair.privateKey, 'ES256');
+}
+
+// THE CODE FLOW (#444 phase 5, the `oauth2` slice): the authorization
+// endpoint answered with and without a session, each code's stored record
+// and each pending sign-in, then the code and refresh grants with DPoP —
+// in a development realm and a product one, with the session row, the
+// clients and the person as Node held them.
+async function codeVectors(ROOT, port, mods) {
+  const { realms, helpers } = mods;
+  const applications = require(path.join(ROOT, 'common', 'applications'));
+  const ldap = require(path.join(ROOT, 'ldap', 'ldap_server'));
+  const authnModule = require(path.join(ROOT, 'authn', 'authn'));
+  const stsCrypto = require(path.join(ROOT, 'common', 'crypto'));
+  const SECRET = 'oauth-vector-code-secret-0123456789abcdef0123456789ab';
+  const REDIRECT = 'https://rp.vectors.example/cb';
+  const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+  const CHALLENGE = nodeCrypto.createHash('sha256').update(VERIFIER)
+    .digest('base64url');
+  // A browser's user agent: product mode's risk engine ends the sessions
+  // of an automated client (STS-RISK-0016).
+  const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
+  const out = [];
+  for (const realmMode of ['development', 'product']) {
+    const id = 'code' + realmMode.slice(0, 3);
+    // A public client is asked consent every time in product
+    // (`oauth2.consentAlwaysForPublicClients`), which is the consent
+    // screen's; the product realm turns that off so the code is issued.
+    realms.create({ id: id, name: id, description: 'oauth-vectors.js',
+      overrides: realmMode === 'product'
+        ? { 'global.mode': 'product',
+            'oauth2.consentAlwaysForPublicClients': false } : {} });
+    const realm = realms.get(id);
+    const P = '/realm/' + id;
+    const BASE = 'http://127.0.0.1:' + port + P;
+    const facts = {};
+    let cookie = '';
+    let session = null;
+    let user = null;
+    realms.run(realm, function () {
+      ldap.createUser('vec-ann', { attributes: { cn: 'Ann Vector',
+        sn: 'Vector', givenName: 'Ann', mail: 'ann@vectors.example' } });
+      const make = function (cid, fields) {
+        applications.createApplication({ identifier: cid,
+          protocols: ['oauth2', 'oidc'], registeredBy: 'oauth-vectors.js',
+          fields: Object.assign({ oauthClientId: cid,
+            oauthRedirectUri: [REDIRECT],
+            oauthGrantType: ['authorization_code', 'refresh_token'],
+            oauthGlobalConsent: ['openid', 'offline_access', 'read'],
+            oauthAllowedScope: ['openid', 'offline_access', 'read'] },
+            fields) });
+      };
+      make('cf-pub', { oauthTokenEndpointAuthMethod: 'none' });
+      make('cf-conf', { oauthClientSecret: SECRET,
+                        oauthTokenEndpointAuthMethod: 'client_secret_basic' });
+      make('cf-ask', { oauthTokenEndpointAuthMethod: 'none',
+                       oauthGlobalConsent: [] });
+      make('cf-norefresh', { oauthTokenEndpointAuthMethod: 'none',
+                             oauthGrantType: ['authorization_code'] });
+      ['cf-pub', 'cf-conf', 'cf-ask', 'cf-norefresh', 'cf-nobody']
+        .forEach(function (cid) {
+          facts[cid] = {
+            config: clone(applications.clientConfigOf(cid)),
+            flows: clone(applications.declaredFlowsOf(cid)),
+            allowedScopes: clone(applications.allowedScopesOf(cid)),
+            globalConsents: clone(require(path.join(ROOT, 'common',
+              'consent')).globalConsentsOf(cid)),
+            entry: clone(applications.get(cid))
+          };
+        });
+      const req0 = { headers: { 'user-agent': UA }, body: {},
+                     method: 'GET', url: '/' };
+      const res0 = { cookies: [], locals: {}, req: req0,
+        set: function (k, v) {
+          if (String(k).toLowerCase() === 'set-cookie') {
+            this.cookies = [].concat(v);
+          }
+        },
+        append: function (k, v) {
+          if (String(k).toLowerCase() === 'set-cookie') {
+            this.cookies = this.cookies.concat(v);
+          }
+        },
+        getHeader: function () {
+          return this.cookies;
+        } };
+      session = authnModule.startSession(res0, 'vec-ann', ['pwd'], null,
+                                         'OAuth 2.0 / OIDC',
+                                         { request: req0 });
+      const line = res0.cookies.filter(function (l) {
+        return /^sts_session=/.test(l);
+      }).pop() || '';
+      cookie = line.split(';')[0];
+      user = clone(helpers.userFor('vec-ann'));
+    });
+    const handle = function (name) {
+      return realms.handleFor(name).partition(id);
+    };
+    const sessionRow = clone(handle('authn.sessions').get(session.id));
+    out.push({ name: '(the realm)', realm: id, mode: realmMode, base: BASE,
+               facts: facts, cookie: cookie, session: sessionRow,
+               sessionId: session.id, user: user,
+               blob: clone(mods.keystore.serialise(
+                 realms.run(realm, function () {
+                   return helpers.stsKeysFor();
+                 }))) });
+    const authorize = function (params) {
+      return P + '/oauth2/authorize?' + new URLSearchParams(params)
+        .toString();
+    };
+    const pkce = { response_type: 'code', redirect_uri: REDIRECT,
+                   scope: 'openid read', state: 'st-1', nonce: 'n-1',
+                   code_challenge: CHALLENGE, code_challenge_method: 'S256' };
+    const CASES = [
+      { name: 'code, a session', query: Object.assign({ client_id: 'cf-pub' },
+                                                      pkce) },
+      { name: 'code, fragment', query: Object.assign({ client_id: 'cf-pub',
+          response_mode: 'fragment' }, pkce) },
+      { name: 'code, form_post', query: Object.assign({ client_id: 'cf-pub',
+          response_mode: 'form_post' }, pkce) },
+      { name: 'code, a resource', query: Object.assign({ client_id: 'cf-pub',
+          resource: BASE + '/resource' }, pkce) },
+      { name: 'code, offline_access', query: Object.assign({
+          client_id: 'cf-pub' }, pkce, { scope: 'openid offline_access' }) },
+      { name: 'code, confidential, no PKCE', query: { client_id: 'cf-conf',
+          response_type: 'code', redirect_uri: REDIRECT, scope: 'openid',
+          state: 'st-2' } },
+      { name: 'code, public, no PKCE', query: { client_id: 'cf-pub',
+          response_type: 'code', redirect_uri: REDIRECT, scope: 'openid',
+          state: 'st-3' } },
+      { name: 'code, plain PKCE', query: Object.assign({ client_id: 'cf-pub' },
+          pkce, { code_challenge_method: 'plain', code_challenge: VERIFIER }) },
+      { name: 'no session', cookie: '', query: Object.assign({
+          client_id: 'cf-pub' }, pkce) },
+      { name: 'no session, prompt=none', cookie: '', query: Object.assign({
+          client_id: 'cf-pub', prompt: 'none' }, pkce) },
+      { name: 'prompt=login', query: Object.assign({ client_id: 'cf-pub',
+          prompt: 'login' }, pkce) },
+      { name: 'an unregistered redirect_uri', query: Object.assign({
+          client_id: 'cf-pub' }, pkce,
+          { redirect_uri: 'https://elsewhere.example/cb' }) },
+      { name: 'an unknown client', query: Object.assign({
+          client_id: 'cf-nobody' }, pkce) },
+      { name: 'no client_id', query: Object.assign({}, pkce) },
+      { name: 'response_type token', query: Object.assign({
+          client_id: 'cf-pub' }, pkce, { response_type: 'token' }) },
+      { name: 'no response_type', query: Object.assign({
+          client_id: 'cf-pub' }, pkce, { response_type: '' }) },
+      { name: 'a protected scope', query: Object.assign({
+          client_id: 'cf-pub' }, pkce, { scope: 'openid admin:read' }) },
+      { name: 'consent needed', query: Object.assign({ client_id: 'cf-ask' },
+          pkce) },
+      { name: 'consent needed, prompt=none', query: Object.assign({
+          client_id: 'cf-ask', prompt: 'none' }, pkce) },
+      { name: 'an unregistered resource', query: Object.assign({
+          client_id: 'cf-pub', resource: 'https://nobody.example/api' },
+          pkce) },
+      { name: 'a malformed query', query: Object.assign({
+          client_id: 'cf-pub' }, pkce, { state: 'a\nb' }) },
+      { name: 'code, no refresh grant', query: Object.assign({
+          client_id: 'cf-norefresh' }, pkce) }
+    ];
+    const codes = {};
+    for (const c of CASES) {
+      const nowMs = Date.now();
+      const sent = c.cookie === undefined ? cookie : c.cookie;
+      const r = await getWith(port, authorize(c.query),
+        Object.assign({ accept: 'application/json',
+                        'user-agent': UA },
+                      sent ? { cookie: sent } : {}));
+      const location = String(r.headers.location || '');
+      let code = '';
+      let record = null;
+      let pending = null;
+      const found = /[?&#]code=([^&]+)/.exec(location) ||
+        /name="code" value="([^"]+)"/.exec(r.text);
+      if (found) {
+        code = decodeURIComponent(found[1]);
+        record = clone(handle('oauth2.authzCodes')
+          .get(stsCrypto.credentialDigest(code)));
+        codes[c.name] = { code: code, record: record };
+      }
+      const authnId = /[?&]authn=([^&]+)/.exec(location);
+      if (authnId) {
+        pending = clone(handle('authn.pending')
+          .get(decodeURIComponent(authnId[1])));
+      }
+      out.push({ kind: 'authorize', name: c.name, realm: id, mode: realmMode,
+                 nowMs: nowMs, base: BASE, query: c.query,
+                 cookie: sent || '', status: r.status,
+                 location: location,
+                 contentType: r.headers['content-type'] || '',
+                 csp: r.headers['content-security-policy'] || '',
+                 body: /json/.test(String(r.headers['content-type'] || ''))
+                   ? JSON.parse(r.text) : r.text,
+                 code: code, record: record, pending: pending });
+    }
+    // THE TOKEN ENDPOINT: each code redeemed with a DPoP proof, then the
+    // refresh, then the replays.
+    const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const htu = BASE + '/oauth2/token';
+    const token = async function (name, form, headers, more) {
+      const nowMs = Date.now();
+      const r = await post(port, P + '/oauth2/token', form, headers);
+      let body = r.text;
+      try {
+        body = JSON.parse(r.text);
+      } catch (e) {
+        body = r.text;
+      }
+      const row = Object.assign({ kind: 'token', name: name, realm: id,
+        mode: realmMode, nowMs: nowMs, base: BASE, form: form,
+        headers: headers || {}, status: r.status,
+        responseHeaders: { 'content-type': r.headers['content-type'],
+                           'cache-control': r.headers['cache-control'],
+                           'dpop-nonce': r.headers['dpop-nonce'] },
+        body: body,
+        accessToken: body && body.access_token ? decoded(body.access_token)
+          : null,
+        idToken: body && body.id_token ? decoded(body.id_token) : null },
+        more || {});
+      if (body && body.refresh_token) {
+        row.refreshClaims = realms.run(realm, function () {
+          const opened = require(path.join(ROOT, 'oauth-oidc',
+            'refresh_token_crypto')).open(body.refresh_token);
+          return JSON.parse(Buffer.from(opened.split('.')[1], 'base64url'));
+        });
+      }
+      out.push(row);
+      return body;
+    };
+    const redeem = function (caseName, client, extra, headers) {
+      const held = codes[caseName];
+      const form = Object.assign({ grant_type: 'authorization_code',
+        code: held ? held.code : 'nope', redirect_uri: REDIRECT,
+        client_id: client, code_verifier: VERIFIER }, extra || {});
+      Object.keys(form).forEach(function (k) {
+        if (form[k] === undefined) {
+          delete form[k];
+        }
+      });
+      return form;
+    };
+    const first = await token('redeem, DPoP',
+      redeem('code, a session', 'cf-pub'), { dpop: dpopProof(pair, htu) },
+      { codeRecord: (codes['code, a session'] || {}).record });
+    await token('redeem, no DPoP (public console rule absent)',
+      redeem('code, fragment', 'cf-pub'), {},
+      { codeRecord: (codes['code, fragment'] || {}).record });
+    await token('redeem, wrong verifier',
+      redeem('code, form_post', 'cf-pub', { code_verifier: 'x'.repeat(43) }),
+      { dpop: dpopProof(pair, htu) },
+      { codeRecord: (codes['code, form_post'] || {}).record });
+    await token('redeem, a resource',
+      redeem('code, a resource', 'cf-pub', { resource: BASE + '/resource' }),
+      { dpop: dpopProof(pair, htu) },
+      { codeRecord: (codes['code, a resource'] || {}).record });
+    await token('redeem, offline_access',
+      redeem('code, offline_access', 'cf-pub'),
+      { dpop: dpopProof(pair, htu) },
+      { codeRecord: (codes['code, offline_access'] || {}).record });
+    await token('redeem, confidential',
+      redeem('code, confidential, no PKCE', 'cf-conf',
+             { code_verifier: undefined }),
+      { authorization: 'Basic ' + Buffer.from('cf-conf:' + SECRET)
+          .toString('base64') },
+      { codeRecord: (codes['code, confidential, no PKCE'] || {}).record });
+    await token('redeem, no refresh grant',
+      redeem('code, no refresh grant', 'cf-norefresh'),
+      { dpop: dpopProof(pair, htu) },
+      { codeRecord: (codes['code, no refresh grant'] || {}).record });
+    await token('redeem, an unknown code',
+      redeem('(none)', 'cf-pub'), { dpop: dpopProof(pair, htu) });
+    await token('a malformed DPoP proof', redeem('(none)', 'cf-pub'),
+      { dpop: 'not.a.proof' });
+    if (first && first.refresh_token) {
+      const rt = first.refresh_token;
+      const refreshed = await token('refresh, DPoP',
+        { grant_type: 'refresh_token', refresh_token: rt,
+          client_id: 'cf-pub' }, { dpop: dpopProof(pair, htu) },
+        { presented: rt });
+      await token('refresh, no proof',
+        { grant_type: 'refresh_token',
+          refresh_token: (refreshed && refreshed.refresh_token) || rt,
+          client_id: 'cf-pub' }, {},
+        { presented: (refreshed && refreshed.refresh_token) || rt });
+      await token('refresh, another key',
+        { grant_type: 'refresh_token',
+          refresh_token: (refreshed && refreshed.refresh_token) || rt,
+          client_id: 'cf-pub' },
+        { dpop: dpopProof(nodeCrypto.generateKeyPairSync('ec',
+          { namedCurve: 'P-256' }), htu) },
+        { presented: (refreshed && refreshed.refresh_token) || rt });
+      await token('refresh, a wider scope',
+        { grant_type: 'refresh_token',
+          refresh_token: (refreshed && refreshed.refresh_token) || rt,
+          client_id: 'cf-pub', scope: 'openid read write' },
+        { dpop: dpopProof(pair, htu) },
+        { presented: (refreshed && refreshed.refresh_token) || rt });
+      await token('refresh, the rotated one (a replay)',
+        { grant_type: 'refresh_token', refresh_token: rt,
+          client_id: 'cf-pub' }, { dpop: dpopProof(pair, htu) },
+        { presented: rt });
+      await token('redeem again (a replay)',
+        redeem('code, a session', 'cf-pub'), { dpop: dpopProof(pair, htu) });
+      await token('refresh after the code replay',
+        { grant_type: 'refresh_token',
+          refresh_token: (refreshed && refreshed.refresh_token) || rt,
+          client_id: 'cf-pub' }, { dpop: dpopProof(pair, htu) },
+        { presented: (refreshed && refreshed.refresh_token) || rt });
+      await token('refresh, garbage',
+        { grant_type: 'refresh_token', refresh_token: 'garbage',
+          client_id: 'cf-pub' }, { dpop: dpopProof(pair, htu) });
+    }
+    // THE DISCOVERY DOCUMENTS.
+    for (const doc of ['/.well-known/oauth-authorization-server',
+                       '/.well-known/openid-configuration']) {
+      const r = await getWith(port, P + doc, {});
+      let body = r.text;
+      try {
+        body = JSON.parse(r.text);
+      } catch (e) {
+        body = r.text;
+      }
+      out.push({ kind: 'metadata', name: doc, realm: id, mode: realmMode,
+                 base: BASE, status: r.status,
+                 cacheControl: r.headers['cache-control'] || '',
+                 contentType: r.headers['content-type'] || '', body: body });
+    }
+  }
+  return out;
+}
+
 async function build(ROOT) {
   require(path.join(ROOT, 'common', 'protocol_stack'));
   const app = require(path.join(ROOT, 'common', 'app'));
@@ -602,6 +967,7 @@ async function build(ROOT) {
     out.clientAuth = await clientAuthVectors(mods);
     out.jwks = await jwksVectors(ROOT, port, mods);
     out.token = await tokenVectors(ROOT, port, mods);
+    out.code = await codeVectors(ROOT, port, mods);
   } catch (e) {
     out.problems.push(String((e && e.stack) || e));
   }

@@ -107,9 +107,72 @@ struct Chosen {
     allowed: Vec<String>,
 }
 
+/// What the hand-off asks of the session core: the pending row's lifetime
+/// and the account half (#561).
+pub trait AccountChoices: Send + Sync {
+    /// `pendingTtlMs()`.
+    fn pending_ttl_ms(&self) -> f64;
+    /// `begin_account_choice()`: `(pick, hint)`, or `None` with the setting
+    /// off.
+    fn begin_account_choice(
+        &self,
+        request: &Request,
+        account_choice: &str,
+        hinted: bool,
+    ) -> Option<(String, Option<String>)>;
+    /// `routeToAccounts()`: the record to set and the picker's address.
+    fn route_to_accounts(
+        &self,
+        existing: Option<Map<String, Json>>,
+        opts: &Json,
+        target: &str,
+        why: &str,
+        request: &Request,
+    ) -> (Map<String, Json>, String);
+}
+
+impl AccountChoices for Sessions {
+    fn pending_ttl_ms(&self) -> f64 {
+        Sessions::pending_ttl_ms(self)
+    }
+
+    fn begin_account_choice(
+        &self,
+        request: &Request,
+        account_choice: &str,
+        hinted: bool,
+    ) -> Option<(String, Option<String>)> {
+        Sessions::begin_account_choice(
+            self,
+            Some(request),
+            account_choice,
+            hinted,
+        )
+        .map(|c| (c.pick, c.hint))
+    }
+
+    fn route_to_accounts(
+        &self,
+        existing: Option<Map<String, Json>>,
+        opts: &Json,
+        target: &str,
+        why: &str,
+        request: &Request,
+    ) -> (Map<String, Json>, String) {
+        Sessions::route_to_accounts(
+            self,
+            existing,
+            opts,
+            target,
+            why,
+            Some(request),
+        )
+    }
+}
+
 /// Node's `beginAuthentication()` over the `authn.pending` store.
 pub struct PendingSignIns {
-    pub sessions: Arc<Sessions>,
+    pub sessions: Arc<dyn AccountChoices>,
     pub pending: RealmMap<Json>,
     pub settings: Arc<Settings>,
     pub mechanisms: Arc<dyn MechanismPolicy>,
@@ -346,19 +409,19 @@ impl SignInHandOff for PendingSignIns {
     ) -> Result<String, String> {
         let hinted =
             !begin.hint.is_empty() || !begin.locked_username.is_empty();
-        let Some(choice) = self.sessions.begin_account_choice(
-            Some(request),
+        let Some((pick, hint)) = self.sessions.begin_account_choice(
+            request,
             &begin.account_choice,
             hinted,
         ) else {
             return self.begin_here(begin).map(|(t, _)| t);
         };
         let mut given = begin.clone();
-        if let Some(h) = choice.hint.filter(|_| !hinted) {
+        if let Some(h) = hint.filter(|_| !hinted) {
             given.hint = h;
         }
         let (target, id) = self.begin_here(&given)?;
-        if choice.pick.is_empty() {
+        if pick.is_empty() {
             return Ok(target);
         }
         let existing =
@@ -368,13 +431,9 @@ impl SignInHandOff for PendingSignIns {
             "protocol": given.protocol, "application": given.application,
             "uiLocales": given.ui_locales,
         });
-        let (record, location) = self.sessions.route_to_accounts(
-            existing,
-            &opts,
-            &target,
-            &choice.pick,
-            Some(request),
-        );
+        let (record, location) = self
+            .sessions
+            .route_to_accounts(existing, &opts, &target, &pick, request);
         let rid = crate::js::string_of(record.get("id"));
         self.pending.set(&rid, Json::Object(record));
         Ok(location)

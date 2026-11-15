@@ -91,6 +91,8 @@ pub struct AuthorizeAsk {
     /// The body of a POST.
     pub body: String,
     pub accept: String,
+    /// `Accept-Language`, for the page a `form_post` is drawn on.
+    pub accept_language: String,
     /// `asBaseOf(req)`: the realm's base URL.
     pub base: String,
     /// The session core's view of the request (cookies, address, the
@@ -234,54 +236,88 @@ impl PersonConsents for NoConsents {
 }
 
 /// The page a `form_post` response is drawn on (`formPostResponse()`):
-/// the translated words of `oauthPages.formPost.*`.
+/// a message of the page's negotiated catalog, unfilled, and the
+/// `<html>` attributes (` lang="…" dir="…"`).
 pub trait Pages: Send + Sync {
-    /// `t.text(key, params)` in the page's negotiated language, and the
-    /// `<html>` attributes (` lang="…"`, and ` dir="rtl"`).
-    fn words(
+    fn message(
         &self,
         ask: &AuthorizeAsk,
         ui_locales: &str,
-    ) -> (Box<dyn Fn(&str, &[(&str, &str)]) -> String + '_>, String);
+        key: &str,
+    ) -> String;
+    fn html_attributes(&self, ask: &AuthorizeAsk, ui_locales: &str) -> String;
 }
 
-/// English, from the words Node's source catalog has.
-pub struct EnglishPages;
+/// The catalogs under `common/locales/` (`PageLocale.translatorFor()`):
+/// `ui_locales` first, then the chooser's `sts_lang` cookie, then
+/// `Accept-Language`, English last.
+pub struct CatalogPages {
+    pub catalogs: Arc<sts_http::i18n::Catalogs>,
+}
 
-impl Pages for EnglishPages {
-    fn words(
+impl CatalogPages {
+    fn preferences(ask: &AuthorizeAsk, ui_locales: &str) -> Vec<String> {
+        let chooser =
+            sts_authn::cookie::cookie_value(&ask.request.cookie, "sts_lang");
+        sts_http::i18n::preferences(&sts_http::i18n::Preferences {
+            ui_locales: ui_locales.to_string(),
+            own: None,
+            chooser,
+            accept_language: ask.accept_language.clone(),
+        })
+    }
+}
+
+impl Pages for CatalogPages {
+    fn message(
         &self,
-        _ask: &AuthorizeAsk,
-        _ui_locales: &str,
-    ) -> (Box<dyn Fn(&str, &[(&str, &str)]) -> String + '_>, String) {
-        (
-            Box::new(|key: &str, params: &[(&str, &str)]| {
-                let uri = params
-                    .iter()
-                    .find(|(n, _)| *n == "uri")
-                    .map(|(_, v)| *v)
-                    .unwrap_or("");
-                match key {
-                    "oauthPages.formPost.title" => "Submit This Form".into(),
-                    "oauthPages.formPost.heading" => {
-                        "Returning to the application".into()
-                    }
-                    "oauthPages.formPost.sub" => {
-                        "Your sign-in is complete; this page posts the result back to the application.".into()
-                    }
-                    "oauthPages.formPost.continue" => "Continue".into(),
-                    "oauthPages.formPost.postingTo" => {
-                        format!("Posting to {}", uri)
-                    }
-                    "oauthPages.formPost.scriptNote" => {
-                        "With scripts allowed this page submits itself.".into()
-                    }
-                    other => other.to_string(),
-                }
-            }),
-            " lang=\"en\"".to_string(),
+        ask: &AuthorizeAsk,
+        ui_locales: &str,
+        key: &str,
+    ) -> String {
+        let t = self
+            .catalogs
+            .translator(&Self::preferences(ask, ui_locales), "");
+        t.text(key, &[])
+    }
+
+    fn html_attributes(&self, ask: &AuthorizeAsk, ui_locales: &str) -> String {
+        let n = self
+            .catalogs
+            .negotiate(&Self::preferences(ask, ui_locales), "");
+        format!(
+            " lang=\"{}\" dir=\"{}\"",
+            esc(&n.locale),
+            if n.rtl { "rtl" } else { "ltr" }
         )
     }
+}
+
+/// `t.html(key, params)`: the message's own markup kept, every parameter
+/// escaped.
+fn html_of(message: &str, params: &[(&str, &str)]) -> String {
+    let mut out = message.to_string();
+    for (name, value) in params {
+        out = out.replace(&format!("{{{}}}", name), &esc(value));
+    }
+    out
+}
+
+/// `t.text(key)`: the inline elements a message may carry stripped.
+fn text_of(message: &str) -> String {
+    let mut out = message.to_string();
+    for tag in [
+        "<strong>",
+        "</strong>",
+        "<em>",
+        "</em>",
+        "<code>",
+        "</code>",
+        "<br>",
+    ] {
+        out = out.replace(tag, "");
+    }
+    out
 }
 
 /// The endpoint's dependencies.
@@ -477,8 +513,10 @@ impl AuthorizationEndpoint {
         _client_id: &str,
         ui_locales: &str,
     ) -> Answer {
-        let (t, html_attributes) = self.pages.words(ask, ui_locales);
-        let h = |key: &str, params: &[(&str, &str)]| esc(&t(key, params));
+        let html_attributes = self.pages.html_attributes(ask, ui_locales);
+        let message = |key: &str| self.pages.message(ask, ui_locales, key);
+        let h =
+            |key: &str, params: &[(&str, &str)]| html_of(&message(key), params);
         let inputs: String = fields
             .iter()
             .map(|(n, v)| {
@@ -506,7 +544,7 @@ impl AuthorizationEndpoint {
              <div><button type=\"submit\">{}</button></div></form><div class=\"meta\"><div>{}</div>{}\
              <div>{}</div></div><script src=\"/oauth2/autopost.js\"></script></body></html>",
             html_attributes,
-            esc(&t("oauthPages.formPost.title", &[])),
+            esc(&text_of(&message("oauthPages.formPost.title"))),
             h("oauthPages.formPost.heading", &[]),
             h("oauthPages.formPost.sub", &[]),
             esc(redirect_uri),
@@ -1216,7 +1254,11 @@ impl AuthorizationEndpoint {
             ..Begin::default()
         };
         match self.hand_off.begin_authentication(&begin, &ask.request) {
-            Ok(location) => Answer::redirect(&location),
+            Ok(location) => Answer::redirect(&if self.mode.hides_step_ids() {
+                hide_step(&location, &client_id)
+            } else {
+                location
+            }),
             Err(e) => {
                 tracing::error!(
                     "{}the authorization response could not be issued: {}",
@@ -1250,8 +1292,23 @@ impl AuthorizationEndpoint {
         let consent_required =
             self.settings.value_of("oauth2.consentRequired").as_bool();
         if consent_required {
-            let wants_consent =
-                words(&s(q.get("prompt"))).iter().any(|p| p == "consent");
+            // `consent.alwaysAsks()`: a public client that is not one of
+            // this service's own surfaces is asked every time where
+            // `oauth2.consentAlwaysForPublicClients` says so.
+            const HOSTED: [&str; 4] = [
+                "sts-admin-console",
+                "sts-user-portal",
+                "sts-report",
+                "sts-debugger-ui",
+            ];
+            let always = !HOSTED.contains(&client_id.as_str())
+                && self
+                    .settings
+                    .value_of("oauth2.consentAlwaysForPublicClients")
+                    .as_bool()
+                && s(client.get("token_endpoint_auth_method")) == "none";
+            let wants_consent = always
+                || words(&s(q.get("prompt"))).iter().any(|p| p == "consent");
             let global = self.global_consents_of(&client_id);
             let mine = self.consents.consented(&username, &client_id);
             let outstanding: Vec<String> =
@@ -1278,7 +1335,6 @@ impl AuthorizationEndpoint {
                     "This authorization server does not serve the consent screen yet, and the request needs consent to a scope no global consent covers.");
             }
         }
-        let _ = client;
         self.issue(ask, q, types, session)
     }
 
@@ -1524,6 +1580,52 @@ fn strip_undefined(mut record: Json) -> Json {
         }
     }
     record
+}
+
+/// `StepAddress.hide(location, authn.stepApplication)` (#1454): in
+/// product a sign-in step's id leaves the address for its fragment, the
+/// application it is for named in `app`. Node does it to every redirect
+/// in `app.js`; here to the hand-off's, the one redirect of this endpoint
+/// that names a step (the realm's prefix is put on by the HTTP layer
+/// after).
+#[tracing::instrument(level = "debug")]
+pub fn hide_step(location: &str, application: &str) -> String {
+    let (path, query) = match location.split_once('?') {
+        Some(pq) => pq,
+        None => return location.to_string(),
+    };
+    let is_step = (path.starts_with("/authn/")
+        && !path.starts_with("/authn/spnego")
+        && path.len() > "/authn/".len()
+        && path["/authn/".len()..].bytes().all(|b| {
+            b.is_ascii_lowercase()
+                || b.is_ascii_digit()
+                || b == b'/'
+                || b == b'-'
+        }))
+        || path == "/oauth2/consent";
+    let (name, rest) = query.split_once('=').unwrap_or(("", ""));
+    let id = rest.split(['&', '#']).next().unwrap_or("");
+    if !is_step
+        || !["authn", "mfa", "change", "consent"].contains(&name)
+        || id.is_empty()
+        || query.contains('#')
+    {
+        return location.to_string();
+    }
+    format!(
+        "{}{}#{}",
+        path,
+        if application.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "?app={}",
+                sts_authn::account_sets::encode_uri_component(application)
+            )
+        },
+        query
+    )
 }
 
 fn is_loopback(host: &str) -> bool {

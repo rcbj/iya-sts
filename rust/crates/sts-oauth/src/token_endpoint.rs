@@ -2038,8 +2038,16 @@ impl TokenEndpoint {
             .unwrap_or_else(|| {
                 self.settings.value_of("oauth2.refreshTokenTtlS").as_int()
             });
-        let _ = chain_iat;
-        iat + ttl
+        let own = iat + ttl;
+        let limit = crate::grants::setting_number(
+            &self.settings,
+            "oauth2.refreshTokenMaxChainS",
+        );
+        if limit > 0.0 {
+            own.min(chain_iat + limit as i64)
+        } else {
+            own
+        }
     }
 
     /// `accessTokenUnsigned()` and the signature.
