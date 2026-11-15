@@ -45,6 +45,8 @@
 //      the browser's own cookies are read, the set is not "unreadable"
 //      (no 503, no STS-AUTHN-0344) and the picker's act answers rather
 //      than throwing (2026-11-14, #444's D12).
+//  14. a session ended between its read and the set's stamp is not
+//      written back: the stamp never brings a session back (2026-11-14).
 //
 // WHY IN PROCESS. Which row a session is, what the set holds and whether a
 // ticket was spent are facts about the stores; an HTTP caller sees cookies
@@ -891,6 +893,51 @@ function partBadCookie(t) {
   log.debug("Leaving partBadCookie().");
 }
 
+// ---------------------------------------------------------------------------
+// 14. THE STAMP NEVER BRINGS A SESSION BACK (2026-11-14). The set's id is
+// stamped on a session it lists; that stamp wrote the HELD object back with
+// a plain `set()`, so a session another request (or node) ended between the
+// read and the stamp came back. The adoption path (D12, section 9) is the
+// one with a write between its read and its stamp — the set's own save —
+// and that save is where the session is ended here.
+// ---------------------------------------------------------------------------
+function partNoResurrection(t) {
+  log.debug("Entering partNoResurrection().");
+  t.log.info('=== 14. the account set\'s stamp never brings a session ' +
+             'back ===');
+  const b = browser();
+  const alice = withSettings({ 'authn.multipleAccounts': false }, function () {
+    return signIn(b, 'mas-nr-alice').session;
+  });
+  t.check(!!alice && !!authn.sessions.get(alice.id),
+          '14a. alice signed in with the setting off, so she has no set');
+  const realSave = AccountSets.save;
+  let ended = false;
+  AccountSets.save = function (row) {
+    log.debug("Entering save().");
+    if (!ended) {
+      ended = true;
+      // Another request ending her session between the read and the stamp.
+      authn.sessions.delete(alice.id);
+    }
+    log.debug("Leaving save().");
+    return realSave.call(AccountSets, row);
+  };
+  try {
+    withSettings({ 'authn.multipleAccounts': true }, function () {
+      const req = b.req('/oauth2/authorize');
+      authn.sessionOf(req);
+    });
+  } finally {
+    AccountSets.save = realSave;
+  }
+  t.check(ended, '14b. the adoption reached the set\'s save');
+  t.check(!authn.sessions.get(alice.id),
+          '14c. and the session ended meanwhile was NOT written back by the ' +
+          'stamp');
+  log.debug("Leaving partNoResurrection().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   realms.run(realms.DEFAULT_REALM, function () {
@@ -916,6 +963,7 @@ function run(t) {
       partEnrolHint(t);
       partBadCookie(t);
     });
+    partNoResurrection(t);
     made.forEach(function (sid) {
       if (authn.sessionById(sid)) {
         authn.endSessionById(sid, 'the end of multi_account_sessions.js');

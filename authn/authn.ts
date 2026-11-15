@@ -2348,14 +2348,29 @@ class Authn {
 
   // A session's own set, stamped on the row so that its end can find the
   // set by key (`accountSessionEnded()`) without a scan.
+  //
+  // **IT NEVER BRINGS A SESSION BACK (2026-11-14, found by #444's D12).**
+  // The stamp wrote the HELD object back with a plain `set()`, so a session
+  // another request or node ended between the caller's read and this write
+  // came back to life. It goes through `noteSessionChanged()`, which writes
+  // only a row the store still holds (merged with a newer copy where one
+  // replaced it) and writes nothing for a session that is gone.
   private stampAccountSet(sid, session, setId) {
     const { log } = this.deps;
     log.debug("Entering Authn.stampAccountSet().");
-    if (session && session.accountSetId !== setId) {
-      session.accountSetId = setId;
-      sessions.set(String(sid), session);
+    if (!session || session.accountSetId === setId) {
+      log.debug("Leaving Authn.stampAccountSet(). Nothing to stamp.");
+      return;
     }
-    log.debug("Leaving Authn.stampAccountSet().");
+    if (String(session.id || '') !== String(sid)) {
+      log.debug("Leaving Authn.stampAccountSet(). The row is not " + sid +
+                "'s.");
+      return;
+    }
+    session.accountSetId = setId;
+    const written = this.noteSessionChanged(session);
+    log.debug("Leaving Authn.stampAccountSet(). " +
+              (written ? "Stamped." : "The session is gone; not written."));
   }
 
   // ---------------------------------------------------------------------------
