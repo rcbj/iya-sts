@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "Napagpasyahan ang isang AuthZEN access evaluation"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "Nagpatupad ng desisyon ang isang remote na PEP"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "Nagpasya ang isang remote na PEP sa isang AuthZEN access evaluation"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "Nagpasya sa isang kahilingan ang reverse proxy ng isang remote na PEP"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "Nasagot ang isang AuthZEN search"
@@ -998,6 +1010,10 @@
   "audit.actions.xacml.pep.certificate.label": {
     "en": "419007622035492d",
     "text": "May remote PEP na na-issue-han ng HTTPS listener certificate"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "Na-certify ang assertion key ng isang remote PEP mula sa request nito"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",

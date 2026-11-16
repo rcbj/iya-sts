@@ -55,6 +55,7 @@ use sts_xacml::model::{Decision, StatusCode};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions};
 use sts_xacml::request::{Response, Status};
 
+use crate::audit::{self, Record};
 use crate::authzen_map::{self, Trusted};
 use crate::enforce::Enforcer;
 use crate::listener::Transport;
@@ -537,7 +538,8 @@ async fn forward_to(
         headers.push(("X-Request-ID", id));
     }
     let answer = client
-        .call_with(
+        .call_authorized_with(
+            crate::credential::Resource::Access,
             reqwest::Method::POST,
             EVALUATION_PATH,
             Some(Body::Json(forwarded_body(body, application))),
@@ -864,8 +866,9 @@ impl Pep {
         Reply::decision(json!({ "evaluations": out }))
     }
 
-    /// Decides one evaluation for an admitted caller, and records it — the
-    /// container's record being a log line, since it has no audit log.
+    /// Decides one evaluation for an admitted caller, and records it — a
+    /// log line, and (unless it was FORWARDED, which the service recorded
+    /// itself) a decision record sent to the service's audit log (#1827).
     async fn evaluate_one(
         &self,
         body: &Value,
@@ -892,7 +895,9 @@ impl Pep {
             }
         };
         // THE SERVICE'S TO DECIDE (#564, P7): forwarded, never answered
-        // from the root, and counted and logged here like any other.
+        // from the root, and counted and logged here like any other — but
+        // NOT queued for the service's audit log (#1827): the service
+        // decided it and wrote its own row under the same request id.
         if forwards(catalogue, &application) {
             let timeout = self.options.now().authzen_forward_timeout_ms;
             let one = forward_to(
@@ -1048,6 +1053,41 @@ impl Pep {
                 )
             }
         );
+        // THE RECORD FOR THE SERVICE carries what the line carries and
+        // nothing more: the subject is "" because its id is the caller's.
+        self.audit.record(Record {
+            at: sts_core::time::iso_now(),
+            kind: "authzen".into(),
+            decision: if outcome.fault {
+                String::new()
+            } else {
+                outcome.xacml_decision.clone()
+            },
+            allowed: outcome.decision,
+            fault: outcome.fault,
+            code: code.to_string(),
+            resource: evaluation.resource_type.clone(),
+            action: evaluation.action_name.clone(),
+            bias: Bias::DenyBiased.as_str().to_string(),
+            why: if outcome.fault {
+                outcome.why.clone()
+            } else {
+                String::new()
+            },
+            policies: answer
+                .policy_identifiers
+                .iter()
+                .map(|p| audit::policy_name(&p.id, &p.version))
+                .collect(),
+            discharged: outcome.discharged.clone(),
+            undischargeable: outcome.undischargeable.clone(),
+            caller: caller.name.clone(),
+            application: application.clone(),
+            subject_type: evaluation.subject_type.clone(),
+            endpoint: endpoint.to_string(),
+            request_id: batch_id.to_string(),
+            ..Record::default()
+        });
         if outcome.fault {
             tracing::error!("{}{} {}", tag(code), line, outcome.why);
             return ItemResult::failed(
@@ -1581,6 +1621,116 @@ mod tests {
             forward_to(&nowhere, &ask("read"), "payments", "", 1000).await;
         assert_eq!((down.status, down.code), (502, "STS-XPEP-0055"));
         assert!(!down.decision);
+    }
+
+    /// The decision records (#1827): an evaluation decided HERE is queued
+    /// with what its log line carries and no id the caller sent; one
+    /// FORWARDED to the service is not, because the service recorded it.
+    #[tokio::test]
+    async fn queues_what_it_decides_and_not_what_it_forwards() {
+        use axum::routing::post;
+        use std::sync::Arc;
+
+        let router = axum::Router::new().route(
+            "/access/v1/evaluation",
+            post(|| async { axum::Json(json!({ "decision": true })) }),
+        );
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            // A failure to serve shows as the forward below failing.
+            if let Err(error) = axum::serve(socket, router).await {
+                eprintln!("the mock service stopped: {}", error);
+            }
+        });
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("http://127.0.0.1:{}", port);
+        options.audit_enabled = true;
+        let client = PdpClient::new(&options).unwrap();
+        let sync =
+            Arc::new(crate::sync::Sync::new(client.clone(), options.clone()));
+        let pep = crate::service::Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            crate::pip::RemotePip::new(client, false),
+            Arc::new(crate::listener::HttpsListener::new(
+                "", "", 0, 5000, None,
+            )),
+        );
+        let audit = pep.audit.clone();
+        let catalogue = Catalogue {
+            fga_applications: Arc::new(vec!["payments".to_string()]),
+            ..Catalogue::default()
+        };
+        let caller = Caller {
+            name: "edge-caller".into(),
+            applications: vec!["payments".into(), "todo-app".into()],
+        };
+        let ask = |application: &str| {
+            json!({ "subject": { "type": "user", "id": "alice" },
+                    "action": { "name": "read" },
+                    "resource": { "type": "document", "id": "d1" },
+                    "context": { "application": application } })
+        };
+        let forwarded = pep
+            .evaluate_one(
+                &ask("payments"),
+                &caller,
+                &catalogue,
+                "r-1",
+                EVALUATION_PATH,
+            )
+            .await;
+        assert!(forwarded.error.is_none() && forwarded.decision);
+        assert_eq!(audit.overview()["queued"], 0, "a forward is not queued");
+        let here = pep
+            .evaluate_one(
+                &ask("todo-app"),
+                &caller,
+                &catalogue,
+                "r-2",
+                EVALUATION_PATH,
+            )
+            .await;
+        assert!(here.error.is_none() && !here.decision);
+        assert_eq!(audit.overview()["queued"], 1);
+        let record = audit.queued_for_test();
+        assert_eq!(record.len(), 1);
+        let one = &record[0];
+        assert_eq!(
+            (one.kind.as_str(), one.decision.as_str(), one.allowed),
+            ("authzen", "NotApplicable", false)
+        );
+        assert_eq!(
+            (
+                one.subject.as_str(),
+                one.resource.as_str(),
+                one.action.as_str()
+            ),
+            ("", "document", "read")
+        );
+        assert_eq!(
+            (
+                one.caller.as_str(),
+                one.application.as_str(),
+                one.subject_type.as_str(),
+                one.request_id.as_str(),
+                one.endpoint.as_str(),
+                one.bias.as_str()
+            ),
+            (
+                "edge-caller",
+                "todo-app",
+                "user",
+                "r-2",
+                EVALUATION_PATH,
+                "deny-biased"
+            )
+        );
+        let sent = serde_json::to_string(one).unwrap();
+        assert!(!sent.contains("alice") && !sent.contains("d1"));
     }
 
     #[test]

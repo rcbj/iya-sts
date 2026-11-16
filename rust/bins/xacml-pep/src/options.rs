@@ -137,6 +137,46 @@ pub struct Options {
     pub log_level: String,
     /// What the service set (#1760), shared by every clone.
     pub managed: Arc<Held>,
+    /// The decision records shipped to the service (#1827): `PEP_AUDIT`,
+    /// on by default; `false` queues nothing and starts no loop.
+    pub audit_enabled: bool,
+    /// How often the queue is shipped, `PEP_AUDIT_INTERVAL_MS`.
+    pub audit_interval_ms: u64,
+    /// The most records in one batch, `PEP_AUDIT_BATCH`, held to 1..=500
+    /// (the service's bound) where it is used.
+    pub audit_batch: usize,
+    /// The most records held waiting, `PEP_AUDIT_BUFFER`; full, the
+    /// oldest is dropped.
+    pub audit_buffer: usize,
+    /// The public client the self-assertion grant goes through,
+    /// `PEP_CLIENT_ID` (`PEP_AUDIT_CLIENT_ID`, its name before every call
+    /// carried a token, is still read when it is unset).
+    pub client_id: String,
+    /// The key the self-assertion and every DPoP proof are signed with:
+    /// `PEP_ASSERTION_KEY`, else `PEP_TLS_KEY` (`credential.rs`). Read
+    /// by the credential, again on the listener pair's reload interval.
+    pub assertion_key: crate::credential::KeySource,
+}
+
+/// `PEP_CLIENT_ID`, else its old name `PEP_AUDIT_CLIENT_ID`, else
+/// `sts-remote-pep` — from the two values given, so a test does not touch
+/// the environment. The second member is the variable it came from.
+pub fn client_id_of(
+    primary: Option<&str>,
+    alias: Option<&str>,
+) -> (String, &'static str) {
+    let set = |v: Option<&str>| {
+        v.map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    if let Some(id) = set(primary) {
+        return (id, "PEP_CLIENT_ID");
+    }
+    if let Some(id) = set(alias) {
+        return (id, "PEP_AUDIT_CLIENT_ID");
+    }
+    ("sts-remote-pep".to_string(), "")
 }
 
 /// THE SETTINGS IN FORCE NOW: the service's value where it set one, else
@@ -174,6 +214,12 @@ pub struct Now {
     pub proxy_signals_poll_ms: u64,
     pub proxy_signals_stale_ms: u64,
     pub proxy_strip_cookies: String,
+    /// The decision records (#1827): whether they are queued and sent, how
+    /// often, how many to a batch, and how many may wait.
+    pub audit: bool,
+    pub audit_interval_ms: u64,
+    pub audit_batch: usize,
+    pub audit_buffer: usize,
 }
 
 impl Now {
@@ -200,7 +246,11 @@ impl Now {
             "proxyRpAllowInsecure": self.proxy_rp_allow_insecure,
             "proxySignalsPollMs": self.proxy_signals_poll_ms,
             "proxySignalsStaleMs": self.proxy_signals_stale_ms,
-            "proxyStripCookies": self.proxy_strip_cookies
+            "proxyStripCookies": self.proxy_strip_cookies,
+            "auditEnabled": self.audit,
+            "auditIntervalMs": self.audit_interval_ms,
+            "auditBatch": self.audit_batch,
+            "auditBuffer": self.audit_buffer
         });
         match value {
             serde_json::Value::Object(map) => map,
@@ -830,6 +880,14 @@ impl Options {
                 "proxyStripCookies",
                 &self.proxy_strip_cookies,
             ),
+            audit: flag("auditEnabled", self.audit_enabled),
+            audit_interval_ms: int("auditIntervalMs", self.audit_interval_ms)
+                .max(1),
+            audit_batch: (int("auditBatch", self.audit_batch as u64) as usize)
+                .clamp(1, 500),
+            audit_buffer: (int("auditBuffer", self.audit_buffer as u64)
+                as usize)
+                .max(1),
         }
     }
 
@@ -1071,6 +1129,21 @@ impl Options {
                 .unwrap_or_default(),
             log_level: std::env::var("PEP_LOG_LEVEL").unwrap_or_default(),
             managed: Arc::new(Held::from_env()),
+            audit_enabled: std::env::var("PEP_AUDIT").as_deref() != Ok("false"),
+            audit_interval_ms: int_from_env("PEP_AUDIT_INTERVAL_MS", 5000u64)
+                .max(1),
+            audit_batch: int_from_env("PEP_AUDIT_BATCH", 200usize)
+                .clamp(1, 500),
+            audit_buffer: int_from_env("PEP_AUDIT_BUFFER", 10000usize).max(1),
+            client_id: client_id_of(
+                std::env::var("PEP_CLIENT_ID").ok().as_deref(),
+                std::env::var("PEP_AUDIT_CLIENT_ID").ok().as_deref(),
+            )
+            .0,
+            assertion_key: crate::credential::KeySource::choose(
+                std::env::var("PEP_ASSERTION_KEY").ok().as_deref(),
+                std::env::var("PEP_TLS_KEY").ok().as_deref(),
+            ),
         }
     }
 }
@@ -1164,6 +1237,22 @@ fn authzen_pdp_identifier() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pep_client_id_wins_and_pep_audit_client_id_is_its_alias() {
+        assert_eq!(
+            client_id_of(Some("a"), Some("b")),
+            ("a".to_string(), "PEP_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(Some(" "), Some("b")),
+            ("b".to_string(), "PEP_AUDIT_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(None, None),
+            ("sts-remote-pep".to_string(), "")
+        );
+    }
 
     #[test]
     fn callers_are_read_strictly() {

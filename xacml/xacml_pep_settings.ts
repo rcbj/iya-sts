@@ -209,7 +209,21 @@ const SETTINGS: SettingRow[] = [
   // trailing `*` a prefix. An application's own cookies are never touched
   // unless named here.
   { key: 'proxyStripCookies', env: 'PEP_PROXY_STRIP_COOKIES', type: 'text',
-    group: 'proxy', maxLength: 1024, applies: 'now', default: '' }
+    group: 'proxy', maxLength: 1024, applies: 'now', default: '' },
+  // THE DECISION RECORDS THE PEP SENDS TO THIS SERVICE'S AUDIT LOG (#1827),
+  // read at each use (`audit.rs`). `auditBuffer` LOWERED applies to new
+  // records: nothing already queued is dropped for it, and each new record
+  // displaces the oldest until the queue has drained below it. The client
+  // the PEP authenticates through, `PEP_AUDIT_CLIENT_ID`, is bootstrap.
+  { key: 'auditEnabled', env: 'PEP_AUDIT', type: 'boolean',
+    group: 'logging', applies: 'now', default: true },
+  { key: 'auditIntervalMs', env: 'PEP_AUDIT_INTERVAL_MS', type: 'integer',
+    group: 'logging', min: 1000, max: DAY_MS, applies: 'nextRound',
+    default: 5000 },
+  { key: 'auditBatch', env: 'PEP_AUDIT_BATCH', type: 'integer',
+    group: 'logging', min: 1, max: 500, applies: 'now', default: 200 },
+  { key: 'auditBuffer', env: 'PEP_AUDIT_BUFFER', type: 'integer',
+    group: 'logging', min: 1, max: 1000000, applies: 'now', default: 10000 }
 ];
 
 // THE ENVIRONMENT THAT STAYS THE PEP'S, with why (the console's catalog
@@ -222,6 +236,17 @@ const BOOTSTRAP: BootstrapRow[] = [
   { env: 'PEP_TLS_KEY', reason: 'connect', default: '' },
   { env: 'PEP_TLS_CA', reason: 'connect', default: '' },
   { env: 'PEP_TLS_INSECURE', reason: 'connect', default: 'false' },
+  // THE PEP'S TOKEN CREDENTIAL (#1827's follow-up): the client every token
+  // is asked through, and the one key file its RFC 7523 self-assertion and
+  // its DPoP proofs are signed with (PEP_TLS_KEY where it is unset). How the
+  // PEP authenticates, so needed before anything is sent, and a file it
+  // reads from disk.
+  { env: 'PEP_CLIENT_ID', reason: 'connect', default: 'sts-remote-pep' },
+  { env: 'PEP_ASSERTION_KEY', reason: 'file', default: '' },
+  // The older name of PEP_CLIENT_ID (#1827), read where PEP_CLIENT_ID is
+  // unset, and listed so an environment that sets it is still described.
+  { env: 'PEP_AUDIT_CLIENT_ID', reason: 'connect',
+    default: 'sts-remote-pep' },
   { env: 'PEP_PORT', reason: 'bind', default: '9090' },
   // PLAIN HTTP IS OFF BY DEFAULT (#1760): each switch binds its listener
   // before the first pull, so it is the environment's; a listener defined

@@ -559,6 +559,29 @@ async function theDefaultPolicy() {
       "the pull answered " + pulled.status + " " +
       String(pulled.text).slice(0, 400));
   });
+  // AND ON THE REMOTE PEP'S OWN KEY (#1827's follow-up, phase 3): the same
+  // pull on a DPoP-bound token from a key this job generated and the realm
+  // certified from its request, no certificate presented.
+  const key = await credentials.assertionRequest({ keyAlg: "ec-p256",
+                                                   name: REMOTE_PEP });
+  const issued = await credentials.issueAssertionCredential(
+    { post: postJson }, base, PREFIX, REMOTE_PEP, key.csrPem);
+  const got = await credentials.pepAccessToken(base + PREFIX, REMOTE_PEP,
+    key.privateKeyPem, "xacml:pep", "/xacml/pep");
+  const where = base + PREFIX + "/xacml/pep/policies";
+  const onKey = got.token
+    ? await fetchJson(where, { headers: credentials.dpopHeaders(
+        key.privateKeyPem, "GET", where, got.token) })
+    : { status: got.status, body: null, text: got.text };
+  check("on its own key's token the pull withholds it the same", function () {
+    assert.ok(onKey.status === 200 && onKey.body &&
+              (onKey.body.withheld || []).indexOf(policyName) >= 0,
+      "the pull on the token answered " + onKey.status + " " +
+      String(onKey.text).slice(0, 400));
+  });
+  await postJson(api("/pki/revoke"), { target: "person",
+    identifier: REMOTE_PEP, purpose: "jwt", handle: issued.kid,
+    reason: "cessationOfOperation" });
   log.debug("Leaving theDefaultPolicy().");
 }
 

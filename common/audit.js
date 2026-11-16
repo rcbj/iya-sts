@@ -1055,6 +1055,20 @@ const ACTIONS = [
   // AUTHZEN (#563): one row per evaluation, a batch's each with the batch id.
   { action: 'authzen.decision', category: 'authorization',
     label: 'An AuthZEN access evaluation was decided' },
+  // A REMOTE PEP'S DECISIONS (#1827): the records a remote enforcement point
+  // pushed to `POST /admin-api/pep-audit`, one row per decision IT made in
+  // its own process. An action per kind, the first two mirroring the two
+  // this service records for itself (`xacml.enforcement` and
+  // `authzen.decision`), so a filter for either finds both halves; the third
+  // is the reverse proxy's (#1760), which has no twin here. The row's `at` is when this
+  // service RECEIVED it — the audit chain orders what this process wrote —
+  // and `decidedAt` in the detail is when the PEP decided.
+  { action: 'xacml.remote.enforcement', category: 'authorization',
+    label: 'A remote PEP enforced a decision' },
+  { action: 'authzen.remote.decision', category: 'authorization',
+    label: 'A remote PEP decided an AuthZEN access evaluation' },
+  { action: 'xacml.remote.proxy', category: 'authorization',
+    label: 'A remote PEP\'s reverse proxy decided a request' },
   { action: 'authzen.search', category: 'authorization',
     label: 'An AuthZEN search was answered' },
   // FINE-GRAINED AUTHORIZATION (#564): one row per authorization detail an
@@ -1135,6 +1149,11 @@ const ACTIONS = [
   // row names the serial, the names and the expiry, and never the key.
   { action: 'xacml.pep.certificate', category: 'authorization',
     label: 'A remote PEP was issued an HTTPS listener certificate' },
+  // A remote PEP's RFC 7523 assertion key was certified from its own
+  // request (#1827's follow-up, phase 3). The row names the urn, the kid,
+  // the serial and the expiry, and never the certificate or a key.
+  { action: 'xacml.pep.credential', category: 'authorization',
+    label: 'A remote PEP\'s assertion key was certified from its request' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 

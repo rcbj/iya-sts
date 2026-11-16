@@ -768,8 +768,8 @@
     "text": "PDP 所见的每条策略，包括文档在内，以及每条策略的静态类型检查问题。与 /admin/ldap/* 隐藏的秘密不同，这些文档是刻意展示的：策略是规则而不是凭据，而一条没人能读的规则就是一条没人能检查的规则。谁可以读取它，与它是否被遮盖是两个不同的问题，而此端点需要 XACML_USER：自从访问 PEP 和签发 PEP 被嵌入以来，这些文档就是本服务用来决定自身准入的文档，而把放行他人的确切条件交给匿名调用方，与发布一条演示策略并不是同一回事。存储位置是嵌入式目录中的 ou=policies——该容器本身就是存储库。"
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "另一个进程中的策略执行点（PEP）通过同一端口上的双向 TLS 声明自己的存在——server.js 已经设置了 requestCert: true，因此不需要新的监听器。这是此系列中唯一要求凭据的端点，它问的问题与 /xacml/pdp 不同：不是决策针对谁，而是这是哪个 PEP——因为注册会写入一个条目，并提供一个本服务之后会拨号的地址。它与此处其他所有关卡一样是一道闸口（证书无需链接到任何东西，依据 RFC 8705 第 3 节的论证），它并不是让 PEP 能够执行的条件：未注册的 PEP 同样可以拉取并作出决策。xacml.pepRequireCertificate 可将其关闭。"
+    "en": "f25896a0df078725",
+    "text": "另一个进程中的策略执行点（PEP）通过同一端口上的双向 TLS 声明自己的存在——server.js 已经设置了 requestCert: true，因此不需要新的监听器。这是此系列中唯一要求凭据的端点，它问的问题与 /xacml/pdp 不同：不是决策针对谁，而是这是哪个 PEP——因为注册会写入一个条目，并提供一个本服务之后会拨号的地址。它与此处其他所有关卡一样是一道闸口（证书无需链接到任何东西，依据 RFC 8705 第 3 节的论证），它并不是让 PEP 能够执行的条件：未注册的 PEP 同样可以拉取并作出决策。xacml.pepRequireCertificate 可将其关闭。 由 sts-remote-pep 签发、受众为 /xacml/pep 并携带 xacml:pep 的 DPoP 绑定访问令牌，可在此处以及每个 /xacml/pep 端点和 /xacml/pip 上代替证书，具体取决于 xacml.pepAuthentication 的设置；此时 PEP 以其条目的用户名命名。"
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -1894,6 +1894,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "设置一个设备或一批设备的合规状态"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827)。远程 XACML PEP 推送它在自身进程中所作决定的记录——/protected 的执行、它自己决定的 AuthZEN 评估（从不包括它转发的）以及其反向代理对某条路由的请求——至少一次且按顺序，每批最多 500 条，每条按其 seq 确认。令牌携带受保护的 xacml:pep-audit 范围，此处没有其他操作接受它：PEP 自己的 RFC 7523 自我断言，经由预置的公共客户端 sts-remote-pep，绑定到其证书，仅在其条目属于远程 PEP 组（REMOTE_PEPS）时签发和接受。PEP 必须已在该领域注册。/admin/audit 上的行为 xacml.remote.enforcement、authzen.remote.decision，以及反向代理请求的 xacml.remote.proxy。"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "将远程 PEP 作出的一批决定记录为审计行"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",

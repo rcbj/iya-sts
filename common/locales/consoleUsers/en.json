@@ -976,5 +976,6 @@
   "mfaSection.pubStateDeactivated": "Deactivated",
   "mfaSection.pubDeactivate": "Deactivate",
   "mfaSection.pubDeactivateTip": "Deactivates this DID for good: its address answers 410 Gone, its history stays resolvable, and it no longer signs the person in or is released in the did claim.",
-  "mfaSection.pubNeedsWrite": "Deactivating one needs <strong>Admin Write</strong>."
+  "mfaSection.pubNeedsWrite": "Deactivating one needs <strong>Admin Write</strong>.",
+  "keySource.issuedFromCsr": "Certified here from their own request &mdash; this realm&rsquo;s Issuing CA certified a key they generated. They hold the private key; this service never had it."
 }

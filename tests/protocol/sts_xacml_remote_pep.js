@@ -637,7 +637,14 @@ var pep = { url: "", network: "", mode: "", pdpUrl: "", created: false,
             // and the companion container this job started, if it did.
             proxyUrl: "", proxyHttpsUrl: "", upstreamUrl: "",
             upstreamDirectUrl: "", listenerAnchorPem: "",
-            companionCreated: false };
+            companionCreated: false,
+            // THE ASSERTION KEY (#1827's follow-up, phase 3): what
+            // issue-pep-credential answered for the container's key, or
+            // null where nothing registered one (an older launcher that
+            // wrote no request).
+            assertion: null,
+            // The two PEPs section 11 starts on keys alone, by name.
+            keyPeps: [] };
 
 // The last of the container's own log. Every failure message below ends with
 // this, because the interesting failures here are ones where the PEP said
@@ -981,8 +988,17 @@ async function mintTheContainersCredential() {
   // inside that image is not this user, so a key only this user can read is a
   // container that starts and quietly has no certificate.
   fs.writeFileSync(path.join(dir, "pep.key"), cred.keyPem, { mode: 0o644 });
+  // AND THE ASSERTION KEY (#1827's follow-up, phase 3), generated HERE —
+  // the service never sees it — and registered from its request, which is
+  // what a launcher does with the request it wrote (registerTheKey()).
+  const made = await credentials.assertionRequest({ keyAlg: "ec-p256",
+                                                    name: PEP_NAME });
+  fs.writeFileSync(path.join(dir, "pep-assertion.key"), made.privateKeyPem,
+                   { mode: 0o644 });
+  await registerTheKey(made.csrPem);
   log.info("Minted the PEP container's client certificate (" + cred.subject +
-           ") and trusted its Root CA. It is mounted at /certs.");
+           ") and trusted its Root CA, and registered the assertion key " +
+           "it signs its token requests with. Both are mounted at /certs.");
   log.debug("Leaving mintTheContainersCredential().");
   return dir;
 }
@@ -1015,6 +1031,10 @@ async function startThePep() {
     // for the same reason it is there.
     PEP_TLS_CERT: "/certs/pep.crt",
     PEP_TLS_KEY: "/certs/pep.key",
+    // THE ASSERTION KEY (#1827's follow-up, phase 3), as the launchers mount
+    // it: every call carries a DPoP-bound token from it, the certificate
+    // beside it while xacml.pepAuthentication is `either`.
+    PEP_ASSERTION_KEY: "/certs/pep-assertion.key",
     // THE HTTPS LISTENER'S PAIR (2026-09-13): two paths that are empty when the
     // container starts, exactly as the launchers arrange it — the realm issues
     // the pair only once the PEP has registered, and this job writes it.
@@ -1400,6 +1420,288 @@ async function waitForItToFindTheRealm() {
 // its life, so a registration that succeeded on the first attempt would mean
 // something other than what this job thinks is running.
 // ===========================================================================
+// ===========================================================================
+// THE ASSERTION KEY (#1827's follow-up, phase 3; rcbj 2026-11-16: "the
+// service never holds the PEP's private key").
+//
+// The container signs an RFC 7523 self-assertion with ONE key
+// (PEP_ASSERTION_KEY) for a DPoP-bound token per audience, and the service
+// accepts that key once it is REGISTERED on the PEP's entry as an RFC 7523
+// key certified by the realm's Issuing CA. The key is generated where the PEP
+// is — by the launcher (`pep-credential.js --assertion --csr-only`, beside
+// pep.key) or by this job for a container of its own — and only its
+// certificate request reaches the service, through issue-pep-credential,
+// which this job sends once the PEP's entry exists in its realm.
+// ===========================================================================
+
+// The launcher's request, beside the server pair's directory as pep.crt is
+// (`launcherLeafPem()`); '' where the launcher wrote none.
+function launcherAssertionCsr() {
+  log.debug("Entering launcherAssertionCsr().");
+  if (!process.env.XACML_PEP_SERVER_CERT_DIR) {
+    log.debug("Leaving launcherAssertionCsr(). No directory.");
+    return "";
+  }
+  const file = path.join(path.dirname(
+    String(process.env.XACML_PEP_SERVER_CERT_DIR)), "pep-assertion.csr");
+  let pem = "";
+  try {
+    pem = fs.readFileSync(file, "utf8");
+  } catch (e) {
+    log.debug("Caught in launcherAssertionCsr(): " + ((e && e.message) || e));
+    pem = "";
+  }
+  log.debug("Leaving launcherAssertionCsr(). " + (pem ? "found" : "none"));
+  return pem.indexOf("CERTIFICATE REQUEST") >= 0 ? pem : "";
+}
+
+// issue-pep-credential for the PEP's own request. Must work: the entry is in
+// the group and so a service account (`designateRemotePep()`).
+async function registerTheKey(csrPem) {
+  log.debug("Entering registerTheKey().");
+  pep.assertion = await credentials.issueAssertionCredential(
+    { post: postJson }, base, "/realm/" + REALM, PEP_NAME, csrPem);
+  log.info("Registered the PEP's assertion key: " + pep.assertion.urn +
+           ", kid " + pep.assertion.kid + ".");
+  log.debug("Leaving registerTheKey().");
+}
+
+async function registerTheLaunchersKey() {
+  log.debug("Entering registerTheLaunchersKey().");
+  const csr = launcherAssertionCsr();
+  if (!csr) {
+    log.warn("The launcher wrote no pep-assertion.csr beside " +
+             String(process.env.XACML_PEP_SERVER_CERT_DIR || "(unset)") +
+             ", so the container has no registered assertion key and " +
+             "authenticates by its client certificate alone. Section 1c " +
+             "asserts what it can without one.");
+    log.debug("Leaving registerTheLaunchersKey(). None.");
+    return;
+  }
+  await registerTheKey(csr);
+  log.debug("Leaving registerTheLaunchersKey().");
+}
+
+// ---------------------------------------------------------------------------
+// SECTION 1c: THE CONTAINER ON ITS KEY, AND THE REFUSALS AROUND IT.
+// ---------------------------------------------------------------------------
+async function itAuthenticatesOnItsKey() {
+  log.debug("Entering itAuthenticatesOnItsKey().");
+  log.info("=== 1c. The PEP authenticates on its own key ===");
+  if (pep.assertion) {
+    check("the PEP's key was certified as urn:sts:sa:" + PEP_NAME, function () {
+      assert.strictEqual(pep.assertion.urn, "urn:sts:sa:" + PEP_NAME);
+      assert.ok(!/PRIVATE KEY-----/.test(JSON.stringify(pep.assertion)),
+        "issue-pep-credential's answer carries a private key; the service " +
+        "never had one");
+    });
+    let seen = null;
+    await until("the PEP to hold a DPoP-bound token for /xacml/pep",
+                async function () {
+      seen = await pepOverview();
+      const token = ((seen.credential || {}).tokens || {})["xacml-pep"] || {};
+      return { ok: token.held === true,
+               note: "credential=" + JSON.stringify(seen.credential || null)
+                 .slice(0, 400) };
+    });
+    check("its calls carry a token from PEP_ASSERTION_KEY", function () {
+      assert.strictEqual(seen.credential.keySource, "PEP_ASSERTION_KEY",
+        "the PEP signs with " + seen.credential.keySource);
+    });
+  }
+
+  // THE REFUSALS, each needing nothing from the container.
+  const stranger = await postJson(api("/xacml/issue-pep-credential"),
+    { name: STAFF_PERSON,
+      csr: (await credentials.assertionRequest({})).csrPem });
+  check("issue-pep-credential refuses a person outside remote-peps",
+        function () {
+    assert.strictEqual(stranger.status, 400,
+      "issuing a PEP key to " + STAFF_PERSON + " answered " +
+      stranger.status + " " + String(stranger.text).slice(0, 300));
+  });
+  const fresh = await credentials.assertionRequest({ keyAlg: "ec-p256",
+                                                     name: PEP_NAME });
+  const der = Buffer.from(fresh.csrPem.replace(/-----[A-Z ]+-----/g, "")
+                            .replace(/\s+/g, ""), "base64");
+  der[der.length - 3] ^= 0x5a;
+  const tampered = await postJson(api("/xacml/issue-pep-credential"),
+    { name: PEP_NAME, csr: der.toString("base64") });
+  check("a request whose signature does not prove possession is refused",
+        function () {
+    assert.strictEqual(tampered.status, 400,
+      "a tampered request answered " + tampered.status + " " +
+      String(tampered.text).slice(0, 300));
+  });
+  const unregistered = await credentials.pepAccessToken(realmUrl(""),
+    PEP_NAME, fresh.privateKeyPem, "xacml:pep", "/xacml/pep");
+  check("a key that is not registered is refused at the grant", function () {
+    assert.ok(unregistered.status === 400 || unregistered.status === 401,
+      "a self-assertion signed with an unregistered key answered " +
+      unregistered.status + " " + String(unregistered.text).slice(0, 300));
+  });
+
+  // A KEY THIS JOB HOLDS, for the two calls only a holder can make: the
+  // token as Bearer, refused; as DPoP, admitted. Revoked afterwards.
+  const probe = await credentials.issueAssertionCredential({ post: postJson },
+    base, "/realm/" + REALM, PEP_NAME, fresh.csrPem);
+  const got = await credentials.pepAccessToken(realmUrl(""), PEP_NAME,
+    fresh.privateKeyPem, "xacml:pep", "/xacml/pep");
+  check("a registered key is issued a DPoP-bound xacml:pep token",
+        function () {
+    assert.ok(got.status === 200 && got.token &&
+              got.body.token_type === "DPoP",
+      "the grant answered " + got.status + " " +
+      String(got.text).slice(0, 300));
+  });
+  const where = realmUrl("/xacml/pep/policies");
+  const asBearer = await fetchJson(where, { headers:
+    credentials.dpopHeaders(fresh.privateKeyPem, "GET", where, got.token,
+                            "Bearer") });
+  check("the token sent as Bearer is refused", function () {
+    assert.strictEqual(asBearer.status, 401,
+      "GET /xacml/pep/policies with the token as Bearer answered " +
+      asBearer.status + " " + String(asBearer.text).slice(0, 300));
+  });
+  const asDpop = await fetchJson(where, { headers:
+    credentials.dpopHeaders(fresh.privateKeyPem, "GET", where, got.token) });
+  check("the token sent as DPoP pulls the policies", function () {
+    assert.strictEqual(asDpop.status, 200,
+      "GET /xacml/pep/policies on the DPoP-bound token answered " +
+      asDpop.status + " " + String(asDpop.text).slice(0, 300));
+  });
+  const revoked = await postJson(api("/pki/revoke"), {
+    target: "person", identifier: PEP_NAME, purpose: "jwt",
+    handle: probe.kid, reason: "cessationOfOperation" });
+  const after = await credentials.pepAccessToken(realmUrl(""), PEP_NAME,
+    fresh.privateKeyPem, "xacml:pep", "/xacml/pep");
+  check("revoking that key refuses it at the grant", function () {
+    assert.strictEqual(revoked.status, 200,
+      "POST /admin-api/pki/revoke answered " + revoked.status + " " +
+      String(revoked.text).slice(0, 300));
+    assert.ok(after.status === 400 || after.status === 401,
+      "the revoked key's grant answered " + after.status);
+  });
+  log.debug("Leaving itAuthenticatesOnItsKey().");
+}
+
+// ---------------------------------------------------------------------------
+// SECTION 11: TWO PEPS ON KEYS ALONE, AS 8081 RUNS THEM (#1827's follow-up,
+// phase 3). A realm of their own with `xacml.pepAuthentication` `token`, so a
+// certificate alone is refused there; two entries in its remote-peps group,
+// each with a key generated here and registered from its request; and two
+// containers with PEP_ASSERTION_KEY and NO PEP_TLS_CERT. Both must register
+// and pull. The key reaches each container by `docker cp` before it starts,
+// so no host path is needed.
+//
+// IT NEEDS A DOCKER DAEMON THIS JOB CAN REACH, which a launcher's runner
+// container does not have (see test()). Without one the section says so at
+// warn and asserts nothing; with one — a hand run, a coverage run — it runs.
+// ---------------------------------------------------------------------------
+async function twoPepsOnKeysAlone() {
+  log.debug("Entering twoPepsOnKeysAlone().");
+  log.info("=== 11. Two PEPs on keys alone, xacml.pepAuthentication=token ===");
+  if (!pep.network || !pep.pdpUrl ||
+      !dockerQuiet(["version", "--format", "{{.Server.Version}}"]).ok) {
+    log.warn("Section 11 needs a docker daemon and the network this job's " +
+             "own container ran on, and this run has neither (a launcher " +
+             "owns the PEP). It asserted nothing.");
+    log.debug("Leaving twoPepsOnKeysAlone(). Skipped.");
+    return;
+  }
+  const realm = (REALM + "-keys").slice(0, 40);
+  const prefix = "/realm/" + realm;
+  const made = await postJson(base + "/admin-api/realms/create", {
+    id: realm, domain: realm + ".example.net",
+    name: "Remote PEPs on keys", description: "Created by " +
+      "sts_xacml_remote_pep.js section 11; LEFT IN PLACE." });
+  assert.ok(made.status === 200 && made.body && made.body.ok !== false,
+    "creating " + realm + " answered " + made.status + " " +
+    String(made.text).slice(0, 300));
+  const setting = await postJson(base + prefix + "/admin-api/config/set",
+    { key: "xacml.pepAuthentication", value: "token" });
+  assert.ok(setting.status === 200,
+    "setting xacml.pepAuthentication to token in " + realm + " answered " +
+    setting.status + " " + String(setting.text).slice(0, 300));
+  await postJson(base + prefix + "/admin-api/xacml/create-from-template", {
+    template: "rbac", name: POLICY_A, p_roleAttribute: "employeeType",
+    p_adminRoles: "admin", p_readerRoles: "staff",
+    p_readerActions: "GET, HEAD" });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "iya-sts-pep-keys-"));
+  try {
+    for (const n of [1, 2]) {
+      const name = (PEP_NAME + "-k" + n).slice(0, 40);
+      const user = await postJson(base + prefix + "/admin-api/users/create", {
+        username: name, invent: false,
+        attributes: { cn: name, givenName: "Remote", sn: "Remote PEP",
+                      mail: name + "@xacml-remote-pep.test",
+                      displayName: name } });
+      assert.strictEqual(user.status, 200, "creating " + name + " answered " +
+                         user.status + " " + String(user.text).slice(0, 300));
+      const joined = await postJson(base + prefix +
+        "/admin-api/groups/add-member", { group: "remote-peps",
+                                          member: name });
+      assert.strictEqual(joined.status, 200, "adding " + name + " to " +
+        "remote-peps answered " + joined.status);
+      const key = await credentials.assertionRequest({ keyAlg: n === 1
+        ? "ec-p256" : "rsa-2048", name: name });
+      await credentials.issueAssertionCredential({ post: postJson }, base,
+        prefix, name, key.csrPem);
+      const file = path.join(dir, name + ".key");
+      fs.writeFileSync(file, key.privateKeyPem, { mode: 0o644 });
+      dockerQuiet(["rm", "-f", name]);
+      docker(["create", "--name", name, "--hostname", name,
+              "--network", pep.network,
+              "--env", "PEP_PDP_URL=" +
+                String(pep.pdpUrl).replace(/\/realm\/[^/]+\/?$/, "") + prefix,
+              "--env", "PEP_NAME=" + name,
+              "--env", "PEP_ASSERTION_KEY=/keys/pep-assertion.key",
+              "--env", "PEP_TLS_INSECURE=true",
+              "--env", "PEP_POLL_INTERVAL_MS=" + String(POLL_MS),
+              "--env", "PEP_HEARTBEAT_INTERVAL_MS=" + String(HEARTBEAT_MS),
+              "--env", "PEP_PORT=" + String(await freePort()),
+              "--env", "PEP_HTTPS_PORT=" + String(await freePort()),
+              "--env", "PEP_PROXY_PORT=" + String(await freePort()),
+              "--env", "PEP_PROXY_HTTPS_PORT=" + String(await freePort()),
+              IMAGE], "creating " + name);
+      pep.keyPeps.push(name);
+      docker(["cp", file, name + ":/keys/pep-assertion.key"],
+             "copying " + name + "'s key into it");
+      docker(["start", name], "starting " + name);
+    }
+    for (const name of pep.keyPeps) {
+      let row = null;
+      await until(name + " to register in " + realm + " on its key alone " +
+                  "and pull", async function () {
+        const r = await get(base + prefix + "/admin-api/xacml/peps");
+        row = ((r.body && r.body.peps) || []).filter(function (one) {
+          return one.name === name;
+        })[0] || null;
+        return { ok: !!row && row.authenticated === true &&
+                     !!row.syncToken,
+                 note: "row=" + JSON.stringify(row).slice(0, 300) + " " +
+                       (dockerQuiet(["logs", "--tail", "5", name]).out ||
+                        "") };
+      });
+      check(name + " registered and pulls with no client certificate, " +
+            "xacml.pepAuthentication=token", function () {
+        assert.ok(row && row.authenticated === true);
+      });
+    }
+  } finally {
+    pep.keyPeps.forEach(function (name) {
+      dockerQuiet(["rm", "-f", name]);
+    });
+    pep.keyPeps = [];
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      log.warn("Could not remove " + dir + ": " + e.message);
+    }
+  }
+  log.debug("Leaving twoPepsOnKeysAlone().");
+}
+
 async function itRegistersAndPulls() {
   log.debug("Entering itRegistersAndPulls().");
   log.info("=== The PEP container registers and pulls what is deployed ===");
@@ -5434,6 +5736,7 @@ async function test() {
     await admit("xacml-user-1", "xacml-users", xacmlUser.leaf.pem);
     if (LAUNCHER_STARTED_IT) {
       await admit(PEP_NAME, "remote-peps", launcherLeafPem());
+      await registerTheLaunchersKey();
     }
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order
     // and both before anything is asserted about it.
@@ -5469,6 +5772,7 @@ async function test() {
     try {
       await waitForItToFindTheRealm();
       await itRegistersAndPulls();
+      await itAuthenticatesOnItsKey();
       await theListenerServesARealmCertificate();
       await itDecidesInItsOwnProcess();
       await thePipReachesTheDirectory();
@@ -5484,6 +5788,9 @@ async function test() {
       await itTakesItsSettingsFromTheService();
       await itBindsTheListenersTheServiceDefines();
       await itProxiesAnApplication();
+      // Section 11 (#1827's follow-up, phase 3) before section 9 too: its
+      // two PEPs need the PDP.
+      await twoPepsOnKeysAlone();
       await itKeepsEnforcingWhenThePdpIsGone();
     } finally {
       stopThePep();

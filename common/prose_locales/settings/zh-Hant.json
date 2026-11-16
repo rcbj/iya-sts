@@ -4348,8 +4348,8 @@
     "text": "接受 TLS 用戶端憑證"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "由「此領域」簽發的用戶端憑證，驗證至其 Intermediate，並依其中的 urn:sts:person: 或 urn:sts:application: 名稱對應到其項目（RFC 7030 section 3.3.2）。沒有 Basic 認證時，simplereenroll 必須使用它。"
+    "en": "a9bb56c470b2a73f",
+    "text": "由「此領域」簽發的用戶端憑證，驗證至其 Intermediate，並依其中的 urn:sts:person:、urn:sts:sa:（服務帳戶）或 urn:sts:application: 名稱對應到其項目（RFC 7030 section 3.3.2）。沒有 Basic 認證時，simplereenroll 必須使用它。"
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7778,6 +7778,14 @@
   "xacml.pepRequireCertificate|description": {
     "en": "e41d92adf65ec5bc",
     "text": "預設開啟。它曾是此協定族中「唯一」的拒絕；現在每個 /xacml 端點都要求憑證，而此設定仍管轄的是特別針對「註冊」的部分——它會寫入項目、是主控台列出的內容，也是推送提示的送達位址，因此「這是哪個 PEP」正是那裡的問題，而用戶端憑證就是答案。其上方的存取原則層是另一種更強的檢查（roles.remotePepGroup，以及用來關閉它的 xacml.enforceAccess）；此項關乎「沒有」憑證的註冊是否會被接受並標示為未驗證。如同此服務中的其他每道門禁，它是一道「旋轉門」：憑證不需要鏈結到任何東西，因為 RFC 8705 的論點同樣適用——所證明的是同一把金鑰完成了交握。關閉此項可讓 PEP 透過一般 HTTP 註冊，這是 global.https 關閉的執行所需要的；這類註冊會在其項目與主控台上被標示為「未驗證」，而不是悄悄地與已證明某些事的註冊無從區分。"
+  },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "遠端 PEP 的驗證方式"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "8d19137204b63401",
+    "text": "either（預設）：遠端 PEP 透過本服務驗證的用戶端憑證存取 /xacml/pep/* 與 POST /xacml/pip，或透過 DPoP 繫結的存取權杖（RFC 9449）存取；該權杖由 PEP 以自己的 RFC 7523 自我斷言經用戶端 sts-remote-pep 取得，受眾為本領域的 /xacml/pep，並帶有 xacml:pep。出示了權杖時，以權杖為準。token：只接受權杖，僅有憑證會被拒絕。certificate：只接受憑證，不讀取 Authorization 標頭。無論哪種方式，PEP 的項目都必須持有 REMOTE_PEPS（roles.remotePepGroup），並由存取控制原則決定。同樣的設定也適用於遠端 PEP 在 /access/v1 上的權杖，即邊緣 PDP 轉送細粒度評估時，不論 authzen.callerAuthentication 如何設定。"
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

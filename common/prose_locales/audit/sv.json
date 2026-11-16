@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "En AuthZEN-åtkomstutvärdering avgjordes"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "En fjärr-PEP verkställde ett beslut"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "En fjärr-PEP avgjorde en AuthZEN-åtkomstbedömning"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "En fjärr-PEP:s omvända proxy avgjorde en begäran"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "En AuthZEN-sökning besvarades"
@@ -998,6 +1010,10 @@
   "audit.actions.xacml.pep.certificate.label": {
     "en": "419007622035492d",
     "text": "En fjärransluten PEP fick ett certifikat för en HTTPS-lyssnare"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "En fjärr-PEP:s påståendenyckel certifierades från dess begäran"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",

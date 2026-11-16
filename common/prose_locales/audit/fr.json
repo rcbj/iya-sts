@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "Une évaluation d’accès AuthZEN a été décidée"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "Un PEP distant a appliqué une décision"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "Un PEP distant a décidé une évaluation d’accès AuthZEN"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "Le proxy inverse d’un PEP distant a décidé une requête"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "Une recherche AuthZEN a reçu une réponse"
@@ -998,6 +1010,10 @@
   "audit.actions.xacml.pep.certificate.label": {
     "en": "419007622035492d",
     "text": "Un certificat d’écouteur HTTPS a été émis pour un PEP distant"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "La clé d’assertion d’un PEP distant a été certifiée à partir de sa demande"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
