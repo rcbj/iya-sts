@@ -233,8 +233,9 @@ whole difference between the two controls on that page.
 
 The rule holds for a certificate presented in an `x5c` as well, with nothing on
 the entry to consult: the leaf this service issues to a person carries
-`urn:sts:person:<name>` as a URI subjectAltName, and that name is what is
-checked. Before people could hold a key pair, *it chains here* and *it may
+`urn:sts:person:<name>` as a URI subjectAltName (a
+[service account](service-accounts.md)'s says `urn:sts:sa:<name>`), and that
+name is what is checked. Before people could hold a key pair, *it chains here* and *it may
 assert about somebody* were one sentence.
 
 **Taking a person's key pair off clears their issuer declaration with it**,

@@ -231,7 +231,8 @@ shim) are in git history.
 | Rust module (`rust/bins/xacml-pep/src/`) | What it is (the Node file it replaces) |
 |---|---|
 | `options.rs` | The environment, read once (`pep.js`'s `options`). |
-| `pdp_client.rs` | ONE HTTP client for every call to the PDP, with the client certificate on every call (`sync.js`'s `call()`). |
+| `pdp_client.rs` | ONE HTTP client for every call to the PDP (`sync.js`'s `call()`): `call_authorized` puts the credential's DPoP-bound token and proof on every call to the service, and the client certificate goes on too while `PEP_TLS_CERT` is set. |
+| `credential.rs` | The PEP's one credential to the service (#1827 follow-up): the assertion key, the RFC 7523 self-assertion, the DPoP proofs, one token per audience. See *THE PEP'S CREDENTIAL TO THE SERVICE*. |
 | `sync.rs` | Register, pull, heartbeat; what is held (`sync.js`) — and the two AuthZEN pulls, the catalogue (#1179) and the callers (#1189), with the caller list's strict grammar. |
 | `pip.rs` | The walk, the batched `POST /xacml/pip`, the resolver (`pip.js`). |
 | `enforce.rs` | The bias and the obligation rule (`pep.js`'s `enforce()`). |
@@ -249,7 +250,8 @@ shim) are in git history.
 | `rp_set.rs` | The session mechanism's relying parties: one `oidc-caep-risc` `RelyingParty` per client, and its CAEP/RISC `SignalsReceiver`, built from the pull and rebuilt when it changes (D5). |
 | `identity.rs` | How the identity reaches the application (D11): claim values as headers, the `jwt` mode's token cache, the `saml` mode's cookie jar. Pure. **A claim with no value sends no header** (2026-11-14): an empty string or list is no value, as absent and null always were, so a person in no group no longer sends `X-Iya-Groups:` empty. `X-Iya-Amr` reached nobody for another reason, the service's: its identity endpoint answered every proxy session's access token with `amr: []`, and reads the token's own `amr` now (`xacml/xacml_pep_proxy.ts`, `subjectOf()`). |
 | `listeners.rs` | **Every listener, and the ones the service defines (#1760)**: the definitions read again, bound, rebound and unbound after each pull, an HTTPS one's key generated here and its certificate asked for, and the report on the heartbeat. See *THE LISTENERS THE SERVICE DEFINES*. |
-| `main.rs` | Start-up, the backoff timers, the fault handler, `--stamp`, `--healthcheck`. |
+| `audit.rs` | The decision records sent to the service's audit log (#1827): the queue, the RFC 7523 self-assertion token, the shipping — see *THE DECISION RECORDS GO TO THE SERVICE*. No Node file: it is newer than the port. |
+| `main.rs` | Start-up, the backoff timers and the decision records' fixed one, the fault handler, `--stamp`, `--healthcheck`. |
 
 ## The tests, and which half each guards
 
@@ -399,8 +401,8 @@ under both spellings) and `pip.rs` forwards it in the PIP query, because the
 same name could be a person holding different roles.
 
 **`PEP_PIP=false` reaches the same state on purpose**, and so does a container
-with no client certificate — the endpoint requires a verified one whose subject
-holds `REMOTE_PEPS`. So the no-PIP deployment is a CONFIGURATION rather than a
+with neither a token nor a client certificate — the endpoint requires a remote
+PEP, an entry holding `REMOTE_PEPS`. So the no-PIP deployment is a CONFIGURATION rather than a
 limitation, which is what lets one container demonstrate both, and
 `GET /protected?employeeType=staff` still works and still means what it always
 meant: an attribute the SUBJECT asserted about itself, which no real deployment
@@ -660,7 +662,8 @@ keys, variables and bounds); the table below marks them.
   counts as set when it was non-empty at start). The service holds it to its
   members and draws it beside what is set.
 * **BOOTSTRAP STAYS HERE**: `PEP_PDP_URL`, `PEP_NAME`, `PEP_TLS_CERT`/`KEY`,
-  `PEP_TLS_CA` and `PEP_TLS_INSECURE` (needed before the first pull), the
+  `PEP_ASSERTION_KEY`, `PEP_CLIENT_ID`, `PEP_TLS_CA` and `PEP_TLS_INSECURE`
+  (needed before the first pull), the
   four ports (a listening socket is not rebound while it serves), the files
   (`PEP_HTTPS_CERT`/`KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA`,
   `PEP_PROXY_UPSTREAM_CA`), `PEP_PROXY` (whether the proxy's listeners start;
@@ -671,13 +674,15 @@ keys, variables and bounds); the table below marks them.
 | Variable | Default | What |
 |---|---|---|
 | `PEP_PDP_URL` | `https://localhost:8081` | The mock. |
-| `PEP_NAME` | `pep-1` | **Ignored when a client certificate is presented** — the PDP names the row from the certificate. |
-| `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate. Without it the PDP refuses the registration unless `xacml.pepRequireCertificate` is off. Enforcement is unaffected either way. |
+| `PEP_NAME` | `pep-1` | **MUST BE THE PEP'S DIRECTORY USERNAME**: it is the self-assertion's `iss` and `sub`, the token's subject is that entry, and the service names the row by the entry's username. (With a client certificate presented and no token, the PDP names the row from the certificate, as before.) |
+| `PEP_ASSERTION_KEY` | `PEP_TLS_KEY` | **A path, re-read on `httpsReloadIntervalMs`**: the ONE private key the self-assertion and every DPoP proof are signed with — RSA (RS256) or EC P-256 (ES256). Unset, `PEP_TLS_KEY` (`STS-XPEP-0127`); neither, every call goes without a token (`STS-XPEP-0126`). See *THE PEP'S CREDENTIAL TO THE SERVICE*. |
+| `PEP_CLIENT_ID` | `sts-remote-pep` | The public client the self-assertion grant goes through, the one the service seeds for it. `PEP_AUDIT_CLIENT_ID`, its name until every call carried a token, is read when it is unset. **Bootstrap**, not managed: it is how the PEP authenticates at all. |
+| `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate, **presented only while it is set**, beside the token: the service accepts either while the certificate is being retired. Enforcement is unaffected either way. |
 | `PEP_TLS_CA` | — | An anchor for the PDP's certificate. |
 | `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, whose listener certificate is issued by a service Root that development mode regenerates on every start — so there is no fixed anchor to verify against (`tls/CLAUDE.md`). Logged on every start, for `federation_http.ts`'s reason. |
 | `PEP_NOTIFY_URL` | derived | Where the PDP should nudge; unset, derived from the HTTPS certificate (*THE NOTIFY URL IS DERIVED*). *Managed* (`notifyUrl`). |
 | `PEP_BIAS` | `deny-biased` | This PEP's own. *Managed* (`bias`). |
-| `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with no `PEP_TLS_CERT`, since that endpoint requires a verified certificate holding `REMOTE_PEPS`. On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. *Managed* (`pip`). |
+| `PEP_PIP` | `true` | Resolve designators the request did not carry against the PDP's embedded directory, through `POST /xacml/pip`, in one batched query before each evaluation. **`false` reaches the old behaviour deliberately** — and so does a container with neither a token nor a certificate, since that endpoint requires a remote PEP (`REMOTE_PEPS`). On by default because the surprising state is the other one: a PEP enforcing the same policy as its PDP and reaching a different answer. *Managed* (`pip`). |
 | `PEP_POLL_INTERVAL_MS` | `15000` | **The contract**, and since 2026-09-06 also the interval a FAILED REGISTRATION is retried on. *Managed* (`pollIntervalMs`). |
 | `PEP_HEARTBEAT_INTERVAL_MS` | `60000` | *Managed* (`heartbeatIntervalMs`). |
 | `PEP_PORT` | `9090` | The plain-HTTP API port, bound only with `PEP_HTTP=true` (#1760). |
@@ -690,6 +695,10 @@ keys, variables and bounds); the table below marks them.
 | `PEP_AUTHZEN_CALLERS` | — | **Optional since #1189.** A JSON array of `{ "name", "sha256", "applications" }`. Set, it NARROWS the callers pulled from the service to the certificates it names (`STS-XPEP-0054`), and before the first caller pull it decides alone, as #1179's door did (`STS-XPEP-0037`); unset, the pulled list alone decides and nothing is answered before it (`STS-XPEP-0050`). Set to a value that names nobody, it admits nobody. A malformed entry is left out (`STS-XPEP-0038`). |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). *Managed* (`authzenPdpIdentifier`). |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. *Managed* (`authzenForwardTimeoutMs`). |
+| `PEP_AUDIT` | `true` | Send each decision made here to the service's audit log (#1827). `false` queues nothing new; what is queued is still sent, and the log line is unchanged either way. *Managed* (`auditEnabled`). |
+| `PEP_AUDIT_INTERVAL_MS` | `5000` | How often the queue is sent. A fixed interval, not backed off: the queue is what holds the records while the service refuses. *Managed* (`auditIntervalMs`, 1000 to a day, from the next round). |
+| `PEP_AUDIT_BATCH` | `200` | The most records in one `POST`, held to 1–500 (the service's bound). A tick sends batches while the queue holds more and the last was taken. *Managed* (`auditBatch`). |
+| `PEP_AUDIT_BUFFER` | `10000` | The most records waiting. Full, the OLDEST is dropped and counted (`STS-XPEP-0122`); a decision never waits for the queue. *Managed* (`auditBuffer`, 1 to 1,000,000); a lowered bound applies to NEW records — nothing queued is dropped for it, and each new record displaces the oldest until the queue drains below it. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). *Managed* (`resource`, `description`, `timeoutMs`, `maxBodyBytes`, `logLevel`; `PEP_BACKOFF_MAX_MS` too, `backoffMaxMs`). |
 | `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 503 with `Retry-After` to everything until its first pull since the start succeeds (`STS-XPEP-0118`), and 404 to everything while the configuration it received is empty or switched off. |
 | `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener, bound only with `PEP_PROXY_HTTP=true` (#1760). A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
@@ -747,6 +756,10 @@ and says why. Generating one here would mean either committing a
 private key to this repository (which `postgres/generate-tls.sh` exists
 specifically to avoid) or a first-start script for a demonstration container.
 Mount a pair to see the authenticated path. **Either way it enforces.**
+**Since the token credential (#1827 follow-up) a DPoP-bound token whose
+subject is that entry is accepted in place of the certificate**, and the
+key it is bound to is what is registered instead (*THE PEP'S CREDENTIAL TO
+THE SERVICE*).
 
 **And the compose service's nudge is delivered once the PEP holds its pair**:
 until then the dial fails, the PDP says why on the PEP's row, and the PEP
@@ -1050,14 +1063,17 @@ before the first pull, one not on the local list 403 (`-0037`). No
 * **THE PIP IS A NETWORK CALL**, the existing one: if `POST /xacml/pip`
   refuses or fails, the subject's attributes are an empty bag, as for
   `/protected` — the degraded state is the old one, here too.
-* **THE AUDIT LOG.** One log line per evaluation, carrying what the service's
-  `authzen.decision` row carries and nothing more (no property value, no id
-  the caller sent, no credential), tagged `STS-AUTHZEN-0028`/`-0029` where
-  the row would be; `GET /`'s `authzen.answered` counts them. They are
-  counted apart from `enforced`, which the heartbeat reports: the AuthZEN
-  caller enforced these, in its own process, so the PDP's console never
-  sees them — the same reason the service's monitor counts AuthZEN
-  decisions and not enforcements.
+* **THE RECORD IS A LOG LINE HERE AND A ROW AT THE SERVICE** (#1827; it
+  was a log line only until then). One log line per evaluation, carrying
+  what the service's `authzen.decision` row carries and nothing more (no
+  property value, no id the caller sent, no credential), tagged
+  `STS-AUTHZEN-0028`/`-0029` where the row would be; `GET /`'s
+  `authzen.answered` counts them. The same content goes to the service as
+  an `authzen.remote.decision` row — see *THE DECISION RECORDS GO TO THE
+  SERVICE*. They are counted apart from `enforced`, which the heartbeat
+  reports: the AuthZEN caller enforced these, in its own process, so the
+  PDP's console never sees them — the same reason the service's monitor
+  counts AuthZEN decisions and not enforcements.
 * **A CATALOGUE OR CALLER CHANGE IS NOT NUDGED**; each converges on the
   poll.
 
@@ -1139,7 +1155,8 @@ container. `PEP_PROXY=false` starts neither listener and skips the pull.
 ### The configuration is pulled, read again, and loaded whole
 
 `sync.rs` pulls `GET /xacml/pep/proxy` after the AuthZEN callers on every
-poll, with the same client certificate, its own sync token (`?since=`) and
+poll, with the same credential (the `/xacml/pep` token, and the client
+certificate where there is one), its own sync token (`?since=`) and
 `If-None-Match` with the `ETag` it was last given. 304 is unchanged; a
 failure keeps the configuration held (`STS-XPEP-0060`, `-0061`, a PDP older
 than #1760 answering 404); `configured: false` holds nothing, and the proxy
@@ -1867,13 +1884,226 @@ method, the normalised path (at most 200 characters, quoted), the route and
 the reason.
 
 
+## THE DECISION RECORDS GO TO THE SERVICE (#1827)
+
+**Until 2026-11-16 a decision made here had one record: a line on this
+container's stdout.** The service learned the COUNTS from the heartbeat and
+nothing else — not what was decided, for whom, against which policy — and a
+container that was removed took its history with it. `/admin/audit`,
+`/admin-api/audit` and the audit export (#641) never saw any of it. Now every
+decision this process MAKES is queued and sent to the service, which writes it
+as an audit row in the PEP's realm (`audit.rs`).
+
+* **WHAT IS QUEUED.** A `/protected` enforcement (`kind: "enforcement"`,
+  action `xacml.remote.enforcement` at the service): the XACML decision,
+  allowed or refused, the bias, the reason, the applicable policies, the
+  obligations discharged and undischargeable, and the subject, resource and
+  action the request named (the last two with their defaults). An AuthZEN
+  evaluation DECIDED HERE (`kind: "authzen"`, `authzen.remote.decision`):
+  exactly what its log line carries — the caller, the application, the
+  subject type, the resource type, the action, the request id, the decision,
+  the obligations — and **no property value, no id the caller sent, and no
+  credential** (decision 9 on #563); its `subject` is always `""`. A
+  REVERSE PROXY request (`kind: "proxy"`, `xacml.remote.proxy`) that reached
+  its route's authorization, with two members of its own: `route` and the
+  `status` answered — see *The proxy's records*, below. Each carries the
+  `STS-` code its log line carried and the instant it was DECIDED, which the
+  service keeps apart from the instant it received it.
+* **A FORWARDED EVALUATION IS NOT QUEUED** (#564): the service decided it
+  and wrote its own `authzen.decision` row under the same request id, so
+  queuing it would record one decision twice.
+* **WHY `/admin-api` AND NOT `/xacml/pep`.** The issue's first design had a
+  `POST /xacml/pep/audit` gated like the heartbeat. rcbj's rule replaced it
+  (2026-11-16): every log event pushed into the service goes through an
+  authenticated request on the management API, with access tied to the
+  built-in group of remote PEPs. So it is `POST /admin-api/pep-audit` (not
+  under `/admin-api/xacml/`, where it would collide with that family's
+  `:action` route), with a token whose scope, `xacml:pep-audit`, nothing
+  else on `/admin-api` accepts and only the built-in REMOTE_PEPS role
+  authorizes — held at issuance and again on every call, so a PEP taken out
+  of the group stops at its next push.
+* **THE TOKEN IS THE SHARED CREDENTIAL'S** (*THE PEP'S CREDENTIAL TO THE
+  SERVICE*, below): DPoP-bound, for `resource=<PDP>/admin-api` and
+  `scope=xacml:pep-audit`, from the RFC 7523 self-assertion grant. Until the
+  credential was shared this module held its own token, bound by the client
+  certificate (RFC 8705); the batch now goes through
+  `PdpClient::call_authorized`, which asks a new token once on a 401, and a
+  401 that survives that keeps the batch. A batch that went with no token at
+  all is `STS-XPEP-0123`, the grant's own reason `STS-XPEP-0129`. **The
+  operator's one extra step** is registering the assertion key on the PEP's
+  entry (`POST /admin-api/pki/upload-certificate` with `target: "person"`
+  and `purpose: "jwt"`, or the service's `issue-pep-credential`); the
+  entry's membership of `remote-peps` was already required.
+* **AT LEAST ONCE, IN ORDER.** Each record carries `seq`, from 1 and
+  monotonic in this process, and every batch the `instance` drawn at start,
+  so a restart counting from 1 again is not taken for old records by the
+  service. A record leaves the queue
+  only when the answer's `acknowledged` covers its `seq`. A 400 is the
+  service calling the batch malformed: that batch is DROPPED
+  (`STS-XPEP-0125`) rather than sent forever. Anything else — no answer,
+  403, 404, 5xx — keeps it for the next tick (`STS-XPEP-0124`, warn the
+  first time and on a change of reason). The loop runs on a FIXED interval,
+  not the backoff the poll uses: the queue, not the timer, is what holds the
+  records while the service refuses.
+* **THE QUEUE NEVER HOLDS UP A DECISION.** It is in memory and bounded
+  (`auditBuffer`); full, the oldest record is dropped and counted
+  (`STS-XPEP-0122` at drops 1, 2, 3 and each power of ten). A PEP that cannot
+  reach its PDP must keep enforcing.
+* **WHAT A RESTART LOSES**: every record not yet acknowledged. The log line
+  is still on stdout. A disk spool would be a separate decision.
+* **`GET /` REPORTS `audit`**: enabled, queued, shipped, dropped (a full
+  queue's and a refused batch's together), the last delivery and its result,
+  whether a token is held (never the token), and the instance.
+* **FOUR OF ITS KNOBS ARE MANAGED SETTINGS** (#1760's table, group
+  `logging`): `auditEnabled` (`PEP_AUDIT`), `auditIntervalMs`, `auditBatch`
+  and `auditBuffer`, each read through `options.now()` at its use — the
+  switch at each record, the interval before each wait, the batch at each
+  take, the bound at each insert. So the loop is ALWAYS started: switched
+  off, nothing new is queued and what is queued is still sent; switched on
+  from the console, records start at once. A LOWERED bound applies to new
+  records (`applies: now`, and the catalog says so): nothing queued is
+  dropped for it, each new record displaces the oldest until the queue has
+  drained below it. `PEP_CLIENT_ID` and `PEP_ASSERTION_KEY` are BOOTSTRAP (`connect`): they
+  are how the PEP authenticates at all. The service's
+  `xacml.remotePepAudit` switch, off, acknowledges and records nothing, so
+  the queue drains and `lastShipWhy` says why.
+
+### The proxy's records
+
+`Proxy::answer()` holds a `Noted` for each request, behind a `Mutex` because
+the future crosses awaits, filled as the request is answered: the route,
+method and normalised path when a route that takes the method matched, the
+subject (`Identity::subject()`, the username) and the decision once the
+route's policy was asked, and the code, reason and page incident ID when
+`refuse()` answered. It is queued after the answer only when `decided` — set
+when the route matched and took the method, cleared again for a body too
+large (`0067`) and for an `Established::Answer` (a redirect to sign in, whose
+decision comes on the way back). So `0118`'s 503, `0064`, `0065`, `0066`, the
+logo, the start page and `/.iya-pep/*` are never recorded: none is a
+decision about access. `allowed` is "forwarded"; `fault` is a 5xx of the
+proxy's own (`!forwarded && status >= 500`), never one the application
+answered; `policies` is the route's policy by its NAME (the name the route
+configuration references; `decide_proxy()` does not return the document's
+`PolicyId`); `requestId` is the error page's incident ID, empty for a JSON
+refusal and a forwarded request. **Never the query string**, which can carry
+a secret, and never a credential: the test holds both.
+
+The tests are `audit.rs`'s (the bound and the drop count, an acknowledgement
+removing exactly what it covers, a 400 dropping that batch alone, a whole
+tick against a mock service with a DPoP-bound token, its proof, a 401
+`invalid_token` and a second token) and `authzen.rs`'s
+`queues_what_it_decides_and_not_what_it_forwards`.
+
+## THE PEP'S CREDENTIAL TO THE SERVICE (#1827 follow-up)
+
+**Every call this process makes to the service carries a DPoP-bound access
+token (RFC 9449) from an RFC 7523 self-assertion grant**, in place of the
+client certificate the PDP used to identify a PEP by (`credential.rs`,
+`PdpClient::call_authorized`) — rcbj's approved plan, phase 2 of four;
+the service's side is phase 1, and through phase 3 the service accepts the
+certificate or the token.
+
+* **ONE KEY.** `PEP_ASSERTION_KEY` signs the assertion AND every DPoP proof,
+  so the token is bound to the key registered on the PEP's entry — the
+  service checks the proof's `jwk` against it. Unset, `PEP_TLS_KEY` is used
+  with a notice (`STS-XPEP-0127`), which is what lets a PEP provisioned
+  before this change keep working once its certificate is registered as the
+  entry's assertion certificate. RS256 for RSA, ES256 for P-256 (`r || s`),
+  anything else refused by name (`STS-XPEP-0128`). **The file is re-read on
+  the listener pair's interval** (`httpsReloadIntervalMs`); a changed key
+  drops every token held, since each is bound to the old one. A file that
+  goes missing or bad KEEPS the key already loaded (`STS-XPEP-0126`,
+  `0128`), as the listener pair does.
+* **WHERE THE KEY COMES FROM (phase 3).** It is generated where the PEP
+  runs — by its provisioning, or `tests/tools/pep-credential.js
+  --assertion` — and only a PKCS #10 request goes to the service's
+  `issue-pep-credential`, which certifies it from the realm's Issuing CA as
+  `urn:sts:sa:<PEP_NAME>` and registers it on the entry (rcbj: the service
+  never holds the private key; `xacml/CLAUDE.md`). Nothing in this binary
+  changed for it: the PEP reads the key file as before. The stacks mount
+  it as `/certs/pep-assertion.key` beside `pep.key`.
+* **THE ASSERTION**: `iss` = `sub` = `PEP_NAME`, which must be the entry's
+  username; `aud` `<PDP>/oauth2/token`; two minutes; a fresh 128-bit `jti`;
+  no `kid`. Presented with `client_id` = `PEP_CLIENT_ID` (`sts-remote-pep`),
+  one `scope` and one `resource`, and a DPoP proof for `POST` and the token
+  endpoint. A token whose `token_type` is not `DPoP` is refused here: a
+  service that did not bind it cannot be sent it as one.
+* **THREE AUDIENCES, ONE TOKEN EACH** (`Resource`):
+
+  | Calls | `resource` | `scope` |
+  |---|---|---|
+  | the registration, heartbeat, the policy, settings, AuthZEN catalogue and caller and proxy pulls, `listener-certificate`, the four validation doors (`introspect`, `basic`, `saml`, `session`) and `identity`, `POST /xacml/pip` | `<PDP>/xacml/pep` | `xacml:pep` |
+  | `POST /admin-api/pep-audit` | `<PDP>/admin-api` | `xacml:pep-audit` |
+  | the AuthZEN forward, `POST /access/v1/evaluation` | `<PDP>/access/v1` | `authzen:evaluate` |
+
+  `<PDP>` is `PEP_PDP_URL`, a realm prefix included. The validation doors'
+  URLs come from the proxy pull and are absolute, but are all under
+  `/xacml/pep/`, so they take that token (`call_authorized_url`).
+* **THE CACHE.** A token is used until 30 s before it expires. Callers for
+  one resource that find none wait on that resource's async gate and look
+  again once they hold it, so N concurrent callers make ONE token request.
+  A REFUSED grant is held for five seconds before it is asked again, so a
+  PEP with no registered key does not send a token request ahead of every
+  PIP query; the refusal is `STS-XPEP-0129`, at warn the first time and on
+  a change of reason, and names the provisioning step that is missing
+  (`invalid_grant`: register the key; `invalid_client`: `PEP_CLIENT_ID`;
+  `invalid_scope`/`access_denied`: the remote PEPs group).
+* **THE TWO RETRIES**, each once: `use_dpop_nonce` (a 400 at the token
+  endpoint, a 401 challenge at a resource) with a `DPoP-Nonce` is made again
+  carrying it; any other 401 to a call that carried a token — the contract's
+  `invalid_token`, and a bare 401, which can mean nothing else — drops that
+  token (only if it is still the one held) and is made again with a new one.
+  A second nonce demand is `STS-XPEP-0130`, a second refusal `STS-XPEP-0131`;
+  the call's answer then stands. **The latest `DPoP-Nonce` of ANY answer is
+  remembered**, keyed by origin AND role — the token endpoint, and each of
+  the three resources — and put in the next proof, so a nonce the token
+  endpoint hands is never offered to a resource or the other way round.
+* **NEVER BLOCKING.** A call for which no token can be had goes WITHOUT one
+  (`Answer::no_token` says why) — on the client certificate where
+  `PEP_TLS_CERT` is set, which the service accepts through the transition,
+  and otherwise to be refused, as a PEP with no credential always was. The
+  caller records the service's answer as it always did.
+* **WHAT STAYS WITHOUT A TOKEN**: the realm's JWKS (`proxy_auth.rs`, a
+  public document); the token request itself; and everything that is not a
+  call TO the service — `PEP_HTTPS_CERT`/`KEY` and the defined listeners'
+  certificates (what this PEP SERVES), the service's nudge to `POST
+  /notify` (inbound, unauthenticated by design), `PEP_AUTHZEN_CLIENT_CA`
+  (who may call the edge PDP: inbound mutual TLS, unchanged), and the
+  reverse proxy's relying parties and CAEP/RISC receivers, which talk to
+  the realm as the application's own client.
+* **`PEP_TLS_CERT` IS STILL PRESENTED WHILE IT IS SET** — a PEP with both
+  presents both — and no longer needed: a PEP with an assertion key and no
+  certificate registers, pulls and queries the PIP on its token.
+* **`GET /` REPORTS `credential`**: `keyFile`, `keySource`
+  (`PEP_ASSERTION_KEY` or `PEP_TLS_KEY`), `fallback`, `keyType`, `alg`,
+  `jwkThumbprint` (RFC 7638, to match against what is registered),
+  `keyProblem`, `clientId`, `subject`, `clientCertificate`, and per resource
+  `tokens.{xacml-pep,admin-api,access-v1}`: `resource`, `scope`, `held`,
+  `expiresAt`, `lastRefusal`. **Never a token, a proof or a key.**
+  `pip.credentialed` is true with either credential.
+
+The tests are `credential.rs`'s (both algorithms' assertions and proofs
+decoded and verified, `ath`, `htu` without query or fragment, the RFC 7638
+thumbprint against the RFC's own example, keys refused by name, the
+fallback, a rotated and a broken key file) and `pdp_client.rs`'s, against a
+mock service (one fetch for eight concurrent callers, the early renewal,
+`invalid_token` refetched and retried once and not twice, `use_dpop_nonce`
+at the token endpoint and at a resource, a nonce demanded twice, no key);
+`options.rs` holds the `PEP_AUDIT_CLIENT_ID` alias.
+
 ## Error codes
 
 Every failure has an `STS-XPEP-nnnn` code in the service's ONE table
 (`common/error_codes.js`), at the front of the log line through
-`sts_core::log::tag()` — the only place it can be, there being no audit log
-here, and never in a response. `tests/error_codes.js` scans `rust/`'s `.rs`
-files with the rest. **Eight codes were retired with the Node container**
+`sts_core::log::tag()`, and never in a response. A decision record sent to
+the service carries the code its log line carried (`code`), and the service
+puts it on the audit row (#1827). **0122–0125 are the decision records'**
+(#1827): a full queue, a batch sent with no token, a batch not delivered, a
+batch refused as malformed; **0126–0131 the PEP's credential**: no
+assertion key or an unreadable file, the fallback to `PEP_TLS_KEY`, a key
+refused, a token grant refused, a DPoP nonce demanded twice, a resource
+refusing a new token; 0060–0119 are #1760's. `tests/error_codes.js` scans `rust/`'s
+`.rs` files with the rest. **Eight codes were retired with the Node container**
 (0001, 0002, 0007, 0008, 0011, 0012, 0014, 0034): a registry or a version
 module that could not be loaded, a URL that would not parse, a decision that
 threw, a retried registration or a heartbeat that threw, the engine modules

@@ -8936,7 +8936,8 @@ const SETTINGS = [
     runtime: true,
     description: 'A client certificate THIS REALM issued, verified to its ' +
                  'Intermediate and mapped to its entry by the ' +
-                 'urn:sts:person: or urn:sts:application: name in it ' +
+                 'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+                 'urn:sts:application: name in it ' +
                  '(RFC 7030 section 3.3.2). Required for simplereenroll ' +
                  'with no Basic credential.' },
   { key: 'est.serverKeyGeneration', group: 'EST',
@@ -15030,6 +15031,34 @@ const SETTINGS = [
                  'registration is marked UNAUTHENTICATED on its entry and on ' +
                  'the console rather than being quietly indistinguishable ' +
                  'from one that proved something.' },
+
+  // #1827's follow-up (rcbj-approved plan, 2026-11-16): which credential a
+  // remote PEP may present. Runtime and per realm, as
+  // `xacml.pepRequireCertificate` and `authzen.callerAuthentication` are —
+  // the two settings that already say how this realm's PEP door and its
+  // AuthZEN door authenticate a caller — because it moves no socket and is a
+  // fact about the realm's PEPs, whose tokens a realm's own `sts-remote-pep`
+  // issues. `either` through phase 3 of the plan; phase 4 makes `token` the
+  // default, and `certificate` stays an operator's choice for good.
+  { key: 'xacml.pepAuthentication', group: 'XACML',
+    label: 'How a remote PEP authenticates',
+    env: 'STS_XACML_PEP_AUTHENTICATION', type: 'enum',
+    enumValues: ['certificate', 'token', 'either'], dflt: 'either',
+    runtime: true,
+    description: 'either, the default: a remote PEP reaches /xacml/pep/* ' +
+                 'and POST /xacml/pip by a client certificate this service ' +
+                 'verifies, or by a DPoP-bound access token (RFC 9449) it ' +
+                 'obtains from its own RFC 7523 self-assertion through the ' +
+                 'client sts-remote-pep, audienced to this realm\'s ' +
+                 '/xacml/pep and carrying xacml:pep; a token, where one is ' +
+                 'presented, decides. token: the token only, and a ' +
+                 'certificate alone is refused. certificate: the ' +
+                 'certificate only, and the Authorization header is not ' +
+                 'read. Either way the PEP\'s entry must hold REMOTE_PEPS ' +
+                 '(roles.remotePepGroup) and the access-control policy ' +
+                 'decides. The same answer governs a remote PEP\'s token at ' +
+                 '/access/v1, the edge PDP\'s forward of a fine-grained ' +
+                 'evaluation, whatever authzen.callerAuthentication says.' },
 
   { key: 'xacml.pepPlainHttpProxyListeners', group: 'XACML',
     label: 'A remote PEP may define a plain-HTTP reverse-proxy listener',

@@ -976,5 +976,6 @@
   "mfaSection.pubStateDeactivated": "Désactivé",
   "mfaSection.pubDeactivate": "Désactiver",
   "mfaSection.pubDeactivateTip": "Désactive ce DID pour de bon : son adresse répond 410 Gone, son historique reste résoluble, et il ne connecte plus la personne et n'est plus divulgué dans le claim did.",
-  "mfaSection.pubNeedsWrite": "En désactiver un nécessite <strong>Admin Write</strong>."
+  "mfaSection.pubNeedsWrite": "En désactiver un nécessite <strong>Admin Write</strong>.",
+  "keySource.issuedFromCsr": "Certifiée ici à partir de leur propre demande &mdash; la CA émettrice de ce domaine a certifié une clé qu’ils ont générée. Ils détiennent la clé privée ; ce service ne l’a jamais eue."
 }

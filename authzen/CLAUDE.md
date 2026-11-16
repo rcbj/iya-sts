@@ -656,6 +656,26 @@ or the two drift with both suites green.
   `docs/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
   forwarding rules it out no more than it did.
 
+### The forward on the PEP's token (#1827's follow-up)
+
+**rcbj's decision 3 on the PEP token plan (2026-11-16): the edge PDP's
+forward is accepted on the PEP's DPoP-bound token under EVERY
+`authzen.callerAuthentication`, `mtls` included.** It is the same caller on a
+different credential, so it is scoped exactly as the certificate-holding
+PEP: `authenticate()` asks `xacml/pep_token.ts`'s `isPepToken()` first (a
+token this realm issued to `sts-remote-pep`), and `byPepToken()` reads it
+for this realm's `/access/v1` and `authzen:evaluate` and answers the caller
+as `kind: 'entry'`, the PEP's DN — what its certificate named — so
+`mayAsk()`'s AUTHZEN_PEPS and `scopeOf()`'s `stsAuthzenApplication` decide
+as before. **It must name a REMOTE_PEPS holder as well** (`0120`): every PEP
+shares the client, and the token is not a way for anybody else in
+AUTHZEN_PEPS to arrive. `authzen:evaluate` is not role-gated at issuance
+(AUTHZEN_PEPS authorizes no permission), so a non-PEP person can be issued
+one through `sts-remote-pep` and is refused here; AUTHZEN_PEPS is widened
+for nobody. A token of any other client goes through the realm's door as
+it always did. A refusal carries a `DPoP` challenge, not the Bearer one.
+`tests/remote_pep_token_door.js` Z.
+
 ### The callers the edge PDP admits (#1189)
 
 **rcbj's decision on #1189: the edge admits by pulling who this service
@@ -843,4 +863,7 @@ the callback, the job and the mail; 0100–0115 the token-exchange binding
 the exchange question's answer, 0111–0113 a scope's, 0114 an expired subject
 token, 0115 the no-broadening check; 0116 an answer that is not its model's
 (#1579); 0117 a request whose `Content-Type` is not `application/json`
-(#936).
+(#936); 0118–0121 a remote PEP's DPoP-bound token from `sts-remote-pep`
+(#1827's follow-up): 0118 refused as a token, 0119 without
+`authzen:evaluate`, 0120 naming no entry or one outside REMOTE_PEPS, 0121
+`xacml.pepAuthentication` set to `certificate`.

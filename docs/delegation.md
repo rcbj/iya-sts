@@ -1403,7 +1403,8 @@ Product mode has no rules until an operator writes one.
     user is not protected;
   * PA-S4U-X509-USER names the user by name, by a certificate this realm
     issued to them (its TLS client or enrollment Issuing CA, `clientAuth`,
-    one `urn:sts:person:` name, not revoked), or both, which must agree. Its
+    one `urn:sts:person:` or `urn:sts:sa:` name, not revoked), or both, which
+    must agree. Its
     checksum and the request's nonce are checked, and the reply carries it
     back with a checksum of its own (key usage 27 when the client asks).
 * **S4U2Proxy** is **delegation**:

@@ -116,5 +116,11 @@
   "cluster.back": "Back to the cluster",
   "cluster.discardedDownload": "Download what was discarded",
   "cluster.discardedLead": "The PEP no longer holds its own reverse proxy, settings or listeners: it pulls the cluster's. This is what it held, once.",
-  "cluster.discardedTitle": "A PEP joined a cluster"
+  "cluster.discardedTitle": "A PEP joined a cluster",
+  "once.pepCredential": "PEP assertion key",
+  "pepCredential.keyPath": "(the path of the key file you made the request with)",
+  "pepCredential.urn": "Names",
+  "pepCredential.env": "Start the PEP with this environment. The private key never left the machine that made the request; this service has none to give.",
+  "pepCredential.chain": "The certificate and its chain through the service Root. Public: the PEP does not need it to authenticate, and it is on the entry&rsquo;s key list.",
+  "pepCredential.download": "Download the certificate"
 }

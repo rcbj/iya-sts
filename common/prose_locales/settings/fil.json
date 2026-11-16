@@ -4348,8 +4348,8 @@
     "text": "Tanggapin ang TLS client certificate"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Isang client certificate na iniisyu ng REALM NA ITO, vine-verify hanggang sa Intermediate nito at ini-map sa entry nito gamit ang urn:sts:person: o urn:sts:application: name na nasa loob nito (RFC 7030 section 3.3.2). Kailangan para sa simplereenroll na walang Basic credential."
+    "en": "a9bb56c470b2a73f",
+    "text": "Isang client certificate na iniisyu ng REALM NA ITO, vine-verify hanggang sa Intermediate nito at ini-map sa entry nito gamit ang urn:sts:person:, urn:sts:sa: (service account) o urn:sts:application: name na nasa loob nito (RFC 7030 section 3.3.2). Kailangan para sa simplereenroll na walang Basic credential."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7778,6 +7778,14 @@
   "xacml.pepRequireCertificate|description": {
     "en": "e41d92adf65ec5bc",
     "text": "NAKA-ON bilang default. Minsan itong naging ANG TANGING pagtanggi sa family na ito; humihingi na ng certificate ang bawat /xacml endpoint ngayon, at ang pinamamahalaan pa rin ng setting na ito ay ang REGISTRATION mismo — nagsusulat ito ng entry, ito ang inililista ng console, at ito ang address na pinapadalhan ng nudge, kaya ang \"aling PEP ito\" ang eksaktong tanong doon at ang client certificate ang sagot. Ang access-policy layer sa itaas nito ay iba at mas malakas na check (roles.remotePepGroup, at xacml.enforceAccess para i-off ito); ang isang ito ay tungkol sa kung tinatanggap man lang ang registration na WALANG certificate at minamarkahang unauthenticated. Gaya ng bawat ibang gate sa serbisyong ito, TURNSTILE ito: hindi kailangang mag-chain ang certificate sa anuman, dahil nalalapat nang walang pagbabago ang argumento ng RFC 8705 — ang napapatunayan ay ang parehong key ang nakatapos ng handshake. Ang pag-off dito ay nagpapahintulot sa PEP na mag-register sa plain HTTP, na siyang kailangan ng run na naka-off ang global.https; ang ganitong registration ay minamarkahang UNAUTHENTICATED sa entry nito at sa console sa halip na tahimik na hindi makilala mula sa isang nakapagpatunay ng isang bagay."
+  },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Paano nagpapatunay ang isang remote PEP"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "8d19137204b63401",
+    "text": "either, ang default: naaabot ng isang remote PEP ang /xacml/pep/* at POST /xacml/pip gamit ang client certificate na bine-verify ng serbisyong ito, o gamit ang DPoP-bound na access token (RFC 9449) na nakukuha nito mula sa sarili nitong RFC 7523 self-assertion sa pamamagitan ng client na sts-remote-pep, na ang audience ay ang /xacml/pep ng realm na ito at may dalang xacml:pep; kapag may iniharap na token, ang token ang nagpapasya. token: token lamang, at tinatanggihan ang certificate na mag-isa. certificate: certificate lamang, at hindi binabasa ang Authorization header. Alinman dito, dapat may REMOTE_PEPS (roles.remotePepGroup) ang entry ng PEP at ang access-control policy ang nagpapasya. Ang parehong sagot ang namamahala sa token ng isang remote PEP sa /access/v1, ang pagpapasa ng edge PDP ng isang fine-grained na evaluation, anuman ang sabihin ng authzen.callerAuthentication."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

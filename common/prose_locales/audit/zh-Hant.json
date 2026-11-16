@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "一次 AuthZEN 存取評估已做出決策"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "遠端 PEP 執行了一項決定"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "遠端 PEP 對一項 AuthZEN 存取評估作出了決定"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "遠端 PEP 的反向代理對一項請求作出了決定"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "一次 AuthZEN 搜尋已回應"
@@ -998,6 +1010,10 @@
   "audit.actions.xacml.pep.certificate.label": {
     "en": "419007622035492d",
     "text": "遠端 PEP 獲簽發 HTTPS 接聽程式憑證"
+  },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "遠端 PEP 的斷言金鑰已根據其請求完成認證"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -1843,6 +1859,18 @@
     "en": "82df232dbe72d709",
     "text": "遠端 PEP 已被遺忘"
   },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "已設定遠端 PEP 的反向代理設定"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "已移除遠端 PEP 的反向代理設定"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "遠端 PEP 的代理請求驗證一個認證"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "寫入了 XACML 原則"
@@ -1926,17 +1954,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "傳送到稽核匯出目的地的測試事件"
-  },
-  "audit.actions.xacml.pep.proxy.set.label": {
-    "en": "b27a6eab052ea9fa",
-    "text": "已設定遠端 PEP 的反向代理設定"
-  },
-  "audit.actions.xacml.pep.proxy.clear.label": {
-    "en": "faee586bfee3cbf0",
-    "text": "已移除遠端 PEP 的反向代理設定"
-  },
-  "audit.actions.xacml.pep.validate.label": {
-    "en": "c3a780c6921b5dd8",
-    "text": "遠端 PEP 的代理請求驗證一個認證"
   }
 }

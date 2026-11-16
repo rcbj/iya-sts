@@ -458,7 +458,8 @@ class Krb5Delegation {
   /**
    * The person a PA-S4U-X509-USER certificate names: the certificate this
    * realm's TLS client or enrollment Issuing CA issued, signed by it and not
-   * revoked, carrying clientAuth and one `urn:sts:person:` name — the same
+   * revoked, carrying clientAuth and one `urn:sts:person:` name (or a
+   * service account's `urn:sts:sa:`, #1827) — the same
    * gate `GET /tls/sign-in` puts a presented certificate through
    * (`common/tls_client_certificates.js`'s `identityOf()`).
    *

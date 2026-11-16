@@ -239,14 +239,38 @@ const BUILT_IN = [
   // refused — which is the whole point of resolving the DN rather than
   // stopping at the handshake.
   // -------------------------------------------------------------------------
-  { name: 'REMOTE_PEPS',
+  // **AND IT AUTHORIZES ONE PERMISSION SINCE #1827 (rcbj, 2026-11-16)**:
+  // `xacml:pep-audit`, the scope `POST /admin-api/pep-audit` takes, by
+  // which a remote PEP pushes the records of the decisions it made to this
+  // service's audit log. rcbj: "Every log event pushed to iya-sts must be
+  // through an authenticated request on the mgmt API. Tie access to the
+  // built in group of remote PEPs." So the role that already says which
+  // enforcement points may pull the policy is the one that says which may
+  // write their decisions here, asked at issuance and again on every call
+  // (held ∩ carried, `role_permissions.ts`), exactly as the owner roles
+  // authorize theirs. A PEP taken out of the group is refused at its next
+  // push, whatever token it still holds.
+  //
+  // **AND A SECOND SINCE THE PEP'S TOKEN CREDENTIAL (#1827's follow-up,
+  // rcbj-approved, 2026-11-16)**: `xacml:pep`, the scope a remote PEP's
+  // DPoP-bound access token for `/xacml/pep/*` and `POST /xacml/pip`
+  // carries in place of its client certificate. So the row names a LIST,
+  // and `AUTHORIZING_BUILT_INS` below carries one `{ name, permission }`
+  // per pair: a reader asking "which built-in role authorizes this
+  // permission" reads the same rows it did.
+  { name: 'REMOTE_PEPS', permissions: ['xacml:pep-audit', 'xacml:pep'],
     what: 'A remote XACML Policy Enforcement Point: whoever is a member of ' +
           'the group named by `roles.remotePepGroup` (default ' +
           '"remote-peps"). It is what `/xacml/pep/register`, ' +
           '`/xacml/pep/policies` and `/xacml/pep/heartbeat` require, and the ' +
           'party that holds it is normally a client-certificate DN rather ' +
           'than a person — the certificate says WHO, and this group says ' +
-          'whether they may.',
+          'whether they may. It authorizes the xacml:pep-audit permission: ' +
+          'pushing the records of the decisions the PEP made to this ' +
+          'service\'s audit log, through POST /admin-api/pep-audit, ' +
+          'and nothing else on /admin-api; and the xacml:pep permission: ' +
+          'reaching /xacml/pep/* and POST /xacml/pip on a DPoP-bound ' +
+          'access token instead of a client certificate.',
     holds: function (who) {
       log.debug("Entering holds().");
       const wanted = remotePepGroupName().toLowerCase();
@@ -410,16 +434,34 @@ const BUILT_IN = [
     } }
 ];
 
-// THE BUILT-IN ROLES THAT AUTHORIZE A PERMISSION (#607): the two owner roles.
-// Derived from the table, as `BUILT_IN_NAMES` is.
+// THE BUILT-IN ROLES THAT AUTHORIZE A PERMISSION: the two owner roles (#607)
+// and, since #1827, REMOTE_PEPS. Derived from the table, as `BUILT_IN_NAMES`
+// is. Every reader that asks "which permissions does a built-in role
+// authorize" reads this list; `OWNER_ROLES` below is the two owner roles
+// alone, for the readers that ask about OWNING something — a person holds
+// those by owning, and REMOTE_PEPS by being in a group, so one list for both
+// questions would hand the PEP permission to every owner.
+// A row naming several (`permissions`, REMOTE_PEPS since the PEP's token
+// credential) is one entry per permission, so a role may appear twice.
 /**
- * The built-in roles that authorize a permission of this service (#607):
- * `{ name, permission }` per row that names one.
+ * The built-in roles that authorize a permission of this service:
+ * `{ name, permission }` per permission a row names (#607, #1827).
  */
-const OWNER_ROLES = BUILT_IN.filter(function (one) {
-  return !!one.permission;
-}).map(function (one) {
-  return { name: one.name, permission: one.permission };
+const AUTHORIZING_BUILT_INS = [];
+BUILT_IN.forEach(function (one) {
+  const named = one.permissions || (one.permission ? [one.permission] : []);
+  named.forEach(function (permission) {
+    AUTHORIZING_BUILT_INS.push({ name: one.name, permission: permission });
+  });
+});
+
+// THE OWNER ROLES (#607), held by owning something: the two rows of the list
+// above whose names say so.
+/**
+ * The two owner roles (#607): `{ name, permission }`.
+ */
+const OWNER_ROLES = AUTHORIZING_BUILT_INS.filter(function (one) {
+  return /^OWNER_/.test(one.name);
 });
 
 // The group that grants REMOTE_PEPS. A setting rather than a constant because
@@ -2366,6 +2408,7 @@ module.exports = {
   NATIVE_ROLES: NATIVE_ROLES,
   // The two owner roles (#607): built in, each authorizing its permission.
   OWNER_ROLES: OWNER_ROLES,
+  AUTHORIZING_BUILT_INS: AUTHORIZING_BUILT_INS,
   setOwnerProtected: setOwnerProtected,
   nativeRoleFor: nativeRoleFor,
   isNativeRole: isNativeRole,

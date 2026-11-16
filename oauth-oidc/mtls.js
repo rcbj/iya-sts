@@ -565,8 +565,13 @@ function declaredRefusal(opts) {
                'certificate is its credential, and it did not authenticate: ' +
                (observation.why || 'nothing was verified.') };
   }
+  // `boundByDpop` (#1827's follow-up): the token endpoint says so for a
+  // client whose DPoP binding stands for this declaration
+  // (`sender_constraints.js`'s `dpopStandsForCertificate()`, sts-remote-pep)
+  // when the request carried a proof that verified — then there IS
+  // something to bind the token to, which is all this refusal asks.
   if (registered.tls_client_certificate_bound_access_tokens === true &&
-      !presentedThumbprint(o.request)) {
+      !presentedThumbprint(o.request) && !o.boundByDpop) {
     log.debug("Leaving declaredRefusal(). Bound tokens declared, no " +
               "certificate.");
     return { status: 400, error: 'invalid_request',

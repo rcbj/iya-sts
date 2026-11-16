@@ -41,6 +41,22 @@
 //      it. `context.application` must be in the set (403 otherwise); with
 //      none named and exactly one in the set, that one.
 //
+// **AND A REMOTE PEP'S TOKEN UNDER EVERY DOOR (#1827's follow-up, rcbj's
+// decision 3 on the PEP token plan, 2026-11-16).** The edge PDP of a remote
+// PEP forwards a fine-grained evaluation here as itself (#564 P7). It did
+// that on its client certificate, which `mtls` admits; on the plan's token
+// it presents a DPoP-bound access token from `sts-remote-pep`, audienced to
+// this realm's /access/v1 and carrying `authzen:evaluate`, and that is
+// accepted whatever `authzen.callerAuthentication` says — `mtls` included —
+// because it is the same caller on a different credential. It is read by
+// `xacml/pep_token.ts`, the PEP door's own reading, and the caller it names
+// is the PEP's ENTRY, exactly the caller its certificate named: the
+// policy's AUTHZEN_PEPS and the entry's `stsAuthzenApplication` scope it
+// as before, and it must hold REMOTE_PEPS as well, so the token of the
+// client every PEP shares is no way for anybody else in AUTHZEN_PEPS to
+// arrive. `xacml.pepAuthentication` set to `certificate` refuses it here
+// as at the PEP door. AUTHZEN_PEPS is widened for nobody.
+//
 // **THE SELF-REGISTERED `ou=peps` ROW IS NOT CONSULTED.** A remote PEP's
 // registration is visibility and a nudge, never a permission
 // (`xacml/xacml_pep_registry.ts`), and it would be the first thing a caller
@@ -67,6 +83,10 @@ const AUTHZEN_ROLE = 'AUTHZEN_PEPS';
 
 // The scope a token must carry. AuthZEN defines none.
 const AUTHZEN_SCOPE = 'authzen:evaluate';
+
+// The role a remote PEP's token must name an entry holding (#1827's
+// follow-up), `xacml.ts`'s REMOTE_PEP_ROLE.
+const REMOTE_PEP_ROLE = 'REMOTE_PEPS';
 
 // The three doors.
 const DOORS = Object.freeze(['mtls', 'bearer', 'mtls+bearer']);
@@ -115,6 +135,9 @@ interface CallerDeps {
   loadAdmin(): any;
   loadCertificates(): any;
   loadCodec(): any;
+  // `xacml/pep_token.ts`, a remote PEP's token (#1827's follow-up), built
+  // when a token arrives.
+  loadPepToken(): any;
   // The SHA-256 of a certificate's DER, lower-case hex: the spelling the
   // door's index keys a stored certificate by.
   sha256Hex(der: Buffer): string;
@@ -209,6 +232,12 @@ class AuthzenCaller {
         log.debug("Entering loadCodec().");
         log.debug("Leaving loadCodec().");
         return require('../persistence/directory_codec');
+      },
+      loadPepToken: function (): any {
+        log.debug("Entering loadPepToken().");
+        const PepToken = require('../xacml/pep_token');
+        log.debug("Leaving loadPepToken().");
+        return new PepToken(PepToken.defaultDeps());
       },
       sha256Hex: function (der: Buffer): string {
         log.debug("Entering sha256Hex().");
@@ -310,6 +339,16 @@ class AuthzenCaller {
     log.debug("Entering AuthzenCaller.authenticate().");
     const door = self.door();
     let caller: Caller | null = null;
+    // A REMOTE PEP'S TOKEN, UNDER EVERY DOOR (#1827's follow-up): the
+    // header's paragraph. Asked first, because under `mtls` the token would
+    // otherwise never be read.
+    const pepToken = self.deps.loadPepToken();
+    if (pepToken.isPepToken(req)) {
+      caller = self.byPepToken(req, res, pepToken);
+      log.debug("Leaving AuthzenCaller.authenticate(). A remote PEP's " +
+                "token: " + (caller ? caller.name : 'refused.'));
+      return caller;
+    }
     if (door === 'mtls') {
       caller = self.byCertificate(req, res);
     } else {
@@ -327,6 +366,83 @@ class AuthzenCaller {
     log.debug("Leaving AuthzenCaller.authenticate(). " +
               (caller ? caller.kind + ' ' + caller.name : 'Refused.'));
     return caller;
+  }
+
+  // THE REMOTE PEP'S TOKEN (#1827's follow-up): `pep_token.ts`'s reading for
+  // /access/v1, then REMOTE_PEPS on the entry it names. A 401 carries RFC
+  // 9449's DPoP challenge, and a fresh nonce where the proof wanted one.
+  private byPepToken(req: Req, res: Res, pepToken: any): Caller | null {
+    const self = this;
+    const { log, config, roles } = this.deps;
+    log.debug("Entering AuthzenCaller.byPepToken().");
+    const challenge = function (error: string, nonce: boolean): void {
+      log.debug("Entering challenge().");
+      if (nonce) {
+        res.set('DPoP-Nonce', self.deps.loadOAuth().dpop.issueNonce());
+      }
+      res.set('WWW-Authenticate', 'DPoP error="' + error + '"' +
+              (error === 'insufficient_scope'
+                ? ', scope="' + AUTHZEN_SCOPE + '"' : '') +
+              ', algs="ES256 RS256"');
+      log.debug("Leaving challenge().");
+    };
+    if (String(config.value('xacml.pepAuthentication') || '') ===
+        'certificate') {
+      challenge('invalid_token', false);
+      log.debug("Leaving AuthzenCaller.byPepToken(). The setting refuses " +
+                "a token.");
+      return self.pepUnauthenticated(res, 'STS-AUTHZEN-0121',
+        'This realm accepts a remote PEP only by its client certificate ' +
+        '(xacml.pepAuthentication is certificate), and this request ' +
+        'carried a remote PEP\'s access token.');
+    }
+    const read = pepToken.verify(req, { path: '/access/v1',
+                                        scope: AUTHZEN_SCOPE });
+    if (!read.ok && read.reason === 'scope') {
+      challenge('insufficient_scope', false);
+      log.debug("Leaving AuthzenCaller.byPepToken(). No authzen:evaluate.");
+      return self.forbidden(res, 'STS-AUTHZEN-0119', read.description);
+    }
+    if (!read.ok && read.reason === 'subject') {
+      challenge('invalid_token', false);
+      log.debug("Leaving AuthzenCaller.byPepToken(). Names nobody.");
+      return self.pepUnauthenticated(res, 'STS-AUTHZEN-0120',
+                                  read.description);
+    }
+    if (!read.ok) {
+      challenge(read.needNonce ? 'use_dpop_nonce' : 'invalid_token',
+                !!read.needNonce);
+      log.info('authzen: a remote PEP\'s access token was refused (' +
+               read.reason + (read.proofCode ? ', ' + read.proofCode : '') +
+               '): ' + read.description);
+      log.debug("Leaving AuthzenCaller.byPepToken(). Refused.");
+      return self.pepUnauthenticated(res, 'STS-AUTHZEN-0118',
+                                  read.description);
+    }
+    const held = roles.rolesOf({ kind: 'user', name: read.dn,
+                                 authenticated: true }) || [];
+    if (held.indexOf(REMOTE_PEP_ROLE) < 0) {
+      log.debug("Leaving AuthzenCaller.byPepToken(). Not a remote PEP.");
+      return self.forbidden(res, 'STS-AUTHZEN-0120', 'That access token ' +
+        'was issued through sts-remote-pep to "' + read.username + '", ' +
+        'which is not a remote PEP: it is not in the group ' +
+        'roles.remotePepGroup names (REMOTE_PEPS).');
+    }
+    log.debug("Leaving AuthzenCaller.byPepToken(). " + read.dn);
+    return { kind: 'entry', name: String(read.dn), door: 'pep-token',
+             identifier: '', clientId: '', roles: [] };
+  }
+
+  // A 401 for a remote PEP's token, whose DPoP challenge `byPepToken()`
+  // has already set: `unauthenticated()` would replace it with a Bearer one.
+  private pepUnauthenticated(res: Res, code: string, message: string): null {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthzenCaller.pepUnauthenticated(). " + code);
+    errorCodes.mark(res, code);
+    // error-code: none — marked on the line above with the caller's code.
+    AuthzenCaller.send(res, 401, message);
+    log.debug("Leaving AuthzenCaller.pepUnauthenticated().");
+    return null;
   }
 
   // THE CERTIFICATE DOOR: links 1 and 2, read by the XACML surface's own

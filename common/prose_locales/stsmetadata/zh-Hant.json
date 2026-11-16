@@ -768,8 +768,8 @@
     "text": "PDP 所見的每一項原則，包含文件本身，以及每項原則的靜態型別檢查問題。文件是刻意顯示的，不同於 /admin/ldap/* 所隱藏的機密：原則是規則而不是認證資訊，沒有人能讀的規則就是沒有人能檢查的規則。誰可以讀取，與是否遮蔽是不同的問題，而此端點需要 XACML_USER：自從內嵌了存取與簽發 PEP，這些文件就是本服務用來決定自身准入的文件，把它讓人進入的確切條件交給匿名呼叫端，與發布一份示範原則並不是同一回事。存放位置是內嵌目錄中的 ou=policies——該容器「就是」存放庫。"
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "位於「另一個程序」中的原則強制執行點（PEP）透過同一連接埠上的相互 TLS 宣告自己存在——server.js 已設定 requestCert: true，因此不需要新的接聽程式。這是此系列中唯一要求認證資訊的端點，而它問的問題與 /xacml/pdp 不同：不是決策針對誰，而是這是「哪一個」PEP——因為註冊會寫入一個項目，並提供一個本服務稍後會連線的位址。它和此處其他每道閘門一樣只是一道旋轉門（憑證不必鏈結至任何對象，即 RFC 8705 第 3 節的論點），而且它並不是讓 PEP 能夠強制執行的條件：未註冊的 PEP 一樣能拉取並做決策。xacml.pepRequireCertificate 可將其關閉。"
+    "en": "f25896a0df078725",
+    "text": "位於「另一個程序」中的原則強制執行點（PEP）透過同一連接埠上的相互 TLS 宣告自己存在——server.js 已設定 requestCert: true，因此不需要新的接聽程式。這是此系列中唯一要求認證資訊的端點，而它問的問題與 /xacml/pdp 不同：不是決策針對誰，而是這是「哪一個」PEP——因為註冊會寫入一個項目，並提供一個本服務稍後會連線的位址。它和此處其他每道閘門一樣只是一道旋轉門（憑證不必鏈結至任何對象，即 RFC 8705 第 3 節的論點），而且它並不是讓 PEP 能夠強制執行的條件：未註冊的 PEP 一樣能拉取並做決策。xacml.pepRequireCertificate 可將其關閉。 由 sts-remote-pep 簽發、受眾為 /xacml/pep 並帶有 xacml:pep 的 DPoP 繫結存取權杖，可在此處以及每個 /xacml/pep 端點與 /xacml/pip 上取代憑證，視 xacml.pepAuthentication 的設定而定；此時 PEP 以其項目的使用者名稱命名。"
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -1894,6 +1894,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "設定一個或一批裝置的合規性"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827)。遠端 XACML PEP 推送它在自身行程中所作決定的紀錄——/protected 的執行、它自己決定的 AuthZEN 評估（從不包括它轉發的）以及其反向代理對某條路由的請求——至少一次且依序，每批最多 500 筆，每筆以其 seq 確認。權杖攜帶受保護的 xacml:pep-audit 範圍，此處沒有其他操作接受它：PEP 自己的 RFC 7523 自我斷言，經由預置的公開用戶端 sts-remote-pep，綁定至其憑證，僅在其項目屬於遠端 PEP 群組（REMOTE_PEPS）時簽發並接受。PEP 必須已在該領域註冊。/admin/audit 上的列為 xacml.remote.enforcement、authzen.remote.decision，以及反向代理請求的 xacml.remote.proxy。"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "將遠端 PEP 作出的一批決定記錄為稽核列"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",

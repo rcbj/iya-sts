@@ -976,5 +976,6 @@
   "mfaSection.pubStateDeactivated": "已停用",
   "mfaSection.pubDeactivate": "停用",
   "mfaSection.pubDeactivateTip": "永久停用此 DID：其地址答复 410 Gone，其历史仍可解析，并且不再用于此人登录，也不再在 did 声明中发布。",
-  "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。"
+  "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。",
+  "keySource.issuedFromCsr": "根据其自己的请求在此认证 &mdash; 本领域的签发 CA 认证了其自行生成的密钥。私钥由其持有；本服务从未持有。"
 }

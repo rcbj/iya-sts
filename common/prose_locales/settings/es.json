@@ -4348,8 +4348,8 @@
     "text": "Aceptar un certificado de cliente TLS"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Un certificado de cliente emitido por ESTE DOMINIO, verificado hasta su intermedia y asociado a su entrada por el nombre urn:sts:person: o urn:sts:application: que contiene (RFC 7030 sección 3.3.2). Obligatorio para simplereenroll sin credencial Basic."
+    "en": "a9bb56c470b2a73f",
+    "text": "Un certificado de cliente emitido por ESTE DOMINIO, verificado hasta su intermedia y asociado a su entrada por el nombre urn:sts:person:, urn:sts:sa: (una cuenta de servicio) o urn:sts:application: que contiene (RFC 7030 sección 3.3.2). Obligatorio para simplereenroll sin credencial Basic."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7778,6 +7778,14 @@
   "xacml.pepRequireCertificate|description": {
     "en": "e41d92adf65ec5bc",
     "text": "ACTIVADO por defecto. Fue en su día el ÚNICO rechazo de esta familia; ahora todo endpoint de /xacml pide un certificado, y lo que este ajuste sigue rigiendo es específicamente el REGISTRO — escribe una entrada, es lo que enumera la consola y es la dirección a la que se envía un aviso, así que «qué PEP es este» es exactamente la pregunta allí y un certificado de cliente es la respuesta. La capa de política de acceso por encima es una comprobación distinta y más fuerte (roles.remotePepGroup, y xacml.enforceAccess para desactivarla); esta trata de si se acepta en absoluto un registro SIN certificado y se marca como no autenticado. Como cualquier otra puerta de este servicio, es un TORNIQUETE: no se exige que el certificado se encadene a nada, porque el argumento de RFC 8705 se aplica sin cambios — lo que se demuestra es que la misma clave completó el handshake. Desactivarlo permite a un PEP registrarse por HTTP sin cifrar, que es lo que necesita una ejecución con global.https desactivado; tal registro se marca como NO AUTENTICADO en su entrada y en la consola en lugar de ser discretamente indistinguible de uno que demostró algo."
+  },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Cómo se autentica un PEP remoto"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "8d19137204b63401",
+    "text": "either, el valor predeterminado: un PEP remoto llega a /xacml/pep/* y a POST /xacml/pip con un certificado de cliente que este servicio verifica, o con un token de acceso vinculado por DPoP (RFC 9449) que obtiene de su propia autoaserción RFC 7523 a través del cliente sts-remote-pep, con audiencia el /xacml/pep de este reino y que lleva xacml:pep; cuando se presenta un token, decide el token. token: solo el token, y un certificado solo se rechaza. certificate: solo el certificado, y no se lee la cabecera Authorization. En cualquier caso, la entrada del PEP debe tener REMOTE_PEPS (roles.remotePepGroup) y decide la política de control de acceso. La misma respuesta rige el token de un PEP remoto en /access/v1, el reenvío por parte del PDP de borde de una evaluación detallada, diga lo que diga authzen.callerAuthentication."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",
