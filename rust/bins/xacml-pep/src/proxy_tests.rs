@@ -544,17 +544,21 @@ async fn service(
                     }
                     "carol".into()
                 }
+                // The service's refusal envelope (`identityRefusal()`):
+                // no code is ever in it (#1830).
                 _ => {
                     return (
                         StatusCode::UNPROCESSABLE_ENTITY,
-                        Json(json!({ "code": "STS-XACML-0235" })),
+                        Json(json!({ "error": "invalid_request",
+                            "error_description": "unusable evidence" })),
                     )
                 }
             };
             if who == "denied" {
                 return (
                     StatusCode::FORBIDDEN,
-                    Json(json!({ "code": "STS-XACML-0234" })),
+                    Json(json!({ "error": "access_denied",
+                        "error_description": "refused" })),
                 );
             }
             match route.as_str() {

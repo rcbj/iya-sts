@@ -660,19 +660,16 @@ impl Authenticator {
             .client
             .call_url(Method::POST, url, Some(Body::Json(body)), &[], None)
             .await;
+        // DECIDED BY THE STATUS ALONE (#1830). The service's 403 body is
+        // `{ error, error_description }` and carries no code — its code is
+        // on its own audit row — so nothing in it is read here.
         if answer.error.is_none() && answer.status == 403 {
             return Err(Refusal::new(
                 403,
                 "STS-XPEP-0095",
                 &format!(
-                    "the service refused the identity for route {} (403{})",
-                    route.id,
-                    answer
-                        .json
-                        .as_ref()
-                        .and_then(|j| j["code"].as_str())
-                        .map(|c| format!(", {}", c))
-                        .unwrap_or_default()
+                    "the service refused the identity for route {} (403)",
+                    route.id
                 ),
             ));
         }

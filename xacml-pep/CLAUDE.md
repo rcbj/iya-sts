@@ -1931,7 +1931,7 @@ unchanged (none is a fix for this ticket):
   the PEP sends `Accept: application/json` to it and reads neither.
 * `basic` has two 429 bodies, its lockout's and the limiter's; the listener
   certificate's 200 carries a stray `ok: true`; the nudge's `pdp` is always
-  empty; the identity door's 403 is read for a `code` the service never sends.
+  empty.
 * On `GET /`, `authzen.enabled` and `authzen.pdpIdentifier` report the
   environment, not the managed values in force (which `settings.values` has).
 * The proxy's
