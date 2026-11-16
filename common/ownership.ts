@@ -488,7 +488,8 @@ class Ownership {
                 ((e && e.message) || e));
       out = [];
     }
-    roles.NATIVE_ROLES.concat(roles.OWNER_ROLES).forEach(function (row: Json) {
+    roles.NATIVE_ROLES.concat(roles.AUTHORIZING_BUILT_INS)
+      .forEach(function (row: Json) {
       if (out.indexOf(row.permission) < 0) {
         out.push(row.permission);
       }

@@ -40,8 +40,8 @@
     "text": "此領域的 KDC 用來簽署其 PKINIT 回覆的證書（RFC 4556）：其擴充金鑰使用方式中為 id-pkinit-KPKdc，id-pkinit-san 中為該領域的票證授予服務 krbtgt/REALM@REALM。每個程序一張，於首次使用 PKINIT 時產生；私密金鑰絕不離開產生它的程序。"
   },
   "pki.useCases.acme.what": {
-    "en": "85c88fe668bcb64d",
-    "text": "透過 ACME（RFC 8555）在 /enroll/acme 簽發的證書，簽發給已為其簽發 External Account Binding 金鑰的個人或應用程式項目。每張末端證書都在 urn:sts:person: 或 urn:sts:application: subjectAltName 中指名該項目。"
+    "en": "2f0eeec1390c0623",
+    "text": "透過 ACME（RFC 8555）在 /enroll/acme 簽發的證書，簽發給已為其簽發 External Account Binding 金鑰的個人或應用程式項目。每張末端證書都在 urn:sts:person:（服務帳戶為 urn:sts:sa:）或 urn:sts:application: subjectAltName 中指名該項目。"
   },
   "pki.useCases.est.what": {
     "en": "20925fe97c792b47",
@@ -52,8 +52,8 @@
     "text": "透過 SCEP（RFC 8894）在 /enroll/scep 簽發的證書，簽發給已為其簽發單次使用挑戰密碼的項目。SCEP 用來加密請求的 RA 證書也是此 CA 的末端證書，使用 RSA 金鑰，因為 SCEP 的金鑰傳輸是 RSA。"
   },
   "pki.useCases.tls-client.what": {
-    "en": "903e048677f8ab58",
-    "text": "用戶在用戶入口網站上自行簽發的 TLS 客戶端證書：clientAuth、該人的 urn:sts:person: 名稱，以及以 PKCS#12 只交付一次的私密金鑰。此授權單位簽發的證書可在此領域中於主連接埠的 GET /tls/sign-in 讓持有者登入；本服務其他任何授權單位簽發的證書則不行，儘管它們全都鏈結到同一個根證書。"
+    "en": "1b378238cd4bc7ec",
+    "text": "用戶在用戶入口網站上自行簽發的 TLS 客戶端證書：clientAuth、該人的 urn:sts:person: 名稱（服務帳戶為 urn:sts:sa:），以及以 PKCS#12 只交付一次的私密金鑰。此授權單位簽發的證書可在此領域中於主連接埠的 GET /tls/sign-in 讓持有者登入；本服務其他任何授權單位簽發的證書則不行，儘管它們全都鏈結到同一個根證書。"
   },
   "pki.subjectKinds.application.what": {
     "en": "52037236b4cfff5f",

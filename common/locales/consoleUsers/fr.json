@@ -629,6 +629,8 @@
   "userCredentialsSection.labelField": "Nom (facultatif)",
   "userCredentialsSection.labelHint": "ce qui l’utilisera",
   "userCredentialsSection.addHeading": "Ajouter une paire de clés",
+  "userCredentialsSection.issueHeading": "En émettre une depuis l&rsquo;AC de ce domaine",
+  "userCredentialsSection.uploadHeading": "Téléverser un certificat qu&rsquo;elle détient déjà",
   "userCredentialsSection.atCap": "Elle détient {max} paires de clés valides pour ce profil, soit <code>pki.personSigningKeyMax</code>. Révoquez-en une avant d’en émettre ou d’en téléverser une autre.",
   "userCredentialsSection.addNote": "<strong>Dans les deux cas, cela AJOUTE une paire de clés à cette entrée</strong>, et celles qu’elle détient continuent de fonctionner, jusqu’à {max} valides par profil. L’émission génère ici une nouvelle paire de clés et la signe avec l’AC émettrice de ce domaine ; la clé privée est scellée sur l’entrée et <strong>affichée une seule fois</strong>, sur la page qu’ouvre le bouton. Le téléversement enregistre un certificat que la personne détient déjà, et ce service n’en conserve aucune clé privée. Un certificat de l’autorité de CE domaine peut être téléversé seul, et doit avoir été délivré à cette personne. <strong>Un certificat de toute autre autorité doit être accompagné de sa chaîne complète</strong> &mdash; chaque intermédiaire et la racine auto-signée &mdash; et chaque maillon est vérifié. Un téléversement contenant une clé privée est refusé.",
   "userCredentialsSection.upload": "Téléverser le certificat",
@@ -976,5 +978,6 @@
   "mfaSection.pubStateDeactivated": "Désactivé",
   "mfaSection.pubDeactivate": "Désactiver",
   "mfaSection.pubDeactivateTip": "Désactive ce DID pour de bon : son adresse répond 410 Gone, son historique reste résoluble, et il ne connecte plus la personne et n'est plus divulgué dans le claim did.",
-  "mfaSection.pubNeedsWrite": "En désactiver un nécessite <strong>Admin Write</strong>."
+  "mfaSection.pubNeedsWrite": "En désactiver un nécessite <strong>Admin Write</strong>.",
+  "keySource.issuedFromCsr": "Certifiée ici à partir de leur propre demande &mdash; la CA émettrice de ce domaine a certifié une clé qu’ils ont générée. Ils détiennent la clé privée ; ce service ne l’a jamais eue."
 }

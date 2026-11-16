@@ -4153,6 +4153,16 @@ class AdminConsole {
       // about four screens of empty box. They are sized by their `rows`
       // attribute here instead, which is what the markup already says.
       // ---------------------------------------------------------------------
+      // A SECTION FRAME: a box around a block of a panel that holds its own
+      // heading, table and forms, so a reader can see which fields belong to
+      // which block. A frame inside a frame is white on the outer's tint, so
+      // the nesting reads without a heavier border. First drawn around each
+      // profile, and each Add form, on a person's Credentials > Key pairs.
+      '.secframe{border:1px solid #d5d5dd;border-radius:8px;padding:10px ' +
+      '14px 12px;margin:0 0 14px;background:#fbfbfd;min-width:0}' +
+      '.secframe .secframe{background:#fff;margin:.6em 0 0}' +
+      '.secframe>h3:first-child,.secframe>h4:first-child{margin-top:0}' +
+      '.secframe>:last-child{margin-bottom:0}' +
       '.pki-cols{display:grid;grid-template-columns:repeat(auto-fit,' +
       'minmax(22rem,1fr));gap:14px;margin:.6em 0 ' +
       '1em;align-items:start}.pki-col{border:1px solid ' +

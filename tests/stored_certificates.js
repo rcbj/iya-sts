@@ -690,6 +690,9 @@ async function childBody() {
   twice(false);
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0178'),
           'X3. stored twice, 403 and STS-XACML-0178', r.status);
+  // The PEP gate on a certificate is an operator's opt-in since phase 4 of
+  // #1827's follow-up made xacml.pepAuthentication default to `token`.
+  config.setOverride('xacml.pepAuthentication', 'either');
   r = await request(port, 'GET', '/xacml/pep/policies', pepCred);
   t.check(r.status === 200,
           'X4. the remote PEP\'s stored certificate reaches GET ' +

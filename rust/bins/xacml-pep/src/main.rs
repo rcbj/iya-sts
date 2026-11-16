@@ -15,9 +15,11 @@
 //! `PEP_HTTPS_PORT`, not verifying the certificate: it is the process's
 //! own loopback, and liveness is the question, not who answers.
 
+mod audit;
 mod authzen;
 mod authzen_catalogue;
 mod authzen_map;
+mod credential;
 mod enforce;
 mod identity;
 mod jwt;
@@ -312,18 +314,6 @@ async fn start(options: Options, info: version::VersionInfo) {
              setting against anything else."
         );
     }
-    if options.client_certificate.is_none() {
-        tracing::warn!(
-            "xacml-pep: no PEP_TLS_CERT, so this PEP has no client \
-             certificate. The PDP refuses the REGISTRATION unless \
-             xacml.pepRequireCertificate is off — and it refuses the PULL \
-             too, because GET /xacml/pep/policies requires a VERIFIED \
-             certificate whose subject holds the built-in REMOTE_PEPS role. \
-             This PEP will go on deciding against whatever policy it already \
-             holds, which on a fresh start is NOTHING, so every decision will \
-             be NotApplicable and the bias will settle it."
-        );
-    }
     let client = match PdpClient::new(&options) {
         Ok(client) => client,
         Err(error) => {
@@ -335,6 +325,40 @@ async fn start(options: Options, info: version::VersionInfo) {
             std::process::exit(1);
         }
     };
+    // THE CREDENTIAL (#1827 follow-up): what key signs the token requests
+    // and proofs, or why there is none — and when there is no key, what
+    // that costs. PHASE 4 (rcbj, 2026-11-16): the client certificate is no
+    // longer presented, so PEP_TLS_CERT is said once and ignored.
+    let credential = client.credential().clone();
+    credential.announce();
+    if let Some(said) = options
+        .retired_client_certificate
+        .notice(&std::env::var("PEP_ASSERTION_KEY").unwrap_or_default())
+    {
+        tracing::warn!("{}xacml-pep: {}", tag("STS-XPEP-0135"), said);
+    }
+    if !credential.has_key() {
+        tracing::warn!(
+            "xacml-pep: no assertion key, so this PEP \
+             cannot authenticate to the PDP. The PDP refuses the PULL, \
+             because GET /xacml/pep/policies requires a remote PEP. This PEP \
+             will go on deciding against whatever policy it already holds, \
+             which on a fresh start is NOTHING, so every decision will be \
+             NotApplicable and the bias will settle it."
+        );
+    }
+    {
+        // The key file is read again on the listener pair's interval, so a
+        // rotated key is picked up the way a rotated pair is.
+        let (credential, reload_options) =
+            (credential.clone(), options.clone());
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(reload_interval(&reload_options)).await;
+                credential.reload();
+            }
+        });
+    }
     let sync = Arc::new(Sync::new(client.clone(), options.clone()));
     let proxy_client = client.clone();
     let pip = RemotePip::new(client, options.pip_enabled)
@@ -353,6 +377,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         pip,
         https.clone(),
     ));
+    let audit = pep.audit.clone();
 
     // The reverse proxy (#1760) is built here so the poll can reconcile
     // its relying parties after every pull; its listeners start below.
@@ -381,12 +406,17 @@ async fn start(options: Options, info: version::VersionInfo) {
     // the console can say how to turn it on (`options::plain_http`).
     let api_http = Arc::new(PlainStatus::default());
     options.http.announce("decision API", options.port);
-    // THE CRL POINT STAYS REACHABLE WITH HTTP OFF (2026-11-14): a client
-    // credential minted with `--crl-base=http://<pep>:9090/crl` names this
-    // port, and the service fetches it under hard-fail in product, so with
-    // the API's plain HTTP off by default the PEP could no longer
-    // authenticate. The port serves the CRLs alone (`crl_listener`).
+    // THE CRL POINT (2026-11-14): a client credential minted with
+    // `--crl-base=http://<pep>:9090/crl` named this port, and the service
+    // fetched it under hard-fail in product, so with the API's plain HTTP
+    // off the port served the CRLs alone (`crl_listener`). Phase 4 of
+    // #1827's follow-up retired that client certificate, so the port binds
+    // only with PEP_CRL_HTTP=true, and a CRL directory that would have
+    // bound it is said once (STS-XPEP-0136).
     let crl_only = options::crl_listener(&options);
+    if let Some(said) = options::crl_listener_notice(&options) {
+        tracing::info!("{}xacml-pep: {}", tag("STS-XPEP-0136"), said);
+    }
     listener_set.environment(
         "api-http",
         options.port,
@@ -475,6 +505,42 @@ async fn start(options: Options, info: version::VersionInfo) {
                 }
                 result.ok
             })
+        },
+    );
+
+    // THE DECISION RECORDS (#1827): on their own fixed interval — the
+    // queue, not the timer, is what holds them while the service refuses,
+    // so there is nothing to back off from. ALWAYS STARTED, because
+    // `auditEnabled` is a managed setting (#1760) that may be switched on
+    // while this runs; switched off, nothing new is queued, and what is
+    // already queued is still sent.
+    tracing::info!(
+        "xacml-pep: decision records {} to POST {}{} every {}ms, with a \
+         DPoP-bound token from {}{} (client {}).",
+        if audit.enabled() {
+            "are sent"
+        } else {
+            "are NOT queued (auditEnabled / PEP_AUDIT is false) but would be \
+             sent"
+        },
+        options.pdp_url.trim_end_matches('/'),
+        audit::AUDIT_PATH,
+        audit.interval_ms(),
+        options.pdp_url.trim_end_matches('/'),
+        credential::TOKEN_PATH,
+        options.client_id
+    );
+    let (shipper, client) = (audit.clone(), sync.client().clone());
+    let timer = audit.clone();
+    on_backoff(
+        "sending the decision records",
+        move || {
+            let every = timer.interval_ms();
+            (every, every)
+        },
+        move || {
+            let (audit, client) = (shipper.clone(), client.clone());
+            Box::pin(async move { audit.ship(&client).await })
         },
     );
 

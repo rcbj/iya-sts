@@ -868,7 +868,8 @@ class Est {
   //     global tier's and every cell holds it.
   //   * **a TLS client certificate**, when there is no Authorization header
   //     (the order `authenticate()` reads them in) — the person its
-  //     `urn:sts:person:` subjectAltName names goes home the same way.
+  //     `urn:sts:person:` (or, for a service account, `urn:sts:sa:`, #1827)
+  //     subjectAltName names goes home the same way.
   //
   // A name nobody knows, or a certificate naming no person, is served here
   // and refused here for its own reasons. A single-cell service places

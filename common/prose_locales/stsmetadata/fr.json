@@ -768,8 +768,8 @@
     "text": "Chaque politique telle que la voit le PDP, DOCUMENTS COMPRIS, avec les problèmes de vérification statique de types de chacune. Les documents sont montrés délibérément, contrairement aux secrets que masque /admin/ldap/* : une politique est une règle plutôt qu’un justificatif, et une règle que personne ne peut lire est une règle que personne ne peut vérifier. QUI PEUT LA LIRE EST UNE AUTRE QUESTION QUE DE SAVOIR SI ELLE EST MASQUÉE, et ceci exige XACML_USER : depuis que les PEP d’accès et d’émission ont été intégrés, ces documents sont ceux avec lesquels ce service décide de ses propres admissions, et remettre à un appelant anonyme les conditions exactes dans lesquelles il laisse entrer les gens n’est pas le même acte que publier une politique de démonstration. Le magasin est ou=policies dans l’annuaire intégré — ce conteneur EST le référentiel."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "Un Policy Enforcement Point situé dans UN AUTRE PROCESSUS signale son existence, en TLS mutuel sur ce même port — server.js définit déjà requestCert: true, aucun nouvel écouteur n’a donc été nécessaire. LE SEUL POINT DE TERMINAISON DE CETTE FAMILLE QUI DEMANDE UN JUSTIFICATIF, et il pose une autre question que /xacml/pdp : non pas sur qui porte la décision, mais QUEL PEP est celui-ci — parce qu’un enregistrement écrit une entrée et fournit une adresse que ce service contactera plus tard. C’est un tourniquet comme tous les autres contrôles ici (le certificat n’a pas besoin de remonter à quoi que ce soit, l’argument de la section 3 de la RFC 8705) et ce n’est PAS ce qui permet à un PEP d’appliquer les décisions : un PEP non enregistré récupère et décide tout aussi bien. xacml.pepRequireCertificate le désactive."
+    "en": "f25896a0df078725",
+    "text": "Un Policy Enforcement Point situé dans UN AUTRE PROCESSUS signale son existence, en TLS mutuel sur ce même port — server.js définit déjà requestCert: true, aucun nouvel écouteur n’a donc été nécessaire. LE SEUL POINT DE TERMINAISON DE CETTE FAMILLE QUI DEMANDE UN JUSTIFICATIF, et il pose une autre question que /xacml/pdp : non pas sur qui porte la décision, mais QUEL PEP est celui-ci — parce qu’un enregistrement écrit une entrée et fournit une adresse que ce service contactera plus tard. C’est un tourniquet comme tous les autres contrôles ici (le certificat n’a pas besoin de remonter à quoi que ce soit, l’argument de la section 3 de la RFC 8705) et ce n’est PAS ce qui permet à un PEP d’appliquer les décisions : un PEP non enregistré récupère et décide tout aussi bien. xacml.pepRequireCertificate le désactive. Un jeton d’accès lié par DPoP délivré par sts-remote-pep, dont l’audience est /xacml/pep et qui porte xacml:pep, peut remplacer le certificat ici et sur chaque point de terminaison /xacml/pep et /xacml/pip, selon ce que permet xacml.pepAuthentication ; le PEP est alors nommé par le nom d’utilisateur de son entrée."
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -1894,6 +1894,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "définit la conformité d’un appareil ou d’un lot"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Un PEP XACML distant envoie les enregistrements des décisions prises dans son propre processus — les applications de /protected, les évaluations AuthZEN qu’il a décidées, jamais une qu’il a transmise, et les requêtes de son proxy inverse vers une route — au moins une fois et dans l’ordre, jusqu’à 500 par lot, chacun acquitté par son seq. Le jeton porte la portée PROTÉGÉE xacml:pep-audit et rien d’autre ici ne l’accepte : l’auto-assertion RFC 7523 du PEP lui-même, via le client public pré-enregistré sts-remote-pep, liée à son certificat, émise et honorée seulement tant que son entrée est dans le groupe des PEP distants (REMOTE_PEPS). Le PEP doit être enregistré dans le domaine. Lignes xacml.remote.enforcement, authzen.remote.decision et, pour les requêtes du proxy inverse, xacml.remote.proxy sur /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "enregistre comme lignes d’audit un lot de décisions prises par un PEP distant"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",

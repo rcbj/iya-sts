@@ -629,6 +629,8 @@
   "userCredentialsSection.labelField": "Name (optional)",
   "userCredentialsSection.labelHint": "what will use it",
   "userCredentialsSection.addHeading": "Add a key pair",
+  "userCredentialsSection.issueHeading": "Issue one from this realm&rsquo;s CA",
+  "userCredentialsSection.uploadHeading": "Upload a certificate they already hold",
   "userCredentialsSection.atCap": "They hold {max} valid key pairs for this profile, which is <code>pki.personSigningKeyMax</code>. Revoke one before issuing or uploading another.",
   "userCredentialsSection.addNote": "<strong>Either way ADDS a key pair to this entry</strong>, and the ones it holds go on working, up to {max} valid ones per profile. Issuing generates a new key pair here and signs it with this realm&rsquo;s Issuing CA; the private key is sealed on the entry and <strong>shown once</strong>, on the page the button opens. Uploading registers a certificate the person already holds, and this service keeps no private key for it. A certificate from THIS realm&rsquo;s authority may be uploaded alone, and must have been issued to this person. <strong>One from any other authority must come with its full chain</strong> &mdash; every intermediate and the self-signed root &mdash; and every link is verified. An upload carrying a private key is refused.",
   "userCredentialsSection.upload": "Upload the certificate",
@@ -976,5 +978,6 @@
   "mfaSection.pubStateDeactivated": "Deactivated",
   "mfaSection.pubDeactivate": "Deactivate",
   "mfaSection.pubDeactivateTip": "Deactivates this DID for good: its address answers 410 Gone, its history stays resolvable, and it no longer signs the person in or is released in the did claim.",
-  "mfaSection.pubNeedsWrite": "Deactivating one needs <strong>Admin Write</strong>."
+  "mfaSection.pubNeedsWrite": "Deactivating one needs <strong>Admin Write</strong>.",
+  "keySource.issuedFromCsr": "Certified here from their own request &mdash; this realm&rsquo;s Issuing CA certified a key they generated. They hold the private key; this service never had it."
 }

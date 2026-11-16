@@ -109,6 +109,10 @@ const realms = require('./realms');
 // with no caller to hand it to is `tag()`ged onto its log line instead: this
 // module does not require `audit.js`, for the leaf rule above.
 const errorCodes = require('./error_codes');
+// THE NAMES A LEAF GIVES ITS HOLDER (#1827): `urn:sts:application:`,
+// `urn:sts:person:`, `urn:sts:sa:`, `urn:sts:federation:` — one table, a leaf
+// that requires only `config` and `bunyan`, so it closes no cycle here.
+const SubjectUrn = require('./subject_urn');
 // THE MODE, for SHA-1 certificate signatures, which are development's (#181).
 // A LEAF (`config` and `error_codes` only), so no cycle.
 const mode = require('./mode');
@@ -404,8 +408,9 @@ const USE_CASES = [
     cn: 'ACME Issuing CA',
     what: 'Certificates issued over ACME (RFC 8555) at /enroll/acme, to a ' +
           'person or application entry an External Account Binding key was ' +
-          'issued for. Every leaf names that entry in a urn:sts:person: or ' +
-          'urn:sts:application: subjectAltName.' },
+          'issued for. Every leaf names that entry in a urn:sts:person: ' +
+          '(urn:sts:sa: for a service account) or urn:sts:application: ' +
+          'subjectAltName.' },
   { id: 'est', scope: 'realm', label: 'EST enrollment',
     cn: 'EST Issuing CA',
     what: 'Certificates issued over EST (RFC 7030) at /.well-known/est, to ' +
@@ -433,7 +438,8 @@ const USE_CASES = [
   { id: 'tls-client', scope: 'realm', label: 'TLS client certificates',
     cn: 'TLS Client Issuing CA',
     what: 'The TLS client certificates people issue themselves on the user ' +
-          'portal: clientAuth, the person\'s urn:sts:person: name, and a ' +
+          'portal: clientAuth, the person\'s urn:sts:person: name (a ' +
+          'service account\'s urn:sts:sa:), and a ' +
           'private key handed over once as a PKCS#12. A certificate from ' +
           'this authority signs its holder in at GET /tls/sign-in on the ' +
           'main port, in this ' +
@@ -457,7 +463,8 @@ const USE_CASES = [
     what: 'The certificates a person or an application signs a WS-Trust ' +
           'request with (a WS-Security 1.1 signature over the SOAP Body ' +
           'and Timestamp): digitalSignature only, the holder\'s ' +
-          'urn:sts:person: or urn:sts:application: name, and a private key ' +
+          'urn:sts:person:, urn:sts:sa: (a service account) or ' +
+          'urn:sts:application: name, and a private key ' +
           'handed over once as a PKCS#12. Issued by an administrator from ' +
           'the console or /admin-api. A certificate from this authority ' +
           'authenticates its holder as the requester of a signed RST, in ' +
@@ -3169,11 +3176,11 @@ function trustAnchorsFor(realmId) {
  */
 const SUBJECT_KINDS = [
   { id: 'application', label: 'an application',
-    urnPrefix: 'urn:sts:application:', kidPrefix: 'app-',
+    urnPrefix: SubjectUrn.APPLICATION, kidPrefix: 'app-',
     what: 'A registered OAuth client or relying party. Its key pair is ' +
           'written onto its own entry in ou=applications.' },
   { id: 'person', label: 'a person',
-    urnPrefix: 'urn:sts:person:', kidPrefix: 'person-',
+    urnPrefix: SubjectUrn.PERSON, kidPrefix: 'person-',
     what: 'Somebody in ou=users. Their key pair signs an RFC 7523 section ' +
           '2.1 assertion ABOUT THEMSELVES and about nobody else — see ' +
           'common/person_assertions.js, which is where the refusal is ' +
@@ -3198,6 +3205,69 @@ function subjectKindFor(id) {
   return SUBJECT_KINDS.filter(function (one) {
     return one.id === wanted;
   })[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// IS THIS PERSON A SERVICE ACCOUNT NOW (#1827).
+//
+// rcbj, 2026-11-16: a service account's certificates name it
+// `urn:sts:sa:<name>`, "but underneath, it's a regular user object". Which
+// spelling a person's leaf gets is decided at ISSUE from the entry, so this
+// module asks — LAZILY, at the act, in the realm the leaf is issued in —
+// `service_accounts.isServiceAccountName()`, the one predicate every door
+// asks (`common/CLAUDE.md` 3cd). This module stays a leaf at load: the
+// register is a leaf too, and is reached only when a person's key pair or an
+// upload for one is being decided. With no register or no directory in this
+// process the answer is "not one", which writes `urn:sts:person:` — the
+// spelling every reader has always accepted.
+// ---------------------------------------------------------------------------
+/**
+ * Says whether a person is a service account now, in a realm.
+ *
+ * @param realmId - the realm
+ * @param username - the person's username
+ * @returns true for a service account; false for anybody else, and where
+ *   nothing can say
+ */
+function personIsServiceAccount(realmId, username) {
+  log.debug('Entering personIsServiceAccount().');
+  let out = false;
+  try {
+    const realm = realms.get(realmIdOf(realmId));
+    const ask = function () {
+      return require('./service_accounts').isServiceAccountName(username) ===
+             true;
+    };
+    out = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug('Caught in personIsServiceAccount(): ' +
+              ((e && e.message) || e));
+    out = false;
+  }
+  log.debug('Leaving personIsServiceAccount(). ' + out);
+  return out;
+}
+
+/**
+ * Returns the URI subjectAltName a signing leaf names its holder by.
+ *
+ * @param realmId - the realm
+ * @param subjectKind - a `SUBJECT_KINDS` entry (or the encryption kind)
+ * @param identifier - the holder's name or identifier
+ * @param serviceAccount - for a person, the caller's answer; asked of the
+ *   directory when it is not a boolean
+ * @returns the URI
+ */
+function subjectUriFor(realmId, subjectKind, identifier, serviceAccount) {
+  log.debug('Entering subjectUriFor().');
+  if (subjectKind.id !== 'person') {
+    log.debug('Leaving subjectUriFor(). Not a person.');
+    return subjectKind.urnPrefix + identifier;
+  }
+  const flagged = typeof serviceAccount === 'boolean' ? serviceAccount
+    : personIsServiceAccount(realmId, identifier);
+  log.debug('Leaving subjectUriFor(). ' + flagged);
+  return SubjectUrn.forPerson(identifier, flagged);
 }
 
 /**
@@ -3388,7 +3458,8 @@ async function issueFederationClientKeyPair(realmId, opts) {
     extensions: {
       extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
       subjectAltName: { present: true, critical: false,
-        names: [{ kind: 'uri', value: 'urn:sts:federation:' + identifier }] }
+        names: [{ kind: 'uri',
+                  value: SubjectUrn.make('federation', identifier) }] }
     }
   });
   if (!made.ok) {
@@ -3424,7 +3495,9 @@ async function issueFederationClientKeyPair(realmId, opts) {
  *
  * @param realmId - the realm
  * @param opts - `identifier`, `subjectKind`, `purpose`, `keyAlg`,
- *   `signatureAlg`, `commonName` and `days`
+ *   `signatureAlg`, `commonName` and `days`; and `publicKeyPem` (with the
+ *   `keyAlg` it is) for a key the holder generated, which is certified and
+ *   answered with an empty `privateKeyPem`
  * @returns a promise of `{ ok: true, issued }` or `{ ok: false, errors }`
  */
 async function issueSigningKeyPair(realmId, opts) {
@@ -3471,7 +3544,7 @@ async function issueSigningKeyPair(realmId, opts) {
   // in the subjectAltName with nothing saying so.
   const subjectKind = encryption
     ? { id: 'federation', label: 'a federation relationship',
-        urnPrefix: 'urn:sts:federation:', kidPrefix: 'fedenc-' }
+        urnPrefix: SubjectUrn.FEDERATION, kidPrefix: 'fedenc-' }
     : subjectKindFor(options.subjectKind);
   if (!subjectKind) {
     log.debug('Leaving issueSigningKeyPair(). Unknown subject kind.');
@@ -3482,6 +3555,13 @@ async function issueSigningKeyPair(realmId, opts) {
                       'to ' + SUBJECT_KIND_IDS.join(' and ') + '.'] },
                            'STS-PKI-0012');
   }
+  // THE NAME THE LEAF CARRIES (#1827): a person who is a SERVICE ACCOUNT now
+  // is `urn:sts:sa:<name>`, anybody else `urn:sts:person:<name>`. Asked here,
+  // at issue, of the directory (`subjectUriFor()`), unless the caller has
+  // said — the decision is the entry's, and a leaf issued before the entry
+  // became one keeps its `urn:sts:person:` name and keeps working.
+  const subjectUri = subjectUriFor(id, subjectKind, identifier,
+                                   options.serviceAccount);
   const issuing = chain.tiers[chain.tiers.length - 1];
   // The leaf follows the ISSUING CA's key algorithm by default, because a chain
   // whose leaf and issuer are the same family is the one a client library is
@@ -3555,7 +3635,13 @@ async function issueSigningKeyPair(realmId, opts) {
     notAfter.setTime(issuerNotAfter);
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1827's phase 3, rcbj 2026-11-16): the
+  // caller hands the PUBLIC half — read out of a PKCS #10 request whose proof
+  // of possession `certifySigningRequest()` checked — and no private half
+  // exists here to return. Everything below is the same leaf either way.
+  const pair = options.publicKeyPem
+    ? { publicPem: String(options.publicKeyPem), privatePem: '' }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const subject = [{ name: 'CN', value: commonName },
                    { name: 'O', value: chain.organisation }]
     .concat(chain.country ? [{ name: 'C', value: chain.country }] : []);
@@ -3597,7 +3683,7 @@ async function issueSigningKeyPair(realmId, opts) {
         // to decide what an assertion signed with this key may say.
         subjectAltName: { present: true, critical: false,
                           names: [{ kind: 'uri',
-                                    value: subjectKind.urnPrefix + identifier }]
+                                    value: subjectUri }]
                             .concat(purpose.profileUri
                               ? [{ kind: 'uri', value: purpose.profileUri }]
                               : []) }
@@ -3705,7 +3791,7 @@ async function issueSigningKeyPair(realmId, opts) {
     // same place.
     subjectKind: subjectKind.id,
     subjectKindLabel: subjectKind.label,
-    subjectUri: subjectKind.urnPrefix + identifier,
+    subjectUri: subjectUri,
     // WHICH AUTHORITY SIGNED IT, by the id its revocation list is kept
     // under (#1290): a person's key pairs are revoked one at a time on
     // `/portal/signing-key`, and a serial is unique only within one issuer.
@@ -3774,6 +3860,130 @@ async function issueSigningKeyPair(realmId, opts) {
            record.notAfter + '.');
   log.debug('Leaving issueSigningKeyPair(). kid=' + record.kid);
   return { ok: true, issued: record };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S RFC 7523 KEY CERTIFIED FROM THEIR OWN REQUEST (#1827's phase 3,
+// rcbj 2026-11-16: "the service never holds the PEP's private key").
+//
+// `issueSigningKeyPair()` GENERATES the key pair and hands the private half to
+// its caller, which seals a copy onto the entry (`person_assertions.write()`).
+// That is right for a person who asked this service for a key, and wrong for a
+// workload that can make its own: a remote PEP, or the tool that provisions
+// one, generates the key, sends a PKCS #10 request, and the realm's Issuing CA
+// certifies the PUBLIC key in it. The leaf is the same leaf — the same
+// profile, the same revocation pointers, the same record in `issuedKeyPairs`,
+// so its authority's CRL and OCSP responder answer for it — with nothing
+// private anywhere in this process.
+//
+// THE PROOF OF POSSESSION IS `cert_enrollment.ts`'s `parseCsr()`, the one
+// PKCS #10 reader this service has (ACME, EST, SCEP and a PEP's listener
+// certificate read through it), required LAZILY: that module requires this
+// one, and a request reaches here long after both are built. Not a second
+// parser, so a key family it verifies is verified the same way here.
+//
+// **THE REQUEST'S NAMES ARE READ FOR NOTHING.** Its subject and any
+// subjectAltName it asks for are ignored: the leaf's names are the ENTRY's —
+// its username as CN and `SubjectUrn.forPerson()` as the URI SAN, which is
+// `urn:sts:sa:<name>` for a service account. A requester cannot name somebody
+// else, which is what keeps `assertion_grant.js`'s "a person asserts only
+// about themselves" true of a key nobody here generated.
+//
+// **TWO KEY FAMILIES, BY NAME** (`CSR_SIGNING_KEY_ALGS`): EC P-256 (ES256,
+// the one a PEP is told to prefer) and RSA of 2048 bits or more (RS256 or
+// PS256, the realm's chain decides). These are the two the remote PEP signs a
+// self-assertion and a DPoP proof with (`credential.rs`), and anything else is
+// refused naming the two, rather than certified into a key the holder cannot
+// use.
+// ---------------------------------------------------------------------------
+/**
+ * The key algorithms a holder-generated RFC 7523 key is certified for:
+ * EC P-256 and RSA of at least 2048 bits.
+ */
+const CSR_SIGNING_KEY_ALGS = ['ec-p256', 'rsa-2048', 'rsa-3072', 'rsa-4096'];
+
+/**
+ * Certifies the public key in a person's own PKCS #10 request as an RFC 7523
+ * signing key, from the realm's Issuing CA. Nothing private is generated or
+ * answered.
+ *
+ * The request's signature must verify with its own key (proof of
+ * possession). Its subject and names are ignored: the leaf names the entry
+ * (`urn:sts:sa:<name>` for a service account).
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param opts - `identifier` (the username), `csr` (PEM or base64 DER),
+ *   `serviceAccount` (the entry's flag, read by the caller), `commonName`
+ *   and `days`
+ * @returns a promise of `{ ok: true, issued }` — `issueSigningKeyPair()`'s
+ *   record with `source` `issued-from-csr` and an empty `privateKeyPem` — or
+ *   `{ ok: false, errors }` marked with its code
+ */
+async function certifySigningRequest(realmId, opts) {
+  log.debug('Entering certifySigningRequest().');
+  const options = opts || {};
+  const text = typeof options.csr === 'string' ? options.csr : '';
+  const der = Buffer.from(text.replace(/-----[A-Z0-9 ]+-----/g, '')
+                            .replace(/\s+/g, ''), 'base64');
+  if (!der.length) {
+    log.debug('Leaving certifySigningRequest(). No request.');
+    return errorCodes.mark({ ok: false,
+             errors: ['No certificate request arrived: `csr` is a PKCS #10 ' +
+                      'request (PEM, or base64 DER) signed with the key to ' +
+                      'be certified. This service never generates or holds ' +
+                      'that key.'] },
+                           'STS-PKI-0278');
+  }
+  let parsed = null;
+  try {
+    parsed = await require('./cert_enrollment').parseCsr(der);
+  } catch (e) {
+    log.debug('Caught in certifySigningRequest(): ' +
+              ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || !parsed.ok) {
+    log.debug('Leaving certifySigningRequest(). The request was refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The certificate request was refused: ' +
+                      ((parsed && (parsed.why ||
+                                   (parsed.errors || []).join(' '))) ||
+                       'it could not be read.')] },
+             (parsed && errorCodes.codeOf(parsed)) || 'STS-PKI-0278');
+  }
+  if (CSR_SIGNING_KEY_ALGS.indexOf(String(parsed.keyAlg)) < 0) {
+    log.debug('Leaving certifySigningRequest(). Key ' + parsed.keyAlg +
+              ' refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The request carries a ' + parsed.keyAlg + ' key. An ' +
+                      'RFC 7523 key certified from a request is EC P-256 ' +
+                      '(ES256, preferred) or RSA of 2048 bits or more — ' +
+                      CSR_SIGNING_KEY_ALGS.join(', ') + '.'] },
+                           'STS-PKI-0281');
+  }
+  const identifier = String(options.identifier || '');
+  const issued = await issueSigningKeyPair(realmId, {
+    identifier: identifier,
+    purpose: 'jwt',
+    subjectKind: 'person',
+    serviceAccount: options.serviceAccount,
+    commonName: String(options.commonName || '') || identifier,
+    keyAlg: parsed.keyAlg,
+    publicKeyPem: parsed.publicKeyPem,
+    days: options.days
+  });
+  if (!issued.ok) {
+    log.debug('Leaving certifySigningRequest(). Not issued.');
+    return issued;
+  }
+  issued.issued.source = 'issued-from-csr';
+  issued.issued.privateKeyPem = '';
+  log.info('pki: the ' + parsed.keyAlg + ' key in a certificate request ' +
+           'from "' + identifier + '" was certified for RFC 7523 as ' +
+           issued.issued.subjectUri + ', serial ' + issued.issued.serialHex +
+           '. Its private key was never here.');
+  log.debug('Leaving certifySigningRequest(). kid=' + issued.issued.kid);
+  return issued;
 }
 
 // ===========================================================================
@@ -6294,17 +6504,38 @@ async function registerCertificate(realmId, opts) {
     // making the same decision an external certificate is. A leaf naming no
     // subject of this service (one the Certificate & Key pane authored)
     // carries no such claim, and is registered on the entry's word alone.
-    const named = String(leaf.cert.subjectAltName || '').split(',')
-      .map(function (one) { return one.trim(); })
-      .map(function (one) {
-        return /^URI:(urn:sts:(?:application|person):.+)$/.exec(one);
-      })
-      .filter(Boolean)
-      .map(function (match) { return match[1]; });
+    //
+    // A SERVICE ACCOUNT IS A PERSON HERE (#1827): `urn:sts:sa:<name>` is a
+    // person's name on both sides of the rule — a person's upload may carry
+    // its own name in either spelling (one issued before the entry became a
+    // service account says `urn:sts:person:`, and still works), and an
+    // application's may carry neither. What the `sa` spelling adds is one
+    // claim the directory can check: that the entry IS a service account.
+    // A leaf saying so of somebody who is not is refused (STS-PKI-0277),
+    // since this realm's authority writes it only for one.
+    const parsedNames = SubjectUrn.namesIn(
+      String(leaf.cert.subjectAltName || ''), ['application', 'person', 'sa']);
+    const named = parsedNames.map(function (one) { return one.uri; });
     const wanted = subjectKind.urnPrefix + identifier;
     const widens = subjectKind.id === 'person'
-      ? named.length && named.indexOf(wanted) < 0
-      : named.some(function (one) { return /^urn:sts:person:/.test(one); });
+      ? named.length && !parsedNames.some(function (one) {
+        return SubjectUrn.sameHolder(one.uri, wanted);
+      })
+      : parsedNames.some(function (one) { return one.kind === 'person'; });
+    if (!widens && subjectKind.id === 'person' &&
+        parsedNames.some(SubjectUrn.isServiceAccountForm) &&
+        !personIsServiceAccount(id, identifier)) {
+      log.debug('Leaving registerCertificate(). It names a service account ' +
+                'that is not one.');
+      return uploadRefusal('STS-PKI-0277', 'The certificate was issued by ' +
+                           'this realm\'s certificate authority as a SERVICE ' +
+                           'ACCOUNT\'s (' + SubjectUrn.forPerson(identifier,
+                                                                 true) +
+                           '), and "' + identifier + '" is not a service ' +
+                           'account in this realm. This service writes that ' +
+                           'name only for a service account, so a person ' +
+                           'who is not one cannot hold such a certificate.');
+    }
     if (widens) {
       log.debug('Leaving registerCertificate(). It names another subject.');
       return uploadRefusal('STS-PKI-0155', 'The certificate was issued by ' +
@@ -15347,6 +15578,8 @@ module.exports = {
   trustAnchorsFor: trustAnchorsFor,
   useCaseChainPems: useCaseChainPems,
   issueSigningKeyPair: issueSigningKeyPair,
+  certifySigningRequest: certifySigningRequest,
+  CSR_SIGNING_KEY_ALGS: CSR_SIGNING_KEY_ALGS,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
   FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,
   issueFederationClientKeyPair: issueFederationClientKeyPair,
