@@ -1023,6 +1023,13 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   newer generation (`receivePublishedKeys()`). A directory sign-out it makes
   goes to the front on the channel (`{ ldapDrop }`), since no response is in
   flight.
+* **AND THE WORKER CATCHES UP BEFORE IT RUNS THE BODY (2026-11-16, GitHub
+  Actions run 43913216604).** A request waits at the pool's read barrier; a
+  body handed over the channel did not, so it could read a realm's settings
+  from before a write another worker had just made. `sts_post_login_activities`
+  turned mail off, ran the reminder job at once, and the body still saw mail
+  on. `runSchedulerJob()` now calls `persistence.syncNow()` first; the time
+  it takes counts against the job's limit.
 * **Fenced, not interrupted.** At its time limit, on a lost lease or a
   removed realm, the leader sends `{ schedulerFence }` and stops waiting. The
   worker's `ctx.stillOwner()` answers false from then on. The front's timer
