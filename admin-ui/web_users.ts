@@ -1845,8 +1845,8 @@ class UsersPage {
       // The same three pieces as the stored case, so a caller never has
       // to tell a missing store from a drawn one by the type.
       return {
-        factors: heading +
-          kit.note(t.html('consoleUsers.mfaSection.noStore')),
+        factors: kit.frame(heading +
+          kit.note(t.html('consoleUsers.mfaSection.noStore'))),
         keyCertificates: '',
         selfIssued: ''
       };
@@ -2926,17 +2926,19 @@ class UsersPage {
         : kit.note(t.html('consoleUsers.mfaSection.siopNeedsWrite'))) +
       '</section>';
 
-    const html = heading +
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the pane is one
+    // frame, and each kind of second factor a frame inside it.
+    const html = kit.frame(heading +
       kit.note(t.html('consoleUsers.mfaSection.leadBefore',
                       { name: row.name }) +
       '<a href="/admin/totp">TOTP MFA</a>' +
       t.html('consoleUsers.mfaSection.leadAnd') +
       '<a href="/admin/webauthn">WebAuthn</a>' +
       t.html('consoleUsers.mfaSection.leadAfter')) +
-      wayIn + totpBlock + UsersPage.emailFactorBlock(t, key, mech, state,
-                                                carryBack, data.mail) +
-      keysBlock + recoveryBlock + appPasswordsBlock +
-      devicesBlock + verificationsBlock;
+      wayIn + [totpBlock, UsersPage.emailFactorBlock(t, key, mech, state,
+                                                     carryBack, data.mail),
+               keysBlock, recoveryBlock, appPasswordsBlock, devicesBlock,
+               verificationsBlock].map(kit.frame).join(''));
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
     // this draws it — and since #446 draws it from the answer's `page.mfa`.
@@ -4082,15 +4084,15 @@ class UsersPage {
   static userKerberosSection(t, key, kerberos, gate) {
     const heading = '<h2 id="kerberos">Kerberos</h2>';
     if (!kerberos || !kerberos.kdc) {
-      return heading +
+      return kit.frame(heading +
         kit.note(t.html('consoleUsers.userKerberosSection.noKdc', {
           realm: (kerberos && kerberos.trustRealm) || '',
           reason: (kerberos && kerberos.reason) ||
-            t.text('consoleUsers.userKerberosSection.krb5Off') }));
+            t.text('consoleUsers.userKerberosSection.krb5Off') })));
     }
     if (!kerberos.person) {
-      return heading +
-        kit.note(t.html('consoleUsers.userKerberosSection.noEntry'));
+      return kit.frame(heading +
+        kit.note(t.html('consoleUsers.userKerberosSection.noEntry')));
     }
     const keys = kerberos.keys;
     const etypeList = function (etypes) {
@@ -4149,12 +4151,12 @@ class UsersPage {
       '</table>';
     const why = kit.note(t.html('consoleUsers.userKerberosSection.why'));
     if (!gate.write) {
-      return heading + state + why +
-        kit.note(t.html('consoleUsers.userKerberosSection.needsWrite'));
+      return kit.frame(heading + state + why +
+        kit.note(t.html('consoleUsers.userKerberosSection.needsWrite')));
     }
     if (kerberos.disabled) {
-      return heading + state + why +
-        kit.note(t.html('consoleUsers.userKerberosSection.enableFirst'));
+      return kit.frame(heading + state + why +
+        kit.note(t.html('consoleUsers.userKerberosSection.enableFirst')));
     }
     const form = '<h3>' +
       t.html('consoleUsers.userKerberosSection.resetHeading') +
@@ -4181,7 +4183,9 @@ class UsersPage {
       kit.esc(t.text('consoleUsers.userKerberosSection.resetTitle')) + '">' +
       t.html('consoleUsers.userKerberosSection.resetHeading') +
       '</button></div></form>';
-    return heading + state + why + form;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab is one
+    // frame, and the reset a frame inside it.
+    return kit.frame(heading + state + why + kit.frame(form));
   }
 
   // ---------------------------------------------------------------------------
@@ -4622,8 +4626,8 @@ class UsersPage {
     const heading = '<h2 id="credential-controls">' +
       t.html('consoleUsers.controls.heading') + '</h2>';
     if (!factors) {
-      return heading +
-        kit.note(t.html('consoleUsers.controls.noStore'));
+      return kit.frame(heading +
+        kit.note(t.html('consoleUsers.controls.noStore')));
     }
     const requirement = factors.mfaRequirement ||
       { required: false, byUser: false, byRealm: false };
@@ -4708,9 +4712,9 @@ class UsersPage {
     const signalsNote =
       kit.note(t.html('consoleUsers.controls.signals'));
     if (!gate.write) {
-      return heading + state + signalsNote +
+      return kit.frame(heading + state + signalsNote +
         kit.note(
-          t.html('consoleUsers.controls.needsWrite'));
+          t.html('consoleUsers.controls.needsWrite')));
     }
     // `extra` is markup for the form's own fields (#146): the reset forms'
     // "compromised" box and the disable form's RISC reason — the console half
@@ -4894,8 +4898,11 @@ class UsersPage {
                  'consoleUsers.controls.noDefault')) +
                '</option>';
            }).join('') + '</select></label></div>');
-    return heading + state + signalsNote + account + reset + passkeys + mfa +
-      delegationBlock;
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab is one
+    // frame, and each control a frame inside it.
+    return kit.frame(heading + state + signalsNote +
+      [account, reset, passkeys, mfa, delegationBlock].map(kit.frame)
+        .join(''));
   }
 
   /**
@@ -5015,9 +5022,13 @@ class UsersPage {
         kind: 'service-account', name: key, back: back, write: write,
         state: pageState }) : '';
     };
+    // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the tab is one
+    // frame, and each block in it — the owners, the search, the
+    // destination, the owners' protection, the rotation — a frame inside it.
     if (!gate.write) {
-      return heading + lead + state + protection(false) +
-        kit.note(t.html('consoleUsers.serviceAccountSection.needsWrite'));
+      return kit.frame(heading + lead + state +
+        kit.frame(protection(false)) +
+        kit.note(t.html('consoleUsers.serviceAccountSection.needsWrite')));
     }
     // THE TAB AS DRAWN LAST, after a press — or what the account holds, on a
     // fresh page. TWO MODES (#602, rcbj: "The owners table should be
@@ -5129,13 +5140,13 @@ class UsersPage {
         : '') + ' ' +
       t.html('consoleUsers.serviceAccountSection.ownersMax',
              { max: String(held.maxOwners || 25) }));
-    const ownersBlock = '<h3 id="service-account-owners">' +
+    const ownersBlock = kit.frame('<h3 id="service-account-owners">' +
       t.html('consoleUsers.serviceAccountSection.ownersHeading') + '</h3>' +
       ownersLead + said('owners') + table +
       (changed
         ? '<p class="sub"><strong>' +
           t.html('consoleUsers.serviceAccountSection.unsaved') +
-          '</strong></p>' : '');
+          '</strong></p>' : ''));
     // THE PAGER under a search's results, Previous and Next round trips.
     const pager = function (attribute, found, goes) {
       return found.failed || (found.pages || 1) <= 1 ? ''
@@ -5225,7 +5236,7 @@ class UsersPage {
                 '</span>' + pick(one) + '</div>';
             }).join('')) +
         pager('owners', found, '') + '</div>';
-    const search = '<h3 id="service-account-find">' +
+    const search = kit.frame('<h3 id="service-account-find">' +
       t.html('consoleUsers.serviceAccountSection.findHeading') + '</h3>' +
       '<div class="sa-find">' +
       '<div class="fg-bool fg-kinds" role="radiogroup" aria-label="' +
@@ -5243,7 +5254,7 @@ class UsersPage {
       button('fgsearch', 'owners', t.text('consoleKit.find.find'),
              t.text('consoleUsers.serviceAccountSection.findTip',
                     { n: kit.FIND_PER_PAGE }), 'fg-findbtn') +
-      '</div>' + results + '</div>';
+      '</div>' + results + '</div>');
     // THE PUSH DESTINATION (#602): found among the realm's secret
     // destinations and nothing else (GET /admin-api/secret-destinations),
     // FIND_PER_PAGE to a page. On a service account a result's Use is
@@ -5350,7 +5361,7 @@ class UsersPage {
     // first), Enter in the search box is a Find, and a result's Use saves
     // that destination with the name in the box — both or neither.
     const destForm = !immediate ? ''
-      : destHeading +
+      : kit.frame(destHeading +
         kit.note(t.html('consoleUsers.serviceAccountSection.destLead')) +
         said('destination') +
         '<form method="post" action="' + kit.esc(destGoes) +
@@ -5386,7 +5397,7 @@ class UsersPage {
             '>' +
             t.html('consoleUsers.serviceAccountSection.clearDestination') +
             '</button></div></form>'
-          : '');
+          : ''));
     // ON AN ORDINARY PERSON, ONE FORM (#600): the owners, the searches and
     // the destination, and the button at its foot that writes them. Its own
     // route (`route`) is what the runtime answers a Remove, a search or a
@@ -5405,10 +5416,10 @@ class UsersPage {
         // a search box is a Find (the runtime reads `data-fg-find`).
         '<button type="submit" class="default-submit" tabindex="-1" ' +
         'aria-hidden="true">' + makeLabel + '</button>' +
-        ownersBlock + search + destHeading +
+        ownersBlock + search + kit.frame(destHeading +
         kit.note(t.html('consoleUsers.serviceAccountSection.destLeadDraft')) +
         hidden('destination', destination) + current + secretBox +
-        destSearch +
+        destSearch) +
         // IT CANNOT BE UNDONE (rcbj, 2026-11-15), said where the button is
         // and held by a REQUIRED checkbox: the browser refuses the Make (and
         // the Enter that presses the default button) until it is ticked,
@@ -5465,8 +5476,8 @@ class UsersPage {
       ? '<div class="warn" id="service-account-permanent">' +
         t.html('consoleUsers.serviceAccountSection.permanentNote') + '</div>'
       : '';
-    return heading + lead + state + set + protection(true) + rotate +
-      permanent;
+    return kit.frame(heading + lead + state + set +
+      kit.frame(protection(true)) + kit.frame(rotate) + permanent);
   }
 
   // Not a 404: this service has simply never seen the name, or has forgotten
