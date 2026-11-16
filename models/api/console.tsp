@@ -581,6 +581,8 @@ namespace IyaSts.Api.Console {
     `authenticationEventsMatched`?: numeric;
     `authenticationEventsKnownActors`?: Record<boolean>;
     `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
+    `authenticationHistory`?: (WithAtProtocolMethodEtc12)[];
+    `authenticationHistoryPaging`?: WithPagePagesPerPageEtc8;
     `page`?: {
       `key`?: string;
       `riskAsked`?: boolean;

@@ -357,6 +357,10 @@ const CHOOSER_HITS = WebKit.CHOOSER_HITS;
  * Rows per page when the query names none.
  */
 const DEFAULT_PER_PAGE = 50;
+// A person's two lists of authentications on Directory → Users — How they
+// authenticated on the Overview tab and the Authentication attempts tab —
+// default to ten rows a page (rcbj, #1844, 2026-11-16).
+const USER_EVENTS_PER_PAGE = 10;
 // HOW MANY OPEN VERIFICATIONS THE VERIFIER REQUEST TAB AND `GET
 // /admin-api/verifications` LIST (#587). A transaction lives for
 // oid4vp.presentationRequestTtlS and the store is bounded by
@@ -11933,8 +11937,10 @@ class AdminViews {
         names.push(dn);
       });
     const events = auditLog.authenticationEventsForPerson(names);
+    // Ten a page by default (rcbj, #1844); a `per` still changes it.
     const paged = this.pagedRows((req && req.query) || {}, events, {
-      name: 'authentications', noun: 'attempts'
+      name: 'authentications', noun: 'attempts',
+      defaultPer: USER_EVENTS_PER_PAGE
     });
     const known = this.knownUserKeys();
     const knownActors: Record<string, boolean> = {};
@@ -15321,16 +15327,21 @@ class AdminViews {
     // sharing `per` — see pagingOf() for why it is that way round.
     //
     // What is deliberately NOT paged here: the names this identity has been
-    // seen under, the protocols it authenticated through, and the
-    // authentication events. The first two are bounded by how many spellings
-    // and protocols exist, and the third is capped at stats.MAX_EVENTS_PER_USER
-    // — fifty — by the registry itself, which is the note authenticationTable()
-    // already prints. Paging a list that cannot exceed fifty would buy a
-    // control nobody will see, and it would cost something real: all three live
-    // on `row`, which goes out whole as this reply's `user`, so slicing them
-    // for the table would either corrupt that object or duplicate it, and
-    // leaving the JSON whole while the table paged is the console-and-API
-    // disagreement this file keeps warning about.
+    // seen under and the protocols it authenticated through, both bounded by
+    // how many spellings and protocols exist.
+    //
+    // THE AUTHENTICATION EVENTS ARE PAGED SINCE #1844 (rcbj, 2026-11-16: ten
+    // a page). They are capped at stats.MAX_EVENTS_PER_USER by the registry,
+    // and that was the argument for drawing them whole until then; ten a page
+    // is what the Overview tab is read at. They live on `row`, which goes
+    // out whole as this reply's `user` and stays whole (a caller of 1.x reads
+    // `user.events`), so the page is a COPY, most recent first, under
+    // `authenticationHistory` with its `authenticationHistoryPaging` — and
+    // the table draws that, so the table and the reply's page agree.
+    const historyPage = this.pagedRows(req.query,
+      ((row && row.events) || []).slice().reverse(),
+      { name: 'authenticationHistory', noun: 'events',
+        defaultPer: USER_EVENTS_PER_PAGE });
     const sessionPage = this.pagedRows(req.query, sessionRows,
       { name: 'sessions', noun: 'sessions',
         defaultPer: DEFAULT_BLOCKS_PER_PAGE });
@@ -15471,7 +15482,11 @@ class AdminViews {
           authenticationEventsPaging: attempts.paging,
           authenticationEventsMatched: attempts.matched,
           authenticationEventsKnownActors: attempts.knownActors,
-          authenticationEventsLog: attempts.log
+          authenticationEventsLog: attempts.log,
+          // HOW THEY AUTHENTICATED (#1844): one page of `user.events`, most
+          // recent first, paged as `authenticationHistoryPage`.
+          authenticationHistory: historyPage.shown,
+          authenticationHistoryPaging: self.pagingJson(historyPage.paging)
       };
       }())
     };

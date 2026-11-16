@@ -1139,7 +1139,8 @@ class UsersPage {
       }).join('') || '<tr><td colspan="4">' +
         t.html('consoleUsers.detail.neverHere') + '</td></tr>') +
         '</table>' +
-      UsersPage.authenticationTable(t, row, page.maxEventsPerUser) },
+      UsersPage.authenticationTable(t, row, page.maxEventsPerUser, params,
+                                    json) },
         { id: 'utab-authentications',
           label: t.text('consoleUsers.detail.tabAuthentications'),
           html: UsersPage.authenticationsSection(t, params, json) },
@@ -1498,7 +1499,10 @@ class UsersPage {
   // How they authenticated, most recent first. The whole point of the table is
   // the Method column: "sign-in screen (password)" and "AS-REQ with
   // PA-ENC-TIMESTAMP" are both authentications and only one of them checked
-  // anything.
+  // anything. Paged since #1844, ten a page: the rows are the answer's
+  // `authenticationHistory`, already sliced and most recent first, and the
+  // pager moves `authenticationHistoryPage`. An answer without it (a server
+  // older than the console) draws `row.events` whole, as before.
   /**
    * Draws how a person authenticated, most recent first, with a note when
    * older events have been forgotten past the per-user cap.
@@ -1507,10 +1511,20 @@ class UsersPage {
    * @param row - the person's record in the identity register
    * @param maxEvents - how many events the register keeps per person
    *   (`stats.MAX_EVENTS_PER_USER`)
+   * @param params - the page's query, carried on the pager
+   * @param json - the `?user=` answer
    * @returns the table as HTML
    */
-  static authenticationTable(t, row, maxEvents) {
-    const rows = row.events.slice().reverse().map(function (event) {
+  static authenticationTable(t, row, maxEvents, params?, json?) {
+    const answer = json || {};
+    const paged = Array.isArray(answer.authenticationHistory);
+    const events = paged ? answer.authenticationHistory
+                         : (row.events || []).slice().reverse();
+    const nav = paged && answer.authenticationHistoryPaging
+      ? kit.pageNavPair('/admin/users', params || {},
+                        answer.authenticationHistoryPaging, t)
+      : { head: '', foot: '' };
+    const rows = events.map(function (event) {
       return '<tr><td>' + kit.esc(kit.whenText(event.at)) + '</td>' +
         '<td>' + kit.esc(event.protocol) + '</td>' +
         '<td>' + kit.esc(event.method) + '</td>' +
@@ -1531,7 +1545,7 @@ class UsersPage {
         '<td>' + (event.sessionId ? kit.shortened(event.sessionId, 10) : '—') +
         '</td><td>' + kit.esc(event.note || '') + '</td></tr>';
     }).join('');
-    return '<table><tr><th>' +
+    return nav.head + '<table><tr><th>' +
       t.html('consoleUsers.authenticationTable.thWhen') + '</th><th>' +
       t.html('consoleUsers.detail.thProtocol') + '</th><th>' +
       t.html('consoleUsers.authenticationTable.thMethod') + '</th><th>' +
@@ -1544,7 +1558,7 @@ class UsersPage {
       (rows || '<tr><td colspan="10">' +
                t.html('consoleUsers.authenticationTable.none') +
                '</td></tr>') +
-      '</table>' +
+      '</table>' + nav.foot +
       (row.eventsForgotten > 0
         ? kit.note(t.html('consoleUsers.authenticationTable.forgotten', {
             max: maxEvents,
@@ -2847,8 +2861,10 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const selfIssuedBlock = '<h2>' +
-      t.html('consoleUsers.mfaSection.siopHeading') + '</h2>' +
+    // Framed as Key pairs frames each profile (`secframe`, rcbj 2026-11-16,
+    // #1844): the list, its note and the enrol form read as one block.
+    const selfIssuedBlock = '<section class="secframe"><h3>' +
+      t.html('consoleUsers.mfaSection.siopHeading') + '</h3>' +
       kit.note(t.html('consoleUsers.mfaSection.siopNote',
                       { on: siopView.signInEnabled ? 'yes' : 'no' })) +
       (siopView.subjects.length
@@ -2883,7 +2899,8 @@ class UsersPage {
           kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) + '">' +
           t.html('consoleUsers.mfaSection.enrol') + '</button>' +
           '</div></form>'
-        : kit.note(t.html('consoleUsers.mfaSection.siopNeedsWrite')));
+        : kit.note(t.html('consoleUsers.mfaSection.siopNeedsWrite'))) +
+      '</section>';
 
     const html = heading +
       kit.note(t.html('consoleUsers.mfaSection.leadBefore',

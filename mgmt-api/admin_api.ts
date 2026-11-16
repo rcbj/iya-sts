@@ -4632,6 +4632,7 @@ class AdminApi {
             description: 'Which page of `authenticationEvents`, on the ' +
                          '`?user=` reply only. Named rather than the bare ' +
                          '`page` so it does not move the session list. ' +
+                         'Ten a page by default (#1844). ' +
                          'The member is not `authentications`: that one ' +
                          'is the count.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
@@ -4650,6 +4651,10 @@ class AdminApi {
                          'grants that never involve one.' },
           { name: 'artifacts',
             description: 'SAML assertions, Kerberos tickets and credentials.' },
+          { name: 'authenticationHistory',
+            description: 'How they authenticated (`user.events`), most ' +
+                         'recent first, ten a page by default (#1844). ' +
+                         '`user.events` is still the whole list.' },
           { name: 'federationLinks',
             description: 'The federation partners\' subjects linked to ' +
                          'this person (#109), each `{ link, relationship, ' +
