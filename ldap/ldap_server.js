@@ -3952,9 +3952,10 @@ function hasChildren(dn) {
 //     over the realm and the DN — and every other entry's is random (version
 //     4). The seed runs on every start, so a random value would give alice a
 //     new `sub` on every restart of a development service; nothing created by
-//     a door is treated that way (bar a sign-in's entry where two processes
-//     can race — see putEntry()), because a deterministic value is exactly
-//     what makes a re-created person the same subject again (rcbj's choice).
+//     a door is treated that way — a sign-in's entry on a clustered node was
+//     until 2026-11-16, see putEntry() — because a deterministic value is
+//     exactly what makes a re-created person the same subject again (rcbj's
+//     choice).
 //   * **A RESTORED OR REPLICATED ROW WITHOUT ONE IS BACKFILLED THE SAME WAY**
 //     (version 5 over the realm and the stored key), so every process that
 //     reads a row written before this change computes the SAME value without
@@ -3969,23 +3970,6 @@ const ENTRY_UUID_NAMESPACE = Buffer.from('3b2f8c4e6d1a4e9f8a7c5d2e1f0b9a86',
 
 const UUID_SHAPED =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-// Whether another process can create the same entry at the same moment: this
-// process is a node of a cluster (asked of `cluster/cluster.js` LAZILY — a leaf
-// this file needs only at this one decision), or one of several request
-// workers answering one port (`workers.requestCount` with something in
-// `workers.dispatch`, the question `persistence_minted.js` asks the same way).
-// See putEntry()'s note on a sign-in's entry.
-function clusteredNode() {
-  log.debug("Entering clusteredNode().");
-  const cluster = require('../cluster/cluster');
-  // The #364 rule: the default of one worker is none on a store that
-  // cannot coordinate.
-  const workers = require('../common/process_memory').requestWorkers() > 0 &&
-    String(config.value('workers.dispatch') || '').trim() !== '';
-  log.debug("Leaving clusteredNode().");
-  return cluster.mode() !== 'off' || workers;
-}
 
 // RFC 9562 section 5.5: SHA-1 over the namespace and the name, the version and
 // variant bits set. Node has a v4 generator and no v5 one.
@@ -4782,22 +4766,24 @@ function putEntry(dn, attributes, options) {
   // writer that rebuilt the attribute set from a copy of the entry may well be
   // handing one back, and one that did not is handing none; neither decides.
   //
-  // **AND AN ENTRY A SIGN-IN CREATED ON A CLUSTERED NODE (2026-09-14, #46)**
-  // takes the seed's deterministic value too — rcbj's choice, narrowed to the
-  // one case that needs it. `autoCreateUser()` runs synchronously inside every
-  // protocol's credential check, so two nodes seeing a name's first sign-in at
-  // once both create `uid=<name>,ou=users` and cannot claim it first; with a
-  // random value each, the directory merge keeps one entry and the other
-  // node's tokens carry a `sub` naming nobody. With the value derived from the
-  // realm and the DN both nodes create the SAME entry, and the merge makes them
-  // one. The cost is the one the rule above was written against — a person
-  // deleted and signing in again under the same name gets the same subject —
-  // and it is taken only where two processes can race (a cluster, or a
-  // dispatched pool): auto-create is development mode's (`mode.autoCreates()`),
-  // and a single process keeps random values.
+  // **AN ENTRY A SIGN-IN CREATED ON A CLUSTERED NODE IS RANDOM TOO
+  // (2026-11-16, #1612's rule; it was name-derived from 2026-09-14, #46).**
+  // Two nodes seeing one name's first sign-in at once each create
+  // `uid=<name>,ou=users`, and from #46 that entry took the seed's version 5
+  // value over the realm and the DN so that both created the same entry. The
+  // cost was the one the rule above was written against: on a cluster or a
+  // dispatched pool, a person deleted and signing in again under the name
+  // got the deleted person's `entryUUID`, so their subject and every store
+  // keyed by it. rcbj's rule since #1612 is that a namesake inherits nothing.
+  // The race does not need the derived value: the flush keeps the first
+  // committed entry (`STS-STORE-0052`), `applyEntry()` hands the losing node
+  // the winner's row, and `mergeCreateRace()` keeps the loser's value as an
+  // alias (`stsEntryUuidAlias`), so the tokens it already issued still name
+  // the entry. Only the SEED is name-derived now, and an entry that already
+  // carries a value keeps it — so every entry created under #46's rule keeps
+  // the subject it has (`tests/cluster_autocreate_subject.js`).
   stored.attributes.entryuuid = [entryUuidOf(previous) ||
-    (stored.origin === 'seed' || (stored.origin === 'authentication' &&
-                                  clusteredNode())
+    (stored.origin === 'seed'
       ? backfilledEntryUuid(realms.currentId(), normalizeDn(dn))
       : stsCrypto.randomUuid())];
   // And its aliases, the same way: the entry's, never the caller's.

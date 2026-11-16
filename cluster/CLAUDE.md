@@ -54,10 +54,13 @@ what the portable statements cover.
    development mode, or on memory or ldif, changes.
 4. **The fence is checked inside every write transaction, and a node that
    cannot renew its membership exits.**
-5. **A development-mode sign-in's auto-created entry gets a name-derived
-   `entryUUID`** wherever two processes can race to create it (a cluster mode,
-   or a dispatched pool) — `ldap/ldap_server.js` `putEntry()`; a single process
-   keeps random values.
+5. **A development-mode sign-in's auto-created entry gets a RANDOM
+   `entryUUID` on every node** (2026-11-16, #1612's rule; it was name-derived
+   wherever two processes could race from #46 until then, which handed a
+   namesake the deleted person's subject). Two nodes creating one name's entry
+   at once are reconciled by `mergeCreateRace()`, the loser's value kept as an
+   alias — `ldap/ldap_server.js` `putEntry()`; an entry already carrying a
+   derived value keeps it.
 6. **The barrier holds a response for its audit row only when that row is a
    REFUSAL** (chosen 2026-09-15). A successful call that wrote nothing else is
    answered at once and its row reaches the other nodes on their next pull, so

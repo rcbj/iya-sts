@@ -4228,13 +4228,16 @@ the handler), a SCIM create of a User or a Group, and `POST
   `autoCreateUser()` is `recordAuthentication()`'s SYNCHRONOUS observer inside
   every protocol's credential check, and because it is development mode only
   (`mode.autoCreates()`), reachable with several processes in a development
-  dispatch run or cluster. **Resolved 2026-09-14 by rcbj's choice**: where
-  another process can race, `putEntry()` gives a sign-in's entry a name-derived
-  (v5) `entryUUID`, so both nodes create the same entry and the merge makes them
-  one — at the cost of a name deleted and signed in again getting the same
-  subject there; a single process keeps random values.
-  `directory_create_claims.ts`'s header has it, and
-  `tests/cluster_autocreate_subject.js` holds both halves.
+  dispatch run or cluster. **From 2026-09-14 (rcbj's choice) until 2026-11-16**
+  `putEntry()` gave a sign-in's entry a name-derived (v5) `entryUUID` where
+  another process could race, so both nodes created the same entry — at the
+  cost of a name deleted and signed in again getting the deleted person's
+  subject, and every store keyed by it. **Since 2026-11-16 (#1612's rule, a
+  namesake inherits nothing) it is random on every node**: the losing node's
+  value survives as an alias through `mergeCreateRace()` (above), which is all
+  the race needs. An entry created under the old rule carries its value
+  through every overwrite, so no existing subject changed.
+  `tests/cluster_autocreate_subject.js` holds it.
 
 ## SASL EXTERNAL: A PERSON BOUND BY THE CERTIFICATE THIS SERVICE ISSUED (#1047, 2026-10-27)
 
