@@ -2673,7 +2673,19 @@ class XacmlSurface {
       // moved by a PULL as well as by a heartbeat, because a PEP that is
       // polling is plainly alive and a register that called it stale would be
       // reporting on its own heartbeat interval rather than on the PEP.
-      const asName = peps.nameFrom(String(req.query.pep || ''));
+      //
+      // **THE NAME IS THE CERTIFICATE'S WHEN THERE IS ONE (#1830)**, as on
+      // every other door here (`pepNameOf()`): `?pep=` is read only when no
+      // certificate was presented, which with the gate on cannot happen.
+      // Until then it was read whatever the certificate said, so any caller
+      // holding REMOTE_PEPS could keep ANOTHER PEP's row looking alive after
+      // that PEP had gone — and the row on /admin/xacml/peps is what an
+      // operator watches for a dead enforcement point. A PEP sends `?pep=`
+      // with its own name, which is its certificate's, so a deployed one is
+      // touched exactly as before; one that sends none is touched too, by
+      // the certificate that proves which it is.
+      const asName = self.pepNameOf(access.identity,
+                                    String(req.query.pep || ''));
       if (asName && peps.read(asName)) {
         peps.heartbeat(asName, {});
       }

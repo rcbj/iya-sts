@@ -324,7 +324,7 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `description`:"Every PEP_POLL_INTERVAL_MS, on a nudge, and when a heartbeat says the PEP is not current.",
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`description`:"The token held; equal to the current one answers 304.",`schema`:#{`type`:"string"}},
-    #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, whose last-seen time is touched. Not bound to the certificate.",`schema`:#{`type`:"string"}}
+    #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},

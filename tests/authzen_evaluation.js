@@ -1452,6 +1452,40 @@ async function childBody() {
     pullCred, { token: 'not-a-token' });
   heldToModel('X10', 'postIntrospect', r);
 
+  // X11. `?pep=` NAMES NOBODY WHEN A CERTIFICATE WAS PRESENTED (#1830): a
+  // pull by `azpull` naming another PEP's row touches azpull's, never the
+  // other one's.
+  const pepRegistry = require(ROOT + '/xacml/xacml_pep_registry');
+  const seenOf = function (name) {
+    log.debug("Entering seenOf().");
+    log.debug("Leaving seenOf().");
+    return inRealm(function () {
+      const row = pepRegistry.read(name);
+      return row ? row.lastSeen : null;
+    });
+  };
+  const foreign = inRealm(function () {
+    return pepRegistry.register({ name: 'azforeign', authenticated: false });
+  });
+  t.check(foreign && foreign.ok, 'X11. setup: another PEP\'s row exists',
+          JSON.stringify(foreign));
+  const foreignSeen = seenOf('azforeign');
+  const pullSeen = seenOf('azpull');
+  await new Promise(function (ok) {
+    setTimeout(ok, 5);
+  });
+  r = await request(port, 'GET',
+                    PREFIX + '/xacml/pep/policies?pep=azforeign', pullCred);
+  t.check(r.status === 200 && seenOf('azforeign') === foreignSeen &&
+          seenOf('azpull') !== pullSeen,
+          'X11. a pull naming another PEP with ?pep= touches the ' +
+          'certificate\'s row (azpull) and leaves the named one alone',
+          JSON.stringify({ status: r.status, foreign: [foreignSeen,
+            seenOf('azforeign')], own: [pullSeen, seenOf('azpull')] }));
+  inRealm(function () {
+    pepRegistry.remove('azforeign');
+  });
+
   // -------------------------------------------------------------------------
   // O. OFF
   // -------------------------------------------------------------------------

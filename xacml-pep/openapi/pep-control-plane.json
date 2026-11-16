@@ -2621,7 +2621,7 @@
             "name": "pep",
             "in": "query",
             "required": false,
-            "description": "The register name, whose last-seen time is touched. Not bound to the certificate.",
+            "description": "The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",
             "schema": {
               "type": "string"
             }
