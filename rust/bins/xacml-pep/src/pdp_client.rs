@@ -224,6 +224,11 @@ impl PdpClient {
                 request =
                     request.header("Content-Type", "application/xml").body(text)
             }
+            Some(Body::Form(pairs)) => {
+                request = request
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .body(form_encoded(&pairs))
+            }
             None => {}
         }
         let mut response = match request.send().await {
@@ -276,6 +281,25 @@ impl PdpClient {
 pub enum Body {
     Json(serde_json::Value),
     Xml(String),
+    /// `application/x-www-form-urlencoded`, in the order given — the token
+    /// request of the decision records' grant (#1827).
+    Form(Vec<(String, String)>),
+}
+
+/// The pairs as a form body. `encodeURIComponent` leaves nothing a form
+/// reader could misread (`&`, `=`, `+` are all escaped), so it serves.
+pub fn form_encoded(pairs: &[(String, String)]) -> String {
+    pairs
+        .iter()
+        .map(|(name, value)| {
+            format!(
+                "{}={}",
+                crate::sync::encode(name),
+                crate::sync::encode(value)
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("&")
 }
 
 /// A transport failure in a sentence, with its cause chain.

@@ -38,6 +38,7 @@ use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
 use sts_xacml::policy::PolicyNode;
 use sts_xacml::request::{ResolvedObligation, Status};
 
+use crate::audit::{self, Audit, Record};
 use crate::authzen::{self, Reply};
 use crate::enforce::Enforcer;
 use crate::listener::{HttpsListener, Transport};
@@ -67,6 +68,8 @@ pub struct Pep {
     pub(crate) pip: RemotePip,
     pub(crate) pdp: Pdp,
     pub listener: Arc<HttpsListener>,
+    /// The decision records' queue (#1827).
+    pub audit: Arc<Audit>,
     last_pip_report: Mutex<Option<Value>>,
     crl_name: Option<Regex>,
 }
@@ -128,6 +131,7 @@ impl Pep {
         sync: Arc<Sync>,
         pip: RemotePip,
         listener: Arc<HttpsListener>,
+        audit: Arc<Audit>,
     ) -> Pep {
         Pep {
             options,
@@ -136,6 +140,7 @@ impl Pep {
             pip,
             pdp: Pdp::new(),
             listener,
+            audit,
             last_pip_report: Mutex::new(None),
             crl_name: Regex::new(r"(?i)^[a-z0-9-]+\.crl$").ok(),
         }
@@ -351,11 +356,14 @@ impl Pep {
         std::fs::read(dir.join(name)).ok()
     }
 
-    /// A decision here, with what was pulled — and the remote PIP asked
-    /// BEFORE evaluation, because the engine's resolver is synchronous.
-    async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
-        let get = |k: &str| query.get(k).cloned().unwrap_or_default();
-        let subject = get("subject");
+    /// The subject, resource and action a `/protected` request names, the
+    /// last two with their defaults — what the decision is about, and what
+    /// its record says it was about.
+    fn named(
+        &self,
+        query: &IndexMap<String, String>,
+    ) -> (String, String, String) {
+        let subject = query.get("subject").cloned().unwrap_or_default();
         let resource = query
             .get("resource")
             .filter(|r| !r.is_empty())
@@ -369,6 +377,13 @@ impl Pep {
             .filter(|a| !a.is_empty())
             .cloned()
             .unwrap_or_else(|| "GET".to_string());
+        (subject, resource, action)
+    }
+
+    /// A decision here, with what was pulled — and the remote PIP asked
+    /// BEFORE evaluation, because the engine's resolver is synchronous.
+    async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
+        let (subject, resource, action) = self.named(query);
         // THROUGH THE ONE BUILDER (#306), the four categories named first
         // so an empty subject is still sent as the empty category it was.
         let mut req = AuthorizationRequest::default();
@@ -558,6 +573,39 @@ impl Pep {
         let outcome =
             self.enforcer().enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
+        if self.audit.enabled() {
+            let (subject, resource, action) = self.named(query);
+            let policies = answer
+                .policy_identifiers
+                .iter()
+                .map(|p| {
+                    audit::policy_name(
+                        p["id"].as_str().unwrap_or(""),
+                        p["version"].as_str().unwrap_or(""),
+                    )
+                })
+                .collect();
+            self.audit.record(Record {
+                at: sts_core::time::iso_now(),
+                kind: "enforcement".into(),
+                decision: answer.decision.as_str().to_string(),
+                allowed: outcome.allowed,
+                code: if answer.decision == Decision::Indeterminate {
+                    "STS-XPEP-0006".into()
+                } else {
+                    String::new()
+                },
+                subject,
+                resource,
+                action,
+                bias: outcome.bias.as_str().to_string(),
+                why: outcome.why.clone(),
+                policies,
+                discharged: outcome.discharged.clone(),
+                undischargeable: outcome.undischargeable.clone(),
+                ..Record::default()
+            });
+        }
         let obligations: Vec<Value> = answer
             .obligations
             .iter()
@@ -651,8 +699,9 @@ impl Pep {
                        service (who holds AUTHZEN_PEPS as its policy decides \
                        it, and each caller's application scope), narrowed by \
                        PEP_AUTHZEN_CALLERS when that is set; an outside \
-                       authority's revocation is not checked, and each \
-                       decision is a log line rather than an audit row."
+                       authority's revocation is not checked. Each decision \
+                       made here is a log line, and a record sent to the \
+                       service's audit log (audit, below; #1827)."
                 ),
             );
         }
@@ -741,6 +790,7 @@ impl Pep {
             "https": self.listener.overview(),
             "authzen": self.authzen_overview(),
             "proxy": self.sync.proxy_json(),
+            "audit": self.audit.overview(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,

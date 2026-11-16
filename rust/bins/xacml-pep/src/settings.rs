@@ -174,6 +174,24 @@ pub const SETTINGS: &[Row] = &[
         env: "PEP_PROXY_STRIP_COOKIES",
         kind: Kind::Text(1024),
     },
+    // THE DECISION RECORDS (#1827). `PEP_AUDIT_CLIENT_ID` is not here: it
+    // is how the PEP authenticates to send them, so it is bootstrap.
+    Row { key: "auditEnabled", env: "PEP_AUDIT", kind: Kind::Bool },
+    Row {
+        key: "auditIntervalMs",
+        env: "PEP_AUDIT_INTERVAL_MS",
+        kind: Kind::Int(1000, DAY_MS),
+    },
+    Row {
+        key: "auditBatch",
+        env: "PEP_AUDIT_BATCH",
+        kind: Kind::Int(1, 500),
+    },
+    Row {
+        key: "auditBuffer",
+        env: "PEP_AUDIT_BUFFER",
+        kind: Kind::Int(1, 1_000_000),
+    },
 ];
 
 /// The row of a member, or `None` for one this PEP does not know.
