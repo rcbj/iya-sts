@@ -2528,7 +2528,14 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const certificatesBlock = '<section><h2>' +
+    // EACH KIND OF CERTIFICATE ON KEY PAIRS IS A FRAME (.secframe), headed
+    // inside it, and the form that adds one a frame inside that, as each
+    // RFC 7523/7522 profile above them is drawn.
+    const subFrame = function (heading, body) {
+      return '<div class="secframe"><h4>' + heading + '</h4>' + body +
+             '</div>';
+    };
+    const certificatesBlock = '<section class="secframe"><h2>' +
       t.html('consoleUsers.mfaSection.certificatesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
       (certView.certificates.length
@@ -2541,7 +2548,8 @@ class UsersPage {
         : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
                    '</strong>')) +
       (state.write
-        ? '<form method="post" action="/admin/users">' +
+        ? subFrame(t.html('consoleUsers.mfaSection.certAddHeading'),
+          '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="add-certificate">' +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           '<input type="hidden" name="from" value="user">' +
@@ -2553,7 +2561,8 @@ class UsersPage {
           'spellcheck="false"></textarea></label></div>' +
           '<div class="formrow"><button type="submit" title="' +
           kit.esc(t.text('consoleUsers.mfaSection.certAddTitle')) + '">' +
-          t.html('consoleUsers.mfaSection.certAdd') + '</button></div></form>'
+          t.html('consoleUsers.mfaSection.certAdd') +
+          '</button></div></form>')
         : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite'))) +
       '</section>';
 
@@ -2610,7 +2619,8 @@ class UsersPage {
         : (signView.active >= signView.max
           ? kit.note(t.html('consoleUsers.mfaSection.signingAtMax',
                             { n: signView.active }))
-          : '<form method="post" action="/admin/users">' +
+          : subFrame(t.html('consoleUsers.mfaSection.signingIssueHeading'),
+            '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" ' +
             'value="issue-signing-certificate">' +
             '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
@@ -2644,8 +2654,8 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.signingIssue') +
             '</button><span class="sub">' +
             t.html('consoleUsers.mfaSection.signingOnce') +
-            '</span></div></form>'));
-    const signingBlock = '<section><h2>' +
+            '</span></div></form>')));
+    const signingBlock = '<section class="secframe"><h2>' +
       t.html('consoleUsers.mfaSection.signingHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.signingLead',
                       { name: signView.implicitName })) +
@@ -2709,7 +2719,8 @@ class UsersPage {
         : (tlsView.active >= tlsView.max
           ? kit.note(t.html('consoleUsers.mfaSection.tlsAtMax',
                             { n: tlsView.active }))
-          : '<form method="post" action="/admin/users">' +
+          : subFrame(t.html('consoleUsers.mfaSection.tlsIssueHeading'),
+            '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" ' +
             'value="issue-tls-client-certificate">' +
             '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
@@ -2743,8 +2754,8 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.tlsIssue') +
             '</button><span class="sub">' +
             t.html('consoleUsers.mfaSection.signingOnce') +
-            '</span></div></form>'));
-    const tlsBlock = '<section><h2>' +
+            '</span></div></form>')));
+    const tlsBlock = '<section class="secframe"><h2>' +
       t.html('consoleUsers.mfaSection.tlsHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.tlsLead',
                       { name: tlsView.implicitName })) +
@@ -3356,16 +3367,22 @@ class UsersPage {
     const heading = '<h2 id="credentials">' +
       t.html('consoleUsers.userCredentialsSection.heading') + '</h2>' +
       kit.note(t.html('consoleUsers.userCredentialsSection.lead'));
+    // THE WHOLE SECTION IS ONE FRAME, as each certificate kind drawn below it
+    // on Key pairs is: the profiles are frames inside it, and their forms
+    // frames inside those.
+    const frame = function (body) {
+      return '<section class="secframe">' + body + '</section>';
+    };
     if (!state.storable) {
-      return heading +
+      return frame(heading +
         kit.warn(t.html('consoleUsers.userCredentialsSection.noDirectory'),
                  t.text(
-                   'consoleUsers.userCredentialsSection.noDirectoryLabel'));
+                   'consoleUsers.userCredentialsSection.noDirectoryLabel')));
     }
     if (!state.found) {
-      return heading +
+      return frame(heading +
         kit.note(t.html('consoleUsers.userCredentialsSection.noEntry',
-                        { key: key }));
+                        { key: key })));
     }
     const username = state.username;
     const algOptions = state.ca.keyAlgorithms.map(function (one) {
@@ -3597,10 +3614,10 @@ class UsersPage {
                           uploadForm)) +
              '</section>';
     }).join('');
-    return heading + purposeHtml +
+    return frame(heading + purposeHtml +
       (state.selfService
         ? kit.note(t.html('consoleUsers.userCredentialsSection.selfService'))
-        : '');
+        : ''));
   }
 
   // ---------------------------------------------------------------------------
