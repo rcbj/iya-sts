@@ -485,8 +485,8 @@ async function theNudgeTrustsThisCa(t) {
     const pdpBody = JSON.parse(own.bodies[2] || '{}');
     const pinnedBase = require('../common/helpers').pinnedBaseUrl('xacml');
     t.check(fromRequest.ok &&
-            pdpBody.pdp === (pinnedBase || 'https://pdp.test:8443') + '/realm/' +
-              REALM,
+            pdpBody.pdp ===
+              (pinnedBase || 'https://pdp.test:8443') + '/realm/' + REALM,
             'F1d. a nudge dispatched with no issuer names the realm\'s PDP ' +
             'as pdp, from the request that made the change',
             own.bodies[2]);
