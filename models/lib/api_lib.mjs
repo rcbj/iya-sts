@@ -285,6 +285,78 @@ function componentsIn(program, namespace) {
 }
 
 /**
+ * The components declared outside every document's namespace (`common.tsp`):
+ * one model several documents answer with. Each document carries the ones it
+ * reaches, under their own names (2026-11-16, models/CLAUDE.md, *One model,
+ * one place*).
+ *
+ * @param program - the compiled program
+ * @returns the shared component types, by name
+ */
+function sharedComponents(program) {
+  log.debug("Entering sharedComponents().");
+  const documented = program.stateMap(DOCUMENT);
+  const shared = {};
+  program.stateSet(COMPONENT).forEach(function (type) {
+    if (!type.namespace || documented.has(type.namespace)) {
+      return;
+    }
+    if (shared[type.name]) {
+      log.debug("Leaving sharedComponents(). Twice.");
+      throw new Error('Two shared components are named ' + type.name + '.');
+    }
+    shared[type.name] = type;
+  });
+  log.debug("Leaving sharedComponents().");
+  return shared;
+}
+
+/**
+ * Adds to a document's own components every shared one its paths and
+ * components reach, followed through each one added. A shared component
+ * whose name the document also declares is refused: the document would hold
+ * two models under one name, which is the trap #1845 fell into.
+ *
+ * @param program - the compiled program
+ * @param paths - the document's paths
+ * @param schemas - its own components, added to in place
+ * @param shared - `sharedComponents()`
+ * @returns the same schemas
+ */
+function withSharedComponents(program, paths, schemas, shared) {
+  log.debug("Entering withSharedComponents().");
+  const own = Object.keys(schemas);
+  Object.keys(shared).forEach(function (name) {
+    if (own.indexOf(name) >= 0) {
+      log.debug("Leaving withSharedComponents(). Declared twice.");
+      throw new Error('The component ' + name + ' is declared in common.tsp ' +
+        'and again in a document\'s own namespace. Refer to the shared one.');
+    }
+  });
+  const pending = [paths].concat(Object.keys(schemas).map(function (name) {
+    return schemas[name];
+  }));
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
+    if (typeof node.$ref === 'string') {
+      const name = node.$ref.split('/').pop();
+      if (!schemas[name] && shared[name]) {
+        schemas[name] = schemaOf(program, shared[name], true);
+        pending.push(schemas[name]);
+      }
+    }
+    Object.keys(node).forEach(function (key) {
+      pending.push(node[key]);
+    });
+  }
+  log.debug("Leaving withSharedComponents().");
+  return schemas;
+}
+
+/**
  * The paths a namespace declares.
  *
  * @param program - the compiled program
@@ -355,6 +427,7 @@ function withEveryOperation(paths, everyOperation) {
 export function documents(program) {
   log.debug("Entering documents().");
   const out = {};
+  const shared = sharedComponents(program);
   program.stateMap(DOCUMENT).forEach(function (top, namespace) {
     const document = Object.assign({}, top);
     const name = document['x-iya-doc'];
@@ -363,7 +436,8 @@ export function documents(program) {
     delete document['x-iya-every-operation'];
     document.paths = withEveryOperation(pathsIn(program, namespace),
       everyOperation);
-    const schemas = componentsIn(program, namespace);
+    const schemas = withSharedComponents(program, document.paths,
+      componentsIn(program, namespace), shared);
     if (top.components !== undefined || Object.keys(schemas).length > 0) {
       document.components = Object.assign({}, top.components || {});
       if (Object.keys(schemas).length > 0) {
