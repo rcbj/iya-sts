@@ -1518,6 +1518,42 @@ async function childBody() {
     heldToModel('X12', one[0], other);
   }
 
+  // X13. THE HEARTBEAT AND THE REGISTRATION ANSWER THE REGISTRY'S STATUS
+  // (#1830): 404 for a row that is gone, 503 with no directory — which
+  // was 404 and 400 until then.
+  const beat = { syncToken: '', policyCount: 0, decisions: 0, allowed: 0,
+                 refused: 0, undischargeable: 0 };
+  inRealm(function () {
+    pepRegistry.remove('azpull');
+  });
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pullCred,
+                    beat);
+  t.check(r.status === 404 && markedSince(since, 'STS-XACML-0021'),
+          'X13. a heartbeat from a PEP that is not registered is 404 ' +
+          '(STS-XACML-0021)', brief(r));
+  heldToModel('X13', 'postHeartbeat', r);
+  const directoryWas = pepRegistry.directoryInstalled();
+  pepRegistry.setDirectory(null);
+  since = marks.length;
+  const noDirBeat = await request(port, 'POST',
+    PREFIX + '/xacml/pep/heartbeat', pullCred, beat);
+  const sinceRegister = marks.length;
+  const noDirRegister = await request(port, 'POST',
+    PREFIX + '/xacml/pep/register', pullCred, { name: 'azpull' });
+  pepRegistry.setDirectory(directoryWas);
+  t.check(noDirBeat.status === 503 && markedSince(since, 'STS-XACML-0026') &&
+          noDirRegister.status === 503 &&
+          markedSince(sinceRegister, 'STS-XACML-0026'),
+          'X13. with no directory the heartbeat and the registration are ' +
+          '503 (STS-XACML-0026), not 404 and 400',
+          brief(noDirBeat) + ' / ' + brief(noDirRegister));
+  heldToModel('X13', 'postHeartbeat', noDirBeat);
+  heldToModel('X13', 'postRegister', noDirRegister);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pullCred,
+                    { name: 'azpull' });
+  t.check(r.status === 201, 'X13. and azpull registers again', brief(r));
+
   // -------------------------------------------------------------------------
   // O. OFF
   // -------------------------------------------------------------------------

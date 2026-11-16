@@ -22751,14 +22751,14 @@ const CODES = [
       'because no embedded directory is loaded in this process.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '503 server_error' },
   { code: 'STS-XACML-0027',
     summary: 'The embedded directory refused a write or removal in ' +
       'ou=policies, ou=peps or ou=roles — usually a container at its ' +
       'maximum.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '507 server_error' },
   { code: 'STS-XACML-0028',
     summary: 'A policy document was refused at write: it does not parse or ' +
       'fails XACML static type checking.',

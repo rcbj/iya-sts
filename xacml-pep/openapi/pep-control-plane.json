@@ -2491,7 +2491,7 @@
             }
           },
           "400": {
-            "description": "The register refused: no usable name (STS-XACML-0019), a bad hostname (0261), no directory (0026), or the directory refused or xacml.maxPeps is reached (0027).",
+            "description": "No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2522,6 +2522,26 @@
           },
           "501": {
             "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2580,7 +2600,7 @@
             }
           },
           "404": {
-            "description": "Not registered (STS-XACML-0021); also no directory (0026) and the directory refused (0027).",
+            "description": "Not registered (STS-XACML-0021).",
             "content": {
               "application/json": {
                 "schema": {
@@ -2591,6 +2611,26 @@
           },
           "501": {
             "description": "XACML or remote PEPs off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No embedded directory in this process (STS-XACML-0026): server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The directory refused the write (STS-XACML-0027): server_error.",
             "content": {
               "application/json": {
                 "schema": {

@@ -26,8 +26,6 @@
 //
 // * the PIP answers its own refusals as XML `PIPError` (400, 429) and the
 //   shared gate's as JSON (403, 501);
-// * the heartbeat answers every registry refusal 404, register every one
-//   400;
 // * the listener certificate's 200 carries `ok: true`;
 // * `basic` answers a lockout 429 `{valid, retryAfterS}` and the limiter's
 //   429 `Error`.
@@ -112,10 +110,12 @@ namespace IyaSts.Pep.ControlPlane {
   `responses`:#{
     `200`:#{`description`:"Registered again.",`content`:#{`application/json`:#{`schema`:null}}},
     `201`:#{`description`:"Registered for the first time.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"The register refused: no usable name (STS-XACML-0019), a bad hostname (0261), no directory (0026), or the directory refused or xacml.maxPeps is reached (0027).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client.",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
+    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",`content`:#{`application/json`:#{`schema`:null}}},
+    `507`:#{`description`:"The directory refused the entry: ou=peps holds xacml.maxPeps, or the directory its entry cap (STS-XACML-0027): server_error, until an operator makes room.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterRequest`,
@@ -124,7 +124,9 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/501/content/application~1json/schema`: `Error`): void;
+  `responses/501/content/application~1json/schema`: `Error`,
+  `responses/503/content/application~1json/schema`: `Error`,
+  `responses/507/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- heartbeat
 
@@ -282,8 +284,10 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"No name (STS-XACML-0020) or a bad hostname (0261).",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
-    `404`:#{`description`:"Not registered (STS-XACML-0021); also no directory (0026) and the directory refused (0027).",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
+    `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
+    `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error.",`content`:#{`application/json`:#{`schema`:null}}},
+    `507`:#{`description`:"The directory refused the write (STS-XACML-0027): server_error.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatRequest`,
@@ -291,7 +295,9 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `Error`,
-  `responses/501/content/application~1json/schema`: `Error`): void;
+  `responses/501/content/application~1json/schema`: `Error`,
+  `responses/503/content/application~1json/schema`: `Error`,
+  `responses/507/content/application~1json/schema`: `Error`): void;
 
 // ---------------------------------------------------------------- policies
 
