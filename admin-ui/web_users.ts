@@ -1037,7 +1037,8 @@ class UsersPage {
     // one source for what those panels say.
     const directory = UsersPage.ldapObjectSection(t, row, json.ldap,
                                                   json.subject);
-    const mfa = UsersPage.mfaSection(t, row, key, gate, back, page.mfa);
+    const mfaParts = UsersPage.mfaSection(t, row, key, gate, back, page.mfa);
+    const mfa = mfaParts.factors;
     const sessionsNav = kit.pageNavPair('/admin/users', params,
                                          json.sessionsPaging, t);
     // A session's tokens arrive with it, paged, and the block draws that page.
@@ -1205,7 +1206,12 @@ class UsersPage {
             // What they can SIGN a grant with (2026-09-13).
             { id: 'ucred-keys', label: t.text('consoleUsers.detail.tabKeys'),
               html: UsersPage.userCredentialsSection(t, key, page.keyPairs,
-                                                gate, back) },
+                                                gate, back) +
+                    mfaParts.keyCertificates },
+            // Self-issued subjects and the DIDs this realm publishes.
+            { id: 'ucred-self-issued',
+              label: t.text('consoleUsers.detail.tabSelfIssued'),
+              html: mfaParts.selfIssued },
             // Their Kerberos account, and a keytab for it (#59).
             { id: 'ucred-kerberos', label: 'Kerberos',
               html: UsersPage.userKerberosSection(t, key, json.kerberos,
@@ -1780,14 +1786,25 @@ class UsersPage {
    * @param key - the person's key
    * @param state - the gate state; `write` draws the controls
    * @param back - the list to return to after an action
-   * @returns an object of html (the section) and json (its ?format=json
-   *   object, null when no credential store is installed)
+   * @param data - `page.mfa` from the person's management API answer
+   * @returns the three Credentials pieces. `factors` is this pane.
+   *   `keyCertificates` is stored certificates, message-signing and TLS
+   *   client certificates, drawn on Key pairs. `selfIssued` is self-issued
+   *   IDs and published DIDs. With no credential store the note is on
+   *   `factors` and the other two pieces are empty.
    */
   static mfaSection(t, row, key, state, back, data) {
     const heading = '<h2 id="second-factors">' +
                     t.html('consoleUsers.mfaSection.heading') + '</h2>';
     if (!data.storable) {
-      return heading + kit.note(t.html('consoleUsers.mfaSection.noStore'));
+      // The same three pieces as the stored case, so a caller never has
+      // to tell a missing store from a drawn one by the type.
+      return {
+        factors: heading +
+          kit.note(t.html('consoleUsers.mfaSection.noStore')),
+        keyCertificates: '',
+        selfIssued: ''
+      };
     }
 
     const mech = data.mech;
@@ -2508,8 +2525,8 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const certificatesBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h3>' +
+    const certificatesBlock = '<section><h2>' +
+      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
       (certView.certificates.length
         ? '<table><tr><th>' +
@@ -2534,7 +2551,8 @@ class UsersPage {
           '<div class="formrow"><button type="submit" title="' +
           kit.esc(t.text('consoleUsers.mfaSection.certAddTitle')) + '">' +
           t.html('consoleUsers.mfaSection.certAdd') + '</button></div></form>'
-        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite')));
+        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite'))) +
+      '</section>';
 
     // --- message-signing certificates (#521, 2026-10-28) ---------------------
     // WHAT THE PERSON SIGNS A WS-TRUST REQUEST WITH, issued by an
@@ -2624,8 +2642,8 @@ class UsersPage {
             '</button><span class="sub">' +
             t.html('consoleUsers.mfaSection.signingOnce') +
             '</span></div></form>'));
-    const signingBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.signingHeading') + '</h3>' +
+    const signingBlock = '<section><h2>' +
+      t.html('consoleUsers.mfaSection.signingHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.signingLead',
                       { name: signView.implicitName })) +
       (signView.certificates.length
@@ -2636,7 +2654,114 @@ class UsersPage {
           signView.certificates.map(signRow).join('') + '</table>'
         : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
                    '</strong>')) +
-      signIssue;
+      signIssue + '</section>';
+
+    // --- TLS client certificates, issued here from this realm's CA --------
+    // THE KEY PAIR A CLIENT PRESENTS AT A HANDSHAKE, generated on this
+    // page (or by the same action on /admin-api) and mapped to the person
+    // by the register. The subject is the directory entry's. A certificate
+    // stored from an outside authority is the section above this one, and
+    // is a different credential.
+    const tlsView = data.tls && data.tls.ok
+      ? data.tls
+      : { certificates: [], active: 0, max: 0, keyAlgorithms: [],
+          revocationReasons: [], passwordMin: 8, caAvailable: false,
+          implicitName: '', subjectDn: '', entryDn: '' };
+    const tlsRow = function (one) {
+      return '<tr><td><code>' + kit.esc(one.subject || '—') + '</code>' +
+        '<div class="sub">' +
+        (one.label ? kit.esc(one.label) + ' &middot; ' : '') +
+        t.html('consoleUsers.mfaSection.signingSerial') + ' <code>' +
+        kit.esc(one.serialHex) + '</code> &middot; ' + kit.esc(one.keyAlg) +
+        ' &middot; ' + t.html('consoleUsers.mfaSection.signingUntil') +
+        ' <code>' + kit.esc(one.notAfter) + '</code></div></td><td>' +
+        '<span class="state-' + (one.state === 'valid' ? 'valid' : 'revoked') +
+        '">' + kit.esc(one.state) + '</span>' + (one.reason
+          ? '<div class="sub">' + kit.esc(one.reason) + '</div>' : '') +
+        '</td><td>' +
+        (state.write && one.state === 'valid'
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="revoke-tls-client-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="serialHex" value="' +
+            kit.esc(one.serialHex) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '"><select name="reason" aria-label="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingReason')) + '">' +
+            tlsView.revocationReasons.map(function (reason) {
+              return '<option value="' + kit.esc(reason) + '">' +
+                     kit.esc(reason) + '</option>';
+            }).join('') + '</select> <button class="danger" type="submit">' +
+            t.html('consoleUsers.mfaSection.signingRevoke') +
+            '</button></form>'
+          : '') + '</td></tr>';
+    };
+    const tlsIssue = !state.write
+      ? kit.note(t.html('consoleUsers.mfaSection.tlsNeedsWrite'))
+      : (!tlsView.caAvailable
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsNoCa') +
+                   ' <a href="/admin/pki">/admin/pki</a>.')
+        : (tlsView.active >= tlsView.max
+          ? kit.note(t.html('consoleUsers.mfaSection.tlsAtMax',
+                            { n: tlsView.active }))
+          : '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" ' +
+            'value="issue-tls-client-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '">' +
+            '<div class="formrow"><label for="tls-label">' +
+            t.html('consoleUsers.mfaSection.signingLabel') + '</label>' +
+            '<input id="tls-label" name="label" maxlength="40" ' +
+            'placeholder="' +
+            kit.esc(t.text('consoleUsers.mfaSection.signingPlaceholder')) +
+            '"><label for="tls-alg">' +
+            t.html('consoleUsers.mfaSection.signingKey') + '</label>' +
+            '<select id="tls-alg" name="keyAlg">' +
+            tlsView.keyAlgorithms.map(function (alg) {
+              return '<option value="' + kit.esc(alg) + '"' +
+                     (alg === tlsView.defaultKeyAlg ? ' selected' : '') +
+                     '>' + kit.esc(alg) + '</option>';
+            }).join('') + '</select></div>' +
+            '<div class="formrow"><label for="tls-password">' +
+            t.html('consoleUsers.mfaSection.signingPassword') +
+            '</label><input type="password" id="tls-password" ' +
+            'name="password" minlength="' + tlsView.passwordMin +
+            '" required autocomplete="new-password"><label ' +
+            'for="tls-confirm">' +
+            t.html('consoleUsers.mfaSection.signingAgain') + '</label>' +
+            '<input type="password" id="tls-confirm" name="confirm" ' +
+            'minlength="' + tlsView.passwordMin + '" required ' +
+            'autocomplete="new-password"></div>' +
+            '<div class="formrow"><button type="submit">' +
+            t.html('consoleUsers.mfaSection.tlsIssue') +
+            '</button><span class="sub">' +
+            t.html('consoleUsers.mfaSection.signingOnce') +
+            '</span></div></form>'));
+    const tlsBlock = '<section><h2>' +
+      t.html('consoleUsers.mfaSection.tlsHeading') + '</h2>' +
+      kit.note(t.html('consoleUsers.mfaSection.tlsLead',
+                      { name: tlsView.implicitName })) +
+      (tlsView.subjectDn
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsSubject') +
+                   ' <code>' + kit.esc(tlsView.subjectDn) + '</code>')
+        : '') +
+      (tlsView.entryDn
+        ? kit.note(t.html('consoleUsers.mfaSection.tlsEntry') +
+                   ' <code>' + kit.esc(tlsView.entryDn) + '</code>')
+        : '') +
+      (tlsView.certificates.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.signingThCertificate') +
+          '</th><th>' + t.html('consoleUsers.mfaSection.signingThState') +
+          '</th><th></th></tr>' +
+          tlsView.certificates.map(tlsRow).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')) +
+      tlsIssue + '</section>';
 
     // --- self-issued IDs (#129, 2026-09-23) --------------------------------
     // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
@@ -2704,8 +2829,8 @@ class UsersPage {
             '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
           : '') + '</td></tr>';
     };
-    const selfIssuedBlock = '<h3>' +
-      t.html('consoleUsers.mfaSection.siopHeading') + '</h3>' +
+    const selfIssuedBlock = '<h2>' +
+      t.html('consoleUsers.mfaSection.siopHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.siopNote',
                       { on: siopView.signInEnabled ? 'yes' : 'no' })) +
       (siopView.subjects.length
@@ -2752,14 +2877,19 @@ class UsersPage {
       wayIn + totpBlock + UsersPage.emailFactorBlock(t, key, mech, state,
                                                 carryBack, data.mail) +
       keysBlock + recoveryBlock + appPasswordsBlock +
-      devicesBlock + certificatesBlock + signingBlock +
-      selfIssuedBlock + UsersPage.publishedDidsBlock(t, key, state, back,
-                                                     data.publishedDids) +
-      verificationsBlock;
+      devicesBlock + verificationsBlock;
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
     // this draws it — and since #446 draws it from the answer's `page.mfa`.
-    return html;
+    // Stored certificates, message-signing and TLS client certificates are
+    // drawn on Key pairs. Self-issued IDs and published DIDs are their own
+    // Credentials sub-tab.
+    return {
+      factors: html,
+      keyCertificates: certificatesBlock + signingBlock + tlsBlock,
+      selfIssued: selfIssuedBlock + UsersPage.publishedDidsBlock(
+        t, key, state, back, data.publishedDids)
+    };
   }
 
   // The drill-down. Returns null when the identity is not one this service

@@ -98,6 +98,7 @@
   "tls.key": "密钥",
   "tls.goodUntil": "有效期至",
   "tls.how": "<strong>应用如何使用它。</strong>在连接令牌端点的 TLS 连接上出示它，使用 <code>client_id={client}</code>，并在条目上设置 <code>token_endpoint_auth_method</code> 为 <code>tls_client_auth</code>：RFC 8705 第 2.1 节会对其进行认证，因为此领域将其签发给了此应用，无需注册其他任何内容。在该连接上签发的每个访问令牌都带有此证书的 <code>cnf[\"x5t#S256\"]</code>（第 3 节），因此应用需向资源服务器出示同一证书。<code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "领域",
   "pep.names": "名称",
   "validUntil": "有效期至",
@@ -111,5 +112,9 @@
   "person.certificate": "证书（它是公开的，也在条目上）：",
   "once.signingCertificate": "消息签名证书",
   "signing.warn": "<strong>这是唯一一次可以下载这些文件。</strong>本服务不保留私钥——既不在持有者的条目中，也不在证书登记册中——此控制台和 <code>/admin-api</code> 上也没有任何地方会再次提供它。如果丢失，请吊销该证书并签发新的。",
-  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的密钥签名每个 WS-Trust 请求：对 SOAP Body 和 Timestamp 的 WS-Security 1.1 签名，此证书放在 BinarySecurityToken 中，<code>{chain}</code> 为其证书链。请求随后以 <code>{name}</code> 的身份认证，因为此领域将证书签发给了该名称，无需注册其他任何内容。"
+  "signing.how": "<strong>如何使用。</strong>用 <code>{key}</code>（或 PKCS#12）中的密钥签名每个 WS-Trust 请求：对 SOAP Body 和 Timestamp 的 WS-Security 1.1 签名，此证书放在 BinarySecurityToken 中，<code>{chain}</code> 为其证书链。请求随后以 <code>{name}</code> 的身份认证，因为此领域将证书签发给了该名称，无需注册其他任何内容。",
+  "cluster.back": "返回集群",
+  "cluster.discardedDownload": "下载被丢弃的内容",
+  "cluster.discardedLead": "该 PEP 不再拥有自己的反向代理、设置或侦听器：它拉取集群的配置。以下是它原有的内容，仅显示一次。",
+  "cluster.discardedTitle": "一个 PEP 加入了集群"
 }

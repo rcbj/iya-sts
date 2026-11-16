@@ -9,8 +9,10 @@
 # persisting modes of tests/tools/modes.sh run on; `mariadb` (#356), the
 # MySQL attribute-source database; `openbao` and its two
 # one-shot helpers, the secret store; `xacml-pep`, the remote enforcement
-# point one job drives the seam to; and `test-peer` (#586), the far party of
-# the protocols the service's own demo endpoints used to play. The tests
+# point one job drives the seam to; `test-peer` (#586), the far party of
+# the protocols the service's own demo endpoints used to play; and
+# `companion` (#594), for the application the remote PEP's reverse proxy
+# protects (#1760). The tests
 # container drives the service by its compose DNS name and exits with the
 # suite's status;
 # ./run-tests.sh brings the pair up with --exit-code-from tests and takes
@@ -987,14 +989,19 @@ services:
       # stack starts, so there is no anchor any image could hold. `pep.js` logs this on every start
       # rather than once, for federation_http.ts's reason.
       - PEP_TLS_INSECURE=true
-      # THE ADDRESS THE SERVICE NUDGES, and it is deliverable in this stack
-      # once the job turns xacml.pepNotifyAllowHttp on in its realm — which
-      # is the one place this repository's third outbound request is dialled at
-      # a listener that answers. Until it does, the service refuses to dial a
-      # plain-http URL and says so on the row, which the job asserts first. In
-      # product mode plain http stays refused (#171): the job asserts that and
-      # puts its own realm in development mode for the delivery.
-      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-http://xacml-pep:9090/notify}
+      # THE ADDRESS THE SERVICE NUDGES IS DERIVED, NOT SET (2026-11-14, rcbj's
+      # "option 1"): with PEP_NOTIFY_URL unset the PEP advertises
+      # https://<host>:9443/notify, <host> its listener certificate's DNS name
+      # that equals this container's hostname. The job issues that pair
+      # naming `xacml-pep` (XACML_PEP_HTTPS_URL's host), so this stack
+      # exercises the derivation and still gets https://xacml-pep:9443/notify.
+      # It is deliverable once the job has written the pair and turns
+      # xacml.pepNotify on in its realm — the one place this repository's
+      # third outbound request is dialled at a listener that answers — and
+      # it verifies against the realm's pep-tls Issuing CA with no CA file,
+      # in either mode. EMPTY BY DEFAULT, which the PEP reads as unset; a host
+      # that sets XACML_PEP_NOTIFY_URL still overrides the derivation.
+      - PEP_NOTIFY_URL=${XACML_PEP_NOTIFY_URL:-}
       - PEP_RESOURCE=${XACML_PEP_RESOURCE:-https://example.test/records}
       - PEP_BIAS=${XACML_PEP_BIAS:-deny-biased}
       # THE REMOTE POLICY INFORMATION POINT (2026-09-06). On by default:
@@ -1021,8 +1028,34 @@ services:
       # job waits for the PEP to find its realm once it exists.
       - PEP_BACKOFF_MAX_MS=${XACML_PEP_BACKOFF_MAX_MS:-15000}
       - PEP_LOG_LEVEL
+      # THE REVERSE PROXY'S TWO LISTENERS (#1760): 9180 plain and 9543
+      # https, the second serving the same reloaded pair as 9443 — so it
+      # listens once the job has written that pair. The job configures the
+      # proxy through /admin-api/xacml/set-pep-proxy, pointing it at the
+      # companion below, and drives it on these two ports by this host name.
+      - PEP_PROXY_PORT=9180
+      - PEP_PROXY_HTTPS_PORT=9543
+      # PLAIN HTTP TURNED ON EXPLICITLY (#1760: it is off by default in the
+      # image and in docker-compose.yml), and since 2026-11-14 for ONE reason
+      # of the job's: the HTTPS pair does not exist when this container
+      # starts — the job issues it once the PEP has REGISTERED in the realm
+      # it creates — and it reads GET / and the decisions before that, over
+      # 9090. The other two reasons are gone. The CRL distribution point,
+      # http://xacml-pep:9090/crl (`--crl-base`, ./run-tests.sh), is served
+      # by the PEP's CRL-only listener whenever this switch is off
+      # (PEP_CRL_HTTP); and the nudge is HTTPS only, asserted over 9443.
+      # The proxy's plain listener stays on for the job's plain-HTTP route.
+      - PEP_HTTP=true
+      - PEP_PROXY_HTTP=true
+      # ZERO, so the PEP asks the service whether a proxy session's sign-on
+      # session is still live on EVERY access: the job signs the person out
+      # at the service and asserts the very next access is refused, which a
+      # five-second window would make a race.
+      - PEP_PROXY_SESSION_RECHECK_MS=${XACML_PEP_PROXY_SESSION_RECHECK_MS:-0}
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9090,path:'/healthcheck'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      # The binary's own probe: the image is the Rust PEP, which holds no
+      # node (xacml-pep/Dockerfile). With PEP_HTTP=true it asks 9090.
+      test: ["CMD", "xacml-pep", "--healthcheck"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -1310,6 +1343,51 @@ services:
       default:
         ipv4_address: ${TEST_PEER_ADDRESS:-172.30.0.48}
 
+  # ===========================================================================
+  # THE COMPANION (#594), FOR ONE THING ONLY: THE APPLICATION THE REMOTE PEP
+  # PROTECTS (#1760). `companion/pep_app.js` serves `/pep-app`, which echoes
+  # what reached it as JSON, and `tests/protocol/sts_xacml_remote_pep.js`
+  # points the PEP's proxy upstream at `http://companion:9700` and reads the
+  # echo — and the application's own hit counter, directly — to assert what
+  # the proxy forwarded, stripped and refused. rcbj's direction on #1760: the
+  # dummy application is built INTO the companion, not into the job or the
+  # test peer. The companion stays development-only: the service image
+  # removes `companion/`, and this image is built from that directory alone.
+  #
+  # WHAT IS OFF HERE: its Kerberos TCP service (no socket nothing dials) and
+  # every demonstration that needs the service — those are asked for at the
+  # first request that needs them, and nothing in this stack asks. No
+  # bootstrap secret is passed, so it can register nothing.
+  #
+  # IN EVERY MODE, with no profile, STARTED in the runner's depends_on, for
+  # the test peer's reason; PINNED at `.49`, beside the peer's `.48`, for
+  # the conformance suite's reason (the service's `.11` to `.13`).
+  # ===========================================================================
+  companion:
+    container_name: ${STS_COMPANION_CONTAINER_NAME:-sts-docker-tests-companion}
+    hostname: companion
+    image: ${STS_COMPANION_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-companion:${IMAGE_TAG:-latest}}
+    build:
+      context: ./companion
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
+    environment:
+      - COMPANION_PORT=9700
+      - COMPANION_PUBLIC_URL=http://companion:9700
+      - COMPANION_STS_URL=https://sts:8081
+      - COMPANION_STS_TLS_INSECURE=true
+      - COMPANION_KRB5_SERVICE_PORT=off
+      - COMPANION_LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9700/healthz').then(function (r) { process.exit(r.status === 200 ? 0 : 1); }, function () { process.exit(1); })"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      default:
+        ipv4_address: ${COMPANION_ADDRESS:-172.30.0.49}
+
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
     # A DOTTED NAME FOR THE SERVICE, FOR THE RUNNER ONLY (#694). `sts` is one
@@ -1413,6 +1491,18 @@ services:
       # ---------------------------------------------------------------------
       - XACML_PEP_HTTPS_URL=${XACML_PEP_HTTPS_URL:-}
       - XACML_PEP_SERVER_CERT_DIR=${XACML_PEP_SERVER_CERT_DIR:-}
+      # ---------------------------------------------------------------------
+      # AND ITS REVERSE PROXY (#1760): the plain listener, the https one
+      # (empty in a stack with no launcher, and the job then drives the
+      # session sign-in over the plain one), and the application behind it —
+      # the companion, as both the PEP and this container reach it on the
+      # bridge. An EMPTY upstream (`-`, not `:-`) is what the job reads as
+      # "no application to put behind the proxy" and skips that section,
+      # saying so: ./run-coverage.sh starts no companion.
+      # ---------------------------------------------------------------------
+      - XACML_PEP_PROXY_URL=${XACML_PEP_PROXY_URL:-http://xacml-pep:9180}
+      - XACML_PEP_PROXY_HTTPS_URL=${XACML_PEP_PROXY_HTTPS_URL:-}
+      - XACML_PEP_UPSTREAM_URL=${XACML_PEP_UPSTREAM_URL-http://companion:9700}
       # ---------------------------------------------------------------------
       # WHERE THE SERVICE DIALS BACK INTO THIS CONTAINER (2026-09-12).
       # `sts_gnap_core` runs a listener in the job and has the authorization
@@ -1561,6 +1651,11 @@ services:
       # The test peer (#586): STARTED, for the catcher's reason — the jobs
       # that need it wait for it themselves (tests/protocol/test_peer.js).
       test-peer:
+        condition: service_started
+      # The companion (#1760): STARTED, for the test peer's reason — an
+      # application that will not come up fails the remote PEP job's proxy
+      # section, which waits for it, and nothing else.
+      companion:
         condition: service_started
       sts:
         # The whole ordering of this file. `up` reports success for a container

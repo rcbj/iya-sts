@@ -205,5 +205,6 @@
   "shell.menu.another.title": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
   "nav.broadcast": "Diffuser une annonce",
   "nav.sign-in-appearance": "Apparence de la connexion",
-  "nav.post-login-activities": "Activités après connexion"
+  "nav.post-login-activities": "Activités après connexion",
+  "nav.xacml-pep-clusters": "Clusters de PEP"
 }

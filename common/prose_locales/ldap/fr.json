@@ -1947,6 +1947,10 @@
     "en": "eb941b100ed53ed4",
     "text": "Le moment où l’application propriétaire a été supprimée. La politique est conservée, désactivée, pour l’audit, jusqu’à ce qu’un administrateur la supprime."
   },
+  "xacmlPolicies.schema.attributes.xacmlPepRoute.what": {
+    "en": "4e1dc3fa8c6c3e3c",
+    "text": "Le PEP distant et la route, sous la forme du nom du PEP, d’une barre oblique et de l’id de la route, pour lesquels cette politique a été GÉNÉRÉE par le choix d’autorisation de la route (simple ou publique) dans les formulaires de routes du proxy inverse ou par l’action generate-pep-route-policy (#1760). Une telle politique est réécrite quand la route est enregistrée, renommée avec la route et retirée avec elle ; elle n’est jamais la racine. Elle peut être modifiée dans l’éditeur de politiques, et le prochain enregistrement du choix simple ou public de la route la réécrit : choisis une politique existante sur la route pour en garder une écrite à la main."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Un Policy Enforcement Point distant qui s’est enregistré auprès de ce Policy Decision Point. LA LIGNE EST UN ENREGISTREMENT ET NON UNE PERMISSION — un PEP qui ne s’enregistre jamais peut tout de même récupérer le référentiel et appliquer les décisions. Ce qu’une ligne apporte, c’est une place sur la console et une adresse pour la notification de changement."
@@ -2019,12 +2023,64 @@
     "en": "b6078cbbbfdb9576",
     "text": "Ce que le PEP distant dit être. Texte libre."
   },
+  "xacmlPeps.schema.attributes.xacmlPepHostname.what": {
+    "en": "127c84c46465d544",
+    "text": "Le nom d’hôte que le PEP distant communique à son enregistrement et dans son signal de vie (#1760) : la variable d’environnement HOSTNAME, à défaut celui du noyau, à défaut /etc/hostname — le nom sous lequel le conteneur est connu sur son réseau, et celui dont il dérive son URL de notification quand le certificat de son écouteur HTTPS le porte. Limité à un nom DNS d’au plus 253 caractères, mis en minuscules, jamais une adresse IP ; un enregistrement ou un signal de vie portant autre chose est refusé (STS-XACML-0261). Le certificat d’écoute par défaut du domaine le porte à côté du nom enregistré du PEP et de son hôte de notification. Un enregistrement qui ne le contient pas le supprime, un signal de vie qui ne le contient pas le conserve. Absent pour un PEP plus ancien, dont les noms de certificat sont ceux d’avant."
+  },
   "xacmlPeps.schema.attributes.xacmlPepLastNotify.what": {
     "en": "a4283bfe7916574e",
     "text": "Ce qu’il est advenu de la dernière notification — le statut, ou la phrase de refus. LE SEUL ENDROIT OÙ UNE NOTIFICATION ÉCHOUÉE EST CONSIGNÉE, pour la raison que ssf_streams.js donne au sujet d’une poussée refusée : elle est par définition invisible du côté de la réception."
   },
+  "xacmlPeps.schema.attributes.xacmlPepProxy.what": {
+    "en": "1d8edee3c551082e",
+    "text": "La configuration de proxy inverse que le PEP distant récupère de GET /xacml/pep/proxy (#1760) : un document JSON — enabled, l’URL de base de l’application en amont, l’URL de base publique par laquelle un navigateur atteint le proxy, les délais et la table ordonnée des routes, chacune avec son chemin, ses méthodes, ses mécanismes d’authentification, l’application du registre du royaume qu’elle protège, et la ressource et l’action XACML. Écrite par l’action set-pep-proxy de la console et de l’API de gestion, validée entière là et de nouveau à la construction de la récupération : une valeur écrite par ldapmodify qui n’est pas valide est récupérée comme configured: false. Conservée par un enregistrement et un battement de cœur ; supprimée avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSignals.what": {
+    "en": "973f5fff5b5df8e8",
+    "text": "La santé des flux de signaux CAEP/RISC du proxy inverse telle que le PEP distant l’a communiquée en dernier dans un signal de vie (#1760) : un document JSON de comptes et d’âges uniquement — les récepteurs, combien sont sains et périmés, le seuil de péremption et l’intervalle d’interrogation, l’âge du plus ancien dernier succès, le plus grand nombre d’échecs consécutifs, les SET acceptés et refusés, les sessions terminées, et pour les magasins de sessions de la bibliothèque les valeurs held, max, TTL, evicted et expired — avec son heure d’arrivée, et, venant d’un PEP qui les communique, une ligne par flux : le client OIDC qu’il sert et son identifiant de flux, chacun limité à un jeu de caractères, s’il fonctionne et s’il est sain, quand il a démarré, été interrogé en dernier et réussi en dernier (calculé ici à partir des âges envoyés par le PEP et de l’heure d’arrivée, jamais d’après une horloge du PEP), et ses compteurs. Tout autre membre est écarté et toute valeur qui n’est pas un entier non négatif vaut 0 : aucune URL ni aucun texte d’erreur n’est donc jamais conservé. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime, puisqu’un enregistrement est un nouveau processus. Absent sur un PEP qui ne l’a jamais communiqué, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettings.what": {
+    "en": "2216d5f263d38ea5",
+    "text": "Les paramètres qu’un administrateur a fixés pour ce PEP distant sur sa page de la console ou avec l’action set-pep-settings de l’API de gestion (#1760) : un document JSON ne contenant que les paramètres fixés, chacun sous son nom de membre (description, resource, notifyUrl, bias, pip, les intervalles d’interrogation, de signal de vie et d’attente avant nouvelle tentative, le délai et la limite du corps, l’intervalle de rechargement HTTPS, le niveau de journalisation, l’interrupteur, l’identifiant et le délai de transmission AuthZEN, et les limites de session, de JWKS, d’amont, de partie de confiance et de flux de signaux du proxy inverse), validé en entier à l’écriture et de nouveau quand le PEP les récupère depuis GET /xacml/pep/settings. Un paramètre absent est la variable d’environnement du PEP, ou sa valeur par défaut. Le minimum dont le PEP a besoin pour se connecter la première fois n’y figure jamais. Conservé lors d’un enregistrement et d’un signal de vie ; supprimé avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepSettingsInUse.what": {
+    "en": "b081386a6d832967",
+    "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, comme étant en vigueur pour chaque paramètre géré (#1760) : un document JSON de la forme { token, values: { setting: { value, source } } }, la source étant service, environment ou default, avec son heure d’arrivée. Tout paramètre que la table ne nomme pas, toute valeur qui n’est pas du type de son paramètre et toute autre source sont écartés. Un signal de vie sans lui le conserve, un signal avec null l’efface, et un enregistrement l’écarte. Absent pour un PEP plus ancien que les paramètres, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListeners.what": {
+    "en": "b2e07443143061b7",
+    "text": "Les écouteurs qu’un administrateur a définis pour ce PEP distant sur sa page de la console ou avec l’action set-pep-listener de l’API de gestion (#1760), en plus des quatre que lie son environnement : un tableau JSON, chaque écouteur avec son identifiant, son protocole (http ou https), son rôle (api ou proxy), son adresse et son port, et pour un écouteur HTTPS les noms DNS et adresses IP que porte son certificat, son algorithme de clé et un compteur de renouvellement. Validé en entier à l’écriture et de nouveau quand le PEP les récupère depuis GET /xacml/pep/settings, qui les lie et les délie pendant qu’il fonctionne. Le PEP génère la clé de chaque écouteur HTTPS et demande son certificat à POST /xacml/pep/listener-certificate : aucune clé privée n’est donc jamais ici. Conservé lors d’un enregistrement et d’un signal de vie ; supprimé avec la ligne."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
+    "en": "b2a987046bb7d733",
+    "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, sur chacun de ses écouteurs (#1760), les quatre de son environnement et ceux qui sont définis : un document JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, avec son heure d’arrivée. L’état est l’un de listening, waiting, failed et off et la raison l’une d’un ensemble fermé, jamais le texte du système d’exploitation ; le certificat est le sujet, l’émetteur, le numéro de série, le subjectAltName, la validité et l’empreinte de celui qu’il sert. Tout autre membre est écarté. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime. Absent sur un PEP antérieur aux écouteurs, ce que la console affiche comme non communiqué."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
+  },
+  "xacmlPepClusters.schema.objectClasses.xacmlPepCluster.what": {
+    "en": "e64d0948328eb8a1",
+    "text": "Un cluster logique de points d’application des politiques (PEP) distants qui partagent une configuration (#1760) : le proxy inverse, les paramètres gérés et les définitions d’écouteurs sont conservés ici une seule fois, et chaque membre les récupère comme les siens. Un membre ne diffère que par son nom et ses adresses. L’appartenance est conservée ici, si bien qu’un PEP peut être listé avant de s’enregistrer, et qu’un PEP appartient à un cluster au plus."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterProxy.what": {
+    "en": "e23df410bfb4fa42",
+    "text": "La configuration du proxy inverse que chaque membre du cluster récupère par GET /xacml/pep/proxy (#1760) : le même document que celui du PEP (xacmlPepProxy), validé par la même grammaire, les politiques générées de ses routes étant nommées pepc-<cluster>-<route> et marquées @<cluster>/<route>. Son publicBaseUrl est l’URL de base logique du cluster, à partir de laquelle est construite la ressource par défaut d’une route simple ou publique et qui est envoyée à un membre sans publicBaseUrl propre. Écrite par les actions set-pep-cluster-proxy et set-pep-cluster-route."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterSettings.what": {
+    "en": "dc3c4657f5e8a82b",
+    "text": "Les paramètres gérés que chaque membre du cluster récupère par GET /xacml/pep/settings (#1760) : le même document que celui du PEP (xacmlPepSettings), validé par la même table, sauf l’URL de notification, qui est une adresse du membre et se définit sur le membre. Écrits par l’action set-pep-cluster-settings."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterListeners.what": {
+    "en": "27e48be388ccf3ed",
+    "text": "Les écouteurs définis pour chaque membre du cluster (#1760) : le même tableau que celui du PEP (xacmlPepListeners), validé par la même grammaire. Un membre peut remplacer l’adresse et le port d’un écouteur et ajouter des noms DNS à son certificat ; le certificat de chaque membre est le sien, émis pour sa propre clé. Écrits par les actions set-pep-cluster-listener et remove-pep-cluster-listener."
+  },
+  "xacmlPepClusters.schema.attributes.xacmlPepClusterMembers.what": {
+    "en": "189d31ecba7f4c6b",
+    "text": "Les membres du cluster (#1760) : un tableau JSON de { pep, publicBaseUrl, notifyUrl, listeners: { <listener id>: { address, port, names } } }, chaque pep étant le nom d’un PEP enregistré ou d’un PEP pas encore enregistré, le reste les adresses propres du membre. Un PEP est membre d’un cluster au plus. Écrits par les actions create-pep-cluster, add-pep-cluster-member, set-pep-cluster-member et remove-pep-cluster-member."
+  },
+  "xacmlPepClusters.schema.attributes.description.what": {
+    "en": "769286563bacdcb4",
+    "text": "Ce qu’un administrateur a dit du cluster en le créant."
   }
 }

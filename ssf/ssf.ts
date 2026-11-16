@@ -2189,16 +2189,55 @@ class SharedSignals {
   // it had cleared `events_requested` when it had not, and the symptom is
   // event types still arriving after they were removed.
   // -------------------------------------------------------------------------
+  // A cluster member's name (#1760 phase 3), from `X-Iya-Pep-Name`.
+  // Absent is a name of '': the caller is not asking for a member's
+  // stream, which is every receiver that is not a cluster member.
+  // Present and not a PEP name is refused. Reading that as absent would
+  // put the caller on the untagged stream it was trying not to share.
+  private pepMemberHeader(req: Req): { ok: boolean; name: string } {
+    const { log } = this.deps;
+    log.debug('Entering SharedSignals.pepMemberHeader().');
+    const raw = req.headers ? req.headers['x-iya-pep-name'] : undefined;
+    if (raw === undefined) {
+      log.debug('Leaving SharedSignals.pepMemberHeader(). Absent.');
+      return { ok: true, name: '' };
+    }
+    // Several values are one header that cannot be a name: Express
+    // joins them with a comma, and a comma is outside the grammar.
+    const text = Array.isArray(raw) ? raw.join(',') : String(raw);
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(text)) {
+      log.debug('Leaving SharedSignals.pepMemberHeader(). Not a name.');
+      return { ok: false, name: '' };
+    }
+    log.debug('Leaving SharedSignals.pepMemberHeader().');
+    return { ok: true, name: text };
+  }
+
+  private refuseMemberHeader(res: Res): void {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.refuseMemberHeader().');
+    errorCodes.mark(res, 'STS-SSF-0163');
+    this.fail(res, 400, 'invalid_request',
+      'X-Iya-Pep-Name is not a PEP name. It is one token of 1 to 128 ' +
+      'letters, digits, ".", "_" or "-", the name this PEP registered ' +
+      'as. Omit the header to use the untagged stream.');
+    log.debug('Leaving SharedSignals.refuseMemberHeader().');
+  }
+
   private contextOf(req: Req, decision: Json | null): Json {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.contextOf().');
     // `owner` is what KIND of party authenticated (ssf_auth.ts), from the
     // decision and never from the request body, so a person's stream is
     // recorded as theirs (ssf_streams.ts, "A PERSON'S STREAM IS ABOUT THAT
-    // PERSON").
+    // PERSON"). `pepMember` is the same kind of fact (#1760 phase 3): the
+    // X-Iya-Pep-Name header, when it is a PEP name, and never a body
+    // field a caller could use to tag a stream as somebody else's.
+    const member = this.pepMemberHeader(req);
     const out = { issuer: this.issuerFor(req),
       principal: String((decision || {}).principal || ''),
-      owner: (decision || {}).owner || null };
+      owner: (decision || {}).owner || null,
+      pepMember: member.ok && member.name ? member.name : undefined };
     log.debug('Leaving SharedSignals.contextOf().');
     return out;
   }
@@ -2391,6 +2430,15 @@ class SharedSignals {
         log.debug('Leaving POST /ssf/stream. Refused.');
         return;
       }
+      // BEFORE THE BODY (#1760 phase 3). A header that is not a PEP name
+      // creates nothing, including when the body would also be refused:
+      // the two failures are different facts, and the header is the one
+      // that would otherwise be read as "no header".
+      if (!this.pepMemberHeader(req).ok) {
+        this.refuseMemberHeader(res);
+        log.debug('Leaving POST /ssf/stream. Bad member header.');
+        return;
+      }
       const body = this.jsonBody(req);
       if (!body) {
         errorCodes.mark(res, 'STS-SSF-0011');
@@ -2472,14 +2520,35 @@ class SharedSignals {
         log.debug('Leaving GET /ssf/stream. Refused.');
         return;
       }
+      // A bad header is refused on a list AND on a read of one stream.
+      // Treating it as absent would answer the untagged list to a caller
+      // that sent a name and failed to spell it.
+      const member = this.pepMemberHeader(req);
+      if (!member.ok) {
+        this.refuseMemberHeader(res);
+        log.debug('Leaving GET /ssf/stream. Bad member header.');
+        return;
+      }
       const id = String(req.query.stream_id || '');
       if (!id) {
         // "The stream configurations AVAILABLE TO THIS RECEIVER" (section
         // 8.1.1.2) — its own, and an empty list when it has none. Until #144
         // this was every stream in the realm, each with its
         // authorization_header.
-        const list = streams.streamsOwnedBy(decision.principal)
-          .map((record) => {
+        //
+        // A NAME SELECTS THAT MEMBER'S STREAMS (#1760 phase 3), and the
+        // filter is BEFORE noteActivity: listing pep-1 must not restart
+        // pep-2's inactivity timer. No match is an empty list, so the
+        // caller creates a stream of its own rather than being handed
+        // the untagged one. A caller that sent no header still sees
+        // every stream it owns, tagged and not.
+        const owned = streams.streamsOwnedBy(decision.principal);
+        const mine = member.name
+          ? owned.filter((record) => {
+              return String(record.pepMember || '') === member.name;
+            })
+          : owned;
+        const list = mine.map((record) => {
             streams.noteActivity(record);
             return this.streamView(req, record, decision);
           });

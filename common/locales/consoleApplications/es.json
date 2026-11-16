@@ -949,5 +949,11 @@
   "fga.pepsNone": "Ninguna persona, cuenta de servicio o aplicación de este reino tiene REMOTE_PEPS.",
   "fga.pepsUnlocated": "Miembros del grupo que no nombran ninguna entrada y por eso no se pueden conceder: {n}.",
   "fga.pepsRegrant": "Conceder de nuevo a los PEP remotos",
-  "fga.pepsRegrantTip": "Aplicar de nuevo: cada titular de REMOTE_PEPS sin el grupo AuthZEN o sin esta aplicación en su ámbito recibe ambas cosas. Nada más cambia."
+  "fga.pepsRegrantTip": "Aplicar de nuevo: cada titular de REMOTE_PEPS sin el grupo AuthZEN o sin esta aplicación en su ámbito recibe ambas cosas. Nada más cambia.",
+  "pepRoutes.tab": "Proxy inverso",
+  "pepRoutes.lead": "Estas rutas de los PEP remotos de este reino están delante de esta aplicación. Cada una lee de esta entrada lo que necesita su mecanismo cuando el PEP obtiene su configuración, así que un cambio aquí llega al proxy en su próxima obtención.",
+  "pepRoutes.thPep": "PEP remoto",
+  "pepRoutes.thRoute": "Ruta",
+  "pepRoutes.thPath": "Ruta de acceso",
+  "pepRoutes.thMechanisms": "Mecanismos"
 }

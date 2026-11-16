@@ -783,6 +783,38 @@
     "en": "59db273e0a0989c3",
     "text": "A quién admite ahora este dominio en su API AuthZEN, para que el PDP de borde del contenedor xacml-pep admita según ello: cada llamante que la política de control de acceso admite en /access/v1/* (AUTHZEN_PEPS, tal como lo decide la política), nombrado como lo ve una política en urn:sts:xacml:authzen:caller, con el SHA-256 del DER de cada certificado que este servicio resolvería a ese nombre, su ámbito de aplicaciones y los puntos de conexión a los que se le admite, más un token de sincronización propio; ?since=<token> responde 304. El token cambia con un miembro, un certificado, un ámbito o la respuesta de la política, y el borde converge en su sondeo. Requiere REMOTE_PEPS, como la obtención de las políticas, de modo que cualquiera que tenga ese rol puede leer quién puede preguntar al PDP (rcbj en #1189). Aditivo: /xacml/pep/policies y /xacml/pep/authzen-catalogue no cambian."
   },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Lo que el contenedor xacml-pep aplica cuando se sitúa delante de una aplicación (#1760): el destino al que reenvía, las rutas ordenadas con los mecanismos que acepta cada una y el recurso y la acción XACML a los que corresponde, la aplicación de cada ruta resuelta desde el registro, los datos del reino con los que valida localmente (emisor, JWKS, los puntos de conexión de inicio de sesión, los certificados de firma SAML, la cadena del servicio de escucha, los clientes de las rutas de sesión) y las cuatro URL de validación siguientes, bajo un token de sincronización propio; ?since=<token> responde 304. Un PEP sin configurar es configured: false y su proxy lo deniega todo. Requiere REMOTE_PEPS, como la obtención de políticas; sin aviso."
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "Los ajustes que un administrador fijó para este PEP en su página de la consola (#1760) — su descripción y recurso, la URL de aviso, el sesgo, el interruptor del PIP, los intervalos de sondeo, latido y espera, el tiempo de espera y el límite del cuerpo, el nivel de registro, el interruptor, el identificador y el tiempo de reenvío del PDP perimetral AuthZEN, y los límites del proxy inverso — con un token de sincronización propio; ?since=<token> responde 304. Solo se envía lo fijado: el PEP usa su entorno para el resto, y lo mínimo que necesita para conectarse nunca está aquí. Requiere REMOTE_PEPS, como la descarga de políticas; sin aviso."
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "El certificado de una escucha HTTPS que un administrador definió para este PEP en su página de la consola (#1760): el PEP genera la clave y envía por POST { listener, csr }, una solicitud PKCS #10 cuya firma prueba que la posee, y recibe el certificado de la CA emisora pep-tls del reino y su cadena hasta la raíz, con no-store y sin ninguna clave. Los nombres son los del PEP y los de la definición, nunca los de la solicitud; la misma clave pedida de nuevo recibe el certificado guardado mientras le quede un tercio de su vida. Requiere REMOTE_PEPS, como el latido."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "La lectura RFC 7662 del propio servidor de autorización de un token de acceso OAuth 2.0 que el proxy no pudo verificar por sí mismo (un token opaco, o una clave que no está en el JWKS), por el TLS mutuo del PEP en lugar de un registro de cliente propio. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "El nombre de usuario y la contraseña de una persona, verificados aquí y nunca en el PEP, tras los límites del propio inicio de sesión (429 con retryAfterS); un rechazo es { valid: false } y no dice nada más. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "Una aserción que emitió este reino, comprobada aquí cuando el proxy no pudo comprobarla por sí mismo: la firma envuelta en la aserción raíz contra los certificados de firma XML del reino, el emisor, las condiciones y la audiencia de la ruta. Se rechaza una EncryptedAssertion. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Si la sesión de inicio de sesión que nombra el sid de un ID Token sigue activa, de modo que un cierre de sesión aquí termina la sesión propia del proxy en su siguiente comprobación. Requiere REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "Para una ruta del PEP que pregunta, la identidad que nombra su prueba (un token de acceso, una aserción SAML o un ticket Basic, validados de nuevo), en el modo de la ruta: notificaciones para sus cabeceras, un token de acceso para la aplicación o una respuesta SAML firmada a su servicio consumidor de aserciones. Requiere REMOTE_PEPS."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Sus contadores acumulados y el token de sincronización que tiene, que es lo que hace de \"actual\" una comparación que realiza este servicio en lugar de una afirmación que el PEP hace sobre sí mismo. Esas decisiones ocurrieron en otro proceso y este servicio no vio ninguna, que es todo el sentido de un PEP remoto. NO crea una fila: un latido de algo que nunca se registró se rechaza nombrando el endpoint de registro, porque una fila creada aquí no llevaría certificado, ni URL de notificación, ni fecha de registro."
@@ -1030,6 +1062,10 @@
   "stsmetadata.endpoints./admin-api/xacml/peps.what": {
     "en": "102e5302d8a29ce7",
     "text": "El registro, y lo que cada PEP informó por última vez: si tiene el repositorio actual, cuándo se supo de él por última vez, el sesgo con el que dice estar funcionando y qué pasó con el último aviso, que es el único lugar donde se registra un aviso fallido, porque por definición es invisible desde el extremo receptor."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Cada clúster de PEP remotos que comparten una configuración: su proxy inverso, sus ajustes y sus definiciones de escuchas tal como los obtiene cada miembro, y cada miembro con sus propias direcciones y por qué un guardado lo rechazaría ahora."
   },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",

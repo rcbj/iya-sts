@@ -1715,6 +1715,12 @@ Scope: `admin:read`.
 | `page.passkeyPolicies.missing` | boolean |  |  |
 | `page.passkeyPolicies.named` | string |  |  |
 | `page.passkeyPolicies.precedence` | number |  |  |
+| `page.pepRoutes` | list |  | The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only. |
+| `page.pepRoutes[].mechanisms` | list |  |  |
+| `page.pepRoutes[].mechanisms[]` | string |  |  |
+| `page.pepRoutes[].path` | string |  |  |
+| `page.pepRoutes[].pep` | string |  |  |
+| `page.pepRoutes[].route` | string |  |  |
 | `page.permissionClaims` | object |  |  |
 | `page.permissionClaims.catalogue` | list |  |  |
 | `page.permissionClaims.catalogue[].claim` | string |  |  |
@@ -1982,6 +1988,12 @@ Scope: `admin:read`.
 | `paging.param` | string |  |  |
 | `paging.perPage` | integer |  |  |
 | `paging.total` | integer |  |  |
+| `pepRoutes` | list |  | The routes of this realm's remote PEPs that front this application (#1760): the reference only. |
+| `pepRoutes[].mechanisms` | list |  |  |
+| `pepRoutes[].mechanisms[]` | string |  |  |
+| `pepRoutes[].path` | string |  |  |
+| `pepRoutes[].pep` | string |  |  |
+| `pepRoutes[].route` | string |  |  |
 | `perPage` | integer |  |  |
 | `protocols` | list |  |  |
 | `protocols[]` | object, or string |  |  |

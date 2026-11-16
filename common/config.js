@@ -2944,12 +2944,13 @@ const SETTINGS = [
     path: 'authn.passwordAloneDoors', env: 'STS_AUTHN_PASSWORD_ALONE_DOORS',
     type: 'csv', dflt: '', runtime: true,
     // Mirrors common/app_passwords.ts's DOOR_IDS (the reader lower-cases).
-    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est'],
+    csvValues: ['ldap', 'wstrust', 'scim', 'ssf', 'est', 'xacml-pep'],
     description: 'Product mode only. A comma-separated list of the ' +
-                 'password-only doors — ldap, wstrust, scim, ssf, est — at ' +
+                 'password-only doors — ldap, wstrust, scim, ssf, est, ' +
+                 'xacml-pep — at ' +
                  'which a person who holds or must hold a second factor is ' +
                  'STILL accepted with their own password. Empty, the ' +
-                 'default, refuses that password at all five (answered as ' +
+                 'default, refuses that password at all six (answered as ' +
                  'a wrong password) and accepts only an app password there. ' +
                  '**WARNING: every door listed lowers every such person to ' +
                  'ONE factor at that door** (NIST SP 800-63B section 4.2: ' +
@@ -15030,6 +15031,23 @@ const SETTINGS = [
                  'the console rather than being quietly indistinguishable ' +
                  'from one that proved something.' },
 
+  { key: 'xacml.pepPlainHttpProxyListeners', group: 'XACML',
+    label: 'A remote PEP may define a plain-HTTP reverse-proxy listener',
+    env: 'STS_XACML_PEP_PLAIN_HTTP_PROXY_LISTENERS', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF by default, and read only in product mode, where a ' +
+                 'listener defined on a remote PEP\'s page (#1760) that ' +
+                 'serves its reverse proxy over plain HTTP is refused ' +
+                 '(STS-XACML-0249): the proxy is where a browser signs in ' +
+                 'and carries its session cookie, so in the clear it is ' +
+                 'right only when something in front of it terminates TLS ' +
+                 '— a fact about the deployment only an administrator can ' +
+                 'state, which is what turning this on states. Development ' +
+                 'allows such a listener whatever this says. It governs ' +
+                 'only the listeners defined on the page; the four the ' +
+                 'PEP\'s environment binds (PEP_PROXY_PORT among them) are ' +
+                 'its operator\'s.' },
+
   { key: 'xacml.pipMaxPerWindow', group: 'XACML',
     label: 'PIP queries one caller may make per rate-limit window',
     env: 'STS_XACML_PIP_MAX_PER_WINDOW', type: 'int', dflt: 600,
@@ -15119,42 +15137,51 @@ const SETTINGS = [
                  'path and does not legitimately move to another host.' },
 
   // THE THREE NUDGE TRANSPORT SETTINGS (#171), which were ONE —
-  // `xacml.pepNotifyAllowInsecure` — honoured in product mode.
+  // `xacml.pepNotifyAllowInsecure` — honoured in product mode. SINCE
+  // 2026-11-14 TWO OF THEM ARE RETIRED (rcbj: the notify listener is always
+  // HTTPS): a nudge is https with the certificate verified in every mode.
+  // The rows STAY, so an appconfig file, the environment or a stored value
+  // naming either still loads — backwards compatibility — and the value is
+  // ignored, said once per process by `xacml/xacml_pep_http.ts`
+  // (STS-XACML-0258). `REPLACED_SETTINGS` would refuse to start instead,
+  // which is the pre-1.0 rule and the wrong one for a setting whose only
+  // effect was to weaken something.
   { key: 'xacml.pepNotifyAllowHttp', group: 'XACML',
-    label: 'Allow http:// for a nudge (development only)',
+    label: 'Allow http:// for a nudge (retired, ignored)',
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
-    description: 'OFF by default, like federation\'s and SSF\'s equivalents ' +
-                 '— and what travels here is WEAKER than either of those, ' +
-                 'which is worth saying rather than leaving to be assumed. ' +
-                 'A nudge carries no credential and no event: its whole ' +
-                 'body says that the repository changed, which the PEP is ' +
-                 'about to find out anyway. It is still off by default, ' +
-                 'because the URL is one somebody configured and a request ' +
-                 'this service makes in the clear is a request somebody can ' +
-                 'answer for. ON allows an http:// notify URL in ' +
-                 'development; in product mode plain http is refused ' +
-                 'whatever this says (STS-XACML-0073).' },
+    description: 'RETIRED ON 2026-11-14 AND IGNORED. A nudge is sent over ' +
+                 'https only, in every mode, so an http:// notify URL is ' +
+                 'reported unusable on the PEP\'s row and the PEP converges ' +
+                 'by polling. The setting is still accepted, so a ' +
+                 'configuration that names it keeps starting; turned on, it ' +
+                 'changes nothing and is logged once per process ' +
+                 '(STS-XACML-0258). Remove it.' },
   { key: 'xacml.pepNotifySkipTlsVerification', group: 'XACML',
-    label: 'Skip TLS verification for a nudge (development only)',
+    label: 'Skip TLS verification for a nudge (retired, ignored)',
     env: 'STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION', type: 'bool',
     dflt: false, runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
-    description: 'WARNING — DEVELOPMENT MODE ONLY. On nudges an https notify ' +
-                 'URL WITHOUT verifying the PEP\'s certificate, so anybody ' +
-                 'who can intercept the connection can answer for it. Every ' +
-                 'such request is logged as a warning. In product mode it is ' +
-                 'ignored (STS-XACML-0074, logged once) and cannot be set ' +
-                 '(STS-CORE-0103): name a private CA in ' +
-                 'xacml.pepNotifyCaFile instead.' },
+    description: 'RETIRED ON 2026-11-14 AND IGNORED. A nudge always ' +
+                 'verifies the PEP\'s certificate: against the realm\'s ' +
+                 'Remote PEP listeners (pep-tls) Issuing CA, which issues a ' +
+                 'PEP\'s HTTPS listener certificate, and against ' +
+                 'xacml.pepNotifyCaFile and node\'s own store. The setting ' +
+                 'is still accepted, so a configuration that names it keeps ' +
+                 'starting; turned on, it changes nothing and is logged once ' +
+                 'per process (STS-XACML-0258). In product it still cannot ' +
+                 'be set (STS-CORE-0103). Remove it.' },
   { key: 'xacml.pepNotifyCaFile', group: 'XACML',
-    label: 'CA certificates for a nudge',
+    label: 'More CA certificates for a nudge',
     env: 'STS_XACML_PEP_NOTIFY_CA_FILE', type: 'string', dflt: '',
     runtime: true,
     description: 'A PEM file of CA certificates a PEP\'s notify listener may ' +
-                 'chain to, BESIDE node\'s own CA store — how a PEP ' +
-                 'certified by a private CA is nudged with verification on. ' +
-                 'Read on every nudge; a file that cannot be read or holds no ' +
-                 'certificate refuses the nudge (STS-CORE-0104).' },
+                 'chain to, BESIDE the realm\'s Remote PEP listeners ' +
+                 '(pep-tls) Issuing CA and node\'s own CA store. Not needed ' +
+                 'for a PEP whose HTTPS listener certificate this realm ' +
+                 'issued: that one verifies with nothing set. It is for a ' +
+                 'PEP certified by a CA of its own. Read on every nudge; a ' +
+                 'file that cannot be read or holds no certificate refuses ' +
+                 'the nudge (STS-CORE-0104).' },
 
   { key: 'xacml.pepNotifyTimeoutMs', group: 'XACML',
     label: 'Nudge timeout (ms)',
@@ -21141,7 +21168,13 @@ const REPLACED_SETTINGS = [
   { key: 'xacml.pepNotifyAllowInsecure',
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
     now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
-          'xacml.pepNotifyCaFile'] },
+          'xacml.pepNotifyCaFile'],
+    why: ' It was removed on 2026-09-23 (#171) and replaced by ' +
+         'xacml.pepNotifyAllowHttp, xacml.pepNotifySkipTlsVerification and ' +
+         'xacml.pepNotifyCaFile — and on 2026-11-14 the first two were ' +
+         'retired in turn: a nudge is https with the PEP\'s certificate ' +
+         'verified, against the realm\'s pep-tls Issuing CA by default, and ' +
+         'xacml.pepNotifyCaFile adds anchors.' },
   { key: 'oauth2.registeredSecretLifetimeS',
     env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S',
     now: ['oauth2.clientSecretLifetimeDays'],

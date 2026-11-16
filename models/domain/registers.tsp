@@ -66,8 +66,51 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepVersion"})
   `version`?: string;
 
+  @fromAttr(#{attr: "xacmlPepHostname"})
+  `hostname`?: string;
+
   @fromAttr(#{attr: "xacmlPepLastNotify"})
   `lastNotify`?: string;
+
+  @fromAttr(#{attr: "xacmlPepProxy"})
+  `proxy`?: string;
+
+  @fromAttr(#{attr: "xacmlPepSignals"})
+  `signals`?: string;
+
+  @fromAttr(#{attr: "xacmlPepSettings"})
+  `settings`?: string;
+
+  @fromAttr(#{attr: "xacmlPepSettingsInUse"})
+  `settingsInUse`?: string;
+
+  @fromAttr(#{attr: "xacmlPepListeners"})
+  `listeners`?: string;
+
+  @fromAttr(#{attr: "xacmlPepListenersInUse"})
+  `listenersInUse`?: string;
+
+  @fromAttr(#{attr: "description"})
+  `description`?: string[];
+}
+
+@domain(#{
+  area: "Authorization",
+  entry: "xacmlPepCluster",
+  what: "A logical cluster of remote policy enforcement points sharing one configuration."
+})
+model XacmlPepCluster {
+  @fromAttr(#{attr: "xacmlPepClusterProxy"})
+  `proxy`?: string;
+
+  @fromAttr(#{attr: "xacmlPepClusterSettings"})
+  `settings`?: string;
+
+  @fromAttr(#{attr: "xacmlPepClusterListeners"})
+  `listeners`?: string;
+
+  @fromAttr(#{attr: "xacmlPepClusterMembers"})
+  `members`?: string;
 
   @fromAttr(#{attr: "description"})
   `description`?: string[];

@@ -783,6 +783,38 @@
     "en": "59db273e0a0989c3",
     "text": "Vilka denna sfär släpper in i sitt AuthZEN-API nu, så att edge-PDP:n i containern xacml-pep släpper in efter det: varje anropare som åtkomstpolicyn släpper in till /access/v1/* (AUTHZEN_PEPS, så som policyn avgör det), namngiven som en policy ser den i urn:sts:xacml:authzen:caller, med SHA-256 av DER för varje certifikat som denna tjänst skulle koppla till det namnet, dess applikationsomfång och de slutpunkter den släpps in till, plus en egen synkroniseringstoken; ?since=<token> svarar 304. Token ändras med en medlem, ett certifikat, ett omfång eller policyns svar, och edge-noden når samma läge vid nästa avfrågning. Kräver REMOTE_PEPS, liksom policyhämtningen, så den som har den rollen kan läsa vem som får fråga PDP:n (rcbj på #1189). Tillägg: /xacml/pep/policies och /xacml/pep/authzen-catalogue är oförändrade."
   },
+  "stsmetadata.endpoints./xacml/pep/proxy.what": {
+    "en": "dbd48be2ca7bfe7b",
+    "text": "Det som xacml-pep-containern tillämpar när den står framför ett program (#1760): uppströmsadressen den vidarebefordrar till, de ordnade vägarna med de mekanismer var och en godtar och den XACML-resurs och åtgärd var och en motsvarar, varje vägs program upplöst från registret, de realmuppgifter den validerar lokalt med (utfärdare, JWKS, inloggningsslutpunkterna, SAML-signeringscertifikaten, lyssnarens kedja, sessionsvägarnas klienter) och de fyra valideringsadresserna nedan, under en egen synkroniseringstoken; ?since=<token> svarar 304. En okonfigurerad PEP är configured: false och dess proxy nekar allt. Kräver REMOTE_PEPS, som policyhämtningen; ingen knuff."
+  },
+  "stsmetadata.endpoints./xacml/pep/settings.what": {
+    "en": "1d0f3cc8f4e76c25",
+    "text": "De inställningar en administratör har satt för denna PEP på dess konsolsida (#1760) — dess beskrivning och resurs, notifierings-URL:en, biasen, PIP-brytaren, intervallen för hämtning, hjärtslag och backoff, tidsgränsen och gränsen för kroppen, loggnivån, AuthZEN-kant-PDP:ns brytare, identifierare och tidsgräns för vidarebefordran, samt den omvända proxyns gränser — under en egen synkroniseringstoken; ?since=<token> svarar 304. Endast det som är satt skickas: PEP:en använder sin miljö för resten, och det minsta den behöver för att ansluta finns aldrig här. Kräver REMOTE_PEPS, som policyhämtningen; ingen puff."
+  },
+  "stsmetadata.endpoints./xacml/pep/listener-certificate.what": {
+    "en": "2e12c8c3ee45d622",
+    "text": "Certifikatet för en HTTPS-lyssnare som en administratör definierat för den här PEP:en på dess sida i konsolen (#1760): PEP:en genererar nyckeln och skickar med POST { listener, csr }, en PKCS #10-begäran vars signatur bevisar att den innehar den, och får som svar certifikatet från sfärens utfärdande CA pep-tls och dess kedja till roten, no-store och utan någon nyckel. Namnen är PEP:ens och definitionens, aldrig begärans; samma nyckel som efterfrågas igen får det lagrade certifikatet så länge en tredjedel av dess livstid återstår. Kräver REMOTE_PEPS, som hjärtslaget."
+  },
+  "stsmetadata.endpoints./xacml/pep/introspect.what": {
+    "en": "b3f9e293393b2e8a",
+    "text": "Auktoriseringsserverns egen RFC 7662-läsning av en OAuth 2.0-åtkomsttoken som proxyn inte kunde verifiera själv (en opak token, eller en nyckel som inte finns i JWKS), över PEP:ens ömsesidiga TLS i stället för en egen klientregistrering. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/basic.what": {
+    "en": "96fe8e90091c87a2",
+    "text": "En persons användarnamn och lösenord, verifierade här och aldrig i PEP:en, bakom inloggningens egna gränser (429 med retryAfterS); en avvisning är { valid: false } och säger inget mer. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/saml.what": {
+    "en": "360f706d92daab1b",
+    "text": "En försäkran som den här realmen utfärdade, kontrollerad här när proxyn inte kunde kontrollera den själv: den inneslutna signaturen på rotförsäkran mot realmens XML-signeringscertifikat, utfärdaren, villkoren och vägens målgrupp. En EncryptedAssertion avvisas. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/session.what": {
+    "en": "da3c9a2559ab1433",
+    "text": "Om inloggningssessionen som ett ID Tokens sid namnger fortfarande är aktiv, så att en utloggning här avslutar proxyns egen session vid dess nästa kontroll. Kräver REMOTE_PEPS."
+  },
+  "stsmetadata.endpoints./xacml/pep/identity.what": {
+    "en": "5a190f936df62f6b",
+    "text": "För en väg hos den frågande PEP:en, den identitet som dess bevis (en åtkomsttoken, en SAML-försäkran eller en Basic-biljett, validerade igen) namnger, i vägens läge: anspråk för dess huvuden, en åtkomsttoken för programmet eller ett signerat SAML-svar till dess tjänst för mottagning av försäkringar. Kräver REMOTE_PEPS."
+  },
   "stsmetadata.endpoints./xacml/pep/heartbeat.what": {
     "en": "d05c08b4b281db67",
     "text": "Dess kumulativa räknare och den synktoken den innehar — vilket är det som gör \"aktuell\" till en jämförelse som den här tjänsten utför snarare än ett påstående som PEP:n gör om sig själv. De besluten fattades i en annan process och den här tjänsten såg inget av dem, vilket är hela poängen med en fjärr-PEP. Den skapar INTE någon rad: ett hjärtslag från något som aldrig registrerats nekas med en hänvisning till registreringsslutpunkten, eftersom en rad som skapades här inte skulle bära något certifikat, ingen notifierings-URL och inget registreringsdatum."
@@ -1030,6 +1062,10 @@
   "stsmetadata.endpoints./admin-api/xacml/peps.what": {
     "en": "102e5302d8a29ce7",
     "text": "Registret, och vad varje PEP senast rapporterade: om den har det aktuella förrådet, när den senast hördes av, vilken bias den säger att den kör med och vad som hände med den senaste knuffen — vilket är det enda stället där en misslyckad knuff registreras, eftersom den per definition är osynlig från mottagarsidan."
+  },
+  "stsmetadata.endpoints./admin-api/xacml/pep-clusters.what": {
+    "en": "456664ae403ea3f3",
+    "text": "Varje kluster av fjärr-PEP:er som delar en konfiguration: dess omvända proxy, inställningar och lyssnardefinitioner så som varje medlem hämtar dem, och varje medlem med sina egna adresser och varför ett sparande skulle neka den nu."
   },
   "stsmetadata.endpoints./admin-api/xacml/monitor.what": {
     "en": "a0f18506f38d22b3",

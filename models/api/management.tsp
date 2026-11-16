@@ -2587,7 +2587,8 @@ namespace IyaSts.Api.Management {
       `owners`?: (WithDnKindNameEtc4)[];
       `maxOwners`?: numeric;
       `ownership`?: WithKindNameMarkedEtc5;
-      `krb5Across`?: NullableObject75
+      `krb5Across`?: NullableObject75;
+      @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
     }
   }
 
@@ -2654,7 +2655,8 @@ namespace IyaSts.Api.Management {
     `applicationRoles`?: WithHeldOfferableRequiredEtc4;
     `delegatedPermissions`?: WithHeldExposesOfferableEtc5;
     `owners`?: (WithDnKindNameEtc4)[];
-    `maxOwners`?: numeric
+    `maxOwners`?: numeric;
+    @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
   }
 
 @js(#{
@@ -3305,6 +3307,13 @@ namespace IyaSts.Api.Management {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `pep`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
@@ -7496,6 +7505,83 @@ namespace IyaSts.Api.Management {
     `problems`?: NullableArray
   }
 
+@component model `XacmlPepSyncAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The PEP nudged."}) `pep`?: string;
+    @js(#{`description`:"The remote PEP cluster it is a member of, whose configuration it pulls; null for a standalone PEP."}) `cluster`?: NullableString;
+    @js(#{`description`:"Whether the nudge was delivered."}) `delivered`?: boolean;
+    @js(#{`description`:"The HTTP status the PEP answered the nudge with."}) `status`?: numeric
+  }
+
+@component model `XacmlPepSettingsAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `settings`?: NullableXacmlPepSettings
+  }
+
+@component model `XacmlPepListenersAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `listeners`?: NullableXacmlPepListeners
+  }
+
+@component model `XacmlPepClusterAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The cluster acted on."}) `cluster`?: string;
+    @js(#{`description`:"The member acted on."}) `pep`?: string;
+    @js(#{`description`:"create-pep-cluster: the PEP it was created from, or null."}) `from`?: NullableString;
+    @js(#{`description`:"add-pep-cluster-member: whether the PEP is registered yet."}) `registered`?: boolean;
+    @js(#{`description`:"remove-pep-cluster-member: whether the member kept a copy."}) `kept`?: boolean;
+    @js(#{`description`:"delete-pep-cluster: the members that kept a copy."}) `released`?: (string)[];
+    @js(#{`description`:"add-pep-cluster-member with discard: the PEP's own documents that joining replaced, for the console to offer as a download; null when it held none."}) `discarded`?: XacmlPepClusterDiscarded | null;
+    @js(#{`description`:"set-pep-cluster-member: the member as saved."}) `member`?: XacmlPepClusterMemberAddresses;
+    `proxy`?: NullableXacmlPepProxy;
+    `settings`?: NullableXacmlPepSettings;
+    `listeners`?: NullableXacmlPepListeners;
+    @js(#{`description`:"What the act did to the routes' generated policies: written, removed, and left in the repository with no route naming them."}) `policies`?: {
+      `generated`?: (string)[];
+      `removed`?: (string)[];
+      `unreferenced`?: (string)[]
+    };
+    `policy`?: string;
+    `written`?: boolean
+  }
+
+@component model `XacmlPepProxyAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    `proxy`?: NullableXacmlPepProxy;
+    @js(#{`description`:"What the save did to the routes' generated policies (#1760): written, removed with a removed or renamed route, and left in the repository with no route naming them."}) `policies`?: {
+      `generated`?: (string)[];
+      `removed`?: (string)[];
+      `unreferenced`?: (string)[]
+    };
+    @js(#{`description`:"generate-pep-route-policy: the policy's name."}) `policy`?: string;
+    @js(#{`description`:"generate-pep-route-policy: whether it was written; false when it already said what the route chooses."}) `written`?: boolean
+  }
+
 @component model `WithOkMessageErrors108` {
     `ok`: boolean;
     `message`?: string;
@@ -10605,6 +10691,33 @@ namespace IyaSts.Api.Management {
     `error`?: string;
     `error_description`?: string;
     `row`?: `WithIdRealmClientId5`
+  }
+
+// A person's TLS client certificate, issued. The signing answer's shape with
+// `tls` in place of `signing`, and no `purpose`: this door issues `tls-client`
+// only, and the subject is the directory entry's.
+@component model `WithOkMessageErrors194` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `certificate`?: `WithSerialHexSubjectKeyAlg`;
+    `files`?: `WithPkcs12KeyChain`;
+    `user`?: string;
+    `tls`?: PersonTlsClientView
+  }
+
+// The same certificate, revoked. The signing revoke's shape with `tls`.
+@component model `WithOkMessageErrors195` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `certificate`?: `WithSlotLabelSerialHex`;
+    `reason`?: string;
+    `already`?: boolean;
+    `why`?: string;
+    `entry`?: `WithSerialHexRevokedAtReason`;
+    `user`?: string;
+    `tls`?: PersonTlsClientView
   }
 
 @endpoint("/admin-api",
@@ -17535,6 +17648,90 @@ op `revokeUserSigningCertificate`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/users/issue-tls-client-certificate",
+  "post",
+  #{
+    `operationId`:"issueUserTlsClientCertificate",
+    `summary`:"Issue somebody a TLS client certificate from this realm's CA",
+    `description`:"Generates a key pair and certifies it from the realm's `tls-client` Issuing CA with `clientAuth`. The subject is the person's directory name — common name and UID first, then the entry's own naming attributes, then the organisation and country — and `urn:sts:person:<username>` is its subjectAltName, which is what admits a remote PEP that presents the certificate. It is not stored on the entry as `userCertificate`.\n\n**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past the maximum of valid TLS client certificates for a person, for a person with no entry (`STS-ADMIN-0939`), for a file password that is too short or does not match (`STS-ADMIN-0940`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.\n\n**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate (serial, subject, thumbprint, PEM and chain, its urn:sts: name), the three files, and the person's TLS client certificates as they now stand, in `tls`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueUserTlsClientCertificate`(@js(#{
+    `examples`:#[
+      #{
+        `user`:"alice",
+        `password`:"correct horse battery",
+        `keyAlg`:"ec-p256",
+        `label`:"remote pep"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    @js(#{`minLength`:8,`maxLength`:256}) `password`: string;
+    `confirm`?: string;
+    `keyAlg`?: "rsa-2048" | "rsa-3072" | "ec-p256" | "ec-p384";
+    @js(#{`maxLength`:40}) `label`?: string;
+    @js(#{`minimum`:1}) `days`?: integer
+  },
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors194`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors194`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/revoke-tls-client-certificate",
+  "post",
+  #{
+    `operationId`:"revokeUserTlsClientCertificate",
+    `summary`:"Revoke one of somebody's TLS client certificates",
+    `description`:"Revokes a certificate `issue-tls-client-certificate` issued to THIS person — a serial belonging to anybody else, or one of their message-signing certificates, matches nothing — onto the Issuing CA's CRL and OCSP responder. A handshake that presents it is refused from then on. The person's certificates are listed in `mfa.tls` of GET /admin-api/users?user=.\n\n**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The revoked certificate, the reason, and the person's TLS client certificates as they now stand.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `revokeUserTlsClientCertificate`(@js(#{
+    `examples`:#[#{`user`:"alice",`serialHex`:"1a2b3c",`reason`:"keyCompromise"}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    `serialHex`: string;
+    `reason`?: "cessationOfOperation" | "keyCompromise"
+  },
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors195`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors195`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/users/enrol-self-issued-subject",
   "post",
   #{
@@ -17992,7 +18189,7 @@ op `createUserAppPassword`(@js(#{
     @js(#{
       `description`:"What it is for — the client it goes in. At most 64 characters, unique among this person's."
     }) `name`: string;
-    @js(#{`description`:"The doors it is accepted at. At least one."}) `doors`: ("ldap" | "wstrust" | "scim" | "ssf" | "est")[]
+    @js(#{`description`:"The doors it is accepted at. At least one."}) `doors`: ("ldap" | "wstrust" | "scim" | "ssf" | "est" | "xacml-pep")[]
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors47`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors47`,
@@ -27987,13 +28184,51 @@ op `getXacml`(`responses/200/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
+    `parameters`:#[
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A search (#1760, the reverse-proxy route forms' policy chooser): a substring of a policy's name, PolicyId or description, without case. With q, per, page or routable the answer is that page of the matching policies, with matched, page and pages; with none of them, the whole repository."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Policies per page of a search; 50 by default, capped at 300."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of a search. CLAMPED rather than refused: a page past the end returns the last one."
+      },
+      #{
+        `name`:"routable",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"true keeps only the policies a reverse-proxy route may choose: enabled, and sent to a remote PEP (not this service's own access or issuance policy, not an application's)."
+      }
+    ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getXacmlPolicies`(`responses/200/content/application~1json/schema`: {
+op `getXacmlPolicies`(@js(#{`maxLength`:256,`examples`:#["pep-demo"]}) `parameters/0/schema`: string,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[5]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`enum`:#["true","false"]}) `parameters/3/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `root`?: NullableString;
     `policies`?: (WithNamePolicyIdKindEtc11)[];
+    @js(#{`description`:"A search's: how many policies matched."}) `matched`?: integer;
+    @js(#{`description`:"A search's: the page these rows are, clamped."}) `page`?: integer;
+    @js(#{`description`:"A search's: how many pages the match has."}) `pages`?: integer;
+    @js(#{`description`:"A search's: what was asked."}) `query`?: { `q`?: string; `routable`?: boolean };
     `applicationPolicies`?: (WithApplicationKnownEnforcedEtc4)[];
     `templates`?: (WithIdLabelBlurbEtc5)[];
     `serviceOwn`?: `WithKindTypeLexical`;
@@ -28387,7 +28622,7 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
   #{
     `operationId`:"getXacmlPeps",
     `summary`:"The REMOTE Policy Enforcement Points that pull this repository, and whether they are deciding with the same policy this service holds",
-    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\n**Mirrors** `GET /admin/xacml` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep, GET /admin/xacml/pep/route and GET /admin/xacml/pep/monitor` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -28399,9 +28634,27 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
+    `parameters`:#[
+      #{
+        `name`:"pep",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One registered PEP, by its name exactly. The answer then lists that row alone and says `found`; a name with no row answers 200 with `found: false`."
+      },
+      #{
+        `name`:"route",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `pep`: one route of that PEP's reverse proxy, by its id. The answer then carries `routeDetail`: the route, where it stands, whether its application resolves and which proxy listeners serve it; `found: false` there when the PEP has no such route."
+      }
+    ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getXacmlPeps`(`responses/200/content/application~1json/schema`: {
+op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:64,`examples`:#["orders"]}) `parameters/1/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `enabled`?: boolean;
@@ -28414,7 +28667,68 @@ op `getXacmlPeps`(`responses/200/content/application~1json/schema`: {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `pep`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: `WithParamsDescriptionParams`
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/xacml/pep-clusters",
+  "get",
+  #{
+    `operationId`:"getXacmlPepClusters",
+    `summary`:"The realm's remote PEP clusters: each one's shared configuration and its members",
+    `description`:"Everything the PEP clusters tab on /admin/xacml and a cluster's own pages draw (#1760). A cluster's reverse proxy, managed settings and listener definitions are held once and every member pulls them as its own, differing only in its name and addresses. Each cluster carries its documents as the pull reads them, its routes' resolution and policy state, and each member's addresses, whether it is registered, and why a write would refuse it now (`code`, `why`). `peps` lists every registered PEP and its cluster, for the Members tab's chooser. With `cluster`, one cluster and `found`; with `route` as well, `routeDetail`.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep-cluster and GET /admin/xacml/pep-cluster/route` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The clusters and their members.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{
+        `name`:"cluster",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One cluster, by its name exactly. The answer then lists that cluster alone and says `found`."
+      },
+      #{
+        `name`:"route",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `cluster`: one route of the cluster's reverse proxy, by its id. The answer then carries `routeDetail`."
+      }
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getXacmlPepClusters`(@js(#{`maxLength`:64,`examples`:#["orders"]}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:64,`examples`:#["health"]}) `parameters/1/schema`: string,
+  `responses/200/content/application~1json/schema`: {
+    `xacml`?: boolean;
+    `message`?: string;
+    `enabled`?: boolean;
+    `clusters`?: (XacmlPepClusterView)[];
+    `peps`?: (XacmlPepClusterPep)[];
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `cluster`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -30168,7 +30482,8 @@ op `disableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/conten
 op `enableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, which is the one its client certificate gave it."
-    }) `name`: string
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors107`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors107`,
@@ -30205,6 +30520,36 @@ op `forgetXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/xacml/sync-pep",
+  "post",
+  #{
+    `operationId`:"syncXacmlPep",
+    `summary`:"Tell one remote PEP to pull everything again now",
+    `description`:"Nudges ONE registered PEP at the address the change nudge dials (its managed notify URL, or a cluster member's own) and waits for the answer. This service pushes nothing: the PEP answers a nudge by pulling a whole round — its settings and listeners, the policies, the AuthZEN catalogue and callers, and its reverse proxy — and a member of a remote PEP cluster pulls its cluster's documents, so the cluster's configuration travels with it. A document the PEP already holds byte for byte is answered 304, because every pull's token is a digest of exactly what would be sent.\n\nRefused before anything is dialled when remote PEPs or nudging are off (STS-XACML-0282), when nudging is stopped for this PEP (STS-XACML-0283), or when it has no usable notify URL (STS-XACML-0284); a nudge that was not delivered is STS-XACML-0285 and is recorded on the PEP's row as every nudge is. The PEP converges on its own poll in every one of those cases.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The nudge was delivered; the PEP is pulling.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `syncXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepSyncAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSyncAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @js(#{
     `description`:"DNS names to ADD to the two derived from the registration. An array, or one string separated by commas or whitespace. A `*.` wildcard is accepted in the first label.",
     `$comb`:"oneOf"
@@ -30220,7 +30565,7 @@ op `forgetXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
   #{
     `operationId`:"issueXacmlPepCertificate",
     `summary`:"Issue a remote PEP the certificate and private key for its HTTPS listener",
-    `description`:"Generates a key pair and certifies it from the Remote PEP listeners (`pep-tls`) Issuing CA of THE REALM THE PEP REGISTERED TO — the realm this call is made in, because ou=peps is per realm — so a client that installed this service's Root CA verifies the PEP, and the chain says which realm vouched for it. A realm whose branch was built before that Issuing CA existed gets it added under its existing Intermediate; nothing already issued is replaced.\n\nThe PEP must be REGISTERED: its row is the one record that it exists in this realm. That is not a permission check on the PEP — registering is still not what lets it pull or enforce.\n\nTHE CERTIFICATE NAMES the PEP's registered name (where that is a DNS name) and the host of its notify URL, plus any `dnsNames` and `ipAddresses` sent. It certifies `serverAuth` and nothing else.\n\n**THE PRIVATE KEY IS IN THIS REPLY AND NOWHERE ELSE.** This service records the certificate — its issuer's CRL and OCSP responder answer for it — and keeps no copy of the key, so nothing can read it back. To put the pair in the container, write `fullChainPem` (the leaf followed by its Issuing CA, the realm Intermediate and, since #1064, the service Root) and `privateKeyPem` to the files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP picks up a pair written after it started. `anchorPem` is the service Root a client of that listener installs.\n\nIssuing again REPLACES: the certificate it replaces goes on its issuer's revocation list as `superseded` (`replacedSerialHex`).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Generates a key pair and certifies it from the Remote PEP listeners (`pep-tls`) Issuing CA of THE REALM THE PEP REGISTERED TO — the realm this call is made in, because ou=peps is per realm — so a client that installed this service's Root CA verifies the PEP, and the chain says which realm vouched for it. A realm whose branch was built before that Issuing CA existed gets it added under its existing Intermediate; nothing already issued is replaced.\n\nThe PEP must be REGISTERED: its row is the one record that it exists in this realm. That is not a permission check on the PEP — registering is still not what lets it pull or enforce.\n\nTHE CERTIFICATE NAMES the PEP's registered name (where that is a DNS name), the hostname it reported on its registration or heartbeat (#1760; the name its derived notify URL looks for, so the nudge works on a fresh install), and the host of its notify URL, plus any `dnsNames` and `ipAddresses` sent. It certifies `serverAuth` and nothing else.\n\n**THE PRIVATE KEY IS IN THIS REPLY AND NOWHERE ELSE.** This service records the certificate — its issuer's CRL and OCSP responder answer for it — and keeps no copy of the key, so nothing can read it back. To put the pair in the container, write `fullChainPem` (the leaf followed by its Issuing CA, the realm Intermediate and, since #1064, the service Root) and `privateKeyPem` to the files `PEP_HTTPS_CERT` and `PEP_HTTPS_KEY` name; the PEP picks up a pair written after it started. `anchorPem` is the service Root a client of that listener installs.\n\nIssuing again REPLACES: the certificate it replaces goes on its issuer's revocation list as `superseded` (`replacedSerialHex`).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30250,7 +30595,8 @@ op `issueXacmlPepCertificate`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
-    }) `name`: string;
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
     `dnsNames`?: post_admin_api_xacml_issue_pep_certificate_b_application_json_dnsNames_h2783;
     `ipAddresses`?: post_admin_api_xacml_issue_pep_certificate_b_application_json_ipAddresses_h2784;
     @js(#{
@@ -30265,6 +30611,960 @@ op `issueXacmlPepCertificate`(@js(#{
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors108`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
+
+@endpoint("/admin-api/xacml/set-pep-proxy",
+  "post",
+  #{
+    `operationId`:"setXacmlPepProxy",
+    `summary`:"Configure a registered remote PEP as a reverse proxy in front of an application",
+    `description`:"Sets the configuration a registered remote PEP pulls from GET /xacml/pep/proxy (#1760) and enforces as a reverse proxy in front of one application: `enabled`, the `upstream` it forwards to (absolute http or https, no user name, query or fragment — fixed per PEP, so no request can choose where it is forwarded), the `publicBaseUrl` a browser reaches the proxy at (an origin; required when a route uses the session mechanism, https in product mode), `upstreamTimeoutMs` (1 to 120000, default 10000), `maxBodyBytes` (0 to 104857600, default 1048576) and the ORDERED `routes`, first match wins, at most 64. A route has a unique `id`, a `path` (starting with /, no . or .. segment, no //, %, backslash, ? or #), `match` (`prefix` at a segment boundary, or `exact`), `methods` (required: all seven for any, empty for deny-all, STS-XACML-0262), its `authorization` (required, STS-XACML-0263: kind `policy` naming an existing policy, `simple` with a resource, an action model and roles per action, or `public`, anyone and no credential; simple and public generate the policy pep-<pep>-<route>; every request on the route is decided by that policy, never by the root), at least one of `mechanisms` unless it is public: `session`, `oauth2`, `saml2` and `basic`, the `application` it fronts (an identifier in this realm's registry; refused on a public route), how the identity reaches the application, `identity` (`mode` `headers` with up to 16 `headers` of { `name`, `claim` } and a one-character `separator`, `saml` for a signed SAML Response to the application's registered assertion consumer service, or `jwt` for an access token addressed to it; refused on a public route; the proxy strips a client's own identity headers), `forwardCredentials` (false by default: the Authorization header and the proxy's cookie are stripped) and `signals` (true by default: a session route's sign-out reaches the proxy through CAEP/RISC, else through POST /xacml/pep/session).\n\nTHE DOCUMENT IS VALIDATED WHOLE AND IS CLOSED: a member the grammar does not name is refused by name, and nothing is written unless all of it is right. What is stored is the document normalised, every member present, which is what the pull sends.\n\nEACH ROUTE NAMES AN APPLICATION AND NOTHING IS COPIED FROM IT: the pull reads what each mechanism needs off the application's entry — the audiences of its access tokens (`oauthAudience`, `oauthPermissionBaseUri`), its SAML entity ID, its confidential OIDC client — so a save is refused, by code, for an unknown application, an oauth2 route whose application has no audience, a saml2 route whose application has no entity ID, and a session route whose application is not a confidential client (client_secret_basic or client_secret_post), does not allow authorization_code, does not register `<publicBaseUrl>/.iya-pep/callback`, or holds no unexpired secret. A session route needs an https publicBaseUrl.\n\nThe PEP must be REGISTERED in this realm (its row is where the configuration lives); the proxy picks a change up on its next pull — there is no nudge.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1",`proxy`:#{`enabled`:true,`upstream`:"http://companion:8090/pep-app",`upstreamTimeoutMs`:10000,`maxBodyBytes`:1048576,`routes`:#[#{`id`:"public",`path`:"/public",`match`:"prefix",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},#{`id`:"api",`path`:"/api",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["oauth2","basic"],`application`:"my-api",`authorization`:#{`kind`:"simple",`actionModel`:"read-write",`roles`:#{`read`:#["my-api-users"],`write`:#["my-api-admins"]}},`identity`:#{`mode`:"headers",`headers`:#[#{`name`:"X-Remote-User",`claim`:"username"},#{`name`:"X-Remote-Groups",`claim`:"groups"}],`separator`:","},`forwardCredentials`:false}]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The configuration document. Validated whole by the handler, which refuses a member it does not name, so this schema leaves its shape to that refusal."
+    }) `proxy`: Record<unknown>
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/xacml/clear-pep-proxy",
+  "post",
+  #{
+    `operationId`:"clearXacmlPepProxy",
+    `summary`:"Remove a remote PEP's reverse-proxy configuration",
+    `description`:"Removes a registered remote PEP's reverse-proxy configuration (#1760). From its next pull the PEP's proxy answers 404 to everything. The applications its routes named are untouched.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearXacmlPepProxy`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-identity",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteIdentity",
+    `summary`:"Set how one reverse-proxy route forwards the identity to its application",
+    `description`:"Replaces one route's `identity` in a registered remote PEP's reverse-proxy configuration (#1760, D11) and saves the document through the same checks as set-pep-proxy. `mode` is `headers` (the claims in `headerName` and `headerClaim`, row by row; a row with no name is unused; at most 16; each name an RFC 9110 token that is not hop-by-hop, framing, Authorization, Cookie, Host, Forwarded or X-Forwarded-*, each claim one of sub, username, email, name, given_name, family_name, groups, mechanism, acr and amr; `separator` one printable ASCII character that is not a letter or a digit, `,` by default), `saml` (a signed SAML Response to the application's registered assertion consumer service; its entity ID and ACS are required) or `jwt` (an access token addressed to the application; an audience is required). A public route forwards nobody.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteIdentity`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"api",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:","}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The route's `id` in that PEP's configuration."
+    }) `route`: string;
+    @js(#{
+      `description`:"How the identity reaches the application.",
+      `enum`:#["headers", "saml", "jwt"]
+    }) `mode`: string;
+    @js(#{
+      `description`:"Mode headers: the header names, one per row of the console's table."
+    }) `headerName`?: string[];
+    @js(#{
+      `description`:"Mode headers: the claim each row's header carries, by position."
+    }) `headerClaim`?: string[];
+    @js(#{
+      `description`:"Mode headers: the one character a list claim (groups, amr) is joined with."
+    }) `separator`?: string
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/xacml/set-pep-settings",
+  "post",
+  #{
+    `operationId`:"setXacmlPepSettings",
+    `summary`:"Set a remote PEP's managed settings, over its environment",
+    `description`:"Sets the settings a registered remote PEP pulls from GET /xacml/pep/settings and applies while it runs (#1760), REPLACING what was set: the settings are sent as `settings`, an object of them, or as members of the body itself (the console's form), and a setting absent, null or empty is NOT SET, so the PEP uses its environment variable for it, or its default — THE PRECEDENCE IS THE SERVICE'S VALUE, THEN THE ENVIRONMENT'S, THEN THE DEFAULT. GET /admin-api/xacml/peps' `settingsCatalogue` lists every setting with its variable, type, bounds, default and when a change takes effect. Validated whole: a member of `settings` that is not a setting is refused by name (STS-XACML-0236), a wrong type or a value outside a closed set (bias, logLevel) STS-XACML-0237, an integer out of bounds STS-XACML-0238, text too long or with a control character, a notifyUrl that is not an absolute http(s) URL and an authzenPdpIdentifier that is not an https origin STS-XACML-0239, and in product mode proxyUpstreamInsecure or proxyRpAllowInsecure true STS-XACML-0240. THE MINIMUM THE PEP NEEDS TO CONNECT THE FIRST TIME IS NOT HERE AND CANNOT BE: the service's URL, the PEP's name, its client certificate, key and anchors, the ports it binds and the files its TLS stacks read stay in its environment (`settingsCatalogue.bootstrap`). The PEP must be registered in this realm; it applies a change on its next pull — there is no nudge — and an older PEP, which never asks, goes on using its environment.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1",`bias`:"deny-biased",`pollIntervalMs`:10000,`logLevel`:"info",`proxySessionRecheckMs`:2000},#{`name`:"pep-1",`settings`:#{`description`:"In front of the orders API",`timeoutMs`:4000}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."
+    }) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{
+      `description`:"The settings as one object, in place of the members below. Validated whole by the handler, which refuses a member that is not a setting by name."
+    }) `settings`?: Record<unknown>;
+    @js(#{`maxLength`:1024,`description`:"Sets `description` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `description`?: string;
+    @js(#{`maxLength`:2048,`description`:"Sets `resource` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `resource`?: string;
+    @js(#{`maxLength`:2048,`description`:"Sets `notifyUrl` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `notifyUrl`?: string;
+    @js(#{`enum`:#["deny-biased","permit-biased"],`minLength`:1,`description`:"Sets `bias` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `bias`?: string;
+    @js(#{`description`:"Sets `pip` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `pip`?: boolean;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `pollIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `pollIntervalMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `heartbeatIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `heartbeatIntervalMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:86400000,`description`:"Sets `backoffMaxMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `backoffMaxMs`?: integer;
+    @js(#{`minimum`:100,`maximum`:120000,`description`:"Sets `timeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `timeoutMs`?: integer;
+    @js(#{`minimum`:1024,`maximum`:104857600,`description`:"Sets `maxBodyBytes` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `maxBodyBytes`?: integer;
+    @js(#{`minimum`:1000,`maximum`:3600000,`description`:"Sets `httpsReloadIntervalMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `httpsReloadIntervalMs`?: integer;
+    @js(#{`enum`:#["trace","debug","info","warn","error","fatal"],`minLength`:1,`description`:"Sets `logLevel` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `logLevel`?: string;
+    @js(#{`description`:"Sets `authzen` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzen`?: boolean;
+    @js(#{`maxLength`:2048,`description`:"Sets `authzenPdpIdentifier` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzenPdpIdentifier`?: string;
+    @js(#{`minimum`:1,`maximum`:120000,`description`:"Sets `authzenForwardTimeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `authzenForwardTimeoutMs`?: integer;
+    @js(#{`minimum`:0,`maximum`:3600000,`description`:"Sets `proxySessionRecheckMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySessionRecheckMs`?: integer;
+    @js(#{`minimum`:1000,`maximum`:2592000000,`description`:"Sets `proxySessionTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySessionTtlMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:1000000,`description`:"Sets `proxyMaxSessions` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyMaxSessions`?: integer;
+    @js(#{`minimum`:1,`maximum`:32,`description`:"Sets `proxyMaxAccounts` at the PEP: the most accounts one browser holds on a route with `multipleAccounts`; absent, null or empty is not set, so the PEP uses PEP_PROXY_MAX_ACCOUNTS or its default, 5."}) `proxyMaxAccounts`?: integer;
+    @js(#{`minimum`:0,`maximum`:86400000,`description`:"Sets `proxyJwksTtlMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyJwksTtlMs`?: integer;
+    @js(#{`description`:"Sets `proxyUpstreamInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyUpstreamInsecure`?: boolean;
+    @js(#{`description`:"Sets `proxyRpAllowInsecure` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxyRpAllowInsecure`?: boolean;
+    @js(#{`minimum`:100,`maximum`:3600000,`description`:"Sets `proxySignalsPollMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsPollMs`?: integer;
+    @js(#{`minimum`:1,`maximum`:86400000,`description`:"Sets `proxySignalsStaleMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default."}) `proxySignalsStaleMs`?: integer;
+    @js(#{`maxLength`:1024,`description`:"Sets `proxyStripCookies` at the PEP: more cookie names the reverse proxy never forwards upstream, beside this service's own, separated by commas, a trailing `*` a prefix; absent, null or empty is not set, so the PEP uses PEP_PROXY_STRIP_COOKIES or its default, none."}) `proxyStripCookies`?: string
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/clear-pep-settings",
+  "post",
+  #{
+    `operationId`:"clearXacmlPepSettings",
+    `summary`:"Remove a remote PEP's managed settings",
+    `description`:"Removes every setting set for a registered remote PEP (#1760). From its next pull of GET /xacml/pep/settings every setting is the PEP's environment variable or its default.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `clearXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSettingsAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-listener",
+  "post",
+  #{
+    `operationId`:"setXacmlPepListener",
+    `summary`:"Define or replace one of a remote PEP's listeners",
+    `description`:"Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on. The listener's TLS, session cache, HTTP pooling, HTTP/2, client certificates and thread pool (`threadPoolMin`, `threadPoolMax`) are the same knobs Server Settings' listeners expose, and the reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"public-https",`protocol`:"https",`purpose`:"proxy",`address`:"0.0.0.0",`port`:8443,`dnsNames`:#["app.example.test"]},#{`name`:"pep-1",`listener`:#{`id`:"internal-api",`protocol`:"http",`purpose`:"api",`port`:9091}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`description`:"The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler."}) `listener`?: Record<unknown>;
+    @js(#{`maxLength`:64,`description`:"The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four (api-http, api-https, proxy-http, proxy-https). An id already defined is replaced."}) `id`?: string;
+    @js(#{`enum`:#["http","https"],`description`:"http or https."}) `protocol`?: string;
+    @js(#{`enum`:#["api","proxy"],`description`:"api (the PEP's decision API: /protected, GET / and the AuthZEN endpoints) or proxy (the reverse proxy)."}) `purpose`?: string;
+    @js(#{`maxLength`:64,`description`:"The IPv4 or IPv6 address to bind; 0.0.0.0 (the default) or :: for every one."}) `address`?: string;
+    @js(#{`minimum`:1,`maximum`:65535,`description`:"The port, 1 to 65535."}) `port`?: integer;
+    @js(#{`description`:"HTTPS only: DNS names the certificate carries beside the PEP's own name and its notify host; at most 16. A string is one per line or separated by commas."}) `dnsNames`?: string[] | string;
+    @js(#{`description`:"HTTPS only: IP addresses the certificate carries; at most 16."}) `ipAddresses`?: string[] | string;
+    @js(#{`enum`:#["ec-p256","ec-p384","rsa-2048","rsa-3072"],`description`:"HTTPS only: the key the PEP generates, ec-p256 by default."}) `keyAlg`?: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-environment-tuning",
+  "post",
+  #{
+    `operationId`:"setXacmlPepEnvironmentTuning",
+    `summary`:"Set the TLS, HTTP and thread-pool tuning of one environment listener",
+    `description`:"Sets the tuning of one of a registered remote PEP's four environment listeners (api-http, api-https, proxy-http, proxy-https) (#1760). The address, port and protocol stay the environment's. The PEP applies the tuning on its next pull. The same knobs as set-pep-listener: TLS, the session cache, HTTP pooling, HTTP/2, client certificates and the thread pool. The reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281). A cluster has no single process, so this act is a PEP's, not a cluster's.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepEnvironmentTuning`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"api-http"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep=. Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"One of the environment's four: api-http, api-https, proxy-http or proxy-https."}) `listener`: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-listener",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepListener",
+    `summary`:"Remove one of a remote PEP's defined listeners",
+    `description`:"Removes a listener defined for a registered remote PEP (#1760); the PEP unbinds it on its next pull. The environment's four cannot be removed here (STS-XACML-0250).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"public-https"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The listener's id."}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/renew-pep-listener-certificate",
+  "post",
+  #{
+    `operationId`:"renewXacmlPepListenerCertificate",
+    `summary`:"Have a remote PEP renew a defined HTTPS listener's certificate",
+    `description`:"Moves the renewal counter of an HTTPS listener defined for a registered remote PEP (#1760): on its next pull the PEP generates a new key and asks POST /xacml/pep/listener-certificate for a new certificate, which supersedes the old one. A plain-HTTP listener or an unknown id is refused (STS-XACML-0250). The environment's HTTPS pair is issued with issue-pep-certificate.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `renewXacmlPepListenerCertificate`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"public-https"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The listener's id."}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRoute",
+    `summary`:"Add or replace one route of a remote PEP's reverse proxy",
+    `description`:"Adds a route to a registered remote PEP's reverse-proxy configuration, or replaces the one with its id (#1760), and saves the WHOLE document through the same checks as set-pep-proxy — the grammar (STS-XACML-0184 to 0199, 0224 to 0228) and every route's application resolved in the registry (0217 to 0223) — so a route this saves is one the document editor could hold. An edit keeps the route's identity, which set-pep-route-identity sets, unless the form members carry `mode`, as the route's own page sends them, and its authorization unless they carry `authzKind`; `from` renames the route it names to `id`, and a simple or public route's generated policy with it; `part` reads one tab of the route's page and keeps the rest of the route. Every route states `methods` (STS-XACML-0262; empty is deny-all) and one authorization choice (STS-XACML-0263): see set-pep-route-authorization. The PEP must already hold a configuration (STS-XACML-0201); a missing route or a position outside the list is STS-XACML-0256.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"orders",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`mechanisms`:#["session"],`application`:"orders-app",`authzKind`:"simple",`authzActionModel`:"read-write",`authzActions`:#["read","write"],`authzRole.read`:#["orders-users"],`authzRole.write`:#["orders-admins"]},#{`name`:"pep-1",`from`:"orders",`id`:"orders-api",`path`:"/orders",`match`:"prefix",`methods`:#["GET","POST"],`methodsGiven`:"true",`mechanisms`:#["session","oauth2"],`application`:"orders-app",`authzKind`:"policy",`authzPolicy`:"orders-policy",`authzPolicyActionModel`:"crud",`authzResource`:"https://orders.example.test",`forwardCredentials`:"false",`signals`:"true",`mode`:"headers",`headerName`:#["X-Remote-User","X-Remote-Groups"],`headerClaim`:#["username","groups"],`separator`:",",`position`:1},#{`name`:"pep-1",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`description`:"The route as one object (id, path, match, methods, mechanisms, application, authorization, identity, forwardCredentials, signals, multipleAccounts), or its JSON, in place of the members below. `methods` and `authorization` are required (STS-XACML-0262, 0263)."}) `route`?: Record<unknown> | string;
+    @js(#{`maxLength`:64,`description`:"The route's id; one already in the list is replaced where it stands, keeping its identity."}) `id`?: string;
+    @js(#{`maxLength`:2048,`description`:"The path the route matches."}) `path`?: string;
+    @js(#{`enum`:#["prefix","exact"],`description`:"prefix (the default) or exact."}) `match`?: string;
+    @js(#{`description`:"The methods it allows, from GET, HEAD, POST, PUT, PATCH, DELETE and OPTIONS: all seven for any, none for deny-all (every request on it is refused). Absent with no `methodsGiven` is not stated, which is refused (STS-XACML-0262)."}) `methods`?: string[] | string;
+    @js(#{`description`:"\"true\" when the form drew the method boxes, so that no `methods` is the empty list (deny-all) rather than not stated."}) `methodsGiven`?: boolean | string;
+    @js(#{`description`:"The route's authorization as one object, { kind: policy | simple | public, policy, resource, actionModel: method | crud | read-write, roles: { action: [role] } }, in place of the authz members below. On an edit, absent keeps the route's own."}) `authorization`?: Record<unknown> | string;
+    @js(#{`enum`:#["policy","simple","public",""],`description`:"The form's authorization choice: an existing policy, a simple generated policy, or Public (anyone, a generated policy too). Empty is no choice, refused on a new route (STS-XACML-0263)."}) `authzKind`?: string;
+    @js(#{`maxLength`:128,`description`:"kind policy: the existing policy's name in this realm's repository."}) `authzPolicy`?: string;
+    @js(#{`enum`:#["method","crud","read-write"],`description`:"kind policy: what the PEP sends as the action-id; the method by default."}) `authzPolicyActionModel`?: string;
+    @js(#{`maxLength`:1024,`description`:"The resource-id sent, an absolute URI. Empty: for a simple or public route the proxy's base URL and the path; for an existing policy the request's path."}) `authzResource`?: string;
+    @js(#{`enum`:#["crud","read-write"],`description`:"kind simple: the action model."}) `authzActionModel`?: string;
+    @js(#{`description`:"kind simple: the actions permitted, each of the model's: create, read, update, delete, or read, write."}) `authzActions`?: string[] | string;
+    @js(#{`description`:"kind simple: the configured roles that may take `read` (any of them), one to eight; the same for `authzRole.create`, `.update`, `.delete` and `.write`."}) `authzRole.read`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may create."}) `authzRole.create`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may update."}) `authzRole.update`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may delete."}) `authzRole.delete`?: string[] | string;
+    @js(#{`description`:"kind simple: the roles that may write."}) `authzRole.write`?: string[] | string;
+    @js(#{`description`:"How a caller is authenticated: session, oauth2, saml2, basic."}) `mechanisms`?: string[] | string;
+    @js(#{`maxLength`:256,`description`:"The identifier of the application in this realm's registry the route fronts."}) `application`?: string;
+    @js(#{`description`:"Whether the caller's own credential is forwarded upstream."}) `forwardCredentials`?: boolean | string;
+    @js(#{`description`:"Whether a session route's sign-out reaches the proxy by CAEP/RISC (true, the default) or by POST /xacml/pep/session."}) `signals`?: boolean | string;
+    @js(#{`description`:"true lets one browser hold several signed-in accounts on this session route and switch the active one at /.iya-pep/accounts; false (the default) is one sign-in per browser. Only on a route whose mechanisms include session (STS-XACML-0257)."}) `multipleAccounts`?: boolean | string;
+    @js(#{`minimum`:0,`description`:"Where the route goes in the list, from 0; the first route that matches wins. A replaced route keeps its place unless this is given."}) `position`?: integer;
+    @js(#{`enum`:#["settings","authentication","authorization","identity",""],`description`:"With the form members and an existing route: the route page's tab the form is (2026-11-15). Only that part's members are read — settings: id, path, match, application and position; authentication: mechanisms, signals, multipleAccounts; authorization: methods and the authz members; identity: forwardCredentials and the identity members — and every other member keeps the stored route's value. A route that does not exist is STS-XACML-0230, another value STS-XACML-0256. Empty or absent: the members are the whole route."}) `part`?: string;
+    @js(#{`maxLength`:64,`description`:"The route being edited, when it is not `id`: the route's own page renames a route by sending its current id here and the new one as `id`. An unknown route is STS-XACML-0230, and a new id another route holds is STS-XACML-0192."}) `from`?: string;
+    @js(#{`enum`:#["headers","saml","jwt"],`description`:"With the form members: the route's identity mode, which then replaces its identity (headers with `headerName`, `headerClaim` and `separator`). Without it, an edit keeps the identity."}) `mode`?: string;
+    @js(#{`description`:"mode headers: the header names, paired by position with `headerClaim`; a row with no name is left out."}) `headerName`?: string[] | string;
+    @js(#{`description`:"mode headers: the claim each header carries: sub, username, email, name, given_name, family_name, groups, mechanism, acr or amr."}) `headerClaim`?: string[] | string;
+    @js(#{`maxLength`:1,`description`:"mode headers: the one character that joins a claim's several values; , when empty."}) `separator`?: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-route",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepRoute",
+    `summary`:"Remove one route of a remote PEP's reverse proxy",
+    `description`:"Removes a route from a registered remote PEP's reverse-proxy configuration (#1760) and saves the document through set-pep-proxy's checks. An unknown route is STS-XACML-0230. A route with a policy generated for it (its authorization simple or public) is removed only with `removePolicy: true`, and the policy goes with it (STS-XACML-0268 otherwise).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepRoute`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`removePolicy`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`description`:"true confirms that the policy generated for the route (a simple or public choice) is removed with it; without it such a route is refused (STS-XACML-0268)."}) `removePolicy`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-application",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteApplication",
+    `summary`:"Map an application to one route of a remote PEP's reverse proxy",
+    `description`:"Binds a route of a registered remote PEP's reverse-proxy configuration to an application in this realm's registry (#1760, D10): the route's `application`, from which the pull reads what each mechanism needs. Saved through set-pep-proxy's checks, so an application that does not qualify for the route's mechanisms is refused by its code (STS-XACML-0217 to 0223) and a public route, which names none, by STS-XACML-0197. An unknown route is STS-XACML-0230 and a missing application STS-XACML-0256. Kept for compatibility: the console no longer has a form for it, and edits a route's application on the route's own page (`/admin/xacml/pep/route?pep=<name>&route=<id>`) through set-pep-route.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteApplication`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`application`:"orders-app"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`maxLength`:256,`description`:"The application's identifier in this realm's registry."}) `application`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-route-authorization",
+  "post",
+  #{
+    `operationId`:"setXacmlPepRouteAuthorization",
+    `summary`:"Set one route's authorization: an existing policy, a simple generated policy, or Public",
+    `description`:"Replaces the authorization of one route of a registered remote PEP's reverse proxy (#1760) and saves the WHOLE document through set-pep-proxy's checks. Every route makes exactly one choice and every request on it is decided by that policy in XACML, never by the realm's root: kind policy names an existing policy of this realm's repository, enabled and sent to a remote PEP (STS-XACML-0265); kind simple names a resource, an action model (crud or read-write) and, for each action permitted, one to eight configured roles (STS-XACML-0266), and generates the policy pep-<pep>-<route>; kind public lets anyone take the route's methods and generates that policy too, and clears the route's mechanisms, application and identity. An empty resource on a simple or public route is filled with the proxy's base URL and the path. A grammar refusal is STS-XACML-0263 or 0264, a generated name held by a hand-written policy STS-XACML-0267, an unknown route STS-XACML-0230. Switching a route to an existing policy leaves its generated policy in the repository, unreferenced, and the answer's `policies.unreferenced` says so.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepRouteAuthorization`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders",`authorization`:#{`kind`:"simple",`actionModel`:"crud",`roles`:#{`read`:#["orders-users"],`update`:#["orders-admins"],`delete`:#["orders-admins"]}}},#{`name`:"pep-1",`route`:"health",`authorization`:#{`kind`:"public"}},#{`name`:"pep-1",`route`:"orders",`authorization`:#{`kind`:"policy",`policy`:"orders-policy",`actionModel`:"method"}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+    @js(#{`description`:"{ kind: policy | simple | public, policy, resource, actionModel: method | crud | read-write, roles: { action: [role] } }, or its JSON. The console's form members (authzKind, authzPolicy, authzPolicyActionModel, authzResource, authzActionModel, authzActions, authzRole.<action>) are read in its place."}) `authorization`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/generate-pep-route-policy",
+  "post",
+  #{
+    `operationId`:"generateXacmlPepRoutePolicy",
+    `summary`:"Generate a route's simple or public policy again",
+    `description`:"Writes the policy a simple or public route of a registered remote PEP's reverse proxy generates (#1760), pep-<pep>-<route>, again from the route as stored: after it was edited in the policy editor or deleted. It is written as ALFA and stored through the repository's validating write, marked xacmlPepRoute = <pep>/<route>, never the root. A route choosing an existing policy has nothing to generate (STS-XACML-0264); a name held by a policy not generated for the route is STS-XACML-0267; an unknown route STS-XACML-0230. The answer's `written` is false when the policy already says what the route chooses.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `generateXacmlPepRoutePolicy`(@js(#{`examples`:#[#{`name`:"pep-1",`route`:"orders"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"The route's id."}) `route`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepProxyAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/create-pep-cluster",
+  "post",
+  #{
+    `operationId`:"createXacmlPepCluster",
+    `summary`:"Create a remote PEP cluster, empty or from a registered PEP",
+    `description`:"Creates a logical cluster of remote PEPs that share one configuration (#1760). With `from`, the PEP's reverse proxy, managed settings and listener definitions are copied to the cluster, the PEP becomes its first member (its publicBaseUrl and notify URL kept as its own addresses), its own documents are cleared, and the routes' generated policies are written again as pepc-<cluster>-<route>, marked @<cluster>/<route>; the PEP's old pep-<pep>-<route> policies are left in the repository, unreferenced. A name that is not 1 to 64 letters, digits, dots, dashes or underscores, or one already taken, is STS-XACML-0270; a PEP not registered STS-XACML-0038, one already a member STS-XACML-0271.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `createXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`from`:"pep-1",`description`:"The orders proxies"},#{`cluster`:"empty-cluster"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The registered PEP whose configuration the cluster starts from; omitted for an empty cluster."}) `from`?: string;
+    @js(#{`maxLength`:1024}) `description`?: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/delete-pep-cluster",
+  "post",
+  #{
+    `operationId`:"deleteXacmlPepCluster",
+    `summary`:"Delete a remote PEP cluster",
+    `description`:"Deletes a cluster and the policies generated for its routes (#1760). A cluster that still has members is refused unless `release` says what they keep: keep, and each registered member keeps a copy of the configuration as its own (its routes' policies generated again as pep-<pep>-<route>), or empty, and each is left with none (STS-XACML-0273). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `deleteXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`release`:"keep"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"keep or empty; required while the cluster has members."}) `release`?: "keep" | "empty";
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/add-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"addXacmlPepClusterMember",
+    `summary`:"Add a member to a remote PEP cluster",
+    `description`:"Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. Each member polls its own CAEP/RISC stream: it sends its registered name in the X-Iya-Pep-Name header, and a sign-out on that stream reaches that member. The member's routes must resolve with its own callback, <publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `addXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`publicBaseUrl`:"https://pep-2.example.test:9543",`discard`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own public base URL, the origin a browser reaches it at; empty for the cluster's."}) `publicBaseUrl`?: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own notify URL, which the nudge dials; empty for the one it registered with."}) `notifyUrl`?: string;
+    @js(#{`description`:"The member's own listener addresses: { <listener id>: { address, port, names } }, its JSON, or the console's lines of `<id> <address>:<port> <name> ...`."}) `listeners`?: Record<unknown> | string;
+    @js(#{`description`:"true confirms that the PEP's own configuration is replaced by the cluster's."}) `discard`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterMember",
+    `summary`:"Remove a member from a remote PEP cluster",
+    `description`:"Removes a member (#1760). By default (`keep` true) a registered member keeps a copy of the configuration it pulled as its own, its routes' policies generated again as pep-<pep>-<route>, and goes on enforcing it; with `keep` false it is left with none. Not a member is STS-XACML-0269.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`keep`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`description`:"Whether the member keeps a copy; true by default."}) `keep`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-member",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterMember",
+    `summary`:"Set a member's own addresses",
+    `description`:"Replaces a member's own addresses (#1760): its publicBaseUrl, notify URL and listener addresses, each member given replacing the stored one. Checked as a cluster write is, for this member (STS-XACML-0277 for a shape, the grammar's and the resolution's own codes otherwise).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep-2",`publicBaseUrl`:"https://pep-2.example.test:9543",`listeners`:#{`proxy-alt`:#{`port`:9544,`names`:#["pep-2.example.test"]}}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:128,`description`:"The member's name: a registered PEP's, or one not registered yet."}) `pep`: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own public base URL, the origin a browser reaches it at; empty for the cluster's."}) `publicBaseUrl`?: string;
+    @js(#{`maxLength`:2048,`description`:"The member's own notify URL, which the nudge dials; empty for the one it registered with."}) `notifyUrl`?: string;
+    @js(#{`description`:"The member's own listener addresses: { <listener id>: { address, port, names } }, its JSON, or the console's lines of `<id> <address>:<port> <name> ...`."}) `listeners`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-proxy",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterProxy",
+    `summary`:"Set a remote PEP cluster's reverse-proxy configuration",
+    `description`:"The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-<cluster>-<route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is polled by each member on a stream of its own (X-Iya-Pep-Name). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterProxy`(@js(#{`examples`:#[#{`cluster`:"orders",`proxy`:#{`upstream`:"http://orders.internal:8080",`publicBaseUrl`:"https://orders.example.test",`routes`:#[#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET"],`authorization`:#{`kind`:"public"}}]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"The configuration document, or its JSON: set-pep-proxy's."}) `proxy`: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-settings",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterSettings",
+    `summary`:"Set a remote PEP cluster's managed settings",
+    `description`:"The cluster's set-pep-settings (#1760): the same table, replacing what is set; every member pulls them. The notify URL is a member's address and is refused here (STS-XACML-0278).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterSettings`(@js(#{`examples`:#[#{`cluster`:"orders",`settings`:#{`bias`:"deny-biased",`pollIntervalMs`:30000}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"The settings, as set-pep-settings takes them."}) `settings`?: Record<unknown> | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-route",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterRoute",
+    `summary`:"Add or replace one route of a remote PEP cluster's reverse proxy",
+    `description`:"The cluster's set-pep-route (#1760): `route` or the form's members, `from` for a rename, `part` for one tab of the route's page. Saved through set-pep-cluster-proxy's checks.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterRoute`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:#{`id`:"health",`path`:"/health",`match`:"exact",`methods`:#["GET","HEAD"],`authorization`:#{`kind`:"public"}},`position`:0}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"One route object, or its JSON; or the console form's members."}) `route`?: Record<unknown> | string;
+    @js(#{`maxLength`:64}) `from`?: string;
+    `part`?: string;
+    `position`?: integer | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-route",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterRoute",
+    `summary`:"Remove one route of a remote PEP cluster's reverse proxy",
+    `description`:"The cluster's remove-pep-route (#1760): a route with a generated policy needs `removePolicy` true (STS-XACML-0268).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterRoute`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:"health",`removePolicy`:true}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `route`: string;
+    `removePolicy`?: boolean | string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/generate-pep-cluster-route-policy",
+  "post",
+  #{
+    `operationId`:"generateXacmlPepClusterRoutePolicy",
+    `summary`:"Generate a cluster route's simple or public policy again",
+    `description`:"The cluster's generate-pep-route-policy (#1760): pepc-<cluster>-<route> written again from the route as stored.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `generateXacmlPepClusterRoutePolicy`(@js(#{`examples`:#[#{`cluster`:"orders",`route`:"health"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `route`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-cluster-listener",
+  "post",
+  #{
+    `operationId`:"setXacmlPepClusterListener",
+    `summary`:"Define or replace one listener of a remote PEP cluster",
+    `description`:"The cluster's set-pep-listener (#1760): the same grammar; each member's copy, with its own address, port and names, is checked against what that member reported (STS-XACML-0247 names the member).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:#{`id`:"proxy-alt",`protocol`:"https",`purpose`:"proxy",`port`:9544,`dnsNames`:#["orders.example.test"]}}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`description`:"One listener object, or its JSON; or the console form's members."}) `listener`?: Record<unknown> | string;
+    @js(#{`maxLength`:64,`description`:"The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four. An id already defined is replaced."}) `id`?: string;
+    @js(#{`enum`:#["http","https"],`description`:"http or https."}) `protocol`?: string;
+    @js(#{`enum`:#["api","proxy"],`description`:"api or proxy."}) `purpose`?: string;
+    @js(#{`maxLength`:64,`description`:"The IPv4 or IPv6 address to bind; 0.0.0.0 or :: for every one."}) `address`?: string;
+    @js(#{`minimum`:1,`maximum`:65535,`description`:"The port, 1 to 65535."}) `port`?: integer;
+    @js(#{`description`:"HTTPS only: DNS names the certificate carries; at most 16."}) `dnsNames`?: string[] | string;
+    @js(#{`description`:"HTTPS only: IP addresses the certificate carries; at most 16."}) `ipAddresses`?: string[] | string;
+    @js(#{`enum`:#["ec-p256","ec-p384","rsa-2048","rsa-3072"],`description`:"HTTPS only: the key the PEP generates, ec-p256 by default."}) `keyAlg`?: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/remove-pep-cluster-listener",
+  "post",
+  #{
+    `operationId`:"removeXacmlPepClusterListener",
+    `summary`:"Remove one listener of a remote PEP cluster",
+    `description`:"The cluster's remove-pep-listener (#1760).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `removeXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:"proxy-alt"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
+    @js(#{`maxLength`:64}) `listener`: string;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/ssf",
   "get",
@@ -34105,7 +35405,7 @@ op `pairKerberosTrust`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" | "admin" | "api" | "application" | "protocol" | "spiffe" | "signals" | "authorization" | "service" | "mail",
-  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "user.export" | "user.import" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.policies.export" | "admin.policies.import" | "admin.policies.trust-signer" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.confer" | "roles.unconfer" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test",
+  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "user.export" | "user.import" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.policies.export" | "admin.policies.import" | "admin.policies.trust-signer" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.confer" | "roles.unconfer" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.pep.proxy.set" | "xacml.pep.proxy.clear" | "xacml.pep.validate" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test",
   `parameters/2/schema`: "success" | "refused" | "error",
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,

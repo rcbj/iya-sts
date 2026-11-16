@@ -13,6 +13,8 @@
 //! went wrong, because every caller wants to RECORD what happened and carry
 //! on.
 
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use openssl::pkey::PKey;
@@ -34,6 +36,11 @@ pub struct Answer {
     /// refused connection for the AuthZEN forward (#564), which answers 504
     /// for the one and 502 for the other.
     pub timed_out: bool,
+    /// The answer's `ETag`, for the proxy pull's `If-None-Match` (#1760).
+    pub etag: Option<String>,
+    /// The answer's `Retry-After`, passed on with a 429 from the service's
+    /// Basic door (#1760).
+    pub retry_after: Option<String>,
 }
 
 impl Answer {
@@ -62,12 +69,20 @@ impl Answer {
     }
 }
 
-/// The client. Built once at start from the options.
+/// The client. Built once at start from the options; its timeout and its
+/// answer bound follow the settings the service sets (#1760,
+/// `set_limits()`), shared by every clone.
 #[derive(Clone)]
 pub struct PdpClient {
     http: Client,
     base: String,
-    max_body_bytes: usize,
+    limits: Arc<Limits>,
+}
+
+/// `PEP_TIMEOUT_MS` and `PEP_MAX_BODY_BYTES`, or the service's values.
+struct Limits {
+    timeout_ms: AtomicU64,
+    max_body_bytes: AtomicUsize,
 }
 
 /// The client key in PKCS #8, whatever form it was written in — OpenSSL
@@ -119,8 +134,29 @@ impl PdpClient {
         Ok(PdpClient {
             http,
             base,
-            max_body_bytes: options.max_body_bytes,
+            limits: Arc::new(Limits {
+                timeout_ms: AtomicU64::new(options.timeout_ms),
+                max_body_bytes: AtomicUsize::new(options.max_body_bytes),
+            }),
         })
+    }
+
+    /// The timeout every call without one of its own is given, and the
+    /// largest answer read — moved by a settings pull (#1760).
+    pub fn set_limits(&self, timeout_ms: u64, max_body_bytes: usize) {
+        self.limits.timeout_ms.store(timeout_ms.max(1), Ordering::Relaxed);
+        self.limits
+            .max_body_bytes
+            .store(max_body_bytes.max(1), Ordering::Relaxed);
+    }
+
+    /// The timeout and bound in force, for a test.
+    #[cfg(test)]
+    pub fn limits(&self) -> (u64, usize) {
+        (
+            self.limits.timeout_ms.load(Ordering::Relaxed),
+            self.limits.max_body_bytes.load(Ordering::Relaxed),
+        )
     }
 
     /// `path` is appended to the PDP URL's own path (a realm prefix
@@ -150,16 +186,38 @@ impl PdpClient {
         timeout: Option<Duration>,
     ) -> Answer {
         let url = format!("{}{}", self.base, path);
+        self.call_url(method, &url, body, headers, timeout).await
+    }
+
+    /// One call to an ABSOLUTE URL the PDP named in a pull (#1760: the
+    /// realm's JWKS and token endpoint, the four validation endpoints) —
+    /// through the same client, so the same certificate and the same
+    /// verification of whoever answers. Never a URL from a request.
+    #[tracing::instrument(level = "debug", skip(self, body, headers))]
+    pub async fn call_url(
+        &self,
+        method: Method,
+        url: &str,
+        body: Option<Body>,
+        headers: &[(&str, String)],
+        timeout: Option<Duration>,
+    ) -> Answer {
         let mut request = self
             .http
-            .request(method, &url)
+            .request(method, url)
             .header("Accept", "application/json");
         for (name, value) in headers {
             request = request.header(*name, value.as_str());
         }
-        if let Some(timeout) = timeout {
-            request = request.timeout(timeout);
-        }
+        // A call's own timeout wins; otherwise the one in force now, which
+        // replaces the client's built-in `PEP_TIMEOUT_MS` per request.
+        request = request.timeout(timeout.unwrap_or_else(|| {
+            Duration::from_millis(
+                self.limits.timeout_ms.load(Ordering::Relaxed),
+            )
+        }));
+        let max_body_bytes =
+            self.limits.max_body_bytes.load(Ordering::Relaxed);
         match body {
             Some(Body::Json(value)) => request = request.json(&value),
             Some(Body::Xml(text)) => {
@@ -173,15 +231,24 @@ impl PdpClient {
             Err(error) => return Answer::failed_by(&error),
         };
         let status = response.status().as_u16();
+        let header = |name: &str| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string)
+        };
+        let etag = header("etag");
+        let retry_after = header("retry-after");
         let mut bytes = Vec::new();
         loop {
             match response.chunk().await {
                 Ok(Some(chunk)) => {
                     bytes.extend_from_slice(&chunk);
-                    if bytes.len() > self.max_body_bytes {
+                    if bytes.len() > max_body_bytes {
                         return Answer::failed(format!(
                             "the PDP's answer was larger than {} bytes",
-                            self.max_body_bytes
+                            max_body_bytes
                         ));
                     }
                 }
@@ -199,6 +266,8 @@ impl PdpClient {
             json,
             error: None,
             timed_out: false,
+            etag,
+            retry_after,
         }
     }
 }

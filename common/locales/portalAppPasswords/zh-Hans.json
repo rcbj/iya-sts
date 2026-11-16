@@ -5,6 +5,7 @@
   "door.scim": "/scim/v2 上的 HTTP Basic（RFC 7617）",
   "door.ssf": "/ssf 端点上的 HTTP Basic（RFC 7617）",
   "door.est": "/.well-known/est 上的 HTTP Basic（RFC 7030 第 3.2.3 节）",
+  "door.xacml-pep": "远程 XACML PEP 反向代理上的 HTTP Basic，在 POST /xacml/pep/basic 处检查",
   "fresh.heading": "您的新应用密码",
   "fresh.copyNow": "<strong>请立即复制。</strong>它只在此页面显示一次，之后无法再次显示——本服务只保存它的哈希值。",
   "fresh.note": "请在客户端中用它代替您的密码，用户名不变。它只在上述入口有效，在登录页面上永远无效。连字符可有可无。",

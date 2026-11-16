@@ -1694,6 +1694,13 @@ const ACTIONS = [
     label: 'A remote PEP was disabled' },
   { action: 'xacml.pep.forget', category: 'authorization',
     label: 'A remote PEP was forgotten' },
+  // The remote PEP's reverse proxy (#1760).
+  { action: 'xacml.pep.proxy.set', category: 'authorization',
+    label: 'A remote PEP\'s reverse-proxy configuration was set' },
+  { action: 'xacml.pep.proxy.clear', category: 'authorization',
+    label: 'A remote PEP\'s reverse-proxy configuration was removed' },
+  { action: 'xacml.pep.validate', category: 'authorization',
+    label: 'A remote PEP\'s proxy asked for a credential to be validated' },
   { action: 'xacml.policy.write', category: 'authorization',
     label: 'An XACML policy was written' },
   { action: 'xacml.policy.delete', category: 'authorization',

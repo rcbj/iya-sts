@@ -8,7 +8,7 @@
 //! ```text
 //! GET  /              what this PEP is, what it holds, what it has enforced
 //! GET  /protected     THE RESOURCE. 200 or 403, decided here
-//! POST /notify        the PDP's nudge: pull now
+//! POST /notify        the PDP's nudge: pull now (HTTPS only)
 //! GET  /healthcheck   liveness, never whether the policy is current
 //! GET  /crl/<name>    this PEP's own credential's CRLs (#174)
 //! POST /access/v1/evaluation, /access/v1/evaluations,
@@ -35,6 +35,7 @@ use sts_core::version::VersionInfo;
 use sts_xacml::builder::{vocabulary, AuthorizationRequest};
 use sts_xacml::model::{attribute, category, types, Decision};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
+use sts_xacml::policy::PolicyNode;
 use sts_xacml::request::{ResolvedObligation, Status};
 
 use crate::authzen::{self, Reply};
@@ -42,7 +43,7 @@ use crate::enforce::Enforcer;
 use crate::listener::{HttpsListener, Transport};
 use crate::options::Options;
 use crate::pip::RemotePip;
-use crate::sync::Sync;
+use crate::sync::{Policies, Sync};
 
 /// The attribute prefix the service's PIP answers beside the bare name.
 const PIP_PREFIX: &str = "urn:sts:xacml:attribute:";
@@ -64,7 +65,6 @@ pub struct Pep {
     pub version: VersionInfo,
     pub sync: Arc<Sync>,
     pub(crate) pip: RemotePip,
-    enforcer: Enforcer,
     pub(crate) pdp: Pdp,
     pub listener: Arc<HttpsListener>,
     last_pip_report: Mutex<Option<Value>>,
@@ -114,6 +114,14 @@ fn status_json(status: &Status) -> Value {
 }
 
 impl Pep {
+    /// The enforcement rule with the bias in force now (#1760: the service
+    /// may set it while this PEP runs).
+    pub(crate) fn enforcer(&self) -> Enforcer {
+        Enforcer::new(self.options.now().bias)
+    }
+}
+
+impl Pep {
     pub fn new(
         options: Options,
         version: VersionInfo,
@@ -122,7 +130,6 @@ impl Pep {
         listener: Arc<HttpsListener>,
     ) -> Pep {
         Pep {
-            enforcer: Enforcer::new(options.bias),
             options,
             version,
             sync,
@@ -148,6 +155,30 @@ impl Pep {
             .get::<Transport>()
             .cloned()
             .unwrap_or_default();
+        if transport.crl_only
+            && !(method == Method::GET && path.starts_with("/crl/"))
+        {
+            // THE CRL-ONLY LISTENER (2026-11-14) answers this PEP's own
+            // credential's lists and nothing else: the decision API, the
+            // nudge and the AuthZEN edge PDP are on HTTPS.
+            tracing::info!(
+                "{}xacml-pep: {} {} reached the CRL-only plain-HTTP \
+                 listener, which serves GET /crl/<name> alone.",
+                tag("STS-XPEP-0114"),
+                method,
+                path
+            );
+            return json_response(
+                StatusCode::NOT_FOUND,
+                &json!({
+                    "error": "not_found",
+                    "error_description": "This plain-HTTP port serves only \
+                        this PEP's own credential's CRLs, GET /crl/<name>. \
+                        The decision API, POST /notify and the AuthZEN edge \
+                        PDP answer on the HTTPS listener."
+                }),
+            );
+        }
         if method == Method::POST
             && (path == authzen::EVALUATION_PATH
                 || path == authzen::EVALUATIONS_PATH)
@@ -163,10 +194,11 @@ impl Pep {
             let batch = path == authzen::EVALUATIONS_PATH;
             let limit = if batch {
                 self.options
+                    .now()
                     .max_body_bytes
                     .max(self.sync.catalogue().settings.max_body_bytes + 1)
             } else {
-                self.options.max_body_bytes
+                self.options.now().max_body_bytes
             };
             let body = axum::body::to_bytes(request.into_body(), limit)
                 .await
@@ -245,6 +277,26 @@ impl Pep {
                 };
             }
         }
+        if method == Method::POST && path == "/notify" && !transport.https {
+            // THE NUDGE IS HTTPS ONLY (2026-11-14, rcbj: "Let's assume
+            // always HTTPS"). The service never dials an http:// notify
+            // URL, so a nudge over plain HTTP is not the PDP's; refused
+            // where a PEP that still answered it would be answering anybody
+            // on the network.
+            tracing::info!(
+                "{}xacml-pep: POST /notify over plain HTTP was refused; the \
+                 nudge is answered on the HTTPS listener only.",
+                tag("STS-XPEP-0112")
+            );
+            return json_response(
+                StatusCode::NOT_FOUND,
+                &json!({
+                    "error": "not_found",
+                    "error_description": "POST /notify is answered on this \
+                        PEP's HTTPS listener only; the PDP nudges over https."
+                }),
+            );
+        }
         if method == Method::POST && path == "/notify" {
             // THE NUDGE: answered 204 IMMEDIATELY and pulled after, and its
             // body is neither read nor trusted — what changed is discovered
@@ -253,7 +305,7 @@ impl Pep {
                 "xacml-pep: nudged by the PDP; pulling now rather than \
                  waiting up to {}ms for the next poll. Nothing in the nudge \
                  was read — what changed is discovered by pulling.",
-                self.options.poll_interval_ms
+                self.options.now().poll_interval_ms
             );
             let sync = self.sync.clone();
             tokio::spawn(async move {
@@ -302,30 +354,6 @@ impl Pep {
     /// A decision here, with what was pulled — and the remote PIP asked
     /// BEFORE evaluation, because the engine's resolver is synchronous.
     async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
-        let (policies, loaded) = self.sync.current();
-        let Some(root) = policies.root.as_ref().filter(|_| loaded) else {
-            tracing::warn!(
-                "{}xacml-pep: a decision was asked for and this PEP holds no \
-                 root policy, so it is NotApplicable and the {} bias settles \
-                 it.",
-                tag("STS-XPEP-0005"),
-                self.options.bias.as_str()
-            );
-            return Answer {
-                decision: Decision::NotApplicable,
-                status: Status::ok(),
-                obligations: Vec::new(),
-                advice: Vec::new(),
-                policy_identifiers: Vec::new(),
-                note: Some(
-                    "This PEP holds no root policy — it has never pulled one \
-                     successfully, or what it pulled had no root. There is \
-                     nothing to evaluate, so the decision is NotApplicable \
-                     and the bias below is what actually decided.",
-                ),
-                pip: None,
-            };
-        };
         let get = |k: &str| query.get(k).cloned().unwrap_or_default();
         let subject = get("subject");
         let resource = query
@@ -333,7 +361,7 @@ impl Pep {
             .filter(|r| !r.is_empty())
             .cloned()
             .or_else(|| {
-                Some(self.options.resource.clone()).filter(|r| !r.is_empty())
+                Some(self.options.now().resource).filter(|r| !r.is_empty())
             })
             .unwrap_or_else(|| "urn:xacml-pep:protected".to_string());
         let action = query
@@ -379,9 +407,101 @@ impl Pep {
         req.target(&resource, Some(types::ANYURI))
             .requested_action(&action);
         let request = req.build();
+        self.evaluate(request).await
+    }
+
+    /// The reverse proxy's decision (#1760, D8): subject, resource and
+    /// action through the ONE builder exactly as `/protected` builds its
+    /// request — the four categories named first, the subject as
+    /// `subject-id`, the resource typed anyURI, the action as `action-id` —
+    /// evaluated by the same path (the PIP asked first), enforced by the
+    /// same rule and counted with the same counters.
+    ///
+    /// **AGAINST THE POLICY THE ROUTE NAMES, NEVER THE ROOT** (rcbj's
+    /// decision on #1760): `policy` is an entry's NAME in what this PEP
+    /// last pulled, and the PIP walks that policy (the repository answering
+    /// its references). `None` is "not held" — never pulled, withheld,
+    /// disabled, renamed, failed to load, or a name two entries carry — and
+    /// is NOT a NotApplicable for the bias to settle: a permit-biased PEP
+    /// would otherwise open every route whose policy went missing. Nothing
+    /// is counted then, there having been no decision. It does not ask
+    /// whether a ROOT is held (`loaded`): a route needs only its own.
+    ///
+    /// An empty `subject` is the ANONYMOUS subject of a public route: the
+    /// access-subject category is sent with no attribute in it, as
+    /// `/protected` sends a request with no `subject`, so a policy matches
+    /// it by `subject-id` being absent (`MustBePresent="false"`).
+    pub(crate) async fn decide_proxy(
+        &self,
+        subject: &str,
+        resource: &str,
+        action: &str,
+        policy: &str,
+    ) -> Option<(Decision, crate::enforce::Outcome)> {
+        let (policies, _) = self.sync.current();
+        let named = policies.by_name.get(policy)?;
+        let mut req = AuthorizationRequest::default();
+        for id in [
+            category::ACCESS_SUBJECT,
+            category::RESOURCE,
+            category::ACTION,
+            category::ENVIRONMENT,
+        ] {
+            req.category(id);
+        }
+        if !subject.is_empty() {
+            req.subject(attribute::SUBJECT_ID, [subject]);
+        }
+        req.target(resource, Some(types::ANYURI))
+            .requested_action(action);
+        let answer = self.evaluate_against(named, &policies, req.build()).await;
+        let outcome =
+            self.enforcer().enforce(answer.decision, &answer.obligations);
+        self.sync.count_decision(&outcome);
+        Some((answer.decision, outcome))
+    }
+
+    /// One built request evaluated against what was pulled, from the root.
+    async fn evaluate(&self, request: sts_xacml::request::Request) -> Answer {
+        let (policies, loaded) = self.sync.current();
+        let Some(root) = policies.root.as_ref().filter(|_| loaded) else {
+            tracing::warn!(
+                "{}xacml-pep: a decision was asked for and this PEP holds no \
+                 root policy, so it is NotApplicable and the {} bias settles \
+                 it.",
+                tag("STS-XPEP-0005"),
+                self.options.now().bias.as_str()
+            );
+            return Answer {
+                decision: Decision::NotApplicable,
+                status: Status::ok(),
+                obligations: Vec::new(),
+                advice: Vec::new(),
+                policy_identifiers: Vec::new(),
+                note: Some(
+                    "This PEP holds no root policy — it has never pulled one \
+                     successfully, or what it pulled had no root. There is \
+                     nothing to evaluate, so the decision is NotApplicable \
+                     and the bias below is what actually decided.",
+                ),
+                pip: None,
+            };
+        };
+        self.evaluate_against(root, &policies, request).await
+    }
+
+    /// One built request evaluated from `start` — the root, or a proxy
+    /// route's own policy — with the PIP asked first and the repository
+    /// answering references.
+    async fn evaluate_against(
+        &self,
+        start: &PolicyNode,
+        policies: &Policies,
+        request: sts_xacml::request::Request,
+    ) -> Answer {
         let resolution = self
             .pip
-            .resolver_for(&request, root, &policies.repository)
+            .resolver_for(&request, start, &policies.repository)
             .await;
         if let Ok(mut last) = self.last_pip_report.lock() {
             *last = Some(resolution.report.clone());
@@ -394,7 +514,7 @@ impl Pep {
             repository: Some(&policies.repository),
             now: None,
         };
-        let response = self.pdp.evaluate(root, &request, &options);
+        let response = self.pdp.evaluate(start, &request, &options);
         if response.decision == Decision::Indeterminate {
             tracing::warn!(
                 "{}xacml-pep: the engine answered Indeterminate ({}{}), so \
@@ -407,7 +527,7 @@ impl Pep {
                     .as_ref()
                     .map(|m| format!(": {}", m))
                     .unwrap_or_default(),
-                self.options.bias.as_str()
+                self.options.now().bias.as_str()
             );
         }
         let identifiers = response
@@ -436,7 +556,7 @@ impl Pep {
     ) -> (StatusCode, Value) {
         let answer = self.decide(query).await;
         let outcome =
-            self.enforcer.enforce(answer.decision, &answer.obligations);
+            self.enforcer().enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
         let obligations: Vec<Value> = answer
             .obligations
@@ -544,7 +664,8 @@ impl Pep {
     /// missed heartbeats, and the two can disagree.
     fn overview(&self) -> Value {
         let o = &self.options;
-        let stale_after_ms = o.poll_interval_ms * 3;
+        let now = o.now();
+        let stale_after_ms = now.poll_interval_ms * 3;
         let last_pull =
             chrono::DateTime::parse_from_rfc3339(&self.sync.last_pull_at());
         let stale = match last_pull {
@@ -615,19 +736,27 @@ impl Pep {
                          unless both were built as the same release."
             },
             "pdp": o.pdp_url,
-            "bias": o.bias.as_str(),
+            "bias": now.bias.as_str(),
             "protectedAt": "/protected",
             "https": self.listener.overview(),
             "authzen": self.authzen_overview(),
+            "proxy": self.sync.proxy_json(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,
             "registration": self.sync.registration_json(),
             "enforced": self.sync.counters_json(),
-            "notify": if o.notify_url.is_empty() { Value::Null }
-                      else { Value::from(o.notify_url.clone()) },
-            "poll": { "intervalMs": o.poll_interval_ms,
-                      "heartbeatMs": o.heartbeat_interval_ms },
+            "notify": match crate::options::advertised_notify_url(
+                &now.notify_url) {
+                url if url.is_empty() => Value::Null,
+                url => Value::from(url),
+            },
+            "poll": { "intervalMs": now.poll_interval_ms,
+                      "heartbeatMs": now.heartbeat_interval_ms },
+            // EVERY SETTING IN FORCE AND WHERE IT CAME FROM (#1760): the
+            // service, the environment or the default, and the settings
+            // pull's own state.
+            "settings": self.sync.settings_json(),
             "contract": "THE PULL IS THE CONTRACT. This PEP polls the PDP on \
                          its own interval and converges whether or not a \
                          nudge ever arrives. A PDP that is unreachable leaves \
@@ -637,5 +766,113 @@ impl Pep {
                          is not enforced here until the next successful \
                          pull."
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pdp_client::PdpClient;
+    use crate::options::Bias;
+    use crate::settings::Managed;
+
+    /// A bias the service sets (#1760) is the one a decision is enforced
+    /// with, from the next decision on, and clearing it puts the
+    /// environment's back.
+    #[test]
+    fn the_bias_in_force_is_the_service_s() {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.bias = Bias::DenyBiased;
+        options.pip_enabled = false;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+        let pep = Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            RemotePip::new(client, false).governed_by(options.clone()),
+            Arc::new(HttpsListener::new("", "", 0, 1000, None)),
+        );
+        let na = Decision::NotApplicable;
+        assert!(!pep.enforcer().enforce(na, &[]).allowed);
+        assert!(!pep.pip.enabled());
+        options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({ "bias": "permit-biased", "pip": true }),
+        ));
+        assert!(pep.enforcer().enforce(na, &[]).allowed);
+        assert!(pep.pip.enabled());
+        options.managed.apply(Managed::default());
+        assert!(!pep.enforcer().enforce(na, &[]).allowed);
+    }
+
+    fn a_pep() -> Arc<Pep> {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.pip_enabled = false;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+        Arc::new(Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            RemotePip::new(client, false).governed_by(options.clone()),
+            Arc::new(HttpsListener::new("", "", 0, 1000, None)),
+        ))
+    }
+
+    fn ask(pep: &Arc<Pep>, method: Method, path: &str,
+           transport: Transport) -> (StatusCode, String) {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let mut request = Request::builder()
+                .method(method)
+                .uri(path)
+                .body(Body::empty())
+                .unwrap();
+            request.extensions_mut().insert(transport);
+            let response = pep.clone().handle(request).await;
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+                .await
+                .unwrap_or_default();
+            (status, String::from_utf8_lossy(&bytes).to_string())
+        })
+    }
+
+    /// THE NUDGE IS HTTPS ONLY (2026-11-14): over plain HTTP it is refused
+    /// with a sentence naming the HTTPS listener; over HTTPS it is 204.
+    #[test]
+    fn the_nudge_is_answered_on_https_only() {
+        let pep = a_pep();
+        let (plain, body) = ask(&pep, Method::POST, "/notify",
+                                Transport::default());
+        assert_eq!(plain, StatusCode::NOT_FOUND);
+        assert!(body.contains("HTTPS listener only"), "{}", body);
+        let https = Transport { https: true, ..Transport::default() };
+        let (secure, _) = ask(&pep, Method::POST, "/notify", https);
+        assert_eq!(secure, StatusCode::NO_CONTENT);
+    }
+
+    /// THE CRL-ONLY LISTENER answers GET /crl/<name> and nothing else.
+    #[test]
+    fn the_crl_only_listener_serves_crls_alone() {
+        let pep = a_pep();
+        let crl = Transport { crl_only: true, ..Transport::default() };
+        for (method, path) in [(Method::GET, "/"),
+                               (Method::GET, "/protected"),
+                               (Method::GET, "/healthcheck"),
+                               (Method::POST, "/notify")] {
+            let (status, body) = ask(&pep, method, path, crl.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "{}", path);
+            assert!(body.contains("only this PEP's own credential's CRLs"),
+                    "{}: {}", path, body);
+        }
+        let (status, body) = ask(&pep, Method::GET, "/crl/root.crl", crl);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(!body.contains("only this PEP's own credential's CRLs"),
+                "a CRL path is the CRL lookup's to answer: {}", body);
     }
 }

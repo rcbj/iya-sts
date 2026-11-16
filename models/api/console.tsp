@@ -816,7 +816,8 @@ namespace IyaSts.Api.Console {
       `owners`?: (WithDnKindNameEtc4)[];
       `maxOwners`?: numeric;
       `ownership`?: WithKindNameMarkedEtc5;
-      `krb5Across`?: NullableObject75
+      `krb5Across`?: NullableObject75;
+      @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
     }
   }
 
@@ -1534,6 +1535,13 @@ namespace IyaSts.Api.Console {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
+    `settingsCatalogue`?: XacmlPepSettingsCatalogue;
+    `listenersCatalogue`?: XacmlPepListenersCatalogue;
+    `applicationChoices`?: (WithIdentifierName)[];
+    `pep`?: string;
+    `found`?: boolean;
+    `route`?: string;
+    `routeDetail`?: XacmlPepRouteDetail;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 

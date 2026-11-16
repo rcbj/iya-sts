@@ -84,8 +84,11 @@ class WebShell {
       // THE LANGUAGE CHOOSER (#539 phase 5), last of the page's tools.
       (page.t ? kit.languageChooser(page.t, shell.locale) : '') +
       '</div></div>' +
+    // THE OPEN TAB PATH (rcbj 2026-11-15): the runtime hands the tabs
+    // open in `page.inner` (`page.tabs`, WebShell.openTabs()) and the
+    // page's own address (`page.self`), so the trail names them.
     WebShell.trailBar(page.active, page.up, page.title,
-                      shell.navLabels, t) +
+                      shell.navLabels, t, page.tabs, page.self) +
     // A tabbed body carries the link inside each leaf panel (#895). An
     // untabbed page has nowhere else to put it, so it sits under the trail,
     // above the banners, on every such page.
@@ -580,9 +583,14 @@ class WebShell {
    * @param labels - every console page's nav label by path (the shell
    *   answer's `navLabels`)
    * @param t - optional; the translator, the default when left out
+   * @param tabs - optional; the open tab path, outermost first
+   *   (`openTabs()`'s answer): each `{ label, href }`, `href` the tab's
+   *   own `#<id>`
+   * @param self - optional; the page's own address with no fragment, what
+   *   the page's crumb links to once tab crumbs follow it
    * @returns the trail as HTML
    */
-  static trailBar(active, up, title, labels, t?) {
+  static trailBar(active, up, title, labels, t?, tabs?, self?) {
     t = t || kit.context().t;
     const crumbs: any[] = [{ label: t.text('console.shell.adminConsole'),
                       href: active === '/admin' ? null : '/admin' }];
@@ -624,6 +632,29 @@ class WebShell {
         crumbs.push({ label: label });
       }
     }
+    // THE OPEN TAB AND SUB-TAB, AFTER THE PAGE (rcbj 2026-11-15, which
+    // reverses "a tabbed page's own trail names no open tab"): Admin
+    // console › XACML › Remote PEPs › the PEP › Listener › Create a new
+    // listener. The page's own crumb becomes a link to the page with no
+    // fragment (its first tab), each tab but the deepest a link to its
+    // anchor, and the deepest the plain leaf, as the last crumb always is.
+    // The runtime draws the trail again on every fragment change, so it
+    // cannot go stale on a tab press (ConsoleRuntime.redrawTrail()).
+    const open = (Array.isArray(tabs) ? tabs : []).filter(function (one) {
+      return one && one.label && one.href;
+    });
+    if (open.length) {
+      const page = crumbs[crumbs.length - 1];
+      if (!page.href) {
+        page.href = String(self || active || '/admin');
+      }
+      open.forEach(function (one, index) {
+        crumbs.push({ label: WebShell.shortCrumb(one.label),
+                      href: index === open.length - 1 ? null
+                        : String(one.href),
+                      title: String(one.label) });
+      });
+    }
     const html = '<p class="crumb">' + crumbs.map(function (crumb, index) {
       const sep = index ? '<span class="sep">&rsaquo;</span>' : '';
       if (!crumb.href) {
@@ -649,6 +680,192 @@ class WebShell {
     return value.length > WebShell.MAX_CRUMB
       ? value.slice(0, WebShell.MAX_CRUMB - 1) + '…' :
            value;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PAGE'S TAB TREE, READ FROM THE BODY IT WAS DRAWN WITH (rcbj
+  // 2026-11-15: the trail names the open tab and sub-tab). The tabs are
+  // `kit.tabbedPanels()` and `kit.subTabbedPanels()`'s markup: a `.tabs` or
+  // `.subtabs` holding a `nav.tabbar` of links and a `.tabpanel` or
+  // `.subpanel` per drawn tab. The tree is read from the SAME string the
+  // page is drawn from, so the trail cannot name a tab the page does not
+  // have, and node can hold it without a DOM. Each root records its links
+  // (`label`, `href`, `first`) and its panels (`id`, `first`, every `id`
+  // inside it, and the roots nested in it).
+  // ---------------------------------------------------------------------------
+  static readonly VOID_TAGS = ['area', 'base', 'br', 'col', 'embed', 'hr',
+    'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'];
+
+  /**
+   * Reads a page body's tab bars into a tree.
+   *
+   * @param html - the page's body, as drawn
+   * @returns the outermost tab roots, in document order
+   */
+  static tabTreeOf(html: string): Json[] {
+    const top: Json[] = [];
+    // One entry per open element: its name, and what it is to the tree.
+    const stack: Json[] = [];
+    const token = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>|([^<]+)|</g;
+    const attrOf = function (attrs: string, name: string): string | null {
+      const re = /([^\s"'=\/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+      let m = re.exec(attrs);
+      while (m) {
+        if (m[1].toLowerCase() === name) {
+          const v = m[2] !== undefined ? m[2]
+            : (m[3] !== undefined ? m[3] : (m[4] || ''));
+          return WebShell.unescapeHtml(v);
+        }
+        m = re.exec(attrs);
+      }
+      return null;
+    };
+    const scopeRoots = function (): Json[] {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].panel) {
+          return stack[i].panel.roots;
+        }
+      }
+      return top;
+    };
+    let raw = '';
+    let m = token.exec(String(html || ''));
+    while (m) {
+      if (raw) {
+        // Inside a <script>, <style> or <textarea>: text until its close.
+        if (m[1] === '/' && m[2] && m[2].toLowerCase() === raw) {
+          raw = '';
+          stack.pop();
+        }
+      } else if (m[2] && m[1] === '/') {
+        const name = m[2].toLowerCase();
+        for (let i = stack.length - 1; i >= 0; i--) {
+          if (stack[i].name === name) {
+            stack.length = i;
+            break;
+          }
+        }
+      } else if (m[2]) {
+        const name = m[2].toLowerCase();
+        const attrs = m[3] || '';
+        const classes = (attrOf(attrs, 'class') || '').split(/\s+/);
+        const has = function (c: string): boolean {
+          return classes.indexOf(c) >= 0;
+        };
+        const id = attrOf(attrs, 'id');
+        if (id) {
+          stack.forEach(function (one) {
+            if (one.panel) {
+              one.panel.ids.push(id);
+            }
+          });
+        }
+        const parent = stack.length ? stack[stack.length - 1] : null;
+        const entry: Json = { name: name };
+        if (name === 'div' && (has('tabs') || has('subtabs'))) {
+          entry.root = { links: [], panels: [] };
+          scopeRoots().push(entry.root);
+        } else if (parent && parent.root && name === 'nav' &&
+                   has('tabbar')) {
+          entry.bar = parent.root;
+        } else if (parent && parent.bar && name === 'a') {
+          entry.link = { label: '', href: attrOf(attrs, 'href') || '',
+                         first: has('first') };
+          parent.bar.links.push(entry.link);
+        } else if (parent && parent.root && id &&
+                   (has('tabpanel') || has('subpanel'))) {
+          entry.panel = { id: id, first: has('first'), ids: [], roots: [] };
+          parent.root.panels.push(entry.panel);
+        }
+        const selfClosing = /\/\s*$/.test(attrs);
+        if (WebShell.VOID_TAGS.indexOf(name) < 0 && !selfClosing) {
+          stack.push(entry);
+          if (name === 'script' || name === 'style' || name === 'textarea') {
+            raw = name;
+          }
+        }
+      } else if (m[4]) {
+        for (let i = stack.length - 1; i >= 0; i--) {
+          if (stack[i].link) {
+            stack[i].link.label += WebShell.unescapeHtml(m[4]);
+            break;
+          }
+        }
+      }
+      m = token.exec(String(html || ''));
+    }
+    return top;
+  }
+
+  /**
+   * The tabs open for a fragment, outermost first, as `markOpenTabs()`
+   * marks them: in each bar the tab whose panel is or holds the target,
+   * else its `first`, else its first. A tab that links to another page (a
+   * drill-down's, rule 7a) is open but is no crumb — that trail already
+   * names it — and the walk goes on into the panel drawn.
+   *
+   * @param roots - `tabTreeOf()`'s answer
+   * @param fragment - the address's fragment, with or without its `#`
+   * @returns `{ label, href }` per open tab of this page
+   */
+  static openTabs(roots: Json[], fragment: string): Json[] {
+    const target = String(fragment || '').replace(/^#/, '');
+    const holds = function (panel: Json): boolean {
+      return !!target && !!panel &&
+        (panel.id === target || panel.ids.indexOf(target) >= 0);
+    };
+    const panelFor = function (root: Json, link: Json): Json {
+      const href = String(link.href || '');
+      if (href.charAt(0) === '#') {
+        return root.panels.filter(function (p: Json) {
+          return p.id === href.slice(1);
+        })[0] || null;
+      }
+      return root.panels.filter(function (p: Json) {
+        return p.first;
+      })[0] || null;
+    };
+    const path: Json[] = [];
+    let level = Array.isArray(roots) ? roots : [];
+    // Bounded by the depth of the tree; the guard is for a malformed one.
+    for (let depth = 0; level.length && depth < 16; depth++) {
+      const root = level.filter(function (r: Json) {
+        return r.panels.some(holds);
+      })[0] || level[0];
+      let link = root.links.filter(function (l: Json) {
+        return holds(panelFor(root, l)) &&
+          String(l.href || '').charAt(0) === '#';
+      })[0] || null;
+      if (!link) {
+        link = root.links.filter(function (l: Json) {
+          return l.first;
+        })[0] || root.links[0] || null;
+      }
+      if (!link) {
+        break;
+      }
+      if (String(link.href).charAt(0) === '#' && link.label.trim()) {
+        path.push({ label: link.label.trim(), href: link.href });
+      }
+      const panel = panelFor(root, link);
+      level = panel ? panel.roots : [];
+    }
+    return path;
+  }
+
+  // The five entities `kit.esc()` writes, and numeric references.
+  static unescapeHtml(text: string): string {
+    return String(text).replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos|nbsp);/g,
+      function (whole: string, name: string): string {
+        if (name.charAt(0) === '#') {
+          const code = name.charAt(1).toLowerCase() === 'x'
+            ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+          return code > 0 && code < 0x110000 ? String.fromCodePoint(code)
+            : whole;
+        }
+        return ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+                  nbsp: ' ' } as Json)[name];
+      });
   }
 
   /**

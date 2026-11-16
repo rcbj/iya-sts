@@ -2011,6 +2011,16 @@ since the same change** (`STS-API-0110`) — see `oauth-oidc/CLAUDE.md` 3an. **T
 DPoP half of that check was missing until #34 (2026-09-15)**: see *THE GATE
 READS `DPoP` TOO* above.
 
+The same two action names on `POST /admin-api/users` issue and revoke one
+for a **person** (`issueUserTlsClientCertificate`,
+`revokeUserTlsClientCertificate`). The subject is the directory entry's
+name, the subjectAltName is `urn:sts:person:<username>`, and the leaf is
+not written to `userCertificate`. The list is `mfa.tls` of
+`GET /admin-api/users`, which adds `subjectDn`, `entryDn` and
+`caAvailable` to the signing list's shape. Codes `STS-ADMIN-0939` through
+`0942`; a refusal the certificate module already marked keeps that code.
+The application's operations are unchanged.
+
 ## `issue-software-statement` (2026-09-13)
 
 `POST /admin-api/applications/issue-software-statement` mirrors the *Issue a

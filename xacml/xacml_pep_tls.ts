@@ -37,13 +37,24 @@
 // ---------------------------------------------------------------------------
 // WHAT THE CERTIFICATE NAMES.
 //
-// The PEP's registered NAME and the HOST of its notify URL, unless the caller
-// names others — and names the caller adds are ADDED rather than replacing,
-// because the notify host is where this service itself would dial the PEP and a
-// certificate that did not name it is one the nudge could never verify. The PEP
-// name is only used where it is a DNS name (a certificate subject folded into
-// an entry name may not be), and an IP host becomes an IP subjectAltName rather
-// than a DNS one, which is the difference `checkServerIdentity()` reads.
+// The PEP's registered NAME, the HOSTNAME it reports (#1760), and the HOST of
+// its notify URL, unless the caller names others — and names the caller adds
+// are ADDED rather than replacing, because the notify host is where this
+// service itself would dial the PEP and a certificate that did not name it is
+// one the nudge could never verify. The PEP name is only used where it is a
+// DNS name (a certificate subject folded into an entry name may not be), and
+// an IP host becomes an IP subjectAltName rather than a DNS one, which is the
+// difference `checkServerIdentity()` reads. A name derived twice (a notify
+// host that is the hostname) is named once.
+//
+// THE HOSTNAME IS WHAT MAKES THE DEFAULT CERTIFICATE WORK ON A FRESH INSTALL
+// (#1760). A PEP that derives its notify URL picks the certificate's DNS name
+// that equals its hostname, and registers with NO notify URL until it holds a
+// certificate — so before the PEP reported its hostname, a first
+// certificate's defaults were the registered name alone (`remote-pep-1`), the
+// derivation fell through to it, and nothing resolved it. The registry holds
+// what the PEP reports to a DNS name (`hostnameOf()`, STS-XACML-0261); an
+// older PEP reports none, and the defaults are what they were.
 //
 // ---------------------------------------------------------------------------
 // THE PRIVATE KEY IS HANDED OVER ONCE.
@@ -91,11 +102,18 @@ import errorCodes = require('../common/error_codes');
 // nothing and closes no cycle.
 import pki = require('../common/pki');
 import peps = require('./xacml_pep_registry');
+// The listeners defined for a PEP (#1760): which of them a certificate may be
+// issued for, and the register slot each is filed under. A LIBRARY.
+import pepListeners = require('./xacml_pep_listeners');
 
 // The part of a register row this module reads.
 interface PepRowNames {
   name?: string;
+  // The hostname the PEP reported (#1760), already held to a DNS name by
+  // the registry; absent from an older PEP.
+  hostname?: string;
   notifyUrl?: string;
+  listeners?: string;
 }
 
 // The names a certificate carries, in their two kinds.
@@ -132,6 +150,14 @@ interface PepTlsDeps {
   // The subjectAltName string node's X509Certificate reports for a PEM.
   // Throws on a PEM node will not parse.
   subjectAltNameOf(pem: string): string;
+  // A PKCS #10 request read and its proof of possession verified
+  // (`common/cert_enrollment.ts`'s `parseCsr()`), required when asked.
+  parseCsr(der: Buffer): Promise<any>;
+  // Whether a certificate certifies the public key in a PEM (the SPKI
+  // digests of both, through `common/crypto.js`).
+  certifiesKey(certificatePem: string, publicKeyPem: string): boolean;
+  // The listener definitions stored for a PEP.
+  listenersOf(text: string): any[] | null;
 }
 
 /**
@@ -174,10 +200,52 @@ class PepTls {
       audit: audit,
       errorCodes: errorCodes,
       pki: pki,
-      peps: peps,
+      // A MEMBER OF A CLUSTER IS READ AS IT PULLS (#1760, Remote PEP
+      // clusters): its effective row, whose listeners are the cluster's
+      // with the member's own addresses and names. A PEP in no cluster is
+      // its row unchanged. The clusters module is required lazily: it
+      // reads the register this module reads.
+      peps: {
+        read: function (name: string): any {
+          helpers.log.debug("Entering read().");
+          const row = peps.read(name);
+          helpers.log.debug("Leaving read().");
+          return require('./xacml_pep_clusters').effectiveRow(row);
+        }
+      },
       isIP: net.isIP,
       subjectAltNameOf: function (pem) {
         return stsCrypto.parseCertificate(pem).subjectAltName;
+      },
+      // LAZY: the enrollment core is built with ACME, EST and SCEP at 23e,
+      // and this library is required at 23c; a request reaches it only at
+      // the first certificate a PEP asks for, long after both are built.
+      parseCsr: function (der) {
+        helpers.log.debug("Entering parseCsr().");
+        helpers.log.debug("Leaving parseCsr().");
+        return require('../common/cert_enrollment').parseCsr(der);
+      },
+      certifiesKey: function (certificatePem, publicKeyPem) {
+        helpers.log.debug("Entering certifiesKey().");
+        let same = false;
+        try {
+          same = stsCrypto.certificateSpkiThumbprint(certificatePem) ===
+            stsCrypto.publicKeySpkiThumbprint(
+              stsCrypto.publicKeyOf(publicKeyPem));
+        } catch (e) {
+          // A certificate or key node cannot read certifies nothing, and the
+          // caller issues a new certificate rather than answer an old one.
+          helpers.log.debug("Caught in certifiesKey(): " +
+                            ((e && e.message) || e));
+          same = false;
+        }
+        helpers.log.debug("Leaving certifiesKey(). " + same);
+        return same;
+      },
+      listenersOf: function (text) {
+        helpers.log.debug("Entering listenersOf().");
+        helpers.log.debug("Leaving listenersOf().");
+        return pepListeners.stored(text || '', null).listeners;
       }
     };
   }
@@ -223,7 +291,8 @@ class PepTls {
   // header.
   /**
    * Returns the names a certificate for a registered PEP carries by default:
-   * its name when that is a DNS name, and the host of its notify URL.
+   * its name when that is a DNS name, the hostname it reported, and the host
+   * of its notify URL, each once.
    *
    * A notify URL that does not parse contributes nothing.
    * @param row - the PEP's register row
@@ -234,8 +303,24 @@ class PepTls {
     log.debug("Entering PepTls.derivedNames().");
     const dnsNames: string[] = [];
     const ipAddresses: string[] = [];
+    // A name already derived is not derived again, case aside: a notify URL
+    // whose host is the hostname would otherwise name it twice.
+    const addDns = function (one: string): void {
+      const lower = one.toLowerCase();
+      if (!dnsNames.some(function (had) {
+        return had.toLowerCase() === lower;
+      })) {
+        dnsNames.push(one);
+      }
+    };
     if (row && this.isDnsName(row.name)) {
-      dnsNames.push(row.name);
+      addDns(row.name);
+    }
+    // THE HOSTNAME THE PEP REPORTED (#1760) — see the header: the name its
+    // notify-URL derivation looks for in this certificate.
+    if (row && row.hostname && this.isDnsName(row.hostname) &&
+        !isIP(row.hostname)) {
+      addDns(row.hostname);
     }
     if (row && row.notifyUrl) {
       try {
@@ -247,7 +332,7 @@ class PepTls {
         if (isIP(host)) {
           ipAddresses.push(host);
         } else if (this.isDnsName(host)) {
-          dnsNames.push(host);
+          addDns(host);
         }
       } catch (e) {
         // A notify URL that will not parse names no host. The row already
@@ -456,6 +541,167 @@ class PepTls {
       privateKeyPem: issued.privateKeyPem
     };
   }
+
+  // -------------------------------------------------------------------------
+  // A DEFINED HTTPS LISTENER'S CERTIFICATE (#1760), for
+  // `POST /xacml/pep/listener-certificate`. The PEP generated the key and
+  // proves possession of it in a PKCS #10 request; the certificate is
+  // issued over the PUBLIC key in it, naming what THIS SERVICE says the
+  // listener is called — the PEP's derived names and the definition's — and
+  // never what the request asks for. So the request's subject and
+  // extensions are read for nothing, and a PEP cannot name a host its
+  // definition does not.
+  //
+  // ASKED AGAIN WITH THE SAME KEY, IT ANSWERS THE CERTIFICATE IT HOLDS while
+  // that certifies the key, carries the definition's names and has a third
+  // of its life left, so a PEP that lost the answer, or restarts and asks
+  // again before the heartbeat, does not supersede anything. A new key, a
+  // changed name or `renew` moved by an administrator issues a new one and
+  // supersedes the old, as a reissue of the environment's pair does.
+  // -------------------------------------------------------------------------
+  /**
+   * Issues, or answers again, the certificate of an HTTPS listener defined
+   * for a PEP, over the key in the PEP's own certificate request.
+   *
+   * @param name - the PEP's name, from its client certificate
+   * @param body - `listener` (the id) and `csr` (PEM or base64 DER)
+   * @returns a promise of `{ ok: true, ... }` with the certificate, the
+   *   chain and `fullChainPem` and no key, or `{ ok: false, why, status }`
+   *   carrying its code
+   */
+  async issueForListener(name: string, body?: any): Promise<IssueResult> {
+    const { log, audit, errorCodes, pki, peps, parseCsr, certifiesKey,
+            listenersOf } = this.deps;
+    log.debug("Entering PepTls.issueForListener(). name=" + name);
+    const b = body || {};
+    const row = peps.read(name);
+    const id = typeof b.listener === 'string' ? b.listener : '';
+    const defined = row ? listenersOf(row.listeners || '') || [] : [];
+    const listener = defined.filter(function (one) {
+      return one.id === id && one.protocol === 'https';
+    })[0];
+    if (!row || !listener) {
+      log.debug("Leaving PepTls.issueForListener(). No such listener.");
+      return errorCodes.mark({ ok: false,
+               why: row
+                 ? 'No HTTPS listener "' + id + '" is defined for remote ' +
+                   'PEP "' + name + '" in this realm; the listeners the ' +
+                   'settings pull sends are the ones a certificate is ' +
+                   'issued for.'
+                 : 'No Policy Enforcement Point is registered as "' + name +
+                   '" in this realm. Register first.',
+               status: row ? 400 : 404 }, 'STS-XACML-0253');
+    }
+    const text = typeof b.csr === 'string' ? b.csr : '';
+    const der = Buffer.from(text.replace(/-----[A-Z ]+-----/g, '')
+                              .replace(/\s+/g, ''), 'base64');
+    const parsed = der.length ? await parseCsr(der) : null;
+    if (!parsed || !parsed.ok ||
+        pepListeners.KEY_ALGS.indexOf(parsed.keyAlg) < 0) {
+      log.debug("Leaving PepTls.issueForListener(). Request refused.");
+      return errorCodes.mark({ ok: false,
+               why: parsed && !parsed.ok
+                 ? 'The certificate request was refused: ' + parsed.why
+                 : 'Send `csr`, a PKCS #10 request (PEM or base64 DER) ' +
+                   'signed with a key of ' + pepListeners.KEY_ALGS.join(', ') +
+                   '.',
+               status: 400 }, 'STS-XACML-0254');
+    }
+    const slot = pepListeners.slotOf(name, id);
+    const derived = this.derivedNames(row);
+    const dnsNames = derived.dnsNames.concat(listener.dnsNames);
+    const ipAddresses = derived.ipAddresses.concat(listener.ipAddresses);
+    const held: any = this.certificateOf(slot);
+    const sameNames = function (a: string[], b2: string[]): boolean {
+      const x = a.map(function (one) {
+        return one.toLowerCase();
+      }).sort().join(',');
+      const y = b2.map(function (one) {
+        return one.toLowerCase();
+      }).sort().join(',');
+      return x === y;
+    };
+    const unique = function (list: string[]): string[] {
+      return list.filter(function (one, i) {
+        return list.map(function (o) {
+          return o.toLowerCase();
+        }).indexOf(one.toLowerCase()) === i;
+      });
+    };
+    const lifeLeft = held
+      ? (Date.parse(held.notAfter) - Date.now()) /
+        Math.max(1, Date.parse(held.notAfter) - Date.parse(held.notBefore))
+      : 0;
+    if (held && !held.expired && lifeLeft > 1 / 3 &&
+        certifiesKey(held.certificatePem, parsed.publicKeyPem) &&
+        sameNames(held.dnsNames, unique(dnsNames)) &&
+        sameNames(held.ipAddresses, unique(ipAddresses))) {
+      log.debug("Leaving PepTls.issueForListener(). The one held.");
+      return this.listenerAnswer(name, listener, held, false, null);
+    }
+    const result = await pki.issueTlsServerKeyPair('', PepTls.USE_CASE, {
+      slot: slot,
+      label: 'remote PEP ' + name + ' listener ' + id,
+      commonName: name,
+      dnsNames: dnsNames,
+      ipAddresses: ipAddresses,
+      keyAlg: parsed.keyAlg,
+      publicKeyPem: parsed.publicKeyPem
+    });
+    if (!result.ok) {
+      log.debug("Leaving PepTls.issueForListener(). Not issued.");
+      return errorCodes.mark({ ok: false,
+               why: (result.errors || []).join(' ') ||
+                    'The certificate could not be issued.', status: 500 },
+               'STS-XACML-0255');
+    }
+    const issued = result.issued;
+    audit.audit({ action: 'xacml.pep.listener.certificate', actor: '',
+                  protocol: 'XACML',
+                  detail: 'Issued the certificate of listener "' + id +
+                          '" of remote PEP "' + name + '" over the key it ' +
+                          'generated (serial ' + issued.serialHex +
+                          ', names ' +
+                          issued.dnsNames.concat(issued.ipAddresses)
+                            .join(', ') +
+                          ', expires ' + issued.notAfter + ')' +
+                          (issued.replacedSerialHex
+                            ? '; serial ' + issued.replacedSerialHex +
+                              ' is superseded'
+                            : '') + '.' });
+    log.debug("Leaving PepTls.issueForListener(). serial=" +
+              issued.serialHex);
+    return this.listenerAnswer(name, listener, issued, true,
+                               issued.replacedSerialHex || null);
+  }
+
+  // The answer of `POST /xacml/pep/listener-certificate`: public material
+  // only — there is no key to hand back.
+  private listenerAnswer(name: string, listener: any, held: any,
+                         issued: boolean,
+                         replaced: string | null): IssueResult {
+    const { log, pki } = this.deps;
+    log.debug("Entering PepTls.listenerAnswer().");
+    const fullChainPem = pki.chainThroughRoot(held.certificatePem,
+                                              held.chainPem || [])
+      .map(function (one) {
+        return String(one).replace(/\s*$/, '\n');
+      }).join('');
+    log.debug("Leaving PepTls.listenerAnswer().");
+    return {
+      ok: true,
+      pep: name,
+      listener: listener.id,
+      renew: listener.renew,
+      issued: issued,
+      serialHex: held.serialHex,
+      notBefore: held.notBefore,
+      notAfter: held.notAfter,
+      replacedSerialHex: replaced,
+      certificatePem: held.certificatePem,
+      fullChainPem: fullChainPem
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +736,7 @@ export = {
   USE_CASE: PepTls.USE_CASE,
   issue: slot.forward('issue'),
   certificateOf: slot.forward('certificateOf'),
+  issueForListener: slot.forward('issueForListener'),
   derivedNames: slot.forward('derivedNames'),
   listFrom: slot.forward('listFrom')
 };

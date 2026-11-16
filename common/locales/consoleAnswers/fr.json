@@ -98,6 +98,7 @@
   "tls.key": "Clé",
   "tls.goodUntil": "Valide jusqu’au",
   "tls.how": "<strong>Comment l’application l’utilise.</strong> Présentez-le sur la connexion TLS au point de terminaison de jeton avec <code>client_id={client}</code> et une <code>token_endpoint_auth_method</code> de <code>tls_client_auth</code> sur l’entrée : la section 2.1 de la RFC 8705 l’authentifie parce que ce domaine l’a émis pour cette application, sans rien d’autre d’enregistré. Chaque jeton d’accès émis sur cette connexion porte le <code>cnf[\"x5t#S256\"]</code> de ce certificat (section 3) : l’application présente donc le même certificat aux serveurs de ressources. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Domaine",
   "pep.names": "Noms",
   "validUntil": "Valide jusqu’au",
@@ -111,5 +112,9 @@
   "person.certificate": "Le certificat, qui est public et figure aussi sur l’entrée :",
   "once.signingCertificate": "Certificat de signature de messages",
   "signing.warn": "<strong>C’est la seule fois où ces fichiers peuvent être téléchargés.</strong> Ce service ne conserve pas la clé privée — ni sur l’entrée du détenteur, ni dans le registre des certificats — et rien sur cette console ni sur <code>/admin-api</code> ne la redonne. Si elle est perdue, révoquez le certificat et émettez-en un autre.",
-  "signing.how": "<strong>Comment l’utiliser.</strong> Signez chaque requête WS-Trust avec la clé de <code>{key}</code> (ou le PKCS#12) : une signature WS-Security 1.1 sur le Body SOAP et le Timestamp, avec ce certificat dans un BinarySecurityToken et <code>{chain}</code> comme chaîne. La requête s’authentifie alors comme <code>{name}</code>, parce que ce domaine a émis le certificat à ce nom, sans rien d’autre d’enregistré."
+  "signing.how": "<strong>Comment l’utiliser.</strong> Signez chaque requête WS-Trust avec la clé de <code>{key}</code> (ou le PKCS#12) : une signature WS-Security 1.1 sur le Body SOAP et le Timestamp, avec ce certificat dans un BinarySecurityToken et <code>{chain}</code> comme chaîne. La requête s’authentifie alors comme <code>{name}</code>, parce que ce domaine a émis le certificat à ce nom, sans rien d’autre d’enregistré.",
+  "cluster.back": "Retour au cluster",
+  "cluster.discardedDownload": "Télécharger ce qui a été abandonné",
+  "cluster.discardedLead": "Le PEP n’a plus son propre proxy inverse, ses paramètres ni ses écouteurs : il récupère ceux du cluster. Voici ce qu’il avait, une seule fois.",
+  "cluster.discardedTitle": "Un PEP a rejoint un cluster"
 }

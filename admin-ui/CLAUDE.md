@@ -155,7 +155,110 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    the one control the shell had turned off.
 
    A drill-down view returns `up` — `upTo(section, leaf, listView)` — and
-   `respond()` threads it to `page()`. It makes the active tab a LINK as well.
+   `respond()` threads it to `page()`. **A static page row may add crumbs
+   between the section and the leaf** (`upVia(query, t)`, #1760), through
+   `trailBar()`'s `via`, as #1068's person pages are. **Every drill-down's
+   trail names the tab it was opened from** (rcbj, 2026-11-14): a remote
+   PEP's page is *XACML › Remote PEPs › the PEP* and a route's page *XACML ›
+   Remote PEPs › the PEP › Reverse proxy › the route*, each tab crumb a link
+   to that tab (by the tab's own label) and the PEP a link to its page, so
+   the section crumb is the page itself, with no fragment. **A drill-down
+   at a path of its own may be drawn inside its parent's tabs** (the remote
+   PEP route page, rcbj 2026-11-14): `kit.tabbedPanels()` and
+   `subTabbedPanels()` take a panel's `href` (a tab linking to that tab on
+   the parent page, no panel drawn; the one panel drawn is then the `first`,
+   shown and marked current with no fragment), so the route page draws the PEP page's
+   bar with Reverse proxy current and its sub-tabs with Configured Routes
+   current, the route inside. **Both are drawn inside the XACML page's own
+   bar** (rcbj 2026-11-15: three rows on the route page, two on the PEP's),
+   Remote PEPs current and every other XACML tab a link to
+   `/admin/xacml#<tab>` (`XacmlPage.withinXacmlTabs()`, the one tab list
+   `XacmlPage.xacmlTabs()` that `/admin/xacml` draws too). Three levels
+   needed no change to the kit: every rule of the stylesheet is a child
+   rule on its own `.tabs` or `.subtabs`.
+
+   **A DRILL-DOWN DRAWN INSIDE A PARENT'S TABS LINKS EVERY TAB BACK, TITLES
+   ITSELF, AND OFFERS A BACK LINK** (rcbj 2026-11-15: *"clicking on that
+   leaves you trapped on the route detail sub-subtab"*). The trap: the tab
+   of the one panel drawn was `#<its id>`, a fragment of the DRILL-DOWN's
+   own page, so Configured Routes, Reverse proxy and Remote PEPs on a
+   route's page each pointed at the route's page and the runtime, finding
+   the same path and query, only set the fragment. On a drill-down no tab
+   is the page itself, so **every tab carries `href`, the current ones
+   included**: a panel with `html` is drawn whatever its `href`
+   (`WebKit.drawsPanel()`), its tab links to the `href`, and it is still
+   the `first`, shown and marked current with no fragment — the
+   stylesheet's `a.first` rule, and `markOpenTabs()`, which falls back to
+   the `first` link when no link's fragment holds the target. The runtime
+   needed nothing: a tab whose `href` is another page goes through
+   `onClick()`'s `go()` like any link. The panel then opens with
+   `kit.drillTitle()`: *← Back to routes* directly under the innermost tab
+   row (rcbj: *"just below the 'Configured Routes' tab marker"*), then
+   *Route detail: <id>* with the path beside it — an indented heading with
+   the tab colour's bar (`.drilltitle`) as the level below that row, rather
+   than a fourth row of one tab, which would offer nothing to press but the
+   page.
+   The trail names every level: *XACML › Remote PEPs › the PEP › Reverse
+   proxy › Configured Routes › the route*, Reverse proxy linking to
+   `#xacml-pep-tab-proxy` and Configured Routes to
+   `#xacml-pep-proxy-routes`. `tests/xacml_pep_console.js` X/W/T/K hold
+   all of it.
+
+   **A TABBED PAGE'S TRAIL ENDS AT THE OPEN TAB AND SUB-TAB** (rcbj
+   2026-11-15: *"the breadcrumb trail does not correctly show Admin
+   console->XACML->Remote PEPs->PEP Name->Listener->Create a new
+   listener"*). **This reverses the rule recorded with `07f0f12a2` and
+   `f902f7a84`**, that a tabbed page's own trail names no open tab because
+   it is drawn with the view and a tab press changes only the fragment, so
+   a tab crumb would go stale on the first press. The staleness was the
+   whole argument, and the runtime answers it: the trail is drawn again on
+   every fragment change, without drawing the page. **It is generic, in
+   the shared mechanism, never per page**:
+   * `draw()` reads the body's tab tree from the SAME string it draws
+     (`WebShell.tabTreeOf()`: each `.tabs`/`.subtabs` with its
+     `nav.tabbar` links and its `.tabpanel`/`.subpanel`s, every id inside
+     each panel, the bars nested in each), so the trail cannot name a tab
+     the page lacks, and node holds it with no DOM.
+   * `WebShell.openTabs(tree, fragment)` walks it as `markOpenTabs()`
+     marks the bars: in each bar the tab whose panel is or holds the
+     target, else its `first`, else its first — so with no fragment, or
+     one the page lacks, the trail names the first tab, and a tab alone
+     names its first sub-tab. **A tab that links to another page is open
+     but is no crumb** (a drill-down's rows, above): the walk goes on into
+     the panel drawn, and the route and listener pages, whose every tab is
+     such a link, keep their trails unchanged.
+   * `trailBar()`'s `tabs` and `self`: the page's own crumb becomes a link
+     to the page with no fragment, each tab crumb but the deepest a link to
+     its `#<id>`, and the deepest the plain leaf.
+   * `redrawTrail()` replaces `.card p.crumb` on every `hashchange` and
+     fragment `popstate` (a tab press, a tab crumb, Back), from what the
+     page was drawn with; `drawProblem()` and `drawShellRefused()` clear
+     it.
+   So every console page drawn with `kit.tabbedPanels()` or
+   `subTabbedPanels()` is covered: a PEP's page (its six tabs and the
+   Listener and Reverse proxy sub-tabs), `/admin/xacml`, OAuth, SAML,
+   Kerberos, OpenID4VC, SSF and SCIM, every `WebPages.PROTOCOL_TABS` page
+   (delegation, federation, OpenID Federation, provider commands, claim
+   providers, GNAP, UMA, TOTP, recovery codes, WebAuthn, device
+   registration, LDAP, WS-Trust, WS-Federation, PKI, TLS, groups, roles,
+   applications, devices, attribute sources, secret destinations),
+   Certificate issuance with its ACME, EST, SCEP and SPIFFE sub-tabs,
+   Server configuration → Listeners, and the application, user (its
+   Credentials and person-field sub-tabs), group, role and policy pages
+   with their sub-tabs. `tests/xacml_pep_console.js` TR holds it. **A remote PEP
+   LISTENER's page is the second** (rcbj 2026-11-15:
+   `/admin/xacml/pep/listener?pep=&listener=`, Listener › Configured
+   Listeners current, *← Back to listeners*, *Listener detail: <id>*, the
+   trail through Listener › Configured Listeners): both draw through
+   `XacmlPage.withinPepSubTab()`, the one wrapper for a drill-down of a PEP
+   sub-tab, so a third is a call, not a copy. It is drawn from the PEP's
+   own answer, so `listener` is the page row's `ownParams` — a name the
+   page reads from `ctx.query` and `WebPages.operationQuery()` never asks
+   the operation, which does not declare it (#1476) — and rule 7 owed
+   nothing. The environment's four listeners link to the same page,
+   read-only. `tests/xacml_pep_console.js` LS/LD/LT hold it. And `WebAnswers.landing()` sends that page's save to the route as it
+   is now called (a rename moves its address) and its removal to the PEP's
+   tab, the fragment kept with the notice before it. It makes the active tab a LINK as well.
    **The section label comes from `NAV`**, so a renamed tab cannot leave a trail
    naming the old one. **The last crumb is never a link**: a crumb that reloads
    the page you are on teaches a reader not to trust the ones beside it.
@@ -2829,6 +2932,15 @@ WHERE the code runs, not what it draws.
   console operations' `svg` is console-only markup (`mgmt-api/CLAUDE.md`
   3cc), while `getCredentialLineage`'s `svg` and `format=svg` and
   `getGeolocation`'s `picture.svg` are on management operations.
+* **A FOURTH PICTURE WAS BORN IN THE BROWSER** (2026-11-15):
+  `xacml/web_pep_picture.ts`, a remote PEP's Visual sub-tab, has no server
+  wrapper, no `svg` member and no `?format=svg`; it is drawn from the PEP
+  page's answer as it stands, takes this section's palette, hexagon and text
+  metric, and its key is drawn in the browser from its own catalog
+  (`consolePepPicture`). `xacml/CLAUDE.md` has it. A click on a picture's
+  box is a console navigation since then: `ConsoleRuntime.onClick()`
+  compares `tagName` without case, because an SVG `<a>` is `a`, and before it
+  every picture's link was a full page load that dropped the token.
 * **THE KEYS ARE STILL DRAWN ON THE SERVER** (`mapKey`): fixed markup — the
   delegation key out of the glyph functions, the federation key out of
   one-box graphs put through the real renderer — whose sentences the server
@@ -7373,6 +7485,15 @@ stored on their entry and no other (`common/CLAUDE.md` 3ag), so this is where
 an operator says ahead of time which certificate is whose. The Attributes
 tab's editor still does not offer `userCertificate`: its value is binary, and
 this block is its door. `mgmt-api/CLAUDE.md` has the API twin.
+
+The block is drawn on the **Key pairs** sub-tab (`ucred-keys`), after the
+assertion key pairs, together with **Message-signing certificates** and
+**TLS client certificates**. Self-issued IDs and the published DIDs are the
+next sub-tab, `ucred-self-issued`. The TLS client section issues from this
+realm's TLS Client Issuing CA with the directory entry's subject
+(`issue-tls-client-certificate` / `revoke-tls-client-certificate` on
+`POST /admin/users`). The leaf is not stored in `userCertificate`. The
+portal's own card is a different door and still issues `CN=<username>`.
 
 **An application's** (#1227, 2026-10-30) is the same block at the end of the
 application page's Credentials tab

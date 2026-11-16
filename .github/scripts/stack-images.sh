@@ -32,7 +32,7 @@ set -euo pipefail
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}"
 IMAGE_TAG="${IMAGE_TAG:?IMAGE_TAG must be set}"
 NAMES="sts xacml-pep iya-sts-tests sts-saml-shibboleth sts-saml-simplesamlphp
-       sts-saml-pysaml2 sts-saml-keycloak sts-test-peer"
+       sts-saml-pysaml2 sts-saml-keycloak sts-test-peer sts-companion"
 
 ACTION="${1:?usage: stack-images.sh save|load <file.tar.zst>}"
 ARCHIVE="${2:?usage: stack-images.sh save|load <file.tar.zst>}"

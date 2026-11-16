@@ -1102,29 +1102,72 @@ class WebKit {
   // page, a printout and a browser without `:has()` (which shows them all)
   // see everything. A panel with nothing in it gets no tab.
   // ---------------------------------------------------------------------------
+  // A DRILL-DOWN DRAWN INSIDE ITS PARENT'S TABS (rcbj, 2026-11-14): a page
+  // at a path of its own — a remote PEP route's — keeps the tabs of the
+  // page it was opened from. Every tab but its own is `href`, a link to
+  // that tab on the parent page, with no panel here, so its own is the one
+  // panel drawn and the `first`: shown and marked current with no fragment.
+  // Without `href`, nothing changes.
+  //
+  // AND ITS OWN TAB IS A LINK BACK AS WELL (rcbj, 2026-11-15: "clicking on
+  // that leaves you trapped on the route detail sub-subtab"). The tab of
+  // the one panel drawn was `#<its id>`, a fragment of the DRILL-DOWN's
+  // page: Configured Routes on a route's page pointed at the route's page,
+  // so pressing it changed nothing, and no tab of the three rows led back
+  // to the list it was opened from. On a drill-down none of the tabs is
+  // the page itself, so the drawn panel takes an `href` too: a panel with
+  // `html` is drawn here whatever its `href`, and its tab links to the
+  // `href` when it has one, else to its fragment. It is still the `first`,
+  // so it is shown and marked current with no fragment, by the stylesheet
+  // and by the runtime's `markOpenTabs()`, which falls back to the `first`
+  // link when no link's fragment holds the target.
   /**
    * Draws panels as tabs: a bar of links, then each panel with something in
    * it, the first shown when no fragment picks one.
    *
    * @param cls - an extra class for the container
-   * @param panels - `{ id, label, html }` in tab order
+   * @param panels - `{ id, label, html }` in tab order; optionally `href`
+   *   (the tab is a link there; with no `html`, no panel is drawn)
    * @returns the tabs as HTML
    */
   static tabbedPanels(cls, panels) {
-    const shown = panels.filter(function (one) {
-      return String(one.html || '').trim() !== '';
-    });
+    const shown = WebKit.panelsShown(panels);
     return '<div class="tabs ' + WebKit.esc(cls) + '">' +
       '<nav class="tabbar" aria-label="Sections of this page">' +
-      shown.map(function (one, n) {
-        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
-          WebKit.esc(one.id) + '">' + WebKit.esc(one.label) + '</a>';
+      shown.map(function (one) {
+        return WebKit.tabLink(one);
       }).join('') + '</nav>' +
-      shown.map(function (one, n) {
-        return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
+      shown.filter(WebKit.drawsPanel).map(function (one) {
+        return '<section class="tabpanel' + (one.first ? ' first' : '') +
           '" id="' + WebKit.esc(one.id) + '">' +
           WebKit.withDocLink(one) + '</section>';
       }).join('') + '</div>';
+  }
+
+  // The panels that get a tab, the first one drawn here marked `first`:
+  // the one shown with no fragment.
+  static panelsShown(panels) {
+    const shown = panels.filter(function (one) {
+      return !!one.href || String(one.html || '').trim() !== '';
+    });
+    const first = shown.filter(WebKit.drawsPanel)[0];
+    return shown.map(function (one) {
+      return Object.assign({}, one, { first: one === first });
+    });
+  }
+
+  // A panel drawn on this page: one with something in it. A tab with an
+  // `href` and nothing in it only links elsewhere; one with both is a
+  // drill-down's own panel, drawn here and linking back to its parent.
+  static drawsPanel(one) {
+    return String(one.html || '').trim() !== '';
+  }
+
+  // One tab of a bar: to its panel's fragment, or where `href` says.
+  static tabLink(one) {
+    return '<a' + (one.first ? ' class="first"' : '') + ' href="' +
+      WebKit.esc(one.href ? String(one.href) : '#' + one.id) + '">' +
+      WebKit.esc(one.label) + '</a>';
   }
 
   // THE DOCUMENTATION LINK (#895) sits at the top of a leaf panel. A panel
@@ -2654,23 +2697,54 @@ class WebKit {
    * mechanism one level down.
    *
    * @param label - what the bar is, for a screen reader
-   * @param panels - `{ id, label, html }` in tab order
+   * @param panels - `{ id, label, html }` in tab order; `href` as
+   *   `tabbedPanels()` takes it
    * @returns the sub-tabs as HTML
    */
   static subTabbedPanels(label, panels) {
-    const shown = panels.filter(function (one) {
-      return String(one.html || '').trim() !== '';
-    });
+    const shown = WebKit.panelsShown(panels);
     return '<div class="subtabs"><nav class="tabbar subbar" aria-label="' +
       WebKit.esc(label) + '">' +
-      shown.map(function (one, n) {
-        return '<a' + (n === 0 ? ' class="first"' : '') + ' href="#' +
-          WebKit.esc(one.id) + '">' + WebKit.esc(one.label) + '</a>';
+      shown.map(function (one) {
+        return WebKit.tabLink(one);
       }).join('') + '</nav>' +
-      shown.map(function (one, n) {
-        return '<div class="subpanel' + (n === 0 ? ' first' : '') + '" id="' +
-          WebKit.esc(one.id) + '">' + WebKit.withDocLink(one) + '</div>';
+      shown.filter(WebKit.drawsPanel).map(function (one) {
+        return '<div class="subpanel' + (one.first ? ' first' : '') +
+          '" id="' + WebKit.esc(one.id) + '">' + WebKit.withDocLink(one) +
+          '</div>';
       }).join('') + '</div>';
+  }
+
+  // A DRILL-DOWN'S TITLE INSIDE ITS PARENT'S TABS (rcbj, 2026-11-15: "There
+  // needs to be a title on this section specifying that you are now on the
+  // xyz route detail sub-subtab. There needs to be a clear / obvious way to
+  // get back"). The tab rows say where the page was opened from and mark
+  // that tab current, which on its own reads as if the reader were still
+  // ON it. So the panel opens with this: an indented heading, the level
+  // below the innermost tab row (`.drilltitle`'s rule and left bar), what
+  // it is about beside it, and a back link to the tab it was opened from.
+  // A heading rather than a fourth row of tabs: a bar with one tab would
+  // offer nothing to press but the page itself. THE BACK LINK COMES FIRST
+  // (rcbj, 2026-11-15: "just below the 'Configured Routes' tab marker"),
+  // directly under the innermost tab row, and the heading after it.
+  /**
+   * Draws a drill-down's head: a back link to the tab it was opened from,
+   * then its title with a note beside it.
+   *
+   * @param titleHtml - the title, as HTML
+   * @param asideHtml - beside the title (such as the route's path), as
+   *   HTML; '' for none
+   * @param backHref - the parent tab's address, page and fragment
+   * @param backHtml - the back link's text, as HTML
+   * @returns the heading row as HTML
+   */
+  static drillTitle(titleHtml: string, asideHtml: string, backHref: string,
+                    backHtml: string): string {
+    return '<p class="drillback"><a href="' + WebKit.esc(backHref) + '">' +
+      backHtml + '</a></p><div class="drilltitle"><h2>' + titleHtml +
+      '</h2>' +
+      (asideHtml ? '<span class="drillaside">' + asideHtml + '</span>'
+                 : '') + '</div>';
   }
 
   // A list of names, each in its own <code>. Written as a function because the

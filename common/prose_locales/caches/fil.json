@@ -1694,5 +1694,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "stale: na-disown na ang credential"
+  },
+  "caches.store.xacml.pep-tickets.title": {
+    "en": "d8dab9277ae943e0",
+    "text": "Mga Basic ticket ng remote PEP"
+  },
+  "caches.store.xacml.pep-tickets.description": {
+    "en": "1cdd4ca49053b643",
+    "text": "Ang mga ticket na ibinigay ng isang wastong POST /xacml/pep/basic sa isang remote PEP, nakatala sa SHA-256 ng bawat isa; hindi iniimbak ang ticket mismo."
+  },
+  "caches.store.xacml.pep-tickets.bound": {
+    "en": "4dead9c8be3539ac",
+    "text": "Ipinapatupad: 10000 bawat realm, inaalis ang pinakaluma; bina-validate muli ng PEP ang Basic credential."
+  },
+  "caches.store.xacml.pep-tickets.hitMeaning": {
+    "en": "484401484f6f539d",
+    "text": "may natagpuang ticket sa pamamagitan ng digest nito"
   }
 }

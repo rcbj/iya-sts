@@ -390,6 +390,69 @@ A remote PEP holds its own copy of the engine and decides in its own process.
   `serverAuth` key pair from its realm's `pep-tls` Issuing CA. The private key
   appears in one reply and is never stored.
 
+### Authorizing a route
+
+A remote PEP in front of an application as a reverse proxy
+([Remote PEP](remote-pep.md#in-front-of-an-application-the-reverse-proxy-1760))
+decides every request on every route in XACML, against **that route's own
+policy**: never the realm's root, and a public route is decided too. Each
+route makes exactly one choice, its `authorization`:
+
+| `kind` | The route's policy |
+|---|---|
+| `policy` | **An existing policy** of the realm's repository, by name (`policy`). It must be enabled and one a remote PEP is sent: not this service's own access or issuance policy, and not an application's fine-grained policy (`STS-XACML-0265`). `actionModel` is what the PEP sends as the action-id: `method` (the default, the HTTP method), `crud` or `read-write`. `resource` empty sends the request's normalised path, so a hand-written policy can decide by path. |
+| `simple` | **A generated policy**: a `resource`, an `actionModel` (`crud` or `read-write`), and `roles`, for each action the route permits one to eight configured roles of the realm, any of which permits it (`STS-XACML-0266` for a role that is not configured: the built-in roles describe a request, not a person, and the PIP never answers them). |
+| `public` | **A generated policy** permitting anyone, signed in or not, the route's methods on its `resource`. The route takes no credential, names no application and forwards no identity. |
+
+```json
+{ "id": "api", "path": "/pep-app/api", "match": "prefix",
+  "methods": ["GET", "HEAD", "POST"],
+  "mechanisms": ["session"], "application": "pep-app",
+  "authorization": { "kind": "simple", "actionModel": "read-write",
+                     "roles": { "read": ["pep-demo-users"],
+                                "write": ["pep-demo-admins"] } } }
+```
+
+**The action.** Under `crud`, GET, HEAD and OPTIONS are `read`, POST is
+`create`, PUT and PATCH are `update` and DELETE is `delete`; under
+`read-write`, GET, HEAD and OPTIONS are `read` and the rest `write`.
+
+**The resource.** A simple or public route's `resource` is the full URL the
+PEP sends as the resource-id (typed anyURI) for every request on the route.
+Left empty it is filled when the route is saved with the proxy's
+`publicBaseUrl` and the route's path, or, with no `publicBaseUrl`, the PEP's
+HTTPS proxy listener as `https://<the hostname it reports>:<the port it
+reports for proxy-https, 9543 by default>`. The route's page shows the
+application's home page (`appHomePageUrl`) beside it, offers it as the
+resource, and flags a different origin.
+
+**The generated policy** is named `pep-<pep>-<route>` and marked with
+`xacmlPepRoute` = `<pep>/<route>`. It is written as ALFA and stored through
+the same validating write the policy editor uses: a first-applicable policy
+with one Permit rule per action (the resource, the action-id and the roles)
+and a last rule that denies everything else, so a permit-biased PEP admits
+nothing it does not name. It is never the root (`STS-XACML-0267` for
+set-root). Saving the route's choice writes it again; it may be edited in the
+policy editor, and choosing an existing policy keeps a hand-written one.
+Renaming the route renames it; removing the route removes it, with
+`removePolicy: true` to confirm (`STS-XACML-0268`); switching to an existing
+policy leaves it in the repository, unreferenced, and the answer says so. A
+name already held by a policy not generated for the route is never
+overwritten (`STS-XACML-0267`). `generate-pep-route-policy` writes it again
+from the route as saved.
+
+**Methods.** A route with no method is deny-all: its generated policy is the
+deny rule alone, and the PEP refuses every request on it after asking the
+policy (`STS-XPEP-0116`, or `STS-XPEP-0086` where the policy denied). A route whose policy the PEP does not hold is
+refused whatever its bias (`STS-XPEP-0117`).
+
+| Operation | What it does |
+|---|---|
+| `GET /admin-api/xacml/policies?q=&per=&page=&routable=true` | The policy chooser's search: a page of the policies a route may choose |
+| `GET /admin-api/roles?q=&per=&rolesPage=` | The role chooser's search: the realm's configured roles |
+| `POST /admin-api/xacml/set-pep-route-authorization` | One route's choice, saved through the whole document's checks |
+| `POST /admin-api/xacml/generate-pep-route-policy` | A simple or public route's policy written again |
+
 ### Not implemented
 
 * **`AttributeSelector` and the XPath functions are not evaluated.** A policy
@@ -431,15 +494,16 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
 | `xacml.pepRequireCertificate` | `STS_XACML_PEP_REQUIRE_CERTIFICATE` | `true` | yes | Whether a PEP registration needs a client certificate. When off, a registration without one is marked unauthenticated. |
+| `xacml.pepPlainHttpProxyListeners` | `STS_XACML_PEP_PLAIN_HTTP_PROXY_LISTENERS` | `false` | yes | In product mode, whether a listener defined on a remote PEP's page may serve its reverse proxy over plain HTTP. Turn it on only where something in front of the PEP terminates TLS. Development allows it regardless. |
 | `xacml.pipMaxPerWindow` | `STS_XACML_PIP_MAX_PER_WINDOW` | `600` | yes | `POST /xacml/pip` queries allowed per PEP and per address in one `security.rateLimitWindowS` window. |
 | `xacml.pipMaxDesignators` | `STS_XACML_PIP_MAX_DESIGNATORS` | `50` | yes | The most attribute designators one PIP query may name. |
 | `xacml.maxPeps` | `STS_XACML_MAX_PEPS` | `50` | yes | How many entries `ou=peps` may hold. A registration past the limit is refused. |
 | `xacml.pepStaleAfterS` | `STS_XACML_PEP_STALE_AFTER_S` | `300` | yes | How long after its last heartbeat the console calls a PEP stale. The service behaves no differently. |
 | `xacml.pepNotify` | `STS_XACML_PEP_NOTIFY` | `true` | yes | Whether a repository change nudges registered PEPs. When off, changes take up to one poll interval longer to reach them. |
 | `xacml.pepNotifyAllowedHosts` | `STS_XACML_PEP_NOTIFY_ALLOWED_HOSTS` | *(empty)* | yes | Hosts that may be nudged. Empty means any host. |
-| `xacml.pepNotifyAllowHttp` | `STS_XACML_PEP_NOTIFY_ALLOW_HTTP` | `false` | yes | Allows nudging an `http://` notify URL, in development mode only. |
-| `xacml.pepNotifySkipTlsVerification` | `STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION` | `false` | yes | **Development only — a warning.** Nudges a PEP whose certificate does not verify. Ignored in product, and refused on write there. |
-| `xacml.pepNotifyCaFile` | `STS_XACML_PEP_NOTIFY_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates a PEP's notify listener may chain to, beside node's own store. |
+| `xacml.pepNotifyAllowHttp` | `STS_XACML_PEP_NOTIFY_ALLOW_HTTP` | `false` | yes | **Retired on 2026-11-14 and ignored**: a nudge is https only. Still accepted; on, it logs `STS-XACML-0258` once per process. |
+| `xacml.pepNotifySkipTlsVerification` | `STS_XACML_PEP_NOTIFY_SKIP_TLS_VERIFICATION` | `false` | yes | **Retired on 2026-11-14 and ignored**: a nudge always verifies the PEP's certificate. Still accepted; on, it logs `STS-XACML-0258` once per process. |
+| `xacml.pepNotifyCaFile` | `STS_XACML_PEP_NOTIFY_CA_FILE` | *(empty)* | yes | A PEM file of more CA certificates a PEP's notify listener may chain to, beside the realm's `pep-tls` Issuing CA (which verifies a PEP this realm certified with nothing set) and node's own store. |
 | `xacml.pepNotifyTimeoutMs` | `STS_XACML_PEP_NOTIFY_TIMEOUT_MS` | `2000` | yes | How long to wait for a PEP to answer a nudge. |
 | `roles.enforceIssuance` | `STS_ROLES_ENFORCE_ISSUANCE` | `true` | yes | Whether issuance asks the issuance PEP. When off, everything is issued. |
 | `roles.remotePepGroup` | `STS_ROLES_REMOTE_PEP_GROUP` | `remote-peps` | yes | The group whose members hold `REMOTE_PEPS`. Empty closes those endpoints to everyone. |
@@ -561,6 +625,11 @@ an enforcement.
   and combined. The counters start with the process and have no reset. The
   lasting record of a refusal is the audit log (`/admin/audit`), under
   `xacml.access.refused` and `xacml.issuance.refused`.
+* **Monitoring → Remote PEPs** (`/admin/xacml/pep/monitor`) shows what each
+  remote PEP is serving: listener stats, its thread pool, requests per path
+  and memory. The figures are the PEP's, cumulative since that process
+  started. [Its page](remote-pep.md#what-a-remote-pep-is-serving) says how
+  they are counted. The page reads `GET /admin-api/xacml/peps`.
 * **`/admin/roles`**: who holds which role, which roles an application
   requires, and a preview of whether a person would be issued a token. The
   preview is a dry run and is not audited.

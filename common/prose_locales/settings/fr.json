@@ -1240,8 +1240,8 @@
     "text": "Portes à mot de passe seul qui acceptent un mot de passe sans second facteur"
   },
   "authn.passwordAloneDoors|description": {
-    "en": "c893f7eaeaad4aa7",
-    "text": "Mode produit uniquement. Une liste, séparée par des virgules, des portes à mot de passe seul — ldap, wstrust, scim, ssf, est — auxquelles une personne qui détient ou doit détenir un second facteur est MALGRÉ TOUT acceptée avec son propre mot de passe. Vide, la valeur par défaut, refuse ce mot de passe aux cinq (comme un mot de passe erroné) et n’y accepte qu’un mot de passe d’application. **AVERTISSEMENT : chaque porte listée ramène chacune de ces personnes à UN SEUL facteur à cette porte** (NIST SP 800-63B section 4.2 : AAL2 devient AAL1), si bien qu’un mot de passe volé l’ouvre sans le second facteur. Préférez les mots de passe d’application ; ne listez une porte que pour un client auquel on ne peut pas en donner un. Le développement ne vérifie aucun mot de passe nulle part et ignore ce paramètre."
+    "en": "a01fe4fce9df1599",
+    "text": "Mode produit uniquement. Une liste, séparée par des virgules, des portes à mot de passe seul — ldap, wstrust, scim, ssf, est, xacml-pep — auxquelles une personne qui détient ou doit détenir un second facteur est MALGRÉ TOUT acceptée avec son propre mot de passe. Vide, la valeur par défaut, refuse ce mot de passe aux six (comme un mot de passe erroné) et n’y accepte qu’un mot de passe d’application. **AVERTISSEMENT : chaque porte listée ramène chacune de ces personnes à UN SEUL facteur à cette porte** (NIST SP 800-63B section 4.2 : AAL2 devient AAL1), si bien qu’un mot de passe volé l’ouvre sans le second facteur. Préférez les mots de passe d’application ; ne listez une porte que pour un client auquel on ne peut pas en donner un. Le développement ne vérifie aucun mot de passe nulle part et ignore ce paramètre."
   },
   "appPasswords.enabled|label": {
     "en": "2208ee75339ab0f4",
@@ -7779,6 +7779,14 @@
     "en": "e41d92adf65ec5bc",
     "text": "ACTIVÉ par défaut. C’était autrefois le SEUL refus de cette famille ; chaque endpoint /xacml demande désormais un certificat, et ce que ce paramètre régit encore, c’est spécifiquement l’ENREGISTREMENT — il écrit une entrée, c’est ce que la console liste, et c’est l’adresse à laquelle une notification est envoyée ; « quel PEP est-ce » est donc exactement la question qui s’y pose, et un certificat client en est la réponse. La couche de politique d’accès au-dessus est une vérification différente et plus forte (roles.remotePepGroup, et xacml.enforceAccess pour la désactiver) ; celle-ci porte sur l’acceptation même d’un enregistrement SANS certificat, marqué non authentifié. Comme toute autre barrière de ce service, c’est un TOURNIQUET : le certificat n’a pas besoin de remonter à quoi que ce soit, car l’argument de RFC 8705 s’applique sans changement — ce qui est prouvé, c’est que la même clé a mené à bien la poignée de main. Le désactiver permet à un PEP de s’enregistrer en HTTP simple, ce dont a besoin une exécution avec global.https désactivé ; un tel enregistrement est marqué NON AUTHENTIFIÉ sur son entrée et dans la console plutôt que d’être discrètement impossible à distinguer d’un enregistrement qui a prouvé quelque chose."
   },
+  "xacml.pepPlainHttpProxyListeners|label": {
+    "en": "25b7e415e05fa392",
+    "text": "Un PEP distant peut définir un écouteur de proxy inverse en HTTP simple"
+  },
+  "xacml.pepPlainHttpProxyListeners|description": {
+    "en": "b30ff05f28db4d9c",
+    "text": "DÉSACTIVÉ par défaut, et lu seulement en mode produit, où un écouteur défini sur la page d’un PEP distant (#1760) qui sert son proxy inverse en HTTP simple est refusé (STS-XACML-0249) : le proxy est l’endroit où un navigateur se connecte et porte son cookie de session, donc en clair il ne convient que si quelque chose devant lui termine TLS — un fait sur le déploiement que seul un administrateur peut affirmer, et que l’activation de ce paramètre affirme. Le mode développement autorise un tel écouteur quoi que dise ce paramètre. Il ne régit que les écouteurs définis sur la page ; les quatre que lie l’environnement du PEP (dont PEP_PROXY_PORT) relèvent de son opérateur."
+  },
   "xacml.pipMaxPerWindow|label": {
     "en": "5e3d588e1a459b92",
     "text": "Requêtes PIP par appelant et par fenêtre de limitation"
@@ -7828,28 +7836,28 @@
     "text": "Les noms d’hôte que ce service notifiera. VIDE SIGNIFIE N’IMPORTE LEQUEL, ce qui est la valeur par défaut et correspond exactement à ssf.pushAllowedHosts — un déploiement joignable par des parties auxquelles il ne fait pas confiance définit la liste, et tout autre hôte est refusé NOMMÉMENT sur la propre ligne du PEP. Des hôtes plutôt que des URL, pour la raison que donne SSF : un composant déplace légitimement son chemin, mais ne déménage pas légitimement vers un autre hôte."
   },
   "xacml.pepNotifyAllowHttp|label": {
-    "en": "f232b8d66a791160",
-    "text": "Autoriser http:// pour une notification (développement uniquement)"
+    "en": "37d9db04e27a17a9",
+    "text": "Autoriser http:// pour une notification (retiré, ignoré)"
   },
   "xacml.pepNotifyAllowHttp|description": {
-    "en": "a86a934a3f20a990",
-    "text": "DÉSACTIVÉ par défaut, comme ses équivalents de la fédération et de SSF — et ce qui circule ici est PLUS ANODIN que dans ces deux cas, ce qu’il vaut mieux dire que laisser supposer. Une notification ne transporte ni identifiant ni événement : tout son corps dit que le dépôt a changé, ce que le PEP est sur le point de découvrir de toute façon. Elle reste désactivée par défaut, car l’URL est configurée par quelqu’un et une requête que ce service effectue en clair est une requête à laquelle quelqu’un peut répondre à sa place. ACTIVÉ autorise une URL de notification en http:// en développement ; en mode produit, le http simple est refusé quelle que soit cette valeur (STS-XACML-0073)."
+    "en": "f283479a0bedc4de",
+    "text": "RETIRÉ LE 2026-11-14 ET IGNORÉ. Une notification n’est envoyée qu’en https, dans tous les modes ; une URL de notification http:// est donc signalée inutilisable sur la ligne du PEP, et le PEP converge par interrogation. Le réglage est toujours accepté, si bien qu’une configuration qui le nomme démarre encore ; activé, il ne change rien et est journalisé une fois par processus (STS-XACML-0258). Supprimez-le."
   },
   "xacml.pepNotifySkipTlsVerification|label": {
-    "en": "dbfe535e5ae02217",
-    "text": "Ignorer la vérification TLS pour une notification (développement uniquement)"
+    "en": "da9e36587928e192",
+    "text": "Ignorer la vérification TLS pour une notification (retiré, ignoré)"
   },
   "xacml.pepNotifySkipTlsVerification|description": {
-    "en": "d86b4e5d60f9ad54",
-    "text": "AVERTISSEMENT — RÉSERVÉ AU MODE DÉVELOPPEMENT. Activé, notifie une URL https SANS vérifier le certificat du PEP ; quiconque peut intercepter la connexion peut donc répondre à sa place. Chacune de ces requêtes est journalisée comme avertissement. En mode produit, il est ignoré (STS-XACML-0074, journalisé une fois) et ne peut pas être défini (STS-CORE-0103) : nommez plutôt une AC privée dans xacml.pepNotifyCaFile."
+    "en": "3a27f9a4f0fe5cc1",
+    "text": "RETIRÉ LE 2026-11-14 ET IGNORÉ. Une notification vérifie toujours le certificat du PEP : avec l’AC émettrice des écouteurs de PEP distants (pep-tls) du domaine, qui émet le certificat de l’écouteur HTTPS d’un PEP, ainsi qu’avec xacml.pepNotifyCaFile et le magasin propre de node. Le réglage est toujours accepté, si bien qu’une configuration qui le nomme démarre encore ; activé, il ne change rien et est journalisé une fois par processus (STS-XACML-0258). En mode produit, il ne peut toujours pas être défini (STS-CORE-0103). Supprimez-le."
   },
   "xacml.pepNotifyCaFile|label": {
-    "en": "647c5ee499d1a37b",
-    "text": "Certificats d’AC pour les notifications"
+    "en": "ba76eb67fd7510d1",
+    "text": "Certificats d’AC supplémentaires pour les notifications"
   },
   "xacml.pepNotifyCaFile|description": {
-    "en": "792f75ad9d56b75b",
-    "text": "Un fichier PEM de certificats d’AC auxquels l’écouteur de notification d’un PEP peut remonter, EN PLUS du propre magasin d’AC de node — c’est ainsi qu’un PEP certifié par une AC privée est notifié avec la vérification activée. Lu à chaque notification ; un fichier illisible ou ne contenant aucun certificat fait refuser la notification (STS-CORE-0104)."
+    "en": "69d21c555590f4c8",
+    "text": "Un fichier PEM de certificats d’AC auxquels l’écouteur de notification d’un PEP peut remonter, EN PLUS de l’AC émettrice des écouteurs de PEP distants (pep-tls) du domaine et du propre magasin d’AC de node. Inutile pour un PEP dont ce domaine a émis le certificat de l’écouteur HTTPS : celui-ci se vérifie sans aucun réglage. Il sert à un PEP certifié par une AC qui lui est propre. Lu à chaque notification ; un fichier illisible ou sans certificat refuse la notification (STS-CORE-0104)."
   },
   "xacml.pepNotifyTimeoutMs|label": {
     "en": "6c361a6796002d56",

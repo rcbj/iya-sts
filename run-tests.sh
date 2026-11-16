@@ -269,6 +269,9 @@ STS_SAML_PYSAML2_CONTAINER_NAME="${STS_SAML_PYSAML2_CONTAINER_NAME:-sts-docker-t
 STS_SAML_KEYCLOAK_CONTAINER_NAME="${STS_SAML_KEYCLOAK_CONTAINER_NAME:-sts-docker-tests-saml-keycloak}"
 # The test peer (#586), named for the same reason.
 STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-test-peer}"
+# The companion (#1760: the application the remote PEP's proxy protects),
+# named for the same reason.
+STS_COMPANION_CONTAINER_NAME="${STS_COMPANION_CONTAINER_NAME:-sts-docker-tests-companion}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -303,6 +306,7 @@ SAML_SSP_IMAGE="${SAML_SSP_IMAGE:-${IMAGE_REGISTRY}/sts-saml-simplesamlphp:${ima
 SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${imageTag}}"
 SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
 TEST_PEER_IMAGE="${TEST_PEER_IMAGE:-${IMAGE_REGISTRY}/sts-test-peer:${imageTag}}"
+STS_COMPANION_IMAGE="${STS_COMPANION_IMAGE:-${IMAGE_REGISTRY}/sts-companion:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -1249,6 +1253,14 @@ COMPOSE_ENV=(
   "TEST_PEER_ADDRESS=${STS_NETWORK_PREFIX}.48"
   "STS_TEST_PEER_URL=http://test-peer:9600"
   "TEST_PEER_CA_FILE=/run/sts-test/test-peer/ca.crt"
+  # ---- the companion (#1760) -----------------------------------------------
+  # In EVERY local mode, for one thing: `/pep-app`, the application the
+  # remote PEP's reverse proxy protects in sts_xacml_remote_pep.js. Pinned
+  # beside the test peer, for its reason. The URL is where the PEP and the
+  # runner both reach it; an AWS target names none, and that section skips.
+  "STS_COMPANION_CONTAINER_NAME=${STS_COMPANION_CONTAINER_NAME}"
+  "COMPANION_ADDRESS=${STS_NETWORK_PREFIX}.49"
+  "XACML_PEP_UPSTREAM_URL=http://companion:9700"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # The #444 switch (rcbj, 2026-11-15), `off` unless --with-444 or the host
@@ -1309,6 +1321,14 @@ COMPOSE_ENV=(
   "XACML_PEP_HTTPS_KEY=/certs/server/pep-server.key"
   "XACML_PEP_HTTPS_URL=https://xacml-pep:9443"
   "XACML_PEP_SERVER_CERT_DIR=/usr/src/sts/tests/report/pep-credential/server"
+  # ---- the PEP's reverse proxy (#1760) -------------------------------------
+  # Its two listeners, by the PEP's compose name: 9180 plain, and 9543 over
+  # the same pair as 9443, which listens once the job has written it. And
+  # the session recheck at zero, so a sign-out at the service is seen on the
+  # very next access the job makes.
+  "XACML_PEP_PROXY_URL=http://xacml-pep:9180"
+  "XACML_PEP_PROXY_HTTPS_URL=https://xacml-pep:9543"
+  "XACML_PEP_PROXY_SESSION_RECHECK_MS=0"
   # ---- the management API's client secret, pinned for this run ------------
   # `/admin-api` requires an access token, and the token is obtained by the
   # seeded `sts-api-client` client with `client_credentials`. That client's
@@ -1351,7 +1371,7 @@ then
   COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
 fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
-                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE;
+                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE STS_COMPANION_IMAGE;
 do
   if [ -n "${!peerImage:-}" ];
   then
@@ -1431,6 +1451,10 @@ captureContainerLogs()
   # why it refused one — what a job's failure against it is read beside.
   captureOneContainerLog "${mode}" test-peer "00-test-peer.log" \
     "Test peer log"
+  # The companion's (#1760): one line per request that reached `/pep-app`,
+  # the application behind the remote PEP's proxy.
+  captureOneContainerLog "${mode}" companion "00-companion.log" \
+    "Companion log"
   captureOneContainerLog "${mode}" tests "00-test-runner.log"      "Runner log"
 }
 
@@ -2449,7 +2473,7 @@ do
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit
                 --no-attach mariadb-tls
-                --no-attach test-peer)
+                --no-attach test-peer --no-attach companion)
   # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
   # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
   if stsModeIsCells "${MODE}";

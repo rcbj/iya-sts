@@ -152,7 +152,9 @@ apart by who may open it, which is the sentence on its row.
   derivative of the parent project's debugger artwork, which was white
   lettering drawn for a black band. This one is dark lettering on an off-white
   ground, so the band behind it is the image's own colour (`#fbfaf8`). Copy
-  `docs/logo.png` over it again if the README's logo changes.
+  `docs/logo.png` over it again if the README's logo changes. The Remote
+  PEP embeds the same bytes (`rust/bins/xacml-pep/src/logo.png`); copy that
+  file too. `xacml-pep/CLAUDE.md` says why it cannot read this one.
 
 ## A static surface since #579
 

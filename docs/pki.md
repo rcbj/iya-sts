@@ -685,6 +685,30 @@ curl --cert alice-laptop-tls-client-chain.pem \
      https://localhost:8081/tls/sign-in
 ```
 
+## A TLS client certificate an administrator issues a person
+
+The same Issuing CA issues one from the person's `/admin/users` page,
+Credentials, Key pairs, **TLS client certificates**, or from
+`POST /admin-api/users/issue-tls-client-certificate`. This is the certificate
+a remote PEP presents to this service.
+
+* The subject is the directory entry's name: common name and UID, then the
+  entry's own naming attributes, then the organisation and country. The
+  subjectAltName is still `urn:sts:person:<username>`.
+* The key, a label and a file password typed twice are chosen there. The
+  page that comes back offers a `.p12`, an encrypted key and the chain,
+  once. Nothing keeps the private key, and the leaf is not written to
+  `userCertificate`.
+* `mfa.tls` of `GET /admin-api/users` is the list, including the subject the
+  next certificate would carry (`subjectDn`) and the entry it was modelled
+  on (`entryDn`).
+* The portal card above is unchanged: a person issuing their own still gets
+  `CN=<username>` and no file password.
+
+A certificate from an outside authority is still pasted into **Stored
+certificates** on that same Key pairs sub-tab. Revoke is
+`POST /admin-api/users/revoke-tls-client-certificate`.
+
 ## A message-signing certificate for a WS-Trust requester
 
 A **message-signing certificate** is what a person or an application signs a
@@ -698,7 +722,7 @@ only:
   subjectAltName — the name a signed request is mapped back to, with nothing
   else registered;
 * **an administrator issues it** — to a person from their `/admin/users` page
-  (**Message-signing certificates**, beside Stored certificates), to an
+  (Credentials, Key pairs, **Message-signing certificates**), to an
   application from the **Credentials** section of its `/admin/applications`
   page (drawn for a WS-Trust relying party, and for any application already
   holding one) — never the person on the user portal;
