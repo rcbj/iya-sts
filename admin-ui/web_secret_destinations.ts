@@ -226,7 +226,10 @@ class SecretDestinationsPage {
         : '') +
       '<h3 id="destinations" data-tab="destinations">' +
       t.html('consoleSecretDestinations.body.destinations') +
-      '</h3>' + nav.head + '<table><thead><tr>' +
+      '</h3>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content is one frame, its heading being the tab's label.
+      kit.frame(nav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleSecretDestinations.body.thDestination') +
       '</th><th>' + t.html('consoleSecretDestinations.body.thProvider') +
       '</th><th>' + t.html('consoleSecretDestinations.body.thPayload') +
@@ -239,11 +242,11 @@ class SecretDestinationsPage {
                '</span></td></tr>') +
       '</tbody></table>' + nav.foot +
       '<p class="sub">' + t.html('consoleSecretDestinations.body.testPush') +
-      '</p>' +
+      '</p>') +
       (c.write
         ? '<h3 id="add" data-tab="add">' +
           t.html('consoleSecretDestinations.body.add') +
-          '</h3><form method="post" ' +
+          '</h3>' + kit.frame('<form method="post" ' +
           'action="' + PAGE + '"><input type="hidden" name="action" ' +
           'value="add-destination"><div class="formrow">' +
           this.text('identifier',
@@ -253,7 +256,7 @@ class SecretDestinationsPage {
                     'Production Vault') + '</div>' +
           this.fields(t, json, null) + '<button type="submit">' +
           t.html('consoleSecretDestinations.body.addButton') + '</button>' +
-          '</form>'
+          '</form>')
         : '') +
       '<p class="links" data-metadata>' +
       '<code>GET /admin-api/secret-destinations</code></p>';

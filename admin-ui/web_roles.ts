@@ -110,8 +110,11 @@ class RolesPage {
     const preview = json.preview && json.preview.answered !== false
       ? json.preview : null;
 
+    // EVERY SECTION IS A FRAME (`secframe`, rcbj 2026-11-16), as Key pairs'
+    // are. A section `WebPages.protocolTabs()` makes a tab keeps its heading
+    // at the top level, where the splitter cuts, and frames what follows it.
     const inner =
-      '<h2>' + t.html('consoleRoles.body.heading') + '</h2>' +
+      kit.frame('<h2>' + t.html('consoleRoles.body.heading') + '</h2>' +
       // The links carry hrefs, so the sentences around them are messages
       // and the anchors are code.
       kit.note(t.html('consoleRoles.body.introBefore') + '<a ' +
@@ -140,7 +143,7 @@ class RolesPage {
 
       (register.gated ? '' : kit.warn(t.html('consoleRoles.body.notGated'))) +
 
-      '<h3 id="built-in">' +
+      kit.frame('<h3 id="built-in">' +
       t.html('consoleRoles.body.builtInHeading',
              { count: register.builtIn.length }) + '</h3>' +
       kit.note(t.html('consoleRoles.body.builtInNote',
@@ -152,11 +155,11 @@ class RolesPage {
         return '<tr><td class="who"><code>' + kit.esc(one.name) +
                '</code></td><td>' + kit.esc(one.what) + '</td></tr>';
       }).join('') +
-      '</tbody></table>' +
+      '</tbody></table>')) +
 
       '<h3 id="roles" data-tab="roles">' +
       t.html('consoleRoles.body.madeHeading') + '</h3>' +
-      kit.note(t.html('consoleRoles.body.madeNote',
+      kit.frame(kit.note(t.html('consoleRoles.body.madeNote',
                       { container: register.container || 'ou=roles' })) +
       '<form method="get" action="/admin/roles"><div class="formrow">' +
         '<label for="q">' + t.html('consoleRoles.body.text') + '</label>' +
@@ -167,7 +170,7 @@ class RolesPage {
         '</button>' +
         (q ? ' <a href="/admin/roles#roles">' +
              t.html('consoleRoles.body.clear') + '</a>' : '') +
-      '</div></form>' +
+      '</div></form>' + rolesNav.head +
       '<table><thead><tr><th>' + t.html('consoleRoles.body.thRole') +
       '</th>' +
       json.memberKinds.map(function (one) {
@@ -185,13 +188,13 @@ class RolesPage {
              : t.html('consoleRoles.body.noneMade',
                       { defaultRequired: register.defaultRequired })) +
           '</span></td></tr>') +
-      // `rolesNav` is a { head, foot } pair drawn as a string, and has been
-      // since before #539; the words are what changed here, not that.
-      '</tbody></table>' + rolesNav +
+      // `rolesNav` is a { head, foot } pair: until 2026-11-16 it was drawn
+      // as a string, so the tab read "[object Object]" under its table.
+      '</tbody></table>' + rolesNav.foot) +
 
       '<h3 id="create" data-tab="create">' +
       t.html('consoleRoles.body.makeHeading') + '</h3>' +
-      kit.note(t.html('consoleRoles.body.makeNote',
+      kit.frame(kit.note(t.html('consoleRoles.body.makeNote',
                       { container: register.container || 'ou=roles' })) +
       '<form method="post" action="/admin/roles">' +
       RolesPage.rolesBack(listView) +
@@ -224,7 +227,7 @@ class RolesPage {
       'value="application">' + t.html('consoleRoles.body.appsOnly') +
       '</option></select></label>' +
       '<button type="submit">' + t.html('consoleRoles.body.create') +
-      '</button></div></form>' +
+      '</button></div></form>') +
 
       // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
       //
@@ -244,7 +247,7 @@ class RolesPage {
       '<h3 id="member" data-tab="member">' +
       t.html('consoleRoles.body.memberHeading') +
       '</h3>' +
-      kit.note(t.html('consoleRoles.body.memberLead') + '<br>' +
+      kit.frame(kit.note(t.html('consoleRoles.body.memberLead') + '<br>' +
       json.memberKinds.map(function (one) {
         return '<strong>' + kit.esc(one.label) + '</strong> &mdash; ' +
                kit.esc(one.what);
@@ -292,13 +295,13 @@ class RolesPage {
       '</datalist><button type="submit"' +
         (register.roles.length ? '' : ' disabled') + '>' +
         t.html('consoleRoles.body.add') + '</button>' +
-      '</div></form>' +
+      '</div></form>') +
 
       // WHAT A ROLE AUTHORIZES (#303, part B of #88).
       '<h3 id="authorizes" data-tab="authorizes">' +
       t.html('consoleRoles.body.authorizeHeading') +
       '</h3>' +
-      kit.note(t.html('consoleRoles.body.authorizeBefore') +
+      kit.frame(kit.note(t.html('consoleRoles.body.authorizeBefore') +
       '<a href="/admin/rbac">' + t.html('consoleRoles.body.adminRoles') +
       '</a>' + t.html('consoleRoles.body.authorizeAfter')) +
       '<form method="post" action="/admin/roles">' +
@@ -325,12 +328,12 @@ class RolesPage {
         (register.roles.some(function (one) { return !one.native; })
           ? '' : ' disabled') + '>' + t.html('consoleRoles.body.authorize') +
       '</button>' +
-      '</div></form>' +
+      '</div></form>') +
 
       '<h3 id="requiring" data-tab="requiring">' +
       t.html('consoleRoles.body.requiringHeading') +
       '</h3>' +
-      kit.note(t.html('consoleRoles.body.requiringNote',
+      kit.frame(kit.note(t.html('consoleRoles.body.requiringNote',
                       { defaultRequired: register.defaultRequired })) +
       requiringNav.head +
       '<table><thead><tr><th>' + t.html('consoleRoles.body.thApplication') +
@@ -365,12 +368,12 @@ class RolesPage {
           t.html('consoleRoles.body.nothingNarrowed',
                  { defaultRequired: register.defaultRequired }) +
           '</span></td></tr>') +
-      '</tbody></table>' + requiringNav.foot +
+      '</tbody></table>' + requiringNav.foot) +
 
       '<h3 id="preview" data-tab="preview">' +
       t.html('consoleRoles.body.previewHeading') +
       '</h3>' +
-      kit.note(t.html('consoleRoles.body.previewBefore') + '<a ' +
+      kit.frame(kit.note(t.html('consoleRoles.body.previewBefore') + '<a ' +
       'href="/admin/xacml/decide">' + t.html('consoleRoles.body.tryDecision') +
       '</a>' + t.html('consoleRoles.body.previewAfter')) +
       // NEITHER FIELD IS `required`, and that is not laziness. A browser will
@@ -427,9 +430,13 @@ class RolesPage {
                              t.text('consoleRoles.body.none'))) +
               '</code>.</span></div>'
           )
-        : '') +
+        : '')) +
 
-      '<h3 id="policy">' + t.html('consoleRoles.body.policyHeading') +
+      // Two sections of Metadata, after the tabs: a framed `<h3>` is no
+      // longer a heading the splitter sees, so `data-metadata` sends the
+      // block back to Metadata rather than into the Preview tab.
+      '<div data-metadata>' +
+      kit.frame('<h3 id="policy">' + t.html('consoleRoles.body.policyHeading') +
       '</h3>' +
       (register.policy
         ? (register.policy.ok
@@ -454,15 +461,16 @@ class RolesPage {
                               { why: register.policy.why }) +
               '<br><br>' + t.html('consoleRoles.body.notEvaluatedRest',
                 { defaultRequired: register.defaultRequired })))
-        : '') +
+        : '')) +
 
-      '<h3 id="claim">' + t.html('consoleRoles.body.claimHeading') + '</h3>' +
+      kit.frame('<h3 id="claim">' + t.html('consoleRoles.body.claimHeading') +
+      '</h3>' +
       kit.note('<strong>' + (register.claim
         ? t.html('consoleRoles.body.claimOn', { name: register.claimName })
         : t.html('consoleRoles.body.claimOff')) +
       '</strong>' + t.html('consoleRoles.body.claimRest', {
         defaultRequired: register.defaultRequired,
-        name: register.claimName })) +
+        name: register.claimName }))) + '</div>' +
 
       SettingsForms.forms(json.settings, '/admin/roles', undefined, t);
 
@@ -497,10 +505,13 @@ class RolesPage {
       return kit.note(t.html('consoleRoles.detail.notFound',
                              { name: role.name })) + back;
     }
+    // EVERY SECTION OF BOTH TABS IS A FRAME (`secframe`, rcbj 2026-11-16),
+    // as Key pairs' are: its heading inside, each block under it a frame
+    // inside that.
     if (role.builtIn) {
-      return '<h2><code>' + kit.esc(role.name) + '</code></h2>' +
+      return kit.frame('<h2><code>' + kit.esc(role.name) + '</code></h2>' +
         kit.note(t.html('consoleRoles.detail.builtIn')) +
-        '<p>' + kit.esc(role.what) + '</p>' + back;
+        '<p>' + kit.esc(role.what) + '</p>') + back;
     }
     const none = '<span class="state-none">' +
       t.html('consoleRoles.roleRow.none') + '</span>';
@@ -548,7 +559,7 @@ class RolesPage {
       row(t.html('consoleRoles.detail.thOwners'),
           String((role.owners || []).length)) +
       '</table>';
-    const members = '<h3 id="role-members">' +
+    const members = kit.frame('<h3 id="role-members">' +
       t.html('consoleRoles.detail.membersHeading',
              { n: role.holderCount }) + '</h3>' +
       kit.note(t.html('consoleRoles.detail.membersNote')) +
@@ -569,18 +580,18 @@ class RolesPage {
             }
             : null;
         return '<td>' + listOf(role[k.field], href) + '</td>';
-      }).join('') + '</tr></table>';
-    const authorizes = '<h3 id="role-authorizes">' +
+      }).join('') + '</tr></table>');
+    const authorizes = kit.frame('<h3 id="role-authorizes">' +
       t.html('consoleRoles.detail.authorizesHeading') + '</h3>' +
-      listOf(role.permissions, null) +
-      '<h3 id="role-conferred">' +
+      listOf(role.permissions, null)) +
+      kit.frame('<h3 id="role-conferred">' +
       t.html('consoleRoles.detail.conferredHeading') + '</h3>' +
       kit.note(t.html('consoleRoles.relations.conferred'),
                t.html('consoleRoles.relations.label')) +
       listOf(role.conferredBy, function (one) {
         return '/admin/applications?application=' + encodeURIComponent(one);
-      }) +
-      '<h3 id="role-required">' +
+      })) +
+      kit.frame('<h3 id="role-required">' +
       t.html('consoleRoles.detail.requiredHeading') + '</h3>' +
       kit.note(t.html('consoleRoles.relations.required'),
                t.html('consoleRoles.relations.label')) +
@@ -589,16 +600,18 @@ class RolesPage {
           encodeURIComponent(one.application)) + '">' + kit.esc(one.name) +
           '</a></div>';
       }).join('') : '<p class="state-none">' +
-        t.html('consoleRoles.detail.requiredNone') + '</p>');
+        t.html('consoleRoles.detail.requiredNone') + '</p>'));
     const entry = role.entry
-      ? '<h3 id="role-entry">' + t.html('consoleRoles.detail.entryHeading') +
+      ? kit.frame('<h3 id="role-entry">' +
+        t.html('consoleRoles.detail.entryHeading') +
         '</h3>' + GroupsPage.attributeTable({
           attributes: role.entry.attributes || {},
-          operational: role.entry.operational || [] }, ctx.t)
+          operational: role.entry.operational || [] }, ctx.t))
       : '';
-    const rolePanel = '<h2><code>' + kit.esc(role.name) + '</code></h2>' +
+    const rolePanel = kit.frame('<h2><code>' + kit.esc(role.name) +
+      '</code></h2>' +
       facts + members + authorizes + entry +
-      kit.note(t.html('consoleRoles.detail.editOnList'));
+      kit.note(t.html('consoleRoles.detail.editOnList')));
     return kit.tabbedPanels('roletabs', [
       { id: 'rtab-role', label: t.text('consoleRoles.detail.tabRole'),
         html: rolePanel },
@@ -610,12 +623,13 @@ class RolesPage {
             route: '/admin/roles/owners', id: 'role-owners', field: 'role',
             value: role.name, stateKey: 'roleOwners', self: '',
             lead: t.html('consoleRoles.owners.lead'),
-            leadRead: t.html('consoleRoles.owners.leadRead') }) +
+            leadRead: t.html('consoleRoles.owners.leadRead'),
+            framed: true }) +
           // Closed to its owners (#607).
-          GroupsPage.ownerProtectionSection(t, role.ownership, {
+          kit.frame(GroupsPage.ownerProtectionSection(t, role.ownership, {
             route: '/admin/roles/owners', id: 'role-owners', kind: 'role',
             name: role.name, back: kit.queryWith(listView, {}),
-            write: !!role.canWrite && !!ctx.write, state: json.state }) }
+            write: !!role.canWrite && !!ctx.write, state: json.state })) }
     ]) + back;
   }
 

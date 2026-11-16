@@ -264,7 +264,11 @@ class AttributeSourcesPage {
         kit.warn(t.html('consoleAttributeSources.anyHost'))) +
       '<h3 id="sources" data-tab="sources">' +
       t.html('consoleAttributeSources.sources') +
-      '</h3>' + nav.head + '<table><thead><tr><th>' +
+      '</h3>' +
+      // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each tab's
+      // content is one frame, its heading being the tab's label. Settings
+      // are `settings.forms()`'s, whose heading opens its own tab.
+      kit.frame(nav.head + '<table><thead><tr><th>' +
       t.html('consoleAttributeSources.colSource') + '</th>' +
       '<th>' + t.html('consoleAttributeSources.colDatabase') + '</th><th>' +
       t.html('consoleAttributeSources.colRow') + '</th><th>' +
@@ -275,25 +279,25 @@ class AttributeSourcesPage {
       (rows || '<tr><td colspan="7"><span class="state-none">' +
                t.html('consoleAttributeSources.noSource') +
                '</span></td></tr>') +
-      '</tbody></table>' + nav.foot +
+      '</tbody></table>' + nav.foot) +
       '<h3 id="add" data-tab="add">' +
       t.html('consoleAttributeSources.addSource') +
-      '</h3><form method="post" action="' + PAGE +
+      '</h3>' + kit.frame('<form method="post" action="' + PAGE +
       '"><input type="hidden" name="action" value="add-source">' +
       '<div class="formrow"><label>' + t.html('consoleAttributeSources.id') +
       ' <input type="text" name="id" ' +
       'placeholder="hr-db" required></label></div>' +
       this.fields(t, json, null) + '<button type="submit">' +
-      t.html('consoleAttributeSources.add') + '</button></form>' +
+      t.html('consoleAttributeSources.add') + '</button></form>') +
       '<h3 id="person" data-tab="person">' +
       t.html('consoleAttributeSources.readOnePerson') +
-      '</h3><form method="post" ' +
+      '</h3>' + kit.frame('<form method="post" ' +
       'action="' + PAGE + '"><div class="formrow"><input type="hidden" ' +
       'name="action" value="refresh-person"><label>' +
       t.html('consoleAttributeSources.person') + ' <input ' +
       'type="text" name="username" required></label><button ' +
       'type="submit">' + t.html('consoleAttributeSources.read') +
-      '</button></div></form>' +
+      '</button></div></form>') +
       // The link is markup a message cannot carry, so the sentence is split
       // around it.
       '<p class="sub" data-metadata>' +

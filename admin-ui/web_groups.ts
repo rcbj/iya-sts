@@ -148,7 +148,11 @@ class GroupsPage {
       // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
       // warning, the tiles and the notes under the table are Metadata.
       '</div><h2 data-tab="groups">' + t.html('console.nav.groups') +
-      '</h2><form method="get" action="/admin/groups"><div ' +
+      '</h2>' +
+      // EACH TAB'S CONTENT IS A FRAME (`secframe`, rcbj 2026-11-16), as Key
+      // pairs' are: after its heading, which `WebPages.protocolTabs()` cuts
+      // at the top level and turns into the tab's label.
+      kit.frame('<form method="get" action="/admin/groups"><div ' +
       'class="formrow"><label for="q">' + t.html('consoleGroups.body.group') +
       '</label><input type="text" ' +
       'id="q" name="q" value="' + kit.esc(wantedText) + '" ' +
@@ -178,11 +182,11 @@ class GroupsPage {
                t.html('consoleGroups.body.noMatch',
                       { filtered: wantedText ? 'yes' : 'no' }) +
                '</td></tr>') + '</table>' +
-      nav.foot +
+      nav.foot) +
       '<div data-metadata>' +
-      kit.note(t.html('consoleGroups.body.whatAGroupIs',
+      kit.frame(kit.note(t.html('consoleGroups.body.whatAGroupIs',
                       { groupsDn: json.groupsDn, usersDn: json.usersDn })) +
-      kit.note(t.html('consoleGroups.body.counts')) + '</div>' +
+      kit.note(t.html('consoleGroups.body.counts'))) + '</div>' +
       // THE ONE CONTROL ON THIS LIST (rule 7's mirror is
       // POST /admin-api/groups/create). Below the table rather than above it,
       // because the question this page is usually open to answer is "what is
@@ -192,7 +196,7 @@ class GroupsPage {
       (json.canWrite
         ? '<h2 data-tab="create">' +
           t.html('consoleGroups.body.createHeading') + '</h2>' +
-          '<form method="post" action="/admin/groups">' +
+          kit.frame('<form method="post" action="/admin/groups">' +
           '<input type="hidden" name="action" value="create">' +
           '<input type="hidden" name="back" value="' +
           kit.esc(kit.queryWith(listView, {})) + '">' +
@@ -222,8 +226,8 @@ class GroupsPage {
           '</button>' +
           '</div></form>' +
           kit.note(t.html('consoleGroups.body.createNote',
-                          { groupsDn: json.groupsDn }))
-        : kit.note(t.html('consoleGroups.body.noWriter'))) +
+                          { groupsDn: json.groupsDn })))
+        : kit.frame(kit.note(t.html('consoleGroups.body.noWriter')))) +
       SettingsForms.forms(json.settings, '/admin/groups', undefined, t) +
       GroupsPage.groupsCaveat(t, json.adminGroups) +
       GroupsPage.groupsLinks(t);
@@ -455,8 +459,11 @@ class GroupsPage {
       // TWO TABS SINCE #603 (rcbj: "Call the primary tab group. Call this
       // new tab owners"): Group — everything this page drew before — and
       // Owners. The way back and the links stay under both.
+      // EVERY SECTION OF BOTH TABS IS A FRAME (`secframe`, rcbj
+      // 2026-11-16), as Key pairs' are: its heading inside, and each block
+      // under it a frame inside that.
       const groupPanel =
-        '<h2>' + kit.esc(GroupsPage.groupLabel(t, group)) +
+        kit.frame('<h2>' + kit.esc(GroupsPage.groupLabel(t, group)) +
         '</h2><table><tr><th>DN</th><th>' +
         t.html('consoleGroups.detail.thRule') + '</th><th>' +
         t.html('consoleGroups.body.thOrigin') + '</th><th>' +
@@ -468,7 +475,7 @@ class GroupsPage {
         '<td><code>' + kit.esc(group.createdAt) + '</code></td>' +
         '<td><code>' + kit.esc(group.modifiedAt) + '</code></td></tr></table>' +
         kit.note(t.html('consoleGroups.detail.timestamps',
-                        { port: info.port, dn: group.dn })) +
+                        { port: info.port, dn: group.dn }))) +
 
         kit.perPageForm('/admin/groups', 'group', group.dn,
                          json.membersPaging.perPage,
@@ -476,7 +483,7 @@ class GroupsPage {
                          kit.filterOnly(kit.listViewOf('/admin/groups',
                                                          ctx.query)), t) +
 
-        '<h2>' + t.html('consoleGroups.body.thMembers') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleGroups.body.thMembers') + '</h2>' +
         '<div class="tiles">' +
         kit.tile(group.memberCount, t.text('consoleGroups.body.tileValues')) +
         kit.tile(json.claimedPaging.total,
@@ -497,8 +504,8 @@ class GroupsPage {
         kit.note(t.html('consoleGroups.detail.membershipRead', {
           attributes: group.memberAttributes.join('</code>, <code>'),
           usersDn: info.usersDn })) +
-        kit.note(t.html('consoleGroups.detail.usersColumn')) +
-        claimedSection +
+        kit.note(t.html('consoleGroups.detail.usersColumn'))) +
+        kit.frame(claimedSection) +
 
         // ---------------------------------------------------------------------
         // ADD SOMEBODY (2026-09-06). On the drill-down rather than on the list,
@@ -512,7 +519,8 @@ class GroupsPage {
         // cannot become a redirect this file did not write.
         // ---------------------------------------------------------------------
         (json.canWrite
-          ? '<h2>' + t.html('consoleGroups.detail.addHeading') + '</h2>' +
+          ? kit.frame('<h2>' + t.html('consoleGroups.detail.addHeading') +
+            '</h2>' +
             '<form method="post" action="/admin/groups">' +
             '<input type="hidden" name="action" value="add-member">' +
             '<input type="hidden" name="group" value="' + kit.esc(group.dn) +
@@ -532,11 +540,12 @@ class GroupsPage {
                             { usersDn: info.usersDn }) +
             '<a href="/admin/rbac">' +
             t.html('consoleGroups.groupsCaveat.adminRoles') + '</a>' +
-            t.html('consoleGroups.detail.addAfter')) +
+            t.html('consoleGroups.detail.addAfter'))) +
             // THE GROUP'S EMAIL ADDRESS (#989): its own `mail`, where a
             // report shared with it is sent. One box, prefilled; Save
             // writes it, and an emptied box removes it.
-            '<h2>' + t.html('consoleGroups.detail.mailHeading') + '</h2>' +
+            kit.frame('<h2>' + t.html('consoleGroups.detail.mailHeading') +
+            '</h2>' +
             '<form method="post" action="/admin/groups">' +
             '<input type="hidden" name="action" value="set-mail">' +
             '<input type="hidden" name="group" value="' + kit.esc(group.dn) +
@@ -550,14 +559,16 @@ class GroupsPage {
             '<button type="submit">' +
             t.html('consoleGroups.detail.setMail') + '</button>' +
             '</div></form>' +
-            kit.note(t.html('consoleGroups.detail.mailNote')) +
-            GroupsPage.policyPickers(t, group, json.policyReferences,
-              kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {}))
+            kit.note(t.html('consoleGroups.detail.mailNote'))) +
+            kit.frame(GroupsPage.policyPickers(t, group,
+              json.policyReferences,
+              kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {})))
           : '') +
 
-        '<h2>' + t.html('consoleGroups.detail.attributesHeading') + '</h2>' +
+        kit.frame('<h2>' + t.html('consoleGroups.detail.attributesHeading') +
+        '</h2>' +
         GroupsPage.attributeTable(group, t) +
-        kit.note(t.html('consoleGroups.detail.attributesNote')) +
+        kit.note(t.html('consoleGroups.detail.attributesNote'))) +
         GroupsPage.groupsCaveat(t, json.adminGroups);
       inner = GroupsPage.directoryListenerWarning(t, info,
         GroupsPage.GROUP_SUBJECT) +
@@ -571,14 +582,16 @@ class GroupsPage {
             html: GroupsPage.ownersSection(t, group,
               !!json.canWrite && !!ctx.write,
               kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {}),
-              json.state) +
-              // Closed to its owners (#607).
-              GroupsPage.ownerProtectionSection(t, json.ownership, {
+              json.state, { framed: true }) +
+              // Closed to its owners (#607), framed here: a person's
+              // Service account tab frames its own call.
+              kit.frame(GroupsPage.ownerProtectionSection(t, json.ownership, {
                 route: '/admin/groups/owners', id: 'group-owners',
                 kind: 'group', name: group.dn,
                 back: kit.queryWith(kit.listViewOf('/admin/groups',
                                                    ctx.query), {}),
-                write: !!json.canWrite && !!ctx.write, state: json.state }) }
+                write: !!json.canWrite && !!ctx.write,
+                state: json.state })) }
         ]) +
         back + GroupsPage.groupsLinks(t);
     }
@@ -609,7 +622,8 @@ class GroupsPage {
    * @param opts - optional; for another kind of thing with owners (#604, a
    *   role): `route`, `id` (the section's anchor), `field` and `value` (the
    *   hidden field naming it), `stateKey`, `lead` and `leadRead` (markup),
-   *   and `self` (a DN the search may not add; a group's own)
+   *   `self` (a DN the search may not add; a group's own), and `framed`
+   *   (each of its two blocks drawn as a section frame, `secframe`)
    * @returns the tab as HTML
    */
   static ownersSection(t, group, write, back, pageState?, opts?) {
@@ -621,6 +635,11 @@ class GroupsPage {
     const max = Number(group.maxOwners) || 25;
     const drawn = (pageState && pageState[o.stateKey || 'groupOwners']) || {};
     const selfDn = o.self === undefined ? group.dn : o.self;
+    // FRAMED ON ASKING (`secframe`, rcbj 2026-11-16): the Groups and Roles
+    // Owners tabs ask; a caller that frames the whole block does not.
+    const box = function (html) {
+      return o.framed ? kit.frame(html) : html;
+    };
     const lower = function (dn) {
       return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
     };
@@ -681,8 +700,8 @@ class GroupsPage {
                t.html('consoleGroups.owners.max', { max: String(max) })) +
       said + table;
     if (!write) {
-      return head +
-        kit.note(t.html('consoleGroups.owners.needsWrite'));
+      return box(head +
+        kit.note(t.html('consoleGroups.owners.needsWrite')));
     }
     // THE SEARCH: people or groups, each result with an Add that writes —
     // or why it has none: already an owner, this group itself, or an
@@ -783,7 +802,7 @@ class GroupsPage {
       button('fgsearch', 'owners', t.text('consoleKit.find.find'), findTip,
              'fg-findbtn') +
       '</div>' + results + '</div></form>';
-    return head + search;
+    return box(head) + box(search);
   }
 
   // ---------------------------------------------------------------------------
