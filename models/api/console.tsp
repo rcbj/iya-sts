@@ -895,7 +895,8 @@ namespace IyaSts.Api.Console {
     `applicationRoles`?: WithHeldOfferableRequiredEtc4;
     `delegatedPermissions`?: WithHeldExposesOfferableEtc5;
     `owners`?: (WithDnKindNameEtc4)[];
-    `maxOwners`?: numeric
+    `maxOwners`?: numeric;
+    @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[]
   }
 
 @js(#{
@@ -1918,6 +1919,10 @@ namespace IyaSts.Api.Console {
     @js(#{
       `description`:"The identity exactly as it was presented, when that differs from `actor` — a bind DN, a Kerberos principal, an X.509 subject. Both are carried because the collapse from one to the other is something an auditor has to be able to see rather than infer."
     }) `actorForm`?: string;
+      `mac`?: string;
+    @js(#{
+      `description`:"The `mac` of the row the same process wrote before this one in this realm, covered by this row's own `mac`: a row removed from between two held ones leaves the next naming a checksum no held row has. Empty on a process's first row."
+    }) `prev`?: string;
     @js(#{
       `description`:"What it was done to: a DN, a request path, a session id."
     }) `target`?: string;
