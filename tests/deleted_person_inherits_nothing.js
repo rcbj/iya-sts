@@ -28,7 +28,9 @@
 //         enrolments;
 //      A8 a rich authorization Allow;
 //      A9 the RISC register: the namesake starts with no opt-out, and the
-//         deleted account's row is kept under its old `urn:uuid:` subject.
+//         deleted account's row is kept under its old `urn:uuid:` subject;
+//      A12 the Kerberos principal: the namesake gets a RID (a SID) of their
+//         own (`krb5_principals.retirePerson()`).
 //   B. SCIM'S DOOR (`deletePerson()` by the SCIM id): the same stores.
 //   C. A RE-HOMING (`moved`) IS NOT A DELETE: what is keyed by the name stays.
 //   D. The codes are in the table.
@@ -87,6 +89,7 @@ async function childBody() {
   const adminActions = require(ROOT + '/admin-core/admin_actions');
   const errorCodes = require(ROOT + '/common/error_codes');
   const passkeyPolicy = require(ROOT + '/common/passkey_policy');
+  const krb5 = require(ROOT + '/kerberos/krb5_principals');
 
   await keystore.start();
   await pki.start({ realmIds: [''],
@@ -149,6 +152,9 @@ async function childBody() {
     row.optOut = 'opt-out';
     row.credentialStanding = 'compromised';
     out.subject = subject;
+    // A development-mode Kerberos account under the name, with its RID.
+    const principal = krb5.findOrCreateUser([name]);
+    out.rid = principal && principal.pac ? principal.pac.rid : null;
     log.debug("Leaving seed().");
     return out;
   };
@@ -228,6 +234,12 @@ async function childBody() {
             'namesake starts with no opt-out, and the deleted account\'s ' +
             'row is kept under its old subject',
             JSON.stringify({ now: risc.get(name), kept: kept }));
+    const again = krb5.findOrCreateUser([name]);
+    const rid = again && again.pac ? again.pac.rid : null;
+    t.check(seeded.rid !== null && rid !== null && rid !== seeded.rid,
+            letter + (LABELS.length + 3) + '. the Kerberos principal: the ' +
+            'namesake gets a RID, a SID, of their own',
+            JSON.stringify({ deleted: seeded.rid, namesake: rid }));
     log.debug("Leaving scenario().");
   };
 

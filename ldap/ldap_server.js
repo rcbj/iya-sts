@@ -17057,7 +17057,15 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
                // A DISABLED ACCOUNT (2026-09-17) is refused an AS-REQ —
                // `krb5_person_keys.ts` answers `disabled` and the KDC
                // KDC_ERR_CLIENT_REVOKED (18).
-               disabled: !!firstValue(stored, 'pwdaccountlockedtime') };
+               disabled: !!firstValue(stored, 'pwdaccountlockedtime'),
+               // The entry's entryUUID and its aliases (2026-11-16): the
+               // KDC binds a person's RID to the entry, so a namesake gets
+               // a SID of its own (`krb5_principals.js`).
+               entryUuids: [entryUuidOf(stored)]
+                 .concat(entryUuidAliasesOf(stored))
+                 .filter(function (one) {
+                   return !!one;
+                 }) };
     },
     writePerson: function (username, keysValue, infoValue) {
       log.debug('Entering writePerson(). username=' + username);
@@ -29195,7 +29203,11 @@ function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
 //     and the rich authorization Allows they gave
 //     (`authorization_details.forgetPerson()`), both minutes-long;
 //   * the risk standing this process holds for them
-//     (`risk_engine.forgetStanding()`, one key).
+//     (`risk_engine.forgetStanding()`, one key);
+//   * their Kerberos principal record, RETIRED rather than removed — it
+//     keeps the sign-out stamp that refuses their tickets — so the next
+//     person under the name gets a RID, a SID, of their own
+//     (`krb5_principals.retirePerson()`, one key).
 //
 // The RISC register's `purged` row is not forgotten here: it is the evidence
 // that the purge went out, and `ssf/risc.ts` moves it out of the name when
@@ -29240,6 +29252,9 @@ function forgetPersonHoldings(name, dn, door) {
     } },
     { what: 'risk standing', act: function () {
       require('../risk/risk_engine').forgetStanding(realmFor(dn).id, name);
+    } },
+    { what: 'Kerberos principal', act: function () {
+      require('../kerberos/krb5_principals').retirePerson(name);
     } }
   ];
   realms.run(realmFor(dn), function () {

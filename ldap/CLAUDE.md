@@ -2620,9 +2620,13 @@ mode.
   `mail.forgetPerson()`, `federation_blocks.forgetPerson()` (a key per
   relationship), `gnap_signals.forgetApprover()` (a list per application),
   `admin_stats.forgetIdentity()`, `credentials.forgetPending()`,
-  `authorization_details.forgetPerson()` and `risk_engine.forgetStanding()`
-  (this process's copy). An ACME account is bound to the entry's `entryUUID`
-  as well as its name, so a deleted holder's account orders nothing for a
+  `authorization_details.forgetPerson()`, `risk_engine.forgetStanding()`
+  (this process's copy) and `krb5_principals.retirePerson()` — the Kerberos
+  record is RETIRED, not removed, so it keeps the sign-out stamp and the next
+  person under the name gets a RID, a SID, of their own; a product record is
+  also bound to its entry's `entryUUID`, the lazy migration keeping every
+  existing RID (`kerberos/CLAUDE.md`). An ACME account is bound to the
+  entry's `entryUUID` as well as its name, so a deleted holder's account orders nothing for a
   namesake (`acme/CLAUDE.md`). Each one's cost is the person's
   rows, or configuration (relationships, applications), or a store of
   minutes-long rows its own writes already walk — never the directory. A
@@ -2632,10 +2636,7 @@ mode.
   `retireNamesake()` moves it out of the name when a write names a new entry
   under it (`ssf/CLAUDE.md`). **What is left**, each needing a decision of
   its own: another process's own row of `admin_stats.users` (`merge: 'own'`,
-  display only) and its risk standing (ages out); the Kerberos principal
-  record and its PAC RID, derived from the name alone (`autoRidFor()`), so a
-  namesake gets the same SID — the record must keep its sign-out stamp, and
-  changing the derivation changes existing SIDs; the outbound SCIM client's
+  display only) and its risk standing (ages out); the outbound SCIM client's
   adoption of a deactivated remote User found by `userName`; and AuthZEN
   approvals naming a username as the PEP sent it.
   `tests/deleted_person_inherits_nothing.js` holds it.
