@@ -189,6 +189,9 @@ const CONSOLE: Record<string, string> = {
   '/admin/xacml/pep-cluster': 'remote-pep.html#remote-pep-clusters',
   '/admin/xacml/pep-cluster/route': 'remote-pep.html#remote-pep-clusters',
   '/admin/xacml/pep/listener': 'remote-pep.html#a-listeners-own-page',
+  // Monitoring → Remote PEPs: the figures a PEP reports, not its settings.
+  '/admin/xacml/pep/monitor':
+    'remote-pep.html#what-a-remote-pep-is-serving',
   '/admin/backup-codes': 'authentication.html#recovery-codes',
   '/admin/persistence': 'persistence.html',
   '/admin/totp': 'authentication.html#totp-mfa',

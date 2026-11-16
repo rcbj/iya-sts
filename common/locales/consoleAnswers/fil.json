@@ -98,6 +98,7 @@
   "tls.key": "Key",
   "tls.goodUntil": "Valid hanggang",
   "tls.how": "<strong>Paano ito ginagamit ng application.</strong> Ipakita ito sa TLS connection papunta sa token endpoint na may <code>client_id={client}</code> at <code>token_endpoint_auth_method</code> na <code>tls_client_auth</code> sa entry: ina-authenticate ito ng RFC 8705 section 2.1 dahil ibinigay ito ng realm na ito sa application na ito, nang walang ibang naka-register. Ang bawat access token na ibinigay sa connection na iyon ay may dalang <code>cnf[\"x5t#S256\"]</code> ng certificate na ito (section 3), kaya ipinapakita ng application ang parehong certificate sa mga resource server. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Realm",
   "pep.names": "Mga pangalan",
   "validUntil": "Valid hanggang",

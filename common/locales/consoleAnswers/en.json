@@ -98,6 +98,7 @@
   "tls.key": "Key",
   "tls.goodUntil": "Good until",
   "tls.how": "<strong>How the application uses it.</strong> Present it on the TLS connection to the token endpoint with <code>client_id={client}</code> and a <code>token_endpoint_auth_method</code> of <code>tls_client_auth</code> on the entry: RFC 8705 section 2.1 authenticates it because this realm issued it to this application, with nothing else registered. Every access token issued on that connection carries <code>cnf[\"x5t#S256\"]</code> of this certificate (section 3), so the application presents the same certificate to the resource servers. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Realm",
   "pep.names": "Names",
   "validUntil": "Valid until",

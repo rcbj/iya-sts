@@ -4593,8 +4593,11 @@ const CODES = [
     spec: 'the caller\'s refusal: console page or /admin-api HTTP 400 ' +
       '{ ok: false, errors }' },
   { code: 'STS-PKI-0168',
-    summary: 'A TLS client certificate was asked for with no holder named.',
-    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page' },
+    summary: 'A TLS client certificate was asked for with no holder named, ' +
+      'or with a subject whose first RDN is not that holder\'s CN, or with ' +
+      'a subject attribute this service does not encode.',
+    spec: 'the caller\'s refusal: /portal/signing-key HTTP 400 page, or a ' +
+      'console or /admin-api reply' },
   { code: 'STS-PKI-0169',
     summary: 'A TLS client certificate was asked for with a key algorithm a ' +
       'browser does not present (RSA 2048/3072, ECDSA P-256/P-384 only), or ' +
@@ -19736,6 +19739,13 @@ const CODES = [
       'still judged by the receiver\'s own checks, and what is sent is sent ' +
       'unchanged.',
     spec: 'none (recorded only)' },
+  { code: 'STS-SSF-0163',
+    summary: 'X-Iya-Pep-Name was sent and is not a PEP name: one token of ' +
+      '1 to 128 letters, digits, ".", "_" or "-". A cluster member sends ' +
+      'its registered name so its CAEP/RISC stream is its own; a header ' +
+      'that is not one is refused rather than read as no header ' +
+      '(#1760 phase 3).',
+    spec: 'HTTP 400' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -23517,8 +23527,10 @@ const CODES = [
       'of its session routes ends sessions by CAEP/RISC signals: the ' +
       'members would share one signal stream, so a sign-out could be ' +
       'consumed by a member that does not hold the session. A stream ' +
-      'per member is phase 3 (#1760).',
-    spec: 'HTTP 400 on /admin-api' },
+      'per member is phase 3 (#1760). Retired by #1760 phase 3: each ' +
+      'member polls a stream of its own, named by X-Iya-Pep-Name, so a ' +
+      'cluster no longer refuses the second member.',
+    spec: '', retired: true },
   { code: 'STS-XACML-0276',
     summary: 'An action that edits a PEP\'s own reverse proxy, settings or ' +
       'listeners was asked of a member of a remote PEP cluster, whose ' +
@@ -23546,6 +23558,34 @@ const CODES = [
       'so no PEP pulls its configuration until an administrator ' +
       'corrects it (#1760).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-XACML-0281',
+    summary: 'A remote PEP listener\'s tuning — the TLS policy, the TLS ' +
+      'session cache, HTTP pooling, HTTP/2, the client-certificate ' +
+      'questions or the thread pool — does not fit: a value outside its ' +
+      'range, a cipher suite this service does not name, a ' +
+      'post-quantum-only choice with nothing post-quantum left, or a ' +
+      'thread-pool maximum below its minimum (#1760).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0282',
+    summary: 'A remote PEP\'s Sync was refused before anything was sent: ' +
+      'remote PEPs (xacml.remotePeps) or nudging (xacml.pepNotify) is off ' +
+      'in this realm. The PEP converges on its own poll.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0283',
+    summary: 'A remote PEP\'s Sync was refused because nudging is stopped ' +
+      'for that PEP (disable-pep): an administrator said this service does ' +
+      'not dial it.',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0284',
+    summary: 'A remote PEP\'s Sync was refused because the PEP has no ' +
+      'notify URL, or its notify URL cannot be dialled (not https, or ' +
+      'outside xacml.pepNotifyAllowedHosts).',
+    spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0285',
+    summary: 'A remote PEP\'s Sync dialled the PEP and the nudge was not ' +
+      'delivered: the connection failed, the certificate did not verify, ' +
+      'or the PEP refused it. The result is recorded on the PEP\'s row.',
+    spec: 'HTTP 400 on /admin-api' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24200,6 +24240,14 @@ const CODES = [
       'STS-XPEP-0065 (#1760).',
     spec: 'HTTP 503, temporarily_unavailable, with Retry-After (the poll ' +
       'interval in seconds, at least 1)' },
+  { code: 'STS-XPEP-0119',
+    summary: 'A remote PEP could not apply one part of a listener\'s ' +
+      'tuning. A TLS knob the library refused keeps the acceptor already ' +
+      'served, or serves the certificate without that knob when none is ' +
+      'served yet. sessionTimeoutS other than 300 is left at 300 seconds ' +
+      'and the other settings are applied. A thread-pool worker that does ' +
+      'not start leaves the workers already running (#1760).',
+    spec: 'none — an error in the PEP\'s log' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -26526,6 +26574,30 @@ const CODES = [
       'profile the export does not carry; nothing was trusted or written.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors, missing}' },
+  { code: 'STS-ADMIN-0939',
+    summary: 'A TLS client certificate was asked for a person this realm ' +
+      'has no entry for, or with no person named. Issuing one creates ' +
+      'nobody.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0940',
+    summary: 'The password for a person\'s TLS client certificate files ' +
+      'was refused: shorter than 8 characters, longer than 256, or the ' +
+      'confirmation did not match.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0941',
+    summary: 'A person\'s TLS client certificate was not issued. The ' +
+      'certificate module\'s own code names the specific refusal when it ' +
+      'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-ADMIN-0942',
+    summary: 'A person\'s TLS client certificate was not revoked. The ' +
+      'certificate module\'s own code names the specific refusal when it ' +
+      'has one.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

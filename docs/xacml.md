@@ -625,6 +625,11 @@ an enforcement.
   and combined. The counters start with the process and have no reset. The
   lasting record of a refusal is the audit log (`/admin/audit`), under
   `xacml.access.refused` and `xacml.issuance.refused`.
+* **Monitoring → Remote PEPs** (`/admin/xacml/pep/monitor`) shows what each
+  remote PEP is serving: listener stats, its thread pool, requests per path
+  and memory. The figures are the PEP's, cumulative since that process
+  started. [Its page](remote-pep.md#what-a-remote-pep-is-serving) says how
+  they are counted. The page reads `GET /admin-api/xacml/peps`.
 * **`/admin/roles`**: who holds which role, which roles an application
   requires, and a preview of whether a person would be issued a token. The
   preview is a dry run and is not audited.

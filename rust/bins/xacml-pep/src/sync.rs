@@ -261,6 +261,9 @@ struct SettingsHolding {
     /// The listeners the service defines for this PEP (#1760), as pulled:
     /// the `listeners` member, or null for none. `listeners.rs` reads it.
     listeners: Value,
+    /// The four environment listeners' tuning. Null until a pull sends
+    /// `environmentTuning`; applying null changes no pool.
+    environment_tuning: Value,
 }
 
 /// What the reverse proxy has answered, cumulative in this process: by
@@ -565,6 +568,25 @@ impl Sync {
     /// answers on the AuthZEN endpoints, as they are on `GET /`.
     pub fn ever_loaded(&self) -> bool {
         !self.lock().held.last_change_at.is_empty()
+    }
+
+    /// The name registration reported, once it has succeeded and the name
+    /// is not blank (#1760 phase 3). Before that, nothing: a receiver
+    /// built then sends no `X-Iya-Pep-Name` and keeps the untagged stream.
+    /// The name is the one the service folded and answered, not a second
+    /// reading of `PEP_NAME`.
+    pub fn registered_name(&self) -> Option<String> {
+        let state = self.lock();
+        let reg = &state.registration;
+        if !reg.registered {
+            return None;
+        }
+        let name = reg.name.trim();
+        if name.is_empty() {
+            None
+        } else {
+            Some(name.to_string())
+        }
     }
 
     /// The AuthZEN catalogue held now.
@@ -991,6 +1013,7 @@ impl Sync {
                 },
                 not_offered: false,
                 listeners: said["listeners"].clone(),
+                environment_tuning: said["environmentTuning"].clone(),
             };
         }
         tracing::info!(
@@ -1667,11 +1690,11 @@ impl Sync {
                 format!("Pulled a proxy configuration of {} route(s).", routes)
             }
             None if pulled.configured => "Pulled a proxy configuration that \
-                is switched off (enabled: false); the proxy answers 404 to \
-                everything."
+                is switched off (enabled: false); the proxy answers 404, \
+                and a browser's / is the start page."
                 .to_string(),
             None => "The PDP holds no proxy configuration for this PEP; the \
-                     proxy answers 404 to everything."
+                     proxy answers 404, and a browser's / is the start page."
                 .to_string(),
         };
         let mut state = self.lock();
@@ -1828,6 +1851,11 @@ impl Sync {
     /// which is also an older service's answer.
     pub fn listener_definitions(&self) -> Value {
         self.lock().settings.listeners.clone()
+    }
+
+    /// The pull's `environmentTuning`, or null when the service sent none.
+    pub fn environment_tuning(&self) -> Value {
+        self.lock().settings.environment_tuning.clone()
     }
 
     pub fn set_relying_parties(&self, counts: (usize, usize)) {

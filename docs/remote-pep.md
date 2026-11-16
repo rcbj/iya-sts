@@ -232,7 +232,18 @@ each row.
 
 ### Minting the certificate
 
-`tests/tools/pep-credential.js` builds a Root CA, an Issuing CA and a client leaf
+**Issue it from this realm.** On the PEP user's page, Credentials, Key pairs,
+**TLS client certificates** generates the key pair and certifies it from the
+realm's TLS Client Issuing CA. The subject follows the directory entry, and
+the subjectAltName `urn:sts:person:<username>` is what admits the PEP. The
+reply is the only copy of the private key (a `.p12`, an encrypted key and
+the chain). Give those two files to the container as `PEP_TLS_CERT` and
+`PEP_TLS_KEY`. The leaf is not stored in `userCertificate`, and no root is
+posted to the truststore: this service already trusts its own Root
+(`tls.trustIssuedClientCertificates`).
+`POST /admin-api/users/issue-tls-client-certificate` is the same act.
+
+**An outside certificate authority still works.** `tests/tools/pep-credential.js` builds a Root CA, an Issuing CA and a client leaf
 on this repository's own PKI code, writes them out, and POSTs the **root alone**
 to the service's truststore — so the service has to build a path from what arrives to
 an anchor it holds, which is the commonest thing to get wrong in mutual TLS.
@@ -1004,7 +1015,9 @@ to `?since=<syncToken>` while nothing changed.
 The document names the upstream, the `publicBaseUrl` a browser reaches the
 proxy at (https in product mode, and always for a session route), the
 timeouts, and an ordered list of routes; the first route that matches wins and
-a request no route matches is refused `404`. Every route states its `methods`
+a request no route matches is refused `404`, except a browser's `GET` or
+`HEAD` of `/`, which is the start page when no route is mounted there.
+Every route states its `methods`
 (all seven for any method, none for **deny-all**) and makes one
 **authorization** choice — see [Authorizing a route](xacml.md#authorizing-a-route):
 every request on it, a public route's included, is decided in XACML by that
@@ -1148,13 +1161,17 @@ or the managed `pollIntervalMs`) in whole seconds, at least 1. A browser
 sees the **Try again later** page, and any other client gets
 `{"error": "temporarily_unavailable", "error_description": …}`. Once a
 configuration has been received, a configuration that is empty or switched
-off answers `404`, as does a path no route matches:
+off answers `404`, as does a path no route matches. A browser's `GET` or
+`HEAD` of `/` is the start page in both of those cases, when no route is
+mounted at `/`:
 
 | The PEP holds | A browser sees | Status |
 |---|---|---|
 | no configuration yet since it started | Try again later | `503`, with `Retry-After` |
-| a configuration that is empty or switched off | Page not found | `404` |
-| routes, none matching the path | Page not found | `404` |
+| a configuration that is empty or switched off, at `/` | the start page | `200` |
+| a configuration that is empty or switched off, at any other path | Page not found | `404` |
+| routes, none matching `/`, and the browser asks for `/` | the start page | `200` |
+| routes, none matching some other path | Page not found | `404` |
 
 The PEP's log says when it starts waiting, gives a count at most once a
 minute while requests go on arriving, and says how many requests were
@@ -1172,10 +1189,13 @@ The page has a title and a sentence saying what went wrong: no access under
 the policy, the page closed to every request (a route with no methods), the
 policy not available, a sign-in that failed, the application not reachable,
 the proxy not configured yet (**Try again later**), and so on. A collapsed note explains why the page appeared, and a link goes
-to the start page. When the policy refused the person signed in on a
+to the start page (`GET /`): the product logo, the name, one sentence, and
+the standard footer. The logo is `GET /.iya-pep/logo.png`. A route mounted
+at `/` is served instead, and a request that does not accept HTML still
+gets the `404`. When the policy refused the person signed in on a
 `session` route, the page also offers another account. On a route with
-**Several accounts** that is *Use a different account* and *Sign in with
-another account*; on any other session route it is a sign-out.
+**Several accounts** that is *Use a different account*, which opens the
+chooser; on any other session route it is a sign-out.
 
 At the bottom, a **Diagnostics** box lists the time (UTC), an **incident
 ID**, the application, the address, who is signed in, and the `error` and
@@ -1214,7 +1234,7 @@ as it always has; both naming different PEPs is refused. Its tabs:
 
 | Tab | What is on it |
 |---|---|
-| Overview | what it registered as — its certificate subject, directory identity (and whether that entry is a [service account](#the-peps-entry-is-a-service-account), with its owners) and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging and Forget |
+| Overview | what it registered as — its certificate subject, directory identity (and whether that entry is a [service account](#the-peps-entry-is-a-service-account), with its owners) and thumbprint, the date, its version, description, resource and bias — whether it is current and when it was last seen, the notify URL the nudge dials, and Stop nudging, Sync and Forget |
 | Decisions | the counts it reports on its heartbeat, and how many policies it loaded |
 | Settings | every setting this service sets for it (below) |
 | Listener | two sub-tabs: **Configured Listeners**, every listener it has — the four its environment binds and the ones defined here — each with its protocol, address and port, purpose, state, certificate and source, each id a link to the listener's own page (below); and **Create a new listener**, the form that defines one and the environment's HTTPS pair with Issue or Reissue (below). Each listener is edited, renewed and removed on its own page |
@@ -1238,18 +1258,26 @@ listener the PEP has, each id a link to [the listener's own
 page](#a-listeners-own-page). **Create a new listener**
 (`#xacml-pep-listeners-new`) holds the form that defines one, laid out as
 Create a New Route is — **Listener** (id, protocol, purpose), **Address**
-(address, port) and **Certificate (HTTPS only)** (DNS names, IP addresses,
-key), which shows only while the protocol is HTTPS — and once it is saved,
-the new listener's page opens. Below it, under its own heading, is the
-environment's HTTPS pair: the certificate issued, then the names and key
-for the next one and Issue or Reissue. A listener's own page edits it in
-the same layout. The listeners are:
+(address, port), **Certificate (HTTPS only)** (DNS names, IP addresses,
+key, shown only while the protocol is HTTPS), and the same groups Server
+configuration → Listeners exposes: **TLS**, **TLS session pooling**,
+**Client certificates**, **HTTP pooling**, **HTTP/2** and **Thread pool**
+(minimum and maximum workers). Once it is saved, the new listener's page
+opens. Below it, under its own heading, is the environment's HTTPS pair:
+the certificate issued, then the names and key for the next one and Issue
+or Reissue. A listener's own page edits a listener defined here in the same
+layout. The listeners are:
 
 * **The four its environment binds** — `api-http` (`PEP_PORT`), `api-https`
   (`PEP_HTTPS_PORT`), `proxy-http` (`PEP_PROXY_PORT`) and `proxy-https`
   (`PEP_PROXY_HTTPS_PORT`). They are what lets the PEP reach this service
-  before it has pulled anything, so they are shown read-only and only its
-  environment changes them. **The two plain-HTTP ones are off unless
+  before it has pulled anything, so the address, port and protocol stay the
+  environment's and are shown read-only. TLS, session pooling, client
+  certificates, HTTP pooling, HTTP/2 and the thread pool are set on that
+  listener's own page (`set-pep-environment-tuning`) and take effect on the
+  next pull. A cluster has no single process, so those four pools stay each
+  member's own and are not part of the cluster's listener document.
+  **The two plain-HTTP ones are off unless
   `PEP_HTTP` or `PEP_PROXY_HTTP` is `true`**. The tab shows each of them as
   *off* and names its switch. The two HTTPS ones serve the pair on the PEP's
   own mount, which **Issue certificate** at the bottom of the tab issues
@@ -1325,13 +1353,48 @@ listener*.
   **Renew the certificate** for HTTPS, and **Remove** behind a
   confirmation box. A save stays on the page; a removal opens Configured
   Listeners.
-* **For one of the environment's four**: the same page, read-only, with
-  the variable that sets its port (and, for a plain-HTTP one, the switch
-  that turns it on), since only the PEP's environment changes it.
+* **For one of the environment's four**: the address, port, protocol and
+  the variable that sets the port (and, for a plain-HTTP one, the switch
+  that turns it on) stay read-only. The TLS, session, client-certificate,
+  HTTP, HTTP/2 and thread-pool fields are the edit form, saved by
+  `set-pep-environment-tuning`, and a save stays on the page. On a
+  cluster's page that form is not offered: each member's process has its
+  own pools, set on that member's listener page.
+
+A reverse-proxy listener's thread pool starts at 16 workers and may grow
+to 128, the highest default. A decision-API listener starts at 4 and may
+grow to 32. `api-http` uses those API defaults even when the process
+serves only CRLs; saving 1 and 4 is how that port is given the smaller
+pool. An empty field is the built-in default. TLS 1.2 is off unless the
+form turns it on, so the minimum version is TLS 1.3. `sessionTimeoutS` is
+stored with the listener. This PEP's TLS library has no session-lifetime
+call, so a value other than 300 is logged (`STS-XPEP-0119`) and a session
+lives OpenSSL's 300 seconds, which is also this service's default. The
+listener's other settings are still applied. A post-quantum-only listener
+whose cipher, group or signature list has nothing post-quantum is refused
+on save (`STS-XACML-0281`).
 
 The page answers `GET /admin-api/xacml/peps?pep=<name>`: the listener is a
 row of that PEP's `listenerRows`, so the management API has no operation
 of its own for it.
+
+### What a remote PEP is serving
+
+**Monitoring → Remote PEPs** (`/admin/xacml/pep/monitor`) lists every
+registered PEP and whether its last heartbeat carried listener figures.
+Open one for its memory (resident, virtual and data, in megabytes, and
+the thread count), each listener's accepted, open and refused connections,
+how many spoke HTTP/1 and HTTP/2, handshakes completed and failed, that
+listener's thread pool (the minimum it starts, the maximum it may grow
+to, and how many workers are running, busy, idle or queued, and how many
+connections it has finished), and requests per method and path. The
+counters are cumulative since that PEP's process started. A PEP that has
+not reported them says so, and a missing figure is left blank rather than
+shown as zero. Path counts drop the query string. A request answered
+401, 403 or 503 counts as refused; a 404 does not. The page reads
+`GET /admin-api/xacml/peps`, the same answer as the Protocols page. The
+figures ride `listenersInUse`. Configuring a listener stays under
+Protocols.
 
 ### Its routes, one at a time
 
@@ -1553,7 +1616,7 @@ active account, adding an account, switching, and signing one or all out.
 
 | Address on the proxy | What it does |
 |---|---|
-| `GET /.iya-pep/accounts?return=<path>` | the chooser: every account in this browser by username (and display name, where the service gives one), with its application, the active one marked, and *Switch to this account*, *Sign out*, *Add another account* and *Sign out of all accounts*. `?format=json` answers the same list as JSON. |
+| `GET /.iya-pep/accounts?return=<path>` | the chooser: every account in this browser by username (and display name, where the service gives one), with its application, the active one marked. The active account offers *Continue with this user*, which goes to `return`; every other account offers *Switch to this account*. Each offers *Sign out*, then *Add another account* and *Sign out of all accounts*. `return` is followed only when its path matches a configured route of this proxy; otherwise these acts go to `/`. `?format=json` answers the same list as JSON. |
 | `GET /.iya-pep/accounts/add?return=<path>` | signs another account in with `prompt=login`, so the service asks for a sign-in rather than reusing the session it holds. With `&account=<id>`, it signs that account in again, sending its `login_hint` and requiring that the ID Token name the same subject. |
 | `POST /.iya-pep/accounts/switch` (`account`, `return`) | makes that account the active one |
 | `POST /.iya-pep/accounts/logout` (`account`, `return`) | signs that account out here; the others stay |
@@ -1573,10 +1636,13 @@ active account, adding an account, switching, and signing one or all out.
   refused with the error page, status 403 (`STS-XPEP-0108`), rather than
   signing another account out. The same person signing in again replaces their own
   account's session.
-* **The account pages** are the proxy's own: plain forms, no script, and
-  `Content-Security-Policy: default-src 'none'; form-action 'self';
-  frame-ancestors 'none'; base-uri 'none'`, `no-store`. A switch or sign-out
-  posted from another site is refused (`STS-XPEP-0109`). The pages are in
+* **The account pages** are the proxy's own: plain forms, no script. The
+  chooser is the error page's document shell — the same style sheet,
+  admitted by its SHA-256 in `style-src` on top of `default-src 'none';
+  form-action 'self'; frame-ancestors 'none'; base-uri 'none'`, and the
+  same footer — and it is not an error page (no warning box, no
+  diagnostics). `Cache-Control: no-store`. A switch or sign-out posted
+  from another site is refused (`STS-XPEP-0109`). The pages are in
   English: the PEP holds no message catalogs.
 * **The active account is per browser, not per tab.** Every tab of one
   browser sends the same cookie, and the proxy cannot tell tabs apart
@@ -1726,14 +1792,21 @@ cluster names the member whose is not.
 Every change to a cluster is pulled by every member on its next poll, and every
 member is nudged once the change is saved.
 
-### Signal streams, in this release
+### Signal streams
 
-The members of a cluster would share one CAEP/RISC stream per client, so a
-sign-out could be consumed by a member that does not hold the session. A
-session route with `signals` on is therefore refused in a cluster of more than
-one member, and a second member is refused while such a route exists
-(`STS-XACML-0275`): turn the route's signals off, and its sign-out reaches the
-proxy by `POST /xacml/pep/session`.
+Each member polls its own CAEP/RISC stream. A registered PEP sends its name
+in the `X-Iya-Pep-Name` header on every call to the transmitter, and the
+stream it creates is tagged with that name. A sign-out on that stream
+reaches that member. A member that does not send the header still shares the
+untagged stream with every other caller of the same client that also omits
+it.
+
+A PEP that already held the untagged stream and then starts sending the
+header creates a new tagged stream. Until the old stream ages out, an event
+is delivered to both. Security Event Tokens still queued on the old stream
+when the receiver is rebuilt are not collected. The members share the
+application's client secret, so one of them can omit the header or send
+another's name.
 
 ### Over the management API
 

@@ -78,6 +78,11 @@
 //      rows links to the page it names, the current ones too, and the
 //      runtime navigates on it; the panel opens with Back to routes, then
 //      Route detail: <id> with the path beside it.
+//   PM. MONITORING → REMOTE PEPS (rcbj, 2026-11-15): the sidebar row after
+//      XACML decisions, the index of who has reported, and one PEP's
+//      memory, listener stats, thread pool and requests per path. Memory
+//      is drawn in megabytes. A PEP that has not reported them says so,
+//      and a missing figure is not a zero.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -105,6 +110,39 @@ async function run(t) {
   // message key.
   require('../common/i18n');
   const tr = kit.context({}, true).t;
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== CS. the Clustered column and Sync (2026-11-16) ===');
+  // -------------------------------------------------------------------------
+  const member = XacmlPage.pepClustered(tr, { name: 'pep-2',
+                                              cluster: 'orders<x>' });
+  t.check(/^Yes<div class="sub"><a href="\/admin\/xacml\/pep-cluster\?cluster=orders%3Cx%3E"><code>orders&lt;x&gt;<\/code><\/a><\/div>$/
+            .test(member),
+          'CS1. a member reads Yes, its cluster escaped and linked to the ' +
+          'cluster\'s page', member);
+  const solo = XacmlPage.pepClustered(tr, { name: 'pep-solo' });
+  t.check(solo === '<span class="sub">No</span>',
+          'CS2. a standalone PEP reads No', solo);
+  const peps = XacmlPage.pepsBody(kit.context({}, true), {
+    peps: [{ name: 'pep-2', cluster: 'orders', enabled: true },
+           { name: 'pep-solo', enabled: true }],
+    elsewhere: [], syncToken: 't', current: 0, stale: 0, staleAfterS: 60,
+    enabled: true, notify: { on: true },
+    listenerCertificates: { keyAlgorithms: ['ec-p256'],
+                            defaultKeyAlg: 'ec-p256' } });
+  const heads = (peps.match(/<th[^>]*>[^<]*<\/th>/g) || [])
+    .map(function (one) { return one.replace(/<[^>]+>/g, ''); });
+  t.check(heads[0] === 'PEP' && heads[1] === 'Clustered',
+          'CS3. the table\'s second column is Clustered',
+          JSON.stringify(heads));
+  t.check((peps.match(/name="action" value="sync-pep"/g) || []).length === 2,
+          'CS4. every row has a Sync button posting sync-pep',
+          (peps.match(/sync-pep/g) || []).length);
+  const readOnly = XacmlPage.pepActions(
+    Object.assign(kit.context({}, true), { write: false }),
+    { name: 'pep-2', enabled: true });
+  t.check(readOnly.indexOf('sync-pep') < 0,
+          'CS5. a reader is offered no Sync', readOnly);
 
   // -------------------------------------------------------------------------
   t.log.info('=== N. the notify column ===');
@@ -1335,12 +1373,12 @@ async function run(t) {
   const lEnvPanel = panelOf(lEnv, 'xacml-pep-listeners-configured');
   t.check(lEnvPanel.indexOf('class="drillback"') >= 0 &&
           lEnvPanel.indexOf('Listener detail: api-http') >= 0 &&
-          lEnvPanel.indexOf('<form') < 0 &&
+          lEnvPanel.indexOf('value="set-pep-environment-tuning"') >= 0 &&
+          lEnvPanel.indexOf('name="threadPoolMin"') >= 0 &&
           lEnvPanel.indexOf('PEP_PORT') >= 0 &&
-          lEnvPanel.indexOf('PEP_HTTP') >= 0 &&
-          lEnvPanel.indexOf('read-only') >= 0,
-          'LD8. an environment listener\'s page: the same layout, read-only, ' +
-          'naming the variables that set it', lEnvPanel);
+          lEnvPanel.indexOf('PEP_HTTP') >= 0,
+          'LD8. an environment listener\'s page sets its tuning; the ' +
+          'address, port and protocol stay the environment\'s', lEnvPanel);
   const lGone = XacmlPage.listenerDetail(
     kit.context({ pep: 'pep-1', listener: 'gone' }, true), lJson);
   t.check(lGone.indexOf('has no listener called gone') >= 0 &&
@@ -1379,9 +1417,14 @@ async function run(t) {
             '/admin/xacml/pep?pep=pep-1#xacml-pep-listeners-configured' &&
           landed('/admin/xacml/pep/listener?pep=pep-1&listener=pub2',
                  'renew-pep-listener-certificate',
-                 { name: 'pep-1', listener: 'pub2' }) === null,
+                 { name: 'pep-1', listener: 'pub2' }) === null &&
+          landed('/admin/xacml/pep/listener?pep=pep-1&listener=api-http',
+                 'set-pep-environment-tuning',
+                 { name: 'pep-1', listener: 'api-http' }) ===
+            '/admin/xacml/pep/listener?pep=pep-1&listener=api-http',
           'LT2. a new listener lands on its page, a save stays there, a ' +
-          'removal lands on Configured Listeners, a renew stays put');
+          'removal lands on Configured Listeners, a renew stays put, and ' +
+          'an environment tuning save stays on that listener');
 
   // -------------------------------------------------------------------------
   t.log.info('=== LP. the CRL-only listener\'s purpose ===');
@@ -1625,20 +1668,33 @@ async function run(t) {
     log.debug("Leaving rowsOf().");
     return out.join(' ');
   };
-  t.equal(legendsIn(defForm), 'Listener | Address | Certificate (HTTPS only)',
+  const tuningLegends = ' | TLS | TLS session pooling | HTTP pooling | ' +
+    'HTTP/2 | Client certificates | Thread pool';
+  const tuningRows = 'minVersion disableTls12 ciphers tls13CipherSuites ' +
+    'groups signatureAlgorithms trustAnchorsFile pqcOnly sessionTimeoutS ' +
+    'sessionCacheSize keepAliveTimeoutS headersTimeoutS ' +
+    'maxRequestsPerSocket maxConnections http2 http2MaxConcurrentStreams ' +
+    'trustIssuedClientCertificates askClientCertificate ' +
+    'requireClientCertificate threadPoolMin threadPoolMax';
+  t.equal(legendsIn(defForm),
+          'Listener | Address | Certificate (HTTPS only)' + tuningLegends,
           'LF1. the definition form\'s legends: Listener, Address, ' +
-          'Certificate (HTTPS only)');
+          'Certificate, then TLS, session pooling, HTTP, HTTP/2, client ' +
+          'certificates and the thread pool');
   t.equal(rowsOf(defForm),
           'id protocol purpose address port dnsNames ipAddresses keyAlg ' +
-          'button',
+          tuningRows + ' button',
           'LF2. one field per .formrow, then the button in a row of its own',
           defForm);
   t.check(/^<form [^>]*><input type="hidden" name="action" value="set-pep-listener"><input type="hidden" name="name" value="pep-1"><button type="submit" class="default-submit"/
             .test(defForm) &&
           (defForm.match(/<div class="formrow"><label title="[^"]+"/g) ||
-           []).length === 8,
+           []).length === 29 &&
+          /name="threadPoolMin"[^>]*value="16"/.test(defForm) &&
+          /name="threadPoolMax"[^>]*value="128"/.test(defForm),
           'LF3. the hidden default submit first, every label with its ' +
-          'tooltip', defForm.slice(0, 600));
+          'tooltip, and the reverse proxy\'s pool is the largest by default',
+          defForm.slice(0, 600));
   const certSet = /<fieldset class="pep-listener-cert"([^>]*)>/.exec(defForm);
   t.check(/<select name="protocol" data-panels="listenerProtocol">/
             .test(defForm) && !!certSet &&
@@ -1656,7 +1712,7 @@ async function run(t) {
           /<span class="formlabel tipword" title="[^"]+">Id<\/span> <code>plain<\/code>/
             .test(plainForm) &&
           legendsIn(plainForm) ===
-            'Listener | Address | Certificate (HTTPS only)',
+            'Listener | Address | Certificate (HTTPS only)' + tuningLegends,
           'LF5. a defined HTTP listener\'s form: the certificate fields ' +
           'hidden, the id fixed, the same legends', plainForm);
   const pairAt = lNew.indexOf('<h3>The environment\'s HTTPS pair</h3>');
@@ -1677,9 +1733,9 @@ async function run(t) {
           'LF7. a reader sees the pair as issued, under its legend', readerNew);
   const editForm = (lPanel.match(/<form\b[\s\S]*?<\/form>/g) || [])[0] || '';
   t.check(legendsIn(editForm) ===
-            'Listener | Address | Certificate (HTTPS only)' &&
+            'Listener | Address | Certificate (HTTPS only)' + tuningLegends &&
           rowsOf(editForm) === '0 controls protocol purpose address port ' +
-            'dnsNames ipAddresses keyAlg button' &&
+            'dnsNames ipAddresses keyAlg ' + tuningRows + ' button' &&
           editForm.indexOf('Save the listener</button></div></form>') > 0,
           'LF8. a listener\'s page edits it in the same layout', editForm);
   const adminSource = require('fs').readFileSync(require.resolve(
@@ -2520,6 +2576,132 @@ async function run(t) {
                                  false)
             .indexOf('href="/admin/xacml#xacml-tab-pep-clusters"') >= 0,
           'CL13. /admin/xacml/pep-clusters is a tab, not a page');
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== PM. Monitoring → Remote PEPs ===');
+  // -------------------------------------------------------------------------
+  const admin = require('../admin-ui/admin');
+  const shell = admin.shellJson(null, null, null);
+  const section = (shell.sections || []).filter(function (one) {
+    return one.title === 'Monitoring';
+  })[0] || { items: [] };
+  const flat = [];
+  const walkNav = function (items) {
+    log.debug("Entering walkNav().");
+    (items || []).forEach(function (item) {
+      if (item.path) {
+        flat.push(item.path);
+      }
+      if (item.items) {
+        walkNav(item.items);
+      }
+    });
+    log.debug("Leaving walkNav().");
+  };
+  walkNav(section.items);
+  t.equal(flat[flat.indexOf('/admin/xacml/monitor') + 1],
+          '/admin/xacml/pep/monitor',
+          'PM1. Monitoring lists Remote PEPs right after XACML decisions',
+          flat.join(', '));
+  const monPage = WebPages.pageFor('/admin/xacml/pep/monitor');
+  t.check(!!monPage && monPage.operation === '/admin-api/xacml/peps' &&
+          monPage.drill && monPage.drill.param === 'pep' &&
+          monPage.title === 'Remote PEPs',
+          'PM2. the page reads GET /admin-api/xacml/peps and drills on pep');
+  const emptyIndex = XacmlPage.pepMonitorIndex(writer, { peps: [] });
+  t.check(emptyIndex.indexOf(
+            'No remote PEP is registered in this realm.') >= 0,
+          'PM3. no PEP: the index says none is registered', emptyIndex);
+  const silent = XacmlPage.pepMonitorIndex(writer, {
+    peps: [{ name: 'pep-1' }] });
+  t.check(silent.indexOf(
+            'href="/admin/xacml/pep/monitor?pep=pep-1"') >= 0 &&
+          silent.indexOf('<td>reported</td>') < 0 &&
+          silent.indexOf('This PEP has not reported these figures.') >= 0,
+          'PM4. a PEP with no report is linked and says so', silent);
+  const heard = XacmlPage.pepMonitorIndex(writer, { peps: [
+    { name: 'pep-1', listenersInUse: { at: 'x' } },
+    { name: 'pep-2' }] });
+  t.check(heard.indexOf('<td>reported</td>') >= 0 &&
+          heard.indexOf('href="/admin/xacml/pep/monitor?pep=pep-2"') >= 0 &&
+          heard.split('This PEP has not reported these figures.').length ===
+            2,
+          'PM5. one reported and one not, each a link to its page', heard);
+  const unheard = XacmlPage.pepMonitorDetail(
+    kit.context({ pep: 'pep-1' }, true),
+    { pep: 'pep-1', found: true, peps: [{ name: 'pep-1' }] });
+  t.check(unheard.indexOf('This PEP has not reported these figures.') >= 0 &&
+          unheard.indexOf('class="tiles"') < 0 &&
+          unheard.indexOf('href="/admin/xacml/pep/monitor"') >= 0 &&
+          unheard.indexOf('← Back to remote PEPs') >= 0,
+          'PM6. a PEP that has not reported draws no zeroes', unheard);
+  const missingPep = XacmlPage.pepMonitorDetail(
+    kit.context({ pep: 'nope' }, true),
+    { pep: 'nope', found: false, peps: [] });
+  t.check(missingPep.indexOf('registered as <code>nope</code>') >= 0 &&
+          missingPep.indexOf('href="/admin/xacml/pep/monitor"') >= 0,
+          'PM7. a PEP that is not there says so and leads back', missingPep);
+  const monJson = {
+    pep: 'pep-1', found: true,
+    peps: [{
+      name: 'pep-1',
+      listenersInUse: {
+        at: '2026-11-15T00:00:00Z',
+        memory: {
+          rssBytes: 12 * 1024 * 1024, virtualBytes: 34 * 1024 * 1024,
+          threads: 6
+        },
+        paths: [{ method: 'GET', path: '/protected', count: 9, refused: 1 }]
+      },
+      listenerRows: [{
+        id: 'api-https',
+        reported: { stats: {
+          accepted: 4, open: 1, refused: 0, http1: 1, http2: 3,
+          handshakes: 4, handshakeFailures: 2,
+          pool: { min: 4, max: 32, current: 4, busy: 1, idle: 3,
+                  queued: 0, completed: 7 }
+        } }
+      }, {
+        id: 'proxy-http',
+        reported: { stats: { accepted: 2, open: 0 } }
+      }]
+    }]
+  };
+  const detail = XacmlPage.pepMonitorDetail(
+    kit.context({ pep: 'pep-1' }, true), monJson);
+  t.check(detail.indexOf('>Memory</h3>') >= 0 &&
+          detail.indexOf('>Listeners</h3>') >= 0 &&
+          detail.indexOf('>Thread pools</h3>') >= 0 &&
+          detail.indexOf('>Requests per path</h3>') >= 0 &&
+          detail.indexOf('<div class="n">12.0</div><div class="l">' +
+                         'RSS (MB)</div>') >= 0 &&
+          detail.indexOf('<div class="n">34.0</div><div class="l">' +
+                         'Virtual (MB)</div>') >= 0 &&
+          detail.indexOf('<div class="n">—</div><div class="l">' +
+                         'Data (MB)</div>') >= 0 &&
+          detail.indexOf('<div class="n">6</div><div class="l">' +
+                         'Threads</div>') >= 0 &&
+          detail.indexOf('<th><code>api-https</code></th><td>4</td>' +
+                         '<td>1</td><td>0</td><td>1</td><td>3</td>' +
+                         '<td>4</td><td>2</td>') >= 0 &&
+          detail.indexOf('<th><code>api-https</code></th><td>4</td>' +
+                         '<td>32</td><td>4</td><td>1</td><td>3</td>' +
+                         '<td>0</td><td>7</td>') >= 0 &&
+          detail.indexOf('<th><code>proxy-http</code></th><td>2</td>' +
+                         '<td>0</td>') >= 0 &&
+          detail.indexOf('colspan="7"') >= 0 &&
+          detail.indexOf('<td><code>GET</code></td><td><code>' +
+                         '/protected</code></td><td>9</td><td>1</td>') >= 0,
+          'PM8. memory, listener stats, the pool and one path; a missing ' +
+          'memory figure is a dash and a listener with no pool says so',
+          detail);
+  monJson.peps[0].listenersInUse.paths = [];
+  const quietPaths = XacmlPage.pepMonitorDetail(
+    kit.context({ pep: 'pep-1' }, true), monJson);
+  t.check(quietPaths.indexOf('No request has been counted yet.') >= 0 &&
+          quietPaths.indexOf('/protected') < 0,
+          'PM9. no counted request says so, rather than an empty table',
+          quietPaths);
   log.debug("Leaving run().");
 }
 
@@ -2528,6 +2710,8 @@ module.exports = {
   describe: 'The Remote PEPs tab: the notify column\'s short status with the ' +
             'long sentences collapsed, and a listener state never drawn as ' +
             'listening unless the PEP reported it, and a Reverse proxy tab ' +
-            'that leaves editing a route to the route\'s own page',
+            'that leaves editing a route to the route\'s own page, and ' +
+            'Monitoring → Remote PEPs drawing each PEP\'s listener, pool, ' +
+            'path and memory figures',
   run: run
 };

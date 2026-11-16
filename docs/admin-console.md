@@ -244,7 +244,7 @@ way. Its five sections:
   settings. Monitoring and Server configuration follow the same rule: the
   lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
-  the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
+  the Shared Signals monitors, consent, XACML decisions, Remote PEPs, GNAP grants, the
   enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
   SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
@@ -730,6 +730,21 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   `/admin-api/applications/issue-signing-certificate` and
   `revoke-signing-certificate`. See
   [PKI](pki.md#a-message-signing-certificate-for-a-ws-trust-requester).
+* **TLS client certificates** lists the certificates the realm's TLS Client
+  Issuing CA issued the person, with **Revoke** per valid row, and a form (a
+  label, the key algorithm, a file password twice) that issues one. The
+  subject is the person's directory name, and the subjectAltName is
+  `urn:sts:person:<username>`, which is what admits a remote PEP that
+  presents the certificate. The leaf is not stored in `userCertificate`.
+  The answer is the `.p12`, the key and the chain, once.
+  `POST /admin-api/users/issue-tls-client-certificate` and
+  `revoke-tls-client-certificate` are the same acts, and `mfa.tls` of the
+  person's `GET /admin-api/users` answer is the list. An application's TLS
+  client certificate stays on its own page.
+
+Stored certificates, message-signing certificates and TLS client certificates
+are the Key pairs sub-tab. Self-issued IDs, with the published DIDs, are the
+sub-tab after it.
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC
@@ -2138,7 +2153,9 @@ Protocols → XACML is one destination with tabs for Metadata (the realm's
 XACML endpoints), Settings, Policies, Policy editor, Remote PEPs and Try a
 decision. The policies, editor, PEP and decision views remain distinct tabs;
 their controls return to the tab they came from. **XACML decisions** remains a
-separate Monitoring page at `/admin/xacml/monitor`.
+separate Monitoring page at `/admin/xacml/monitor`. **Remote PEPs**
+(`/admin/xacml/pep/monitor`) is the next Monitoring page: each remote PEP's
+listener, thread-pool, per-path and memory figures, as that PEP reports them.
 
 ### Authorization servers — `/admin/authorization-servers`
 

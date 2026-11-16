@@ -7504,6 +7504,19 @@ namespace IyaSts.Api.Management {
     `problems`?: NullableArray
   }
 
+@component model `XacmlPepSyncAnswer` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `why`?: string;
+    `what`?: string;
+    `problems`?: NullableArray;
+    @js(#{`description`:"The PEP nudged."}) `pep`?: string;
+    @js(#{`description`:"The remote PEP cluster it is a member of, whose configuration it pulls; null for a standalone PEP."}) `cluster`?: NullableString;
+    @js(#{`description`:"Whether the nudge was delivered."}) `delivered`?: boolean;
+    @js(#{`description`:"The HTTP status the PEP answered the nudge with."}) `status`?: numeric
+  }
+
 @component model `XacmlPepSettingsAnswer` {
     `ok`: boolean;
     `message`?: string;
@@ -10677,6 +10690,33 @@ namespace IyaSts.Api.Management {
     `error`?: string;
     `error_description`?: string;
     `row`?: `WithIdRealmClientId5`
+  }
+
+// A person's TLS client certificate, issued. The signing answer's shape with
+// `tls` in place of `signing`, and no `purpose`: this door issues `tls-client`
+// only, and the subject is the directory entry's.
+@component model `WithOkMessageErrors194` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `certificate`?: `WithSerialHexSubjectKeyAlg`;
+    `files`?: `WithPkcs12KeyChain`;
+    `user`?: string;
+    `tls`?: PersonTlsClientView
+  }
+
+// The same certificate, revoked. The signing revoke's shape with `tls`.
+@component model `WithOkMessageErrors195` {
+    `ok`: boolean;
+    `message`?: string;
+    `errors`?: (string)[];
+    `certificate`?: `WithSlotLabelSerialHex`;
+    `reason`?: string;
+    `already`?: boolean;
+    `why`?: string;
+    `entry`?: `WithSerialHexRevokedAtReason`;
+    `user`?: string;
+    `tls`?: PersonTlsClientView
   }
 
 @endpoint("/admin-api",
@@ -17604,6 +17644,90 @@ op `revokeUserSigningCertificate`(@js(#{
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors40`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors40`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/issue-tls-client-certificate",
+  "post",
+  #{
+    `operationId`:"issueUserTlsClientCertificate",
+    `summary`:"Issue somebody a TLS client certificate from this realm's CA",
+    `description`:"Generates a key pair and certifies it from the realm's `tls-client` Issuing CA with `clientAuth`. The subject is the person's directory name — common name and UID first, then the entry's own naming attributes, then the organisation and country — and `urn:sts:person:<username>` is its subjectAltName, which is what admits a remote PEP that presents the certificate. It is not stored on the entry as `userCertificate`.\n\n**THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past the maximum of valid TLS client certificates for a person, for a person with no entry (`STS-ADMIN-0939`), for a file password that is too short or does not match (`STS-ADMIN-0940`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.\n\n**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate (serial, subject, thumbprint, PEM and chain, its urn:sts: name), the three files, and the person's TLS client certificates as they now stand, in `tls`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueUserTlsClientCertificate`(@js(#{
+    `examples`:#[
+      #{
+        `user`:"alice",
+        `password`:"correct horse battery",
+        `keyAlg`:"ec-p256",
+        `label`:"remote pep"
+      }
+    ]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    @js(#{`minLength`:8,`maxLength`:256}) `password`: string;
+    `confirm`?: string;
+    `keyAlg`?: "rsa-2048" | "rsa-3072" | "ec-p256" | "ec-p384";
+    @js(#{`maxLength`:40}) `label`?: string;
+    @js(#{`minimum`:1}) `days`?: integer
+  },
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors194`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors194`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/users/revoke-tls-client-certificate",
+  "post",
+  #{
+    `operationId`:"revokeUserTlsClientCertificate",
+    `summary`:"Revoke one of somebody's TLS client certificates",
+    `description`:"Revokes a certificate `issue-tls-client-certificate` issued to THIS person — a serial belonging to anybody else, or one of their message-signing certificates, matches nothing — onto the Issuing CA's CRL and OCSP responder. A handshake that presents it is refused from then on. The person's certificates are listed in `mfa.tls` of GET /admin-api/users?user=.\n\n**Mirrors** `POST /admin/users` on the admin console (Credentials, Key pairs).",
+    `tags`:#["Users"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The revoked certificate, the reason, and the person's TLS client certificates as they now stand.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `revokeUserTlsClientCertificate`(@js(#{
+    `examples`:#[#{`user`:"alice",`serialHex`:"1a2b3c",`reason`:"keyCompromise"}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string;
+    `serialHex`: string;
+    `reason`?: "cessationOfOperation" | "keyCompromise"
+  },
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors195`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors195`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
@@ -28497,7 +28621,7 @@ op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMon
   #{
     `operationId`:"getXacmlPeps",
     `summary`:"The REMOTE Policy Enforcement Points that pull this repository, and whether they are deciding with the same policy this service holds",
-    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep and GET /admin/xacml/pep/route` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `description`:"Everything the Remote PEPs tab on /admin/xacml draws.\n\nA REMOTE PEP runs in another process, holds its own copy of the engine and PULLS the enabled policies from GET /xacml/pep/policies. The pull is the contract; the nudge this service sends to `notifyUrl` when the repository changes is an optimisation over the polling interval and never a replacement for it, so a PEP that is never nudged still converges.\n\nREGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactly as well — GET /xacml/pep/policies requires no credential, because a policy is a rule and a rule nobody can read is a rule nobody can check. What a row buys is this listing and an address for the nudge.\n\n`current` is a COMPARISON this service performs between `syncToken` on the row and the repository's own, not a claim the PEP makes; `stale` is how long since it was last heard from against xacml.pepStaleAfterS and changes nothing this service does. The decision counts are the PEP's own, cumulative in its process — this service saw none of those decisions, which is what a remote PEP is — so a PEP that restarts makes them go down.\n\nWith `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.\n\n**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep, GET /admin/xacml/pep/route and GET /admin/xacml/pep/monitor` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30395,6 +30519,36 @@ op `forgetXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/xacml/sync-pep",
+  "post",
+  #{
+    `operationId`:"syncXacmlPep",
+    `summary`:"Tell one remote PEP to pull everything again now",
+    `description`:"Nudges ONE registered PEP at the address the change nudge dials (its managed notify URL, or a cluster member's own) and waits for the answer. This service pushes nothing: the PEP answers a nudge by pulling a whole round — its settings and listeners, the policies, the AuthZEN catalogue and callers, and its reverse proxy — and a member of a remote PEP cluster pulls its cluster's documents, so the cluster's configuration travels with it. A document the PEP already holds byte for byte is answered 304, because every pull's token is a digest of exactly what would be sent.\n\nRefused before anything is dialled when remote PEPs or nudging are off (STS-XACML-0282), when nudging is stopped for this PEP (STS-XACML-0283), or when it has no usable notify URL (STS-XACML-0284); a nudge that was not delivered is STS-XACML-0285 and is recorded on the PEP's row as every nudge is. The PEP converges on its own poll in every one of those cases.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The nudge was delivered; the PEP is pulling.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `syncXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
+  `responses/200/content/application~1json/schema`: `XacmlPepSyncAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepSyncAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @js(#{
     `description`:"DNS names to ADD to the two derived from the registration. An array, or one string separated by commas or whitespace. A `*.` wildcard is accepted in the first label.",
     `$comb`:"oneOf"
@@ -30671,7 +30825,7 @@ op `clearXacmlPepSettings`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/
   #{
     `operationId`:"setXacmlPepListener",
     `summary`:"Define or replace one of a remote PEP's listeners",
-    `description`:"Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on. The listener's TLS, session cache, HTTP pooling, HTTP/2, client certificates and thread pool (`threadPoolMin`, `threadPoolMax`) are the same knobs Server Settings' listeners expose, and the reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281).\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -30702,6 +30856,41 @@ op `setXacmlPepListener`(@js(#{`examples`:#[#{`name`:"pep-1",`id`:"public-https"
     @js(#{`description`:"HTTPS only: DNS names the certificate carries beside the PEP's own name and its notify host; at most 16. A string is one per line or separated by commas."}) `dnsNames`?: string[] | string;
     @js(#{`description`:"HTTPS only: IP addresses the certificate carries; at most 16."}) `ipAddresses`?: string[] | string;
     @js(#{`enum`:#["ec-p256","ec-p384","rsa-2048","rsa-3072"],`description`:"HTTPS only: the key the PEP generates, ec-p256 by default."}) `keyAlg`?: string;
+    ...XacmlPepListenerTuningFields;
+  },
+  `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/xacml/set-pep-environment-tuning",
+  "post",
+  #{
+    `operationId`:"setXacmlPepEnvironmentTuning",
+    `summary`:"Set the TLS, HTTP and thread-pool tuning of one environment listener",
+    `description`:"Sets the tuning of one of a registered remote PEP's four environment listeners (api-http, api-https, proxy-http, proxy-https) (#1760). The address, port and protocol stay the environment's. The PEP applies the tuning on its next pull. The same knobs as set-pep-listener: TLS, the session cache, HTTP pooling, HTTP/2, client certificates and the thread pool. The reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281). A cluster has no single process, so this act is a PEP's, not a cluster's.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The operation was applied.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `setXacmlPepEnvironmentTuning`(@js(#{`examples`:#[#{`name`:"pep-1",`listener`:"api-http"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The registered PEP's name, as GET /admin-api/xacml/peps lists it."}) `name`?: string;
+    @js(#{`description`:"The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep=. Send `pep` or `name`; both, they must name the same PEP."}) `pep`?: string;
+    @js(#{`maxLength`:64,`description`:"One of the environment's four: api-http, api-https, proxy-http or proxy-https."}) `listener`: string;
+    ...XacmlPepListenerTuningFields;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepListenersAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepListenersAnswer`,
@@ -31040,7 +31229,7 @@ op `deleteXacmlPepCluster`(@js(#{`examples`:#[#{`cluster`:"orders",`release`:"ke
   #{
     `operationId`:"addXacmlPepClusterMember",
     `summary`:"Add a member to a remote PEP cluster",
-    `description`:"Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. A second member while a session route has `signals` on is refused (STS-XACML-0275): the members would share one signal stream. The member's routes must resolve with its own callback, <publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. Each member polls its own CAEP/RISC stream: it sends its registered name in the X-Iya-Pep-Name header, and a sign-out on that stream reaches that member. The member's routes must resolve with its own callback, <publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -31144,7 +31333,7 @@ op `setXacmlPepClusterMember`(@js(#{`examples`:#[#{`cluster`:"orders",`pep`:"pep
   #{
     `operationId`:"setXacmlPepClusterProxy",
     `summary`:"Set a remote PEP cluster's reverse-proxy configuration",
-    `description`:"The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-<cluster>-<route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is refused in a cluster of more than one member (STS-XACML-0275). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
+    `description`:"The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-<cluster>-<route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is polled by each member on a stream of its own (X-Iya-Pep-Name). Every member is nudged.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{
@@ -31330,6 +31519,15 @@ op `generateXacmlPepClusterRoutePolicy`(@js(#{`examples`:#[#{`cluster`:"orders",
 op `setXacmlPepClusterListener`(@js(#{`examples`:#[#{`cluster`:"orders",`listener`:#{`id`:"proxy-alt",`protocol`:"https",`purpose`:"proxy",`port`:9544,`dnsNames`:#["orders.example.test"]}}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:64,`description`:"The cluster's name."}) `cluster`: string;
     @js(#{`description`:"One listener object, or its JSON; or the console form's members."}) `listener`?: Record<unknown> | string;
+    @js(#{`maxLength`:64,`description`:"The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four. An id already defined is replaced."}) `id`?: string;
+    @js(#{`enum`:#["http","https"],`description`:"http or https."}) `protocol`?: string;
+    @js(#{`enum`:#["api","proxy"],`description`:"api or proxy."}) `purpose`?: string;
+    @js(#{`maxLength`:64,`description`:"The IPv4 or IPv6 address to bind; 0.0.0.0 or :: for every one."}) `address`?: string;
+    @js(#{`minimum`:1,`maximum`:65535,`description`:"The port, 1 to 65535."}) `port`?: integer;
+    @js(#{`description`:"HTTPS only: DNS names the certificate carries; at most 16."}) `dnsNames`?: string[] | string;
+    @js(#{`description`:"HTTPS only: IP addresses the certificate carries; at most 16."}) `ipAddresses`?: string[] | string;
+    @js(#{`enum`:#["ec-p256","ec-p384","rsa-2048","rsa-3072"],`description`:"HTTPS only: the key the PEP generates, ec-p256 by default."}) `keyAlg`?: string;
+    ...XacmlPepListenerTuningFields;
   },
   `responses/200/content/application~1json/schema`: `XacmlPepClusterAnswer`,
   `responses/400/content/application~1json/schema`: `XacmlPepClusterAnswer`,

@@ -22,6 +22,8 @@ mod enforce;
 mod identity;
 mod jwt;
 mod listener;
+mod listener_pool;
+mod listener_tuning;
 mod listeners;
 mod options;
 mod pdp_client;
@@ -47,14 +49,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use hyper_util::rt::{TokioExecutor, TokioIo};
-use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use sts_core::log::{self, tag};
 use sts_core::version;
 use tokio::net::TcpListener;
 
 use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listener_pool::{drive, ListenerRuntime};
 use crate::listeners::{plain_kind, EnvKind, ListenerSet, PlainStatus};
 use crate::options::Options;
 use crate::pdp_client::PdpClient;
@@ -135,8 +136,13 @@ fn install_fault_handler() {
     }));
 }
 
-async fn serve_http(pep: Arc<Pep>, port: u16, status: Arc<PlainStatus>,
-                    crl_only: bool) {
+async fn serve_http(
+    pep: Arc<Pep>,
+    port: u16,
+    status: Arc<PlainStatus>,
+    crl_only: bool,
+    runtime: ListenerRuntime,
+) {
     let listener = match TcpListener::bind(("0.0.0.0", port)).await {
         Ok(listener) => {
             status.set("listening", if crl_only { "crl-only" } else { "none" });
@@ -183,20 +189,18 @@ async fn serve_http(pep: Arc<Pep>, port: u16, status: Arc<PlainStatus>,
             port
         );
     }
+    runtime.start();
     loop {
         let Ok((stream, _)) = listener.accept().await else {
             continue;
         };
         let pep = pep.clone();
-        tokio::spawn(async move {
+        let job = runtime.clone();
+        runtime.hand_off(stream, move |stream| async move {
             let transport = Transport { crl_only, ..Transport::default() };
             let service = tower_service(pep, transport);
-            let served = Builder::new(TokioExecutor::new())
-                .serve_connection(TokioIo::new(stream), service)
-                .await;
-            if let Err(error) = served {
-                tracing::debug!("connection ended: {}", error);
-            }
+            let cfg = job.http();
+            drive(stream, service, cfg, false, job).await;
         });
     }
 }
@@ -208,19 +212,25 @@ fn tower_service(
     pep: Arc<Pep>,
     transport: Transport,
 ) -> TowerToHyperService<axum::routing::Router> {
-    let router = axum::Router::new().fallback(
-        move |mut request: axum::http::Request<axum::body::Body>| {
-            let pep = pep.clone();
-            request.extensions_mut().insert(transport.clone());
-            async move { pep.handle(request).await }
-        },
-    );
+    let router = axum::Router::new()
+        .fallback(
+            move |mut request: axum::http::Request<axum::body::Body>| {
+                let pep = pep.clone();
+                request.extensions_mut().insert(transport.clone());
+                async move { pep.handle(request).await }
+            },
+        )
+        .layer(axum::middleware::from_fn(crate::listener_pool::observe));
     TowerToHyperService::new(router)
 }
 
 /// The HTTPS listener: started the first time a usable pair appears, and
 /// each connection handed the pair being served at that moment.
-async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
+async fn serve_https(
+    pep: Arc<Pep>,
+    https: Arc<HttpsListener>,
+    runtime: ListenerRuntime,
+) {
     let listener = match TcpListener::bind(("0.0.0.0", https.port())).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -230,6 +240,7 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
     };
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     https.mark_listening(port);
+    runtime.start();
     loop {
         let Ok((stream, _)) = listener.accept().await else {
             continue;
@@ -238,32 +249,30 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
             continue;
         };
         let pep = pep.clone();
-        tokio::spawn(async move {
-            let Ok(ssl) = openssl::ssl::Ssl::new(acceptor.context()) else {
+        let job = runtime.clone();
+        runtime.hand_off(stream, move |stream| async move {
+            let Some(tls) = HttpsListener::accept_tls(
+                stream,
+                &acceptor,
+                &job,
+            )
+            .await
+            else {
                 return;
             };
-            let Ok(mut tls) = tokio_openssl::SslStream::new(ssl, stream) else {
-                return;
-            };
-            if let Err(error) = Pin::new(&mut tls).accept().await {
-                tracing::debug!("TLS handshake failed: {}", error);
-                return;
-            }
+            let alpn_h2 = tls.ssl().selected_alpn_protocol() == Some(b"h2");
+            let cfg = job.http();
+            // HttpCfg is moved into drive, so the ALPN decision is taken
+            // before that move.
+            let offer_h2 = cfg.http2 && alpn_h2;
             let transport = Transport {
                 https: true,
                 peer: peer_of(tls.ssl()),
                 remote: None,
                 crl_only: false,
             };
-            let served = Builder::new(TokioExecutor::new())
-                .serve_connection(
-                    TokioIo::new(tls),
-                    tower_service(pep, transport),
-                )
+            drive(tls, tower_service(pep, transport), cfg, offer_h2, job)
                 .await;
-            if let Err(error) = served {
-                tracing::debug!("connection ended: {}", error);
-            }
         });
     }
 }
@@ -404,8 +413,12 @@ async fn start(options: Options, info: version::VersionInfo) {
     sync.register().await;
     sync.pull("start").await;
     {
-        let (set, defs) = (listener_set.clone(), sync.listener_definitions());
-        tokio::spawn(async move { set.apply(&defs).await });
+        let (set, defs, env) = (
+            listener_set.clone(),
+            sync.listener_definitions(),
+            sync.environment_tuning(),
+        );
+        tokio::spawn(async move { set.apply(&defs, &env).await });
     }
     if let Some(proxy) = proxy.clone() {
         // Off the start: building a relying party asks the service for its
@@ -430,7 +443,12 @@ async fn start(options: Options, info: version::VersionInfo) {
             Box::pin(async move {
                 sync.register_if_needed().await;
                 let ok = sync.pull("poll").await;
-                listeners.apply(&sync.listener_definitions()).await;
+                listeners
+                    .apply(
+                        &sync.listener_definitions(),
+                        &sync.environment_tuning(),
+                    )
+                    .await;
                 if let Some(proxy) = proxy {
                     proxy.reconcile().await;
                 }
@@ -478,14 +496,26 @@ async fn start(options: Options, info: version::VersionInfo) {
         let (watcher, served) = (https.clone(), pep.clone());
         let reload_options = options.clone();
         let reload_sync = sync.clone();
+        let https_runtime = listener_set.runtime_of("api-https")
+            .unwrap_or_else(|| {
+                ListenerRuntime::new("api-https", "api", true)
+            });
         if https_first {
-            tokio::spawn(serve_https(served.clone(), watcher.clone()));
+            tokio::spawn(serve_https(
+                served.clone(),
+                watcher.clone(),
+                https_runtime.clone(),
+            ));
         }
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(reload_interval(&reload_options)).await;
                 if watcher.reload() {
-                    tokio::spawn(serve_https(served.clone(), watcher.clone()));
+                    tokio::spawn(serve_https(
+                        served.clone(),
+                        watcher.clone(),
+                        https_runtime.clone(),
+                    ));
                 }
                 // A NEW CERTIFICATE MAY NAME ANOTHER HOST: derive the notify
                 // URL again, and when the one in force changed, tell the
@@ -543,6 +573,10 @@ async fn start(options: Options, info: version::VersionInfo) {
         );
         let (plain, port) = (proxy.clone(), options.proxy_port);
         let bind_plain = options.proxy_http.on;
+        let proxy_http_runtime = listener_set.runtime_of("proxy-http")
+            .unwrap_or_else(|| {
+                ListenerRuntime::new("proxy-http", "proxy", false)
+            });
         tokio::spawn(async move {
             if !bind_plain {
                 return;
@@ -550,7 +584,7 @@ async fn start(options: Options, info: version::VersionInfo) {
             match TcpListener::bind(("0.0.0.0", port)).await {
                 Ok(socket) => {
                     proxy_http.set("listening", "none");
-                    proxy::serve_on(plain, socket).await;
+                    proxy::serve_on(plain, socket, proxy_http_runtime).await;
                 }
                 Err(error) => {
                     proxy_http.set("failed", listener::bind_reason(&error));
@@ -573,12 +607,18 @@ async fn start(options: Options, info: version::VersionInfo) {
                                  EnvKind::Tls(proxy_https.clone()));
         if proxy_https.is_configured() {
             let reload_options = options.clone();
+            let proxy_https_runtime = listener_set
+                .runtime_of("proxy-https")
+                .unwrap_or_else(|| {
+                    ListenerRuntime::new("proxy-https", "proxy", true)
+                });
             tokio::spawn(async move {
                 loop {
                     if proxy_https.reload() {
                         tokio::spawn(proxy::serve_https(
                             proxy.clone(),
                             proxy_https.clone(),
+                            proxy_https_runtime.clone(),
                         ));
                     }
                     tokio::time::sleep(reload_interval(&reload_options))
@@ -606,7 +646,12 @@ async fn start(options: Options, info: version::VersionInfo) {
     }
     install_fault_handler();
     if options.http.on || crl_only {
-        serve_http(pep, options.port, api_http, crl_only).await;
+        let api_http_runtime = listener_set.runtime_of("api-http")
+            .unwrap_or_else(|| {
+                ListenerRuntime::new("api-http", "api", false)
+            });
+        serve_http(pep, options.port, api_http, crl_only, api_http_runtime)
+            .await;
         std::future::pending::<()>().await;
     } else {
         // Nothing left to await but the tasks above: the process lives as

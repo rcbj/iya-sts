@@ -35,7 +35,14 @@
 //!   the others are bound: one listener does not change what another means.
 //! * **WHAT EACH IS DOING GOES ON THE HEARTBEAT** ([`ListenerSet::report`]):
 //!   the state and reason from closed sets — never the operating system's
-//!   sentence, which goes to the log — and the certificate served.
+//!   sentence, which goes to the log — and the certificate served. Each
+//!   listener's counters and pool, and the process's memory and paths, ride
+//!   the same object.
+//! * **EACH LISTENER HAS ITS OWN POOL.** A defined listener's `tuning`, and
+//!   `environmentTuning` for the four the environment binds, change the
+//!   acceptor and the pool without rebinding the socket. The pool starts
+//!   when the accept loop does, so a listener that is waiting or off holds
+//!   no threads. The reverse proxy's default pool is the largest.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -44,8 +51,6 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use chrono::{DateTime, Utc};
-use hyper_util::rt::{TokioExecutor, TokioIo};
-use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::hash::MessageDigest;
@@ -59,6 +64,8 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
 use crate::listener::{bind_reason, peer_of, HttpsListener, Transport};
+use crate::listener_pool::{drive, memory_json, paths_json, ListenerRuntime};
+use crate::listener_tuning::Tuning;
 
 /// Builds the handler for one connection, given what is known about it.
 pub type MakeService = Arc<
@@ -100,6 +107,9 @@ pub struct Def {
     pub ip_addresses: Vec<String>,
     pub key_alg: String,
     pub renew: u64,
+    /// TLS, HTTP and this listener's pool. Absent on the wire is the
+    /// purpose's defaults (`Tuning::overlay`).
+    pub tuning: Tuning,
 }
 
 impl Def {
@@ -214,6 +224,7 @@ fn parse_one(one: &Value) -> Result<Def, String> {
         return Err(format!("{}'s key is not one of {}", id,
                            KEY_ALGS.join(", ")));
     }
+    let purpose = if proxy { "proxy" } else { "api" };
     Ok(Def {
         id: id.to_string(),
         https,
@@ -224,6 +235,7 @@ fn parse_one(one: &Value) -> Result<Def, String> {
         ip_addresses,
         key_alg: if https { key_alg } else { String::new() },
         renew: one["renew"].as_u64().unwrap_or(0),
+        tuning: Tuning::overlay(&one["tuning"], purpose, https),
     })
 }
 
@@ -295,6 +307,9 @@ struct Entry {
     state: &'static str,
     reason: &'static str,
     logged: String,
+    /// Its pool. Started by the accept loop, so a listener that never
+    /// binds reports min and max and holds no threads.
+    runtime: ListenerRuntime,
 }
 
 impl Drop for Entry {
@@ -302,6 +317,7 @@ impl Drop for Entry {
         if let Some(task) = self.task.take() {
             task.abort();
         }
+        self.runtime.shutdown();
     }
 }
 
@@ -359,6 +375,9 @@ struct EnvListener {
     proxy: bool,
     port: u16,
     kind: EnvKind,
+    /// The pool for this id. The accept loop starts it when it binds;
+    /// an off listener never does.
+    runtime: ListenerRuntime,
 }
 
 /// Every listener: the environment's, registered at start, and the defined
@@ -406,15 +425,38 @@ impl ListenerSet {
         }
     }
 
-    /// Registers one of the environment's four, for the report.
+    /// Registers one of the environment's four, for the report. The pool
+    /// uses the API defaults for `api-http` even when this process is
+    /// serving CRLs only: the service does not know `PEP_CRL_HTTP`, and an
+    /// administrator sets 1/4 on that listener when that is what it is for.
     pub fn environment(&self, id: &'static str, port: u16, kind: EnvKind) {
         let https = id.ends_with("https");
         let proxy = id.starts_with("proxy");
-        lock(&self.env).push(EnvListener { id, https, proxy, port, kind });
+        let purpose = if proxy { "proxy" } else { "api" };
+        let runtime = ListenerRuntime::new(id, purpose, https);
+        lock(&self.env).push(EnvListener {
+            id,
+            https,
+            proxy,
+            port,
+            kind,
+            runtime,
+        });
     }
 
-    /// The pull's definitions, read and applied.
-    pub async fn apply(&self, said: &Value) {
+    /// The pool registered for `id`, so the accept loop and this set share
+    /// one. `None` when that listener was not registered.
+    pub fn runtime_of(&self, id: &str) -> Option<ListenerRuntime> {
+        lock(&self.env)
+            .iter()
+            .find(|one| one.id == id)
+            .map(|one| one.runtime.clone())
+    }
+
+    /// The pull's definitions, read and applied. `environment` is the
+    /// pull's `environmentTuning`; null leaves the pools as they are, so an
+    /// older service does not reset them.
+    pub async fn apply(&self, said: &Value, environment: &Value) {
         let (defs, refused) = parse(said);
         let joined = refused.join("; ");
         {
@@ -430,6 +472,26 @@ impl ListenerSet {
             *last = joined;
         }
         self.reconcile(defs).await;
+        self.apply_environment(environment);
+    }
+
+    /// The four environment listeners' saved tuning. A pull that does not
+    /// carry the member (null, or not an object) changes nothing.
+    fn apply_environment(&self, environment: &Value) {
+        let Some(given) = environment.as_object() else {
+            return;
+        };
+        for one in lock(&self.env).iter() {
+            let Some(raw) = given.get(one.id) else {
+                continue;
+            };
+            let purpose = if one.proxy { "proxy" } else { "api" };
+            let tuning = Tuning::overlay(raw, purpose, one.https);
+            one.runtime.apply(&tuning, one.https);
+            if let EnvKind::Tls(https) = &one.kind {
+                https.set_tuning(tuning);
+            }
+        }
     }
 
     /// Makes what runs match `defs`: see the module header.
@@ -466,18 +528,23 @@ impl ListenerSet {
     }
 
     async fn converge(&self, def: Def, held: Option<Entry>) -> Entry {
-        let mut entry = held.unwrap_or_else(|| Entry {
-            def: def.clone(),
-            task: None,
-            https: None,
-            held: None,
-            state: "waiting",
-            reason: "none",
-            logged: String::new(),
+        let mut entry = held.unwrap_or_else(|| {
+            let purpose = if def.proxy { "proxy" } else { "api" };
+            Entry {
+                def: def.clone(),
+                task: None,
+                https: None,
+                held: None,
+                state: "waiting",
+                reason: "none",
+                logged: String::new(),
+                runtime: ListenerRuntime::new(&def.id, purpose, def.https),
+            }
         });
         let changed_names =
             entry.def.certificate_key() != def.certificate_key();
         entry.def = def.clone();
+        entry.runtime.apply(&entry.def.tuning, entry.def.https);
         let make = if def.proxy {
             match &self.proxy {
                 Some(make) => make.clone(),
@@ -508,6 +575,7 @@ impl ListenerSet {
                     ))
                 })
                 .clone();
+            https.set_tuning(def.tuning.clone());
             let due = match &entry.held {
                 None => true,
                 Some(h) => changed_names || h.key != def.certificate_key()
@@ -534,8 +602,9 @@ impl ListenerSet {
             match TcpListener::bind((def.address, def.port)).await {
                 Ok(socket) => {
                     let https = entry.https.clone();
+                    let runtime = entry.runtime.clone();
                     entry.task = Some(tokio::spawn(serve(
-                        socket, https, make, def.proxy,
+                        socket, https, make, def.proxy, runtime,
                     )));
                     tracing::info!(
                         "xacml-pep: listener {} ({}, {}) listens on {}:{}.",
@@ -661,7 +730,8 @@ impl ListenerSet {
                 "purpose": purpose,
                 "address": "0.0.0.0", "port": one.port,
                 "state": state, "reason": reason, "renew": 0,
-                "certificate": certificate
+                "certificate": certificate,
+                "stats": one.runtime.stats_json()
             }));
         }
         let entries = lock(&self.entries);
@@ -681,10 +751,20 @@ impl ListenerSet {
                 "address": e.def.address.to_string(), "port": e.def.port,
                 "state": e.state, "reason": e.reason,
                 "renew": if e.held.is_some() { e.def.renew } else { 0 },
-                "certificate": certificate
+                "certificate": certificate,
+                "stats": e.runtime.stats_json()
             }));
         }
-        json!({ "listeners": out })
+        let mut doc = json!({ "listeners": out });
+        let memory = memory_json();
+        if !memory.is_null() {
+            doc["memory"] = memory;
+        }
+        let paths = paths_json();
+        if !paths.is_null() {
+            doc["paths"] = paths;
+        }
+        doc
     }
 
     /// The defined listeners held now, for a test.
@@ -700,54 +780,64 @@ impl ListenerSet {
     }
 }
 
-/// One accept loop, plain or TLS, until its task is aborted.
+/// One accept loop, plain or TLS, until its task is aborted. The pool
+/// starts here, when the socket is bound, and each accepted connection is
+/// handed to it. An HTTPS listener with no certificate yet is not counted
+/// as refused: the accept loop drops it and waits, as it always has.
 async fn serve(
     socket: TcpListener,
     https: Option<Arc<HttpsListener>>,
     make: MakeService,
     proxy: bool,
+    runtime: ListenerRuntime,
 ) {
+    runtime.start();
     loop {
         let Ok((stream, remote)) = socket.accept().await else {
             continue;
         };
+        let acceptor = match &https {
+            Some(https) => match https.current() {
+                Some(acceptor) => Some(acceptor),
+                None => continue,
+            },
+            None => None,
+        };
         let make = make.clone();
-        let https = https.clone();
-        tokio::spawn(async move {
-            let Some(https) = https else {
+        let job = runtime.clone();
+        runtime.hand_off(stream, move |stream| async move {
+            if let Some(acceptor) = acceptor {
+                let Some(tls) = HttpsListener::accept_tls(
+                    stream,
+                    &acceptor,
+                    &job,
+                )
+                .await
+                else {
+                    return;
+                };
+                let alpn_h2 =
+                    tls.ssl().selected_alpn_protocol() == Some(b"h2");
+                let peer = peer_of(tls.ssl());
+                let cfg = job.http();
+                let offer_h2 = cfg.http2 && alpn_h2;
+                let transport = Transport {
+                    https: true,
+                    peer,
+                    remote: if proxy { Some(remote) } else { None },
+                    crl_only: false,
+                };
+                drive(tls, make(transport), cfg, offer_h2, job).await;
+            } else {
+                let cfg = job.http();
                 let transport = Transport {
                     https: false,
                     peer: None,
                     remote: if proxy { Some(remote) } else { None },
                     crl_only: false,
                 };
-                let _ = Builder::new(TokioExecutor::new())
-                    .serve_connection(TokioIo::new(stream), make(transport))
-                    .await;
-                return;
-            };
-            let Some(acceptor) = https.current() else {
-                return;
-            };
-            let Ok(ssl) = openssl::ssl::Ssl::new(acceptor.context()) else {
-                return;
-            };
-            let Ok(mut tls) = tokio_openssl::SslStream::new(ssl, stream) else {
-                return;
-            };
-            if let Err(error) = Pin::new(&mut tls).accept().await {
-                tracing::debug!("TLS handshake failed: {}", error);
-                return;
+                drive(stream, make(transport), cfg, false, job).await;
             }
-            let transport = Transport {
-                https: true,
-                peer: peer_of(tls.ssl()),
-                remote: if proxy { Some(remote) } else { None },
-                crl_only: false,
-            };
-            let _ = Builder::new(TokioExecutor::new())
-                .serve_connection(TokioIo::new(tls), make(transport))
-                .await;
         });
     }
 }
@@ -829,6 +919,13 @@ mod tests {
             ip_addresses: vec![],
             key_alg: if https { "ec-p256".into() } else { String::new() },
             renew: 0,
+            // One or two workers: the suite binds many listeners, and the
+            // production defaults (proxy 16) would start a pool each time.
+            tuning: Tuning::overlay(
+                &json!({"threadPoolMin": 1, "threadPoolMax": 2}),
+                if proxy { "proxy" } else { "api" },
+                https,
+            ),
         }
     }
 
@@ -1139,6 +1236,11 @@ mod tests {
         assert_eq!(report["listeners"][0]["state"], "listening");
         assert_eq!(report["listeners"][0]["reason"], "crl-only");
         assert_eq!(report["listeners"][0]["protocol"], "http");
+        assert_eq!(
+            report["listeners"][0]["stats"]["pool"]["min"].as_u64(),
+            Some(4),
+            "api-http starts at the API pool even when it serves CRLs"
+        );
         assert_eq!(report["listeners"][1]["purpose"], "api",
                    "only the CRL-only listener changes purpose");
         // A CRL listener that failed to bind is still a CRL listener.

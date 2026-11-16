@@ -411,7 +411,7 @@ Scope: `admin:write`.
 
 **Add a member to a remote PEP cluster**
 
-Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. A second member while a session route has `signals` on is refused (STS-XACML-0275): the members would share one signal stream. The member's routes must resolve with its own callback, &lt;publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.
+Adds a PEP to a cluster (#1760): from its next poll it pulls the cluster's configuration with its own addresses. A name not yet registered may be listed. A PEP is a member of one cluster at most (STS-XACML-0271). A PEP holding a configuration of its own is refused unless `discard` is true (STS-XACML-0272); its own documents are then cleared and the answer's `discarded` carries them. Each member polls its own CAEP/RISC stream: it sends its registered name in the X-Iya-Pep-Name header, and a sign-out on that stream reaches that member. The member's routes must resolve with its own callback, &lt;publicBaseUrl>/.iya-pep/callback registered on each session route's client, and its listeners must not clash with what it reported; a refusal names the member and keeps its code.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -454,6 +454,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -528,6 +550,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -633,6 +677,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -707,6 +773,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -2610,6 +2698,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -2684,6 +2794,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -2789,6 +2921,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -2863,6 +3017,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -3126,6 +3302,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -3200,6 +3398,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -3305,6 +3525,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -3379,6 +3621,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -4613,6 +4877,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -4687,6 +4973,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -4792,6 +5100,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -4866,6 +5196,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -5442,6 +5794,28 @@ Scope: `admin:read`.
 | `clusters[].listenerRows[].definition.protocol` | one of `http`, `https` |  |  |
 | `clusters[].listenerRows[].definition.purpose` | one of `api`, `proxy` |  |  |
 | `clusters[].listenerRows[].definition.renew` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning` | object |  |  |
+| `clusters[].listenerRows[].definition.tuning.askClientCertificate` | boolean |  |  |
+| `clusters[].listenerRows[].definition.tuning.ciphers` | string |  |  |
+| `clusters[].listenerRows[].definition.tuning.disableTls12` | boolean |  |  |
+| `clusters[].listenerRows[].definition.tuning.groups` | string |  |  |
+| `clusters[].listenerRows[].definition.tuning.headersTimeoutS` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.http2` | boolean |  |  |
+| `clusters[].listenerRows[].definition.tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.keepAliveTimeoutS` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.maxConnections` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.maxRequestsPerSocket` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `clusters[].listenerRows[].definition.tuning.pqcOnly` | boolean |  |  |
+| `clusters[].listenerRows[].definition.tuning.requireClientCertificate` | boolean |  |  |
+| `clusters[].listenerRows[].definition.tuning.sessionCacheSize` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.sessionTimeoutS` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.signatureAlgorithms` | string |  |  |
+| `clusters[].listenerRows[].definition.tuning.threadPoolMax` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.threadPoolMin` | integer |  |  |
+| `clusters[].listenerRows[].definition.tuning.tls13CipherSuites` | string |  |  |
+| `clusters[].listenerRows[].definition.tuning.trustAnchorsFile` | string |  |  |
+| `clusters[].listenerRows[].definition.tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `clusters[].listenerRows[].enable` | string |  |  |
 | `clusters[].listenerRows[].env` | string |  |  |
 | `clusters[].listenerRows[].id` | string |  |  |
@@ -5476,7 +5850,45 @@ Scope: `admin:read`.
 | `clusters[].listenerRows[].reported.renew` | integer |  |  |
 | `clusters[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
 | `clusters[].listenerRows[].reported.state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
+| `clusters[].listenerRows[].reported.stats` | object |  |  |
+| `clusters[].listenerRows[].reported.stats.accepted` | integer |  |  |
+| `clusters[].listenerRows[].reported.stats.handshakeFailures` | integer |  |  |
+| `clusters[].listenerRows[].reported.stats.handshakes` | integer |  |  |
+| `clusters[].listenerRows[].reported.stats.http1` | integer |  |  |
+| `clusters[].listenerRows[].reported.stats.http2` | integer |  |  |
+| `clusters[].listenerRows[].reported.stats.open` | integer |  |  |
+| `clusters[].listenerRows[].reported.stats.pool` | object |  |  |
+| `clusters[].listenerRows[].reported.stats.pool.busy` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.pool.completed` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.pool.current` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.pool.idle` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.pool.max` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.pool.min` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.pool.queued` | integer | yes |  |
+| `clusters[].listenerRows[].reported.stats.refused` | integer |  |  |
 | `clusters[].listenerRows[].source` | one of `environment`, `service` |  |  |
+| `clusters[].listenerRows[].tuning` | object |  |  |
+| `clusters[].listenerRows[].tuning.askClientCertificate` | boolean |  |  |
+| `clusters[].listenerRows[].tuning.ciphers` | string |  |  |
+| `clusters[].listenerRows[].tuning.disableTls12` | boolean |  |  |
+| `clusters[].listenerRows[].tuning.groups` | string |  |  |
+| `clusters[].listenerRows[].tuning.headersTimeoutS` | integer |  |  |
+| `clusters[].listenerRows[].tuning.http2` | boolean |  |  |
+| `clusters[].listenerRows[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `clusters[].listenerRows[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `clusters[].listenerRows[].tuning.maxConnections` | integer |  |  |
+| `clusters[].listenerRows[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `clusters[].listenerRows[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `clusters[].listenerRows[].tuning.pqcOnly` | boolean |  |  |
+| `clusters[].listenerRows[].tuning.requireClientCertificate` | boolean |  |  |
+| `clusters[].listenerRows[].tuning.sessionCacheSize` | integer |  |  |
+| `clusters[].listenerRows[].tuning.sessionTimeoutS` | integer |  |  |
+| `clusters[].listenerRows[].tuning.signatureAlgorithms` | string |  |  |
+| `clusters[].listenerRows[].tuning.threadPoolMax` | integer |  |  |
+| `clusters[].listenerRows[].tuning.threadPoolMin` | integer |  |  |
+| `clusters[].listenerRows[].tuning.tls13CipherSuites` | string |  |  |
+| `clusters[].listenerRows[].tuning.trustAnchorsFile` | string |  |  |
+| `clusters[].listenerRows[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `clusters[].listeners` | list |  |  |
 | `clusters[].listeners[].address` | string |  |  |
 | `clusters[].listeners[].dnsNames` | list |  |  |
@@ -5489,6 +5901,28 @@ Scope: `admin:read`.
 | `clusters[].listeners[].protocol` | one of `http`, `https` |  |  |
 | `clusters[].listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `clusters[].listeners[].renew` | integer |  |  |
+| `clusters[].listeners[].tuning` | object |  |  |
+| `clusters[].listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `clusters[].listeners[].tuning.ciphers` | string |  |  |
+| `clusters[].listeners[].tuning.disableTls12` | boolean |  |  |
+| `clusters[].listeners[].tuning.groups` | string |  |  |
+| `clusters[].listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `clusters[].listeners[].tuning.http2` | boolean |  |  |
+| `clusters[].listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `clusters[].listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `clusters[].listeners[].tuning.maxConnections` | integer |  |  |
+| `clusters[].listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `clusters[].listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `clusters[].listeners[].tuning.pqcOnly` | boolean |  |  |
+| `clusters[].listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `clusters[].listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `clusters[].listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `clusters[].listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `clusters[].listeners[].tuning.threadPoolMax` | integer |  |  |
+| `clusters[].listeners[].tuning.threadPoolMin` | integer |  |  |
+| `clusters[].listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `clusters[].listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `clusters[].listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `clusters[].listenersProblem` | string, or null |  |  |
 | `clusters[].members` | list |  |  |
 | `clusters[].members[].code` | string, or null |  | Why a write of the cluster would refuse this member now (its callback, its listeners' clash, its addresses), with the code; null for none. |
@@ -5595,11 +6029,82 @@ Scope: `admin:read`.
 | `listenersCatalogue.keyAlgorithms` | list |  |  |
 | `listenersCatalogue.keyAlgorithms[]` | string |  |  |
 | `listenersCatalogue.maxListeners` | integer |  |  |
+| `listenersCatalogue.minVersions` | list |  |  |
+| `listenersCatalogue.minVersions[]` | string |  |  |
 | `listenersCatalogue.plainHttpProxyAllowed` | boolean |  |  |
 | `listenersCatalogue.protocols` | list |  |  |
 | `listenersCatalogue.protocols[]` | string |  |  |
 | `listenersCatalogue.purposes` | list |  |  |
 | `listenersCatalogue.purposes[]` | string |  |  |
+| `listenersCatalogue.tls13CipherSuites` | list |  |  |
+| `listenersCatalogue.tls13CipherSuites[]` | string |  |  |
+| `listenersCatalogue.tuningDefaults` | object |  |  |
+| `listenersCatalogue.tuningDefaults.api` | object | yes |  |
+| `listenersCatalogue.tuningDefaults.api.askClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.ciphers` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.disableTls12` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.groups` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.headersTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.http2` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.http2MaxConcurrentStreams` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.keepAliveTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.maxConnections` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.maxRequestsPerSocket` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listenersCatalogue.tuningDefaults.api.pqcOnly` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.requireClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.sessionCacheSize` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.sessionTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.signatureAlgorithms` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.threadPoolMax` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.threadPoolMin` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.tls13CipherSuites` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.trustAnchorsFile` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.trustIssuedClientCertificates` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl` | object | yes |  |
+| `listenersCatalogue.tuningDefaults.crl.askClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.ciphers` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.disableTls12` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.groups` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.headersTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.http2` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.http2MaxConcurrentStreams` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.keepAliveTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.maxConnections` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.maxRequestsPerSocket` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listenersCatalogue.tuningDefaults.crl.pqcOnly` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.requireClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.sessionCacheSize` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.sessionTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.signatureAlgorithms` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.threadPoolMax` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.threadPoolMin` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.tls13CipherSuites` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.trustAnchorsFile` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.trustIssuedClientCertificates` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy` | object | yes |  |
+| `listenersCatalogue.tuningDefaults.proxy.askClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.ciphers` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.disableTls12` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.groups` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.headersTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.http2` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.http2MaxConcurrentStreams` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.keepAliveTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.maxConnections` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.maxRequestsPerSocket` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.pqcOnly` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.requireClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.sessionCacheSize` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.sessionTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.signatureAlgorithms` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.threadPoolMax` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.threadPoolMin` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.tls13CipherSuites` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.trustAnchorsFile` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `peps` | list |  |  |
 | `peps[].cluster` | string, or null |  |  |
@@ -5703,7 +6208,7 @@ REGISTERING IS NOT A PERMISSION. An unregistered PEP can pull and enforce exactl
 
 With `pep`, the answer is ONE PEP's page (#1760, `/admin/xacml/pep?pep=<name>`): `peps` holds that row alone and `found` says whether it is registered. Every answer carries `settingsCatalogue`: each setting an administrator may set for a remote PEP (its member name, the environment variable it replaces at the PEP, its type, bounds and closed set, its default, when a change takes effect, and whether this realm's mode refuses `true`), the environment variables that stay the PEP's own with why, and the precedence — the service's value, then the environment's, then the default. Each row carries `settings` (what is set here, null for none), `settingsProblem`, `settingsInUse` (what the PEP last reported having in force, by source) and `settingsCurrent` (whether that was applied from what would be sent now), and `effectiveNotifyUrl`, the address the nudge dials.
 
-**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep and GET /admin/xacml/pep/route` on the admin console.
+**Mirrors** `GET /admin/xacml, GET /admin/xacml/pep, GET /admin/xacml/pep/route and GET /admin/xacml/pep/monitor` on the admin console.
 
 The reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).
 
@@ -5749,11 +6254,82 @@ Scope: `admin:read`.
 | `listenersCatalogue.keyAlgorithms` | list |  |  |
 | `listenersCatalogue.keyAlgorithms[]` | string |  |  |
 | `listenersCatalogue.maxListeners` | integer |  |  |
+| `listenersCatalogue.minVersions` | list |  |  |
+| `listenersCatalogue.minVersions[]` | string |  |  |
 | `listenersCatalogue.plainHttpProxyAllowed` | boolean |  |  |
 | `listenersCatalogue.protocols` | list |  |  |
 | `listenersCatalogue.protocols[]` | string |  |  |
 | `listenersCatalogue.purposes` | list |  |  |
 | `listenersCatalogue.purposes[]` | string |  |  |
+| `listenersCatalogue.tls13CipherSuites` | list |  |  |
+| `listenersCatalogue.tls13CipherSuites[]` | string |  |  |
+| `listenersCatalogue.tuningDefaults` | object |  |  |
+| `listenersCatalogue.tuningDefaults.api` | object | yes |  |
+| `listenersCatalogue.tuningDefaults.api.askClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.ciphers` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.disableTls12` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.groups` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.headersTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.http2` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.http2MaxConcurrentStreams` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.keepAliveTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.maxConnections` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.maxRequestsPerSocket` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listenersCatalogue.tuningDefaults.api.pqcOnly` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.requireClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.api.sessionCacheSize` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.sessionTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.signatureAlgorithms` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.threadPoolMax` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.threadPoolMin` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.api.tls13CipherSuites` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.trustAnchorsFile` | string |  |  |
+| `listenersCatalogue.tuningDefaults.api.trustIssuedClientCertificates` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl` | object | yes |  |
+| `listenersCatalogue.tuningDefaults.crl.askClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.ciphers` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.disableTls12` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.groups` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.headersTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.http2` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.http2MaxConcurrentStreams` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.keepAliveTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.maxConnections` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.maxRequestsPerSocket` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listenersCatalogue.tuningDefaults.crl.pqcOnly` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.requireClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.crl.sessionCacheSize` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.sessionTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.signatureAlgorithms` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.threadPoolMax` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.threadPoolMin` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.crl.tls13CipherSuites` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.trustAnchorsFile` | string |  |  |
+| `listenersCatalogue.tuningDefaults.crl.trustIssuedClientCertificates` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy` | object | yes |  |
+| `listenersCatalogue.tuningDefaults.proxy.askClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.ciphers` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.disableTls12` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.groups` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.headersTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.http2` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.http2MaxConcurrentStreams` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.keepAliveTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.maxConnections` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.maxRequestsPerSocket` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.pqcOnly` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.requireClientCertificate` | boolean |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.sessionCacheSize` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.sessionTimeoutS` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.signatureAlgorithms` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.threadPoolMax` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.threadPoolMin` | integer |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.tls13CipherSuites` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.trustAnchorsFile` | string |  |  |
+| `listenersCatalogue.tuningDefaults.proxy.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `notify` | object |  |  |
 | `notify.allowedHosts` | list |  |  |
@@ -5828,6 +6404,28 @@ Scope: `admin:read`.
 | `peps[].listenerRows[].definition.protocol` | one of `http`, `https` |  |  |
 | `peps[].listenerRows[].definition.purpose` | one of `api`, `proxy` |  |  |
 | `peps[].listenerRows[].definition.renew` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning` | object |  |  |
+| `peps[].listenerRows[].definition.tuning.askClientCertificate` | boolean |  |  |
+| `peps[].listenerRows[].definition.tuning.ciphers` | string |  |  |
+| `peps[].listenerRows[].definition.tuning.disableTls12` | boolean |  |  |
+| `peps[].listenerRows[].definition.tuning.groups` | string |  |  |
+| `peps[].listenerRows[].definition.tuning.headersTimeoutS` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.http2` | boolean |  |  |
+| `peps[].listenerRows[].definition.tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.keepAliveTimeoutS` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.maxConnections` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.maxRequestsPerSocket` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `peps[].listenerRows[].definition.tuning.pqcOnly` | boolean |  |  |
+| `peps[].listenerRows[].definition.tuning.requireClientCertificate` | boolean |  |  |
+| `peps[].listenerRows[].definition.tuning.sessionCacheSize` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.sessionTimeoutS` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.signatureAlgorithms` | string |  |  |
+| `peps[].listenerRows[].definition.tuning.threadPoolMax` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.threadPoolMin` | integer |  |  |
+| `peps[].listenerRows[].definition.tuning.tls13CipherSuites` | string |  |  |
+| `peps[].listenerRows[].definition.tuning.trustAnchorsFile` | string |  |  |
+| `peps[].listenerRows[].definition.tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `peps[].listenerRows[].enable` | string |  |  |
 | `peps[].listenerRows[].env` | string |  |  |
 | `peps[].listenerRows[].id` | string |  |  |
@@ -5862,7 +6460,45 @@ Scope: `admin:read`.
 | `peps[].listenerRows[].reported.renew` | integer |  |  |
 | `peps[].listenerRows[].reported.source` | one of `environment`, `service` |  |  |
 | `peps[].listenerRows[].reported.state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
+| `peps[].listenerRows[].reported.stats` | object |  |  |
+| `peps[].listenerRows[].reported.stats.accepted` | integer |  |  |
+| `peps[].listenerRows[].reported.stats.handshakeFailures` | integer |  |  |
+| `peps[].listenerRows[].reported.stats.handshakes` | integer |  |  |
+| `peps[].listenerRows[].reported.stats.http1` | integer |  |  |
+| `peps[].listenerRows[].reported.stats.http2` | integer |  |  |
+| `peps[].listenerRows[].reported.stats.open` | integer |  |  |
+| `peps[].listenerRows[].reported.stats.pool` | object |  |  |
+| `peps[].listenerRows[].reported.stats.pool.busy` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.pool.completed` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.pool.current` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.pool.idle` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.pool.max` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.pool.min` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.pool.queued` | integer | yes |  |
+| `peps[].listenerRows[].reported.stats.refused` | integer |  |  |
 | `peps[].listenerRows[].source` | one of `environment`, `service` |  |  |
+| `peps[].listenerRows[].tuning` | object |  |  |
+| `peps[].listenerRows[].tuning.askClientCertificate` | boolean |  |  |
+| `peps[].listenerRows[].tuning.ciphers` | string |  |  |
+| `peps[].listenerRows[].tuning.disableTls12` | boolean |  |  |
+| `peps[].listenerRows[].tuning.groups` | string |  |  |
+| `peps[].listenerRows[].tuning.headersTimeoutS` | integer |  |  |
+| `peps[].listenerRows[].tuning.http2` | boolean |  |  |
+| `peps[].listenerRows[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `peps[].listenerRows[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `peps[].listenerRows[].tuning.maxConnections` | integer |  |  |
+| `peps[].listenerRows[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `peps[].listenerRows[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `peps[].listenerRows[].tuning.pqcOnly` | boolean |  |  |
+| `peps[].listenerRows[].tuning.requireClientCertificate` | boolean |  |  |
+| `peps[].listenerRows[].tuning.sessionCacheSize` | integer |  |  |
+| `peps[].listenerRows[].tuning.sessionTimeoutS` | integer |  |  |
+| `peps[].listenerRows[].tuning.signatureAlgorithms` | string |  |  |
+| `peps[].listenerRows[].tuning.threadPoolMax` | integer |  |  |
+| `peps[].listenerRows[].tuning.threadPoolMin` | integer |  |  |
+| `peps[].listenerRows[].tuning.tls13CipherSuites` | string |  |  |
+| `peps[].listenerRows[].tuning.trustAnchorsFile` | string |  |  |
+| `peps[].listenerRows[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `peps[].listeners` | list |  |  |
 | `peps[].listeners[].address` | string |  |  |
 | `peps[].listeners[].dnsNames` | list |  |  |
@@ -5875,6 +6511,28 @@ Scope: `admin:read`.
 | `peps[].listeners[].protocol` | one of `http`, `https` |  |  |
 | `peps[].listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `peps[].listeners[].renew` | integer |  |  |
+| `peps[].listeners[].tuning` | object |  |  |
+| `peps[].listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `peps[].listeners[].tuning.ciphers` | string |  |  |
+| `peps[].listeners[].tuning.disableTls12` | boolean |  |  |
+| `peps[].listeners[].tuning.groups` | string |  |  |
+| `peps[].listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `peps[].listeners[].tuning.http2` | boolean |  |  |
+| `peps[].listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `peps[].listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `peps[].listeners[].tuning.maxConnections` | integer |  |  |
+| `peps[].listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `peps[].listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `peps[].listeners[].tuning.pqcOnly` | boolean |  |  |
+| `peps[].listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `peps[].listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `peps[].listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `peps[].listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `peps[].listeners[].tuning.threadPoolMax` | integer |  |  |
+| `peps[].listeners[].tuning.threadPoolMin` | integer |  |  |
+| `peps[].listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `peps[].listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `peps[].listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `peps[].listenersInUse` | object |  |  |
 | `peps[].listenersInUse.at` | string |  |  |
 | `peps[].listenersInUse.listeners` | list |  |  |
@@ -5895,6 +6553,32 @@ Scope: `admin:read`.
 | `peps[].listenersInUse.listeners[].renew` | integer |  |  |
 | `peps[].listenersInUse.listeners[].source` | one of `environment`, `service` |  |  |
 | `peps[].listenersInUse.listeners[].state` | one of `listening`, `waiting`, `failed`, `off` |  |  |
+| `peps[].listenersInUse.listeners[].stats` | object |  |  |
+| `peps[].listenersInUse.listeners[].stats.accepted` | integer |  |  |
+| `peps[].listenersInUse.listeners[].stats.handshakeFailures` | integer |  |  |
+| `peps[].listenersInUse.listeners[].stats.handshakes` | integer |  |  |
+| `peps[].listenersInUse.listeners[].stats.http1` | integer |  |  |
+| `peps[].listenersInUse.listeners[].stats.http2` | integer |  |  |
+| `peps[].listenersInUse.listeners[].stats.open` | integer |  |  |
+| `peps[].listenersInUse.listeners[].stats.pool` | object |  |  |
+| `peps[].listenersInUse.listeners[].stats.pool.busy` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.pool.completed` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.pool.current` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.pool.idle` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.pool.max` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.pool.min` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.pool.queued` | integer | yes |  |
+| `peps[].listenersInUse.listeners[].stats.refused` | integer |  |  |
+| `peps[].listenersInUse.memory` | object |  |  |
+| `peps[].listenersInUse.memory.dataBytes` | integer |  |  |
+| `peps[].listenersInUse.memory.rssBytes` | integer |  |  |
+| `peps[].listenersInUse.memory.threads` | integer |  |  |
+| `peps[].listenersInUse.memory.virtualBytes` | integer |  |  |
+| `peps[].listenersInUse.paths` | list |  |  |
+| `peps[].listenersInUse.paths[].count` | integer | yes |  |
+| `peps[].listenersInUse.paths[].method` | string | yes |  |
+| `peps[].listenersInUse.paths[].path` | string | yes |  |
+| `peps[].listenersInUse.paths[].refused` | integer | yes |  |
 | `peps[].listenersProblem` | string, or null |  |  |
 | `peps[].name` | string |  |  |
 | `peps[].notifyProblem` | string, or null |  |  |
@@ -6395,6 +7079,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -6469,6 +7175,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -6574,6 +7302,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -6648,6 +7398,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -6780,6 +7552,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -6854,6 +7648,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -6959,6 +7775,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -7033,6 +7871,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -7165,6 +8025,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -7239,6 +8121,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -7344,6 +8248,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -7418,6 +8344,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -7550,6 +8498,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -7575,6 +8545,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -7763,6 +8755,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -7788,6 +8802,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -8146,9 +9182,42 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `address` | string |  | The IPv4 or IPv6 address to bind; 0.0.0.0 or :: for every one. |
+| `askClientCertificate` | boolean |  | Request a client certificate. Forced off for plain HTTP. |
+| `ciphers` | string |  | TLS 1.2 ciphers, OpenSSL colon-separated. Empty uses the built-in list. |
 | `cluster` | string | yes | The cluster's name. |
+| `disableTls12` | boolean |  | Refuse TLS 1.2. On by default, which forces TLSv1.3. |
+| `dnsNames` | list, or string |  |  |
+| `dnsNames[]` | string |  |  |
+| `groups` | string |  | Key-exchange groups, OpenSSL colon-separated. Empty uses the built-in list. |
+| `headersTimeoutS` | integer |  | Seconds to receive request headers. 0 means the keep-alive timeout plus one. |
+| `http2` | boolean |  | Speak HTTP/2. Forced off for plain HTTP. |
+| `http2MaxConcurrentStreams` | integer |  | Concurrent HTTP/2 streams on one connection. |
+| `id` | string |  | The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four. An id already defined is replaced. |
+| `ipAddresses` | list, or string |  |  |
+| `ipAddresses[]` | string |  |  |
+| `keepAliveTimeoutS` | integer |  | Idle keep-alive seconds before the connection closes. |
+| `keyAlg` | one of `ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072` |  | HTTPS only: the key the PEP generates, ec-p256 by default. |
 | `listener` | map, or string |  |  |
 | `listener.{key}` | any JSON |  |  |
+| `maxConnections` | integer |  | Open connections before further ones are refused. 0 is unlimited. |
+| `maxRequestsPerSocket` | integer |  | Requests on one connection before it closes. 0 is unlimited. |
+| `minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  | The minimum TLS version. disableTls12 or pqcOnly forces TLSv1.3. |
+| `port` | integer |  | The port, 1 to 65535. |
+| `pqcOnly` | boolean |  | Only post-quantum groups and the two 256-bit TLS 1.3 suites. Refused (STS-XACML-0281) when the chosen lists contain none. |
+| `protocol` | one of `http`, `https` |  | http or https. |
+| `purpose` | one of `api`, `proxy` |  | api or proxy. |
+| `requireClientCertificate` | boolean |  | Refuse a handshake with no client certificate. Forced off for plain HTTP. |
+| `sessionCacheSize` | integer |  | TLS session cache entries. 0 keeps none. |
+| `sessionTimeoutS` | integer |  | TLS session lifetime in seconds. |
+| `signatureAlgorithms` | string |  | Signature algorithms, colon-separated. Empty uses the built-in list. |
+| `threadPoolMax` | integer |  | Workers this listener may grow to. At least the minimum. The reverse proxy's default is 128. |
+| `threadPoolMin` | integer |  | Workers this listener starts with. At least 1. The reverse proxy's default is 16. |
+| `tls13CipherSuites` | string |  | TLS 1.3 cipher suites, comma-separated. Empty uses the built-in list. |
+| `trustAnchorsFile` | string |  | PEM file of client trust anchors on the PEP. Empty uses the PEP's own. |
+| `trustIssuedClientCertificates` | boolean |  | Trust client certificates this realm's CA issued. |
+| `tuning` | map |  | The same knobs as one object. Flat members win when both are sent. |
+| `tuning.{key}` | any JSON |  |  |
 
 **200**: The operation was applied.
 
@@ -8168,6 +9237,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -8242,6 +9333,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -8347,6 +9460,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -8421,6 +9556,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -8556,6 +9713,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -8630,6 +9809,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -8735,6 +9936,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -8809,6 +10032,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -8902,7 +10147,7 @@ Scope: `admin:write`.
 
 **Set a remote PEP cluster's reverse-proxy configuration**
 
-The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-&lt;cluster>-&lt;route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is refused in a cluster of more than one member (STS-XACML-0275). Every member is nudged.
+The cluster's set-pep-proxy (#1760): the same document and grammar, its simple and public routes' policies generated as pepc-&lt;cluster>-&lt;route>. Its publicBaseUrl is the cluster's logical base URL: a simple or public route with no resource needs one (STS-XACML-0274). Every member's routes must resolve with its own callback; a session route with signals on is polled by each member on a stream of its own (X-Iya-Pep-Name). Every member is nudged.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -8941,6 +10186,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -9015,6 +10282,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -9120,6 +10409,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -9194,6 +10505,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -9329,6 +10662,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -9403,6 +10758,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -9508,6 +10885,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -9582,6 +10981,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -9714,6 +11135,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -9788,6 +11231,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -9893,6 +11358,28 @@ Scope: `admin:write`.
 | `discarded.listeners[].protocol` | one of `http`, `https` |  |  |
 | `discarded.listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `discarded.listeners[].renew` | integer |  |  |
+| `discarded.listeners[].tuning` | object |  |  |
+| `discarded.listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.ciphers` | string |  |  |
+| `discarded.listeners[].tuning.disableTls12` | boolean |  |  |
+| `discarded.listeners[].tuning.groups` | string |  |  |
+| `discarded.listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.http2` | boolean |  |  |
+| `discarded.listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `discarded.listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.maxConnections` | integer |  |  |
+| `discarded.listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `discarded.listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `discarded.listeners[].tuning.pqcOnly` | boolean |  |  |
+| `discarded.listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `discarded.listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `discarded.listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `discarded.listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `discarded.listeners[].tuning.threadPoolMax` | integer |  |  |
+| `discarded.listeners[].tuning.threadPoolMin` | integer |  |  |
+| `discarded.listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `discarded.listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `discarded.listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `discarded.proxy` | object |  |  |
 | `discarded.proxy.enabled` | boolean |  |  |
 | `discarded.proxy.maxBodyBytes` | integer |  |  |
@@ -9967,6 +11454,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `member` | object |  | set-pep-cluster-member: the member as saved. |
 | `member.listeners` | map |  |  |
 | `member.listeners.{key}.address` | string |  |  |
@@ -10054,13 +11563,13 @@ Scope: `admin:write`.
 | `why` | string |  |  |
 | `written` | boolean |  |  |
 
-## POST /admin-api/xacml/set-pep-listener
+## POST /admin-api/xacml/set-pep-environment-tuning
 
-`setXacmlPepListener`
+`setXacmlPepEnvironmentTuning`
 
-**Define or replace one of a remote PEP's listeners**
+**Set the TLS, HTTP and thread-pool tuning of one environment listener**
 
-Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on.
+Sets the tuning of one of a registered remote PEP's four environment listeners (api-http, api-https, proxy-http, proxy-https) (#1760). The address, port and protocol stay the environment's. The PEP applies the tuning on its next pull. The same knobs as set-pep-listener: TLS, the session cache, HTTP pooling, HTTP/2, client certificates and the thread pool. The reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281). A cluster has no single process, so this act is a PEP's, not a cluster's.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
 
@@ -10077,20 +11586,32 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `address` | string |  | The IPv4 or IPv6 address to bind; 0.0.0.0 (the default) or :: for every one. |
-| `dnsNames` | list, or string |  |  |
-| `dnsNames[]` | string |  |  |
-| `id` | string |  | The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four (api-http, api-https, proxy-http, proxy-https). An id already defined is replaced. |
-| `ipAddresses` | list, or string |  |  |
-| `ipAddresses[]` | string |  |  |
-| `keyAlg` | one of `ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072` |  | HTTPS only: the key the PEP generates, ec-p256 by default. |
-| `listener` | map |  | The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler. |
-| `listener.{key}` | any JSON |  |  |
+| `askClientCertificate` | boolean |  | Request a client certificate. Forced off for plain HTTP. |
+| `ciphers` | string |  | TLS 1.2 ciphers, OpenSSL colon-separated. Empty uses the built-in list. |
+| `disableTls12` | boolean |  | Refuse TLS 1.2. On by default, which forces TLSv1.3. |
+| `groups` | string |  | Key-exchange groups, OpenSSL colon-separated. Empty uses the built-in list. |
+| `headersTimeoutS` | integer |  | Seconds to receive request headers. 0 means the keep-alive timeout plus one. |
+| `http2` | boolean |  | Speak HTTP/2. Forced off for plain HTTP. |
+| `http2MaxConcurrentStreams` | integer |  | Concurrent HTTP/2 streams on one connection. |
+| `keepAliveTimeoutS` | integer |  | Idle keep-alive seconds before the connection closes. |
+| `listener` | string | yes | One of the environment's four: api-http, api-https, proxy-http or proxy-https. |
+| `maxConnections` | integer |  | Open connections before further ones are refused. 0 is unlimited. |
+| `maxRequestsPerSocket` | integer |  | Requests on one connection before it closes. 0 is unlimited. |
+| `minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  | The minimum TLS version. disableTls12 or pqcOnly forces TLSv1.3. |
 | `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
-| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
-| `port` | integer |  | The port, 1 to 65535. |
-| `protocol` | one of `http`, `https` |  | http or https. |
-| `purpose` | one of `api`, `proxy` |  | api (the PEP's decision API: /protected, GET / and the AuthZEN endpoints) or proxy (the reverse proxy). |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep=. Send `pep` or `name`; both, they must name the same PEP. |
+| `pqcOnly` | boolean |  | Only post-quantum groups and the two 256-bit TLS 1.3 suites. Refused (STS-XACML-0281) when the chosen lists contain none. |
+| `requireClientCertificate` | boolean |  | Refuse a handshake with no client certificate. Forced off for plain HTTP. |
+| `sessionCacheSize` | integer |  | TLS session cache entries. 0 keeps none. |
+| `sessionTimeoutS` | integer |  | TLS session lifetime in seconds. |
+| `signatureAlgorithms` | string |  | Signature algorithms, colon-separated. Empty uses the built-in list. |
+| `threadPoolMax` | integer |  | Workers this listener may grow to. At least the minimum. The reverse proxy's default is 128. |
+| `threadPoolMin` | integer |  | Workers this listener starts with. At least 1. The reverse proxy's default is 16. |
+| `tls13CipherSuites` | string |  | TLS 1.3 cipher suites, comma-separated. Empty uses the built-in list. |
+| `trustAnchorsFile` | string |  | PEM file of client trust anchors on the PEP. Empty uses the PEP's own. |
+| `trustIssuedClientCertificates` | boolean |  | Trust client certificates this realm's CA issued. |
+| `tuning` | map |  | The same knobs as one object. Flat members win when both are sent. |
+| `tuning.{key}` | any JSON |  |  |
 
 **200**: The operation was applied.
 
@@ -10110,6 +11631,28 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -10135,6 +11678,183 @@ Scope: `admin:write`.
 | `listeners[].protocol` | one of `http`, `https` |  |  |
 | `listeners[].purpose` | one of `api`, `proxy` |  |  |
 | `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-listener
+
+`setXacmlPepListener`
+
+**Define or replace one of a remote PEP's listeners**
+
+Adds a listener to a registered remote PEP, or replaces the one with its id, beyond the four its environment binds (#1760). The PEP pulls the definitions from GET /xacml/pep/settings and binds a new one, unbinds a removed one and rebinds a changed one while it runs, with no restart; it reports each on its heartbeat (listenerRows on GET /admin-api/xacml/peps). An HTTPS listener's key is generated by the PEP, which asks POST /xacml/pep/listener-certificate for its certificate from the realm's pep-tls Issuing CA, so no private key is in this call or its answer. Validated whole: STS-XACML-0243 (not an object, a stray member, more than 32), 0244 (the id), 0245 (protocol, purpose), 0246 (address, port), 0247 (an address and port another listener holds, the environment's as the PEP last reported them), 0248 (certificate names or key), and in product mode a plain-HTTP proxy listener 0249 unless xacml.pepPlainHttpProxyListeners is on. The listener's TLS, session cache, HTTP pooling, HTTP/2, client certificates and thread pool (`threadPoolMin`, `threadPoolMax`) are the same knobs Server Settings' listeners expose, and the reverse proxy's pool is the largest by default. A value that does not fit is refused (STS-XACML-0281).
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `address` | string |  | The IPv4 or IPv6 address to bind; 0.0.0.0 (the default) or :: for every one. |
+| `askClientCertificate` | boolean |  | Request a client certificate. Forced off for plain HTTP. |
+| `ciphers` | string |  | TLS 1.2 ciphers, OpenSSL colon-separated. Empty uses the built-in list. |
+| `disableTls12` | boolean |  | Refuse TLS 1.2. On by default, which forces TLSv1.3. |
+| `dnsNames` | list, or string |  |  |
+| `dnsNames[]` | string |  |  |
+| `groups` | string |  | Key-exchange groups, OpenSSL colon-separated. Empty uses the built-in list. |
+| `headersTimeoutS` | integer |  | Seconds to receive request headers. 0 means the keep-alive timeout plus one. |
+| `http2` | boolean |  | Speak HTTP/2. Forced off for plain HTTP. |
+| `http2MaxConcurrentStreams` | integer |  | Concurrent HTTP/2 streams on one connection. |
+| `id` | string |  | The listener's id: 1 to 64 letters, digits, dots, dashes or underscores, not one of the environment's four (api-http, api-https, proxy-http, proxy-https). An id already defined is replaced. |
+| `ipAddresses` | list, or string |  |  |
+| `ipAddresses[]` | string |  |  |
+| `keepAliveTimeoutS` | integer |  | Idle keep-alive seconds before the connection closes. |
+| `keyAlg` | one of `ec-p256`, `ec-p384`, `rsa-2048`, `rsa-3072` |  | HTTPS only: the key the PEP generates, ec-p256 by default. |
+| `listener` | map |  | The listener as one object (id, protocol, purpose, address, port, dnsNames, ipAddresses, keyAlg), in place of the members below. Validated whole by the handler. |
+| `listener.{key}` | any JSON |  |  |
+| `maxConnections` | integer |  | Open connections before further ones are refused. 0 is unlimited. |
+| `maxRequestsPerSocket` | integer |  | Requests on one connection before it closes. 0 is unlimited. |
+| `minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  | The minimum TLS version. disableTls12 or pqcOnly forces TLSv1.3. |
+| `name` | string |  | The registered PEP's name, as GET /admin-api/xacml/peps lists it. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
+| `port` | integer |  | The port, 1 to 65535. |
+| `pqcOnly` | boolean |  | Only post-quantum groups and the two 256-bit TLS 1.3 suites. Refused (STS-XACML-0281) when the chosen lists contain none. |
+| `protocol` | one of `http`, `https` |  | http or https. |
+| `purpose` | one of `api`, `proxy` |  | api (the PEP's decision API: /protected, GET / and the AuthZEN endpoints) or proxy (the reverse proxy). |
+| `requireClientCertificate` | boolean |  | Refuse a handshake with no client certificate. Forced off for plain HTTP. |
+| `sessionCacheSize` | integer |  | TLS session cache entries. 0 keeps none. |
+| `sessionTimeoutS` | integer |  | TLS session lifetime in seconds. |
+| `signatureAlgorithms` | string |  | Signature algorithms, colon-separated. Empty uses the built-in list. |
+| `threadPoolMax` | integer |  | Workers this listener may grow to. At least the minimum. The reverse proxy's default is 128. |
+| `threadPoolMin` | integer |  | Workers this listener starts with. At least 1. The reverse proxy's default is 16. |
+| `tls13CipherSuites` | string |  | TLS 1.3 cipher suites, comma-separated. Empty uses the built-in list. |
+| `trustAnchorsFile` | string |  | PEM file of client trust anchors on the PEP. Empty uses the PEP's own. |
+| `trustIssuedClientCertificates` | boolean |  | Trust client certificates this realm's CA issued. |
+| `tuning` | map |  | The same knobs as one object. Flat members win when both are sent. |
+| `tuning.{key}` | any JSON |  |  |
+
+**200**: The operation was applied.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `listeners` | list |  |  |
+| `listeners[].address` | string |  |  |
+| `listeners[].dnsNames` | list |  |  |
+| `listeners[].dnsNames[]` | string |  |  |
+| `listeners[].id` | string |  |  |
+| `listeners[].ipAddresses` | list |  |  |
+| `listeners[].ipAddresses[]` | string |  |  |
+| `listeners[].keyAlg` | string |  |  |
+| `listeners[].port` | integer |  |  |
+| `listeners[].protocol` | one of `http`, `https` |  |  |
+| `listeners[].purpose` | one of `api`, `proxy` |  |  |
+| `listeners[].renew` | integer |  |  |
+| `listeners[].tuning` | object |  |  |
+| `listeners[].tuning.askClientCertificate` | boolean |  |  |
+| `listeners[].tuning.ciphers` | string |  |  |
+| `listeners[].tuning.disableTls12` | boolean |  |  |
+| `listeners[].tuning.groups` | string |  |  |
+| `listeners[].tuning.headersTimeoutS` | integer |  |  |
+| `listeners[].tuning.http2` | boolean |  |  |
+| `listeners[].tuning.http2MaxConcurrentStreams` | integer |  |  |
+| `listeners[].tuning.keepAliveTimeoutS` | integer |  |  |
+| `listeners[].tuning.maxConnections` | integer |  |  |
+| `listeners[].tuning.maxRequestsPerSocket` | integer |  |  |
+| `listeners[].tuning.minVersion` | one of `TLSv1`, `TLSv1.1`, `TLSv1.2`, `TLSv1.3` |  |  |
+| `listeners[].tuning.pqcOnly` | boolean |  |  |
+| `listeners[].tuning.requireClientCertificate` | boolean |  |  |
+| `listeners[].tuning.sessionCacheSize` | integer |  |  |
+| `listeners[].tuning.sessionTimeoutS` | integer |  |  |
+| `listeners[].tuning.signatureAlgorithms` | string |  |  |
+| `listeners[].tuning.threadPoolMax` | integer |  |  |
+| `listeners[].tuning.threadPoolMin` | integer |  |  |
+| `listeners[].tuning.tls13CipherSuites` | string |  |  |
+| `listeners[].tuning.trustAnchorsFile` | string |  |  |
+| `listeners[].tuning.trustIssuedClientCertificates` | boolean |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
@@ -11053,6 +12773,68 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/sync-pep
+
+`syncXacmlPep`
+
+**Tell one remote PEP to pull everything again now**
+
+Nudges ONE registered PEP at the address the change nudge dials (its managed notify URL, or a cluster member's own) and waits for the answer. This service pushes nothing: the PEP answers a nudge by pulling a whole round — its settings and listeners, the policies, the AuthZEN catalogue and callers, and its reverse proxy — and a member of a remote PEP cluster pulls its cluster's documents, so the cluster's configuration travels with it. A document the PEP already holds byte for byte is answered 304, because every pull's token is a digest of exactly what would be sent.
+
+Refused before anything is dialled when remote PEPs or nudging are off (STS-XACML-0282), when nudging is stopped for this PEP (STS-XACML-0283), or when it has no usable notify URL (STS-XACML-0284); a nudge that was not delivered is STS-XACML-0285 and is recorded on the PEP's row as every nudge is. The PEP converges on its own poll in every one of those cases.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string |  | The registered PEP's name. |
+| `pep` | string |  | The registered PEP's name under the member GET /admin-api/xacml/peps calls it, ?pep= (2026-11-14). Send `pep` or `name`; both, they must name the same PEP. |
+
+**200**: The nudge was delivered; the PEP is pulling.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string, or null |  | The remote PEP cluster it is a member of, whose configuration it pulls; null for a standalone PEP. |
+| `delivered` | boolean |  | Whether the nudge was delivered. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP nudged. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `status` | number |  | The HTTP status the PEP answered the nudge with. |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `cluster` | string, or null |  | The remote PEP cluster it is a member of, whose configuration it pulls; null for a standalone PEP. |
+| `delivered` | boolean |  | Whether the nudge was delivered. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP nudged. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `status` | number |  | The HTTP status the PEP answered the nudge with. |
 | `what` | string |  |  |
 | `why` | string |  |  |
 {% endraw %}

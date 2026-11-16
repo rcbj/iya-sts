@@ -3781,11 +3781,13 @@ function recordAuthentication(detail) {
         // AS-REQ and a UsernameToken have no amr to state, and an entry with no
         // factors recorded is the honest answer for them rather than a default.
         amr: info.amr || [], acr: info.acr || '',
-        // Passed through untouched, and only `tls/tls_server.js` sets it: a
-        // client certificate's identity IS a DN, so the entry the directory
-        // seeds for it is not `uid=<name>` and the facts that go in it —
-        // issuer, serial, validity — are on the certificate rather than in
-        // anything this file holds. It rides on the observer rather than on a second hook because
+        // Passed through untouched, and only `tls/tls_server.js` sets it, and
+        // only for a leaf this realm issued. The actor is the mapped
+        // username; this object is the certificate facts the directory
+        // merges onto that person (`certificatePlan()` folds a CN it already
+        // holds). An outside certificate is not passed: its subject is a
+        // name another authority chose, and filing it seeded an entry.
+        // It rides on the observer rather than on a second hook because
         // this is already the funnel, and a second call at the certificate
         // sighting would be a second thing to keep right. Nothing here reads
         // it.

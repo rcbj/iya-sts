@@ -918,18 +918,20 @@ async fn harness() -> Harness {
 }
 
 async fn harness_with(edit: impl FnOnce(&mut Options)) -> Harness {
-    harness_of(edit, true).await
+    harness_of(edit, true, 1, 2).await
 }
 
 /// A PEP that has received NO proxy configuration since it started: what a
 /// recreated container is until its first pull succeeds.
 async fn harness_unconfigured(edit: impl FnOnce(&mut Options)) -> Harness {
-    harness_of(edit, false).await
+    harness_of(edit, false, 1, 2).await
 }
 
 async fn harness_of(
     edit: impl FnOnce(&mut Options),
     configured: bool,
+    pool_min: usize,
+    pool_max: usize,
 ) -> Harness {
     let key = Arc::new(rsa_key());
     let state = Arc::new(Mutex::new(ServiceState {
@@ -977,7 +979,23 @@ async fn harness_of(
     proxy.reconcile().await;
     let socket = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = socket.local_addr().unwrap().port();
-    tokio::spawn(proxy::serve_on(proxy.clone(), socket));
+    let runtime = crate::listener_pool::ListenerRuntime::new(
+        "proxy-http",
+        "proxy",
+        false,
+    );
+    runtime.apply(
+        &crate::listener_tuning::Tuning::overlay(
+            &serde_json::json!({
+                "threadPoolMin": pool_min,
+                "threadPoolMax": pool_max
+            }),
+            "proxy",
+            false,
+        ),
+        false,
+    );
+    tokio::spawn(proxy::serve_on(proxy.clone(), socket, runtime));
     Harness {
         proxy: format!("http://127.0.0.1:{}", port),
         proxied: proxy,
@@ -1065,6 +1083,26 @@ impl HttpBody for Chunks {
         } else {
             Poll::Ready(Some(Ok(Frame::data(this.0.remove(0)))))
         }
+    }
+}
+
+/// The proxy pool starts sixteen workers, each with its own
+/// current-thread runtime. A client shared by all of them leaves the
+/// second proxied request waiting on the first worker's idle connection
+/// until `upstreamTimeoutMs` (504, and the application never sees it).
+/// Eight workers make a later request land on another one.
+#[tokio::test]
+async fn a_later_request_on_another_worker_reaches_the_upstream() {
+    let h = harness_of(|_| {}, true, 8, 8).await;
+    for n in 0..8 {
+        let response = h.get("/public/page").send().await.unwrap();
+        let status = response.status();
+        let said = echoed(response).await;
+        assert_eq!(
+            said["path"], "/pep-app/public/page",
+            "request {n} answered {status} and did not reach the \
+             application: {said}"
+        );
     }
 }
 
@@ -2326,11 +2364,28 @@ async fn several_accounts_in_one_browser() {
     let csp = page.headers()["content-security-policy"].to_str().unwrap()
         .to_string();
     assert!(csp.contains("default-src 'none'") && csp.contains("frame-ancestors 'none'"));
+    assert!(csp.contains("style-src 'sha256-"), "{}", csp);
+    assert!(!csp.contains("unsafe") && !csp.contains("script-src"), "{}", csp);
     let html = page.text().await.unwrap();
     assert!(html.contains("alice") && html.contains("bob")
             && html.contains("Add another account")
             && html.contains("Sign out of all accounts"));
+    assert!(html.contains("<style>") && html.contains("max-width:46rem"),
+            "the chooser uses the error page's style sheet: {}", html);
+    assert!(html.contains("class=\"portal\"")
+            && html.contains("ul class=\"accounts\""), "{}", html);
+    assert!(html.contains("sts-footer"), "{}", html);
     assert!(!html.contains("<script"), "no script on the chooser");
+    assert!(!html.contains("<section class=\"diagnostics\""),
+            "the chooser is not an error page");
+    // The active account (bob) can continue; alice can only switch.
+    assert_eq!(html.matches("Continue with this user").count(), 1,
+               "{}", html);
+    assert!(html.contains(
+        "action=\"/multi/page\"><button class=\"portal\" \
+         type=\"submit\">Continue with this user</button>"
+    ), "{}", html);
+    assert!(html.contains("Switch to this account"), "{}", html);
     // SWITCH: alice is forwarded again, and only she.
     let r = h.account_act("/.iya-pep/accounts/switch",
         &format!("account={}&return=%2Fmulti%2Fpage", alice), &set, &origin)
@@ -2535,6 +2590,120 @@ async fn an_account_without_a_username_claim_is_named_by_the_service() {
         .unwrap();
     assert!(page.contains("<strong>carol</strong>"), "{}", page);
     assert!(!page.contains("urn:uuid:carol"), "{}", page);
+}
+
+/// `return` is followed only when its path matches a configured route.
+/// The active account's *Continue with this user* goes there. A value
+/// that matches no route, or that is not a path on this proxy, is `/`
+/// for the chooser, a switch, and both sign-outs.
+#[tokio::test]
+async fn a_return_is_followed_only_when_a_route_matches() {
+    let h = harness().await;
+    let origin = h.proxy.clone();
+    let (_, to) = h.location_of("/multi/page", "").await;
+    let set = cookie_of(
+        &h.sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-r", "mr")
+            .await,
+    );
+    let alice = account_named(&h.accounts_of(&set).await, "alice")["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let html = h
+        .get("/.iya-pep/accounts?return=%2Fmulti%2Fpage")
+        .header("cookie", set.clone())
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(html.contains(
+        "action=\"/multi/page\"><button class=\"portal\" \
+         type=\"submit\">Continue with this user</button>"
+    ), "{}", html);
+    assert!(!html.contains("Switch to this account"), "{}", html);
+    let html = h
+        .get("/.iya-pep/accounts?return=%2Fpublic%2Fx%3Fa%3Db%2520c")
+        .header("cookie", set.clone())
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(html.contains("action=\"/public/x\""), "{}", html);
+    assert!(html.contains("name=\"a\" value=\"b c\""), "{}", html);
+    let html = h
+        .get("/.iya-pep/accounts?return=%2Fnope")
+        .header("cookie", set.clone())
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(html.contains("action=\"/\""), "{}", html);
+    assert!(!html.contains("nope"), "{}", html);
+    let form = format!(
+        "account={}&return=%2Fpublic%2Fx%3Fa%3Db%2520c",
+        alice
+    );
+    let r = h
+        .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
+        .await;
+    assert_eq!(r.status(), 303);
+    assert_eq!(r.headers()["location"], "/public/x?a=b%20c");
+    let form = format!("account={}&return=%2Fsecret", alice);
+    let r = h
+        .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
+        .await;
+    assert_eq!(r.headers()["location"], "/secret");
+    let form = format!(
+        "account={}&return=%2Fmulti%2Fpage%3Fx%3D1%23frag",
+        alice
+    );
+    let r = h
+        .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
+        .await;
+    assert_eq!(r.headers()["location"], "/multi/page");
+    for ret in [
+        "%2Fnope",
+        "https%3A%2F%2Fevil.example%2Fmulti%2Fpage",
+        "%2F%2Fevil.example%2Fmulti",
+        "%2Fmulti%2F%2Fpage",
+        "%2Fsecret%2Fextra",
+    ] {
+        let form = format!("account={}&return={}", alice, ret);
+        let r = h
+            .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
+            .await;
+        assert_eq!(r.status(), 303, "{}", ret);
+        assert_eq!(r.headers()["location"], "/", "{}", ret);
+    }
+    let (status, _) = h
+        .location_of("/.iya-pep/accounts/add?return=%2Fnope", &set)
+        .await;
+    assert_eq!(status, 404);
+    let form = format!("account={}&return=%2Fnope", alice);
+    let r = h
+        .account_act("/.iya-pep/accounts/logout", &form, &set, &origin)
+        .await;
+    assert_eq!(r.status(), 303);
+    assert_eq!(
+        r.headers()["location"],
+        "/.iya-pep/accounts?return=%2F"
+    );
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/logout-all",
+            "return=%2Fsecret%2Fextra",
+            &set,
+            &origin,
+        )
+        .await;
+    assert_eq!(r.status(), 303);
+    assert_eq!(r.headers()["location"], "/");
 }
 
 /// A request on `path` as alice over Basic, with `method`.
@@ -2952,8 +3121,9 @@ async fn each_refusal_a_browser_meets_is_the_standard_page() {
 }
 
 /// A refusal of WHO is asking, on a session route, says what to do: the
-/// account chooser and Add another on a `multipleAccounts` route, a
-/// sign-out on any other.
+/// account chooser on a `multipleAccounts` route, a sign-out on any other.
+/// Adding an account is the chooser's own action, so the refusal page
+/// does not offer it beside the chooser.
 #[tokio::test]
 async fn a_refused_person_is_offered_another_account() {
     let h = harness().await;
@@ -2971,10 +3141,8 @@ async fn a_refused_person_is_offered_another_account() {
         "<a class=\"portal\" href=\"/.iya-pep/accounts?return=\
          %2Fmulti%2Fpage%3Fx%3D1\">Use a different account</a>"
     ), "{}", html);
-    assert!(html.contains(
-        "href=\"/.iya-pep/accounts/add?return=%2Fmulti%2Fpage%3Fx%3D1\">\
-         Sign in with another account</a>"
-    ), "{}", html);
+    assert!(!html.contains("Sign in with another account"), "{}", html);
+    assert!(!html.contains("/.iya-pep/accounts/add"), "{}", html);
     // One sign-in per browser: a sign-out.
     let (_, to) = h.location_of("/livehdr/page", "").await;
     let one = cookie_of(&h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"),
@@ -3016,6 +3184,77 @@ async fn the_page_escapes_what_the_request_carried() {
     assert!(!html.contains("\"><b>"), "{}", html);
 }
 
+/// `GET /` is the start page for a browser when no route is mounted there:
+/// the product logo, the name, one sentence, and the standard footer. A
+/// route mounted at `/` is that route. A client that does not accept HTML
+/// keeps the 404 (`a_request_that_does_not_accept_html_keeps_its_json`).
+/// The application is not asked.
+#[tokio::test]
+async fn the_start_page_is_what_go_to_the_start_page_opens() {
+    let h = harness().await;
+    let before = hits(&h);
+    let r = as_browser(h.get("/")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["content-type"], "text/html; charset=utf-8");
+    assert_eq!(r.headers()["cache-control"], "no-store");
+    let csp = r.headers()["content-security-policy"].to_str().unwrap();
+    assert!(csp.contains("img-src 'self'"), "{}", csp);
+    assert!(!csp.contains("script-src") && !csp.contains("unsafe"), "{}",
+            csp);
+    let html = r.text().await.unwrap();
+    assert!(html.contains("<title>IYA STS</title>"), "{}", html);
+    assert!(html.contains("class=\"front\""), "{}", html);
+    assert!(html.contains(
+        "src=\"/.iya-pep/logo.png\" width=\"906\" height=\"269\" \
+         alt=\"IYA STS — Security Token Service\""
+    ), "{}", html);
+    assert!(html.contains("<h1>IYA STS</h1>"), "{}", html);
+    assert!(html.contains("class=\"sts-footer\""), "{}", html);
+    assert!(html.contains("Iya CyberSecurity Solutions, LLC"), "{}", html);
+    assert!(html.contains("Version "), "{}", html);
+    assert!(!html.contains("STS-"), "{}", html);
+    assert!(!html.contains("<script"), "{}", html);
+    assert!(!html.contains("<section class=\"diagnostics\""), "{}", html);
+    assert_eq!(hits(&h), before, "the start page asks no application");
+    // The logo the page names.
+    let logo = h.get("/.iya-pep/logo.png").send().await.unwrap();
+    assert_eq!(logo.status(), 200);
+    assert_eq!(logo.headers()["content-type"], "image/png");
+    assert_eq!(logo.headers()["cache-control"], "public, max-age=3600");
+    let bytes = logo.bytes().await.unwrap();
+    assert!(bytes.starts_with(b"\x89PNG"), "not a PNG");
+    // A route mounted at `/` is that route, not this page.
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    let mut doc = configuration(&h.upstream_base, &h.service_base, &cert);
+    doc["proxy"]["routes"].as_array_mut().unwrap().insert(
+        0,
+        json!({
+            "id": "root",
+            "path": "/",
+            "match": "exact",
+            "methods": ["GET", "HEAD"],
+            "authorization": public_on("t")
+        }),
+    );
+    h.sync.receive_proxy(&doc, None);
+    let r = as_browser(h.get("/")).send().await.unwrap();
+    let said = echoed(r).await;
+    assert_eq!(said["path"], "/pep-app/");
+    assert_eq!(hits(&h), before + 1);
+    // Switched off: a browser's `/` is still the start page. Another path
+    // stays the 404.
+    let mut off = configuration(&h.upstream_base, &h.service_base, &cert);
+    off["proxy"]["enabled"] = json!(false);
+    h.sync.receive_proxy(&off, None);
+    let r = as_browser(h.get("/")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let html = r.text().await.unwrap();
+    assert!(html.contains("<h1>IYA STS</h1>"), "{}", html);
+    let r = as_browser(h.get("/public/page")).send().await.unwrap();
+    the_page(r, 404, "Page not found").await;
+    assert_eq!(hits(&h), before + 1, "nothing else was forwarded");
+}
+
 /// THE API ANSWER IS UNCHANGED: a request that does not accept HTML is
 /// answered the JSON it always was, byte for byte.
 #[tokio::test]
@@ -3028,6 +3267,8 @@ async fn a_request_that_does_not_accept_html_keeps_its_json() {
     };
     let cases: Vec<(reqwest::RequestBuilder, u16, &str)> = vec![
         (h.get("/nowhere"), 404,
+         r#"{"error":"not_found","error_description":"no route matches this path"}"#),
+        (h.get("/"), 404,
          r#"{"error":"not_found","error_description":"no route matches this path"}"#),
         (h.get("/closed/x").basic_auth("alice", Some("right")), 403,
          r#"{"error":"access_denied","error_description":"the route allows no method: deny-all"}"#),
@@ -3134,6 +3375,8 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
         "/.iya-pep/accounts/add",
         "/.iya-pep/logout",
         "/.iya-pep/callback?code=c&state=s",
+        "/.iya-pep/logo.png",
+        "/",
         "/nowhere",
     ] {
         let r = h.get(path).send().await.unwrap();
@@ -3141,7 +3384,7 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
         assert_eq!(r.headers()["retry-after"], "2", "{}", path);
     }
     assert_eq!(hits(&h), 0, "nothing reached the application");
-    // Seven requests, one line saying so — not seven.
+    // Nine requests, one line saying so — not nine.
     assert_eq!(waiting_announced(), 1);
     // The first configuration: the routes answer.
     let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
@@ -3156,7 +3399,7 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     assert_eq!(hits(&h), 1);
     assert_eq!(
         proxy::logged::holding("received its first configuration since it \
-                                started; 7 request(s)")
+                                started; 9 request(s)")
             .len(),
         1,
         "the state change, with its count"

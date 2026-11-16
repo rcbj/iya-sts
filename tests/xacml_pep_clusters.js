@@ -30,12 +30,18 @@
 //      and cleared; a PEP in two clusters refused; a name not registered
 //      yet listed;
 //   F. the per-member checks: the callback each member's publicBaseUrl
-//      needs, a listener clash against the member's own report, the
-//      signals refusal, the resource refusal, a notify URL on the cluster;
-//   G. a member's own per-PEP actions refused, naming the cluster;
+//      needs, a listener clash against the member's own report, a session
+//      route with signals on (saved: each member polls its own stream),
+//      the resource refusal, a notify URL on the cluster;
+//   G. a member's own per-PEP actions refused, naming the cluster; and
+//      Sync: refused with no notify URL or with nudging stopped, a
+//      member nudged alone and its cluster named, a lost nudge refused;
 //   H. leave with keep (its routes' policies `pep-<pep>-<route>`) and with
 //      empty; delete refused with members, then released;
-//   I. the view, `GET /admin-api/xacml/pep-clusters`' answer.
+//   I. the view, `GET /admin-api/xacml/pep-clusters`' answer;
+//   J. one application client's CAEP/RISC streams, told apart only by
+//      X-Iya-Pep-Name: each member's stream, the untagged list, a bad
+//      header refused as STS-SSF-0163, and a poll of one member's queue.
 //
 // The over-HTTP half, two xacml-pep containers, is
 // `tests/protocol/sts_xacml_pep_cluster.js`.
@@ -365,9 +371,9 @@ async function childBody() {
       const signals = act({ action: 'set-pep-cluster-route',
         cluster: 'orders', from: 'web', part: 'authentication',
         mechanisms: ['session'], signals: 'true' });
-      t.check(!signals.ok && codeOf(signals) === 'STS-XACML-0275',
-              'F3. signals on a session route with more than one member is ' +
-              'refused (0275)', JSON.stringify(signals));
+      t.check(signals.ok,
+              'F3. signals on a session route saves: each member polls a ' +
+              'stream of its own', JSON.stringify(signals));
       const clash = act({ action: 'set-pep-cluster-listener',
         cluster: 'orders', listener: { id: 'proxy-alt', protocol: 'https',
           purpose: 'proxy', port: 9777 } });
@@ -422,6 +428,76 @@ async function childBody() {
       const enable = act({ action: 'disable-pep', name: 'pep-2' });
       act({ action: 'enable-pep', name: 'pep-2' });
       t.check(enable.ok, 'G2. enabling and disabling stay the PEP\'s own');
+
+      // ---------------------------------------------------------------
+      // G3-G7. SYNC (rcbj, 2026-11-16): one nudge to one PEP, awaited.
+      // The notifier is the module object the console's deps hold, so
+      // replacing its members here is what `syncPep()` calls.
+      // ---------------------------------------------------------------
+      const notifier = require(ROOT + '/xacml/xacml_pep_http');
+      const realSend = notifier.nudge;
+      const realAllowed = notifier.notifyAllowed;
+      const realProblem = notifier.urlProblem;
+      const dialled = [];
+      let deliver = true;
+      notifier.notifyAllowed = function () {
+        log.debug("Entering notifyAllowed().");
+        log.debug("Leaving notifyAllowed().");
+        return true;
+      };
+      notifier.urlProblem = function () {
+        log.debug("Entering urlProblem().");
+        log.debug("Leaving urlProblem().");
+        return null;
+      };
+      notifier.nudge = function (url) {
+        log.debug("Entering nudge().");
+        dialled.push(String(url));
+        log.debug("Leaving nudge().");
+        return Promise.resolve(deliver
+          ? { ok: true, status: 204, why: 'Delivered (204).' }
+          : { ok: false, status: 0, why: 'connect ECONNREFUSED' });
+      };
+      try {
+        const noUrl = await act({ action: 'sync-pep', name: 'pep-solo' });
+        t.check(!noUrl.ok && codeOf(noUrl) === 'STS-XACML-0284' &&
+                dialled.length === 0,
+                'G3. Sync of a PEP with no notify URL is refused (0284) ' +
+                'and dials nothing', JSON.stringify(noUrl));
+        peps.register({ name: 'pep-2',
+          identity: 'cn=pep-2,ou=users,dc=example,dc=com',
+          certificateSubject: 'CN=pep-2', thumbprint: 'test-pep-2',
+          authenticated: true, bias: 'deny', resource: BASE1,
+          hostname: 'pep-2.example.test',
+          notifyUrl: 'https://pep-2.example.test:9443/notify' });
+        const synced = await act({ action: 'sync-pep', name: 'pep-2' });
+        t.check(synced.ok && synced.delivered === true &&
+                synced.cluster === 'orders' && synced.pep === 'pep-2' &&
+                dialled.length === 1 && /^https:\/\//.test(dialled[0]),
+                'G4. Sync of a cluster member nudges that one PEP and ' +
+                'names its cluster', JSON.stringify([synced, dialled]));
+        t.check(/Delivered \(204\)/
+                  .test(String(peps.read('pep-2').lastNotify)),
+                'G5. the nudge is recorded on the row',
+                peps.read('pep-2').lastNotify);
+        act({ action: 'disable-pep', name: 'pep-2' });
+        const stopped = await act({ action: 'sync-pep', name: 'pep-2' });
+        act({ action: 'enable-pep', name: 'pep-2' });
+        t.check(!stopped.ok && codeOf(stopped) === 'STS-XACML-0283' &&
+                dialled.length === 1,
+                'G6. Sync of a PEP nobody may nudge is refused (0283)',
+                JSON.stringify(stopped));
+        deliver = false;
+        const lost = await act({ action: 'sync-pep', name: 'pep-2' });
+        t.check(!lost.ok && codeOf(lost) === 'STS-XACML-0285' &&
+                /ECONNREFUSED/.test(lost.why),
+                'G7. a nudge not delivered is a refusal (0285) saying why',
+                JSON.stringify(lost));
+      } finally {
+        notifier.nudge = realSend;
+        notifier.notifyAllowed = realAllowed;
+        notifier.urlProblem = realProblem;
+      }
 
       // ---------------------------------------------------------------
       // I. THE VIEW.
@@ -490,6 +566,198 @@ async function childBody() {
       t.check(pap.CLUSTER_ACTIONS.every(function (one) {
         return names2.indexOf(one) >= 0;
       }), 'H6. the unknown-action sentence names every cluster action');
+
+      // ---------------------------------------------------------------
+      // J. ONE CLIENT, A STREAM PER MEMBER (#1760 phase 3).
+      //
+      // Both members authenticate as pcl-web. streamsOwnedBy cannot tell
+      // them apart; only X-Iya-Pep-Name can. The same username is the
+      // point of the section.
+      // ---------------------------------------------------------------
+      const http = require('http');
+      const app = require(ROOT + '/common/app');
+      const streams = require(ROOT + '/ssf/ssf_streams');
+      const audit = require(ROOT + '/common/audit');
+      const basic = 'Basic ' +
+        Buffer.from('pcl-web:anything').toString('base64');
+      const pollDelivery = { method: streams.DELIVERY_POLL };
+      function ssfRequest(method, target, extra, json) {
+        log.debug("Entering ssfRequest().");
+        const body = json === undefined ? '' : JSON.stringify(json);
+        const headers = Object.assign({
+          authorization: basic, accept: 'application/json'
+        }, extra || {});
+        if (body) {
+          headers['content-type'] = 'application/json';
+          headers['content-length'] = Buffer.byteLength(body);
+        }
+        log.debug("Leaving ssfRequest().");
+        return new Promise(function (resolve) {
+          const req = http.request({
+            host: '127.0.0.1', port: ssfPort, method: method,
+            path: '/realm/' + id + target, headers: headers
+          }, function (res) {
+            let text = '';
+            res.on('data', function (chunk) { text += chunk; });
+            res.on('end', function () {
+              let parsed = null;
+              try {
+                parsed = text ? JSON.parse(text) : null;
+              } catch (e) {
+                parsed = { parseError: String((e && e.message) || e) };
+              }
+              resolve({ status: res.statusCode, json: parsed,
+                        text: text });
+            });
+          });
+          req.on('error', function (e) {
+            resolve({ status: 0, json: null,
+                      text: String((e && e.message) || e) });
+          });
+          req.end(body);
+        });
+      }
+      function streamIds(answer) {
+        log.debug("Entering streamIds().");
+        const list = Array.isArray(answer && answer.json)
+          ? answer.json : [];
+        const out = list.map(function (one) { return one.stream_id; });
+        log.debug("Leaving streamIds().");
+        return out;
+      }
+      const server = http.createServer(app);
+      let ssfPort = 0;
+      try {
+        await new Promise(function (ready) {
+          server.listen(0, '127.0.0.1', ready);
+        });
+        ssfPort = server.address().port;
+        const plain = await ssfRequest('POST', '/ssf/stream', {},
+          { delivery: pollDelivery });
+        const madeA = await ssfRequest('POST', '/ssf/stream',
+          { 'x-iya-pep-name': 'pep-a' }, { delivery: pollDelivery });
+        const madeB = await ssfRequest('POST', '/ssf/stream',
+          { 'x-iya-pep-name': 'pep-b' }, { delivery: pollDelivery });
+        const idPlain = plain.json && plain.json.stream_id;
+        const idA = madeA.json && madeA.json.stream_id;
+        const idB = madeB.json && madeB.json.stream_id;
+        const recPlain = streams.getStream(idPlain);
+        const recA = streams.getStream(idA);
+        const recB = streams.getStream(idB);
+        t.check(plain.status === 201 && madeA.status === 201 &&
+                madeB.status === 201 && idPlain && idA && idB &&
+                idA !== idB && idA !== idPlain &&
+                recA && recA.pepMember === 'pep-a' &&
+                recB && recB.pepMember === 'pep-b' &&
+                recPlain && !recPlain.pepMember &&
+                madeA.json.pepMember === undefined &&
+                madeB.json.pepMember === undefined &&
+                plain.json.pepMember === undefined,
+                'J1. one Basic client, two members: each header creates ' +
+                'its own stream, the wire omits pepMember, and a call ' +
+                'with no header stays untagged',
+                JSON.stringify({ plain: plain.status, a: madeA.status,
+                                 b: madeB.status, idPlain: idPlain,
+                                 idA: idA, idB: idB }));
+        if (recA) {
+          recA.lastActivityAt = 1;
+        }
+        if (recB) {
+          recB.lastActivityAt = 1;
+        }
+        const listA = await ssfRequest('GET', '/ssf/stream',
+          { 'x-iya-pep-name': 'pep-a' });
+        const seenA = streamIds(listA);
+        const afterA = streams.getStream(idA);
+        const stillB = streams.getStream(idB);
+        t.check(listA.status === 200 && seenA.length === 1 &&
+                seenA[0] === idA && afterA &&
+                afterA.lastActivityAt !== 1 && stillB &&
+                stillB.lastActivityAt === 1,
+                'J2. listing pep-a returns only pep-a and does not ' +
+                'refresh pep-b',
+                JSON.stringify({ status: listA.status, ids: seenA,
+                  a: afterA && afterA.lastActivityAt,
+                  b: stillB && stillB.lastActivityAt }));
+        const listB = await ssfRequest('GET', '/ssf/stream',
+          { 'x-iya-pep-name': 'pep-b' });
+        t.check(listB.status === 200 &&
+                streamIds(listB).join(',') === idB,
+                'J3. listing pep-b returns only pep-b',
+                JSON.stringify(streamIds(listB)));
+        const listAll = await ssfRequest('GET', '/ssf/stream', {});
+        t.check(listAll.status === 200 &&
+                streamIds(listAll).join(',') ===
+                  [idPlain, idA, idB].join(','),
+                'J4. no header lists the untagged stream, then pep-a, ' +
+                'then pep-b, oldest first',
+                JSON.stringify(streamIds(listAll)));
+        const listC = await ssfRequest('GET', '/ssf/stream',
+          { 'x-iya-pep-name': 'pep-c' });
+        t.check(listC.status === 200 && Array.isArray(listC.json) &&
+                listC.json.length === 0,
+                'J5. a name nobody has created a stream for is an empty ' +
+                'list', JSON.stringify(listC.json));
+        const ignored = await ssfRequest('POST', '/ssf/stream',
+          { 'x-iya-pep-name': 'pep-a' },
+          { delivery: pollDelivery, pepMember: 'pep-b' });
+        const ignoredId = ignored.json && ignored.json.stream_id;
+        const ignoredRec = streams.getStream(ignoredId);
+        t.check(ignored.status === 201 && ignored.json.pepMember ===
+                undefined && ignoredRec &&
+                ignoredRec.pepMember === 'pep-a',
+                'J6. a pepMember field in the body is ignored; the ' +
+                'header is what is stored',
+                JSON.stringify({ status: ignored.status,
+                  stored: ignoredRec && ignoredRec.pepMember }));
+        const beforeBad = streams.streamsOwnedBy('pcl-web').length;
+        const bad = await ssfRequest('POST', '/ssf/stream',
+          { 'x-iya-pep-name': 'bad name' },
+          { delivery: pollDelivery });
+        const afterBad = streams.streamsOwnedBy('pcl-web').length;
+        const coded = audit.list().filter(function (event) {
+          return event.errorCode === 'STS-SSF-0163';
+        });
+        t.check(bad.status === 400 && bad.json &&
+                bad.json.err === 'invalid_request' &&
+                afterBad === beforeBad && coded.length >= 1,
+                'J7. a header that is not a PEP name is 400, creates ' +
+                'nothing, and is recorded as STS-SSF-0163',
+                bad.status + ' ' + bad.text.slice(0, 240) + ' owned ' +
+                beforeBad + '->' + afterBad + ' audit ' + coded.length);
+        const badGet = await ssfRequest('GET', '/ssf/stream',
+          { 'x-iya-pep-name': 'bad name' });
+        t.check(badGet.status === 400 && badGet.json &&
+                badGet.json.err === 'invalid_request' &&
+                !Array.isArray(badGet.json),
+                'J8. the same header on a list is 400, and the answer ' +
+                'is the refusal rather than the untagged list',
+                badGet.status + ' ' + badGet.text.slice(0, 200));
+        const liveA = streams.getStream(idA);
+        const liveB = streams.getStream(idB);
+        const queuedA = liveA ? streams.enqueue(liveA,
+          { jti: 'jti-pep-a', token: 'set-pep-a' }) : { ok: false };
+        const queuedB = liveB ? streams.enqueue(liveB,
+          { jti: 'jti-pep-b', token: 'set-pep-b' }) : { ok: false };
+        const polledA = await ssfRequest('POST', '/ssf/poll', {},
+          { stream_id: idA, ack: [] });
+        const polledB = await ssfRequest('POST', '/ssf/poll', {},
+          { stream_id: idB, ack: [] });
+        const setsA = (polledA.json && polledA.json.sets) || {};
+        const setsB = (polledB.json && polledB.json.sets) || {};
+        t.check(queuedA.ok && queuedB.ok && polledA.status === 200 &&
+                polledB.status === 200 && setsA['jti-pep-a'] ===
+                  'set-pep-a' && setsA['jti-pep-b'] === undefined &&
+                setsB['jti-pep-b'] === 'set-pep-b' &&
+                setsB['jti-pep-a'] === undefined,
+                'J9. polling one member\'s stream collects that queue ' +
+                'and leaves the other member\'s',
+                JSON.stringify({ a: polledA.status, b: polledB.status,
+                  setsA: Object.keys(setsA),
+                  setsB: Object.keys(setsB) }));
+      } finally {
+        await new Promise(function (done) { server.close(done); });
+      }
       log.debug("Leaving realmBody().");
     });
   } finally {
@@ -555,7 +823,8 @@ if (require.main === module && process.env[CHILD_FLAG]) {
 module.exports = {
   name: 'xacml_pep_clusters',
   describe: 'remote PEP clusters (#1760): the effective row, the shared ' +
-            'route policies, join and leave, the per-member checks, every ' +
-            'refusal and a standalone PEP unchanged',
+            'route policies, join and leave, the per-member checks, a ' +
+            'signal stream per member, every refusal and a standalone PEP ' +
+            'unchanged',
   run: run
 };

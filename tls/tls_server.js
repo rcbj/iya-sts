@@ -5878,9 +5878,10 @@ function screenCertificateHolder(req) {
 // What it now also does is get WRITTEN DOWN. `/admin/users` answers "who has
 // this service seen, in an interaction that succeeded", and a mutual-TLS client
 // that verified is exactly that — leaving it out made the console's answer
-// wrong by omission, and it is the one family whose identity the embedded
-// directory can seed an entry for verbatim, because a certificate subject is
-// already a DN. So this calls `stats.recordAuthentication()`, the same funnel
+// wrong by omission. The actor is the mapped person (`urn:sts:person:` on a
+// leaf this realm issued, or the one entry storing an outside leaf). Filing
+// the subject DN instead put the row on a name the person's page does not
+// ask for. So this calls `stats.recordAuthentication()`, the same funnel
 // the other thirteen families pass through, and the LDAP entry follows from the
 // observer that is already on it rather than from a second call here.
 //
@@ -5938,21 +5939,34 @@ function recordClientCertificate(socket, mode, revocation) {
   }
   // An application's certificate is not a person's authentication, for
   // `startCertificateSession()`'s reason; filing it on /admin/users would put
-  // an application in the register of people.
+  // an application in the register of people. A stored application's
+  // certificate is the same refusal, once the lookup below has named it.
   if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
     log.debug('Leaving recordClientCertificate(). An application.');
     return null;
   }
-  // AN OUTSIDE AUTHORITY'S CERTIFICATE IS NOT RECORDED HERE (#1061). Until
-  // rcbj's decision it was recorded under its subject, and the observer
-  // SEEDED a directory entry for it (`certificatePlan()`) — an entry created
-  // out of a name somebody else's authority chose. It is an identity now
-  // only as the one entry storing it, in a realm, and a handshake has no
-  // realm: `GET /tls/sign-in` and every other door resolve it where the
-  // request names one, and the sign-in they start is the authentication.
+  // THE ACTOR IS THE MAPPED PERSON, NOT THE SUBJECT. Recording the RFC 4514
+  // subject made `identityOf()` keep that DN whole, so the Authentication
+  // attempts tab for the username never listed the row. A remote PEP's
+  // mutual TLS is this handshake and no later sign-in, which is why that
+  // tab stayed empty while the info line said the certificate authenticated.
+  //
+  // AN OUTSIDE CERTIFICATE IS THE ONE ENTRY STORING IT (#1061). Recording
+  // its SUBJECT seeded `cn=<CN>,ou=users` through `certificatePlan()`.
+  // Recording the mapped username does not: `namePlan()` files the person.
+  // The lookup is the ambient realm, which at a handshake is the default
+  // realm — a handshake still has no request — so a certificate stored only
+  // in another realm stays the door's to record. Nothing stored, or stored
+  // twice, or stored on an application, is still not an authentication here.
+  let holder = gated;
   if (!gated.issuedHere) {
-    log.debug('Leaving recordClientCertificate(). An outside certificate; ' +
-              'its doors resolve it.');
+    holder = issuedIdentityOf(socket, { stored: true });
+  }
+  if (!(holder && holder.accepted && holder.kind === 'person' &&
+        holder.username)) {
+    log.debug('Leaving recordClientCertificate(). ' +
+              (gated.issuedHere ? 'Not a person.'
+                : 'An outside certificate stored on no one person.'));
     return null;
   }
   let cert = null;
@@ -5984,9 +5998,11 @@ function recordClientCertificate(socket, mode, revocation) {
     : '';
   try {
     // IN THE CERTIFICATE'S REALM, so the directory entry the observer seeds is
-    // in the subtree of the realm whose authority issued it.
-    inCertificateRealm(gated, function () {
-      recordCertificateAuthentication(subject, common, cert, mode, revocation);
+    // in the subtree of the realm whose authority issued it. A stored
+    // certificate's realm is the ambient one the lookup just asked.
+    inCertificateRealm(holder, function () {
+      recordCertificateAuthentication(holder.username, subject, common, cert,
+                                      mode, revocation, holder.issuedHere);
     });
   } catch (e) {
     // Same reason as the read above, and one more: the console and the
@@ -5998,10 +6014,9 @@ function recordClientCertificate(socket, mode, revocation) {
     log.debug('Leaving recordClientCertificate(). The recording threw.');
     return null;
   }
-  log.info('tls: ' + subject + ' presented a client certificate that ' +
-           'verified on ' +
-           'the ' + mode + ' listener. It is recorded in the admin ' +
-           'console and the directory has an entry for it. The SIGN-IN is a ' +
+  log.info('tls: ' + holder.username + ' presented a client certificate ' +
+           'that verified on the ' + mode + ' listener (subject ' + subject +
+           '). It is recorded against that person. The SIGN-IN is a ' +
            'separate act and startCertificateSession() performs it on the ' +
            'request, because a cookie needs a response to be written on.');
   log.debug('Leaving recordClientCertificate(). Recorded.');
@@ -6010,30 +6025,40 @@ function recordClientCertificate(socket, mode, revocation) {
 
 // The authentication itself, split out of `recordClientCertificate()` so it
 // can run inside the certificate's realm. It may throw; its caller catches.
-function recordCertificateAuthentication(subject, common, cert, mode,
-                                         revocation) {
+// `username` is the mapped person. `subject` is the RFC 4514 DN, kept in the
+// note and — for a leaf this realm issued — on the certificate the directory
+// merges onto that person. An outside leaf passes no certificate object:
+// `autoCreateUser()` treats one as "the identity is this subject" and
+// `certificatePlan()` would file the outside CN.
+function recordCertificateAuthentication(username, subject, common, cert,
+                                         mode, revocation, issuedHere) {
   log.debug('Entering recordCertificateAuthentication().');
-  stats.recordAuthentication({
-    presented: subject,
+  const detail = {
+    presented: username,
     protocol: 'TLS',
     method: 'client certificate on the main port (' + MAIN_PORT + ')',
     // The certificate subject, RFC 4514, which is what an application's
-    // oauthTlsClientAuthSubjectDn holds. The attempts tab matches that.
-    // Not client_id: this sighting is the certificate, and the token
-    // endpoint records its own client_id when one authenticated there.
+    // oauthTlsClientAuthSubjectDn holds. That application's attempts tab
+    // matches this field. Not client_id: the token endpoint records its
+    // own client_id when a client authenticated there. The person's tab
+    // matches `presented`, which is the username.
     application: subject,
-    note: 'the chain verified against one of the ' + anchors.length +
+    note: 'subject ' + subject +
+      (common ? ' (CN ' + common + ')' : '') +
+      '. The chain verified against one of the ' + anchors.length +
       ' anchor(s) in this service\'s truststore, and ' +
       (revocation && revocation.checked
         ? 'its revocation was consulted (' + revocation.policy + ', ' +
           revocation.status + ')'
         : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)') +
-      '. Since 2026-09-05 a sign-on session is started for the holder, so ' +
-      'a global sign-out can end it; no token is issued.',
+      '. A sign-on session, where one is started, is a separate act; no ' +
+      'token is issued here.'
+  };
+  if (issuedHere) {
     // Both DNs in RFC 4514 form, which is not the form dnToString() renders
-    // for a reader — see dnRfc4514(). These two go into a DIRECTORY, and
-    // that is the only form a directory takes.
-    certificate: {
+    // for a reader — see dnRfc4514(). The directory merges these onto the
+    // person the CN already names.
+    detail.certificate = {
       subject: subject,
       commonName: common,
       issuer: dnRfc4514(cert.issuer),
@@ -6042,8 +6067,9 @@ function recordCertificateAuthentication(subject, common, cert, mode,
       validTo: cert.valid_to || '',
       fingerprint256: cert.fingerprint256 || '',
       email: emailOf(cert)
-    }
-  });
+    };
+  }
+  stats.recordAuthentication(detail);
   log.debug('Leaving recordCertificateAuthentication().');
 }
 

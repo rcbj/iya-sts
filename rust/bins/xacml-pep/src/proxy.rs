@@ -12,11 +12,20 @@
 //! GET  /.iya-pep/accounts       the account chooser (multipleAccounts)
 //! GET  /.iya-pep/accounts/add   sign in another account (prompt=login)
 //! POST /.iya-pep/accounts/switch, /logout, /logout-all
+//! GET  /                        the start page, when no route matches /
+//! GET  /.iya-pep/logo.png       the product logo that page draws
 //! everything else               the route table
 //! ```
 //!
 //! **DENY BY DEFAULT.** No configuration, a configuration switched off, a
 //! path that matches no route: 404, and the application is never reached.
+//! A browser's GET or HEAD of `/` is the exception once a configuration
+//! has been received: the start page (`proxy_page::front_document`),
+//! because that is where *Go to the start page* goes. A route mounted at
+//! `/` is that route. A client that does not accept HTML still gets the
+//! 404. Until the first configuration, `/` is the 503 with every other
+//! path.
+//!
 //! A request is answered in this order, and each step's refusal is the
 //! first one it meets: the path normalised (400), the route found (404),
 //! the method (405 with `Allow`, when the route's list is not empty), the
@@ -44,6 +53,7 @@
 //! mechanisms, `rp_session.rs` the session stores, `proxy_config.rs` the
 //! pulled configuration.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -57,8 +67,6 @@ use axum::http::{
     header, HeaderMap, HeaderName, HeaderValue, Request, Response, StatusCode,
 };
 use hyper::body::{Body as HttpBody, Frame, SizeHint};
-use hyper_util::rt::{TokioExecutor, TokioIo};
-use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use serde_json::{json, Value};
 use sts_core::log::tag;
@@ -66,6 +74,7 @@ use tokio::net::TcpListener;
 
 use crate::identity::{self, Jar, Jars, Tokens};
 use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listener_pool::{drive, ListenerRuntime};
 use crate::pdp_client::PdpClient;
 use crate::proxy_auth::{self, Authenticator, Identity, Refusal};
 use crate::proxy_config::{
@@ -91,19 +100,11 @@ pub const ACCOUNTS_ADD_PATH: &str = "/.iya-pep/accounts/add";
 pub const ACCOUNTS_SWITCH_PATH: &str = "/.iya-pep/accounts/switch";
 pub const ACCOUNTS_LOGOUT_PATH: &str = "/.iya-pep/accounts/logout";
 pub const ACCOUNTS_LOGOUT_ALL_PATH: &str = "/.iya-pep/accounts/logout-all";
-/// The proxy's own pages: nothing but the markup itself and a form posting
-/// back here, never framed, never cached.
-const PAGE_CSP: &str = "default-src 'none'; form-action 'self'; \
-                        frame-ancestors 'none'; base-uri 'none'";
 
-/// The reverse proxy: the PEP it decides with, the mechanisms, and one
-/// client to the upstream per timeout.
+/// The reverse proxy: the PEP it decides with, and the mechanisms.
 pub struct Proxy {
     pep: Arc<Pep>,
     auth: Authenticator,
-    /// The upstream client, by (timeout, verify-off) — both may move with
-    /// the settings (#1760), so either changing builds a new one.
-    upstream: Mutex<Option<((u64, bool), reqwest::Client)>>,
     /// The session mechanism's relying parties (`rp_set.rs`).
     rps: Arc<RpSet>,
     /// Mode `jwt`'s tokens and mode `saml`'s jars (D11, `identity.rs`).
@@ -254,9 +255,10 @@ fn shown_description(refusal: &Refusal) -> String {
 }
 
 /// What the person can do about a refusal of WHO they are: on a session
-/// route that holds several accounts, choose or add another; on any other
+/// route that holds several accounts, the account chooser; on any other
 /// session route, sign out. A refusal of the request itself offers only
-/// the start page, which every page carries.
+/// the start page, which every page carries. The chooser is where another
+/// account is added, so this page does not offer that itself.
 fn refusal_actions(refusal: &Refusal, asked: &Asked) -> Vec<Action> {
     let about_who = refusal.status == 403
         && matches!(refusal.code, "STS-XPEP-0086" | "STS-XPEP-0095");
@@ -270,17 +272,10 @@ fn refusal_actions(refusal: &Refusal, asked: &Asked) -> Vec<Action> {
         None => asked.path.to_string(),
     };
     if route.multiple_accounts {
-        vec![
-            Action {
-                href: format!("{}?return={}", ACCOUNTS_PATH, encode(&here)),
-                label: "Use a different account".into(),
-            },
-            Action {
-                href: format!("{}?return={}", ACCOUNTS_ADD_PATH,
-                              encode(&here)),
-                label: "Sign in with another account".into(),
-            },
-        ]
+        vec![Action {
+            href: format!("{}?return={}", ACCOUNTS_PATH, encode(&here)),
+            label: "Use a different account".into(),
+        }]
     } else {
         vec![Action {
             href: LOGOUT_PATH.into(),
@@ -352,37 +347,29 @@ fn accounts_cookie(set_id: &str, https: bool, clear: bool) -> Option<HeaderValue
     HeaderValue::from_str(&text).ok()
 }
 
-/// A page of the proxy's own, under its strict policy.
-fn own_page(status: u16, title: &str, body: &str) -> Response<Body> {
-    let html = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <meta name=\"viewport\" content=\"width=device-width\">\
-         <title>{}</title></head><body>{}</body></html>",
-        html_escape(title),
-        body
-    );
-    let mut response = Response::new(Body::from(html));
-    *response.status_mut() =
-        StatusCode::from_u16(status).unwrap_or(StatusCode::OK);
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/html; charset=utf-8"),
-    );
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    headers.insert(
-        HeaderName::from_static("content-security-policy"),
-        HeaderValue::from_static(PAGE_CSP),
-    );
-    headers.insert(
-        HeaderName::from_static("x-content-type-options"),
-        HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(
-        HeaderName::from_static("referrer-policy"),
-        HeaderValue::from_static("no-referrer"),
-    );
-    response
+/// A browser asking for `/`: the start page, when no route is mounted
+/// there. Anything else that matches no route stays a 404, and a client
+/// that does not accept HTML keeps the JSON.
+fn front_door(method: &str, path: &str, html: bool) -> bool {
+    (method == "GET" || method == "HEAD") && path == "/" && html
+}
+
+/// A page of the proxy's own. The account chooser is the one caller: the
+/// error page's document shell (`proxy_page::document_shell`), so the same
+/// style sheet, the same hash in `style-src`, and the same footer. `body`
+/// is HTML the caller has already escaped. The chooser is not an error
+/// page; it has no diagnostics and no incident ID. The start page is
+/// `proxy_page::front_document`, which uses that shell itself.
+fn own_page(
+    status: u16,
+    title: &str,
+    body: &str,
+    version: &str,
+) -> Response<Body> {
+    proxy_page::html_response(
+        status,
+        proxy_page::document_shell(title, body, version),
+    )
 }
 
 fn html_escape(text: &str) -> String {
@@ -394,8 +381,9 @@ fn html_escape(text: &str) -> String {
 }
 
 /// Where an account act sends the browser back to: a path on THIS proxy
-/// (normalised, with its query), never a value that leaves it.
-fn return_path(asked: Option<&str>) -> String {
+/// that one of its configured routes matches (normalised, with its query).
+/// Anything else — not a path, off this proxy, or no route — is `/`.
+fn return_path(config: &ProxyConfig, asked: Option<&str>) -> String {
     let Some(raw) = asked.filter(|r| r.starts_with('/') && !r.starts_with("//"))
     else {
         return "/".into();
@@ -404,12 +392,15 @@ fn return_path(asked: Option<&str>) -> String {
         Some((p, q)) => (p, Some(q)),
         None => (raw, None),
     };
-    match normalise_path(path) {
-        Ok(path) if !path.starts_with("/.iya-pep/") => match query {
-            Some(q) if !q.contains('#') => format!("{}?{}", path, q),
-            _ => path,
-        },
-        _ => "/".into(),
+    let Ok(path) = normalise_path(path) else {
+        return "/".into();
+    };
+    if path.starts_with("/.iya-pep/") || config.route_for(&path).is_none() {
+        return "/".into();
+    }
+    match query {
+        Some(q) if !q.contains('#') => format!("{}?{}", path, q),
+        _ => path,
     }
 }
 
@@ -467,6 +458,24 @@ fn rp_limits(now: &crate::options::Now) -> RpLimits {
     }
 }
 
+// One upstream client per worker thread, keyed by (timeout, verify-off).
+//
+// Each listener worker owns a current-thread runtime and polls it only
+// inside `block_on` (`listener_pool.rs`). reqwest parks an idle
+// connection on the runtime that opened it. One client shared by every
+// worker checks that connection out on a worker that is not polling it:
+// `send` waits out `upstreamTimeoutMs`, the application never sees the
+// request, and the caller gets 504 `STS-XPEP-0068`. The proxy pool
+// starts sixteen workers, so the second proxied request is the one that
+// meets this. A client per worker thread keeps the pool on the runtime
+// that drives it. Either half of the key moving builds a new client, as
+// the old shared slot did; a CA change with neither moving keeps the
+// client already built.
+thread_local! {
+    static UPSTREAM_CLIENT: RefCell<Option<((u64, bool), reqwest::Client)>> =
+        RefCell::new(None);
+}
+
 impl Proxy {
     pub fn new(pep: Arc<Pep>, client: PdpClient) -> Proxy {
         let now = pep.options.now();
@@ -497,7 +506,6 @@ impl Proxy {
         Proxy {
             pep,
             auth: Authenticator::new(client, ttl),
-            upstream: Mutex::new(None),
             rps,
             tokens: Tokens::default(),
             jars: Jars::default(),
@@ -621,6 +629,14 @@ impl Proxy {
         response
     }
 
+    /// The start page. Not a refusal, so nothing is logged under a code.
+    fn front_page(&self) -> Response<Body> {
+        proxy_page::html_response(
+            200,
+            proxy_page::front_document(&self.pep.version.version),
+        )
+    }
+
     /// THE ERROR PAGE A PERSON SEES (`proxy_page.rs`): the wording of the
     /// refusal's kind, what they can do, and the Diagnostics box — the
     /// time, the incident ID, and only what an API client of the same
@@ -735,7 +751,8 @@ impl Proxy {
         // realm and routes — is 503 with Retry-After, the poll interval,
         // so a browser and a client try again rather than conclude the page
         // does not exist. A configuration RECEIVED and empty or switched
-        // off is the deny-by-default 404 below.
+        // off is the deny-by-default 404 below, except a browser's `/`,
+        // which is the start page.
         if !received {
             let mut refusal = Refusal::new(
                 503,
@@ -748,7 +765,18 @@ impl Proxy {
             self.pep.sync.note_waiting();
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
+        // The logo is the proxy's own path, like the account pages. It is
+        // answered once a configuration has been received; before that the
+        // 503 above covers it with every other path.
+        if (method == "GET" || method == "HEAD")
+            && path == proxy_page::LOGO_PATH
+        {
+            return (proxy_page::logo_response(), false);
+        }
         let Some(config) = pulled.active() else {
+            if front_door(&method, &path, asked.html) {
+                return (self.front_page(), false);
+            }
             let refusal = Refusal::new(
                 404,
                 "STS-XPEP-0065",
@@ -781,6 +809,9 @@ impl Proxy {
             return (answer, false);
         }
         let Some(route) = config.route_for(&path) else {
+            if front_door(&method, &path, asked.html) {
+                return (self.front_page(), false);
+            }
             let refusal = Refusal::new(
                 404,
                 "STS-XPEP-0065",
@@ -1450,8 +1481,12 @@ impl Proxy {
             return Established::Refused(Refusal::new(401, code, why));
         }
         let client_id = route.resolved.client_id.clone();
-        let party =
-            match self.rps.party(&client_id, pulled, route.signals).await {
+        let member = self.pep.sync.registered_name();
+        let party = match self
+            .rps
+            .party(&client_id, pulled, route.signals, member.as_deref())
+            .await
+        {
                 Ok(party) => party,
                 Err(why) => {
                     return Established::Refused(Refusal::new(
@@ -1741,11 +1776,13 @@ impl Proxy {
 
     /// THE ACCOUNT CHOOSER AND ITS ACTS (#1760), the multipleAccounts
     /// routes' pages, under `/.iya-pep/accounts`. GET draws the browser's
-    /// accounts (HTML, or JSON with `?format=json`); `add` starts a sign-in
+    /// accounts (HTML, or JSON with `?format=json`); the active account's
+    /// *Continue with this user* goes to `return`. `add` starts a sign-in
     /// of another account with `prompt=login` (or of a held account again,
     /// with its `login_hint` and the subject the ID Token must name); the
     /// three POSTs switch, sign one out, or sign all out — HERE: the
-    /// service's sign-on sessions are the person's to end there.
+    /// service's sign-on sessions are the person's to end there. `return`
+    /// is followed only when its path matches a configured route.
     #[allow(clippy::too_many_arguments)]
     async fn accounts(
         &self,
@@ -1765,7 +1802,10 @@ impl Proxy {
             .into_iter()
             .chain(query_pairs(Some(form)))
             .collect();
-        let back = return_path(given.get("return").map(String::as_str));
+        let back = return_path(
+            config,
+            given.get("return").map(String::as_str),
+        );
         let refuse = |status: u16, code: &'static str, why: &str| {
             self.refuse(&Refusal::new(status, code, why), asked, pulled)
         };
@@ -1804,8 +1844,12 @@ impl Proxy {
                         "max": self.pep.options.now().proxy_max_accounts
                     }));
                 }
-                own_page(200, "Accounts", &self.chooser_html(&set, &back,
-                                                              &application_of))
+                own_page(
+                    200,
+                    "Accounts",
+                    &self.chooser_html(&set, &back, &application_of),
+                    &self.pep.version.version,
+                )
             }
             ("GET", ACCOUNTS_ADD_PATH) => {
                 let Some(route) = config
@@ -1894,8 +1938,13 @@ impl Proxy {
     }
 
     /// The chooser: each account by its name and application, the active
-    /// one marked, a Switch and a Sign out per account, Add another, and
-    /// Sign out of all. Plain forms: no script.
+    /// one marked. The active account offers *Continue with this user*, a
+    /// GET form to `back` (it changes nothing). Every other account offers
+    /// *Switch to this account*. Each offers *Sign out*, then *Add another*
+    /// and *Sign out of all*. `back` already matches a configured route,
+    /// or is `/`. Plain forms: no script. The classes are the error page's
+    /// (`portal`) and this page's own (`accounts`, `hint`); the document
+    /// shell supplies the style sheet.
     fn chooser_html(
         &self,
         set: &rp_session::AccountSet,
@@ -1908,35 +1957,73 @@ impl Proxy {
             .iter()
             .map(|a| {
                 let active = set.active.get(&a.client_id) == Some(&a.account);
-                let name = if a.username.is_empty() { &a.sub } else {
-                    &a.username };
+                let name = if a.username.is_empty() {
+                    &a.sub
+                } else {
+                    &a.username
+                };
                 let shown = if a.name.is_empty() || a.name == *name {
                     html_escape(name)
                 } else {
-                    format!("{} — {}", html_escape(name),
-                            html_escape(&a.name))
+                    format!(
+                        "{} — {}",
+                        html_escape(name),
+                        html_escape(&a.name)
+                    )
+                };
+                let act = if active {
+                    let (path, query) = match back.split_once('?') {
+                        Some((p, q)) => (p, q),
+                        None => (back, ""),
+                    };
+                    let fields: String = query_pairs(
+                        (!query.is_empty()).then_some(query),
+                    )
+                    .into_iter()
+                    .map(|(k, v)| {
+                        format!(
+                            "<input type=\"hidden\" name=\"{}\" \
+                             value=\"{}\">",
+                            html_escape(&k),
+                            html_escape(&v)
+                        )
+                    })
+                    .collect();
+                    format!(
+                        "<form method=\"get\" action=\"{}\">{}<button \
+                         class=\"portal\" type=\"submit\">Continue with \
+                         this user</button></form>",
+                        html_escape(path),
+                        fields
+                    )
+                } else {
+                    format!(
+                        "<form method=\"post\" action=\"{}\"><input \
+                         type=\"hidden\" name=\"account\" value=\"{}\">\
+                         <input type=\"hidden\" name=\"return\" \
+                         value=\"{}\"><button class=\"portal\" \
+                         type=\"submit\">Switch to this account</button>\
+                         </form>",
+                        ACCOUNTS_SWITCH_PATH,
+                        html_escape(&a.account),
+                        back_html
+                    )
                 };
                 format!(
-                    "<li><strong>{}</strong> ({}){}{} <form method=\"post\" \
-                     action=\"{}\"><input \
-                     type=\"hidden\" name=\"account\" value=\"{}\"><input \
-                     type=\"hidden\" name=\"return\" value=\"{}\"><button \
-                     type=\"submit\">Sign out</button></form></li>",
+                    "<li><strong>{}</strong> <span class=\"app\">({})\
+                     </span>{}<div class=\"next\">{}<form method=\"post\" \
+                     action=\"{}\"><input type=\"hidden\" name=\"account\" \
+                     value=\"{}\"><input type=\"hidden\" name=\"return\" \
+                     value=\"{}\"><button class=\"portal\" \
+                     type=\"submit\">Sign out</button></form></div></li>",
                     shown,
                     html_escape(&application_of(&a.client_id)),
-                    if active { " — active" } else { "" },
-                    if active { String::new() } else {
-                        format!(
-                            " <form method=\"post\" action=\"{}\"><input \
-                             type=\"hidden\" name=\"account\" value=\"{}\">\
-                             <input type=\"hidden\" name=\"return\" \
-                             value=\"{}\"><button type=\"submit\">Switch to \
-                             this account</button></form>",
-                            ACCOUNTS_SWITCH_PATH,
-                            html_escape(&a.account),
-                            back_html
-                        )
+                    if active {
+                        " <span class=\"mark\">— active</span>"
+                    } else {
+                        ""
                     },
+                    act,
                     ACCOUNTS_LOGOUT_PATH,
                     html_escape(&a.account),
                     back_html
@@ -1944,26 +2031,30 @@ impl Proxy {
             })
             .collect();
         let max = self.pep.options.now().proxy_max_accounts;
+        let list = if rows.is_empty() {
+            "<p class=\"hint\">No account is signed in here.</p>".to_string()
+        } else {
+            format!("<ul class=\"accounts\">{}</ul>", rows)
+        };
+        let all = if set.accounts.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<form method=\"post\" action=\"{}\"><input \
+                 type=\"hidden\" name=\"return\" value=\"{}\"><button \
+                 class=\"portal\" type=\"submit\">Sign out of all accounts\
+                 </button></form>",
+                ACCOUNTS_LOGOUT_ALL_PATH, back_html
+            )
+        };
+        // The bound sits on its own line. Beside a portal button it read
+        // as a label between the two actions.
         format!(
-            "<h1>Accounts in this browser</h1>{}<p><a href=\"{}?return={}\">\
-             Add another account</a> (at most {})</p>{}",
-            if rows.is_empty() {
-                "<p>No account is signed in here.</p>".to_string()
-            } else {
-                format!("<ul>{}</ul>", rows)
-            },
-            ACCOUNTS_ADD_PATH,
-            html_escape(&encode(back)),
-            max,
-            if set.accounts.is_empty() { String::new() } else {
-                format!(
-                    "<form method=\"post\" action=\"{}\"><input \
-                     type=\"hidden\" name=\"return\" value=\"{}\"><button \
-                     type=\"submit\">Sign out of all accounts</button>\
-                     </form>",
-                    ACCOUNTS_LOGOUT_ALL_PATH, back_html
-                )
-            }
+            "<h1>Accounts in this browser</h1>{}<p class=\"hint\">At most \
+             {} accounts can be signed in here.</p><div class=\"next\">\
+             <a class=\"portal\" href=\"{}?return={}\">Add another account\
+             </a>{}</div>",
+            list, max, ACCOUNTS_ADD_PATH, html_escape(&encode(back)), all
         )
     }
 
@@ -2028,7 +2119,8 @@ impl Proxy {
             );
         }
         let pulled = self.pep.sync.proxy();
-        self.rps.reconcile(&pulled).await;
+        let member = self.pep.sync.registered_name();
+        self.rps.reconcile(&pulled, member.as_deref()).await;
         self.pep.sync.set_relying_parties(self.rps.counts());
     }
 
@@ -2036,16 +2128,17 @@ impl Proxy {
         &self,
         timeout_ms: u64,
     ) -> Result<reqwest::Client, Refusal> {
-        let mut slot = match self.upstream.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
         let o = &self.pep.options;
         let insecure = o.now().proxy_upstream_insecure;
-        if let Some((held, client)) = slot.as_ref() {
-            if *held == (timeout_ms, insecure) {
-                return Ok(client.clone());
-            }
+        let key = (timeout_ms, insecure);
+        let cached = UPSTREAM_CLIENT.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .filter(|(held, _)| *held == key)
+                .map(|(_, client)| client.clone())
+        });
+        if let Some(client) = cached {
+            return Ok(client);
         }
         let mut builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -2078,7 +2171,9 @@ impl Proxy {
                 &format!("the upstream client would not build: {}", error),
             )
         })?;
-        *slot = Some(((timeout_ms, insecure), client.clone()));
+        UPSTREAM_CLIENT.with(|slot| {
+            *slot.borrow_mut() = Some((key, client.clone()));
+        });
         Ok(client)
     }
 
@@ -2502,12 +2597,13 @@ pub(crate) fn tower_service(
     proxy: Arc<Proxy>,
     transport: Transport,
 ) -> TowerToHyperService<axum::routing::Router> {
-    let router =
-        axum::Router::new().fallback(move |mut request: Request<Body>| {
+    let router = axum::Router::new()
+        .fallback(move |mut request: Request<Body>| {
             let proxy = proxy.clone();
             request.extensions_mut().insert(transport.clone());
             async move { proxy.handle(request).await }
-        });
+        })
+        .layer(axum::middleware::from_fn(crate::listener_pool::observe));
     TowerToHyperService::new(router)
 }
 
@@ -2515,39 +2611,43 @@ pub(crate) fn tower_service(
 /// records whether the bind succeeded, #1760; the tests bind port 0). A
 /// port that will not bind is logged there and the PEP goes on: the proxy
 /// is a feature of this container, not its purpose.
-pub async fn serve_on(proxy: Arc<Proxy>, listener: TcpListener) {
+pub async fn serve_on(
+    proxy: Arc<Proxy>,
+    listener: TcpListener,
+    runtime: ListenerRuntime,
+) {
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     tracing::info!(
         "xacml-pep: the reverse proxy listens on {} (plain HTTP).",
         port
     );
+    runtime.start();
     loop {
         let Ok((stream, remote)) = listener.accept().await else {
             continue;
         };
         let proxy = proxy.clone();
-        tokio::spawn(async move {
+        let job = runtime.clone();
+        runtime.hand_off(stream, move |stream| async move {
             let transport = Transport {
                 https: false,
                 peer: None,
                 remote: Some(remote),
                 crl_only: false,
             };
-            let served = Builder::new(TokioExecutor::new())
-                .serve_connection(
-                    TokioIo::new(stream),
-                    tower_service(proxy, transport),
-                )
+            let cfg = job.http();
+            drive(stream, tower_service(proxy, transport), cfg, false, job)
                 .await;
-            if let Err(error) = served {
-                tracing::debug!("proxy connection ended: {}", error);
-            }
         });
     }
 }
 
 /// The HTTPS listener: started the first time a usable pair appears.
-pub async fn serve_https(proxy: Arc<Proxy>, https: Arc<HttpsListener>) {
+pub async fn serve_https(
+    proxy: Arc<Proxy>,
+    https: Arc<HttpsListener>,
+    runtime: ListenerRuntime,
+) {
     let listener = match TcpListener::bind(("0.0.0.0", https.port())).await {
         Ok(listener) => listener,
         Err(error) => {
@@ -2557,6 +2657,7 @@ pub async fn serve_https(proxy: Arc<Proxy>, https: Arc<HttpsListener>) {
     };
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     https.mark_listening(port);
+    runtime.start();
     loop {
         let Ok((stream, remote)) = listener.accept().await else {
             continue;
@@ -2565,32 +2666,30 @@ pub async fn serve_https(proxy: Arc<Proxy>, https: Arc<HttpsListener>) {
             continue;
         };
         let proxy = proxy.clone();
-        tokio::spawn(async move {
-            let Ok(ssl) = openssl::ssl::Ssl::new(acceptor.context()) else {
+        let job = runtime.clone();
+        runtime.hand_off(stream, move |stream| async move {
+            let Some(tls) = HttpsListener::accept_tls(
+                stream,
+                &acceptor,
+                &job,
+            )
+            .await
+            else {
                 return;
             };
-            let Ok(mut tls) = tokio_openssl::SslStream::new(ssl, stream) else {
-                return;
-            };
-            if let Err(error) = Pin::new(&mut tls).accept().await {
-                tracing::debug!("proxy TLS handshake failed: {}", error);
-                return;
-            }
+            let alpn_h2 = tls.ssl().selected_alpn_protocol() == Some(b"h2");
+            let cfg = job.http();
+            // HttpCfg is moved into drive, so the ALPN decision is taken
+            // before that move.
+            let offer_h2 = cfg.http2 && alpn_h2;
             let transport = Transport {
                 https: true,
                 peer: peer_of(tls.ssl()),
                 remote: Some(remote),
                 crl_only: false,
             };
-            let served = Builder::new(TokioExecutor::new())
-                .serve_connection(
-                    TokioIo::new(tls),
-                    tower_service(proxy, transport),
-                )
+            drive(tls, tower_service(proxy, transport), cfg, offer_h2, job)
                 .await;
-            if let Err(error) = served {
-                tracing::debug!("proxy connection ended: {}", error);
-            }
         });
     }
 }

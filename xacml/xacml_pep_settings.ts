@@ -594,17 +594,43 @@ class PepSettings {
       sent.note = note;
     }
     // THE LISTENERS DEFINED FOR THIS PEP (#1760), beside the settings and
-    // under the same token, so a definition added, edited, renewed or
-    // removed reaches the PEP on its next poll. Sent only when there are
-    // some, so a PEP with none pulls the body it always did; one stored
-    // that does not validate sends none, and the PEP binds only its
-    // environment's.
-    if (row && row.listeners) {
+    // under the same token. Each definition carries a complete `tuning`:
+    // what was stored, or the defaults where the listener was saved before
+    // the knobs existed, so a pool applies on a PEP that was never given
+    // one. The environment's four travel as `environmentTuning`, always,
+    // the same way — they are not definitions, and an older PEP ignores
+    // both the extra key and the extra member. A document that does not
+    // validate sends neither, and the PEP binds only its environment's.
+    const tuningOf = function (list: Array<{ purpose: string;
+                                            protocol: string;
+                                            tuning?: unknown }>,
+                               environment: Record<string, unknown>): void {
+      log.debug("Entering tuningOf().");
+      if (list.length) {
+        sent.listeners = list.map(function (one) {
+          return Object.assign({}, one, {
+            tuning: pepListeners.effectiveTuning(one.tuning, one.purpose,
+                                                one.protocol === 'https')
+          });
+        });
+      }
+      const env: Record<string, unknown> = {};
+      pepListeners.BOOTSTRAP.forEach(function (one) {
+        env[one.id] = pepListeners.effectiveTuning(environment[one.id],
+                                                  one.purpose,
+                                                  one.protocol === 'https');
+      });
+      sent.environmentTuning = env;
+      log.debug("Leaving tuningOf().");
+    };
+    if (!row || !row.listeners) {
+      tuningOf([], {});
+    } else {
       const read = pepListeners.stored(row.listeners,
                                        row.listenersInUse || null);
-      if (read.listeners && read.listeners.length) {
-        sent.listeners = read.listeners;
-      } else if (!read.listeners) {
+      if (read.listeners) {
+        tuningOf(read.listeners, read.environment);
+      } else {
         log.warn(errorCodes.tag('STS-XACML-0252') + 'xacml: the listeners ' +
                  'stored for remote PEP "' + row.name + '" do not validate (' +
                  read.problem + '); none is pulled.');

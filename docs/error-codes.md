@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5639** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5649** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -79,19 +79,19 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 62
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 166
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 35
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 202
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 118
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 207
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 119
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 287
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 291
 * [Management API (`STS-API`)](#sts-api) — 96
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -989,7 +989,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0165` | A TLS listener certificate was asked for without naming what it is for (no slot). | the caller's refusal: console page or /admin-api HTTP 400 { ok: false, errors } |
 | `STS-PKI-0166` | A TLS listener certificate was refused its subjectAltName: a name that is not a DNS name or IP address, or no name at all. | the caller's refusal: console page or /admin-api HTTP 400 { ok: false, errors } |
 | `STS-PKI-0167` | A TLS listener certificate was asked for with a key algorithm a TLS stack does not serve (only RSA and NIST-curve ECDSA are issued). | the caller's refusal: console page or /admin-api HTTP 400 { ok: false, errors } |
-| `STS-PKI-0168` | A TLS client certificate was asked for with no holder named. | the caller's refusal: /portal/signing-key HTTP 400 page |
+| `STS-PKI-0168` | A TLS client certificate was asked for with no holder named, or with a subject whose first RDN is not that holder's CN, or with a subject attribute this service does not encode. | the caller's refusal: /portal/signing-key HTTP 400 page, or a console or /admin-api reply |
 | `STS-PKI-0169` | A TLS client certificate was asked for with a key algorithm a browser does not present (RSA 2048/3072, ECDSA P-256/P-384 only), or with a name that is not a short label. | the caller's refusal: /portal/signing-key HTTP 400 page |
 | `STS-PKI-0170` | A person already holds pki.personTlsClientCertificateMax valid TLS client certificates, so another was not issued. | the caller's refusal: /portal/signing-key HTTP 400 page |
 | `STS-PKI-0171` | A TLS client certificate revocation named a serial the signed-in person holds no certificate under. | the caller's refusal: /portal/signing-key HTTP 400 page |
@@ -4309,6 +4309,7 @@ Raised from: ssf/.
 | `STS-SSF-0160` | A Shared Signals refusal carried an err value models/ssf/ssf.tsp does not declare (#1579). The refusal is sent as it was built; the value is to be declared, or the refusal to use a declared one. | none (recorded only; the refusal is unchanged) |
 | `STS-SSF-0161` | A Security Event Token this service built carried a claim models/ssf/ssf.tsp does not name, one of a type it does not allow, or lacked one RFC 8417 requires (#1579). The SET is sent as it was built; this is a model gap to close. | none (recorded only; the SET is unchanged) |
 | `STS-SSF-0162` | A document this realm exchanged with a federation partner's Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives it (#1579): a configuration or a SET the partner sent, or a stream request or poll this realm sent. Recorded; what was received is still judged by the receiver's own checks, and what is sent is sent unchanged. | none (recorded only) |
+| `STS-SSF-0163` | X-Iya-Pep-Name was sent and is not a PEP name: one token of 1 to 128 letters, digits, ".", "_" or "-". A cluster member sends its registered name so its CAEP/RISC stream is its own; a header that is not one is refused rather than read as no header (#1760 phase 3). | HTTP 400 |
 
 ## STS-RISK
 
@@ -5125,12 +5126,17 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0272` | A PEP holding a reverse proxy, managed settings or listeners of its own was added to a remote PEP cluster without `discard: true` confirming that joining replaces them with the cluster's (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0273` | A remote PEP cluster that still has members was deleted without `release` (keep or empty) saying what its members are left with (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0274` | A remote PEP cluster's simple or public route names no resource and the cluster has no publicBaseUrl, its logical base URL, to build the default from: every member decides with the cluster's one policy, so no member's address may stand for it (#1760). | HTTP 400 on /admin-api |
-| `STS-XACML-0275` | A remote PEP cluster would have more than one member while one of its session routes ends sessions by CAEP/RISC signals: the members would share one signal stream, so a sign-out could be consumed by a member that does not hold the session. A stream per member is phase 3 (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0275` *(retired)* | A remote PEP cluster would have more than one member while one of its session routes ends sessions by CAEP/RISC signals: the members would share one signal stream, so a sign-out could be consumed by a member that does not hold the session. A stream per member is phase 3 (#1760). Retired by #1760 phase 3: each member polls a stream of its own, named by X-Iya-Pep-Name, so a cluster no longer refuses the second member. | — |
 | `STS-XACML-0276` | An action that edits a PEP's own reverse proxy, settings or listeners was asked of a member of a remote PEP cluster, whose configuration is the cluster's; the refusal names the cluster (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0277` | A remote PEP cluster member is not of the member's shape: a PEP name that is not one, an address that is not text of at most 2048 characters with no space, or a listener override that is not { address, port, names } under a listener id (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0278` | A remote PEP cluster's managed settings carried a notify URL, which is a member's address and is set on the member (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0279` | The directory refused a write or a removal of a remote PEP cluster's entry under ou=pepClusters (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0280` | The members stored on a remote PEP cluster's entry do not validate (an ldapmodify, say); the cluster is read with none, so no PEP pulls its configuration until an administrator corrects it (#1760). | none — a warning in the log |
+| `STS-XACML-0281` | A remote PEP listener's tuning — the TLS policy, the TLS session cache, HTTP pooling, HTTP/2, the client-certificate questions or the thread pool — does not fit: a value outside its range, a cipher suite this service does not name, a post-quantum-only choice with nothing post-quantum left, or a thread-pool maximum below its minimum (#1760). | HTTP 400 on /admin-api |
+| `STS-XACML-0282` | A remote PEP's Sync was refused before anything was sent: remote PEPs (xacml.remotePeps) or nudging (xacml.pepNotify) is off in this realm. The PEP converges on its own poll. | HTTP 400 on /admin-api |
+| `STS-XACML-0283` | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep): an administrator said this service does not dial it. | HTTP 400 on /admin-api |
+| `STS-XACML-0284` | A remote PEP's Sync was refused because the PEP has no notify URL, or its notify URL cannot be dialled (not https, or outside xacml.pepNotifyAllowedHosts). | HTTP 400 on /admin-api |
+| `STS-XACML-0285` | A remote PEP's Sync dialled the PEP and the nudge was not delivered: the connection failed, the certificate did not verify, or the PEP refused it. The result is recorded on the PEP's row. | HTTP 400 on /admin-api |
 
 ## STS-XPEP
 
@@ -5258,6 +5264,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0116` | A request on a remote PEP proxy route whose methods list is empty (deny-all) was refused after the route's policy was asked, whatever it decided; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0118` | The remote PEP's reverse proxy has received no configuration since it started — its first pull has not succeeded yet — so every path, its own /.iya-pep/* included, is answered "try again later" rather than "not found". Logged when first met, then as a count at most once a minute, and once more when the first configuration arrives; a configuration received empty or switched off is STS-XPEP-0065 (#1760). | HTTP 503, temporarily_unavailable, with Retry-After (the poll interval in seconds, at least 1) |
+| `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS other than 300 is left at 300 seconds and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log |
 
 ## STS-AUTHZEN
 
@@ -5782,6 +5789,10 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0936` | The policy transfer view (GET /admin-api/policies/transfer: the export algorithm, the realm's Policy Export Signing CA and the signers it trusts) could not be built, #1713. | /admin-api HTTP 500 with {ok:false, errors} |
 | `STS-ADMIN-0937` | A policy export's selection was refused: it was not a list of 1 to 256 policies each named by kind and name, or it named a policy this realm does not store (an inherited one included); nothing was exported. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors, missing} |
 | `STS-ADMIN-0938` | A policy import's selection was refused: it was not a list of 1 to 256 policies each named by kind and name, or it named a profile the export does not carry; nothing was trusted or written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors, missing} |
+| `STS-ADMIN-0939` | A TLS client certificate was asked for a person this realm has no entry for, or with no person named. Issuing one creates nobody. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0940` | The password for a person's TLS client certificate files was refused: shorter than 8 characters, longer than 256, or the confirmation did not match. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0941` | A person's TLS client certificate was not issued. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0942` | A person's TLS client certificate was not revoked. The certificate module's own code names the specific refusal when it has one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 

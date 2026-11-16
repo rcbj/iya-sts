@@ -1161,6 +1161,25 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.pepsBody(ctx || WebKit.context(), view);
     } },
+  // MONITORING → REMOTE PEPS. The same answer as the Protocols page, read
+  // for traffic: listener stats, thread pools, per-path requests and
+  // memory. `pep` drills to one PEP. Not a Protocols page, so it has no
+  // protocol-endpoints row.
+  { path: '/admin/xacml/pep/monitor', title: 'Remote PEPs',
+    operation: '/admin-api/xacml/peps',
+    drill: {
+      param: 'pep',
+      sample: function (list: Json): string | null {
+        const rows = list.peps || [];
+        return rows[0] ? rows[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return XacmlPage.pepMonitorDetail(ctx || WebKit.context(), view);
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return XacmlPage.pepMonitorIndex(ctx || WebKit.context(), view);
+    } },
   // ONE ROUTE OF A REMOTE PEP'S REVERSE PROXY (#1760), reached from a route
   // id on the PEP's Reverse proxy tab: the same operation asked with `pep`
   // and `route`. Without `route` it lists every PEP's routes as links.

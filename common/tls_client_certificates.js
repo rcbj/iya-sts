@@ -94,6 +94,7 @@ const realms = require('./realms');
 const errorCodes = require('./error_codes');
 const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
+const x509 = require('./crypto_impl/x509');
 const keyMaterial = require('./crypto_impl/key_material');
 // CAEP credential-change when this file changes a person's credential
 // (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
@@ -441,6 +442,269 @@ function labelProblem(label) {
 }
 
 // ---------------------------------------------------------------------------
+// A PERSON'S SUBJECT, MODELED ON THEIR DIRECTORY ENTRY.
+//
+// The portal's certificate is CN, then the organisation, then the country.
+// An administrator issuing one for a person — the remote PEP's mutual-TLS
+// client, above all — asks for the entry's own name instead. The array is
+// the certificate's RDN sequence, bookended so neither direction of
+// `helpers.dnRfc4514()` ends on this realm's directory base:
+// `certificatePlan()` would create a second object for a person already
+// here if the subject sat under that base. CN and UID come first, the
+// organisation and country last. The entry's leaf RDN is the username and
+// is skipped, and so are CN and UID wherever else they occur. An attribute
+// type this service cannot encode is skipped: the SAN still names the person.
+// ---------------------------------------------------------------------------
+/**
+ * The directory attribute types this service can put in a certificate
+ * subject, keyed by the lower-case LDAP name.
+ *
+ * @returns the map
+ */
+function directoryDnNames() {
+  log.debug('Entering directoryDnNames().');
+  const out = {};
+  Object.keys(x509.DN_ATTRS).forEach(function (name) {
+    out[name.toLowerCase()] = name;
+  });
+  // LDAP's long names, where they are not the short name above.
+  out.givenname = 'GN';
+  out.surname = 'SN';
+  out.domaincomponent = 'DC';
+  out.commonname = 'CN';
+  out.organization = 'O';
+  out.organisationalunit = 'OU';
+  out.organizationalunit = 'OU';
+  out.countryname = 'C';
+  out.localityname = 'L';
+  out.userid = 'UID';
+  log.debug('Leaving directoryDnNames().');
+  return out;
+}
+
+const DIRECTORY_DN_NAMES = directoryDnNames();
+
+/**
+ * Reverses an RFC 4514 escape: a special character, or a run of `\XX` bytes
+ * read as UTF-8.
+ *
+ * @param value - the escaped attribute value
+ * @returns the value
+ */
+function unescapeRdnValue(value) {
+  log.debug('Entering unescapeRdnValue().');
+  const text = String(value == null ? '' : value);
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text.charAt(i) !== '\\' || i + 1 >= text.length) {
+      out += text.charAt(i);
+      continue;
+    }
+    const hex = text.slice(i + 1, i + 3);
+    if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+      const bytes = [];
+      while (i < text.length && text.charAt(i) === '\\' &&
+             /^[0-9A-Fa-f]{2}$/.test(text.slice(i + 1, i + 3))) {
+        bytes.push(parseInt(text.slice(i + 1, i + 3), 16));
+        i += 3;
+      }
+      i -= 1;
+      out += Buffer.from(bytes).toString('utf8');
+      continue;
+    }
+    out += text.charAt(i + 1);
+    i += 1;
+  }
+  log.debug('Leaving unescapeRdnValue().');
+  return out;
+}
+
+/**
+ * Splits an RFC 4514 DN into RDNs on unescaped commas.
+ *
+ * @param dn - the DN
+ * @returns the RDNs, leaf first
+ */
+function splitDnRdns(dn) {
+  log.debug('Entering splitDnRdns().');
+  const parts = [];
+  let current = '';
+  let escaped = false;
+  const text = String(dn || '').trim();
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charAt(i);
+    if (escaped) {
+      current += '\\' + ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === ',') {
+      if (current.trim() !== '') {
+        parts.push(current.trim());
+      }
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (escaped) {
+    current += '\\';
+  }
+  if (current.trim() !== '') {
+    parts.push(current.trim());
+  }
+  log.debug('Leaving splitDnRdns(). ' + parts.length + ' RDN(s).');
+  return parts;
+}
+
+/**
+ * The one attribute of an RDN, or null when the RDN is multi-valued or has
+ * no equals sign.
+ *
+ * @param rdn - one RDN
+ * @returns `{ type, value }`, still escaped, or null
+ */
+function rdnAva(rdn) {
+  log.debug('Entering rdnAva().');
+  let escaped = false;
+  for (let i = 0; i < rdn.length; i++) {
+    const ch = rdn.charAt(i);
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (ch === '+') {
+      log.debug('Leaving rdnAva(). Multi-valued.');
+      return null;
+    }
+    if (ch === '=') {
+      log.debug('Leaving rdnAva().');
+      return { type: rdn.slice(0, i).trim(),
+               value: rdn.slice(i + 1).trim() };
+    }
+  }
+  log.debug('Leaving rdnAva(). No equals.');
+  return null;
+}
+
+/**
+ * The RDN sequence of a person's TLS client certificate, modeled on the
+ * directory entry: CN and UID, then the entry's RDNs after its leaf, then
+ * the organisation and country.
+ *
+ * @param username - the person's username, which is the CN and the UID
+ * @param entryDn - the entry's DN, leaf first
+ * @param organisation - the leaf's organisation; empty adds none
+ * @param country - the leaf's country; empty adds none
+ * @returns the `{ name, value }` sequence `certify()` takes as `subject`
+ */
+function personDirectorySubject(username, entryDn, organisation, country) {
+  log.debug('Entering personDirectorySubject().');
+  const subject = [
+    { name: 'CN', value: String(username) },
+    { name: 'UID', value: String(username) }
+  ];
+  const rdns = splitDnRdns(entryDn);
+  for (let i = 1; i < rdns.length; i++) {
+    const ava = rdnAva(rdns[i]);
+    if (!ava) {
+      continue;
+    }
+    const name = DIRECTORY_DN_NAMES[String(ava.type).toLowerCase()];
+    if (!name || name === 'CN' || name === 'UID') {
+      continue;
+    }
+    const value = unescapeRdnValue(ava.value);
+    if (value === '' || value.indexOf('\n') >= 0 ||
+        value.indexOf('\r') >= 0) {
+      continue;
+    }
+    subject.push({ name: name, value: value });
+  }
+  const org = String(organisation || '');
+  const land = String(country || '');
+  if (org !== '' && org.indexOf('\n') < 0 && org.indexOf('\r') < 0) {
+    subject.push({ name: 'O', value: org });
+  }
+  if (land !== '' && land.indexOf('\n') < 0 && land.indexOf('\r') < 0) {
+    subject.push({ name: 'C', value: land });
+  }
+  log.debug('Leaving personDirectorySubject(). ' + subject.length +
+            ' RDN(s).');
+  return subject;
+}
+
+/**
+ * The subject a person's TLS client certificate would be issued with, once
+ * this realm has a hierarchy to take the organisation and country from.
+ * Null when it has none: there is nothing to name the certificate after.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param username - the person's username
+ * @param entryDn - the entry's DN
+ * @returns the RDN sequence, or null
+ */
+function plannedPersonSubject(realmId, username, entryDn) {
+  log.debug('Entering plannedPersonSubject().');
+  const scope = scopeOf(realmId);
+  if (!pki.hasChain(scope)) {
+    log.debug('Leaving plannedPersonSubject(). No chain.');
+    return null;
+  }
+  const facts = pki.leafNameFacts(scope);
+  const subject = personDirectorySubject(username, entryDn,
+    facts.organisation, facts.country);
+  log.debug('Leaving plannedPersonSubject().');
+  return subject;
+}
+
+/**
+ * Says why a subject cannot go on this holder's certificate, or ''.
+ *
+ * The first RDN is the holder's own CN — `identityOf()` requires it to
+ * equal the `urn:sts:person:` name — and every attribute is one
+ * `buildDn()` can encode, with a value and no newline.
+ * @param username - the holder
+ * @param subject - the RDN sequence
+ * @returns the sentence, or ''
+ */
+function subjectProblemOf(username, subject) {
+  log.debug('Entering subjectProblemOf().');
+  if (!Array.isArray(subject) || subject.length === 0) {
+    log.debug('Leaving subjectProblemOf(). Empty.');
+    return 'A TLS client certificate\'s subject names the person.';
+  }
+  const first = subject[0] || {};
+  if (String(first.name) !== 'CN' ||
+      String(first.value) !== String(username)) {
+    log.debug('Leaving subjectProblemOf(). CN.');
+    return 'A TLS client certificate\'s subject starts with the person\'s ' +
+           'common name.';
+  }
+  for (let i = 0; i < subject.length; i++) {
+    const one = subject[i] || {};
+    const name = String(one.name || '');
+    const value = one.value == null ? '' : String(one.value);
+    if (!x509.DN_ATTRS[name] || value === '' || value.indexOf('\n') >= 0 ||
+        value.indexOf('\r') >= 0) {
+      log.debug('Leaving subjectProblemOf(). Attribute.');
+      return 'A TLS client certificate\'s subject uses only the attribute ' +
+             'types this service encodes, each with a value.';
+    }
+  }
+  log.debug('Leaving subjectProblemOf().');
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // ISSUE ONE.
 //
 // **THE CALLER HAS ALREADY DECIDED WHO.** `username` is the signed-in person's
@@ -468,7 +732,11 @@ function labelProblem(label) {
  * @param realmId - the realm; the ambient realm when absent
  * @param spec - `kind` ('person' or 'application'), `username` or
  *   `application`, `keyAlg`, `label`, `email` (a person's, for an
- *   rfc822Name), `days` and `purpose` ('tls-client' by default)
+ *   rfc822Name), `days`, `purpose` ('tls-client' by default),
+ *   `directorySubject` with `entryDn` (a person's TLS client certificate,
+ *   rebuilt here from the entry), or `subject` (an RDN sequence whose first
+ *   RDN is the holder's CN), and `initiatingEntity` and `via` for the
+ *   credential-change signal
  * @returns `{ ok: true, issued }` with the certificate, chain and key pair,
  *   or `{ ok: false, errors }` marked with its code
  */
@@ -560,6 +828,35 @@ async function issue(realmId, spec) {
                                      'STS-PKI-0009');
   }
 
+  // A DIRECTORY SUBJECT is rebuilt here, after the branch exists, from the
+  // entry's DN and the same organisation and country `certify()` would have
+  // written. A subject posted beside that flag is ignored: the entry is the
+  // source. A subject posted WITHOUT the flag is checked — the first RDN is
+  // the holder's CN, and every attribute is one this service encodes — and
+  // then used. The portal sets neither, and keeps CN, O and C.
+  let subject = null;
+  if (s.directorySubject) {
+    if (kind !== 'person' || purposeId !== 'tls-client') {
+      log.debug("Leaving issue(). A directory subject is a person's TLS " +
+                "client certificate.");
+      return errorCodes.mark({ ok: false,
+               errors: ['A directory subject is issued only on a person\'s ' +
+                        'TLS client certificate.'] }, 'STS-PKI-0168');
+    }
+    const facts = pki.leafNameFacts(scope);
+    subject = personDirectorySubject(username, s.entryDn,
+      facts.organisation, facts.country);
+  } else if (Array.isArray(s.subject) && s.subject.length) {
+    subject = s.subject;
+  }
+  if (subject) {
+    const said = subjectProblemOf(username, subject);
+    if (said) {
+      log.debug("Leaving issue(). Subject refused.");
+      return errorCodes.mark({ ok: false, errors: [said] }, 'STS-PKI-0168');
+    }
+  }
+
   // EXPIRED RECORDS OF THIS PERSON'S ARE FORGOTTEN BEFORE ONE IS ADDED — RFC
   // 5280 section 3.3 lets a list forget an expired certificate, and a register
   // that kept every certificate a person ever held would grow for as long as
@@ -591,7 +888,7 @@ async function issue(realmId, spec) {
     ? { extKeyUsage: { present: true, critical: false, usages: ['clientAuth'] },
         subjectAltName: { present: true, critical: false, names: names } }
     : { subjectAltName: { present: true, critical: false, names: names } };
-  const made = await pki.certify(scope, useCase, {
+  const certifySpec = {
     slot: slot,
     holderSubject: kind === 'person' && realms.get(scope)
       ? realms.run(realms.get(scope), function () {
@@ -611,7 +908,11 @@ async function issue(realmId, spec) {
     keyUsage: keyDesc.kind === 'rsa' && purposeId === 'tls-client'
       ? ['digitalSignature', 'keyEncipherment'] : ['digitalSignature'],
     extensions: extensions
-  });
+  };
+  if (subject) {
+    certifySpec.subject = subject;
+  }
+  const made = await pki.certify(scope, useCase, certifySpec);
   if (!made.ok) {
     log.debug("Leaving issue(). certify() refused.");
     return made;
@@ -626,12 +927,18 @@ async function issue(realmId, spec) {
   // since #221 P5 — is an application's (its RFC 8705 tls_client_auth
   // certificate), told under the application subject. A person issues their
   // own; an application's is issued by an administrator.
+  // The portal's own issue stays a user acting through the portal. An
+  // administrator's issue says so (`admin`, `/admin/users`); a caller that
+  // names neither keeps the default for the kind of holder.
+  const initiating = String(s.initiatingEntity ||
+    (kind === 'application' ? 'admin' : 'user'));
+  const via = String(s.via || (kind === 'application'
+    ? '/admin/applications' : 'portal'));
   accountSignals().certificateChanged(Object.assign(
-    kind === 'application' ? { application: username, initiatingEntity:
-                               'admin', via: '/admin/applications' }
-                           : { username: username, initiatingEntity: 'user',
-                               via: 'portal' },
-    { pem: made.record.certificatePem, changeType: 'create',
+    kind === 'application' ? { application: username }
+                           : { username: username },
+    { initiatingEntity: initiating, via: via,
+      pem: made.record.certificatePem, changeType: 'create',
       friendlyName: String(made.record.label || purpose.noun),
       reasonAdmin: 'A ' + purpose.noun + ' was issued to ' +
                    (kind === 'application' ? 'the application ' : '') +
@@ -1731,6 +2038,8 @@ module.exports = {
   listFor: listFor,
   activeFor: activeFor,
   labelProblem: labelProblem,
+  personDirectorySubject: personDirectorySubject,
+  plannedPersonSubject: plannedPersonSubject,
   issue: issue,
   pkcs12PasswordProblem: pkcs12PasswordProblem,
   bundle: bundle,

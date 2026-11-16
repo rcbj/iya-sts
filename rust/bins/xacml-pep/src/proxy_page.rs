@@ -38,10 +38,29 @@
 //! every other path is the application's. **In English**: the PEP holds no
 //! message catalogs (`docs/remote-pep.md`, *Several accounts*).
 //!
-//! **THE CSS IS A COPY of `common/error_page.ts`'s `CSS` and `FOOTER_CSS`
-//! and of the two footer rules of `common/web_footer.ts` it uses**, because
-//! this image is built from `rust/` alone and cannot read them. A change
-//! there is made here as well.
+//! **THE ACCOUNT CHOOSER USES THIS SHELL** (`document_shell()`), not a second
+//! document. It is not an error page — no warning box, no diagnostics, no
+//! incident ID — and on 2026-11-15 it was drawn with none of this sheet, so
+//! a person who followed *Use a different account* landed on an unstyled
+//! page flush to the left. The rules after the copied sheet
+//! (`ul.accounts`, `button.portal`, `p.hint`) are the chooser's and match
+//! nothing on the error page, so one hash still admits both documents.
+//!
+//! **THE CSS UP TO THE FOOTER IS A COPY of `common/error_page.ts`'s `CSS`
+//! and `FOOTER_CSS` and of the two footer rules of `common/web_footer.ts`
+//! it uses**, because this image is built from `rust/` alone and cannot
+//! read them. A change there is made here as well. The chooser's rules
+//! below that copy are this file's own. The start page's rules at the end
+//! (`.front`) are the front door's band and card (`home/home.ts`'s
+//! `HOME_CSS`, the sign-in card's border and shadow), scoped so they match
+//! nothing on the error page or the chooser.
+//!
+//! **THE START PAGE** is what *Go to the start page* opens: `GET /` when
+//! no route is mounted there (`front_document()`). The same shell, so the
+//! footer is the service's, and the product logo (`logo.png` here, a
+//! byte-for-byte copy of `docs/logo.png`, served at `LOGO_PATH`). It lists
+//! no route. `img-src 'self'` admits that one image; the style sheet stays
+//! a hash.
 
 use std::sync::OnceLock;
 
@@ -86,17 +105,56 @@ const CSS: &str = concat!(
     "color:#555;font-size:14px;line-height:1.4}",
     ".sts-footer-copyright{padding:12px 12px 0}",
     ".sts-footer-version{padding:2px 12px 0;font-size:11px;color:#999;",
-    "letter-spacing:.02em}"
+    "letter-spacing:.02em}",
+    // The account chooser's own rules. Nothing on the error page matches
+    // them; they live in this sheet so both documents share one hash.
+    "ul.accounts{list-style:none;margin:1rem 0;padding:0}",
+    "ul.accounts>li{margin:0 0 .9rem;padding:.75rem .9rem;",
+    "border:1px solid #ddd;border-radius:4px;background:#fafafa}",
+    "ul.accounts .app{color:#555}",
+    "ul.accounts .mark{margin-left:.4rem;color:#1b5e20;",
+    "font-size:.85rem;font-weight:600}",
+    "ul.accounts form,.next form{display:inline}",
+    "button.portal{display:inline-block;margin-top:.5rem;",
+    "margin-right:.5rem;padding:.35rem .8rem;",
+    "border:1px solid #1f4fa3;border-radius:4px;background:#fff;",
+    "color:#1f4fa3;font:inherit;line-height:1.5;cursor:pointer}",
+    "button.portal:hover{background:#eef3fc}",
+    "p.hint{color:#444;margin:.2rem 0 1rem}",
+    // The start page. Nothing else carries `.front`. The band is the
+    // logo's own ground (`#fbfaf8`); the card is the sign-in card's.
+    "body:has(.front){background:#f4f4f7}",
+    ".front{background:#fff;border:1px solid #d5d5dd;",
+    "border-radius:10px;max-width:44rem;margin:0 auto;",
+    "overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.08);",
+    "padding:0 0 26px}",
+    ".front .hero{background:#fbfaf8;padding:22px 24px;",
+    "text-align:center;border-bottom:1px solid #ecebe7}",
+    ".front .hero img{width:100%;max-width:453px;height:auto;",
+    "display:inline-block}",
+    ".front .body{padding:22px 28px 0}",
+    ".front h1{font-size:1.5em;margin:0 0 2px;color:#12107c;",
+    "letter-spacing:.01em}",
+    ".front p.sub{color:#666;font-size:.88em;margin:0 0 16px}"
 );
 
-/// The proxy's page policy with the one style sheet admitted by its hash.
+/// The product logo's path. The proxy's own, like the account chooser.
+pub const LOGO_PATH: &str = "/.iya-pep/logo.png";
+
+/// `docs/logo.png`, byte for byte (906 × 269). `home/assets/logo.png` is
+/// the service's copy; this one is embedded because the image is built
+/// from `rust/` alone. Copy `docs/logo.png` over it when that file changes.
+const LOGO_PNG: &[u8] = include_bytes!("logo.png");
+
+/// The proxy's page policy with the one style sheet admitted by its hash,
+/// and `img-src 'self'` for the start page's logo.
 fn policy() -> &'static str {
     static POLICY: OnceLock<String> = OnceLock::new();
     POLICY.get_or_init(|| {
         let digest = openssl::sha::sha256(CSS.as_bytes());
         format!(
-            "default-src 'none'; style-src 'sha256-{}'; form-action 'self'; \
-             frame-ancestors 'none'; base-uri 'none'",
+            "default-src 'none'; style-src 'sha256-{}'; img-src 'self'; \
+             form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
             openssl::base64::encode_block(&digest)
         )
     })
@@ -179,6 +237,109 @@ pub fn now_utc() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
+/// The copyright line's years: 2026, or 2026 through this year.
+fn copyright_years() -> String {
+    let year = chrono::Utc::now().format("%Y").to_string();
+    if year.as_str() > "2026" {
+        format!("2026–{}", year)
+    } else {
+        "2026".to_string()
+    }
+}
+
+/// The footer the service's error page ends with.
+fn footer(version: &str) -> String {
+    format!(
+        "<footer class=\"sts-footer\"><div \
+         class=\"sts-footer-copyright\">© {years} Iya CyberSecurity \
+         Solutions, LLC. All rights reserved.</div><div \
+         class=\"sts-footer-version\">Version {version}</div></footer>",
+        years = copyright_years(),
+        version = esc(version),
+    )
+}
+
+/// The proxy's own document: the one style sheet, then `inner` (already
+/// escaped by the caller), then the footer. The account chooser and the
+/// error page are both this.
+pub fn document_shell(title: &str, inner: &str, version: &str) -> String {
+    format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width, \
+         initial-scale=1\"><title>{title}</title><style>{css}</style>\
+         </head><body>{inner}{footer}</body></html>",
+        title = esc(title),
+        css = CSS,
+        inner = inner,
+        footer = footer(version),
+    )
+}
+
+/// A document from `document_shell` as a response: `text/html`, never
+/// cached, and the policy that admits the one style sheet and nothing else.
+pub fn html_response(status: u16, html: String) -> Response<Body> {
+    let mut response = Response::new(Body::from(html));
+    *response.status_mut() = StatusCode::from_u16(status)
+        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store"),
+    );
+    headers.insert(
+        HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static(policy()),
+    );
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("no-referrer"),
+    );
+    response
+}
+
+/// The product logo, as `GET /logo.png` serves it on the service: the
+/// bytes cannot change while this process runs, so an hour is enough.
+pub fn logo_response() -> Response<Body> {
+    let mut response = Response::new(Body::from(LOGO_PNG));
+    *response.status_mut() = StatusCode::OK;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("image/png"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=3600"),
+    );
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
+/// The start page: the front door's card inside this proxy's shell, so
+/// the footer is the service's. It lists no route.
+pub fn front_document(version: &str) -> String {
+    let inner = format!(
+        "<div class=\"front\"><div class=\"hero\"><img src=\"{src}\" \
+         width=\"906\" height=\"269\" alt=\"IYA STS — Security Token \
+         Service\"></div><div class=\"body\"><h1>IYA STS</h1><p \
+         class=\"sub\">A policy enforcement point in front of this \
+         realm&#39;s applications.</p></div></div>",
+        src = LOGO_PATH,
+    );
+    document_shell("IYA STS", &inner, version)
+}
+
 impl ErrorPage {
     /// The whole document.
     pub fn document(&self) -> String {
@@ -243,17 +404,8 @@ impl ErrorPage {
             href: "/".into(),
             label: "Go to the start page".into(),
         }];
-        let year = chrono::Utc::now().format("%Y").to_string();
-        let years = if year.as_str() > "2026" {
-            format!("2026–{}", year)
-        } else {
-            "2026".to_string()
-        };
-        format!(
-            "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-             <meta name=\"viewport\" content=\"width=device-width, \
-             initial-scale=1\"><title>{title}</title><style>{css}</style>\
-             </head><body><h1>{title}</h1><div class=\"warn\" \
+        let inner = format!(
+            "<h1>{title}</h1><div class=\"warn\" \
              role=\"alert\">{error}{message}</div>{after}{background}\
              <div class=\"next\"><p>Close this tab and start again from the \
              application you were using, or use your browser's Back button. \
@@ -262,52 +414,22 @@ impl ErrorPage {
              <section class=\"diagnostics\" \
              aria-labelledby=\"diagnostics-heading\"><h2 \
              id=\"diagnostics-heading\">Diagnostics</h2><dl>{rows}</dl>\
-             </section><footer class=\"sts-footer\"><div \
-             class=\"sts-footer-copyright\">© {years} Iya CyberSecurity \
-             Solutions, LLC. All rights reserved.</div><div \
-             class=\"sts-footer-version\">Version {version}</div></footer>\
-             </body></html>",
+             </section>",
             title = esc(&self.title),
-            css = CSS,
             error = error,
             message = esc(&self.message),
             after = after,
             background = background,
             start = links(&start),
             rows = rows,
-            years = years,
-            version = esc(&self.version),
-        )
+        );
+        document_shell(&self.title, &inner, &self.version)
     }
 
     /// The page as a response: its status, `text/html`, never cached, and
     /// the policy that admits its style sheet and nothing else.
     pub fn response(&self) -> Response<Body> {
-        let mut response = Response::new(Body::from(self.document()));
-        *response.status_mut() = StatusCode::from_u16(self.status)
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        let headers = response.headers_mut();
-        headers.insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("text/html; charset=utf-8"),
-        );
-        headers.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-store"),
-        );
-        headers.insert(
-            HeaderName::from_static("content-security-policy"),
-            HeaderValue::from_static(policy()),
-        );
-        headers.insert(
-            HeaderName::from_static("x-content-type-options"),
-            HeaderValue::from_static("nosniff"),
-        );
-        headers.insert(
-            HeaderName::from_static("referrer-policy"),
-            HeaderValue::from_static("no-referrer"),
-        );
-        response
+        html_response(self.status, self.document())
     }
 }
 
@@ -544,12 +666,59 @@ mod tests {
         assert!(csp.contains(&format!("style-src 'sha256-{}'", hash)));
         assert!(csp.starts_with("default-src 'none';"));
         assert!(csp.contains("frame-ancestors 'none'"));
+        assert!(csp.contains("img-src 'self'"));
         assert!(!csp.contains("script-src"));
         assert!(!csp.contains("unsafe-inline"));
         assert_eq!(response.headers()["cache-control"], "no-store");
         assert!(page()
             .document()
             .contains(&format!("<style>{}</style>", CSS)));
+        // The account chooser is the same sheet and the same hash, around
+        // its own body.
+        let shell = document_shell(
+            "Accounts",
+            "<h1>Accounts in this browser</h1>",
+            "1.1.0.1",
+        );
+        assert!(shell.contains(&format!("<style>{}</style>", CSS)));
+        assert!(shell.contains("ul.accounts")
+            && shell.contains("button.portal"));
+        assert!(shell.contains("Version 1.1.0.1"));
+        assert!(shell.contains("<h1>Accounts in this browser</h1>"));
+        let shell_csp = html_response(200, shell).headers()
+            ["content-security-policy"]
+            .to_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(shell_csp.contains(&format!("style-src 'sha256-{}'", hash)));
+    }
+
+    #[test]
+    fn the_start_page_is_the_front_door() {
+        let html = front_document("1.1.0.1");
+        assert!(html.contains("<title>IYA STS</title>"));
+        assert!(html.contains("class=\"front\""));
+        assert!(html.contains(&format!("src=\"{}\"", LOGO_PATH)));
+        assert!(html.contains("width=\"906\""));
+        assert!(html.contains("height=\"269\""));
+        assert!(html.contains(
+            "alt=\"IYA STS — Security Token Service\""
+        ));
+        assert!(html.contains("<h1>IYA STS</h1>"));
+        assert!(html.contains("policy enforcement point"));
+        assert!(html.contains("class=\"sts-footer\""));
+        assert!(html.contains("Iya CyberSecurity Solutions, LLC"));
+        assert!(html.contains("Version 1.1.0.1"));
+        assert!(!html.contains("<script"), "{}", html);
+        assert!(!html.contains("STS-"), "{}", html);
+        assert!(LOGO_PNG.starts_with(b"\x89PNG"));
+        let logo = logo_response();
+        assert_eq!(logo.status(), 200);
+        assert_eq!(logo.headers()["content-type"], "image/png");
+        assert_eq!(
+            logo.headers()["cache-control"],
+            "public, max-age=3600"
+        );
     }
 
     #[test]

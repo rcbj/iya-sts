@@ -7476,6 +7476,15 @@ an operator says ahead of time which certificate is whose. The Attributes
 tab's editor still does not offer `userCertificate`: its value is binary, and
 this block is its door. `mgmt-api/CLAUDE.md` has the API twin.
 
+The block is drawn on the **Key pairs** sub-tab (`ucred-keys`), after the
+assertion key pairs, together with **Message-signing certificates** and
+**TLS client certificates**. Self-issued IDs and the published DIDs are the
+next sub-tab, `ucred-self-issued`. The TLS client section issues from this
+realm's TLS Client Issuing CA with the directory entry's subject
+(`issue-tls-client-certificate` / `revoke-tls-client-certificate` on
+`POST /admin/users`). The leaf is not stored in `userCertificate`. The
+portal's own card is a different door and still issues `CN=<username>`.
+
 **An application's** (#1227, 2026-10-30) is the same block at the end of the
 application page's Credentials tab
 (`ApplicationsPage.applicationStoredCertificatesSection()`), drawn from

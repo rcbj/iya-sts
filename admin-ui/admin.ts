@@ -2047,6 +2047,19 @@ const SECTIONS = [
                'refusal is the <a href="/admin/audit">audit log</a>, and the ' +
                'policies these decisions are made with are under ' +
                '<a href="/admin/xacml">Protocols</a>.' },
+      // A remote PEP's own traffic, beside the decision counts above: what
+      // each listener and its thread pool are doing, which paths are being
+      // asked, and the process's memory. The figures are the PEP's, reported
+      // on its heartbeat. Configuring a listener stays under Protocols.
+      { path: '/admin/xacml/pep/monitor', label: 'Remote PEPs',
+        blurb: 'What each remote PEP is serving rather than how it is ' +
+               'configured: every listener\'s accepted, open and refused ' +
+               'connections, its thread pool, the requests it has counted ' +
+               'per path, and the process\'s memory. The figures are ' +
+               '<strong>reported by the PEP</strong> on its heartbeat and ' +
+               'are cumulative since that process started. A PEP that has ' +
+               'not reported them yet says so. The listeners themselves ' +
+               'are set under <a href="/admin/xacml">Protocols</a>.' },
       // GNAP's traffic, filed here beside XACML's for the same reason: what the
       // applications using it have DONE is a monitoring question, and the
       // configuration is on Protocols -> GNAP.
@@ -2907,7 +2920,8 @@ const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
 // list.
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
-  'ucred-keys', 'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos'].concat(
+  personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
 

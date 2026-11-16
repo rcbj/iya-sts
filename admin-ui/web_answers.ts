@@ -1296,6 +1296,12 @@ class WebAnswers {
         return '/admin/xacml/pep/listener?' + new URLSearchParams({
           pep: pep, listener: String(fields.id) }).toString();
       }
+      // The environment listener's tuning posts `listener`, not `id`.
+      if (action === 'set-pep-environment-tuning' && fields &&
+          fields.listener) {
+        return '/admin/xacml/pep/listener?' + new URLSearchParams({
+          pep: pep, listener: String(fields.listener) }).toString();
+      }
       if (action === 'remove-pep-listener') {
         return '/admin/xacml/pep?' + new URLSearchParams({
           pep: pep }).toString() + '#xacml-pep-listeners-configured';
@@ -1461,10 +1467,18 @@ class WebAnswers {
                active: '/admin/applications',
                html: WebAnswers.didKey(answer, fields, back, t) };
     }
-    if (page === '/admin/applications' &&
+    // A TLS CLIENT CERTIFICATE'S FILES, issued to a person from their Key
+    // pairs section or to an application from its Credentials section. The
+    // only copy of the key, drawn once.
+    if ((page === '/admin/users' || page === '/admin/applications') &&
         action === 'issue-tls-client-certificate' && answer.files) {
-      return { title: t.text('consoleAnswers.once.tlsClientCertificate'),
-               active: '/admin/applications',
+      const title = t.text('consoleAnswers.once.tlsClientCertificate');
+      return { title: title, active: page,
+               up: page === '/admin/users'
+                 ? WebAnswers.personTrail(answer.user ||
+                                          WebAnswers.one(fields, 'user'),
+                                          title)
+                 : undefined,
                html: WebAnswers.tlsClientCertificate(answer, fields, back,
                                                      t) };
     }
@@ -1922,9 +1936,12 @@ class WebAnswers {
     t = t || kit.context().t;
     const files = answer.files;
     const cert = answer.certificate || {};
-    const identifier = String((answer.application &&
-                               answer.application.identifier) ||
-                              WebAnswers.one(fields, 'application'));
+    // A person's certificate names them on the answer; an application's
+    // names the entry. The how-note is the one that matches.
+    const person = String(answer.user || '');
+    const identifier = person ||
+      String((answer.application && answer.application.identifier) ||
+             WebAnswers.one(fields, 'application'));
     const link = function (file, href) {
       return '<a class="btn" download="' + kit.esc(file.name) + '" href="' +
         kit.esc(href) + '">' +
@@ -1951,9 +1968,10 @@ class WebAnswers {
       kit.esc(cert.keyAlg) + '</td></tr><tr><th>' +
       t.html('consoleAnswers.tls.goodUntil') + '</th><td><code>' +
       kit.esc(cert.notAfter) + '</code></td></tr></table>' +
-      kit.note(t.html('consoleAnswers.tls.how', {
-        client: identifier, chain: files.chain.name,
-        key: files.key.name })) +
+      kit.note(t.html(person ? 'consoleAnswers.tls.howPerson'
+                            : 'consoleAnswers.tls.how', {
+        client: identifier, name: String(cert.implicitName || person),
+        chain: files.chain.name, key: files.key.name })) +
       WebAnswers.backButton(back, t.text('consoleAnswers.backTo',
                                          { label: identifier }));
   }

@@ -1069,6 +1069,8 @@ GET  /.iya-pep/logout        ends the proxy session, then the service's
 GET  /.iya-pep/accounts      the account chooser (multipleAccounts routes)
 GET  /.iya-pep/accounts/add  another account, prompt=login
 POST /.iya-pep/accounts/{switch,logout,logout-all}
+GET  /                       the start page, when no route matches /
+GET  /.iya-pep/logo.png      the product logo that page draws
 everything else              the route table
 ```
 
@@ -1096,7 +1098,13 @@ and the display name (`name`, from the ID Token or the session answer),
 onto the session AND the account it backs; the chooser draws `username — name`
 and `?format=json` carries both. A
 full set (`proxyMaxAccounts`) refuses, `STS-XPEP-0108`. The chooser and its
-acts are server-drawn HTML under `default-src 'none'`, with forms only.
+acts are server-drawn HTML, forms only, in the error page's document shell
+(`proxy_page::document_shell`): the same style sheet admitted by its
+SHA-256, and the same footer. It is not an error page. The active account
+offers *Continue with this user*, a GET form to `return`, which changes
+nothing. `return` is followed — by that form, by a switch, and by either
+sign-out — only when its path matches a configured route
+(`ProxyConfig::route_for`); otherwise those acts go to `/`.
 Cross-site POSTs are refused (`STS-XPEP-0109`; the cookie is SameSite=Lax
 as well). The active account is per browser, not per tab: a proxy cannot
 tell tabs apart without rewriting the application's URLs.
@@ -1253,8 +1261,8 @@ everything, the callback, the sign-out and the account chooser included
 | The proxy holds | Answered | Code |
 |---|---|---|
 | no configuration answer loaded since the start (a pull not yet made, refused, or failed) | **503** `temporarily_unavailable`, `Retry-After` the poll interval in whole seconds rounded up, at least 1; the page's "Try again later" | `STS-XPEP-0118` |
-| an answer, `configured: false` or `enabled: false` | **404** `not_found`, deny by default | `STS-XPEP-0065` |
-| an answer with routes, and the path matches none | **404** `not_found` | `STS-XPEP-0065` |
+| an answer, `configured: false` or `enabled: false` | **404** `not_found`, deny by default. A browser's GET or HEAD of `/` is the start page (200) | `STS-XPEP-0065` |
+| an answer with routes, and the path matches none | **404** `not_found`. A browser's GET or HEAD of `/` is the start page (200) when no route matches `/` | `STS-XPEP-0065` |
 
 `loaded` never goes back to false: a later pull that fails keeps what was
 received and its 404 or its routes. **The JSON is the other 503s' shape**
@@ -1291,12 +1299,18 @@ page; `0108` is always the page (the callback is a navigation).
   box with the `error` as a value and a sentence (`wording()`, by code where
   the code says more than the status), what the person can do, the
   background in a `<details>`, the start-over note with a link to `/`, the
-  Diagnostics box, and the copyright and version lines of the footer. **What
+  Diagnostics box, and the copyright and version lines of the footer.
+  **`GET /` is that start page** when no route is mounted there
+  (`proxy_page::front_document`): the front door's card — the product logo
+  (`docs/logo.png`, embedded, drawn at `/.iya-pep/logo.png`), the name, one
+  sentence — and this shell's footer. It lists no route. A route mounted at
+  `/` is that route. A client that does not accept HTML still gets the
+  404, and until the first configuration `/` is the 503 above. **What
   the person can do** is offered only where the refusal is about WHO is
   asking (`0086`, `0095` at 403) on a `session` route: *Use a different
-  account* (`/.iya-pep/accounts`) and *Sign in with another account*
-  (`/.iya-pep/accounts/add`) on a `multipleAccounts` route, a sign-out
-  (`/.iya-pep/logout`) on any other. English only: the PEP holds no
+  account* (`/.iya-pep/accounts`) on a `multipleAccounts` route, a sign-out
+  (`/.iya-pep/logout`) on any other. Adding an account stays on the
+  chooser. English only: the PEP holds no
   catalogs, so the service's language chooser is not drawn.
 * **The pane shows what the service's shows, and no code.** The time (UTC),
   the INCIDENT ID, then the application, the address, who is signed in, the
@@ -1313,13 +1327,20 @@ page; `0108` is always the page (the callback is a navigation).
   server task's events across the suite's threads.
 * **CSP**: no script. The page's one `<style>` element is admitted by its
   SHA-256 (`style-src 'sha256-…'` on top of the proxy's `default-src
-  'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`),
-  narrower than `'self'` and with no second request through a proxy whose
-  other paths are the application's. **The CSS is a copy** of
+  'none'; img-src 'self'; form-action 'self'; frame-ancestors 'none';
+  base-uri 'none'`). Style and script stay narrower than `'self'`.
+  `img-src 'self'` admits the start page's logo, which is this proxy's own
+  path. **The CSS is a copy** of
   `error_page.ts`'s and of `web_footer.ts`'s two footer rules, since this
   image is built from `rust/` alone: change one, change the other.
-* The account chooser (`chooser_html()`) is not an error page and keeps its
-  bare markup.
+* The account chooser (`chooser_html()`) is not an error page: no warning
+  box, no diagnostics, no incident ID. It is drawn by `document_shell()`,
+  so it has the error page's style sheet (centered column, the same type,
+  the portal actions, the footer) and that sheet's hash in `style-src`.
+  Its own rules in the sheet (`ul.accounts`, `button.portal`, `p.hint`)
+  match nothing on the error page. Until 2026-11-15 it was bare markup
+  under a policy with no `style-src`, which is the unstyled page a person
+  met after *Use a different account*.
 
 ### The headers that may not cross
 
@@ -1485,8 +1506,9 @@ every certificate in it as an anchor and checks the host name), `signals`,
 and `allowInsecure` from `PEP_PROXY_RP_ALLOW_INSECURE` (an `http` issuer, a
 development provider only — it never relaxes the redirect URI, which the
 library holds to https or loopback). An entry is keyed by a digest of all of
-that, so **a pull that changes any of it — a rotated secret, a re-issued
-chain — builds a new relying party** and stops the old receiver; the
+that plus the registered PEP name, so **a pull that changes any of it — a
+rotated secret, a re-issued chain, registration completing — builds a new
+relying party** and stops the old receiver; the
 library's session store is handed from one to the next
 (`set_session_store`), so a rotation signs nobody out. `proxy.reconcile()`
 runs after every poll (`main.rs`) and builds what the pull calls for and
@@ -1543,7 +1565,18 @@ browser to sign in to its own.
   `PEP_PROXY_SIGNALS_POLL_MS`) finds the poll stream, and a CAEP
   `session-revoked` naming the provider's session removes it from the
   library's cache — and, through the receiver's callback, the proxy session
-  here. **Each access asks the library whether the session is still there**
+  here. **Once registration has succeeded, every transmitter call carries
+  `X-Iya-Pep-Name` with the name the service answered** (#1760 phase 3),
+  so two members of one application client each poll the stream tagged
+  with their own name. The name is in the party's digest: the library
+  lists once, when the receiver starts, and does not list again when a
+  poll fails, so a receiver built before the name was known would keep
+  the untagged stream. A PEP that has not registered sends no header and
+  keeps that untagged stream. A PEP that already held it and then starts
+  sending the header creates a new tagged stream; until the old one ages
+  out an event is delivered to both, and Security Event Tokens still
+  queued on the old stream when the receiver is rebuilt are not
+  collected. **Each access asks the library whether the session is still there**
   (`RelyingParty::session(id)`): a lookup in the library's in-memory store,
   no network, no lock held across an await — the cost of one `HashMap` get
   under the library's mutex. Nothing else is asked.
@@ -1966,6 +1999,34 @@ configuration->Listeners", the HTTPS listener there now as the default, and
   report) and the certificate it serves. An older service ignores the
   member. **`GET /` does not carry it**: it answers whoever reaches the
   container.
+* **EACH LISTENER HAS THE SERVICE'S TUNING AND ITS OWN POOL.** The pull's
+  `listeners[].tuning` and, separately, `environmentTuning` (the four
+  bootstrap ids only; they are never members of `listeners`, which an older
+  PEP would refuse) are applied by `ListenerRuntime` and, for HTTPS,
+  `HttpsListener::set_tuning`. A defined listener's pool starts when its
+  accept loop binds. An environment listener that is off is still reported
+  and does not start workers. Defaults: the decision API starts 4 workers
+  and may grow to 32; a reverse proxy starts 16 and may grow to 128, the
+  highest. `api-http` uses the API defaults even when the process serves
+  only CRLs. `sessionTimeoutS` other than 300 is logged (`STS-XPEP-0119`)
+  and left at OpenSSL's 300 seconds, because this crate forbids the unsafe
+  call that would set it; the listener's other settings are still applied.
+  A knob the library refuses is the same code. When a pair is already
+  served, that refusal keeps the previous acceptor.
+* **THE HEARTBEAT'S `listeners` IS THE WHOLE REPORT.** `report()` is
+  `{ listeners, memory?, paths? }`, and that object is what the heartbeat
+  assigns to `listeners`. Each listener carries `stats`: accepted, open,
+  refused, http1, http2, handshakes, handshakeFailures, and `pool` (min,
+  max, current, busy, idle, queued, completed). Accepted and refused are
+  disjoint: accepted was queued, refused was dropped before the queue or
+  because the queue was full. A missing TLS acceptor is not a refusal, and
+  a failed handshake counts as `handshakeFailures` only. `memory` is read
+  from `/proc/self/status` and omitted when that file cannot be read.
+  `paths` counts method and path since the process started, query stripped,
+  capped at 256; 401, 403 and 503 increment `refused`, and a 404 does not.
+  The counters are set from the process, not added to the service's copy,
+  and a registration drops the snapshot. Monitoring → Remote PEPs reads
+  them from `listenersInUse`.
 * **A PROXY LISTENER WITH THE PROXY OFF** (`PEP_PROXY=false`) is not bound
   and is reported `off` / `proxy-off`.
 * **THE SIGNAL STREAMS, ONE ROW EACH, ON THE HEARTBEAT ONLY**

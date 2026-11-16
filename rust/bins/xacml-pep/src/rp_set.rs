@@ -35,11 +35,20 @@
 //! **BUILT FROM THE PULL, REBUILT WHEN IT CHANGES.** An entry is keyed by
 //! a digest of everything it was built from (the issuer, the client, its
 //! secret, auth method, redirect URI and scopes, the service's chain,
-//! whether signals are on); a pull that changes any of them — a secret
-//! rotated, a chain re-issued — builds a new relying party and stops the
-//! old receiver. The library's session store is kept across rebuilds
-//! (`set_session_store`), so a rotation signs nobody out. **No secret is
-//! logged or reported**: the digest is not either.
+//! whether signals are on, and the registered PEP name); a pull that
+//! changes any of them — a secret rotated, a chain re-issued, registration
+//! completing — builds a new relying party and stops the old receiver. The
+//! library's session store is kept across rebuilds (`set_session_store`),
+//! so a rotation signs nobody out. **No secret is logged or reported**:
+//! the digest is not either.
+//!
+//! **THE REGISTERED NAME IS THE MEMBER'S STREAM** (#1760 phase 3). Once
+//! registration has succeeded, every transmitter call carries
+//! `X-Iya-Pep-Name` with that name, and the service answers the list with
+//! that member's stream only. The name is in the digest because the
+//! library lists once, when the receiver starts, and does not list again
+//! when a poll fails: a receiver built before the name was known would
+//! keep the untagged stream. A name that is not known yet sends no header.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -296,6 +305,7 @@ impl RpSet {
         client_id: &str,
         pulled: &Pulled,
         signals: bool,
+        pep_name: Option<&str>,
     ) -> Result<Party, String> {
         let client = pulled
             .realm
@@ -312,13 +322,15 @@ impl RpSet {
             bounds.allow_insecure,
         );
         // The poll and stale bounds are the receiver's and the party's, not
-        // the library's configuration, so they go in the digest beside it:
-        // a change of either rebuilds the party on the next reconcile.
-        let digest = format!(
-            "{}|{}|{}",
-            digest_of(&config),
+        // the library's configuration, so they go in the digest beside it,
+        // with the registered PEP name (#1760 phase 3): a change of any of
+        // them rebuilds the party on the next reconcile.
+        let member = member_name(pep_name);
+        let digest = party_digest(
+            &config,
             bounds.poll_ms,
-            bounds.stale_ms
+            bounds.stale_ms,
+            member.as_deref(),
         );
         if let Some(entry) = lock(&self.entries).get(client_id) {
             if entry.digest == digest {
@@ -343,6 +355,17 @@ impl RpSet {
             (None, None)
         } else {
             let reporting = client_id.to_string();
+            // Sent on every transmitter call, including the list the
+            // library does once at start. None until registration has
+            // named this PEP, so an unregistered PEP keeps the untagged
+            // stream.
+            let headers = member.clone().map(|name| {
+                Arc::new(move || {
+                    vec![("X-Iya-Pep-Name".to_string(), name.clone())]
+                }) as Arc<
+                    dyn Fn() -> Vec<(String, String)> + Send + Sync,
+                >
+            });
             let made = SignalsReceiver::new(
                 &issuer,
                 Arc::new(move |ended: Vec<String>, _: SignalEvent| {
@@ -354,6 +377,7 @@ impl RpSet {
                     scope: "ssf.manage".into(),
                     description: described,
                     poll_interval_ms: poll_ms,
+                    headers,
                     // The library's own lines (a failed poll, a refused
                     // SET) go to this log, at debug: the state change
                     // that matters is logged once by `signals_live()`.
@@ -427,7 +451,7 @@ impl RpSet {
     /// After a pull: every client the configuration calls for built (or
     /// kept), every other one dropped and its receiver stopped.
     #[tracing::instrument(level = "debug", skip_all)]
-    pub async fn reconcile(&self, pulled: &Pulled) {
+    pub async fn reconcile(&self, pulled: &Pulled, pep_name: Option<&str>) {
         let want = wanted(pulled);
         let gone: Vec<String> = lock(&self.entries)
             .keys()
@@ -445,7 +469,9 @@ impl RpSet {
             if !done.insert(client_id.clone()) {
                 continue;
             }
-            if let Err(why) = self.party(&client_id, pulled, signals).await {
+            if let Err(why) =
+                self.party(&client_id, pulled, signals, pep_name).await
+            {
                 tracing::warn!(
                     "{}xacml-pep: proxy: the relying party for client {} \
                      could not be built: {}.",
@@ -580,6 +606,34 @@ impl RpSet {
     }
 }
 
+/// The registered name a cluster member puts on `X-Iya-Pep-Name`, or
+/// none when there is nothing to send (#1760 phase 3). Blank is none:
+/// an unregistered PEP, and a registration that named nothing, keep the
+/// untagged stream.
+fn member_name(name: Option<&str>) -> Option<String> {
+    name.map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+}
+
+/// What an entry was built from. The registered name is the fourth
+/// field so registration completing rebuilds the receiver (#1760
+/// phase 3). `member` is already `member_name`'s answer.
+fn party_digest(
+    config: &Map<String, Value>,
+    poll_ms: u64,
+    stale_ms: u64,
+    member: Option<&str>,
+) -> String {
+    format!(
+        "{}|{}|{}|{}",
+        digest_of(config),
+        poll_ms,
+        stale_ms,
+        member.unwrap_or("")
+    )
+}
+
 /// A receiver's `stop()` waits for a transmitter call in flight (at most
 /// the library's 15 s HTTP timeout), so it is never awaited on a request:
 /// it runs as a task of its own, on the blocking pool.
@@ -634,5 +688,48 @@ mod tests {
         );
         assert_eq!(off["signals"], false);
         assert_eq!(off["tlsCa"], "PEM");
+    }
+
+    #[test]
+    fn the_registered_name_is_its_own_stream_and_a_blank_sends_nothing() {
+        assert_eq!(member_name(Some(" pep-1 ")).as_deref(), Some("pep-1"));
+        assert_eq!(member_name(Some("")), None);
+        assert_eq!(member_name(Some("   ")), None);
+        assert_eq!(member_name(None), None);
+        let client = RpClient {
+            client_secret: "s1".into(),
+            token_endpoint_auth_method: String::new(),
+            redirect_uri: "https://pep.example/.iya-pep/callback".into(),
+            scopes: vec!["openid".into()],
+        };
+        let config =
+            library_config("https://sts/r", "app", &client, "", true, false);
+        let named = party_digest(
+            &config,
+            1000,
+            2000,
+            member_name(Some("pep-1")).as_deref(),
+        );
+        let other = party_digest(
+            &config,
+            1000,
+            2000,
+            member_name(Some("pep-2")).as_deref(),
+        );
+        let bare = party_digest(
+            &config,
+            1000,
+            2000,
+            member_name(None).as_deref(),
+        );
+        let blank = party_digest(
+            &config,
+            1000,
+            2000,
+            member_name(Some("   ")).as_deref(),
+        );
+        assert_ne!(named, other, "two members do not share a digest");
+        assert_ne!(named, bare, "a name rebuilds an untagged receiver");
+        assert_eq!(bare, blank, "a blank name sends no header");
     }
 }

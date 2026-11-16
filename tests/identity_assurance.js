@@ -348,7 +348,8 @@ function body(t) {
       .userDetailJson({ query: {}, headers: {} }, 'ida-alice').json.page.mfa));
   const ctxOf = require('../admin-ui/web_kit').context;
   const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
-    { name: 'ida-alice' }, 'ida-alice', { write: true }, '', mfaData);
+    { name: 'ida-alice' }, 'ida-alice', { write: true }, '', mfaData)
+    .factors;
   t.check(/<h3>Identity verifications<\/h3>/.test(drawn) &&
           /name="action" value="record-verification"/.test(drawn) &&
           /name="action" value="remove-verification"/.test(drawn) &&
@@ -357,7 +358,8 @@ function body(t) {
           '8a. a person\'s page lists their verifications with a Remove ' +
           'each, and a form that records one');
   const readOnly = UsersPage.mfaSection(ctxOf({}, false).t,
-    { name: 'ida-alice' }, 'ida-alice', { write: false }, '', mfaData);
+    { name: 'ida-alice' }, 'ida-alice', { write: false }, '', mfaData)
+    .factors;
   t.check(!/value="record-verification"/.test(readOnly) &&
           /needs <strong>Admin Write<\/strong>/.test(readOnly),
           '8b. and without Admin Write, no form');

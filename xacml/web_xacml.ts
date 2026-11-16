@@ -964,6 +964,17 @@ class XacmlPage {
         (row.enabled ? t.html('consoleXacml.pep.stopNudging')
                      : t.html('consoleXacml.pep.nudge')) +
         '</button></form> ' +
+        // SYNC (rcbj, 2026-11-16): the PEP told to pull everything now —
+        // its policies, its own configuration and, for a member, its
+        // cluster's. `XacmlAdmin.syncPep()` argues why that is a nudge.
+        '<form method="post" action="/admin/xacml/peps" ' +
+        'class="inline">' +
+        self.hidden('action', 'sync-pep') +
+        self.hidden('name', row.name) +
+        '<button type="submit"' +
+        self.tipOf(t, 'consoleXacml.pep.syncTip') + '>' +
+        t.html('consoleXacml.pep.sync') +
+        '</button></form> ' +
         '<form method="post" action="/admin/xacml/peps" ' +
         'class="inline">' +
         self.hidden('action', 'forget-pep') +
@@ -971,6 +982,20 @@ class XacmlPage {
         '<button type="submit">' + t.html('consoleXacml.pep.forget') +
         '</button></form>'
       : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
+  }
+
+  // THE CLUSTERED COLUMN (rcbj, 2026-11-16): whether the row is a member of
+  // a remote PEP cluster, as the PEP clusters tab defines one. `cluster` is
+  // on the row only for a member (`XacmlPepClusters.effectiveRow()`), so
+  // the column reads the same fact the member's own page does.
+  static pepClustered(t: Json, row: Json): string {
+    return row.cluster
+      ? t.html('consoleXacml.pep.clusteredYes') +
+        '<div class="sub"><a href="' +
+        esc(XacmlPage.clusterHref(String(row.cluster))) + '"><code>' +
+        esc(row.cluster) + '</code></a></div>'
+      : '<span class="sub">' + t.html('consoleXacml.pep.clusteredNo') +
+        '</span>';
   }
 
   static pepCounts(t: Json, row: Json): string {
@@ -1178,7 +1203,8 @@ class XacmlPage {
         (row.version
           ? '<div class="sub">' + esc(row.version) + '</div>'
           : '') +
-        '</td><td>' + self.pepWho(t, row) + '</td><td>' +
+        '</td><td>' + self.pepClustered(t, row) + '</td><td>' +
+        self.pepWho(t, row) + '</td><td>' +
         self.pepState(t, row) + '</td><td>' +
         esc(row.bias || t.text('consoleXacml.pep.notReported')) +
         '</td><td>' + self.pepCounts(t, row) +
@@ -1186,7 +1212,7 @@ class XacmlPage {
         self.pepListener(ctx, row) + '</td><td>' + proxy +
         '</td><td>' + self.pepActions(ctx, row) + '</td></tr>';
     }).join('') ||
-      '<tr><td colspan="9">' + self.noPepsHere(json.elsewhere, t) +
+      '<tr><td colspan="10">' + self.noPepsHere(json.elsewhere, t) +
       '</td></tr>';
 
     const body = kit.note(
@@ -1212,6 +1238,8 @@ class XacmlPage {
       self.wide(t, 'console.nav.xacml-peps',
       '<table><tr><th' + self.tipOf(t, 'consoleXacml.tip.peps.name') +
       '>PEP</th>' +
+      self.th(t, 'consoleXacml.th.clustered',
+              'consoleXacml.tip.peps.clustered') +
       self.th(t, 'consoleXacml.th.certificate',
               'consoleXacml.tip.peps.certificate') +
       self.th(t, 'consoleXacml.th.state', 'consoleXacml.tip.peps.state') +
@@ -1661,14 +1689,152 @@ class XacmlPage {
         : '');
   }
 
+  // THE BUILT-IN TUNING, the same strings and numbers
+  // `xacml_pep_listener_tuning.ts` fills when the catalogue has not arrived
+  // (an older answer, or a fixture). A browser module cannot require that
+  // file. The reverse proxy's pool is the largest.
+  static tuningFallback(purpose: string, https: boolean): Json {
+    const threads = purpose === 'proxy' ? [16, 128]
+      : (purpose === 'crl' ? [1, 4] : [4, 32]);
+    return {
+      minVersion: 'TLSv1.3',
+      disableTls12: true,
+      ciphers: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
+        'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:' +
+        'ECDHE-RSA-AES256-GCM-SHA384',
+      tls13CipherSuites: 'TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,' +
+        'TLS_CHACHA20_POLY1305_SHA256',
+      pqcOnly: false,
+      groups: 'X25519MLKEM768:SecP256r1MLKEM768:' +
+        'SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521',
+      signatureAlgorithms: 'mldsa65:mldsa87:mldsa44:' +
+        'ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:' +
+        'ecdsa_secp521r1_sha512:ed25519:ed448:' +
+        'rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:' +
+        'rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:' +
+        'rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512',
+      trustAnchorsFile: '',
+      trustIssuedClientCertificates: https && purpose === 'api',
+      askClientCertificate: https,
+      requireClientCertificate: false,
+      sessionTimeoutS: 300,
+      sessionCacheSize: 2048,
+      keepAliveTimeoutS: 60,
+      headersTimeoutS: 0,
+      maxRequestsPerSocket: 0,
+      maxConnections: 0,
+      http2: https,
+      http2MaxConcurrentStreams: 100,
+      threadPoolMin: threads[0],
+      threadPoolMax: threads[1]
+    };
+  }
+
+  // What the form shows: the catalogue's defaults for the purpose, then
+  // anything stored, then HTTP's three flags off and TLSv1.3 when TLS 1.2
+  // is refused. `api-http` keeps the API defaults even when a report says
+  // the port is serving CRLs.
+  static shownTuning(catalogue: Json, purpose: string, https: boolean,
+                     stored: Json | null): Json {
+    const defaults = (catalogue.tuningDefaults || {})[purpose] ||
+      XacmlPage.tuningFallback(purpose, https);
+    const out = Object.assign({}, defaults, stored || {});
+    if (!https) {
+      out.http2 = false;
+      out.askClientCertificate = false;
+      out.requireClientCertificate = false;
+    }
+    const on = function (value: unknown): boolean {
+      return value === true || value === 'true' || value === 'on' ||
+        value === '1' || value === 1;
+    };
+    if (on(out.disableTls12) || on(out.pqcOnly)) {
+      out.disableTls12 = true;
+      out.minVersion = 'TLSv1.3';
+    }
+    return out;
+  }
+
+  // The six groups under the certificate fieldset: TLS, the session cache,
+  // HTTP pooling, HTTP/2, client certificates and the thread pool. One
+  // field per line, in that order, so a reader of the form and the test
+  // that lists its controls see the same sequence.
+  static tuningGroups(t: Json, catalogue: Json, shown: Json): string {
+    const self = this;
+    const onOff = [
+      { value: 'true', label: t.text('consoleXacml.listeners.switch.on') },
+      { value: 'false', label: t.text('consoleXacml.listeners.switch.off') }
+    ];
+    const versions = catalogue.minVersions && catalogue.minVersions.length
+      ? catalogue.minVersions
+      : ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'];
+    const on = function (value: unknown): boolean {
+      return value === true || value === 'true' || value === 'on' ||
+        value === '1' || value === 1;
+    };
+    const row = function (key: string, control: string): string {
+      return self.formRow(self.labelled(t,
+        'consoleXacml.listeners.form.' + key,
+        'consoleXacml.tip.listener.' + key, control));
+    };
+    const flag = function (key: string): string {
+      return row(key, self.select(key, onOff, on(shown[key]) ? 'true'
+        : 'false'));
+    };
+    const num = function (key: string, min: string, max: string): string {
+      return row(key, '<input type="number" name="' + key + '" min="' +
+        min + '" max="' + max + '" value="' + esc(shown[key]) + '">');
+    };
+    const text = function (key: string): string {
+      const value = shown[key] === undefined || shown[key] === null
+        ? '' : shown[key];
+      return row(key, '<input type="text" name="' + key +
+        '" size="48" value="' + esc(value) + '">');
+    };
+    const versionOptions = versions.map(function (one: string) {
+      return { value: one, label: one };
+    });
+    return self.fieldGroup(t, 'consoleXacml.listeners.legend.tls',
+      row('minVersion', self.select('minVersion', versionOptions,
+                                    shown.minVersion)) +
+      flag('disableTls12') +
+      text('ciphers') +
+      text('tls13CipherSuites') +
+      text('groups') +
+      text('signatureAlgorithms') +
+      text('trustAnchorsFile') +
+      flag('pqcOnly')) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.session',
+        num('sessionTimeoutS', '1', '86400') +
+        num('sessionCacheSize', '0', '1000000')) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.http',
+        num('keepAliveTimeoutS', '1', '3600') +
+        num('headersTimeoutS', '0', '3600') +
+        num('maxRequestsPerSocket', '0', '1000000') +
+        num('maxConnections', '0', '1000000')) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.http2',
+        flag('http2') +
+        num('http2MaxConcurrentStreams', '1', '1000')) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.clientCert',
+        flag('trustIssuedClientCertificates') +
+        flag('askClientCertificate') +
+        flag('requireClientCertificate')) +
+      self.fieldGroup(t, 'consoleXacml.listeners.legend.pool',
+        num('threadPoolMin', '1', '256') +
+        num('threadPoolMax', '1', '1024'));
+  }
+
   // One listener's form: a new one, or a defined one to edit (its id fixed).
   // LAID OUT AS THE ROUTE FORMS ARE (rcbj, 2026-11-15: "the UI on the
   // 'Create a new listener' is terrible. Organize and style it similar to
   // the 'Create a route' sub-subtab"): the hidden default submit first, one
   // field per `.formrow` with its tooltip on the label, under the legends
-  // Listener (id, protocol, purpose), Address (address, port) and
-  // Certificate (HTTPS only), then the button in a row of its own. The
-  // certificate's fields are a choice panel of the protocol
+  // Listener (id, protocol, purpose), Address (address, port),
+  // Certificate (HTTPS only), then TLS, TLS session pooling, HTTP pooling,
+  // HTTP/2, Client certificates and Thread pool, then the button in a row
+  // of its own. The new groups sit after the certificate fieldset, which
+  // stays the protocol select's HTTPS panel. The certificate's fields are
+  // a choice panel of the protocol
   // (`ConsoleRuntime.wireChoicePanels()`): shown for HTTPS, hidden for HTTP,
   // and drawn so before the script runs. Hidden, they are still posted, as
   // they always were, and nothing in them is `required`.
@@ -1753,8 +1919,31 @@ class XacmlPage {
             return { value: v, label: v };
           }), d.keyAlg || catalogue.defaultKeyAlg)) +
       '</fieldset>' +
+      self.tuningGroups(t, catalogue, self.shownTuning(catalogue,
+        d.purpose || 'proxy', https, d.tuning || null)) +
       self.formRow('<button type="submit"' + self.tipOf(t, when) + '>' +
         t.html(submit) + '</button>') + '</form>';
+  }
+
+  // The environment listener's tuning. The action is literal: `act()` would
+  // rewrite it to a cluster action, and a cluster has no single pool. The
+  // address, port and protocol are not on this form.
+  static environmentTuningForm(t: Json, json: Json, name: string,
+                               one: Json): string {
+    const catalogue = json.listenersCatalogue || {};
+    const https = one.protocol === 'https';
+    const shown = XacmlPage.shownTuning(catalogue, one.purpose || 'api',
+      https, one.tuning || null);
+    const label = 'consoleXacml.listeners.form.saveTuning';
+    return '<form method="post" action="/admin/xacml/peps" ' +
+      'class="pep-listener-form">' +
+      XacmlPage.hidden('action', 'set-pep-environment-tuning') +
+      XacmlPage.ownerField(name) +
+      XacmlPage.hidden('listener', one.id) +
+      XacmlPage.defaultSubmit(t.text(label)) +
+      XacmlPage.tuningGroups(t, catalogue, shown) +
+      XacmlPage.formRow('<button type="submit">' + t.html(label) +
+        '</button>') + '</form>';
   }
 
   // THE ENVIRONMENT'S HTTPS PAIR ON CREATE A NEW LISTENER, laid out as the
@@ -1902,7 +2091,8 @@ class XacmlPage {
       const where = self.listenerWhere(one);
       const state = self.listenerState(t, words, one);
       // EVERY ID A LINK TO ITS OWN PAGE (rcbj, 2026-11-15), the
-      // environment's four too, whose page is read-only.
+      // environment's four too. Their address, port and protocol stay the
+      // environment's; their tuning is set on that page.
       return '<tr id="pep-listener-' + esc(one.id) + '"><th ' +
         'class="pep-listener-id"><a href="' +
         esc(self.listenerHref(row.name, one.id)) + '"><code>' +
@@ -1984,8 +2174,10 @@ class XacmlPage {
    * purpose, address and port, state and reason, and for HTTPS its names,
    * key and the certificate it serves — and, for one defined here, the
    * edit form, Renew and Remove behind a confirmation. One of the
-   * environment's four is the same page, read-only, naming the variables
-   * that set it. Drawn from `GET /admin-api/xacml/peps?pep=<name>`: the
+   * environment's four is the same page: the address, port and protocol
+   * stay the environment's, and the tuning form sets the rest. A cluster
+   * has no single process, so that form is each member's own. Drawn from
+   * `GET /admin-api/xacml/peps?pep=<name>`: the
    * listener is a row of the PEP's `listenerRows`, so the operation is
    * unchanged (rule 7).
    *
@@ -2095,10 +2287,14 @@ class XacmlPage {
       self.listenersHref(name),
       t.html('consoleXacml.listenerPage.backToListeners'));
     let acts = '';
-    if (environment) {
+    if (environment && self.isCluster()) {
+      acts = '<p class="sub">' +
+        t.html('consoleXacml.listeners.clusterEnv') + '</p>';
+    } else if (environment && ctx.write) {
       acts = '<p class="sub">' + t.html('consoleXacml.listeners.envOnly',
-        { env: one.env }) + '</p>';
-    } else if (!ctx.write) {
+        { env: one.env }) + '</p>' +
+        self.environmentTuningForm(t, json, name, one);
+    } else if (environment || !ctx.write) {
       acts = '<span class="sub">' + t.html('consoleXacml.readOnly') +
         '</span>';
     } else {
@@ -2161,6 +2357,150 @@ class XacmlPage {
           '</p>') +
       '<p><a href="/admin/xacml#xacml-tab-peps">' +
       t.html('consoleXacml.pepPage.back') + '</a></p>';
+  }
+
+  // MONITORING → REMOTE PEPS. Every registered PEP, and whether it has
+  // reported listener figures. The traffic lives on the PEP's own page.
+  static pepMonitorIndex(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const rows = (json.peps || []).map(function (row: Json) {
+      const heard = row.listenersInUse
+        ? t.html('consoleXacml.remotePeps.reported')
+        : t.html('consoleXacml.remotePeps.notReported');
+      return '<tr><td><a href="/admin/xacml/pep/monitor?pep=' +
+        encodeURIComponent(row.name) + '"><code>' + esc(row.name) +
+        '</code></a></td><td>' + heard + '</td></tr>';
+    }).join('');
+    return kit.note('<p>' + t.html('consoleXacml.remotePeps.lead') +
+      '</p>') +
+      (rows
+        ? self.wide(t, 'consoleXacml.remotePeps.index',
+          '<table><tr>' +
+          self.th(t, 'consoleXacml.remotePeps.col.pep',
+                  'consoleXacml.tip.remotePeps.pep') +
+          self.th(t, 'consoleXacml.remotePeps.col.report',
+                  'consoleXacml.tip.remotePeps.report') +
+          '</tr>' + rows + '</table>')
+        : '<p class="sub">' + t.html('consoleXacml.remotePeps.none') +
+          '</p>');
+  }
+
+  // One PEP's listener stats, thread pools, per-path requests and memory.
+  // Figures are cumulative since that PEP's process started. A PEP that
+  // has not reported them says so, rather than zeroes. Memory arrives in
+  // bytes and is drawn in megabytes (1024×1024, one decimal).
+  static pepMonitorDetail(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const self = this;
+    const query = ctx.query || {};
+    const name = String(json.pep || query.pep || '');
+    const back = '<p><a href="/admin/xacml/pep/monitor">' +
+      t.html('consoleXacml.remotePeps.back') + '</a></p>';
+    const row = json.found ? (json.peps || [])[0] : null;
+    if (!row) {
+      return '<p class="warn">' + t.html('consoleXacml.pepPage.notFound',
+        { name: name }) + '</p>' + back;
+    }
+    const title = kit.drillTitle(
+      t.html('consoleXacml.remotePeps.title', { pep: name }),
+      '', '/admin/xacml/pep/monitor',
+      t.html('consoleXacml.remotePeps.back'));
+    const use = row.listenersInUse;
+    if (!use) {
+      return title + '<p class="sub">' +
+        t.html('consoleXacml.remotePeps.notReported') + '</p>' + back;
+    }
+    const missing = '<span class="sub">' +
+      t.html('consoleXacml.remotePeps.notReported') + '</span>';
+    const cell = function (n: unknown): string {
+      return n === undefined || n === null ? '<td>' + missing + '</td>'
+        : '<td>' + esc(String(n)) + '</td>';
+    };
+    const memory = use.memory || {};
+    // The stored fields stay bytes. A tile is that count / 1024×1024.
+    const megabytes = function (n: unknown): string {
+      return typeof n === 'number' ? (n / (1024 * 1024)).toFixed(1) : '—';
+    };
+    const sizeTile = function (key: string, label: string): string {
+      return kit.tile(megabytes(memory[key]), t.text(label));
+    };
+    const threads = memory.threads;
+    const tiles = sizeTile('rssBytes',
+        'consoleXacml.remotePeps.memory.rss') +
+      sizeTile('virtualBytes',
+        'consoleXacml.remotePeps.memory.virtual') +
+      sizeTile('dataBytes', 'consoleXacml.remotePeps.memory.data') +
+      kit.tile(threads === undefined || threads === null ? '—'
+        : String(threads),
+        t.text('consoleXacml.remotePeps.memory.threads'));
+    const statHeads = ['accepted', 'open', 'refused', 'http1', 'http2',
+      'handshakes', 'handshakeFailures'];
+    const poolHeads = ['min', 'max', 'current', 'busy', 'idle', 'queued',
+      'completed'];
+    const head = function (keys: string[], prefix: string): string {
+      return keys.map(function (key) {
+        return self.th(t, 'consoleXacml.remotePeps.col.' + key,
+          prefix + key);
+      }).join('');
+    };
+    const listenerRows = (row.listenerRows || []).map(function (one: Json) {
+      const stats = (one.reported && one.reported.stats) || {};
+      return '<tr><th><code>' + esc(one.id) + '</code></th>' +
+        statHeads.map(function (key) {
+          return cell(stats[key]);
+        }).join('') + '</tr>';
+    }).join('');
+    const poolRows = (row.listenerRows || []).map(function (one: Json) {
+      const pool = one.reported && one.reported.stats &&
+        one.reported.stats.pool;
+      return '<tr><th><code>' + esc(one.id) + '</code></th>' +
+        (pool
+          ? poolHeads.map(function (key) {
+            return cell(pool[key]);
+          }).join('')
+          : '<td colspan="7">' + missing + '</td>') + '</tr>';
+    }).join('');
+    const paths = use.paths || [];
+    const pathRows = paths.map(function (one: Json) {
+      return '<tr><td><code>' + esc(one.method) + '</code></td><td><code>' +
+        esc(one.path) + '</code></td>' + cell(one.count) +
+        cell(one.refused) + '</tr>';
+    }).join('');
+    return title +
+      '<h3>' + t.html('consoleXacml.remotePeps.memory') + '</h3>' +
+      '<div class="tiles">' + tiles + '</div>' +
+      '<h3>' + t.html('consoleXacml.remotePeps.listeners') + '</h3>' +
+      self.wide(t, 'consoleXacml.remotePeps.listeners',
+        '<table><tr>' +
+        self.th(t, 'consoleXacml.remotePeps.col.listener',
+                'consoleXacml.tip.remotePeps.listener') +
+        head(statHeads, 'consoleXacml.tip.remotePeps.') +
+        '</tr>' + (listenerRows || '<tr><td colspan="8">' + missing +
+          '</td></tr>') + '</table>') +
+      '<h3>' + t.html('consoleXacml.remotePeps.pool') + '</h3>' +
+      self.wide(t, 'consoleXacml.remotePeps.pool',
+        '<table><tr>' +
+        self.th(t, 'consoleXacml.remotePeps.col.listener',
+                'consoleXacml.tip.remotePeps.listener') +
+        head(poolHeads, 'consoleXacml.tip.remotePeps.pool.') +
+        '</tr>' + (poolRows || '<tr><td colspan="8">' + missing +
+          '</td></tr>') + '</table>') +
+      '<h3>' + t.html('consoleXacml.remotePeps.paths') + '</h3>' +
+      (pathRows
+        ? self.wide(t, 'consoleXacml.remotePeps.paths',
+          '<table><tr>' +
+          self.th(t, 'consoleXacml.remotePeps.col.method',
+                  'consoleXacml.tip.remotePeps.method') +
+          self.th(t, 'consoleXacml.remotePeps.col.path',
+                  'consoleXacml.tip.remotePeps.path') +
+          self.th(t, 'consoleXacml.remotePeps.col.count',
+                  'consoleXacml.tip.remotePeps.count') +
+          self.th(t, 'consoleXacml.remotePeps.col.refused',
+                  'consoleXacml.tip.remotePeps.pathRefused') +
+          '</tr>' + pathRows + '</table>')
+        : '<p class="sub">' + t.html('consoleXacml.remotePeps.noPaths') +
+          '</p>') + back;
   }
 
   // ---------------------------------------------------------------------------
@@ -3886,7 +4226,7 @@ class XacmlPage {
     return table + '<h3>' + t.html('consoleXacml.cluster.addHeading') +
       '</h3>' +
       (signals && (c.members || []).length
-        ? '<p class="xacml-alert">' + t.html('consoleXacml.cluster.signals') +
+        ? '<p class="sub">' + t.html('consoleXacml.cluster.signals') +
           '</p>' : '') +
       '<p class="sub">' + t.html('consoleXacml.cluster.addLead') + '</p>' +
       self.wide(t, 'consoleXacml.cluster.addHeading', '<table><tr>' +

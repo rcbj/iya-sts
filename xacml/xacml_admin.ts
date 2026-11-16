@@ -279,12 +279,15 @@ interface PepOwner {
 // the configuration the PEP pulls from `GET /xacml/pep/proxy`.
 // `set-pep-settings` and `clear-pep-settings` (#1760) are the PEP's managed
 // settings, pulled from `GET /xacml/pep/settings`.
-const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep',
+// `sync-pep` (2026-11-16) nudges one PEP to pull everything now and, like
+// `issue-pep-certificate`, answers a PROMISE: it waits for the nudge.
+const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep', 'sync-pep',
                      'issue-pep-certificate', 'set-pep-proxy',
                      'clear-pep-proxy', 'set-pep-route-identity',
                      'set-pep-settings', 'clear-pep-settings',
                      'set-pep-listener', 'remove-pep-listener',
-                     'renew-pep-listener-certificate', 'set-pep-route',
+                     'renew-pep-listener-certificate',
+                     'set-pep-environment-tuning', 'set-pep-route',
                      'remove-pep-route', 'set-pep-route-application',
                      'set-pep-route-authorization',
                      'generate-pep-route-policy'];
@@ -837,7 +840,8 @@ class XacmlAdmin {
       view.listeners = defined.listeners;
       view.listenersProblem = defined.problem;
       view.listenerRows = pepListeners.rows(defined.listeners || [],
-                                            row.listenersInUse)
+                                            row.listenersInUse,
+                                            defined.environment)
         .map(function (one: any) {
           const held: any = one.source === 'service' &&
             one.protocol === 'https'
@@ -1165,9 +1169,14 @@ class XacmlAdmin {
       return this.settingsAction(action, this.pepOwner(name), body);
     }
     if (action === 'set-pep-listener' || action === 'remove-pep-listener' ||
-        action === 'renew-pep-listener-certificate') {
+        action === 'renew-pep-listener-certificate' ||
+        action === 'set-pep-environment-tuning') {
       log.debug('Leaving XacmlAdmin.pepAction(). The listeners.');
       return this.listenerAction(action, this.pepOwner(name), body || {});
+    }
+    if (action === 'sync-pep') {
+      log.debug('Leaving XacmlAdmin.pepAction(). Syncing.');
+      return this.syncPep(name, row);
     }
     if (action === 'forget-pep') {
       const gone = peps.remove(name);
@@ -1208,6 +1217,110 @@ class XacmlAdmin {
                  'policy, and it will go on pulling and deciding. What this ' +
                  'changed is that this service no longer dials it, so it now ' +
                  'converges only on its own polling interval.' };
+  }
+
+  // ===========================================================================
+  // SYNC (rcbj, 2026-11-16): "a Sync button that pushes all related XACML
+  // policies, instance configuration, and (if applicable) cluster
+  // configuration to that instance again".
+  //
+  // THIS SERVICE PUSHES NOTHING, AND SYNC DOES NOT CHANGE THAT. A remote PEP
+  // pulls (xacml/CLAUDE.md, *Phase five*), so the way to make one take
+  // everything again is to tell it to pull NOW: one nudge, to this PEP alone,
+  // at the address the change nudge dials (its managed notify URL, or a
+  // cluster member's own). The PEP answers a nudge with a whole round —
+  // its settings and listeners, the policies, the AuthZEN catalogue and
+  // callers, the reverse proxy — and a member's pulls ARE its cluster's
+  // documents, so the cluster's configuration travels with no branch here.
+  // What the PEP already holds byte for byte is answered 304, because every
+  // pull's token is a digest of exactly what would be sent: a re-send of
+  // identical bytes would change nothing.
+  //
+  // UNLIKE THE CHANGE NUDGE IT IS AWAITED, because a person pressed a button
+  // and is owed whether the PEP was reached; nothing was written, so there
+  // is no commit to wait for. A refusal says why before anything is dialled:
+  // notification or remote PEPs off, nudging stopped for this PEP (the
+  // administrator said this service does not dial it), or no usable notify
+  // URL — each converges on the PEP's own poll, which the sentence says.
+  // ---------------------------------------------------------------------------
+  /**
+   * Nudges one registered PEP to pull everything now, and reports whether
+   * the nudge was delivered.
+   * @param name - the PEP's registered name
+   * @param raw - its register row
+   * @returns a promise of `{ ok, what, pep, cluster, delivered, status }`, or
+   * of a refusal carrying its error code
+   */
+  syncPep(name: string, raw: any): Promise<any> {
+    const { log, audit, config, errorCodes, peps, pepHttp,
+            pepSettings } = this.deps;
+    log.debug('Entering XacmlAdmin.syncPep(). name=' + name);
+    const row = this.deps.clusters.effectiveRow(raw) || raw;
+    const cluster = row.cluster ? String(row.cluster) : null;
+    const poll = ' It converges on its own polling interval without one.';
+    if (config.value('xacml.remotePeps') === false ||
+        !pepHttp.notifyAllowed()) {
+      log.debug('Leaving XacmlAdmin.syncPep(). Notification is off.');
+      return Promise.resolve(errorCodes.mark({ ok: false,
+        why: 'Nothing was sent to "' + name + '": ' +
+             (config.value('xacml.remotePeps') === false
+               ? 'remote PEPs are off in this realm (xacml.remotePeps).'
+               : 'nudging is off (xacml.pepNotify).') + poll },
+        'STS-XACML-0282'));
+    }
+    if (!row.enabled) {
+      log.debug('Leaving XacmlAdmin.syncPep(). Not nudged.');
+      return Promise.resolve(errorCodes.mark({ ok: false,
+        why: '"' + name + '" is not nudged: this service was told not to ' +
+             'dial it. Press "Nudge again" first, then Sync.' + poll },
+        'STS-XACML-0283'));
+    }
+    const url = pepSettings.notifyUrlOf(row);
+    const problem = url ? pepHttp.urlProblem(url) : null;
+    if (!url || problem) {
+      log.debug('Leaving XacmlAdmin.syncPep(). No usable notify URL.');
+      return Promise.resolve(errorCodes.mark({ ok: false,
+        why: (url
+          ? 'The notify URL of "' + name + '" cannot be dialled: ' + problem
+          : '"' + name + '" has no notify URL, so there is nowhere to ' +
+            'send a nudge. Set one on the PEP\'s Settings tab' +
+            (cluster ? ' or on its membership of cluster "' + cluster + '"'
+                     : '') + '.') + poll },
+        'STS-XACML-0284'));
+    }
+    return pepHttp.nudge(url, '').then(function (result: any) {
+      peps.recordNotify(name, result.why);
+      audit.audit({ action: 'xacml.pep.sync', actor: '', protocol: 'XACML',
+                    detail: 'Asked remote PEP "' + name + '"' +
+                            (cluster ? ' (cluster "' + cluster + '")' : '') +
+                            ' to pull everything now: ' +
+                            (result.ok ? 'delivered.' : result.why) });
+      if (!result.ok) {
+        log.debug('Leaving XacmlAdmin.syncPep(). Not delivered.');
+        return errorCodes.mark({ ok: false,
+          why: 'The nudge to "' + name + '" was not delivered: ' +
+               result.why },
+          'STS-XACML-0285');
+      }
+      log.debug('Leaving XacmlAdmin.syncPep(). Delivered.');
+      return { ok: true, pep: name, cluster: cluster, delivered: true,
+               status: result.status,
+               what: '"' + name + '" was told to pull now, and is pulling ' +
+                     'its policies, settings, listeners, AuthZEN catalogue ' +
+                     'and callers and reverse proxy' +
+                     (cluster ? ', which are cluster "' + cluster + '"\'s'
+                              : '') +
+                     '. Whatever it already holds unchanged is answered ' +
+                     '"unchanged". The Notify column records this nudge.' };
+    }, function (error: any) {
+      log.debug('Caught in XacmlAdmin.syncPep(): ' +
+                ((error && error.message) || error));
+      log.debug('Leaving XacmlAdmin.syncPep(). Failed.');
+      return errorCodes.mark({ ok: false,
+        why: 'The nudge to "' + name + '" failed: ' +
+             ((error && error.message) || String(error)) + '.' + poll },
+        'STS-XACML-0285');
+    });
   }
 
   // ===========================================================================
@@ -1691,11 +1804,64 @@ class XacmlAdmin {
           delete given.ipAddresses;
           delete given.keyAlg;
         }
+        const tuning = pepListeners.fromBody(body);
+        if (tuning) {
+          given.tuning = tuning;
+        }
       }
       id = String((given && given.id) || '');
       checked = pepListeners.withListener(current.listeners, given,
                                           owner.listenersInUse(),
                                           owner.kind !== 'cluster');
+    } else if (action === 'set-pep-environment-tuning') {
+      // THE ENVIRONMENT'S FOUR KEEP THEIR ADDRESS, PORT AND PROTOCOL.
+      // What is set here is the tuning: TLS, the session cache, HTTP
+      // pooling, HTTP/2, client certificates and the thread pool. It is
+      // the member's own even when the member pulls the cluster's
+      // definitions, which is why this action is not in MEMBER_REFUSED.
+      id = String(body.listener || body.id || '');
+      const meta = pepListeners.BOOTSTRAP.filter(function (one: any) {
+        return one.id === id;
+      })[0];
+      if (!meta) {
+        log.debug('Leaving XacmlAdmin.listenerAction(). Not an ' +
+                  'environment listener.');
+        return errorCodes.mark({ ok: false,
+                 why: '"' + id + '" is not one of the environment\'s ' +
+                      'listeners. A listener defined here is ' +
+                      'set-pep-listener.' }, 'STS-XACML-0244');
+      }
+      const posted = pepListeners.fromBody(body) || body.tuning;
+      const parsed = pepListeners.parseTuning(posted, 'Listener "' + id + '"',
+                                              meta.purpose,
+                                              meta.protocol === 'https');
+      if (!parsed.ok) {
+        log.debug('Leaving XacmlAdmin.listenerAction(). Tuning.');
+        return errorCodes.mark({ ok: false, why: parsed.why }, parsed.code);
+      }
+      const environment = Object.assign({}, current.environment || {},
+                                       { [id]: parsed.tuning });
+      const text = pepListeners.documentText(current.listeners, environment);
+      const writtenEnv = owner.setListeners(text);
+      if (!writtenEnv) {
+        log.debug('Leaving XacmlAdmin.listenerAction(). Not written.');
+        return errorCodes.mark({ ok: false,
+                                 why: 'The directory refused the change.' },
+                               'STS-XACML-0251');
+      }
+      audit.audit({ action: owner.audit + '.listener.environment',
+                    actor: '', protocol: 'XACML',
+                    detail: 'Set the tuning of environment listener "' +
+                            id + '" of ' + owner.noun + ' "' + name + '".' });
+      owner.changed('its listeners were saved');
+      log.debug('Leaving XacmlAdmin.listenerAction(). Environment ' + id);
+      // THE TUNING IS ON THE NEXT PEPS ANSWER (the environment row's
+      // `tuning`). The listeners answer names no `environment` member, and
+      // a member it does not name is a 500.
+      return { ok: true, listeners: current.listeners,
+               what: '"' + name + '" applies the tuning of "' + id + '" on ' +
+                     'its next pull. The address, port and protocol stay ' +
+                     'the environment\'s.' };
     } else {
       checked = pepListeners.without(current.listeners,
                                      String(body.listener || body.id || ''),
@@ -1716,8 +1882,8 @@ class XacmlAdmin {
                 clash.code);
       return errorCodes.mark({ ok: false, why: clash.why }, clash.code);
     }
-    const written = owner.setListeners(list.length
-                                              ? JSON.stringify(list) : null);
+    const written = owner.setListeners(pepListeners.documentText(list,
+                                              current.environment || {}));
     if (!written) {
       log.debug('Leaving XacmlAdmin.listenerAction(). Not written.');
       return errorCodes.mark({ ok: false,
@@ -2234,10 +2400,6 @@ class XacmlAdmin {
       },
       resolve: function (proxy: any): any {
         const now = current();
-        const signals = clusters.signalsProblem(proxy, now.members.length);
-        if (signals) {
-          return signals;
-        }
         if (!now.members.length) {
           return pepProxy.resolutionProblem(proxy);
         }
@@ -2332,7 +2494,7 @@ class XacmlAdmin {
   // A member that leaves keeping a copy (#1760): the effective documents
   // become its own, its routes' generated policies `pep-<pep>-<route>`.
   private keepCopy(cluster: any, member: any): any {
-    const { log, peps, pepProxy, routePolicies } = this.deps;
+    const { log, peps, pepProxy, routePolicies, pepListeners } = this.deps;
     const clusters = this.deps.clusters;
     log.debug('Entering XacmlAdmin.keepCopy(). ' + member.pep);
     const docs = clusters.documentsFor(cluster, member);
@@ -2364,7 +2526,11 @@ class XacmlAdmin {
       peps.setSettings(member.pep, docs.settings);
     }
     if (docs.listeners) {
-      peps.setListeners(member.pep, docs.listeners);
+      // THE MEMBER'S ENVIRONMENT TUNING IS ITS OWN, not the cluster's
+      // definitions. A copy of the cluster's listeners keeps it.
+      const raw = peps.read(member.pep);
+      peps.setListeners(member.pep, pepListeners.withEnvironmentText(
+        docs.listeners, pepListeners.environmentFrom(raw && raw.listeners)));
     }
     log.debug('Leaving XacmlAdmin.keepCopy(). ' + generated.length);
     return { ok: true, generated: generated };
@@ -2504,14 +2670,6 @@ class XacmlAdmin {
       }
       const next = Object.assign({}, held,
         { members: held.members.concat([member]) });
-      const proxy = held.proxy ? pepProxy.validate(held.proxy, owner.policyOwner)
-                               : null;
-      const signals = clusters.signalsProblem(proxy && proxy.ok
-        ? proxy.proxy : null, next.members.length);
-      if (signals) {
-        log.debug('Leaving XacmlAdmin.clusterAction(). Signals.');
-        return this.refused(signals.why, signals.code);
-      }
       const problem = clusters.memberProblem(next, pep);
       if (problem) {
         log.debug('Leaving XacmlAdmin.clusterAction(). Member check.');

@@ -157,12 +157,12 @@
 // THE ONE THING THIS JOB WILL NOT DO UNTIL SECTION 6.
 //
 // **THE NUDGE IS DELIBERATELY OFF FOR SECTIONS 1–5**, because the PULL is the
-// contract and the nudge is an optimisation over it. The PEP registers its
-// HTTPS notify URL — the nudge is https only since 2026-11-14 — and this job
-// turns `xacml.pepNotify` OFF in its realm as soon as it creates it, so the
-// PDP dials nothing; section 1 asserts the registration reply calls the URL
-// usable, and that nothing is dialled. Every convergence up to section 5 is
-// therefore a POLL and nothing else.
+// contract and the nudge is an optimisation over it. POST /notify is HTTPS
+// only, and this container's listener certificate does not exist until
+// section 1b writes it, so the first registration advertises no notify URL.
+// This job also turns `xacml.pepNotify` OFF as soon as it creates the realm,
+// so the PDP dials nothing either way. Section 1 asserts that empty
+// registration. Every convergence up to section 5 is a POLL and nothing else.
 //
 // Section 6 then turns the nudge on IN THIS REALM and measures the
 // difference, which is the only way to have both claims: that the PEP
@@ -203,7 +203,11 @@
 //      sign-out at the service ending the proxy session (by CAEP, and by
 //      the liveness door), a rotated secret and a deleted application
 //      reaching the PEP, and deny-by-default — with the
-//      application's own counter saying what reached it. The launchers
+//      application's own counter saying what reached it. A route whose
+//      policy names a configured role permits a member of that role and
+//      refuses a member of another role, and a public route is reached
+//      with no credential and refuses a method it does not take. The
+//      launchers
 //      hand it `XACML_PEP_PROXY_URL`, `XACML_PEP_PROXY_HTTPS_URL` and
 //      `XACML_PEP_UPSTREAM_URL`; started here, the job builds and starts
 //      the companion beside its own PEP.
@@ -1563,20 +1567,24 @@ async function itRegistersAndPulls() {
              pdpIndex.body.version + " — the same release.");
   });
 
-  check("the PEP registered an HTTPS notify URL the PDP calls usable",
+  // THE URL ARRIVES WITH THE CERTIFICATE, NOT WITH THE FIRST REGISTRATION.
+  // derive_notify_url() returns nothing while the HTTPS listener serves no
+  // certificate, and section 1b is what writes that pair. Section 6 reads
+  // the row again, after the reload and a heartbeat, and that is where the
+  // derived https://<name>:9443/notify has to be usable.
+  check("before its listener certificate, the PEP registers no notify URL",
         function () {
     assert.ok(seen.registration.notify,
       "the registration answer should carry the PDP's verdict on the notify " +
       "URL; the PEP recorded " + JSON.stringify(seen.registration));
-    assert.ok(/^https:\/\//.test(String(seen.registration.notify.url)),
-      "the nudge is https only (2026-11-14), so the PEP advertises its " +
-      "HTTPS listener; it registered " +
+    assert.strictEqual(seen.registration.notify.url, null,
+      "POST /notify is HTTPS only, and nothing is listening for it until " +
+      "section 1b's certificate is served; it registered " +
       JSON.stringify(seen.registration.notify));
-    assert.strictEqual(seen.registration.notify.usable, true,
-      "an https notify URL is usable. THE PREMISE OF SECTIONS 4 AND 5 is " +
-      "xacml.pepNotify OFF in this realm, so nothing is dialled and the " +
-      "convergences up to section 5 happen by POLLING; section 6 turns it on " +
-      "and measures the difference. The PDP said " +
+    assert.strictEqual(seen.registration.notify.usable, false,
+      "with no URL the PDP does not nudge. xacml.pepNotify is also OFF, " +
+      "so sections 4 and 5 converge by polling; section 6 turns the nudge " +
+      "on once the certificate is served. The PDP said " +
       JSON.stringify(seen.registration.notify));
   });
 
@@ -3044,6 +3052,12 @@ const authnSignin = require("./authn_signin");
 const ssfRoles = require("./ssf_roles.js");
 
 const OUTSIDER_PERSON = "pep-outsider-person";
+// Two people, each a member of one configured role, for the route whose
+// simple policy names only the first role (section 10j).
+const ROLE_READERS = "pep-proxy-readers";
+const ROLE_OTHERS = "pep-proxy-others";
+const ROLE_READER = "pep-role-reader";
+const ROLE_OTHER = "pep-role-other";
 const PROXY_API_AUDIENCE = "https://pep-app.example.test/api";
 const PROXY_SAML_AUDIENCE = "https://pep-app.example.test/saml";
 const PROXY_OTHER_AUDIENCE = "https://somebody-else.example.test/api";
@@ -3758,12 +3772,18 @@ async function itTakesItsSettingsFromTheService() {
                               encodeURIComponent(PEP_NAME)));
   check("the PEP's page answers that row alone, with the catalogue",
         function () {
-          assert.ok(page.status === 200 && page.body.peps.length === 1 &&
-            page.body.settingsCatalogue &&
-            page.body.settingsCatalogue.settings.length === 23,
+          // SETTINGS in xacml/xacml_pep_settings.ts, description through
+          // proxyStripCookies. proxyMaxAccounts and proxyStripCookies are
+          // the two past the old count of 23.
+          const catalogue = page.body.settingsCatalogue;
+          const n = catalogue && catalogue.settings
+            ? catalogue.settings.length : 0;
+          assert.ok(page.status === 200 && page.body.peps &&
+            page.body.peps.length === 1 && n === 25,
             "GET /admin-api/xacml/peps?pep= should answer one row and the " +
-            "catalogue; it answered " + page.status + " " +
-            String(page.text).slice(0, 300));
+            "catalogue of 25 settings; it answered " + page.status +
+            " with " + ((page.body.peps && page.body.peps.length) || 0) +
+            " row(s) and " + n + " settings");
         });
   const refused = await postJson(api("/xacml/set-pep-settings"),
     { name: PEP_NAME, settings: { pollIntervalMs: 5 } });
@@ -3973,6 +3993,7 @@ async function itProxiesAnApplication() {
     }
     await theProxyGuardsTheWire();
     await theProxyLosesAnApplication();
+    await theProxyDecidesByRole();
     await theProxyIsCleared();
   } finally {
     if (modeBefore !== "development") {
@@ -3982,7 +4003,9 @@ async function itProxiesAnApplication() {
   log.info("[proxy] OK — the PEP stood in front of " + pep.upstreamUrl +
            " on " + pep.proxyUrl + (pep.proxyHttpsUrl ? " and " +
            pep.proxyHttpsUrl : "") + ", by session, OAuth 2.0, Basic and " +
-           "SAML 2.0, deciding each request in its own engine.");
+           "SAML 2.0, permitting a member of the route's role and refusing " +
+           "a member of another, and serving its public routes, deciding " +
+           "each request in its own engine.");
   log.debug("Leaving itProxiesAnApplication().");
 }
 
@@ -5000,6 +5023,186 @@ async function theProxyGuardsTheWire() {
       "while an end-to-end header passes untouched");
   });
   log.debug("Leaving theProxyGuardsTheWire().");
+}
+
+// 10j. A CONFIGURED ROLE, AND A PUBLIC ROUTE.
+//
+// The routes above are decided by the realm's root, which reads
+// employeeType. This one is a simple policy: GET is `read`, and only a
+// member of ROLE_READERS may take it. ROLE_OTHER is a member of a
+// different role, so the same request is a Deny. The public route needs
+// no credential, still admits that refused person, and refuses a method
+// it does not take before anything reaches the application.
+async function theProxyDecidesByRole() {
+  log.debug("Entering theProxyDecidesByRole().");
+  const people = [[ROLE_READER, "Reader"], [ROLE_OTHER, "Other"]];
+  for (const one of people) {
+    const r = await postJson(api("/users/create"), {
+      username: one[0], invent: false,
+      attributes: { cn: "Remote PEP " + one[1], givenName: "Remote",
+                    sn: one[1], displayName: "Remote PEP " + one[1],
+                    mail: one[0] + "@xacml-remote-pep.test" }
+    });
+    assert.ok(r.status === 200 && r.body && r.body.ok,
+      "POST /admin-api/users/create should put " + one[0] + " in " +
+      REALM + "; it answered " + r.status + " " +
+      String(r.text).slice(0, 300));
+  }
+  const roles = [[ROLE_READERS, ROLE_READER], [ROLE_OTHERS, ROLE_OTHER]];
+  for (const one of roles) {
+    const made = await postJson(api("/roles/create-role"),
+                                { role: one[0],
+                                  description: "Reverse-proxy route test" });
+    assert.ok(made.status === 200 && made.body && made.body.ok !== false,
+      "POST /admin-api/roles/create-role for " + one[0] + " answered " +
+      made.status + " " + String(made.text).slice(0, 300));
+    const member = await postJson(api("/roles/add-member"),
+                                  { role: one[0], kind: "user",
+                                    member: one[1] });
+    assert.ok(member.status === 200 && member.body &&
+              member.body.ok !== false,
+      "POST /admin-api/roles/add-member should give " + one[1] + " " +
+      one[0] + "; it answered " + member.status + " " +
+      String(member.text).slice(0, 300));
+  }
+  await act("set-pep-route", {
+    name: PEP_NAME, id: "role-protected", path: "/pep-app/role",
+    match: "prefix", methods: ["GET", "POST"], methodsGiven: "true",
+    mechanisms: ["oauth2", "basic"], application: PROXY_APP,
+    authzKind: "simple", authzActionModel: "read-write",
+    authzActions: ["read"], "authzRole.read": [ROLE_READERS],
+    forwardCredentials: "false", signals: "false", mode: "headers",
+    headerName: ["X-Remote-User", "X-Remote-Auth"],
+    headerClaim: ["username", "mechanism"]
+  }, "added a route only " + ROLE_READERS + " may read");
+
+  const page = pep.proxyUrl + "/pep-app/role/page";
+  const reader = await personsToken(ROLE_READER, PROXY_API_AUDIENCE);
+  const other = await personsToken(ROLE_OTHER, PROXY_API_AUDIENCE);
+  const allowed = await until("the PEP to permit a member of " +
+                              ROLE_READERS, async function () {
+    const r = await proxyRequest("GET", page, {
+      headers: { authorization: "Bearer " + reader } });
+    return { ok: r.status === 200,
+             note: "GET /pep-app/role/page as " + ROLE_READER +
+                   " answered " + told(r) };
+  });
+  log.info("A member of " + ROLE_READERS + " was permitted " +
+           allowed.ms + "ms after the route was saved.");
+  check("a member of the route's role may read the protected resource",
+        function () {
+    assert.strictEqual(allowed.ok, true,
+      ROLE_READER + " holds " + ROLE_READERS + " and GET should be " +
+      "permitted");
+  });
+  const seen = await proxyRequest("GET", page, {
+    headers: { authorization: "Bearer " + reader,
+               "x-remote-user": "mallory" } });
+  check("the permitted member is the person named to the application",
+        function () {
+    assert.strictEqual(seen.status, 200,
+      "GET /pep-app/role/page answered " + told(seen));
+    assert.strictEqual((seen.json || {}).page, "other",
+      "the application echoes an unmatched /pep-app path as page " +
+      "\"other\"; it said " + JSON.stringify((seen.json || {}).page));
+    assert.strictEqual(echoedUser(seen), ROLE_READER,
+      "X-Remote-User is the member, never the client's mallory; it " +
+      "arrived as " + JSON.stringify(echoedUser(seen)));
+    assert.ok(!("authorization" in ((seen.json || {}).headers || {})),
+      "forwardCredentials is false, so the token must not reach the " +
+      "application");
+  });
+
+  const before = await upstreamHits();
+  const refused = await proxyRequest("GET", page, {
+    headers: { authorization: "Bearer " + other } });
+  const wrote = await proxyRequest("POST", page, {
+    headers: { authorization: "Bearer " + reader,
+               "content-type": "application/json" }, body: "{}" });
+  const none = await proxyRequest("GET", page);
+  const after = await upstreamHits();
+  check("a member of another role is refused the protected resource",
+        function () {
+    assert.strictEqual(refused.status, 403,
+      ROLE_OTHER + " holds " + ROLE_OTHERS + ", which this route does " +
+      "not grant, so GET should be 403; it answered " + told(refused));
+  });
+  check("a member of the read role may not take an action it does not " +
+        "grant", function () {
+    assert.strictEqual(wrote.status, 403,
+      "POST is write, and " + ROLE_READERS + " is granted read only; " +
+      "it answered " + told(wrote));
+  });
+  check("the protected resource still wants a credential", function () {
+    assert.strictEqual(none.status, 401,
+      "GET /pep-app/role/page with nothing answered " + told(none));
+    assert.ok(/Bearer/i.test(String(none.headers["www-authenticate"] ||
+                                    "")),
+      "with a Bearer challenge");
+  });
+  check("none of those refusals reached the application", function () {
+    assert.strictEqual(hitsOn(after, "/pep-app/role/page"),
+                       hitsOn(before, "/pep-app/role/page"),
+      "the refused GET, the refused POST and the missing credential " +
+      "must not be counted");
+  });
+
+  const openBefore = await upstreamHits();
+  const open = await proxyRequest("GET", pep.proxyUrl +
+                                  "/pep-app/public/page?x=2");
+  const openAsOther = await proxyRequest("GET", pep.proxyUrl +
+                                         "/pep-app/public/open", {
+    headers: { authorization: "Bearer " + other } });
+  const openAfter = await upstreamHits();
+  const postedBefore = await upstreamHits();
+  const posted = await proxyRequest("POST", pep.proxyUrl +
+                                    "/pep-app/public/page", {
+    headers: { "content-type": "application/json" }, body: "{}" });
+  const postedAfter = await upstreamHits();
+  check("a public endpoint needs no credential and reaches the " +
+        "application", function () {
+    assert.strictEqual(open.status, 200,
+      "GET /pep-app/public/page answered " + told(open));
+    assert.ok(open.json && open.json.page === "public" &&
+              open.json.query && open.json.query.x === "2",
+      "the echo should be the public page with the query forwarded; " +
+      "it is " + String(open.text).slice(0, 300));
+    assert.ok(!echoedUser(open),
+      "a public route names nobody; X-Remote-User arrived as " +
+      echoedUser(open));
+    assert.strictEqual(hitsOn(openAfter, "/pep-app/public/page"),
+                       hitsOn(openBefore, "/pep-app/public/page") + 1,
+      "and the application counted that request");
+  });
+  check("a public endpoint still admits a person another route refused",
+        function () {
+    assert.strictEqual(openAsOther.status, 200,
+      ROLE_OTHER + " was refused /pep-app/role/page and should still " +
+      "reach the public route; it answered " + told(openAsOther));
+    assert.ok(openAsOther.json && openAsOther.json.page === "public",
+      "the echo should be the public page; it is " +
+      String(openAsOther.text).slice(0, 300));
+    assert.ok(!echoedUser(openAsOther),
+      "a public route forwards nobody, including a signed-in caller; " +
+      "X-Remote-User arrived as " + echoedUser(openAsOther));
+    assert.strictEqual(hitsOn(openAfter, "/pep-app/public/open"),
+                       hitsOn(openBefore, "/pep-app/public/open") + 1,
+      "and the application counted that request too");
+  });
+  check("a method a public endpoint does not take is refused",
+        function () {
+    assert.strictEqual(posted.status, 405,
+      "POST /pep-app/public/page on a GET, HEAD route answered " +
+      told(posted));
+    const allow = String(posted.headers.allow || "").toUpperCase();
+    assert.ok(/\bGET\b/.test(allow) && /\bHEAD\b/.test(allow),
+      "with Allow naming GET and HEAD; it sent " +
+      JSON.stringify(posted.headers.allow || null));
+    assert.strictEqual(hitsOn(postedAfter, "/pep-app/public/page"),
+                       hitsOn(postedBefore, "/pep-app/public/page"),
+      "and the application saw nothing");
+  });
+  log.debug("Leaving theProxyDecidesByRole().");
 }
 
 // 10h. CLEARED, THE PROXY ANSWERS NOTHING AGAIN.

@@ -443,6 +443,11 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // person by an administrator, and revoked (#521).
                        'issue-signing-certificate',
                        'revoke-signing-certificate',
+                       // A TLS client certificate issued to the person
+                       // from this realm's CA, and revoked. The subject
+                       // is the directory entry's.
+                       'issue-tls-client-certificate',
+                       'revoke-tls-client-certificate',
                        // The person as an LDIF file, out and back in: the
                        // Import / export tab of their page (2026-11-14).
                        'export-ldif', 'import-ldif'];
@@ -2952,6 +2957,162 @@ class AdminActions {
     };
   }
 
+  /**
+   * The TLS client certificates one person has been issued in the ambient
+   * realm, and the subject the next one would carry.
+   *
+   * @param holder - the username
+   * @returns the signing list's shape, plus `entryDn`, `subjectDn` and
+   *   `caAvailable`
+   */
+  tlsClientCertificatesOf(holder) {
+    const { log, tlsClientCertificates, personEditor } = this.deps;
+    log.debug("Entering AdminActions.tlsClientCertificatesOf().");
+    const name = String(holder || '');
+    const purpose = 'tls-client';
+    let held = [];
+    try {
+      held = tlsClientCertificates.listFor(undefined, name, 'person',
+                                            purpose)
+        .map(function (cert) {
+          return { serialHex: cert.serialHex, label: cert.label,
+                   subject: cert.subject, keyAlg: cert.keyAlg,
+                   notBefore: cert.notBefore, notAfter: cert.notAfter,
+                   thumbprint: cert.thumbprint, state: cert.state,
+                   reason: cert.reason, revokedAt: cert.revokedAt,
+                   certificatePem: cert.certificatePem };
+        });
+    } catch (e) {
+      // No certificate authority in this process: nothing issued.
+      log.debug("Caught in AdminActions.tlsClientCertificatesOf(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    let entryDn = '';
+    try {
+      const editor = personEditor.editorFor(name);
+      entryDn = editor ? String(editor.dn || '') : '';
+    } catch (e) {
+      log.debug("Caught in AdminActions.tlsClientCertificatesOf(): " +
+                ((e && e.message) || e));
+      entryDn = '';
+    }
+    const planned = tlsClientCertificates.plannedPersonSubject(
+      undefined, name, entryDn);
+    const subjectDn = planned
+      ? planned.map(function (one) {
+          return one.name + '=' + one.value;
+        }).join(', ')
+      : '';
+    log.debug("Leaving AdminActions.tlsClientCertificatesOf(). " +
+              held.length + " held.");
+    return {
+      ok: true, kind: 'person', holder: name,
+      implicitName: 'urn:sts:person:' + name,
+      certificates: held,
+      active: held.filter(function (cert) {
+        return cert.state === 'valid';
+      }).length,
+      max: tlsClientCertificates.maxPerHolder('person', purpose),
+      keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),
+      defaultKeyAlg: tlsClientCertificates.DEFAULT_KEY_ALG,
+      revocationReasons: tlsClientCertificates.REVOCATION_REASONS.slice(),
+      passwordMin: tlsClientCertificates.PKCS12_PASSWORD_MIN,
+      caAvailable: !!planned,
+      entryDn: entryDn,
+      subjectDn: subjectDn
+    };
+  }
+
+  private tlsClientCertificateAction(action, holder, body) {
+    const { log, tlsClientCertificates, personEditor } = this.deps;
+    const self = this;
+    log.debug("Entering AdminActions.tlsClientCertificateAction(). " +
+              action);
+    const whose = '"' + holder + '"';
+    const standing = function () {
+      log.debug("Entering standing().");
+      log.debug("Leaving standing().");
+      return { user: holder,
+               tls: self.tlsClientCertificatesOf(holder) };
+    };
+    if (action === 'revoke-tls-client-certificate') {
+      const done = tlsClientCertificates.revoke(undefined, holder,
+        String(body.serialHex || ''), String(body.reason || ''), 'person',
+        'tls-client');
+      if (done.ok) {
+        done.message = 'The TLS client certificate ' +
+          done.certificate.serialHex + ' of ' + whose + ' was revoked (' +
+          done.reason + '). A handshake that presents it is refused ' +
+          'from now on.';
+        Object.assign(done, standing());
+      }
+      log.debug("Leaving AdminActions.tlsClientCertificateAction(). " +
+                "revoke " + (done.ok ? 'ok' : 'refused') + ".");
+      return this.refusedBy('STS-ADMIN-0942', done);
+    }
+    const passwordSaid = tlsClientCertificates.pkcs12PasswordProblem(
+      body.password, body.confirm === undefined ? undefined : body.confirm);
+    if (passwordSaid) {
+      log.debug("Leaving AdminActions.tlsClientCertificateAction(). The " +
+                "file password.");
+      return this.refused('STS-ADMIN-0940', { ok: false,
+                                              errors: [passwordSaid] });
+    }
+    let entryDn = '';
+    let email = '';
+    try {
+      const editor = personEditor.editorFor(holder);
+      if (editor) {
+        entryDn = String(editor.dn || '');
+        email = String(editor.mail || '');
+      }
+    } catch (e) {
+      // The entry was found a moment ago. A lookup that throws still
+      // issues: the SAN names the person, and the subject falls back to
+      // the common name, the UID and the organisation.
+      log.debug("Caught in AdminActions.tlsClientCertificateAction(): " +
+                ((e && e.message) || e));
+    }
+    return tlsClientCertificates.issue(undefined, {
+      kind: 'person', username: holder,
+      keyAlg: body.keyAlg || undefined, label: body.label || '',
+      email: email,
+      days: body.days ? Number(body.days) : undefined,
+      directorySubject: true, entryDn: entryDn,
+      initiatingEntity: 'admin', via: '/admin/users'
+    }).then(function (made) {
+      if (!made.ok) {
+        log.debug("Leaving AdminActions.tlsClientCertificateAction(). " +
+                  "The issue was refused.");
+        return self.refusedBy('STS-ADMIN-0941', made);
+      }
+      const issued = made.issued;
+      return tlsClientCertificates.bundle(issued, String(body.password))
+        .then(function (files) {
+          log.debug("Leaving AdminActions.tlsClientCertificateAction(). " +
+                    "A TLS client certificate was issued to " + holder +
+                    ".");
+          return Object.assign({
+            ok: true,
+            message: 'A TLS client certificate was issued to ' + whose +
+                     ' (serial ' + issued.serialHex + '). This is the ' +
+                     'only time its private key can be downloaded.',
+            certificate: {
+              serialHex: issued.serialHex, subject: issued.subject,
+              keyAlg: issued.keyAlg, label: issued.label,
+              notBefore: issued.notBefore, notAfter: issued.notAfter,
+              thumbprint: issued.thumbprint,
+              certificatePem: issued.certificatePem,
+              chainPem: issued.chainPem,
+              implicitName: 'urn:sts:person:' + holder
+            },
+            files: files
+          }, standing());
+        });
+    });
+  }
+
   private signingCertificateAction(action, kind, holder, body) {
     const { log, applications, tlsClientCertificates } = this.deps;
     const self = this;
@@ -4380,6 +4541,30 @@ class AdminActions {
       log.debug("Leaving AdminActions.usersAction(). A message-signing " +
                 "certificate.");
       return this.signingCertificateAction(action, 'person', who, body);
+    }
+
+    // A TLS CLIENT CERTIFICATE, issued to the person from this realm's CA
+    // and mapped to them by the register. The subject is rebuilt from the
+    // entry. The same two names an application already has; this branch is
+    // the person's.
+    if (action === 'issue-tls-client-certificate' ||
+        action === 'revoke-tls-client-certificate') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0939', { ok: false,
+          errors: ['Name the person in `user`.'] });
+      }
+      if (!require('../ldap/ldap_server').storedCertificatesOf('person',
+                                                               who)) {
+        log.debug("Leaving AdminActions.usersAction(). No entry.");
+        return this.refused('STS-ADMIN-0939', { ok: false,
+          errors: ['There is no person called "' + who + '" here, and ' +
+                   'issuing a certificate creates nobody.'] });
+      }
+      log.debug("Leaving AdminActions.usersAction(). A TLS client " +
+                "certificate.");
+      return this.tlsClientCertificateAction(action, who, body);
     }
 
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
@@ -12756,6 +12941,7 @@ export = {
   applicationStoredCertificatesOf:
     slot.forward('applicationStoredCertificatesOf'),
   signingCertificatesOf: slot.forward('signingCertificatesOf'),
+  tlsClientCertificatesOf: slot.forward('tlsClientCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),

@@ -5102,6 +5102,15 @@ class AdminApi {
           { action: 'revoke-signing-certificate',
             operationId: 'revokeUserSigningCertificate' },
 
+          // A TLS CLIENT CERTIFICATE FOR THE PERSON, issued from this
+          // realm's CA with the directory entry's subject. The same two
+          // names on an application are that application's door.
+          { action: 'issue-tls-client-certificate',
+            operationId: 'issueUserTlsClientCertificate' },
+
+          { action: 'revoke-tls-client-certificate',
+            operationId: 'revokeUserTlsClientCertificate' },
+
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject' },
 
@@ -7730,8 +7739,8 @@ class AdminApi {
 
       { method: 'GET', path: BASE + '/xacml/peps', tag: 'XACML',
         operationId: 'getXacmlPeps',
-        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep and GET ' +
-                 '/admin/xacml/pep/route',
+        mirrors: 'GET /admin/xacml, GET /admin/xacml/pep, GET ' +
+                 '/admin/xacml/pep/route and GET /admin/xacml/pep/monitor',
         // ONE PEP's PAGE (#1760): `/admin/xacml/pep?pep=<name>` is this
         // answer narrowed to that row, `/admin-api/applications`'
         // `?application=` arrangement.
@@ -7910,6 +7919,8 @@ class AdminApi {
           { action: 'disable-pep', operationId: 'disableXacmlPep' },
           { action: 'enable-pep', operationId: 'enableXacmlPep' },
           { action: 'forget-pep', operationId: 'forgetXacmlPep' },
+          // Sync (2026-11-16): one PEP nudged to pull everything now.
+          { action: 'sync-pep', operationId: 'syncXacmlPep' },
           { action: 'issue-pep-certificate',
             operationId: 'issueXacmlPepCertificate' },
           // The remote PEP's reverse proxy (#1760).
@@ -7923,6 +7934,8 @@ class AdminApi {
             operationId: 'clearXacmlPepSettings' },
           // The remote PEP's listeners and its routes one at a time (#1760).
           { action: 'set-pep-listener', operationId: 'setXacmlPepListener' },
+          { action: 'set-pep-environment-tuning',
+            operationId: 'setXacmlPepEnvironmentTuning' },
           { action: 'remove-pep-listener',
             operationId: 'removeXacmlPepListener' },
           { action: 'renew-pep-listener-certificate',

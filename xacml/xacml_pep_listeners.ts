@@ -66,6 +66,7 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
 import config = require('../common/config');
+import pepListenerTuning = require('./xacml_pep_listener_tuning');
 
 const { log } = helpers;
 
@@ -82,6 +83,9 @@ interface Listener {
   // Moved by `renew-pep-listener-certificate`; a PEP holding a certificate
   // requested under another value asks for a new one.
   renew: number;
+  // Absent on a listener saved before the knobs existed. The pull fills
+  // the defaults (`xacml_pep_listener_tuning.ts`).
+  tuning?: Record<string, unknown>;
 }
 
 // One of the environment's four.
@@ -107,11 +111,15 @@ interface ReportedListener {
   reason: string;
   renew: number;
   certificate: Record<string, string> | null;
+  // Figures since the process started, when the PEP reported them.
+  stats?: Record<string, unknown>;
 }
 
 interface InUse {
   at: string;
   listeners: ReportedListener[];
+  memory?: Record<string, unknown>;
+  paths?: Array<Record<string, unknown>>;
 }
 
 interface Refusal {
@@ -159,7 +167,7 @@ const REASONS = ['none', 'address-in-use', 'permission-denied',
                  'proxy-off', 'http-off', 'not-configured', 'crl-only',
                  'other'];
 const MEMBERS = ['id', 'protocol', 'purpose', 'address', 'port', 'dnsNames',
-                 'ipAddresses', 'keyAlg', 'renew'];
+                 'ipAddresses', 'keyAlg', 'renew', 'tuning'];
 const ID = /^[A-Za-z0-9._-]{1,64}$/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const CERT_MEMBERS = ['subject', 'issuer', 'serialHex', 'subjectAltName',
@@ -251,7 +259,14 @@ class PepListeners {
       keyAlgorithms: KEY_ALGS.slice(),
       defaultKeyAlg: KEY_ALGS[0],
       maxListeners: MAX_LISTENERS,
-      plainHttpProxyAllowed: this.deps.allowsPlainHttpProxy()
+      plainHttpProxyAllowed: this.deps.allowsPlainHttpProxy(),
+      // What the listener-details form offers, the same closed sets the
+      // save is held to. `tuningDefaults` is the HTTPS default of each
+      // purpose; the form forces HTTP/2 and client certificates off for
+      // plain HTTP.
+      minVersions: pepListenerTuning.MIN_VERSIONS.slice(),
+      tls13CipherSuites: pepListenerTuning.TLS13_SUITES.slice(),
+      tuningDefaults: pepListenerTuning.catalogueDefaults()
     };
   }
 
@@ -419,13 +434,31 @@ class PepListeners {
       return this.refuse(where + ' ("' + id + '"): `renew` is a ' +
                          'non-negative integer.', 'STS-XACML-0243');
     }
+    // ABSENT TUNING IS LEFT ABSENT, so a save that did not post the knobs
+    // (every test written before them, and an edit of an old listener)
+    // does not invent a document. Present, it is validated whole.
+    let tuning: Record<string, unknown> | undefined;
+    if (given.tuning !== undefined) {
+      const parsed = pepListenerTuning.parse(given.tuning, where + ' ("' +
+                                            id + '")', purpose,
+                                            protocol === 'https');
+      if (parsed.ok === false) {
+        log.debug("Leaving PepListeners.one(). Tuning.");
+        return parsed;
+      }
+      tuning = parsed.tuning as unknown as Record<string, unknown>;
+    }
     log.debug("Leaving PepListeners.one(). Usable.");
-    return {
+    const listener: Listener = {
       id: id, protocol: protocol as 'http' | 'https',
       purpose: purpose as 'api' | 'proxy', address: address, port: port,
       dnsNames: dnsNames, ipAddresses: ipAddresses,
       keyAlg: protocol === 'https' ? keyAlg as string : '', renew: renew
     };
+    if (tuning) {
+      listener.tuning = tuning;
+    }
+    return listener;
   }
 
   /**
@@ -535,22 +568,43 @@ class PepListeners {
    * Reads a stored document again.
    * @param text - the stored JSON, or ''
    * @param inUse - the PEP's report, for the environment's ports
-   * @returns `{ listeners, problem }`: the list when it validates (empty
-   *   when none is stored), else null and why
+   * @returns `{ listeners, problem, environment }`: the list when it
+   *   validates (empty when none is stored), else null and why, and the
+   *   environment listeners' tuning (empty when the attribute is still a
+   *   bare array)
    */
   stored(text: string, inUse: InUse | null):
-      { listeners: Listener[] | null; problem: string | null } {
+      { listeners: Listener[] | null; problem: string | null;
+        environment: Record<string, Record<string, unknown>> } {
     const { log } = this.deps;
     log.debug("Entering PepListeners.stored().");
+    const none = { listeners: [] as Listener[], problem: null,
+                   environment: {} as Record<string, Record<string, unknown>> };
     if (!text) {
       log.debug("Leaving PepListeners.stored(). None.");
-      return { listeners: [], problem: null };
+      return none;
     }
-    const checked = this.validate(text, inUse, false);
+    // A BARE ARRAY STAYS THE DEFINITIONS. The wrapped document is only
+    // written once an environment listener has a tuning, so a value from
+    // before that, and every test that parses the attribute as an array,
+    // still reads.
+    const split = pepListenerTuning.split(text);
+    if (split.why) {
+      log.debug("Leaving PepListeners.stored(). Not a document.");
+      return { listeners: null, problem: split.why, environment: {} };
+    }
+    const env = pepListenerTuning.environment(split.environment);
+    if (env.ok === false) {
+      log.debug("Leaving PepListeners.stored(). Environment.");
+      return { listeners: null, problem: env.why, environment: {} };
+    }
+    const checked = this.validate(split.list, inUse, false);
     log.debug("Leaving PepListeners.stored(). ok=" + checked.ok);
     return checked.ok
-      ? { listeners: (checked as Validated).listeners, problem: null }
-      : { listeners: null, problem: (checked as Refusal).why };
+      ? { listeners: (checked as Validated).listeners, problem: null,
+          environment: env.environment as
+            unknown as Record<string, Record<string, unknown>> }
+      : { listeners: null, problem: (checked as Refusal).why, environment: {} };
   }
 
   /**
@@ -578,6 +632,12 @@ class PepListeners {
     const at = list.map(function (row) { return row.id; }).indexOf(one.id);
     if (at >= 0) {
       one.renew = list[at].renew;
+      // AN EDIT THAT POSTS NO TUNING KEEPS THE ONE STORED, re-applied for
+      // the protocol this save names (plain HTTP forces three flags off).
+      if (one.tuning === undefined && list[at].tuning) {
+        one.tuning = pepListenerTuning.effective(list[at].tuning, one.purpose,
+          one.protocol === 'https') as unknown as Record<string, unknown>;
+      }
       list[at] = one;
     } else {
       list.push(one);
@@ -712,12 +772,26 @@ class PepListeners {
             ? one.renew : 0,
           certificate: certificate
         });
+        const stats = pepListenerTuning.statsOf(one.stats);
+        if (stats) {
+          kept[kept.length - 1].stats =
+            stats as unknown as Record<string, unknown>;
+        }
       });
     const stamp = at !== undefined ? at
       : (typeof said.at === 'string' && !isNaN(Date.parse(said.at))
           ? new Date(Date.parse(said.at)).toISOString() : '');
+    const report: InUse = { at: stamp, listeners: kept };
+    const memory = pepListenerTuning.memoryOf(said.memory);
+    const paths = pepListenerTuning.pathsOf(said.paths);
+    if (memory) {
+      report.memory = memory as unknown as Record<string, unknown>;
+    }
+    if (paths) {
+      report.paths = paths as unknown as Array<Record<string, unknown>>;
+    }
     log.debug("Leaving PepListeners.inUseOf(). " + kept.length);
-    return { at: stamp, listeners: kept };
+    return report;
   }
 
   /**
@@ -726,9 +800,12 @@ class PepListeners {
    * it (or null for "not reported").
    * @param defined - the definitions
    * @param inUse - the PEP's report, or null
+   * @param environment - the environment listeners' stored tuning; a row
+   *   carries `tuning` only when one was saved
    * @returns the rows, environment first
    */
-  rows(defined: Listener[], inUse: InUse | null): any[] {
+  rows(defined: Listener[], inUse: InUse | null,
+       environment?: Record<string, Record<string, unknown>> | null): any[] {
     const { log } = this.deps;
     log.debug("Entering PepListeners.rows().");
     const reported = function (id: string): ReportedListener | null {
@@ -736,11 +813,18 @@ class PepListeners {
         return one.id === id;
       })[0] || null : null;
     };
+    const saved = environment || {};
     const out = BOOTSTRAP.map(function (one) {
-      return { id: one.id, source: 'environment', protocol: one.protocol,
-               purpose: one.purpose, env: one.env, enable: one.enable,
-               defaultPort: one.port, definition: null,
-               reported: reported(one.id) };
+      const row: Record<string, unknown> = {
+        id: one.id, source: 'environment', protocol: one.protocol,
+        purpose: one.purpose, env: one.env, enable: one.enable,
+        defaultPort: one.port, definition: null,
+        reported: reported(one.id)
+      };
+      if (saved[one.id]) {
+        row.tuning = saved[one.id];
+      }
+      return row;
     }).concat(defined.map(function (one) {
       return { id: one.id, source: 'service', protocol: one.protocol,
                purpose: one.purpose, env: '', enable: '',
@@ -789,5 +873,20 @@ export = {
   stored: slot.forward('stored'),
   withListener: slot.forward('withListener'),
   without: slot.forward('without'),
-  rows: slot.forward('rows')
+  rows: slot.forward('rows'),
+  documentText: pepListenerTuning.documentText,
+  withEnvironmentText: pepListenerTuning.withEnvironmentText,
+  environmentFrom: function (text: unknown):
+      Record<string, Record<string, unknown>> {
+    log.debug("Entering environmentFrom().");
+    const split = pepListenerTuning.split(text || '');
+    const env = pepListenerTuning.environment(split.environment);
+    log.debug("Leaving environmentFrom().");
+    return env.ok
+      ? env.environment as unknown as Record<string, Record<string, unknown>>
+      : {};
+  },
+  effectiveTuning: pepListenerTuning.effective,
+  fromBody: pepListenerTuning.fromBody,
+  parseTuning: pepListenerTuning.parse
 };

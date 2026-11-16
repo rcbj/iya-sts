@@ -4,20 +4,31 @@
 'use strict';
 
 // ===========================================================================
-// REMOTE PEP CLUSTERS (#1760, phase 1).
+// REMOTE PEP CLUSTERS (#1760). Phase 1 is the shared configuration.
+// Phase 3 is a CAEP/RISC stream per member.
 //
 // rcbj: "a concept of a logical cluster of Remote PEPs that share a common
 // configuration. You can configure one Remote PEP, then apply it to
 // additional PEPs. The only thing that should differ between the Remote
 // PEPs is its identifier and listening address."
 //
-// THE WHOLE FEATURE IS ON THIS SIDE. A PEP pulls its proxy, its settings and
-// its listeners as documents this service builds from ONE stored row
+// THE CONFIGURATION IS ON THIS SIDE. A PEP pulls its proxy, its settings
+// and its listeners as documents this service builds from ONE stored row
 // (`GET /xacml/pep/proxy`, `GET /xacml/pep/settings`), so a cluster is the
 // row it is answered from: `effectiveRow()` merges the cluster's documents
 // with the member's own addresses, and every door that reads a PEP's
-// configuration reads that. The PEP is unchanged, and so is a PEP in no
-// cluster: its effective row IS its row, the same object.
+// configuration reads that. A PEP in no cluster is unchanged: its
+// effective row IS its row, the same object.
+//
+// THE SIGNAL STREAM IS THE PEP'S (#1760 phase 3). Members share one OAuth
+// client, so they would share one CAEP/RISC poll stream and the first
+// poller would consume a sign-out. A registered PEP sends its name in
+// `X-Iya-Pep-Name` on every transmitter call. `GET /ssf/stream` then lists
+// only the streams tagged with that name, and a POST creates one tagged
+// from the header, never from the body. A PEP that sends no header keeps
+// the untagged stream. That replaced the refusal (`STS-XACML-0275`,
+// retired): a session route with `signals` on is saved for any number of
+// members.
 //
 // ONE ENTRY PER CLUSTER under the realm's `ou=pepClusters`, object class
 // `xacmlPepCluster` (`models/directory/xacml_pep_cluster.tsp`), its three
@@ -595,10 +606,16 @@ class PepClusters {
                                               { notifyUrl: member.notifyUrl }));
     }
     // THE LISTENERS: each definition with the member's address, port and
-    // extra names over it.
+    // extra names over it. A wrapped document is the definitions plus one
+    // member's environment tuning; take the array and leave the
+    // environment, which is the member's own and is put back by
+    // effectiveRow().
     let listeners = cluster.listeners;
-    const list = parse(cluster.listeners);
-    if (Array.isArray(list)) {
+    const parsed = parse(cluster.listeners);
+    const list = Array.isArray(parsed) ? parsed
+      : (parsed && typeof parsed === 'object' &&
+         Array.isArray(parsed.listeners) ? parsed.listeners : null);
+    if (list) {
       listeners = JSON.stringify(list.map(function (one: any) {
         const over = one && typeof one === 'object' && typeof one.id ===
           'string' ? member.listeners[one.id] : undefined;
@@ -649,8 +666,13 @@ class PepClusters {
     const member = cluster.members.filter(function (one) {
       return one.pep === row.name;
     })[0];
-    const out = Object.assign({}, row, this.documentsFor(cluster, member),
-                              { cluster: cluster.name });
+    const docs = this.documentsFor(cluster, member);
+    // THE MEMBER'S ENVIRONMENT TUNING stays its own. documentsFor hands
+    // back the cluster's definitions; the four environment listeners are
+    // this process's, stored on the member's attribute.
+    docs.listeners = pepListeners.withEnvironmentText(docs.listeners,
+      pepListeners.environmentFrom(row.listeners));
+    const out = Object.assign({}, row, docs, { cluster: cluster.name });
     log.debug("Leaving PepClusters.effectiveRow(). " + cluster.name);
     return out;
   }
@@ -669,46 +691,22 @@ class PepClusters {
     const held = peps.read(member.pep);
     const base = held || { name: member.pep, hostname: '', notifyUrl: '',
                            listenersInUse: null };
-    const out = Object.assign({}, base, this.documentsFor(cluster, member),
-                              { cluster: cluster.name });
+    const docs = this.documentsFor(cluster, member);
+    docs.listeners = pepListeners.withEnvironmentText(docs.listeners,
+      pepListeners.environmentFrom(held && held.listeners));
+    const out = Object.assign({}, base, docs, { cluster: cluster.name });
     log.debug("Leaving PepClusters.memberRow(). " + !!held);
     return { row: out, registered: !!held };
   }
 
   // =========================================================================
   // THE CHECKS A CLUSTER WRITE ASKS OF EVERY MEMBER.
+  //
+  // A session route with `signals` on is not one of them (#1760 phase 3).
+  // Each member polls a stream of its own, named by `X-Iya-Pep-Name`
+  // (`ssf/ssf.ts`). `STS-XACML-0275`, which refused the second member, is
+  // retired.
   // =========================================================================
-  /**
-   * Whether a cluster's proxy document makes the members share a signal
-   * stream: a session route with `signals` on, and more than one member.
-   * The members poll one CAEP/RISC stream per client, so a sign-out
-   * could be consumed by the wrong member; a stream per member is phase 3.
-   * @param proxy - the normalised document, or null
-   * @param count - how many members the cluster would have
-   * @returns a refusal (`STS-XACML-0275`), or null
-   */
-  signalsProblem(proxy: any, count: number): Refusal | null {
-    const { log } = this.deps;
-    log.debug("Entering PepClusters.signalsProblem().");
-    const route = proxy && count > 1 ? (proxy.routes || [])
-      .filter(function (one: any) {
-        return one.mechanisms.indexOf('session') >= 0 && one.signals === true;
-      })[0] : null;
-    if (route) {
-      log.debug("Leaving PepClusters.signalsProblem(). " + route.id);
-      return this.refuse('Route "' + route.id + '" signs people in with a ' +
-        'session and ends their sessions by CAEP/RISC signals (`signals`), ' +
-        'and the cluster would have ' + count + ' members. The members ' +
-        'would share one signal stream per client, so a sign-out could be ' +
-        'consumed by a member that does not hold the session. Turn the ' +
-        'route\'s signals off (its sign-out then reaches the proxy by POST ' +
-        '/xacml/pep/session), or keep this cluster to one member.',
-        'STS-XACML-0275');
-    }
-    log.debug("Leaving PepClusters.signalsProblem(). None.");
-    return null;
-  }
-
   /**
    * Whether a simple or public route of a cluster's document names no
    * resource while the cluster has no logical base URL to build it from.
@@ -862,7 +860,6 @@ export = {
   documentsFor: slot.forward('documentsFor'),
   effectiveRow: slot.forward('effectiveRow'),
   memberRow: slot.forward('memberRow'),
-  signalsProblem: slot.forward('signalsProblem'),
   resourceProblem: slot.forward('resourceProblem'),
   memberProblem: slot.forward('memberProblem'),
   memberProblems: slot.forward('memberProblems')

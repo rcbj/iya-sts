@@ -1872,6 +1872,26 @@ Listeners", the HTTPS listener that exists as the default, and "an arbitrary
 
 `tests/xacml_pep_proxy.js` L, R and T hold it.
 
+## Sync, and the Clustered column (rcbj, 2026-11-16)
+
+**THE TABLE'S CLUSTERED COLUMN** reads `cluster` off each row, which
+`XacmlPepClusters.effectiveRow()` sets on a member only. It needs no new member,
+so `GET /admin-api/xacml/peps` already answered it.
+
+**SYNC IS A NUDGE TO ONE PEP, AWAITED.** rcbj asked for a button that "pushes"
+the policies, the instance's configuration and the cluster's. This service
+pushes nothing, so `sync-pep` (`XacmlAdmin.syncPep()`) is one nudge to that PEP
+alone, at the URL `notifiable()` would dial. A nudge makes the PEP pull a whole
+round, and a member's pulls are its cluster's documents. What it already holds
+is answered 304: every pull's token is a digest of what would be sent, so a
+forced re-send would be the same bytes. Unlike the change nudge it waits for the
+answer, because a person pressed a button. It writes nothing, so there is no
+commit to wait for. It refuses before dialling with `STS-XACML-0282` (remote PEPs
+or nudging off), `0283` (Stop nudging is on for this PEP) or `0284` (no usable
+notify URL). An undelivered nudge is `0285`, recorded on the row like every
+nudge. It is a PROMISE, like `issue-pep-certificate`. It is not a
+`MEMBER_REFUSED` action.
+
 ## What the console page is NOT
 
 `/admin/xacml/peps` reaches into no other process. "Stop nudging" stops this
