@@ -7784,8 +7784,8 @@
     "text": "远程 PEP 的认证方式"
   },
   "xacml.pepAuthentication|description": {
-    "en": "8d19137204b63401",
-    "text": "either（默认）：远程 PEP 通过本服务验证的客户端证书访问 /xacml/pep/* 和 POST /xacml/pip，或者通过 DPoP 绑定的访问令牌（RFC 9449）访问；该令牌由 PEP 以自己的 RFC 7523 自断言经客户端 sts-remote-pep 获得，受众为本领域的 /xacml/pep，并携带 xacml:pep。出示了令牌时，以令牌为准。token：仅接受令牌，仅有证书会被拒绝。certificate：仅接受证书，不读取 Authorization 标头。无论哪种方式，PEP 的条目都必须持有 REMOTE_PEPS（roles.remotePepGroup），并由访问控制策略决定。同样的设置也适用于远程 PEP 在 /access/v1 上的令牌，即边缘 PDP 转发细粒度评估时，无论 authzen.callerAuthentication 如何设置。"
+    "en": "223363d0264d3558",
+    "text": "token，自 1.1.0 起的默认值：远程 PEP 只能凭借经 DPoP 绑定的访问令牌（RFC 9449）访问 /xacml/pep/* 和 POST /xacml/pip，该令牌由其自身的 RFC 7523 自断言通过客户端 sts-remote-pep 获得，受众为本领域的 /xacml/pep 并带有 xacml:pep；仅有客户端证书会被拒绝。either：令牌或本服务验证的客户端证书；出示令牌时由令牌决定——只要仍有 PEP 使用证书进行身份验证，请在升级前设置此值。certificate：仅证书，并且不读取 Authorization 标头。无论哪种情况，PEP 的条目都必须持有 REMOTE_PEPS（roles.remotePepGroup），并由访问控制策略作出决定。同一答案也适用于远程 PEP 在 /access/v1 的令牌，即边缘 PDP 对细粒度评估的转发，无论 authzen.callerAuthentication 如何设置。"
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

@@ -282,9 +282,13 @@ function checkTheExemption(t) {
           '2e-i. the clients DPoP-bound as public clients are the admin ' +
           'console, the user portal, the reports application and (#1827\'s ' +
           'follow-up) the remote PEP\'s client, nothing else');
-  t.equal(sc.DPOP_STANDS_FOR_CERTIFICATE_CLIENTS.join(','), 'sts-remote-pep',
-          '2e-i-b. and only the remote PEP\'s client has its DPoP binding ' +
-          'stand for a declared certificate binding');
+  // Phase 4 of #1827's follow-up: no client's DPoP binding stands for a
+  // declared certificate binding any more; the exception is gone.
+  t.equal(sc.dpopStandsForCertificate, undefined,
+          '2e-i-b. no client\'s DPoP binding stands for a certificate ' +
+          'binding any more (phase 4 retired the exception)');
+  t.equal(sc.REMOTE_PEP_CLIENT, 'sts-remote-pep',
+          '2e-i-b2. the remote PEP\'s client is named for its own refusal');
   const pepNoProof = sc.publicClientIssuanceRefusal({
     clientId: 'sts-remote-pep', method: 'none', dpopJkt: '',
     grant: 'urn:ietf:params:oauth:grant-type:jwt-bearer' });

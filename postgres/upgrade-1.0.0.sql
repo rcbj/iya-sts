@@ -13,6 +13,9 @@
 --   sts_sessions_started        #882, schema version 32
 --   INSERT version 32 beside 31 (the table keeps every version)
 --
+-- And one DATA step that is no schema change at all: xacml.pepAuthentication
+-- (#1827's follow-up, phase 4) — see THE REMOTE PEPS' CREDENTIAL, at the end.
+--
 -- This file builds those two indexes and writes that row. It does not run
 -- schema.sql. That file is idempotent for an empty volume, and it is the
 -- wrong upgrade here: its version-31 block drops and recreates
@@ -314,5 +317,121 @@ $upgrade$;
 ANALYZE sts_sessions;
 
 INSERT INTO sts_schema (version) VALUES (32) ON CONFLICT (version) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- THE REMOTE PEPS' CREDENTIAL (#1827's follow-up, phase 4; rcbj 2026-11-16:
+-- "Default to 'token' ... create a migration script").
+--
+-- 1.1.0 makes xacml.pepAuthentication default to `token`: a remote PEP is
+-- admitted on a DPoP-bound access token from its own assertion key, and a
+-- client certificate alone is refused (STS-XACML-0289). 1.0.0 had no tokens
+-- for a PEP, so EVERY PEP a 1.0.0 store has registered authenticated by its
+-- client certificate, and on the new default each would be cut off at the
+-- upgrade. So every realm that has registered at least one remote PEP is
+-- given `either` as its own stored value — the certificate keeps working
+-- beside the token — and the operator moves it to `token` once each PEP runs
+-- on its key (docs/remote-pep.md, "Upgrading a deployment whose PEPs use a
+-- certificate"). A realm with no PEP, and a new install, gets the default.
+--
+-- WHAT IS READ. A registered PEP is an entry directly under the realm's
+-- ou=peps: a row of sts_ldap_entries whose parent_key starts `ou=peps,` —
+-- dn_key is the normalized DN (each RDN trimmed and lower-cased,
+-- ldap_server.js's normalizeDn()), parent_key is generated from it, and
+-- neither is sealed. The stored settings are plain JSON: the default
+-- realm's are sts_appconfig rows of {"raw": value}, every other realm's are
+-- sts_realms.overrides, a map of key to value; only a `secret` setting's
+-- VALUE is ever sealed (persistence/sealed_settings.js), and this one is not
+-- secret.
+--
+-- WHAT IS WRITTEN, and only where NO value is stored already, so a value an
+-- operator set wins and a second run writes nothing:
+--
+--   1. the default realm: an sts_appconfig row, when realm 'default' has a
+--      PEP. That row is PROCESS-WIDE — config.js reads the default realm's
+--      overrides as every realm's fallback — so it would carry `either` into
+--      every realm that stores no value of its own;
+--   2. every other realm with a PEP: `either` in its overrides;
+--   3. and so, when step 1 wrote `either`, every other realm with NO PEP is
+--      given `token` in its overrides, which is the value it would have had,
+--      kept from inheriting the default realm's. A realm created after the
+--      upgrade inherits `either` from the default realm until the operator
+--      sets the default realm to `token`.
+--
+-- A CHANGE-LOG ROW (sts_changes, kind `appconfig` or `realms`, origin
+-- `upgrade-1.0.0`) is written beside each write that changed something, so
+-- a 1.1.0 process already running — the header allows starting it first —
+-- reads the stored value at its next change-log pull rather than at its
+-- next start.
+--
+-- NOT IN A TRANSACTION, for the reason the header gives (this file opens
+-- none). Each statement is idempotent on its own; a run stopped between them
+-- is completed by running the file again. A 1.0.0 process still serving
+-- reads neither key (it does not know the setting; config.js's
+-- applyPersistedOverrides() logs STS-CORE-0008 and leaves the value in the
+-- store), and its own writes merge by key, so they do not remove it.
+--
+-- A CELL OR TIER DATABASE without sts_realms, sts_appconfig,
+-- sts_ldap_entries or sts_changes is skipped, saying so: the step needs the directory and
+-- the settings in ONE database. Where they are split, set the value by hand
+-- (POST /admin-api/config/set in each realm with remote PEPs).
+-- ---------------------------------------------------------------------------
+SELECT (to_regclass('sts_realms') IS NOT NULL
+        AND to_regclass('sts_appconfig') IS NOT NULL
+        AND to_regclass('sts_ldap_entries') IS NOT NULL
+        AND to_regclass('sts_changes') IS NOT NULL)::int
+       AS pep_tables_present
+\gset
+\if :pep_tables_present
+WITH written AS (
+  INSERT INTO sts_appconfig (key, value)
+  SELECT 'xacml.pepAuthentication', '{"raw": "either"}'::jsonb
+   WHERE EXISTS (SELECT 1 FROM sts_ldap_entries
+                  WHERE realm = 'default' AND parent_key LIKE 'ou=peps,%')
+  ON CONFLICT (key) DO NOTHING
+  RETURNING 1)
+INSERT INTO sts_changes (origin, kind)
+SELECT 'upgrade-1.0.0', 'appconfig' WHERE EXISTS (SELECT 1 FROM written);
+
+WITH written AS (
+  UPDATE sts_realms AS r
+     SET overrides = COALESCE(r.overrides, '{}'::jsonb) ||
+                     '{"xacml.pepAuthentication": "either"}'::jsonb
+   WHERE r.id <> 'default'
+     AND NOT jsonb_exists(COALESCE(r.overrides, '{}'::jsonb),
+                          'xacml.pepAuthentication')
+     AND EXISTS (SELECT 1 FROM sts_ldap_entries AS e
+                  WHERE e.realm = r.id AND e.parent_key LIKE 'ou=peps,%')
+  RETURNING 1)
+INSERT INTO sts_changes (origin, kind)
+SELECT 'upgrade-1.0.0', 'realms' WHERE EXISTS (SELECT 1 FROM written);
+
+WITH written AS (
+  UPDATE sts_realms AS r
+     SET overrides = COALESCE(r.overrides, '{}'::jsonb) ||
+                     '{"xacml.pepAuthentication": "token"}'::jsonb
+   WHERE r.id <> 'default'
+     AND NOT jsonb_exists(COALESCE(r.overrides, '{}'::jsonb),
+                          'xacml.pepAuthentication')
+     AND EXISTS (SELECT 1 FROM sts_appconfig AS a
+                  WHERE a.key = 'xacml.pepAuthentication'
+                    AND a.value->>'raw' = 'either')
+  RETURNING 1)
+INSERT INTO sts_changes (origin, kind)
+SELECT 'upgrade-1.0.0', 'realms' WHERE EXISTS (SELECT 1 FROM written);
+
+SELECT COALESCE((SELECT value->>'raw' FROM sts_appconfig
+                  WHERE key = 'xacml.pepAuthentication'), '(default)')
+         AS default_realm,
+       (SELECT count(*) FROM sts_realms
+         WHERE overrides->>'xacml.pepAuthentication' = 'either')
+         AS realms_either,
+       (SELECT count(*) FROM sts_realms
+         WHERE overrides->>'xacml.pepAuthentication' = 'token')
+         AS realms_token
+\gset
+\echo 'upgrade-1.0.0: xacml.pepAuthentication stored for the default realm:' :'default_realm' '; realms storing either:' :'realms_either' '; realms storing token:' :'realms_token'
+\else
+\echo 'upgrade-1.0.0: sts_realms, sts_appconfig, sts_ldap_entries or sts_changes is not in this database, so xacml.pepAuthentication was not written. Set it to either by hand in each realm whose remote PEPs still present a client certificate.'
+\endif
 
 \echo 'upgrade-1.0.0: schema version 32 is recorded. sts_sessions_subject_band and sts_sessions_started are valid. schema.sql was not run. The version-32 image can start.'

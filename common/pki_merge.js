@@ -159,6 +159,68 @@ function normalSerial(text) {
   return hex.replace(/^0+/, '') || '0';
 }
 
+// ---------------------------------------------------------------------------
+// WHY A RECORDED CERTIFICATE MAY NOT BE CERTIFIED AGAIN (2026-11-16).
+//
+// Every door that re-mints a slot — `pki.js`'s `recertifyUseCase()` (a
+// renewal, a reissue, an import) and `recertifyOrphanedSlots()` (what a merge
+// below reports) — issues a NEW certificate, with a new serial, over the key
+// the old one was over. Re-minting a REVOKED one therefore undid the
+// revocation: the new serial is on no list, so a person's revoked TLS client
+// certificate came back valid from the renewed authority, and its holder's
+// `keyCompromise` meant nothing after the next rebuild. Re-minting an EXPIRED
+// one gave somebody a certificate they had let lapse, which RFC 5280 section
+// 3.3 lets the register forget.
+//
+// **THE ANSWER IS ONE PREDICATE, HERE, BECAUSE BOTH DOORS AND THE MERGE ASK
+// IT.** This module is the leaf all three reach. A revocation of ANY reason
+// counts, a `certificateHold` included: a hold is lifted by RELEASING it
+// (`pki_revocation.release()`), never by a rebuild minting a serial nobody
+// put on hold — and once a rebuild has passed it by, the held certificate
+// chains to a superseded authority, so releasing it later is releasing a
+// certificate that verifies nowhere; its holder issues again. The list asked
+// is the one under the record's own use case, which is where `revoke()` puts
+// a leaf's serial whatever authority now holds that use case.
+//
+// A record with no readable `notAfter` is answered as expired: a door that
+// cannot tell whether something is still good does not mint it again.
+// ---------------------------------------------------------------------------
+/**
+ * Says why a recorded certificate may not be certified again: revoked on its
+ * use case's list (any reason, a hold included), or expired.
+ *
+ * @param row - the PKI row holding the record and its revocation lists
+ * @param record - a certificate record from `row.certs`
+ * @param nowMs - optional; the clock in milliseconds
+ * @returns '' when it is still good; otherwise `revoked (<reason>)` or
+ *   `expired`
+ */
+function notReMintable(row, record, nowMs) {
+  log.debug("Entering notReMintable().");
+  if (!record) {
+    log.debug("Leaving notReMintable(). No record.");
+    return 'absent';
+  }
+  const lists = (row && row.revoked) || {};
+  const list = lists[String(record.useCase || '')] || [];
+  const wanted = record.serialHex ? normalSerial(record.serialHex) : '';
+  const entry = wanted ? list.filter(function (one) {
+    return !!one && normalSerial(one.serialHex) === wanted;
+  })[0] : null;
+  if (entry) {
+    log.debug("Leaving notReMintable(). Revoked.");
+    return 'revoked (' + String(entry.reason || 'unspecified') + ')';
+  }
+  const now = Number(nowMs || Date.now());
+  const ends = new Date(record.notAfter).getTime();
+  if (!(ends > now)) {
+    log.debug("Leaving notReMintable(). Expired.");
+    return 'expired';
+  }
+  log.debug("Leaving notReMintable(). Still good.");
+  return '';
+}
+
 // The three-way answer for one member, and whether it was a conflict.
 function pick(base, mine, theirs) {
   log.debug("Entering pick().");
@@ -605,17 +667,23 @@ function supersededLiveTiers(row, lists) {
 // `certifyStandbyKeys()`'s: the first certificate of a record's chain is the
 // Issuing CA that signed it. A record with no chain (none is written without
 // one) and a use case the row holds no Issuing CA for are left alone.
+//
+// **NOR IS A REVOKED OR EXPIRED SLOT AN ORPHAN (2026-11-16)**: certifying it
+// again would undo its revocation (`notReMintable()`). It stays as it is,
+// under the authority that signed it, on that use case's list.
 // ---------------------------------------------------------------------------
 /**
  * Lists the certificate slots of a row whose certificate was not signed by
  * the row's own Issuing CA for that use case.
  *
  * Reported, not dropped: the caller certifies each slot's key again.
- * Pinned signers with an operator-supplied chain are never listed.
+ * Pinned signers with an operator-supplied chain are never listed, and
+ * neither is a revoked or expired record (`notReMintable()`).
  * @param row - the PKI row
+ * @param nowMs - optional; the clock in milliseconds
  * @returns the slot names
  */
-function orphanedSlots(row) {
+function orphanedSlots(row, nowMs) {
   log.debug("Entering orphanedSlots().");
   const certs = (row && row.certs) || {};
   const issuing = (row && row.issuing) || {};
@@ -625,6 +693,9 @@ function orphanedSlots(row) {
     // is not an orphan for being signed by somebody else (#263).
     if (record && record.pinnedSigner &&
         record.pinnedSigner.operatorCertificate) {
+      return false;
+    }
+    if (notReMintable(row, record, nowMs)) {
       return false;
     }
     const ca = record && issuing[record.useCase];
@@ -732,7 +803,7 @@ function merge(base, mine, theirs, options) {
                                      displaced, nowMs);
   }
   const published = liveAgain(row);
-  const orphaned = orphanedSlots(row);
+  const orphaned = orphanedSlots(row, nowMs);
   log.debug("Leaving merge(). " + lost.length + " member(s) lost, " +
             displaced.length + " displaced, " + published.length +
             " revocation(s) of a live tier dropped, " + orphaned.length +
@@ -758,6 +829,9 @@ module.exports = {
   dropRevocationsOfLiveTiers: liveAgain,
   supersededLiveTiers: supersededLiveTiers,
   orphanedSlots: orphanedSlots,
+  // Whether a recorded certificate may be certified again, for `pki.js`'s
+  // two re-mint doors: one predicate for them and the merge (2026-11-16).
+  notReMintable: notReMintable,
   canonical: canonical,
   normalSerial: normalSerial,
   // The issued-register record for a certificate a slot no longer holds, for

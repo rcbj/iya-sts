@@ -12,9 +12,14 @@
 // The remote PEP container has to be RECOGNISED by the mock — its DN resolved
 // to a directory entry, to a group, to a role, to a policy decision — and that
 // takes a client certificate the mock can build a path from. This tool makes
-// one and tells the mock to trust the authority behind it. Both launchers run
+// one and tells the mock to trust the authority behind it. Both launchers ran
 // it after the service is up and before the PEP container starts, and then
-// mount what it wrote.
+// mounted what it wrote — until phase 4 of #1827's follow-up (rcbj,
+// 2026-11-16) retired the PEP's client certificate: the launchers now run
+// only `--assertion --csr-only` (below), and the default mode is what the
+// protocol jobs use for the OTHER callers they drive over mutual TLS (an
+// XACML_USER, an AuthZEN caller, a PEP in a realm that opted in to
+// `xacml.pepAuthentication` `either`).
 //
 // ---------------------------------------------------------------------------
 // IT BUILDS THE CHAIN OUTSIDE THE SERVICE, WHICH IS THE ESTABLISHED PATTERN

@@ -50,6 +50,25 @@ A disabled account is `pwdAccountLockedTime` on the entry. Every door
 refuses that person.
 [Admin console](admin-console.md#password-and-second-factors).
 
+A deleted person is gone with everything they held: the console's Delete
+tab, `POST /admin-api/users/delete`, SCIM's `DELETE` and an LDAP delete are
+one act. [Admin console](admin-console.md#deleting-a-person).
+
+A person made again under a deleted person's name inherits none of their
+certificates: every one still valid is revoked (`cessationOfOperation`) by the
+delete, and none is listed on the new person.
+[PKI](pki.md#a-deleted-holders-certificates).
+
+Nor anything else that was kept under the name or the entry's DN. The delete
+removes the person's devices (and revokes their certificates), and forgets
+their post-login progress, the mail categories they declined, every
+federation partner's block on them, the GNAP applications they approved,
+their row on the Users list, their pending enrolments and the rich
+authorization requests they allowed. The RISC register keeps the deleted
+account's row, which shows that `account-purged` went out. When the name is
+given to a new entry, that row is filed under the old `urn:uuid:` subject,
+and the new account starts with none, opt-out included.
+
 ## The names
 
 | Name | What it is |

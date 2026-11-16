@@ -16,8 +16,11 @@
 //
 //   S. the seeded objects: `sts-xacml-pep-api` defines `xacml:pep` for the
 //      realm's /xacml/pep; `sts-remote-pep` holds the three delegated
-//      permission grants; one taken off comes back at the next seed.
-//   I. issuance: a request with no DPoP proof is refused; `xacml:pep` and
+//      permission grants; one taken off comes back at the next seed; and
+//      (phase 4) no RFC 8705 flag, one an earlier build set cleared at the
+//      next seed.
+//   I. issuance: a request with no DPoP proof is refused under the
+//      client's own code (STS-OAUTH-1012, phase 4); `xacml:pep` and
 //      `authzen:evaluate` and `xacml:pep-audit` are issued DPoP-bound to
 //      the PEP; somebody not in the group is not issued `xacml:pep`.
 //   X. the PEP door: register (named by the username, the row's thumbprint
@@ -25,8 +28,8 @@
 //      the PIP reached; the token sent as Bearer, a replayed proof, a token
 //      for another audience, and no proof at all each refused 401 with a
 //      DPoP challenge; a server nonce asked for and honoured;
-//      `xacml.pepAuthentication` certificate refusing the token, token
-//      refusing a request without one.
+//      `xacml.pepAuthentication` `token` the default (phase 4) and refusing
+//      a request without one, `certificate` refusing the token.
 //   A. the push to /admin-api/pep-audit on a DPoP-bound token with no
 //      certificate.
 //   Z. AuthZEN under `authzen.callerAuthentication` mtls: the PEP's token is
@@ -149,6 +152,26 @@ function childMain() {
     note(taken && grantsOf().indexOf('urn:sts:xacml-pep-api:xacml:pep') >= 0,
          'S3. a grant taken off an existing sts-remote-pep comes back at the ' +
          'next seed (the upgrade)', taken + ' ' + grantsOf().join(' '));
+    // PHASE 4: the seed declares no RFC 8705 flag, and an entry an earlier
+    // build seeded with one has it cleared at the next seed.
+    const flagOf = function () {
+      const viewed = applications.get('sts-remote-pep') || { fields: {} };
+      return String(viewed.fields.oauthTlsClientCertificateBoundAccessTokens ||
+                    '');
+    };
+    const fresh = flagOf();
+    applications.updateApplication('sts-remote-pep',
+      { attribute: 'oauthTlsClientCertificateBoundAccessTokens', mode: 'set',
+        value: 'TRUE' });
+    const flagged = flagOf();
+    applications.seedInternalApplications({ scope: 'default' });
+    const registration = applications.clientConfigOf('sts-remote-pep') || {};
+    note(fresh === '' && flagged.toUpperCase() === 'TRUE' && flagOf() === '' &&
+         registration.tls_client_certificate_bound_access_tokens !== true,
+         'S4. sts-remote-pep is seeded with no RFC 8705 flag, and one an ' +
+         'earlier build set is cleared at the next seed (phase 4)',
+         JSON.stringify([fresh, flagged, flagOf(),
+           registration.tls_client_certificate_bound_access_tokens]));
 
     // ---------------------------------------------------------------------
     // The PEP and the stranger, each holding one key pair.
@@ -247,9 +270,11 @@ function childMain() {
     // ---------------------------------------------------------------------
     const noProof = await tokenFor(PEP, 'xacml:pep', BASE + '/xacml/pep',
                                    false);
-    note(noProof.status === 400,
+    note(noProof.status === 400 && /DPoP proof/.test(noProof.text) &&
+         !/client certificate/.test(noProof.text),
          'I1. a token request through sts-remote-pep with no DPoP proof is ' +
-         'refused', brief(noProof));
+         'refused for the proof (STS-OAUTH-1012), not for a certificate',
+         brief(noProof));
     const got = await tokenFor(PEP, 'xacml:pep', BASE + '/xacml/pep');
     const token = got.json && got.json.access_token;
     const claims = token ? JSON.parse(Buffer.from(token.split('.')[1],
@@ -269,7 +294,7 @@ function childMain() {
     const aToken = aGot.json && aGot.json.access_token;
     note(aGot.status === 200 && !!aToken,
          'I4. and xacml:pep-audit for /admin-api over a connection with no ' +
-         'certificate: the DPoP key stands for the certificate binding',
+         'certificate, DPoP-bound (the client declares no certificate)',
          brief(aGot));
     const sGot = await tokenFor(STRANGER, 'xacml:pep', BASE + '/xacml/pep');
     const sToken = sGot.json && sGot.json.access_token;
@@ -365,19 +390,28 @@ function childMain() {
          'X12. a server nonce is asked for (401 use_dpop_nonce, DPoP-Nonce) ' +
          'and the retry with it is admitted',
          brief(wantNonce) + ' / ' + withNonce.status);
-    config.setOverride('xacml.pepAuthentication', 'certificate');
-    const certOnly = await atDoor(PEP, 'GET', '/xacml/pep/policies', token);
-    config.setOverride('xacml.pepAuthentication', 'token');
+    // PHASE 4: `token` is the default, read with no override set.
+    const byDefault = config.value('xacml.pepAuthentication');
     const tokenOnly = await call(port, 'GET', '/xacml/pep/policies', {}, '');
     const tokenOk = await atDoor(PEP, 'GET', '/xacml/pep/policies', token);
+    config.setOverride('xacml.pepAuthentication', 'certificate');
+    const certOnly = await atDoor(PEP, 'GET', '/xacml/pep/policies', token);
     config.setOverride('xacml.pepAuthentication', 'either');
+    const eitherOk = await atDoor(PEP, 'GET', '/xacml/pep/policies', token);
+    config.clearOverride('xacml.pepAuthentication');
     note(certOnly.status === 401 && /certificate/.test(certOnly.text),
          'X13. xacml.pepAuthentication certificate refuses the token',
          brief(certOnly));
-    note(tokenOnly.status === 401 && /pepAuthentication is token/.test(
-           tokenOnly.text) && tokenOk.status === 200,
-         'X14. xacml.pepAuthentication token refuses a request without one ' +
-         'and admits the token', brief(tokenOnly) + ' / ' + tokenOk.status);
+    note(byDefault === 'token' && tokenOnly.status === 401 &&
+         /pepAuthentication is token, the default/.test(tokenOnly.text) &&
+         !/under either/.test(tokenOnly.text) && tokenOk.status === 200,
+         'X14. xacml.pepAuthentication is token by default (phase 4): a ' +
+         'request with nothing is refused, with no certificate to mention, ' +
+         'and the token admitted',
+         byDefault + ' ' + brief(tokenOnly) + ' / ' + tokenOk.status);
+    note(eitherOk.status === 200,
+         'X15. under either, the operator\'s opt-in, the token is admitted ' +
+         'too', brief(eitherOk));
 
     // ---------------------------------------------------------------------
     // A. THE PUSH ON A DPoP-BOUND TOKEN.
@@ -392,7 +426,8 @@ function childMain() {
     note(pushed.status === 200 && pushed.json &&
          pushed.json.acknowledged === 1,
          'A1. the decision-record push is taken on a DPoP-bound token with ' +
-         'no certificate (STS-API-0137 lets the DPoP key stand)',
+         'no certificate (the client declares none, so STS-API-0137 asks ' +
+         'nothing)',
          brief(pushed));
 
     // ---------------------------------------------------------------------
@@ -432,7 +467,7 @@ function childMain() {
     config.setOverride('xacml.pepAuthentication', 'certificate');
     const zCert = await atDoor(PEP, 'POST', '/access/v1/evaluation',
       zToken || 'none', { contentType: 'application/json', body: question });
-    config.setOverride('xacml.pepAuthentication', 'either');
+    config.clearOverride('xacml.pepAuthentication');
     note(zCert.status === 401 && /certificate/.test(zCert.text),
          'Z4. xacml.pepAuthentication certificate refuses it here too ' +
          '(STS-AUTHZEN-0121)', brief(zCert));

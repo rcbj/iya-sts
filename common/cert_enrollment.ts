@@ -220,11 +220,11 @@ const SECRET_ATTRIBUTES = ['stsEnrolledPrivateKey', 'appEnrolledPrivateKey',
 
 // What `read()` is asked for, per kind.
 const READ_NAMES = {
-  person: ['mail', 'userPrincipalName', 'x509subject'].concat(
+  person: ['mail', 'userPrincipalName', 'x509subject', 'entryUUID'].concat(
     Object.keys(ATTRIBUTES.person).map(function (k) {
       return ATTRIBUTES.person[k];
     })),
-  application: ['appIdentifier', 'oauthClientId'].concat(
+  application: ['appIdentifier', 'oauthClientId', 'entryUUID'].concat(
     Object.keys(ATTRIBUTES.application).map(function (k) {
       return ATTRIBUTES.application[k];
     }))
@@ -841,10 +841,18 @@ class CertEnrollment {
     const user = kind === 'person' ? Classes.User.fromEntry(attrs) : null;
     const held = self.heldValues({ entry: { kind: kind }, attributes: attrs },
                                  'hostName');
+    // THE ENTRY'S `entryUUID` (2026-11-16), so a binding made to a NAME —
+    // an ACME account — can tell the entry it was made for from one made
+    // again under the name (#1612's rule; `acme/acme.ts`'s `sameHolder()`).
+    const uuidName = Object.keys(attrs).filter(function (name) {
+      return name.toLowerCase() === 'entryuuid';
+    })[0];
+    const uuidValue = uuidName ? [].concat(attrs[uuidName])[0] : '';
     log.debug("Leaving CertEnrollment.resolveEntry(). " + found.dn);
     return {
       ok: true,
       entry: { kind: kind, id: String(id) },
+      uuid: String(uuidValue || '').toLowerCase(),
       dn: found.dn,
       mail: (user && user.email) || '',
       upn: (user && user.userPrincipalName) || '',

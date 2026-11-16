@@ -887,6 +887,19 @@ somebody had merely left.
 create's `before` and a delete's `after`, so creating a person is not an
 `account-enabled` and deleting a disabled one is not either.
 
+**A NAME TAKEN AGAIN STARTS FRESH (2026-11-16, #1612's rule).** The register
+is keyed by the name and keeps a `purged` row on purpose, so a person made
+again under a deleted person's name found it — the holder's opt-out (which
+`gate()` honours by suppressing every event), the credential standing, the
+counts. `retireNamesake()` runs on every person's write (from
+`riscAutoEmit()` before SSF's switch is read, and from `observe()`): when the
+write's entry has a `urn:uuid:` other than the one the row recorded, the row
+is MOVED to that recorded subject — still on `/admin/risc-accounts`, still
+matched by `matchAccount()` — and the name starts with no row. A row with no
+recorded subject is moved when it is `purged`, under `<name>#<updatedAt>`. A
+rename keeps the subject, and its row. `ldap/CLAUDE.md` has the rest of what
+a delete forgets.
+
 **`identifier-recycled` IS READ FROM THE REGISTER'S OWN HISTORY.**
 - Each row keeps `releasedIdentifiers`: an address it moved off, or everything
   it held when purged, each with its time.

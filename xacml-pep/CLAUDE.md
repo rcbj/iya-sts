@@ -40,7 +40,28 @@ the CI liveness check and the AWS suite task. `docker-compose.yml` sets no
 notify URL since 2026-11-14 (`${XACML_PEP_NOTIFY_URL:-}`): the PEP derives
 it (*THE NOTIFY URL IS DERIVED*, below).
 
-**THE CRL POINT STAYS UP WITH HTTP OFF (2026-11-14), AND THAT WAS A DEFECT
+**THE CRL-ONLY LISTENER BINDS ONLY WITH `PEP_CRL_HTTP=true` SINCE PHASE 4
+OF #1827's FOLLOW-UP (rcbj, 2026-11-16).** It existed for the PEP's own
+client certificate, whose CRLs the service fetched before it believed the
+certificate; phase 4 retired that certificate for authenticating to the
+service (*THE PEP'S CREDENTIAL TO THE SERVICE*, below), so nothing of this
+service's fetches these lists any more and a plain-HTTP port bound by
+default for them would be a socket with no reader. **Unset is now NOT
+bound**; a CRL directory that would have bound it before is said once at
+start (`STS-XPEP-0136`, `options::crl_listener_notice`), naming
+`PEP_CRL_HTTP=true` for an operator whose own tooling still fetches them.
+`true` binds it as before (with or without a directory), `false` never,
+anything else is unset and logs `STS-XPEP-0115`. The service lists
+`PEP_CRL_HTTP` among a PEP's bootstrap variables
+(`xacml/xacml_pep_settings.ts`, reason `bind`, default `false`); it has no
+managed setting, as `PEP_HTTP` has none. `cargo test`'s
+`the_crl_point_binds_only_when_asked`. Nothing else relies on the listener:
+the stacks and the AWS runner mint no client certificate since phase 4, so
+no `--crl-base` names it, and the HTTPS listener pair's CRLs are the realm's
+(the service's own revocation listener). What follows is why it was
+added, and still holds for an operator who turns it on.
+
+**THE CRL POINT STAYED UP WITH HTTP OFF (2026-11-14), AND THAT WAS A DEFECT
 OF THE DEFAULT ABOVE.** The client credential's CRL distribution point is
 `http://<pep>:9090/crl` (`tests/tools/pep-credential.js --crl-base`, which
 every launcher passes), and a product-mode service fetches it under hard-fail
@@ -63,10 +84,11 @@ directory to serve. Why this and not the other:
   `:9090/crl`; moving the distribution point would have orphaned all of them,
   and "always reachable" elsewhere means a second process the operator has to
   run for a container whose CRLs nobody else holds.
-* **Its own switch**, `PEP_CRL_HTTP`: unset is the default above, `false`
-  never binds it, `true` binds it with no directory, anything else keeps the
-  default and logs `STS-XPEP-0115`. With `PEP_HTTP=true` the API's listener
-  serves `/crl/` as it always did and this is not bound.
+* **Its own switch**, `PEP_CRL_HTTP`: until phase 4 unset bound it whenever
+  there was a CRL directory; since phase 4 only `true` binds it (above).
+  `false` never binds it, anything else is unset and logs `STS-XPEP-0115`.
+  With `PEP_HTTP=true` the API's listener serves `/crl/` as it always did
+  and this is not bound.
 
 It is reported as `api-http` with state `listening`, reason `crl-only` and
 **purpose `crl`** (2026-11-15; it was `api`, so the console drew it as the
@@ -474,8 +496,10 @@ and the AuthZEN edge PDP's three (#1179), *The AuthZEN edge PDP* below.
 **The reverse proxy (#1760) is on ports of its own** (9180, 9543) and adds
 nothing here but a `proxy` member on `GET /` — *THE REVERSE PROXY* below.
 
-**`/crl/<name>` is not a fifth endpoint of the PEP's; it is its credential's
-distribution point (#174, 2026-09-23).** A product-mode PDP refuses, under
+**`/crl/<name>` is not a fifth endpoint of the PEP's; it was its client
+credential's distribution point (#174, 2026-09-23), and since phase 4 of
+#1827's follow-up retired that credential it is served only where an
+operator asks (`PEP_HTTP=true`, or `PEP_CRL_HTTP=true`).** A product-mode PDP refuses, under
 hard-fail, a client certificate from an authority it does not hold that names
 no CRL and no OCSP responder (STS-PKI-0190) — nobody could ever revoke it. So
 `tests/tools/pep-credential.js --crl-base=http://xacml-pep:9090/crl` names the
@@ -670,9 +694,12 @@ keys, variables and bounds); the table below marks them.
   source `service`, `environment` or `default` (an environment variable
   counts as set when it was non-empty at start). The service holds it to its
   members and draws it beside what is set.
-* **BOOTSTRAP STAYS HERE**: `PEP_PDP_URL`, `PEP_NAME`, `PEP_TLS_CERT`/`KEY`,
-  `PEP_ASSERTION_KEY`, `PEP_CLIENT_ID`, `PEP_TLS_CA` and `PEP_TLS_INSECURE`
-  (needed before the first pull), the
+* **BOOTSTRAP STAYS HERE**: `PEP_PDP_URL`, `PEP_NAME`, `PEP_TLS_CERT`/`KEY`
+  (listed so an environment that sets them is described; since phase 4 the
+  certificate is not presented and the key is only the fallback assertion
+  key), `PEP_ASSERTION_KEY`, `PEP_CLIENT_ID`, `PEP_TLS_CA` and
+  `PEP_TLS_INSECURE` (needed before the first pull), `PEP_CRL_HTTP` beside
+  `PEP_HTTP` and `PEP_PROXY_HTTP` (each binds a listener), the
   four ports (a listening socket is not rebound while it serves), the files
   (`PEP_HTTPS_CERT`/`KEY`, `PEP_CRL_DIR`, `PEP_AUTHZEN_CLIENT_CA`,
   `PEP_PROXY_UPSTREAM_CA`), `PEP_PROXY` (whether the proxy's listeners start;
@@ -683,10 +710,11 @@ keys, variables and bounds); the table below marks them.
 | Variable | Default | What |
 |---|---|---|
 | `PEP_PDP_URL` | `https://localhost:8081` | The mock. |
-| `PEP_NAME` | `pep-1` | **MUST BE THE PEP'S DIRECTORY USERNAME**: it is the self-assertion's `iss` and `sub`, the token's subject is that entry, and the service names the row by the entry's username. (With a client certificate presented and no token, the PDP names the row from the certificate, as before.) |
+| `PEP_NAME` | `pep-1` | **MUST BE THE PEP'S DIRECTORY USERNAME**: it is the self-assertion's `iss` and `sub`, the token's subject is that entry, and the service names the row by the entry's username. (An OLDER PEP presenting a client certificate and no token, to a realm that opted in to `either` or `certificate`, is named from the certificate, as before.) |
 | `PEP_ASSERTION_KEY` | `PEP_TLS_KEY` | **A path, re-read on `httpsReloadIntervalMs`**: the ONE private key the self-assertion and every DPoP proof are signed with — RSA (RS256) or EC P-256 (ES256). Unset, `PEP_TLS_KEY` (`STS-XPEP-0127`); neither, every call goes without a token (`STS-XPEP-0126`). See *THE PEP'S CREDENTIAL TO THE SERVICE*. |
 | `PEP_CLIENT_ID` | `sts-remote-pep` | The public client the self-assertion grant goes through, the one the service seeds for it. `PEP_AUDIT_CLIENT_ID`, its name until every call carried a token, is read when it is unset. **Bootstrap**, not managed: it is how the PEP authenticates at all. |
-| `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | The client certificate, **presented only while it is set**, beside the token: the service accepts either while the certificate is being retired. Enforcement is unaffected either way. |
+| `PEP_TLS_CERT` / `PEP_TLS_KEY` | — | **RETIRED as a client certificate since phase 4 of #1827's follow-up (rcbj, 2026-11-16): never presented to the service.** Set, `PEP_TLS_CERT` is said once at start and ignored (`STS-XPEP-0135`); `PEP_TLS_KEY` is still read as the fallback assertion key where `PEP_ASSERTION_KEY` is unset (`STS-XPEP-0127`), and said under 0135 when `PEP_ASSERTION_KEY` is set too. `PEP_TLS_CERT`'s directory is still where `PEP_CRL_DIR` defaults (`crl/` beside it). |
+| `PEP_CRL_HTTP` | unset (not bound) | `true` binds the plain-HTTP CRL-only listener on `PEP_PORT` while `PEP_HTTP` is off; since phase 4 nothing else does (`STS-XPEP-0136` when a CRL directory exists and it is unset; `STS-XPEP-0115` for a value that is neither). |
 | `PEP_TLS_CA` | — | An anchor for the PDP's certificate. |
 | `PEP_TLS_INSECURE` | `false` | Do not verify the PDP. **The ordinary setting against the mock**, whose listener certificate is issued by a service Root that development mode regenerates on every start — so there is no fixed anchor to verify against (`tls/CLAUDE.md`). Logged on every start, for `federation_http.ts`'s reason. |
 | `PEP_NOTIFY_URL` | derived | Where the PDP should nudge; unset, derived from the HTTPS certificate (*THE NOTIFY URL IS DERIVED*). *Managed* (`notifyUrl`). |
@@ -2122,14 +2150,21 @@ token (RFC 9449) from an RFC 7523 self-assertion grant**, in place of the
 client certificate the PDP used to identify a PEP by (`credential.rs`,
 `PdpClient::call_authorized`) — rcbj's approved plan, phase 2 of four;
 the service's side is phase 1, and through phase 3 the service accepts the
-certificate or the token.
+certificate or the token. **PHASE 4 (rcbj, 2026-11-16) RETIRED THE CLIENT
+CERTIFICATE**: this binary no longer presents one (`PdpClient::new` builds
+no TLS identity), `PEP_TLS_CERT` is said once and ignored
+(`STS-XPEP-0135`, `RetiredClientCertificate` in `options.rs`), and the
+service's `xacml.pepAuthentication` defaults to `token`.
 
 * **ONE KEY.** `PEP_ASSERTION_KEY` signs the assertion AND every DPoP proof,
   so the token is bound to the key registered on the PEP's entry — the
   service checks the proof's `jwk` against it. Unset, `PEP_TLS_KEY` is used
   with a notice (`STS-XPEP-0127`), which is what lets a PEP provisioned
   before this change keep working once its certificate is registered as the
-  entry's assertion certificate. RS256 for RSA, ES256 for P-256 (`r || s`),
+  entry's assertion certificate. **KEPT THROUGH PHASE 4, DELIBERATELY**:
+  `PEP_TLS_KEY` is a key file, not a certificate, and a PEP whose old
+  certificate's key was registered (`pep-credential.js --assertion
+  --reuse-key`) would otherwise stop authenticating on upgrade. RS256 for RSA, ES256 for P-256 (`r || s`),
   anything else refused by name (`STS-XPEP-0128`). **The file is re-read on
   the listener pair's interval** (`httpsReloadIntervalMs`); a changed key
   drops every token held, since each is bound to the old one. A file that
@@ -2180,10 +2215,9 @@ certificate or the token.
   the three resources — and put in the next proof, so a nonce the token
   endpoint hands is never offered to a resource or the other way round.
 * **NEVER BLOCKING.** A call for which no token can be had goes WITHOUT one
-  (`Answer::no_token` says why) — on the client certificate where
-  `PEP_TLS_CERT` is set, which the service accepts through the transition,
-  and otherwise to be refused, as a PEP with no credential always was. The
-  caller records the service's answer as it always did.
+  (`Answer::no_token` says why) and with no other credential since phase
+  4, so it is refused, as a PEP with no credential always was. The caller
+  records the service's answer as it always did.
 * **WHAT STAYS WITHOUT A TOKEN**: the realm's JWKS (`proxy_auth.rs`, a
   public document); the token request itself; and everything that is not a
   call TO the service — `PEP_HTTPS_CERT`/`KEY` and the defined listeners'
@@ -2192,16 +2226,20 @@ certificate or the token.
   (who may call the edge PDP: inbound mutual TLS, unchanged), and the
   reverse proxy's relying parties and CAEP/RISC receivers, which talk to
   the realm as the application's own client.
-* **`PEP_TLS_CERT` IS STILL PRESENTED WHILE IT IS SET** — a PEP with both
-  presents both — and no longer needed: a PEP with an assertion key and no
-  certificate registers, pulls and queries the PIP on its token.
+* **`PEP_TLS_CERT` IS NEVER PRESENTED SINCE PHASE 4.** Through phase 3 it
+  was presented while set, beside the token; now the token is the one
+  credential. A realm that opted in to `certificate` (`xacml.pepAuthentication`)
+  therefore admits only an OLDER PEP image, or another implementation, that
+  still presents one.
 * **`GET /` REPORTS `credential`**: `keyFile`, `keySource`
   (`PEP_ASSERTION_KEY` or `PEP_TLS_KEY`), `fallback`, `keyType`, `alg`,
   `jwkThumbprint` (RFC 7638, to match against what is registered),
-  `keyProblem`, `clientId`, `subject`, `clientCertificate`, and per resource
-  `tokens.{xacml-pep,admin-api,access-v1}`: `resource`, `scope`, `held`,
-  `expiresAt`, `lastRefusal`. **Never a token, a proof or a key.**
-  `pip.credentialed` is true with either credential.
+  `keyProblem`, `clientId`, `subject`, `clientCertificate` (kept for a
+  reader of the older document, and always `false` since phase 4), and per
+  resource `tokens.{xacml-pep,admin-api,access-v1}`: `resource`, `scope`,
+  `held`, `expiresAt`, `lastRefusal`. **Never a token, a proof or a key.**
+  `pip.credentialed` is true when a key is loaded (it also counted a client
+  certificate until phase 4).
 
 The tests are `credential.rs`'s (both algorithms' assertions and proofs
 decoded and verified, `ath`, `htu` without query or fragment, the RFC 7638
@@ -2210,7 +2248,9 @@ fallback, a rotated and a broken key file) and `pdp_client.rs`'s, against a
 mock service (one fetch for eight concurrent callers, the early renewal,
 `invalid_token` refetched and retried once and not twice, `use_dpop_nonce`
 at the token endpoint and at a resource, a nonce demanded twice, no key);
-`options.rs` holds the `PEP_AUDIT_CLIENT_ID` alias.
+`options.rs` holds the `PEP_AUDIT_CLIENT_ID` alias and, since phase 4,
+`the_client_certificate_is_retired_and_said_once` (0135's cases) and
+`the_crl_point_binds_only_when_asked` (0136's).
 
 ## Error codes
 
@@ -2223,7 +2263,10 @@ puts it on the audit row (#1827). **0122–0125 are the decision records'**
 batch refused as malformed; **0126–0131 the PEP's credential**: no
 assertion key or an unreadable file, the fallback to `PEP_TLS_KEY`, a key
 refused, a token grant refused, a DPoP nonce demanded twice, a resource
-refusing a new token; 0060–0119 are #1760's. `tests/error_codes.js` scans `rust/`'s
+refusing a new token; **0132–0134 are #1830's; 0135–0136 phase 4's**: a
+`PEP_TLS_CERT` (or an unused `PEP_TLS_KEY`) said once and ignored, and a CRL
+directory the CRL-only listener no longer binds for by default; 0060–0119
+are #1760's. `tests/error_codes.js` scans `rust/`'s
 `.rs` files with the rest. **Eight codes were retired with the Node container**
 (0001, 0002, 0007, 0008, 0011, 0012, 0014, 0034): a registry or a version
 module that could not be loaded, a URL that would not parse, a decision that

@@ -240,6 +240,17 @@ verifying. It takes `emptyPayload: true` now, which answers `claims: null` for a
 empty payload and changes nothing for any caller that does not pass it. ACME
 still never hand-rolls a signature check.
 
+**An account is bound to an ENTRY, not to a name (2026-11-16, #1612's rule:
+a holder deleted and made again under the same name inherits nothing).** The
+account recorded its entry by kind and name, so the deleted holder's ACME
+client, still holding its account key, ordered certificates for a namesake
+and could revoke theirs. The account now also records the entry's
+`entryUUID` (`entryUuid`, from `cert_enrollment.resolveEntry()`'s `uuid`),
+and `sameHolder()` refuses a new-order (`STS-ACME-0048`, the entry is gone)
+and a revoke-cert by account when the entry under the name has another one.
+An account made before carries none and is answered by the name, as before
+(no migration: it cannot be told after the fact which entry it meant).
+
 ## The documented exceptions
 
 **Parts of the specifications not implemented, and why:**

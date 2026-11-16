@@ -7784,8 +7784,8 @@
     "text": "Hur en fjärr-PEP autentiserar sig"
   },
   "xacml.pepAuthentication|description": {
-    "en": "8d19137204b63401",
-    "text": "either, standardvärdet: en fjärr-PEP når /xacml/pep/* och POST /xacml/pip med ett klientcertifikat som den här tjänsten verifierar, eller med en DPoP-bunden åtkomsttoken (RFC 9449) som den får från sitt eget RFC 7523-självpåstående via klienten sts-remote-pep, med den här sfärens /xacml/pep som mottagare och med xacml:pep; när en token visas upp är det token som avgör. token: endast token, och ett certifikat ensamt avvisas. certificate: endast certifikatet, och Authorization-huvudet läses inte. I båda fallen måste PEP:ns post ha REMOTE_PEPS (roles.remotePepGroup) och åtkomstpolicyn avgör. Samma svar gäller en fjärr-PEP:s token på /access/v1, kant-PDP:ns vidarebefordran av en finkornig utvärdering, oavsett vad authzen.callerAuthentication säger."
+    "en": "223363d0264d3558",
+    "text": "token, standardvärdet sedan 1.1.0: en fjärr-PEP når /xacml/pep/* och POST /xacml/pip endast med en DPoP-bunden åtkomsttoken (RFC 9449) som den får från sitt eget RFC 7523-självintygande via klienten sts-remote-pep, med denna realms /xacml/pep som mottagare och med xacml:pep; ett klientcertifikat ensamt avvisas. either: token eller ett klientcertifikat som denna tjänst verifierar; när en token visas är det den som avgör — sätt det före uppgraderingen så länge någon PEP fortfarande autentiserar sig med sitt certifikat. certificate: endast certifikatet, och Authorization-huvudet läses inte. I alla fall måste PEP:ens post ha REMOTE_PEPS (roles.remotePepGroup) och åtkomstpolicyn avgör. Samma svar gäller en fjärr-PEP:s token vid /access/v1, edge-PDP:ns vidarebefordran av en finkornig utvärdering, oavsett vad authzen.callerAuthentication säger."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",
