@@ -120,6 +120,9 @@ import pepHttp = require('./xacml_pep_http');
 // A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
 // `common/pki.js` and the register above, registering nothing.
 import pepTls = require('./xacml_pep_tls');
+// A remote PEP's RFC 7523 assertion key, certified from its own request
+// (#1827's follow-up, phase 3). A LIBRARY, registering nothing.
+import PepCredential = require('./xacml_pep_credential');
 // The remote PEP's reverse proxy (#1760): the grammar `set-pep-proxy` is
 // held to and the session mechanism's client. A LIBRARY, registering nothing.
 import pepProxy = require('./xacml_pep_proxy');
@@ -194,6 +197,7 @@ interface XacmlAdminDeps {
   peps: any;
   pepHttp: any;
   pepTls: any;
+  pepCredential: any;
   pepProxy: any;
   routePolicies: any;
   pepSettings: any;
@@ -281,8 +285,13 @@ interface PepOwner {
 // settings, pulled from `GET /xacml/pep/settings`.
 // `sync-pep` (2026-11-16) nudges one PEP to pull everything now and, like
 // `issue-pep-certificate`, answers a PROMISE: it waits for the nudge.
+// `issue-pep-credential` (#1827's follow-up, phase 3) certifies the key in a
+// PEP's own certificate request as its RFC 7523 assertion key
+// (`xacml_pep_credential.ts`) and answers a PROMISE too. It needs no
+// registered row: it is how a PEP is provisioned before it ever registers.
 const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep', 'sync-pep',
-                     'issue-pep-certificate', 'set-pep-proxy',
+                     'issue-pep-certificate', 'issue-pep-credential',
+                     'set-pep-proxy',
                      'clear-pep-proxy', 'set-pep-route-identity',
                      'set-pep-settings', 'clear-pep-settings',
                      'set-pep-listener', 'remove-pep-listener',
@@ -438,6 +447,7 @@ class XacmlAdmin {
       peps: peps,
       pepHttp: pepHttp,
       pepTls: pepTls,
+      pepCredential: new PepCredential(PepCredential.defaultDeps()),
       pepProxy: pepProxy,
       routePolicies: pepRoutePolicies,
       pepSettings: pepSettings,
@@ -864,6 +874,10 @@ class XacmlAdmin {
       staleAfterS: peps.staleAfterS(),
       requiresCertificate:
         config.value('xacml.pepRequireCertificate') !== false,
+      // #1827's follow-up: which credential a remote PEP may present here.
+      pepAuthentication: ['certificate', 'token', 'either'].indexOf(
+        String(config.value('xacml.pepAuthentication') || '')) >= 0
+        ? String(config.value('xacml.pepAuthentication')) : 'token',
       notify: {
         on: pepHttp.notifyAllowed(),
         allowedHosts: pepHttp.allowedHosts(),
@@ -1101,7 +1115,7 @@ class XacmlAdmin {
    * `issue-pep-certificate`
    */
   pepAction(given?: any): any {
-    const { log, audit, errorCodes, peps, pepTls } = this.deps;
+    const { log, audit, errorCodes, peps, pepTls, pepCredential } = this.deps;
     log.debug('Entering XacmlAdmin.pepAction(). action=' + (given || {}).action);
     const action = String((given || {}).action || '');
     // `pep` AS WELL AS `name` (2026-11-14). `GET /admin-api/xacml/peps` names
@@ -1124,6 +1138,11 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.pepAction(). Issuing a listener ' +
                 'certificate.');
       return pepTls.issue(body);
+    }
+    if (action === 'issue-pep-credential') {
+      log.debug('Leaving XacmlAdmin.pepAction(). Certifying an assertion ' +
+                'key.');
+      return pepCredential.issue(body);
     }
     const name = String((body || {}).name || '');
     if (!name) {
@@ -1232,16 +1251,18 @@ class XacmlAdmin {
   // its settings and listeners, the policies, the AuthZEN catalogue and
   // callers, the reverse proxy — and a member's pulls ARE its cluster's
   // documents, so the cluster's configuration travels with no branch here.
-  // What the PEP already holds byte for byte is answered 304, because every
-  // pull's token is a digest of exactly what would be sent: a re-send of
-  // identical bytes would change nothing.
+  // The nudge carries `full: true`, so the PEP asks for every document
+  // without its token and loads each one again rather than being answered
+  // 304 (rcbj, 2026-11-16). The PEP honours that at most once a poll
+  // interval, because its /notify is not authenticated.
   //
   // UNLIKE THE CHANGE NUDGE IT IS AWAITED, because a person pressed a button
   // and is owed whether the PEP was reached; nothing was written, so there
-  // is no commit to wait for. A refusal says why before anything is dialled:
-  // notification or remote PEPs off, nudging stopped for this PEP (the
-  // administrator said this service does not dial it), or no usable notify
-  // URL — each converges on the PEP's own poll, which the sentence says.
+  // is no commit to wait for. IT DIALS A PEP WHOSE NUDGES ARE STOPPED too
+  // (rcbj, 2026-11-16): Stop nudging is about the change nudge, and a
+  // person pressing Sync on that row is asking for this one. A refusal says
+  // why before anything is dialled: notification or remote PEPs off, or no
+  // usable notify URL — each converges on the PEP's own poll.
   // ---------------------------------------------------------------------------
   /**
    * Nudges one registered PEP to pull everything now, and reports whether
@@ -1268,13 +1289,6 @@ class XacmlAdmin {
                : 'nudging is off (xacml.pepNotify).') + poll },
         'STS-XACML-0282'));
     }
-    if (!row.enabled) {
-      log.debug('Leaving XacmlAdmin.syncPep(). Not nudged.');
-      return Promise.resolve(errorCodes.mark({ ok: false,
-        why: '"' + name + '" is not nudged: this service was told not to ' +
-             'dial it. Press "Nudge again" first, then Sync.' + poll },
-        'STS-XACML-0283'));
-    }
     const url = pepSettings.notifyUrlOf(row);
     const problem = url ? pepHttp.urlProblem(url) : null;
     if (!url || problem) {
@@ -1288,7 +1302,7 @@ class XacmlAdmin {
                      : '') + '.') + poll },
         'STS-XACML-0284'));
     }
-    return pepHttp.nudge(url, '').then(function (result: any) {
+    return pepHttp.nudge(url, '', { full: true }).then(function (result: any) {
       peps.recordNotify(name, result.why);
       audit.audit({ action: 'xacml.pep.sync', actor: '', protocol: 'XACML',
                     detail: 'Asked remote PEP "' + name + '"' +
@@ -1305,13 +1319,14 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.syncPep(). Delivered.');
       return { ok: true, pep: name, cluster: cluster, delivered: true,
                status: result.status,
-               what: '"' + name + '" was told to pull now, and is pulling ' +
-                     'its policies, settings, listeners, AuthZEN catalogue ' +
-                     'and callers and reverse proxy' +
+               what: '"' + name + '" was told to pull everything again ' +
+                     'now: its policies, settings, listeners, AuthZEN ' +
+                     'catalogue and callers and reverse proxy' +
                      (cluster ? ', which are cluster "' + cluster + '"\'s'
                               : '') +
-                     '. Whatever it already holds unchanged is answered ' +
-                     '"unchanged". The Notify column records this nudge.' };
+                     ', each sent whole. A PEP asked twice within its poll ' +
+                     'interval pulls as usual the second time. The Notify ' +
+                     'column records this nudge.' };
     }, function (error: any) {
       log.debug('Caught in XacmlAdmin.syncPep(): ' +
                 ((error && error.message) || error));

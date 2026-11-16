@@ -171,6 +171,15 @@ rebuild. The service never writes to it. Setting changes made in the console go
 to the store, which overrides the file. Do not edit `env/defaults.js`; it is
 generated from `common/config.js`.
 
+**On an upgrade the mount is NOT upgraded with the image.** A newer image whose
+release added a setting starts on an older `env/` all the same: the setting
+takes the image's own default and the start logs a warning, `STS-CORE-0177`,
+naming it and the older `env/defaults.js`. A default the release changed is
+kept at the older file's value and logged as `STS-CORE-0178`. Update the
+checkout the mount comes from to the release you run, or mount a directory
+that holds only your own appconfig file and no `defaults.js`. See
+[Upgrading with a mounted env/](configuration.md#upgrading-with-a-mounted-env).
+
 ## Network and SPIFFE addresses
 
 The stack declares its own network, `172.29.0.0/24` (`STS_NETWORK_SUBNET`), and
@@ -230,7 +239,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
 | `XACML_PEP_HTTP`, `XACML_PEP_PROXY_HTTP` | `false` | `true` binds the remote PEP's plain-HTTP decision API on 9090, and its plain-HTTP reverse proxy on 9180. Both are off by default ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
-| `XACML_PEP_CRL_HTTP` | empty | `PEP_CRL_HTTP`: with plain HTTP off, `false` stops the remote PEP serving its credential's CRLs on 9090 and `true` serves them with no CRL directory; empty is the default, on where there are CRLs ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
+| `XACML_PEP_CRL_HTTP` | empty | `PEP_CRL_HTTP`: with plain HTTP off, `true` makes the remote PEP serve the CRLs in its CRL directory on 9090; empty or `false` does not (since 1.1.0 empty no longer binds it where there are CRLs, because the PEP presents no client certificate whose lists the service would fetch) ([Remote PEP](remote-pep.md#plain-http-is-off-by-default)) |
 | `XACML_PEP_NOTIFY_URL` | *(empty)* | Where the service nudges the remote PEP. Empty, the PEP derives it from its HTTPS listener certificate, `https://xacml-pep:9443/notify` when the certificate names the hostname `xacml-pep` ([Remote PEP](remote-pep.md#the-pep-derives-its-notify-url)). It must be HTTPS: an `http://` one is rejected ([Remote PEP](remote-pep.md#a-notify-url-that-is-not-https-is-rejected)) |
 | `XACML_PEP_PROXY_SESSION_RECHECK_MS` | `5000` | How old the remote PEP's last answer about a proxy session's sign-on session may be before it asks the service again. `0` asks on every request, so a sign-out at the service ends access at once |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |

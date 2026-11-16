@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5660** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5703** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,22 +51,22 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 108
+* [Service core (`STS-CORE`)](#sts-core) — 111
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 54
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 113
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 263
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 266
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 758
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 74
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 62
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 166
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
@@ -86,13 +86,13 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 207
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 119
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 223
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 133
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 291
-* [Management API (`STS-API`)](#sts-api) — 96
+* [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
@@ -159,7 +159,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-CORE-0001` | The appconfig file CONFIG_FILE names could not be loaded, so the service refused to start. | — |
-| `STS-CORE-0002` | One or more settings have no value in the appconfig layer or the environment (env/defaults.js has not been regenerated), so the service refused to start. | — |
+| `STS-CORE-0002` | One or more settings have no default of their own and no value in the appconfig layer or the environment, so the service refused to start. Since 2026-11-16 a setting WITH a default takes it when env/defaults.js lacks it (STS-CORE-0177) rather than stopping the start. | — |
 | `STS-CORE-0003` | A runtime setting change could not be handed to persistence. The setting is in force and may not survive a restart. | — |
 | `STS-CORE-0004` | A setting was named that does not exist in the settings table. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0005` | A restart-only setting was changed while the service is running; it must be set in the appconfig file or the environment instead. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -266,6 +266,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0174` | An XML document was refused because it carries a DOCTYPE or ENTITY declaration (ASVS 5.0.0 1.5.2). | SOAP 1.2 Part 1 section 5: no Document Type Declaration |
 | `STS-CORE-0175` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_VERSION_RELEASE names the release a build carries in place of the VERSION file's, and it was not M.N.O exactly (three non-negative integers with no leading zero). Nothing is written and the image build fails. | none — the image build exits non-zero |
 | `STS-CORE-0176` | A setting that holds an absolute URI (saml2.nameIdFormat, saml11.nameIdFormat) is set to text that is not one in the environment or an appconfig file. The service starts and uses it as configured, so its SAML assertions carry a NameID Format the schema refuses; /admin/config and the management API refuse the same value on a save (STS-CORE-0006). | saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning logged at startup; nothing is refused |
+| `STS-CORE-0177` | One or more settings have no row in env/defaults.js (or the file is not there) and no value in any layer above it, so each takes the image's own default. The defaults file is older than the image — usually an env/ directory mounted or copied from an earlier release. The service starts; the warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
+| `STS-CORE-0178` | One or more settings in env/defaults.js hold a value that is not the image's default. The file's value is used, as before the upgrade; a defaults file copied from an earlier release pins every default changed since. The warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
+| `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
 
 ## STS-WORKER
 
@@ -978,7 +981,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0152` | An uploaded certificate's chain verifies and the certificate was refused on revocation. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0153` *(retired)* | A certificate upload targeted a person. Only an application's key pair is replaced by an uploaded certificate. Retired 2026-09-13: a person's key pair may be replaced by an uploaded certificate too. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0154` | An uploaded certificate verified and one of the attributes it replaces could not be written to the application entry. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0155` | An uploaded certificate this realm issued would widen its holder: for a person, its subjectAltName names somebody else (another urn:sts:person: or an urn:sts:application:); for an application, it names a urn:sts:person:. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0155` | An uploaded certificate this realm issued would widen its holder: for a person, its subjectAltName names somebody else (another urn:sts:person: or urn:sts:sa:, or an urn:sts:application:); for an application, it names a person in either spelling, urn:sts:person: or a service account's urn:sts:sa: (#1827). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0156` | The certificate behind a key that verified an RFC 7523 or RFC 7522 assertion has an INCOMPLETE chain: it is not this realm's, and nothing registered with it reaches a self-signed root (pki.verifySignerChain). | invalid_grant at the grant, invalid_client at client authentication |
 | `STS-PKI-0157` | The chain of the certificate behind a key that verified an RFC 7523 or RFC 7522 assertion does not verify: a signature, an issuer name or a validity window failed — the leaf expired, an intermediate expired, or a pinned self-signed certificate no longer holds. | invalid_grant at the grant, invalid_client at client authentication |
 | `STS-PKI-0158` | A certificate that signs another on a signer's path is not permitted to: no basicConstraints cA=TRUE, a KeyUsage without keyCertSign, or a pathLenConstraint exceeded. Raised for a presented x5c (pki.verifyLeaf) and for a registered chain at use. | invalid_grant at the grant, invalid_client at client authentication |
@@ -1092,6 +1095,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0274` | A realm's certificate authority branch was asked for a composite ML-DSA signing key. Its Intermediate is on the chain of the realm's SPIFFE gRPC listeners, Remote PEP listeners and custom listeners, and OpenSSL cannot read a composite key, so each of them would have refused the chain. Refused before any key is made; nothing is stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0275` | pki.keyAlgorithm names a composite ML-DSA key, which the realm's TLS listeners cannot load, so a realm branch being built without a named algorithm used the classical default instead. | none: a log line; the build goes on |
 | `STS-PKI-0276` | Refused under paranoid PKI mode for policy-signer: the signer of a policy export (#1713); nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0277` | A certificate uploaded for a person was issued by this realm as a service account's (urn:sts:sa:<name>, #1827), and that person is not a service account in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0278` | A person's RFC 7523 key was to be certified from their own certificate request, and no request was sent or it could not be read (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0281` | A certificate request for a person's RFC 7523 key carries a key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
@@ -1157,6 +1163,7 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0094` | In product mode a certificate was refused to an application declared for some protocol families but not this enrollment protocol (ACME, EST or SCEP); the issuance policy's protocol-not-declared rule decided it. | each protocol's own refusal (an RFC 8555 problem document, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
 | `STS-ENROLL-0095` | The profile is not in the application's own <family>AllowedProfiles, which replaces the realm's list for it. | each protocol's own refusal (ACME invalidProfile, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
 | `STS-ENROLL-0096` | EST refused an application an authentication method or /serverkeygen that its own estBasicAuthentication, estCertificateAuthentication or estServerKeyGeneration turns off. | RFC 7030 HTTP 403 |
+| `STS-ENROLL-0097` | An enrollment request, or the certificate presented to re-enroll, names a person as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. | ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest |
 
 ## STS-ACME
 
@@ -2548,6 +2555,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1008` | Releasing access-token status-list block leases held by a stopped process failed (#884). The leases stay until they expire, so a restarted process keeps wasting blocks until then. | none (recorded only) |
 | `STS-OAUTH-1009` | An access-token status index was not published because the block claim's fence was lost before its status row committed (#884). The access token is not minted on that index. | none (recorded only) |
 | `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
+| `STS-OAUTH-1011` *(retired)* | An assertion's x5c leaf, issued by this realm, names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16): the assertion grant follows WS-Trust and authenticates the person whichever spelling names them. | — |
+| `STS-OAUTH-1012` | A token request through sts-remote-pep, the public client a remote PEP presents its RFC 7523 self-assertion through, carried no DPoP proof: every token issued to that client is DPoP-bound (RFC 9449) to the PEP's assertion key (#1827's follow-up). | invalid_dpop_proof (HTTP 400) |
 
 ## STS-SAML
 
@@ -2760,6 +2769,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
 | `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body that is not XML (STS-WSTRUST-0001) |
 | `STS-WSTRUST-0073` | A request to POST /sts/mex (#958) carried a wsa:Action that is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata (2004/09), or none, so there is no metadata request to answer. | SOAP Client (SOAP 1.2: Sender) fault, HTTP 500 |
+| `STS-WSTRUST-0074` *(retired)* | A WS-Trust requester's certificate (a WS-Security signer, or the TLS client certificate on the connection) names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: "any user with valid credentials should be able to authenticate through WS-Trust"): WS-Trust authenticates the entry whichever spelling names it. | — |
 
 ## STS-WSFED
 
@@ -3986,6 +3996,7 @@ Raised from: tls/.
 | `STS-TLS-0060` | A certificate sign-in started no session because the person owes a second factor. | HTTP 200 |
 | `STS-TLS-0061` | A TLS listener already held its bound of connections that failed at the TLS layer, so another was closed at once rather than held for its alert to be read, and the TCP reset could discard the alert (tls/alert_close.ts, 2026-11-13). | none (logged): the connection closes with its alert sent |
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
+| `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
 
 ## STS-VC
 
@@ -5145,9 +5156,25 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0280` | The members stored on a remote PEP cluster's entry do not validate (an ldapmodify, say); the cluster is read with none, so no PEP pulls its configuration until an administrator corrects it (#1760). | none — a warning in the log |
 | `STS-XACML-0281` | A remote PEP listener's tuning — the TLS policy, the TLS session cache, HTTP pooling, HTTP/2, the client-certificate questions or the thread pool — does not fit: a value outside its range, a cipher suite this service does not name, a post-quantum-only choice with nothing post-quantum left, or a thread-pool maximum below its minimum (#1760). | HTTP 400 on /admin-api |
 | `STS-XACML-0282` | A remote PEP's Sync was refused before anything was sent: remote PEPs (xacml.remotePeps) or nudging (xacml.pepNotify) is off in this realm. The PEP converges on its own poll. | HTTP 400 on /admin-api |
-| `STS-XACML-0283` | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep): an administrator said this service does not dial it. | HTTP 400 on /admin-api |
+| `STS-XACML-0283` *(retired)* | A remote PEP's Sync was refused because nudging is stopped for that PEP (disable-pep). Retired the day it was added: Sync dials a PEP whose change nudges are stopped (rcbj, 2026-11-16). | HTTP 400 on /admin-api |
 | `STS-XACML-0284` | A remote PEP's Sync was refused because the PEP has no notify URL, or its notify URL cannot be dialled (not https, or outside xacml.pepNotifyAllowedHosts). | HTTP 400 on /admin-api |
 | `STS-XACML-0285` | A remote PEP's Sync dialled the PEP and the nudge was not delivered: the connection failed, the certificate did not verify, or the PEP refused it. The result is recorded on the PEP's row. | HTTP 400 on /admin-api |
+| `STS-XACML-0286` | A remote PEP pushed decision records to POST /admin-api/pep-audit in a body that is not { instance, events } with events a non-empty array of objects, or with more events than one batch may carry (#1827). Nothing in the batch is recorded. | HTTP 400, an error message |
+| `STS-XACML-0287` | A remote PEP pushed decision records to POST /admin-api/pep-audit and is not registered in this realm's ou=peps under the name its token's subject carries (#1827). It must register (POST /xacml/pep/register) before its records are taken. | HTTP 404, an error message |
+| `STS-XACML-0288` | A decision record a remote PEP pushed to POST /admin-api/pep-audit was not recorded: it had no positive integer seq, or a kind other than enforcement, authzen or proxy (#1827). The rest of the batch is recorded and the record is counted as ignored. | none; counted as ignored in the answer |
+| `STS-XACML-0289` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with no access token while xacml.pepAuthentication is token, the default since 1.1.0: a client certificate alone is not accepted in this realm (#1827). Where the certificate verified, the description says that either would accept it, and a warning under this code is logged once per realm and process. | HTTP 401, WWW-Authenticate: DPoP error="invalid_request" |
+| `STS-XACML-0290` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with an access token and no client certificate while xacml.pepAuthentication is certificate: the token is not read in this realm (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0291` | A remote PEP's access token at the PEP door was not one this realm issued and holds: its signature did not verify, it expired, it is not an access token, another authorization server issued it, it was revoked, or its certificate binding did not hold (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0292` | A remote PEP's access token at the PEP door is not DPoP-bound (no cnf.jkt), or a DPoP-bound one was sent as Bearer (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0293` | A remote PEP's access token at the PEP door is not audienced to this realm's /xacml/pep (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0294` | An access token at the PEP door was issued to a client other than sts-remote-pep, the one a remote PEP's token comes from (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0295` | A remote PEP's access token at the PEP door does not carry xacml:pep, or sts-remote-pep no longer holds the delegated permission grant of it on sts-xacml-pep-api (#1827). | HTTP 401, WWW-Authenticate: DPoP error="insufficient_scope" |
+| `STS-XACML-0296` | A remote PEP's DPoP proof at the PEP door was refused: missing, malformed, not for this method and URL, outside its iat window, a replay, without the token's ath, by another key than the token is bound to, or without the server nonce the realm asks for (#1827). The log line names the proof's own STS-OAUTH code. | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or "use_dpop_nonce" with a DPoP-Nonce header (RFC 9449 section 9) |
+| `STS-XACML-0297` | A remote PEP's access token at the PEP door names no entry under this realm's ou=users: its sub is not urn:uuid: of exactly one person's entry, the PEP's own (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0298` | issue-pep-credential named no person in this realm's ou=users, or named none at all: a remote PEP's key is certified for an entry that exists (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0299` | issue-pep-credential named a person who is not a service account: a remote PEP's identity is one, and its key names it urn:sts:sa:<name> (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-XPEP
 
@@ -5271,11 +5298,25 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0112` | A remote PEP was nudged (POST /notify) over plain HTTP. The nudge is answered on its HTTPS listener only since 2026-11-14. | HTTP 404 not_found, saying where the nudge is answered |
 | `STS-XPEP-0113` | The remote PEP's notify URL (PEP_NOTIFY_URL, or the notifyUrl the service set) is not https, so it is REJECTED: the service nudges over https only and nothing allows http. The PEP advertises no notify URL, does not fall back to the one it would derive, reports the setting rejected in settingsInUse, and converges by polling until it is fixed or unset. Logged once per value. | none — an error in the PEP's log; settingsInUse rejected |
 | `STS-XPEP-0114` | A request reached the remote PEP's CRL-only plain-HTTP listener for something other than GET /crl/<name>; that listener serves its credential's CRLs and nothing else. | HTTP 404 not_found |
-| `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (bound when PEP_HTTP is off and the credential has a CRL directory). Logged once at start. | none; the listener keeps its default |
+| `STS-XPEP-0115` | PEP_CRL_HTTP holds a value that is neither true nor false; the CRL-only listener keeps its default (not bound: since phase 4 of #1827's follow-up only PEP_CRL_HTTP=true binds it). Logged once at start. | none; the listener keeps its default |
 | `STS-XPEP-0116` | A request on a remote PEP proxy route whose methods list is empty (deny-all) was refused after the route's policy was asked, whatever it decided; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0117` | A remote PEP proxy route names a policy (authorization.policy) this PEP does not hold — never pulled, disabled, withheld or failed to load — so its request was refused whatever the bias; nothing reached the application (#1760). | HTTP 403 |
 | `STS-XPEP-0118` | The remote PEP's reverse proxy has received no configuration since it started — its first pull has not succeeded yet — so every path, its own /.iya-pep/* included, is answered "try again later" rather than "not found". Logged when first met, then as a count at most once a minute, and once more when the first configuration arrives; a configuration received empty or switched off is STS-XPEP-0065 (#1760). | HTTP 503, temporarily_unavailable, with Retry-After (the poll interval in seconds, at least 1) |
 | `STS-XPEP-0119` | A remote PEP could not apply one part of a listener's tuning. A TLS knob the library refused keeps the acceptor already served, or serves the certificate without that knob when none is served yet. sessionTimeoutS other than 300 is left at 300 seconds and the other settings are applied. A thread-pool worker that does not start leaves the workers already running (#1760). | none — an error in the PEP's log |
+| `STS-XPEP-0120` | A remote PEP was nudged with `full` within a poll interval of its last full pull, so it pulled as usual: a full pull is honoured at most once a poll interval, because POST /notify is not authenticated (2026-11-16). | none — an info line in the PEP's log |
+| `STS-XPEP-0121` | A job on a remote PEP listener's thread pool panicked. Its connection is lost; the worker catches the panic and takes the next job (2026-11-16). | none — an error in the PEP's log |
+| `STS-XPEP-0122` | The remote PEP's queue of decision records waiting for the service was full, so the oldest record was dropped to make room (#1827). Enforcement goes on; the dropped decision is still on the PEP's own log. Logged at the first drop and then sparingly, with the count. | none; the PEP keeps enforcing |
+| `STS-XPEP-0123` | The remote PEP sent a batch of decision records to the management API without an access token, because none could be had (#1827; STS-XPEP-0129 says why the grant failed). The records stay queued. | none; the records are kept and sent later |
+| `STS-XPEP-0124` | The remote PEP could not deliver a batch of decision records to POST /admin-api/pep-audit: no answer, a refusal of its token, or a status other than 200 and 400 (#1827). The records stay queued and are sent again. | none; the records are kept and sent later |
+| `STS-XPEP-0125` | The service refused a batch of decision records as malformed (HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped that batch rather than send it forever (#1827). Each decision is still on the PEP's own log. | none; the batch is dropped |
+| `STS-XPEP-0126` | The remote PEP has no assertion key: neither PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could not be read. A key already loaded is kept; without one, every call to the service goes without an access token and is refused (the PEP presents no client certificate since phase 4 of #1827's follow-up). | none — a warning in the PEP's log |
+| `STS-XPEP-0127` | PEP_ASSERTION_KEY is not set, so the remote PEP signs its self-assertion and its DPoP proofs with the key file PEP_TLS_KEY names (its client certificate's key, before phase 4 of #1827's follow-up retired the certificate). A notice: it works when that key is the one registered on the PEP's entry. | none — an info line in the PEP's log |
+| `STS-XPEP-0128` | The remote PEP refused its assertion key: it would not parse, or it is neither RSA (RS256) nor EC P-256 (ES256). A key already loaded is kept. | none — a warning in the PEP's log |
+| `STS-XPEP-0129` | The remote PEP could not obtain an access token for one of its three resources (/xacml/pep, /admin-api, /access/v1): the token endpoint did not answer or refused the RFC 7523 self-assertion grant. The log names the missing provisioning step — the assertion key registered on the entry, the client, the remote PEPs group. Calls to that resource go without a token; the grant is not asked again for five seconds. | none — a warning in the PEP's log, at the first refusal and when the reason changes |
+| `STS-XPEP-0130` | The token endpoint or a resource demanded a DPoP nonce (use_dpop_nonce) again after the remote PEP retried with the nonce it handed. The PEP retries once only; the call's answer stands. | none — a warning in the PEP's log |
+| `STS-XPEP-0131` | A resource refused the remote PEP's access token with a 401 again after the PEP dropped it and fetched a new one. The PEP retries once only; the call's answer stands. | none — a warning in the PEP's log |
+| `STS-XPEP-0135` | PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside PEP_ASSERTION_KEY, and the remote PEP no longer presents a client certificate to the service: it authenticates every call with a DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, certified by issue-pep-credential). The variable is ignored for that; PEP_TLS_KEY alone is still read as the fallback assertion key (STS-XPEP-0127). Logged once at start. | none — a warning in the PEP's log |
+| `STS-XPEP-0136` | The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of the client certificate the PEP no longer presents (phase 4 of #1827's follow-up). PEP_CRL_HTTP=true binds it. Logged once at start. | none — a notice in the PEP's log |
 
 ## STS-AUTHZEN
 
@@ -5379,6 +5420,10 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
 | `STS-AUTHZEN-0116` | An AuthZEN answer carried a member its model in models/authzen/authzen_members.tsp does not name, one of a type or value the model does not allow, or lacked a member it requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
 | `STS-AUTHZEN-0117` | An AuthZEN evaluation, batch or search request did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16) |
+| `STS-AUTHZEN-0118` | A remote PEP's access token from sts-remote-pep at /access/v1 was refused: not one this realm issued and holds, not DPoP-bound or sent as Bearer, not audienced to this realm's /access/v1, or its DPoP proof was refused (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or "use_dpop_nonce" |
+| `STS-AUTHZEN-0119` | A remote PEP's access token at /access/v1 does not carry authzen:evaluate, or sts-remote-pep no longer holds the delegated permission grant of it on sts-authzen-api (#1827). | HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope" |
+| `STS-AUTHZEN-0120` | A remote PEP's access token at /access/v1 names no entry under this realm's ou=users, or one that does not hold REMOTE_PEPS: the token of the client every PEP shares admits only a remote PEP (#1827). | HTTP 401 (no entry) or 403 (not a remote PEP) |
+| `STS-AUTHZEN-0121` | A remote PEP's access token arrived at /access/v1 while xacml.pepAuthentication is certificate, which accepts a remote PEP only by its client certificate (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
 
 ## STS-FGA
 
@@ -5909,6 +5954,7 @@ Raised from: mgmt-api/.
 | `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
 | `STS-API-0146` | An answer was refused by its response model (STS-API-0139) in a process where every plain object or array inherits an enumerable member: something wrote to Object.prototype or Array.prototype, so every closed model refuses every answer. The log line names the members, once per set of names; the process needs a restart and the write that polluted it a fix. | — |
+| `STS-API-0147` | A remote PEP's decision-record push (POST /admin-api/pep-audit) arrived on a token that does not carry xacml:pep-audit or whose subject is not in the remote PEPs' group (REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented at another operation (#1827). Refused at the gate itself, so that the separation does not depend on xacml.enforceAccess. | HTTP 403, an error message |
 
 ## STS-PORTAL
 

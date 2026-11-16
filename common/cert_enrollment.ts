@@ -94,6 +94,8 @@ import keyMaterial = require('./crypto_impl/key_material');
 import keystore = require('./keystore');
 import mode = require('./mode');
 import CertificateTrust = require('./certificate_trust');
+// The names a leaf gives its holder, defined once (#1827).
+import SubjectUrn = require('./subject_urn');
 import pki = require('./pki');
 import realms = require('./realms');
 import x509 = require('./crypto_impl/x509');
@@ -230,10 +232,11 @@ const READ_NAMES = {
 
 /**
  * The `urn:sts:` subjectAltName prefix that names a person or an application
- * entry.
+ * entry. A person who is a SERVICE ACCOUNT is named
+ * `SubjectUrn.SERVICE_ACCOUNT` instead (#1827) — `entryUri()` decides, and `entryFromUri()` reads both.
  */
-const URN_PREFIX = { person: 'urn:sts:person:',
-                     application: 'urn:sts:application:' };
+const URN_PREFIX = { person: SubjectUrn.PERSON,
+                     application: SubjectUrn.APPLICATION };
 
 // ---------------------------------------------------------------------------
 // THE `device` PROFILE (#164 decision 6c, phase 2, 2026-09-26).
@@ -292,7 +295,7 @@ const DEVICE_PROFILE_FAMILIES = ['est', 'scep'];
 /**
  * The `urn:sts:` subjectAltName prefix that names a device entry.
  */
-const DEVICE_URN_PREFIX = 'urn:sts:device:';
+const DEVICE_URN_PREFIX = SubjectUrn.DEVICE;
 // What a device certificate's extensions are: /admin/pki's tls-client leaf.
 const DEVICE_CERTIFICATE_PROFILE = 'tls-client';
 
@@ -349,6 +352,10 @@ interface CertEnrollmentDeps {
   // nonces (#257), by `issueForDevice()`. Lazily: it requires the WebAuthn
   // verifier and the credentials module, which nothing else here needs.
   loadDeviceEnrolment(): typeof import('./device_enrolment');
+  // #1827: whether a person is a service account now, which decides the
+  // spelling of their name in a leaf. LAZY: a leaf register, reached only
+  // when a person's name is written or a `urn:sts:sa:` one is read.
+  loadServiceAccounts(): { isServiceAccountName(username: unknown): boolean };
 }
 
 /**
@@ -466,6 +473,9 @@ class CertEnrollment {
       },
       loadDeviceEnrolment: function () {
         return require('./device_enrolment');
+      },
+      loadServiceAccounts: function () {
+        return require('./service_accounts');
       }
     };
   }
@@ -618,33 +628,106 @@ class CertEnrollment {
   entryUri(entry) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.entryUri().");
+    // A SERVICE ACCOUNT'S NAME SAYS SO (#1827): `urn:sts:sa:<name>` for a
+    // person who is one now. This is the name an enrolled leaf carries
+    // (`namesFor()`) and the one every console and audit row shows.
+    const out = entry.kind === 'person'
+      ? SubjectUrn.forPerson(entry.id, this.isServiceAccount(entry.id))
+      : SubjectUrn.forHolder(entry.kind, entry.id);
     log.debug("Leaving CertEnrollment.entryUri().");
-    return (entry.kind === 'device' ? DEVICE_URN_PREFIX
-                                    : URN_PREFIX[entry.kind]) + entry.id;
+    return out;
   }
 
   /**
-   * Reads a person or application entry out of a `urn:sts:` URI.
+   * Says whether a person is a service account now, in the ambient realm.
+   *
+   * @param id - the username
+   * @returns true for a service account; false otherwise and where nothing
+   *   can say
+   */
+  isServiceAccount(id) {
+    const { log, loadServiceAccounts } = this.deps;
+    log.debug("Entering CertEnrollment.isServiceAccount().");
+    let out = false;
+    try {
+      out = loadServiceAccounts().isServiceAccountName(String(id)) === true;
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.isServiceAccount(): " +
+                ((e && e.message) || e));
+      out = false;
+    }
+    log.debug("Leaving CertEnrollment.isServiceAccount(). " + out);
+    return out;
+  }
+
+  /**
+   * Reads a person or application entry out of a `urn:sts:` URI: a person
+   * in either spelling, `urn:sts:person:` or a service account's
+   * `urn:sts:sa:` (#1827).
    *
    * @param uri - the URI
    * @returns the entry's `kind` and `id`, or null
    */
   entryFromUri(uri) {
     const { log } = this.deps;
-    const self = this;
     log.debug("Entering CertEnrollment.entryFromUri().");
-    const text = String(uri || '');
-    let found = null;
-    Object.keys(URN_PREFIX).forEach(function (kind) {
-      if (!found && text.indexOf(URN_PREFIX[kind]) === 0) {
-        const id = text.slice(URN_PREFIX[kind].length);
-        if (self.wellFormedId(id)) {
-          found = { kind: kind, id: id };
-        }
-      }
-    });
+    const parsed = SubjectUrn.parse(uri, ['person', 'sa', 'application']);
+    const found = parsed && this.wellFormedId(parsed.name)
+      ? { kind: parsed.kind, id: parsed.name } : null;
     log.debug("Leaving CertEnrollment.entryFromUri().");
     return found;
+  }
+
+  /**
+   * Says whether a URI names an entry, in whichever spelling.
+   *
+   * @param uri - the URI
+   * @param entry - the entry's `kind` and `id`
+   * @returns true when it names that entry
+   */
+  namesEntry(uri, entry) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.namesEntry().");
+    const out = this.sameEntry(this.entryFromUri(uri), entry);
+    log.debug("Leaving CertEnrollment.namesEntry(). " + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `urn:sts:sa:` IS A CLAIM ABOUT THE ENTRY (#1827).
+  //
+  // This service writes `urn:sts:sa:<name>` only for a person who IS a
+  // service account (`entryUri()`), and an entry never stops being one. A
+  // request or a presented certificate saying it of somebody who is not —
+  // or of nobody — is refused, STS-ENROLL-0097, wherever the name chooses an
+  // entry: the target of a request, a name it asks for, the credential a
+  // re-enrollment presents. `urn:sts:person:` naming a service account is
+  // NOT refused: a leaf issued before the entry became one keeps working
+  // (rcbj's 1.0.0 rule), and a request asking for it is issued the entry's
+  // own name, `urn:sts:sa:`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Refuses a URI that names a person as a service account when the
+   * directory does not hold them as one.
+   *
+   * @param uri - the URI
+   * @returns a refusal (STS-ENROLL-0097, 403), or null
+   */
+  serviceAccountUriRefusal(uri) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.serviceAccountUriRefusal().");
+    const parsed = SubjectUrn.parse(uri, ['sa']);
+    if (!parsed || this.isServiceAccount(parsed.name)) {
+      log.debug("Leaving CertEnrollment.serviceAccountUriRefusal(). None.");
+      return null;
+    }
+    log.debug("Leaving CertEnrollment.serviceAccountUriRefusal(). Refused.");
+    return this.refuse('STS-ENROLL-0097', 403, 'The name "' +
+                       String(uri).slice(0, 200) + '" says that "' +
+                       parsed.name.slice(0, 200) + '" is a service account, ' +
+                       'and in this realm that entry is not one. This ' +
+                       'service writes that name only for a service ' +
+                       'account.');
   }
 
   // THE ENTRY A CERTIFICATE NAMES, READ AND NOT BELIEVED (#98 D10). Where a
@@ -1174,11 +1257,19 @@ class CertEnrollment {
     const uris = String((cert && cert.subjectAltName) || '').split(/,\s*/)
       .filter(function (one) { return one.indexOf('URI:') === 0; })
       .map(function (one) { return one.slice(4); });
-    const named = uris.map(function (uri) {
-      return self.entryFromUri(uri);
-    }).filter(function (one) {
-      return !!one;
+    const namingUris = uris.filter(function (uri) {
+      return !!self.entryFromUri(uri);
     });
+    const named = namingUris.map(function (uri) {
+      return self.entryFromUri(uri);
+    });
+    const notOne = named.length === 1
+      ? self.serviceAccountUriRefusal(namingUris[0]) : null;
+    if (notOne) {
+      log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
+                "Not a service account.");
+      return notOne;
+    }
     if (named.length !== 1) {
       log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
                 "No entry.");
@@ -1980,7 +2071,16 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.targetFromRequest().");
     const named = [];
-    ((requested && requested.uris) || []).forEach(function (uri) {
+    const asked = (requested && requested.uris) || [];
+    for (let i = 0; i < asked.length; i++) {
+      const notOne = self.serviceAccountUriRefusal(asked[i]);
+      if (notOne) {
+        log.debug("Leaving CertEnrollment.targetFromRequest(). Not a " +
+                  "service account.");
+        return notOne;
+      }
+    }
+    asked.forEach(function (uri) {
       const entry = self.entryFromUri(uri);
       if (entry && !named.some(function (one) {
         return self.sameEntry(one, entry);
@@ -2064,7 +2164,15 @@ class CertEnrollment {
     seen['uri:' + self.entryUri(entry)] = true;
     const uris = want.uris || [];
     for (let i = 0; i < uris.length; i++) {
-      if (uris[i] !== self.entryUri(entry)) {
+      // Either spelling of the entry's own name (#1827); the leaf carries
+      // the entry's name as it is now, which is the first name above.
+      const notOne = self.serviceAccountUriRefusal(uris[i]);
+      if (notOne) {
+        log.debug("Leaving CertEnrollment.namesFor(). Not a service " +
+                  "account.");
+        return notOne;
+      }
+      if (!self.namesEntry(uris[i], entry)) {
         log.debug("Leaving CertEnrollment.namesFor(). A foreign URI.");
         return self.refuse('STS-ENROLL-0050', 403, 'The request asks for the ' +
                            'name "' + String(uris[i]).slice(0, 200) + '", ' +
@@ -2956,7 +3064,8 @@ class CertEnrollment {
                                           want.upns || []);
     if (deviceIds.length > 1 || other.length ||
         ownerUris.some(function (uri) {
-          return !asked.target || uri !== self.entryUri(asked.target);
+          return !asked.target || !self.namesEntry(uri, asked.target) ||
+                 !!self.serviceAccountUriRefusal(uri);
         })) {
       log.debug("Leaving CertEnrollment.issueForDevice(). Names.");
       return refused(self.refuse('STS-ENROLL-0050', 403, 'A device ' +
@@ -5036,6 +5145,9 @@ export = {
   entryUri: slot.forward('entryUri'),
   organisationOf: slot.forward('organisationOf'),
   entryFromUri: slot.forward('entryFromUri'),
+  namesEntry: slot.forward('namesEntry'),
+  serviceAccountUriRefusal: slot.forward('serviceAccountUriRefusal'),
+  isServiceAccount: slot.forward('isServiceAccount'),
   entryNamedByCertificate: slot.forward('entryNamedByCertificate'),
   entryOfCredentialId: slot.forward('entryOfCredentialId'),
   entryLabel: slot.forward('entryLabel'),

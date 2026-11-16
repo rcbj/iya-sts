@@ -54,6 +54,9 @@ const personKeySourceSentences = function (t: Json): Json {
     'uploaded-realm-ca': t.html('consoleUsers.keySource.uploadedRealmCa'),
     'uploaded-external-ca':
       t.html('consoleUsers.keySource.uploadedExternalCa'),
+    // A key the person generated, certified from their own request (#1827's
+    // follow-up, phase 3): a remote PEP's assertion key.
+    'issued-from-csr': t.html('consoleUsers.keySource.issuedFromCsr'),
     'unrecorded': t.html('consoleUsers.keySource.unrecorded')
   };
 };

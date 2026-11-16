@@ -4,7 +4,7 @@
 
 | File | What it is |
 |---|---|
-| `defaults.js` | **GENERATED, and never hand-edited.** One row per setting in `common/config.js`'s `SETTINGS`, written from its `dflt` column by `generate_defaults.js`. It is not selected by anything — it is the layer UNDER whichever file is. |
+| `defaults.js` | **GENERATED, and never hand-edited.** One row per setting in `common/config.js`'s `SETTINGS`, written from its `dflt` column by `generate_defaults.js`. It is not selected by anything — it is the layer UNDER whichever file is, and OVER the table's own defaults, so an older or missing copy costs a warning, not the start. |
 | `generate_defaults.js` | `node env/generate_defaults.js` writes the above. Adding a setting is one edit: add the row to `SETTINGS`, regenerate. |
 | `local.js` | the appconfig for a host run — `CONFIG_FILE=./env/local.js node server.js` — and the default of the image (`Dockerfile`) and of `docker-compose.yml` |
 | `test.js` | the appconfig the test launchers pick for a run below debug level (the *THE SERVICE'S LOG LEVEL* block of `run-tests.sh` and of `run-coverage.sh`) |
@@ -14,10 +14,18 @@
 configuration.** The selected file is unioned on top of `defaults.js`, key by
 key, with the selected file winning; above both sit the environment variables,
 and above those the runtime overrides the console and `/admin-api` set in
-memory. **A setting with a row in `SETTINGS` and no row in `defaults.js` stops
-the service from starting and names itself** — there is no sixth level, no
-constant in a module underneath the table. `common/CLAUDE.md` argues the whole
-layering and is the one place it is written down; this file lists the files.
+memory. **Beneath `defaults.js` is the row's own `dflt`, the image's floor
+(2026-11-16)**: a setting this directory's `defaults.js` lacks — because it is
+an OLDER copy, mounted over the image's `env/` or kept beside a deployment —
+takes the table's default, and the start warns (`STS-CORE-0177`) naming the
+setting and the file; a value here that is not the table's default is used and
+warned of (`STS-CORE-0178`). Until then such a setting stopped the start
+(`STS-CORE-0002`), which is how an upgraded image crash-looped on port 8081's
+mounted `env/`. **So nothing in this directory may be what an image NEEDS** —
+it is what an operator may replace. `common/CLAUDE.md` (*The image's floor*)
+argues the whole layering and is the one place it is written down; this file
+lists the files. A regenerated `defaults.js` is still owed with every new row:
+`tests/config_defaults_layer.js` fails until the file and the table agree.
 `docs/configuration.md`'s *Every setting* lists every setting, its environment
 variable and its default.
 

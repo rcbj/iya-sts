@@ -262,6 +262,16 @@ export = class RegisteredTargets {
                 "AuthZEN API; its object " + (on ? 'exists.' : 'is gone.'));
       return on ? 'the AuthZEN API (/access/v1)' : '';
     }
+    // THE REMOTE PEP'S API (#1827's follow-up): this realm's `/xacml/pep`,
+    // which a remote PEP asks for as its `resource` on the jwt-bearer grant
+    // through `sts-remote-pep` and which `xacml/pep_token.ts` accepts as a
+    // token's audience for every `/xacml/pep/*` call and `POST /xacml/pip`.
+    if (underAny('/xacml/pep')) {
+      const on = RegisteredTargets.seeded('sts-xacml-pep-api');
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The remote " +
+                "PEP API; its object " + (on ? 'exists.' : 'is gone.'));
+      return on ? 'the remote PEP API (/xacml/pep)' : '';
+    }
     // THE UMA 2.0 PROTECTION API (#1168): this realm's `/uma`, which a
     // resource server asks for as its `resource` when it obtains a PAT and
     // which `uma/uma_pat.ts` accepts as a token's audience.

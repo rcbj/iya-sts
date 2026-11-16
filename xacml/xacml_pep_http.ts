@@ -599,16 +599,16 @@ class PepNotifier {
    * recorded on the audit log.
    * @param url - the PEP's notify URL
    * @param issuer - the PDP's identifier, carried as `pdp` in the body
-   * @param options - reserved, unused
+   * @param options - `{ full: true }` asks the PEP to pull every document
+   *   whole (a Sync from the console, 2026-11-16)
    * @returns a promise of `{ ok, status, why }`
    */
   nudge(url: unknown, issuer?: unknown,
-        options?: object): Promise<NudgeResult> {
+        options?: { full?: boolean }): Promise<NudgeResult> {
     const self = this;
     const { log, https, userAgent } = this.deps;
     log.debug('Entering PepNotifier.nudge(). url=' + url);
-    const settings = options || {};
-    void settings;
+    const full = !!(options && options.full);
     log.debug("Leaving PepNotifier.nudge().");
     return new Promise(function (resolve: (r: NudgeResult) => void) {
       if (!self.notifyAllowed()) {
@@ -649,11 +649,19 @@ class PepNotifier {
         resolve({ ok: false, status: 0, why: policy.why });
         return;
       }
-      const body = JSON.stringify({
+      // `full` (2026-11-16) is a Sync's: the PEP pulls every document whole
+      // rather than being answered 304. It carries no content, so the
+      // nudge is still never the mechanism; a PEP that does not read it
+      // pulls as it always did.
+      const fields: Record<string, unknown> = {
         event: 'policy-repository-changed',
         at: new Date().toISOString(),
         pdp: String(issuer || '')
-      });
+      };
+      if (full) {
+        fields.full = true;
+      }
+      const body = JSON.stringify(fields);
       const transport = https;
       const request = transport.request(Object.assign({
         method: 'POST',

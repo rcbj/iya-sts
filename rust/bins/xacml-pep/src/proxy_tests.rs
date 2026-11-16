@@ -479,10 +479,13 @@ async fn service(
             }
             let (issuer, expect, who) = {
                 let g = s.lock().unwrap();
-                (g.issuer.clone(), g.expect.clone(),
-                 g.who.clone().unwrap_or_else(|| {
-                     ("urn:uuid:carol".to_string(), "carol".to_string())
-                 }))
+                (
+                    g.issuer.clone(),
+                    g.expect.clone(),
+                    g.who.clone().unwrap_or_else(|| {
+                        ("urn:uuid:carol".to_string(), "carol".to_string())
+                    }),
+                )
             };
             let Some((challenge, nonce, sid)) = expect else {
                 return (StatusCode::BAD_REQUEST, Json(json!({})));
@@ -701,16 +704,22 @@ fn policy_rows(root: &str) -> Value {
         ("permit-put", "PUT"),
     ] {
         let id = format!("pid-{}", name);
-        let doc = permitting(&id, ACTION, ACTION_ID, STRING, "string-equal",
-                             value);
+        let doc =
+            permitting(&id, ACTION, ACTION_ID, STRING, "string-equal", value);
         rows.push(row(name, doc));
     }
     for (name, value) in
         [("permit-uri", FULL_URI), ("permit-path", "/bypath/x")]
     {
         let id = format!("pid-{}", name);
-        let doc = permitting(&id, RESOURCE, RESOURCE_ID, ANYURI, "anyURI-equal",
-                             value);
+        let doc = permitting(
+            &id,
+            RESOURCE,
+            RESOURCE_ID,
+            ANYURI,
+            "anyURI-equal",
+            value,
+        );
         rows.push(row(name, doc));
     }
     // Permits only a request carrying NO subject-id: the regexp `.` matches
@@ -882,8 +891,7 @@ fn configuration(upstream: &str, service: &str, cert_pem: &str) -> Value {
           "methods": [], "resolved": resolved_for(false, false, ""),
           "authorization": simple_on("never-pulled") }
     ]);
-    if let (Some(all), Value::Array(more)) = (routes.as_array_mut(), decided)
-    {
+    if let (Some(all), Value::Array(more)) = (routes.as_array_mut(), decided) {
         all.extend(more);
     }
     json!({
@@ -1623,9 +1631,14 @@ async fn the_session_flow_through_the_library_and_a_sign_out_at_the_service() {
     // pull that names none stands on; the application's own are kept.
     let said = echoed(
         h.get("/app/page")
-            .header("cookie", format!(
-                "__Host-sts_session=s; {}; sts_lang=fr; \
-                 __Secure-sts_session_bound=b; other=1; ists_x=2", pair))
+            .header(
+                "cookie",
+                format!(
+                    "__Host-sts_session=s; {}; sts_lang=fr; \
+                 __Secure-sts_session_bound=b; other=1; ists_x=2",
+                    pair
+                ),
+            )
             .send()
             .await
             .unwrap(),
@@ -2324,25 +2337,36 @@ async fn several_accounts_in_one_browser() {
     let (status, to) = h.location_of("/multi/page", "").await;
     assert_eq!(status, 302);
     assert_eq!(member(&query_of(&to), "prompt"), "");
-    let r = h.sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-a", "m1")
+    let r = h
+        .sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-a", "m1")
         .await;
     assert_eq!(r.status(), 302);
     assert_eq!(r.headers()["location"], "/multi/page");
     let set_cookie = r.headers()["set-cookie"].to_str().unwrap().to_string();
-    assert!(set_cookie.starts_with("iya_pep_accounts="), "{}", set_cookie);
-    assert!(set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax"));
+    assert!(
+        set_cookie.starts_with("iya_pep_accounts="),
+        "{}",
+        set_cookie
+    );
+    assert!(
+        set_cookie.contains("HttpOnly") && set_cookie.contains("SameSite=Lax")
+    );
     let set = cookie_of(&r);
     let said = h.forwarded_as(&set).await;
     assert_eq!(said["headers"]["x-remote-user"], "alice");
-    assert_eq!(said["headers"]["cookie"], "other=1",
-               "the account set never reaches the application");
+    assert_eq!(
+        said["headers"]["cookie"], "other=1",
+        "the account set never reaches the application"
+    );
     // ADD ANOTHER: prompt=login, the browser back where it was.
     let (status, to) = h
         .location_of("/.iya-pep/accounts/add?return=%2Fmulti%2Fpage", &set)
         .await;
     assert_eq!(status, 302);
     assert_eq!(member(&query_of(&to), "prompt"), "login");
-    let r = h.sign_in_as(&to, ("urn:uuid:bob", "bob"), "sid-b", "m2").await;
+    let r = h
+        .sign_in_as(&to, ("urn:uuid:bob", "bob"), "sid-b", "m2")
+        .await;
     assert_eq!(r.status(), 302);
     assert_eq!(cookie_of(&r), set, "one set for the browser");
     // The account added last is the active one: only bob is forwarded.
@@ -2354,67 +2378,132 @@ async fn several_accounts_in_one_browser() {
     assert_eq!(account_named(&list, "alice")["active"], false);
     assert_eq!(list["accounts"][0]["application"], LIVE_CLIENT);
     let alice = account_named(&list, "alice")["account"]
-        .as_str().unwrap().to_string();
-    let bob = account_named(&list, "bob")["account"]
-        .as_str().unwrap().to_string();
-    // The chooser is the proxy's own page under a strict policy.
-    let page = h.get("/.iya-pep/accounts?return=%2Fmulti%2Fpage")
-        .header("cookie", set.clone()).send().await.unwrap();
-    assert_eq!(page.status(), 200);
-    let csp = page.headers()["content-security-policy"].to_str().unwrap()
+        .as_str()
+        .unwrap()
         .to_string();
-    assert!(csp.contains("default-src 'none'") && csp.contains("frame-ancestors 'none'"));
+    let bob = account_named(&list, "bob")["account"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The chooser is the proxy's own page under a strict policy.
+    let page = h
+        .get("/.iya-pep/accounts?return=%2Fmulti%2Fpage")
+        .header("cookie", set.clone())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status(), 200);
+    let csp = page.headers()["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        csp.contains("default-src 'none'")
+            && csp.contains("frame-ancestors 'none'")
+    );
     assert!(csp.contains("style-src 'sha256-"), "{}", csp);
-    assert!(!csp.contains("unsafe") && !csp.contains("script-src"), "{}", csp);
+    assert!(
+        !csp.contains("unsafe") && !csp.contains("script-src"),
+        "{}",
+        csp
+    );
     let html = page.text().await.unwrap();
-    assert!(html.contains("alice") && html.contains("bob")
+    assert!(
+        html.contains("alice")
+            && html.contains("bob")
             && html.contains("Add another account")
-            && html.contains("Sign out of all accounts"));
-    assert!(html.contains("<style>") && html.contains("max-width:46rem"),
-            "the chooser uses the error page's style sheet: {}", html);
-    assert!(html.contains("class=\"portal\"")
-            && html.contains("ul class=\"accounts\""), "{}", html);
+            && html.contains("Sign out of all accounts")
+    );
+    assert!(
+        html.contains("<style>") && html.contains("max-width:46rem"),
+        "the chooser uses the error page's style sheet: {}",
+        html
+    );
+    assert!(
+        html.contains("class=\"portal\"")
+            && html.contains("ul class=\"accounts\""),
+        "{}",
+        html
+    );
     assert!(html.contains("sts-footer"), "{}", html);
     assert!(!html.contains("<script"), "no script on the chooser");
-    assert!(!html.contains("<section class=\"diagnostics\""),
-            "the chooser is not an error page");
+    assert!(
+        !html.contains("<section class=\"diagnostics\""),
+        "the chooser is not an error page"
+    );
     // The active account (bob) can continue; alice can only switch.
-    assert_eq!(html.matches("Continue with this user").count(), 1,
-               "{}", html);
-    assert!(html.contains(
-        "action=\"/multi/page\"><button class=\"portal\" \
+    assert_eq!(
+        html.matches("Continue with this user").count(),
+        1,
+        "{}",
+        html
+    );
+    assert!(
+        html.contains(
+            "action=\"/multi/page\"><button class=\"portal\" \
          type=\"submit\">Continue with this user</button>"
-    ), "{}", html);
+        ),
+        "{}",
+        html
+    );
     assert!(html.contains("Switch to this account"), "{}", html);
     // SWITCH: alice is forwarded again, and only she.
-    let r = h.account_act("/.iya-pep/accounts/switch",
-        &format!("account={}&return=%2Fmulti%2Fpage", alice), &set, &origin)
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/switch",
+            &format!("account={}&return=%2Fmulti%2Fpage", alice),
+            &set,
+            &origin,
+        )
         .await;
     assert_eq!(r.status(), 303);
     assert_eq!(r.headers()["location"], "/multi/page");
-    assert_eq!(h.forwarded_as(&set).await["headers"]["x-remote-user"],
-               "alice");
+    assert_eq!(
+        h.forwarded_as(&set).await["headers"]["x-remote-user"],
+        "alice"
+    );
     // A switch from another site is refused, and changes nothing.
-    let r = h.account_act("/.iya-pep/accounts/switch",
-        &format!("account={}", bob), &set, "https://evil.example").await;
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/switch",
+            &format!("account={}", bob),
+            &set,
+            "https://evil.example",
+        )
+        .await;
     assert_eq!(r.status(), 403);
-    assert_eq!(h.forwarded_as(&set).await["headers"]["x-remote-user"],
-               "alice");
+    assert_eq!(
+        h.forwarded_as(&set).await["headers"]["x-remote-user"],
+        "alice"
+    );
     // An account the set does not hold is refused.
-    let r = h.account_act("/.iya-pep/accounts/switch", "account=nobody",
-                          &set, &origin).await;
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/switch",
+            "account=nobody",
+            &set,
+            &origin,
+        )
+        .await;
     assert_eq!(r.status(), 404);
     // CAEP SESSION-REVOKED FOR ALICE'S SESSION ends HER account only.
     let (key, issuer) = (h.key.clone(), h.service_base.clone());
-    h.service.lock().unwrap().queued.push((
-        "set-sid-a".into(),
-        session_revoked(&key, &issuer, "sid-a"),
-    ));
+    h.service
+        .lock()
+        .unwrap()
+        .queued
+        .push(("set-sid-a".into(), session_revoked(&key, &issuer, "sid-a")));
     let mut status = 200;
     for _ in 0..100 {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        status = h.get("/multi/page").header("cookie", set.clone())
-            .send().await.unwrap().status().as_u16();
+        status = h
+            .get("/multi/page")
+            .header("cookie", set.clone())
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16();
         if status != 200 {
             break;
         }
@@ -2423,25 +2512,50 @@ async fn several_accounts_in_one_browser() {
     let list = h.accounts_of(&set).await;
     assert_eq!(list["accounts"].as_array().unwrap().len(), 1);
     assert_eq!(list["accounts"][0]["username"], "bob");
-    assert_eq!(list["accounts"][0]["active"], false,
-               "no account is made active for the person");
+    assert_eq!(
+        list["accounts"][0]["active"], false,
+        "no account is made active for the person"
+    );
     // A browser is sent to the chooser to pick, not signed in as bob.
     let (status, to) = h.location_of("/multi/page", &set).await;
     assert_eq!(status, 302);
     assert!(to.starts_with("/.iya-pep/accounts?return="), "{}", to);
-    let r = h.account_act("/.iya-pep/accounts/switch",
-        &format!("account={}", bob), &set, &origin).await;
-    assert_eq!(r.status(), 303);
-    assert_eq!(h.forwarded_as(&set).await["headers"]["x-remote-user"], "bob");
-    // SIGN OUT ONE, then the set is empty and the next sign-in starts afresh.
-    let r = h.account_act("/.iya-pep/accounts/logout",
-        &format!("account={}&return=%2Fmulti%2Fpage", bob), &set, &origin)
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/switch",
+            &format!("account={}", bob),
+            &set,
+            &origin,
+        )
         .await;
     assert_eq!(r.status(), 303);
-    assert!(h.accounts_of(&set).await["accounts"].as_array().unwrap()
-              .is_empty());
-    assert_eq!(h.get("/multi/page").header("cookie", set.clone())
-                 .send().await.unwrap().status(), 401);
+    assert_eq!(
+        h.forwarded_as(&set).await["headers"]["x-remote-user"],
+        "bob"
+    );
+    // SIGN OUT ONE, then the set is empty and the next sign-in starts afresh.
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/logout",
+            &format!("account={}&return=%2Fmulti%2Fpage", bob),
+            &set,
+            &origin,
+        )
+        .await;
+    assert_eq!(r.status(), 303);
+    assert!(h.accounts_of(&set).await["accounts"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        h.get("/multi/page")
+            .header("cookie", set.clone())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
 }
 
 /// THE BOUND (`proxyMaxAccounts`, 2 in the harness): a third account is
@@ -2452,13 +2566,17 @@ async fn the_account_set_is_bounded() {
     let h = harness().await;
     let origin = h.proxy.clone();
     let (_, to) = h.location_of("/multi/page", "").await;
-    let set = cookie_of(&h.sign_in_as(&to, ("urn:uuid:alice", "alice"),
-                                      "sid-1", "b1").await);
+    let set = cookie_of(
+        &h.sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-1", "b1")
+            .await,
+    );
     let add = "/.iya-pep/accounts/add?return=%2Fmulti%2Fpage";
     let (_, to) = h.location_of(add, &set).await;
-    h.sign_in_as(&to, ("urn:uuid:bob", "bob"), "sid-2", "b2").await;
+    h.sign_in_as(&to, ("urn:uuid:bob", "bob"), "sid-2", "b2")
+        .await;
     let (_, to) = h.location_of(add, &set).await;
-    let r = h.sign_in_as(&to, ("urn:uuid:carol", "carol"), "sid-3", "b3")
+    let r = h
+        .sign_in_as(&to, ("urn:uuid:carol", "carol"), "sid-3", "b3")
         .await;
     assert_eq!(r.status(), 403, "a full set refuses the third");
     let list = h.accounts_of(&set).await;
@@ -2467,12 +2585,15 @@ async fn the_account_set_is_bounded() {
     // Alice again (her account named): prompt=login with her login_hint,
     // and her account kept, its session replaced.
     let alice = account_named(&list, "alice")["account"]
-        .as_str().unwrap().to_string();
+        .as_str()
+        .unwrap()
+        .to_string();
     let (_, to) = h
         .location_of(&format!("{}&account={}", add, alice), &set)
         .await;
     assert_eq!(member(&query_of(&to), "login_hint"), "alice");
-    let r = h.sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-4", "b4")
+    let r = h
+        .sign_in_as(&to, ("urn:uuid:alice", "alice"), "sid-4", "b4")
         .await;
     assert_eq!(r.status(), 302);
     let list = h.accounts_of(&set).await;
@@ -2483,16 +2604,28 @@ async fn the_account_set_is_bounded() {
     let (_, to) = h
         .location_of(&format!("{}&account={}", add, alice), &set)
         .await;
-    let r = h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"), "sid-5", "b5")
+    let r = h
+        .sign_in_as(&to, ("urn:uuid:mallory", "mallory"), "sid-5", "b5")
         .await;
     assert_eq!(r.status(), 401, "another person than the one asked for");
     // SIGN OUT OF ALL.
-    let r = h.account_act("/.iya-pep/accounts/logout-all",
-                          "return=%2Fmulti%2Fpage", &set, &origin).await;
+    let r = h
+        .account_act(
+            "/.iya-pep/accounts/logout-all",
+            "return=%2Fmulti%2Fpage",
+            &set,
+            &origin,
+        )
+        .await;
     assert_eq!(r.status(), 303);
-    assert!(r.headers()["set-cookie"].to_str().unwrap().contains("Max-Age=0"));
-    assert!(h.accounts_of(&set).await["accounts"].as_array().unwrap()
-              .is_empty());
+    assert!(r.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .contains("Max-Age=0"));
+    assert!(h.accounts_of(&set).await["accounts"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 /// THE WINDOW BEFORE THE SIGNAL (2026-11-14): a sign-out at the service
@@ -2574,7 +2707,9 @@ async fn an_account_without_a_username_claim_is_named_by_the_service() {
     let (status, to) = h.location_of("/multi/page", "").await;
     assert_eq!(status, 302);
     h.service.lock().unwrap().live.insert("sid-u".into());
-    let r = h.sign_in_as(&to, ("urn:uuid:carol", ""), "sid-u", "mu").await;
+    let r = h
+        .sign_in_as(&to, ("urn:uuid:carol", ""), "sid-u", "mu")
+        .await;
     assert_eq!(r.status(), 302);
     let set = cookie_of(&r);
     let list = h.accounts_of(&set).await;
@@ -2618,10 +2753,14 @@ async fn a_return_is_followed_only_when_a_route_matches() {
         .text()
         .await
         .unwrap();
-    assert!(html.contains(
-        "action=\"/multi/page\"><button class=\"portal\" \
+    assert!(
+        html.contains(
+            "action=\"/multi/page\"><button class=\"portal\" \
          type=\"submit\">Continue with this user</button>"
-    ), "{}", html);
+        ),
+        "{}",
+        html
+    );
     assert!(!html.contains("Switch to this account"), "{}", html);
     let html = h
         .get("/.iya-pep/accounts?return=%2Fpublic%2Fx%3Fa%3Db%2520c")
@@ -2645,10 +2784,7 @@ async fn a_return_is_followed_only_when_a_route_matches() {
         .unwrap();
     assert!(html.contains("action=\"/\""), "{}", html);
     assert!(!html.contains("nope"), "{}", html);
-    let form = format!(
-        "account={}&return=%2Fpublic%2Fx%3Fa%3Db%2520c",
-        alice
-    );
+    let form = format!("account={}&return=%2Fpublic%2Fx%3Fa%3Db%2520c", alice);
     let r = h
         .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
         .await;
@@ -2659,10 +2795,8 @@ async fn a_return_is_followed_only_when_a_route_matches() {
         .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
         .await;
     assert_eq!(r.headers()["location"], "/secret");
-    let form = format!(
-        "account={}&return=%2Fmulti%2Fpage%3Fx%3D1%23frag",
-        alice
-    );
+    let form =
+        format!("account={}&return=%2Fmulti%2Fpage%3Fx%3D1%23frag", alice);
     let r = h
         .account_act("/.iya-pep/accounts/switch", &form, &set, &origin)
         .await;
@@ -2690,10 +2824,7 @@ async fn a_return_is_followed_only_when_a_route_matches() {
         .account_act("/.iya-pep/accounts/logout", &form, &set, &origin)
         .await;
     assert_eq!(r.status(), 303);
-    assert_eq!(
-        r.headers()["location"],
-        "/.iya-pep/accounts?return=%2F"
-    );
+    assert_eq!(r.headers()["location"], "/.iya-pep/accounts?return=%2F");
     let r = h
         .account_act(
             "/.iya-pep/accounts/logout-all",
@@ -2736,7 +2867,11 @@ async fn a_route_is_decided_by_its_own_policy_not_the_root() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 403, "the route's deny-all, not the root's permit");
+    assert_eq!(
+        r.status(),
+        403,
+        "the route's deny-all, not the root's permit"
+    );
     let body: Value = r.json().await.unwrap();
     assert!(body["error_description"]
         .as_str()
@@ -2749,7 +2884,8 @@ async fn a_route_is_decided_by_its_own_policy_not_the_root() {
     assert_eq!(as_alice(&h, reqwest::Method::GET, "/api/x").await, 200);
     assert_eq!(as_alice(&h, reqwest::Method::GET, "/named/x").await, 403);
     // No root at all is not "nothing to decide by" for a route either.
-    h.sync.load_for_test(&json!({ "syncToken": "x", "policies": [
+    h.sync
+        .load_for_test(&json!({ "syncToken": "x", "policies": [
         { "policyId": "proxy-test", "name": "t", "isRoot": false,
           "document": POLICY },
         { "policyId": "other", "name": "other", "isRoot": false,
@@ -2883,7 +3019,10 @@ async fn a_public_route_is_decided_in_xacml() {
     let r = h.get("/anon/page").send().await.unwrap();
     assert_eq!(r.status(), 403);
     let body: Value = r.json().await.unwrap();
-    assert_eq!(body["error_description"], "This route cannot be decided now.");
+    assert_eq!(
+        body["error_description"],
+        "This route cannot be decided now."
+    );
     assert_eq!(hits(&h), before, "neither reached the application");
 }
 
@@ -2895,8 +3034,15 @@ async fn an_empty_methods_list_denies_every_method() {
     use reqwest::Method as M;
     let h = harness().await;
     let before = hits(&h);
-    for m in [M::GET, M::HEAD, M::POST, M::PUT, M::PATCH, M::DELETE,
-              M::OPTIONS] {
+    for m in [
+        M::GET,
+        M::HEAD,
+        M::POST,
+        M::PUT,
+        M::PATCH,
+        M::DELETE,
+        M::OPTIONS,
+    ] {
         let permitted = h.sync.counters_json()["allowed"].as_u64();
         let r = h
             .http
@@ -2944,7 +3090,10 @@ async fn an_empty_methods_list_denies_every_method() {
         .unwrap();
     assert_eq!(r.status(), 403);
     let body: Value = r.json().await.unwrap();
-    assert_eq!(body["error_description"], "This route cannot be decided now.");
+    assert_eq!(
+        body["error_description"],
+        "This route cannot be decided now."
+    );
 }
 
 /// #1760: the route members the change made required refuse the document
@@ -2969,8 +3118,7 @@ async fn a_route_without_methods_or_authorization_refuses_the_document() {
         },
     ];
     for edit in edits {
-        let mut doc =
-            configuration(&h.upstream_base, &h.service_base, &cert);
+        let mut doc = configuration(&h.upstream_base, &h.service_base, &cert);
         doc["syncToken"] = json!("p-broken");
         edit(doc["proxy"]["routes"][1].as_object_mut().unwrap());
         h.sync.receive_proxy(&doc, None);
@@ -2997,20 +3145,28 @@ fn as_browser(r: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
 async fn the_page(r: reqwest::Response, status: u16, title: &str) -> String {
     assert_eq!(r.status(), status, "{}", title);
     let headers = r.headers().clone();
-    assert_eq!(headers["content-type"], "text/html; charset=utf-8", "{}",
-               title);
+    assert_eq!(
+        headers["content-type"], "text/html; charset=utf-8",
+        "{}",
+        title
+    );
     assert_eq!(headers["cache-control"], "no-store");
     let csp = headers["content-security-policy"].to_str().unwrap();
-    assert!(csp.starts_with("default-src 'none'; style-src 'sha256-"),
-            "{}", csp);
-    assert!(!csp.contains("script-src") && !csp.contains("unsafe"), "{}",
-            csp);
+    assert!(
+        csp.starts_with("default-src 'none'; style-src 'sha256-"),
+        "{}",
+        csp
+    );
+    assert!(
+        !csp.contains("script-src") && !csp.contains("unsafe"),
+        "{}",
+        csp
+    );
     let html = r.text().await.unwrap();
     for want in [
         format!("<title>{}</title>", title),
         format!("<h1>{}</h1>", title),
-        "<div class=\"warn\" role=\"alert\"><span class=\"error\">"
-            .to_string(),
+        "<div class=\"warn\" role=\"alert\"><span class=\"error\">".to_string(),
         "<section class=\"diagnostics\"".to_string(),
         "<dt>Time (UTC)</dt>".to_string(),
         "<dt>Incident ID</dt><dd><code>".to_string(),
@@ -3019,8 +3175,12 @@ async fn the_page(r: reqwest::Response, status: u16, title: &str) -> String {
         assert!(html.contains(&want), "{}: no {} in {}", title, want, html);
     }
     // THE CODE IS RECORDED, NEVER SENT: no STS-… code, no script.
-    assert!(!html.contains("STS-"), "{}: a code on the page: {}", title,
-            html);
+    assert!(
+        !html.contains("STS-"),
+        "{}: a code on the page: {}",
+        title,
+        html
+    );
     assert!(!html.contains("<script"), "{}", title);
     html
 }
@@ -3063,12 +3223,14 @@ async fn each_refusal_a_browser_meets_is_the_standard_page() {
         .send()
         .await
         .unwrap();
-    let html =
-        the_page(r, 403, "You do not have access to this page").await;
+    let html = the_page(r, 403, "You do not have access to this page").await;
     assert!(html.contains("<dt>Signed in as</dt><dd><code>mallory</code>"));
     assert!(html.contains("<dt>Application</dt><dd><code>api-app</code>"));
     assert!(html.contains("<dt>error</dt><dd><code>access_denied</code>"));
-    assert!(!html.contains("/.iya-pep/"), "a Basic route offers no switch");
+    assert!(
+        !html.contains("/.iya-pep/"),
+        "a Basic route offers no switch"
+    );
     // 403, deny-all (0116).
     let r = as_browser(h.get("/closed/x"))
         .basic_auth("alice", Some("right"))
@@ -3085,7 +3247,10 @@ async fn each_refusal_a_browser_meets_is_the_standard_page() {
         .unwrap();
     let html = the_page(r, 403, "Access cannot be decided now").await;
     assert!(html.contains("This route cannot be decided now."));
-    assert!(!html.contains("never-pulled"), "the policy's name is logged");
+    assert!(
+        !html.contains("never-pulled"),
+        "the policy's name is logged"
+    );
     // 403, the application is not usable (0093): its reason is logged.
     let r = as_browser(h.get("/gone/x"))
         .basic_auth("alice", Some("right"))
@@ -3111,8 +3276,11 @@ async fn each_refusal_a_browser_meets_is_the_standard_page() {
     drop(gone);
     let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
     h.sync.receive_proxy(
-        &configuration(&format!("http://127.0.0.1:{}/pep-app", dead),
-                       &h.service_base, &cert),
+        &configuration(
+            &format!("http://127.0.0.1:{}/pep-app", dead),
+            &h.service_base,
+            &cert,
+        ),
         None,
     );
     let r = as_browser(h.get("/public/page")).send().await.unwrap();
@@ -3128,33 +3296,43 @@ async fn each_refusal_a_browser_meets_is_the_standard_page() {
 async fn a_refused_person_is_offered_another_account() {
     let h = harness().await;
     let (_, to) = h.location_of("/multi/page", "").await;
-    let set = cookie_of(&h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"),
-                                      "sid-m", "mm").await);
+    let set = cookie_of(
+        &h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"), "sid-m", "mm")
+            .await,
+    );
     let r = as_browser(h.get("/multi/page?x=1"))
         .header("cookie", &set)
         .send()
         .await
         .unwrap();
-    let html =
-        the_page(r, 403, "You do not have access to this page").await;
-    assert!(html.contains(
-        "<a class=\"portal\" href=\"/.iya-pep/accounts?return=\
+    let html = the_page(r, 403, "You do not have access to this page").await;
+    assert!(
+        html.contains(
+            "<a class=\"portal\" href=\"/.iya-pep/accounts?return=\
          %2Fmulti%2Fpage%3Fx%3D1\">Use a different account</a>"
-    ), "{}", html);
+        ),
+        "{}",
+        html
+    );
     assert!(!html.contains("Sign in with another account"), "{}", html);
     assert!(!html.contains("/.iya-pep/accounts/add"), "{}", html);
     // One sign-in per browser: a sign-out.
     let (_, to) = h.location_of("/livehdr/page", "").await;
-    let one = cookie_of(&h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"),
-                                      "sid-n", "mn").await);
+    let one = cookie_of(
+        &h.sign_in_as(&to, ("urn:uuid:mallory", "mallory"), "sid-n", "mn")
+            .await,
+    );
     let r = as_browser(h.get("/livehdr/page"))
         .header("cookie", &one)
         .send()
         .await
         .unwrap();
-    let html =
-        the_page(r, 403, "You do not have access to this page").await;
-    assert!(html.contains("href=\"/.iya-pep/logout\">Sign out"), "{}", html);
+    let html = the_page(r, 403, "You do not have access to this page").await;
+    assert!(
+        html.contains("href=\"/.iya-pep/logout\">Sign out"),
+        "{}",
+        html
+    );
     assert!(!html.contains("/.iya-pep/accounts"), "{}", html);
 }
 
@@ -3171,15 +3349,16 @@ async fn the_page_escapes_what_the_request_carried() {
         .unwrap();
     let html = the_page(r, 403, "This page is closed").await;
     assert!(!html.contains("<script>alert"), "{}", html);
-    assert!(html.contains(
-        "<dt>Signed in as</dt><dd><code>&lt;script&gt;alert(&#39;x&#39;)\
+    assert!(
+        html.contains(
+            "<dt>Signed in as</dt><dd><code>&lt;script&gt;alert(&#39;x&#39;)\
          &lt;/script&gt;&quot;&amp;</code>"
-    ), "{}", html);
+        ),
+        "{}",
+        html
+    );
     // The address, as the request spelled it.
-    let r = as_browser(h.get("/x\"><b>"))
-        .send()
-        .await
-        .unwrap();
+    let r = as_browser(h.get("/x\"><b>")).send().await.unwrap();
     let html = the_page(r, 404, "Page not found").await;
     assert!(!html.contains("\"><b>"), "{}", html);
 }
@@ -3199,18 +3378,29 @@ async fn the_start_page_is_what_go_to_the_start_page_opens() {
     assert_eq!(r.headers()["cache-control"], "no-store");
     let csp = r.headers()["content-security-policy"].to_str().unwrap();
     assert!(csp.contains("img-src 'self'"), "{}", csp);
-    assert!(!csp.contains("script-src") && !csp.contains("unsafe"), "{}",
-            csp);
+    assert!(
+        !csp.contains("script-src") && !csp.contains("unsafe"),
+        "{}",
+        csp
+    );
     let html = r.text().await.unwrap();
     assert!(html.contains("<title>IYA STS</title>"), "{}", html);
     assert!(html.contains("class=\"front\""), "{}", html);
-    assert!(html.contains(
-        "src=\"/.iya-pep/logo.png\" width=\"906\" height=\"269\" \
+    assert!(
+        html.contains(
+            "src=\"/.iya-pep/logo.png\" width=\"906\" height=\"269\" \
          alt=\"IYA STS — Security Token Service\""
-    ), "{}", html);
+        ),
+        "{}",
+        html
+    );
     assert!(html.contains("<h1>IYA STS</h1>"), "{}", html);
     assert!(html.contains("class=\"sts-footer\""), "{}", html);
-    assert!(html.contains("Iya CyberSecurity Solutions, LLC"), "{}", html);
+    assert!(
+        html.contains("Iya CyberSecurity Solutions, LLC"),
+        "{}",
+        html
+    );
     assert!(html.contains("Version "), "{}", html);
     assert!(!html.contains("STS-"), "{}", html);
     assert!(!html.contains("<script"), "{}", html);
@@ -3266,20 +3456,41 @@ async fn a_request_that_does_not_accept_html_keeps_its_json() {
         r.text().await.unwrap()
     };
     let cases: Vec<(reqwest::RequestBuilder, u16, &str)> = vec![
-        (h.get("/nowhere"), 404,
-         r#"{"error":"not_found","error_description":"no route matches this path"}"#),
-        (h.get("/"), 404,
-         r#"{"error":"not_found","error_description":"no route matches this path"}"#),
-        (h.get("/closed/x").basic_auth("alice", Some("right")), 403,
-         r#"{"error":"access_denied","error_description":"the route allows no method: deny-all"}"#),
-        (h.get("/missing/x").basic_auth("alice", Some("right")), 403,
-         r#"{"error":"access_denied","error_description":"This route cannot be decided now."}"#),
-        (h.get("/gone/x").basic_auth("alice", Some("right")), 403,
-         r#"{"error":"access_denied","error_description":"This route cannot be used now."}"#),
-        (h.get("/api/x").header("accept", "application/json"), 401,
-         r#"{"error":"unauthorized","error_description":"the request carries no credential"}"#),
-        (h.get("/slow"), 504,
-         r#"{"error":"gateway_timeout","error_description":"The application did not answer in time."}"#),
+        (
+            h.get("/nowhere"),
+            404,
+            r#"{"error":"not_found","error_description":"no route matches this path"}"#,
+        ),
+        (
+            h.get("/"),
+            404,
+            r#"{"error":"not_found","error_description":"no route matches this path"}"#,
+        ),
+        (
+            h.get("/closed/x").basic_auth("alice", Some("right")),
+            403,
+            r#"{"error":"access_denied","error_description":"the route allows no method: deny-all"}"#,
+        ),
+        (
+            h.get("/missing/x").basic_auth("alice", Some("right")),
+            403,
+            r#"{"error":"access_denied","error_description":"This route cannot be decided now."}"#,
+        ),
+        (
+            h.get("/gone/x").basic_auth("alice", Some("right")),
+            403,
+            r#"{"error":"access_denied","error_description":"This route cannot be used now."}"#,
+        ),
+        (
+            h.get("/api/x").header("accept", "application/json"),
+            401,
+            r#"{"error":"unauthorized","error_description":"the request carries no credential"}"#,
+        ),
+        (
+            h.get("/slow"),
+            504,
+            r#"{"error":"gateway_timeout","error_description":"The application did not answer in time."}"#,
+        ),
     ];
     for (request, status, body) in cases {
         let r = request.send().await.unwrap();
@@ -3295,7 +3506,9 @@ async fn a_request_that_does_not_accept_html_keeps_its_json() {
     assert_eq!(r.status(), 403);
     let body: Value = serde_json::from_str(&json_of(r).await).unwrap();
     assert_eq!(body["error"], "access_denied");
-    assert!(body["error_description"].as_str().unwrap()
+    assert!(body["error_description"]
+        .as_str()
+        .unwrap()
         .starts_with("the policy this PEP holds said Deny"));
 }
 
@@ -3316,16 +3529,21 @@ async fn the_pages_incident_id_finds_the_log_line() {
     assert_eq!(lines.len(), 1, "one line names {}: {:?}", incident, lines);
     let line = &lines[0];
     assert!(line.contains("[STS-XPEP-0116]"), "{}", line);
-    assert!(line.contains(&format!("page incident {}", incident)), "{}",
-            line);
+    assert!(
+        line.contains(&format!("page incident {}", incident)),
+        "{}",
+        line
+    );
     // A second refusal is another incident.
     let r = as_browser(h.get("/closed/x"))
         .basic_auth("alice", Some("right"))
         .send()
         .await
         .unwrap();
-    assert_ne!(incident_of(&the_page(r, 403, "This page is closed").await),
-               incident);
+    assert_ne!(
+        incident_of(&the_page(r, 403, "This page is closed").await),
+        incident
+    );
 }
 
 // ===== BEFORE THE FIRST CONFIGURATION: TRY AGAIN LATER ====================
@@ -3398,9 +3616,11 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     echoed(r).await;
     assert_eq!(hits(&h), 1);
     assert_eq!(
-        proxy::logged::holding("received its first configuration since it \
-                                started; 9 request(s)")
-            .len(),
+        proxy::logged::holding(
+            "received its first configuration since it \
+                                started; 9 request(s)"
+        )
+        .len(),
         1,
         "the state change, with its count"
     );
@@ -3413,8 +3633,11 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     let r = as_browser(h.get("/public/page")).send().await.unwrap();
     assert!(r.headers().get("retry-after").is_none());
     let html = the_page(r, 404, "Page not found").await;
-    assert!(html.contains("no configuration that is switched on"), "{}",
-            html);
+    assert!(
+        html.contains("no configuration that is switched on"),
+        "{}",
+        html
+    );
     // None at all for this PEP: received, and empty — 404.
     h.sync
         .receive_proxy(&json!({ "configured": false, "pep": "pep-1" }), None);
@@ -3438,4 +3661,85 @@ async fn a_first_answer_that_holds_nothing_is_404_not_503() {
     // A failed later pull keeps what was received: still 404.
     h.sync.receive_proxy(&json!({ "configured": true }), None);
     assert_eq!(h.get("/public/page").send().await.unwrap().status(), 404);
+}
+
+/// THE PROXY'S DECISION RECORDS (#1827): one per request that reached its
+/// route's authorization — forwarded, refused by the policy, refused by
+/// authentication — with the route, the status, the person by username and
+/// the path without its query; none for a path no route matches, and none
+/// while no configuration has been received (`STS-XPEP-0118`).
+#[tokio::test]
+async fn queues_a_record_for_each_request_its_route_decided() {
+    let h = harness().await;
+    let audit = h.proxied.audit();
+    let r = h
+        .get("/api/x?token=s3cret")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = h
+        .get("/api/x")
+        .basic_auth("mallory", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let r = h
+        .get("/api/x")
+        .basic_auth("alice", Some("wrong"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    let r = h.get("/nowhere-at-all").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let records = audit.queued_for_test();
+    assert_eq!(records.len(), 3, "{:?}", records);
+
+    let allowed = &records[0];
+    assert_eq!(
+        (allowed.kind.as_str(), allowed.route.as_deref(), allowed.status),
+        ("proxy", Some("api"), Some(200))
+    );
+    assert!(allowed.allowed && !allowed.fault);
+    assert_eq!(allowed.decision, "Permit");
+    assert_eq!(
+        (allowed.subject.as_str(), allowed.resource.as_str(),
+         allowed.action.as_str()),
+        ("alice", "/api/x", "GET")
+    );
+    assert_eq!(allowed.policies, ["t"]);
+    assert_eq!(allowed.code, "");
+    let sent = serde_json::to_string(allowed).unwrap();
+    assert!(!sent.contains("s3cret"), "no query string: {}", sent);
+    assert!(!sent.contains("right"), "no credential: {}", sent);
+
+    let refused = &records[1];
+    assert_eq!((refused.status, refused.allowed), (Some(403), false));
+    assert_eq!(refused.code, "STS-XPEP-0086");
+    assert_eq!(refused.subject, "mallory");
+    assert!(!refused.decision.is_empty() && refused.decision != "Permit");
+    assert!(!refused.why.is_empty() && !refused.fault);
+
+    let unauthenticated = &records[2];
+    assert_eq!(unauthenticated.status, Some(401));
+    assert_eq!(unauthenticated.subject, "", "nobody was established");
+    assert_eq!(unauthenticated.decision, "", "no policy was asked");
+    assert!(unauthenticated.code.starts_with("STS-XPEP-"));
+    // A record's members on the wire: the twenty, and route and status.
+    let wire = serde_json::to_value(unauthenticated).unwrap();
+    assert_eq!(wire.as_object().unwrap().len(), 22);
+
+    // NOT CONFIGURED YET: a 503, and no record.
+    let waiting = harness_unconfigured(|_| {}).await;
+    let r = waiting
+        .get("/api/x")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 503);
+    assert!(waiting.proxied.audit().queued_for_test().is_empty());
 }

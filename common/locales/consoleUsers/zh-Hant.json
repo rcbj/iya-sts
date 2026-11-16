@@ -981,5 +981,6 @@
   "mfaSection.pubStateDeactivated": "已停用",
   "mfaSection.pubDeactivate": "停用",
   "mfaSection.pubDeactivateTip": "永久停用此 DID：其位址回應 410 Gone，其歷史仍可解析，並且不再用於當事人登入，也不再於 did 宣告中發布。",
-  "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。"
+  "mfaSection.pubNeedsWrite": "停用需要 <strong>Admin Write</strong>。",
+  "keySource.issuedFromCsr": "根據其自己的請求在此認證 &mdash; 本領域的簽發 CA 認證了其自行產生的金鑰。私密金鑰由其持有；本服務從未持有。"
 }

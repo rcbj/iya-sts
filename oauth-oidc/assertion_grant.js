@@ -159,6 +159,8 @@ const applications = require('../common/applications');
 // refusal that comes with it is its own: a person's key signs an assertion
 // about that person and about nobody else.
 const personAssertions = require('../common/person_assertions');
+// The names a leaf gives its holder, defined once (#1827).
+const SubjectUrn = require('../common/subject_urn');
 const config = require('../common/config');
 const { log, STS } = require('../common/helpers');
 
@@ -910,18 +912,26 @@ async function keyFromChain(header) {
   // answer nobody holding a PEM file can get to. Node's own parse hands the
   // SAN over as a comma-separated string of `URI:…` members.
   // ---------------------------------------------------------------------
+  //
+  // A SERVICE ACCOUNT IS A PERSON HERE (#1827): its leaf says
+  // `urn:sts:sa:<name>`, and it is read as `person` — so the refusal below
+  // ("a person may assert only about themselves") holds for it word for
+  // word. WHICH SPELLING NAMES THE HOLDER DOES NOT DECIDE ANYTHING HERE
+  // (rcbj, 2026-11-16: the assertion grant follows WS-Trust): a valid leaf
+  // from this realm's authority authenticates the person it names as
+  // `urn:sts:sa:` or `urn:sts:person:`, whether or not that entry is a
+  // service account. STS-OAUTH-1011, which refused a mismatch, is retired;
+  // registering and enrolling still refuse one (STS-PKI-0277,
+  // STS-ENROLL-0097), so this service never builds or records such a leaf.
   const leaf = stsCrypto.parseCertificate(leafPem);
-  const sans = String(leaf.subjectAltName || '').split(',')
-    .map(function (one) { return one.trim(); });
   let subjectKind = '';
   let subjectName = '';
-  sans.forEach(function (one) {
-    const match = /^URI:urn:sts:(application|person):(.+)$/.exec(one);
-    if (match) {
-      subjectKind = match[1];
-      subjectName = match[2];
-    }
-  });
+  SubjectUrn.namesIn(String(leaf.subjectAltName || ''),
+                     ['application', 'person', 'sa'])
+    .forEach(function (one) {
+      subjectKind = one.kind;
+      subjectName = one.name;
+    });
   log.debug('Leaving keyFromChain(). It chains here, issued to ' +
             (subjectKind || 'something this service cannot name') + ' "' +
             subjectName + '".');

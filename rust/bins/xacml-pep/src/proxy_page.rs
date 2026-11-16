@@ -286,10 +286,7 @@ pub fn html_response(status: u16, html: String) -> Response<Body> {
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/html; charset=utf-8"),
     );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("no-store"),
-    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(
         HeaderName::from_static("content-security-policy"),
         HeaderValue::from_static(policy()),
@@ -311,10 +308,7 @@ pub fn logo_response() -> Response<Body> {
     let mut response = Response::new(Body::from(LOGO_PNG));
     *response.status_mut() = StatusCode::OK;
     let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("image/png"),
-    );
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
     headers.insert(
         header::CACHE_CONTROL,
         HeaderValue::from_static("public, max-age=3600"),
@@ -681,8 +675,9 @@ mod tests {
             "1.1.0.1",
         );
         assert!(shell.contains(&format!("<style>{}</style>", CSS)));
-        assert!(shell.contains("ul.accounts")
-            && shell.contains("button.portal"));
+        assert!(
+            shell.contains("ul.accounts") && shell.contains("button.portal")
+        );
         assert!(shell.contains("Version 1.1.0.1"));
         assert!(shell.contains("<h1>Accounts in this browser</h1>"));
         let shell_csp = html_response(200, shell).headers()
@@ -701,9 +696,7 @@ mod tests {
         assert!(html.contains(&format!("src=\"{}\"", LOGO_PATH)));
         assert!(html.contains("width=\"906\""));
         assert!(html.contains("height=\"269\""));
-        assert!(html.contains(
-            "alt=\"IYA STS — Security Token Service\""
-        ));
+        assert!(html.contains("alt=\"IYA STS — Security Token Service\""));
         assert!(html.contains("<h1>IYA STS</h1>"));
         assert!(html.contains("policy enforcement point"));
         assert!(html.contains("class=\"sts-footer\""));
@@ -715,10 +708,7 @@ mod tests {
         let logo = logo_response();
         assert_eq!(logo.status(), 200);
         assert_eq!(logo.headers()["content-type"], "image/png");
-        assert_eq!(
-            logo.headers()["cache-control"],
-            "public, max-age=3600"
-        );
+        assert_eq!(logo.headers()["cache-control"], "public, max-age=3600");
     }
 
     #[test]

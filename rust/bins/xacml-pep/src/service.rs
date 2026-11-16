@@ -38,6 +38,7 @@ use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
 use sts_xacml::policy::PolicyNode;
 use sts_xacml::request::{ResolvedObligation, Status};
 
+use crate::audit::{self, Audit, Record};
 use crate::authzen::{self, Reply};
 use crate::enforce::Enforcer;
 use crate::listener::{HttpsListener, Transport};
@@ -67,6 +68,8 @@ pub struct Pep {
     pub(crate) pip: RemotePip,
     pub(crate) pdp: Pdp,
     pub listener: Arc<HttpsListener>,
+    /// The decision records' queue (#1827).
+    pub audit: Arc<Audit>,
     last_pip_report: Mutex<Option<Value>>,
     crl_name: Option<Regex>,
 }
@@ -129,6 +132,9 @@ impl Pep {
         pip: RemotePip,
         listener: Arc<HttpsListener>,
     ) -> Pep {
+        // The decision records' queue (#1827), built from the same options
+        // so it reads the same managed settings.
+        let audit = Arc::new(Audit::new(&options));
         Pep {
             options,
             version,
@@ -136,6 +142,7 @@ impl Pep {
             pip,
             pdp: Pdp::new(),
             listener,
+            audit,
             last_pip_report: Mutex::new(None),
             crl_name: Regex::new(r"(?i)^[a-z0-9-]+\.crl$").ok(),
         }
@@ -298,18 +305,44 @@ impl Pep {
             );
         }
         if method == Method::POST && path == "/notify" {
-            // THE NUDGE: answered 204 IMMEDIATELY and pulled after, and its
-            // body is neither read nor trusted — what changed is discovered
-            // by pulling from this PEP's own configured PDP.
+            // THE NUDGE: answered 204 IMMEDIATELY and pulled after. What
+            // changed is discovered by pulling from this PEP's own
+            // configured PDP; the body is TRUSTED FOR NOTHING. One member is
+            // read since 2026-11-16, `full`, which a Sync from the console
+            // sends: it asks for every document whole rather than answered
+            // 304, and carries nothing a pull does not fetch. Because anybody
+            // reaching this listener can send it, a full pull is honoured at
+            // most once a poll interval; another is an ordinary pull.
+            let body = axum::body::to_bytes(request.into_body(), 4096)
+                .await
+                .map(|b| b.to_vec())
+                .unwrap_or_default();
+            let asked_full = serde_json::from_slice::<Value>(&body)
+                .ok()
+                .and_then(|v| v.get("full").and_then(Value::as_bool))
+                .unwrap_or(false);
+            let full = asked_full && self.sync.claim_full_pull();
+            if asked_full && !full {
+                tracing::info!(
+                    "{}xacml-pep: a full pull was asked for within a poll \
+                     interval of the last one; pulling as usual instead.",
+                    tag("STS-XPEP-0120")
+                );
+            }
             tracing::info!(
-                "xacml-pep: nudged by the PDP; pulling now rather than \
-                 waiting up to {}ms for the next poll. Nothing in the nudge \
-                 was read — what changed is discovered by pulling.",
+                "xacml-pep: nudged by the PDP; pulling {}now rather than \
+                 waiting up to {}ms for the next poll.",
+                if full { "every document whole " } else { "" },
                 self.options.now().poll_interval_ms
             );
             let sync = self.sync.clone();
             tokio::spawn(async move {
-                if !sync.pull("nudge").await {
+                let pulled = if full {
+                    sync.pull_full("nudge").await
+                } else {
+                    sync.pull("nudge").await
+                };
+                if !pulled {
                     tracing::warn!(
                         "{}xacml-pep: the nudged pull failed. The scheduled \
                          poll will try again.",
@@ -351,11 +384,14 @@ impl Pep {
         std::fs::read(dir.join(name)).ok()
     }
 
-    /// A decision here, with what was pulled — and the remote PIP asked
-    /// BEFORE evaluation, because the engine's resolver is synchronous.
-    async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
-        let get = |k: &str| query.get(k).cloned().unwrap_or_default();
-        let subject = get("subject");
+    /// The subject, resource and action a `/protected` request names, the
+    /// last two with their defaults — what the decision is about, and what
+    /// its record says it was about.
+    fn named(
+        &self,
+        query: &IndexMap<String, String>,
+    ) -> (String, String, String) {
+        let subject = query.get("subject").cloned().unwrap_or_default();
         let resource = query
             .get("resource")
             .filter(|r| !r.is_empty())
@@ -369,6 +405,13 @@ impl Pep {
             .filter(|a| !a.is_empty())
             .cloned()
             .unwrap_or_else(|| "GET".to_string());
+        (subject, resource, action)
+    }
+
+    /// A decision here, with what was pulled — and the remote PIP asked
+    /// BEFORE evaluation, because the engine's resolver is synchronous.
+    async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
+        let (subject, resource, action) = self.named(query);
         // THROUGH THE ONE BUILDER (#306), the four categories named first
         // so an empty subject is still sent as the empty category it was.
         let mut req = AuthorizationRequest::default();
@@ -455,8 +498,9 @@ impl Pep {
         req.target(resource, Some(types::ANYURI))
             .requested_action(action);
         let answer = self.evaluate_against(named, &policies, req.build()).await;
-        let outcome =
-            self.enforcer().enforce(answer.decision, &answer.obligations);
+        let outcome = self
+            .enforcer()
+            .enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
         Some((answer.decision, outcome))
     }
@@ -555,9 +599,43 @@ impl Pep {
         query: &IndexMap<String, String>,
     ) -> (StatusCode, Value) {
         let answer = self.decide(query).await;
-        let outcome =
-            self.enforcer().enforce(answer.decision, &answer.obligations);
+        let outcome = self
+            .enforcer()
+            .enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
+        if self.audit.enabled() {
+            let (subject, resource, action) = self.named(query);
+            let policies = answer
+                .policy_identifiers
+                .iter()
+                .map(|p| {
+                    audit::policy_name(
+                        p["id"].as_str().unwrap_or(""),
+                        p["version"].as_str().unwrap_or(""),
+                    )
+                })
+                .collect();
+            self.audit.record(Record {
+                at: sts_core::time::iso_now(),
+                kind: "enforcement".into(),
+                decision: answer.decision.as_str().to_string(),
+                allowed: outcome.allowed,
+                code: if answer.decision == Decision::Indeterminate {
+                    "STS-XPEP-0006".into()
+                } else {
+                    String::new()
+                },
+                subject,
+                resource,
+                action,
+                bias: outcome.bias.as_str().to_string(),
+                why: outcome.why.clone(),
+                policies,
+                discharged: outcome.discharged.clone(),
+                undischargeable: outcome.undischargeable.clone(),
+                ..Record::default()
+            });
+        }
         let obligations: Vec<Value> = answer
             .obligations
             .iter()
@@ -651,8 +729,9 @@ impl Pep {
                        service (who holds AUTHZEN_PEPS as its policy decides \
                        it, and each caller's application scope), narrowed by \
                        PEP_AUTHZEN_CALLERS when that is set; an outside \
-                       authority's revocation is not checked, and each \
-                       decision is a log line rather than an audit row."
+                       authority's revocation is not checked. Each decision \
+                       made here is a log line, and a record sent to the \
+                       service's audit log (audit, below; #1827)."
                 ),
             );
         }
@@ -713,7 +792,7 @@ impl Pep {
                 } else {
                     Value::Null
                 },
-                "credentialed": o.client_certificate.is_some(),
+                "credentialed": self.sync.client().credential().has_key(),
                 "lastQuery": last_query,
                 "what": pip_what
             },
@@ -741,6 +820,8 @@ impl Pep {
             "https": self.listener.overview(),
             "authzen": self.authzen_overview(),
             "proxy": self.sync.proxy_json(),
+            "audit": self.audit.overview(),
+            "credential": self.sync.client().credential().overview(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,
@@ -772,8 +853,8 @@ impl Pep {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pdp_client::PdpClient;
     use crate::options::Bias;
+    use crate::pdp_client::PdpClient;
     use crate::settings::Managed;
 
     /// A bias the service sets (#1760) is the one a decision is enforced
@@ -823,8 +904,12 @@ mod tests {
         ))
     }
 
-    fn ask(pep: &Arc<Pep>, method: Method, path: &str,
-           transport: Transport) -> (StatusCode, String) {
+    fn ask(
+        pep: &Arc<Pep>,
+        method: Method,
+        path: &str,
+        transport: Transport,
+    ) -> (StatusCode, String) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
             let mut request = Request::builder()
@@ -847,11 +932,14 @@ mod tests {
     #[test]
     fn the_nudge_is_answered_on_https_only() {
         let pep = a_pep();
-        let (plain, body) = ask(&pep, Method::POST, "/notify",
-                                Transport::default());
+        let (plain, body) =
+            ask(&pep, Method::POST, "/notify", Transport::default());
         assert_eq!(plain, StatusCode::NOT_FOUND);
         assert!(body.contains("HTTPS listener only"), "{}", body);
-        let https = Transport { https: true, ..Transport::default() };
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
         let (secure, _) = ask(&pep, Method::POST, "/notify", https);
         assert_eq!(secure, StatusCode::NO_CONTENT);
     }
@@ -860,19 +948,31 @@ mod tests {
     #[test]
     fn the_crl_only_listener_serves_crls_alone() {
         let pep = a_pep();
-        let crl = Transport { crl_only: true, ..Transport::default() };
-        for (method, path) in [(Method::GET, "/"),
-                               (Method::GET, "/protected"),
-                               (Method::GET, "/healthcheck"),
-                               (Method::POST, "/notify")] {
+        let crl = Transport {
+            crl_only: true,
+            ..Transport::default()
+        };
+        for (method, path) in [
+            (Method::GET, "/"),
+            (Method::GET, "/protected"),
+            (Method::GET, "/healthcheck"),
+            (Method::POST, "/notify"),
+        ] {
             let (status, body) = ask(&pep, method, path, crl.clone());
             assert_eq!(status, StatusCode::NOT_FOUND, "{}", path);
-            assert!(body.contains("only this PEP's own credential's CRLs"),
-                    "{}: {}", path, body);
+            assert!(
+                body.contains("only this PEP's own credential's CRLs"),
+                "{}: {}",
+                path,
+                body
+            );
         }
         let (status, body) = ask(&pep, Method::GET, "/crl/root.crl", crl);
         assert_eq!(status, StatusCode::NOT_FOUND);
-        assert!(!body.contains("only this PEP's own credential's CRLs"),
-                "a CRL path is the CRL lookup's to answer: {}", body);
+        assert!(
+            !body.contains("only this PEP's own credential's CRLs"),
+            "a CRL path is the CRL lookup's to answer: {}",
+            body
+        );
     }
 }

@@ -83,8 +83,7 @@ use crate::proxy_config::{
 use crate::proxy_page::{self, Action, ErrorPage, Row};
 use crate::proxy_request::{
     cookie_value, forward_headers, is_browser, normalise_path,
-    response_headers, strip_list, wants_html, ACCOUNTS_COOKIE,
-    SESSION_COOKIE,
+    response_headers, strip_list, wants_html, ACCOUNTS_COOKIE, SESSION_COOKIE,
 };
 use crate::rp_session::{self, Pending, Session};
 use crate::rp_set::{self, RpLimits, RpSet};
@@ -137,6 +136,48 @@ struct Asked<'a> {
     /// Who the request was established as, once it was: the page's
     /// *Signed in as*.
     who: String,
+    /// The request's decision record (#1827), filled in as it is answered;
+    /// `None` where a refusal is not about the request being answered.
+    note: Option<&'a Mutex<Noted>>,
+}
+
+/// WHAT A PROXIED REQUEST'S DECISION RECORD SAYS (#1827), filled in as the
+/// request is answered and queued once it is. Only a request that reached
+/// its route's authorization is recorded (`decided`): one to a route that
+/// takes its method, from the moment it matched — refused by the
+/// application's state, by authentication or by the policy, or forwarded.
+/// NOT the 503 before the first configuration (`STS-XPEP-0118`), a path
+/// refused or matching no route, a method the route does not take, a body
+/// too large, a redirect to sign in, the proxy's own pages (the logo, the
+/// start page, `/.iya-pep/*`): none of those is a decision about access.
+#[derive(Debug, Default)]
+struct Noted {
+    decided: bool,
+    route: String,
+    method: String,
+    /// The normalised path: never the query string, which can carry a
+    /// secret.
+    path: String,
+    /// The person the request was established as, by username: never a
+    /// token, a cookie or a session id.
+    subject: String,
+    decision: String,
+    policy: String,
+    bias: String,
+    code: String,
+    why: String,
+    incident: String,
+}
+
+/// Changes the note, if there is one; a poisoned lock is taken back.
+fn noting(note: Option<&Mutex<Noted>>, change: impl FnOnce(&mut Noted)) {
+    if let Some(note) = note {
+        let mut noted = match note.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        change(&mut noted);
+    }
 }
 
 /// A mechanism's outcome.
@@ -247,9 +288,7 @@ fn shown_description(refusal: &Refusal) -> String {
         (503, _) => "This proxy cannot take the request now.".to_string(),
         (504, _) => "The application did not answer in time.".to_string(),
         (_, "STS-XPEP-0093") => "This route cannot be used now.".to_string(),
-        (_, "STS-XPEP-0117") => {
-            "This route cannot be decided now.".to_string()
-        }
+        (_, "STS-XPEP-0117") => "This route cannot be decided now.".to_string(),
         _ => refusal.why.clone(),
     }
 }
@@ -331,15 +370,21 @@ fn session_cookie(id: &str, https: bool, clear: bool) -> Option<HeaderValue> {
     HeaderValue::from_str(&text).ok()
 }
 
-fn accounts_cookie(set_id: &str, https: bool, clear: bool) -> Option<HeaderValue> {
+fn accounts_cookie(
+    set_id: &str,
+    https: bool,
+    clear: bool,
+) -> Option<HeaderValue> {
     let mut text = if clear {
         format!(
             "{}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax",
             ACCOUNTS_COOKIE
         )
     } else {
-        format!("{}={}; Path=/; HttpOnly; SameSite=Lax", ACCOUNTS_COOKIE,
-                set_id)
+        format!(
+            "{}={}; Path=/; HttpOnly; SameSite=Lax",
+            ACCOUNTS_COOKIE, set_id
+        )
     };
     if https {
         text.push_str("; Secure");
@@ -384,7 +429,8 @@ fn html_escape(text: &str) -> String {
 /// that one of its configured routes matches (normalised, with its query).
 /// Anything else — not a path, off this proxy, or no route — is `/`.
 fn return_path(config: &ProxyConfig, asked: Option<&str>) -> String {
-    let Some(raw) = asked.filter(|r| r.starts_with('/') && !r.starts_with("//"))
+    let Some(raw) =
+        asked.filter(|r| r.starts_with('/') && !r.starts_with("//"))
     else {
         return "/".into();
     };
@@ -407,15 +453,15 @@ fn return_path(config: &ProxyConfig, asked: Option<&str>) -> String {
 /// An account act's form is this proxy's own page: a cross-site POST is
 /// refused whatever the cookie (it is SameSite=Lax as well).
 fn same_origin(headers: &HeaderMap) -> bool {
-    if let Some(site) = headers
-        .get("sec-fetch-site")
-        .and_then(|v| v.to_str().ok())
+    if let Some(site) =
+        headers.get("sec-fetch-site").and_then(|v| v.to_str().ok())
     {
         if site != "same-origin" && site != "none" {
             return false;
         }
     }
-    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())
+    let Some(origin) =
+        headers.get(header::ORIGIN).and_then(|v| v.to_str().ok())
     else {
         return true;
     };
@@ -473,7 +519,7 @@ fn rp_limits(now: &crate::options::Now) -> RpLimits {
 // client already built.
 thread_local! {
     static UPSTREAM_CLIENT: RefCell<Option<((u64, bool), reqwest::Client)>> =
-        RefCell::new(None);
+        const { RefCell::new(None) };
 }
 
 impl Proxy {
@@ -549,11 +595,20 @@ impl Proxy {
         let noted = if asked.html {
             format!(
                 ", page incident {}",
-                if incident.is_empty() { "none" } else { &incident }
+                if incident.is_empty() {
+                    "none"
+                } else {
+                    &incident
+                }
             )
         } else {
             String::new()
         };
+        noting(asked.note, |n| {
+            n.code = refusal.code.to_string();
+            n.why = refusal.why.clone();
+            n.incident = incident.clone();
+        });
         // A 5xx, and a route whose policy is not held, are the operator's
         // to see; a refusal of the request itself is information.
         let warn = refusal.status >= 500 || refusal.code == "STS-XPEP-0117";
@@ -596,8 +651,13 @@ impl Proxy {
         let description = shown_description(refusal);
         let error = error_name(refusal.status, refusal.token_refused);
         let mut response = if asked.html {
-            self.error_page(refusal, asked, &description, incident,
-                            refusal_actions(refusal, asked))
+            self.error_page(
+                refusal,
+                asked,
+                &description,
+                incident,
+                refusal_actions(refusal, asked),
+            )
         } else {
             json_answer(
                 refusal.status,
@@ -669,8 +729,10 @@ impl Proxy {
             incident,
             time: proxy_page::now_utc(),
             diagnostics: vec![
-                row("Application",
-                    asked.route.map_or("", |r| r.application.as_str())),
+                row(
+                    "Application",
+                    asked.route.map_or("", |r| r.application.as_str()),
+                ),
                 row("Address", &shown),
                 row("Signed in as", &asked.who),
                 row("error", error),
@@ -718,7 +780,60 @@ impl Proxy {
         }
     }
 
+    /// The decision records' queue, for a test (#1827).
+    #[cfg(test)]
+    pub fn audit(&self) -> Arc<crate::audit::Audit> {
+        self.pep.audit.clone()
+    }
+
+    /// One request answered, and — when it reached its route's
+    /// authorization — its decision record queued for the service (#1827).
     async fn answer(&self, request: Request<Body>) -> (Response<Body>, bool) {
+        let note = Mutex::new(Noted::default());
+        let (response, forwarded) = self.answer_noted(request, &note).await;
+        let noted = match note.into_inner() {
+            Ok(noted) => noted,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if noted.decided {
+            self.record(noted, response.status().as_u16(), forwarded);
+        }
+        (response, forwarded)
+    }
+
+    /// A proxied request's decision record: `allowed` is whether it was
+    /// forwarded, and a `fault` is a 5xx of the proxy's own, never one the
+    /// application answered.
+    fn record(&self, noted: Noted, status: u16, forwarded: bool) {
+        self.pep.audit.record(crate::audit::Record {
+            at: sts_core::time::iso_now(),
+            kind: "proxy".into(),
+            decision: noted.decision,
+            allowed: forwarded,
+            fault: !forwarded && status >= 500,
+            code: noted.code,
+            subject: noted.subject,
+            resource: noted.path,
+            action: noted.method,
+            bias: noted.bias,
+            why: noted.why,
+            policies: if noted.policy.is_empty() {
+                Vec::new()
+            } else {
+                vec![noted.policy]
+            },
+            request_id: noted.incident,
+            route: Some(noted.route),
+            status: Some(status),
+            ..crate::audit::Record::default()
+        });
+    }
+
+    async fn answer_noted(
+        &self,
+        request: Request<Body>,
+        note: &Mutex<Noted>,
+    ) -> (Response<Body>, bool) {
         let (parts, body) = request.into_parts();
         let transport = parts
             .extensions
@@ -736,6 +851,7 @@ impl Proxy {
             route: None,
             html: wants_html(&parts.headers),
             who: String::new(),
+            note: Some(note),
         };
         let path = match normalise_path(&raw_path) {
             Ok(path) => path,
@@ -803,8 +919,17 @@ impl Proxy {
                 String::new()
             };
             let answer = self
-                .accounts(config, &pulled, &parts.headers, &transport,
-                          &method, &path, query.as_deref(), &form, &asked)
+                .accounts(
+                    config,
+                    &pulled,
+                    &parts.headers,
+                    &transport,
+                    &method,
+                    &path,
+                    query.as_deref(),
+                    &form,
+                    &asked,
+                )
                 .await;
             return (answer, false);
         }
@@ -832,6 +957,15 @@ impl Proxy {
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
+        // FROM HERE THE REQUEST IS ABOUT ACCESS TO THE ROUTE, and is
+        // recorded however it ends (#1827), save the two exits below.
+        noting(Some(note), |n| {
+            n.decided = true;
+            n.route = route.id.clone();
+            n.method = method.clone();
+            n.path = path.clone();
+            n.policy = route.authorization.policy.clone();
+        });
         // D10: the route's application as the service resolved it at the
         // pull. Not usable (deleted, or no longer qualifying) is refused,
         // never admitted on what an earlier pull said.
@@ -870,6 +1004,8 @@ impl Proxy {
                 "STS-XPEP-0067",
                 "the request body is larger than maxBodyBytes",
             );
+            // A size limit, not a decision about access: not recorded.
+            noting(Some(note), |n| n.decided = false);
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
         let identity = if route.is_public() {
@@ -892,7 +1028,12 @@ impl Proxy {
                 Established::Refused(refusal) => {
                     return (self.refuse(&refusal, &asked, &pulled), false)
                 }
-                Established::Answer(response) => return (response, false),
+                Established::Answer(response) => {
+                    // A redirect to sign in, or the proxy's own page: the
+                    // decision comes when the person returns.
+                    noting(Some(note), |n| n.decided = false);
+                    return (response, false);
+                }
             }
         };
         // EVERY ROUTE IS DECIDED IN XACML, BY ITS OWN POLICY (#1760), a
@@ -911,6 +1052,13 @@ impl Proxy {
             .pep
             .decide_proxy(subject, resource, action, &authorization.policy)
             .await;
+        noting(Some(note), |n| {
+            n.subject = subject.to_string();
+            if let Some((decision, outcome)) = &decided {
+                n.decision = decision.as_str().to_string();
+                n.bias = outcome.bias.as_str().to_string();
+            }
+        });
         let Some((decision, outcome)) = decided else {
             // Whatever the bias: a route whose policy is missing is not a
             // NotApplicable, and a permit-biased PEP admitting it would
@@ -960,11 +1108,25 @@ impl Proxy {
         {
             Ok(delivery) => delivery,
             Err(refusal) => {
+                // The refusal the session's end answers for, noted before
+                // the page that ends it is drawn.
+                noting(Some(note), |n| {
+                    n.code = refusal.code.to_string();
+                    n.why = refusal.why.clone();
+                });
                 if let Some(ended) = self
-                    .ended_behind(&refusal, route, &pulled, config,
-                                  identity.as_ref(), &parts.headers,
-                                  &transport, &method, &path,
-                                  query.as_deref())
+                    .ended_behind(
+                        &refusal,
+                        route,
+                        &pulled,
+                        config,
+                        identity.as_ref(),
+                        &parts.headers,
+                        &transport,
+                        &method,
+                        &path,
+                        query.as_deref(),
+                    )
                     .await
                 {
                     return (ended, false);
@@ -1177,8 +1339,16 @@ impl Proxy {
             let stale = !id.is_empty() && stores.get(&id).is_none();
             return self
                 .no_session(
-                    route, pulled, config, transport, browser, path, query,
-                    stale, None, AuthorizeOptions::default(),
+                    route,
+                    pulled,
+                    config,
+                    transport,
+                    browser,
+                    path,
+                    query,
+                    stale,
+                    None,
+                    AuthorizeOptions::default(),
                 )
                 .await;
         };
@@ -1203,8 +1373,16 @@ impl Proxy {
             );
             return self
                 .no_session(
-                    route, pulled, config, transport, browser, path, query,
-                    true, None, AuthorizeOptions::default(),
+                    route,
+                    pulled,
+                    config,
+                    transport,
+                    browser,
+                    path,
+                    query,
+                    true,
+                    None,
+                    AuthorizeOptions::default(),
                 )
                 .await;
         }
@@ -1293,24 +1471,38 @@ impl Proxy {
         };
         let active = set.as_ref().and_then(|s| s.active_for(&client).cloned());
         let Some(account) = active else {
-            let others = set.as_ref().map(|s| s.of_client(&client).len())
+            let others = set
+                .as_ref()
+                .map(|s| s.of_client(&client).len())
                 .unwrap_or(0);
             if others > 0 && browser {
                 return chooser();
             }
             return self
                 .no_session(
-                    route, pulled, config, transport, browser, path, query,
-                    false, Some(set_id), AuthorizeOptions::default(),
+                    route,
+                    pulled,
+                    config,
+                    transport,
+                    browser,
+                    path,
+                    query,
+                    false,
+                    Some(set_id),
+                    AuthorizeOptions::default(),
                 )
                 .await;
         };
         let Some(session) = stores.get(&account.session_id) else {
             stores.end(&account.session_id);
-            return if browser { chooser() } else {
+            return if browser {
+                chooser()
+            } else {
                 Established::Refused(Refusal::new(
-                    401, "STS-XPEP-0084",
-                    "the active account's proxy session has ended"))
+                    401,
+                    "STS-XPEP-0084",
+                    "the active account's proxy session has ended",
+                ))
             };
         };
         let (alive, by_signals) = match self
@@ -1335,10 +1527,14 @@ impl Proxy {
                 },
                 route.id
             );
-            return if browser { chooser() } else {
+            return if browser {
+                chooser()
+            } else {
                 Established::Refused(Refusal::new(
-                    401, "STS-XPEP-0084",
-                    "the active account's sign-on session has ended"))
+                    401,
+                    "STS-XPEP-0084",
+                    "the active account's sign-on session has ended",
+                ))
             };
         }
         let current = stores.get(&account.session_id).unwrap_or(session);
@@ -1413,8 +1609,16 @@ impl Proxy {
         }
         let ended = self
             .no_session(
-                route, pulled, config, transport, browser, path, query, true,
-                None, AuthorizeOptions::default(),
+                route,
+                pulled,
+                config,
+                transport,
+                browser,
+                path,
+                query,
+                true,
+                None,
+                AuthorizeOptions::default(),
             )
             .await;
         match ended {
@@ -1428,6 +1632,7 @@ impl Proxy {
                     route: Some(route),
                     html: wants_html(headers),
                     who: String::new(),
+                    note: None,
                 },
                 pulled,
             )),
@@ -1487,19 +1692,19 @@ impl Proxy {
             .party(&client_id, pulled, route.signals, member.as_deref())
             .await
         {
-                Ok(party) => party,
-                Err(why) => {
-                    return Established::Refused(Refusal::new(
-                        503,
-                        "STS-XPEP-0090",
-                        &format!(
+            Ok(party) => party,
+            Err(why) => {
+                return Established::Refused(Refusal::new(
+                    503,
+                    "STS-XPEP-0090",
+                    &format!(
                         "the relying party for client {} could not be built: \
                          {}",
                         client_id, why
                     ),
-                    ))
-                }
-            };
+                ))
+            }
+        };
         let rp = party.rp.clone();
         let authorized = rp.authorize_async(options).await;
         let transaction = match authorized {
@@ -1673,12 +1878,14 @@ impl Proxy {
         } else {
             None
         };
-        let (learned_name, learned_display) = learned
-            .map(|(_, u, n)| (u, n))
-            .unwrap_or_default();
+        let (learned_name, learned_display) =
+            learned.map(|(_, u, n)| (u, n)).unwrap_or_default();
         self.pep.sync.proxy_sessions.named(&id, &learned_name, "");
-        let display = if display.is_empty() { learned_display } else {
-            display };
+        let display = if display.is_empty() {
+            learned_display
+        } else {
+            display
+        };
         // The receiver finds a session by the service's session id (a
         // CAEP session-revoked names it), by the person, or by the mail.
         if let Some(receiver) = &party.receiver {
@@ -1700,12 +1907,16 @@ impl Proxy {
         if let Some(set_id) = &pending.account_set {
             let max = self.pep.options.now().proxy_max_accounts;
             let stores = &self.pep.sync.proxy_sessions;
-            let username = stores
-                .get(&id)
-                .map(|s| s.username)
-                .unwrap_or_default();
-            match stores.add_account(set_id, &id, &pending.client_id,
-                                     &login.subject, &username, max) {
+            let username =
+                stores.get(&id).map(|s| s.username).unwrap_or_default();
+            match stores.add_account(
+                set_id,
+                &id,
+                &pending.client_id,
+                &login.subject,
+                &username,
+                max,
+            ) {
                 Ok(added) => {
                     stores.named(&id, "", &display);
                     if let Some(old) = &added.replaced {
@@ -1719,8 +1930,9 @@ impl Proxy {
                     if let Some(cookie) =
                         accounts_cookie(&added.set_id, transport.https, false)
                     {
-                        response.headers_mut().insert(header::SET_COOKIE,
-                                                      cookie);
+                        response
+                            .headers_mut()
+                            .insert(header::SET_COOKIE, cookie);
                     }
                     return response;
                 }
@@ -1740,7 +1952,11 @@ impl Proxy {
                         tag("STS-XPEP-0108"),
                         held,
                         max,
-                        if incident.is_empty() { "none" } else { &incident }
+                        if incident.is_empty() {
+                            "none"
+                        } else {
+                            &incident
+                        }
                     );
                     tracing::warn!("{}", line);
                     #[cfg(test)]
@@ -1802,16 +2018,16 @@ impl Proxy {
             .into_iter()
             .chain(query_pairs(Some(form)))
             .collect();
-        let back = return_path(
-            config,
-            given.get("return").map(String::as_str),
-        );
+        let back = return_path(config, given.get("return").map(String::as_str));
         let refuse = |status: u16, code: &'static str, why: &str| {
             self.refuse(&Refusal::new(status, code, why), asked, pulled)
         };
         if method == "POST" && !same_origin(headers) {
-            return refuse(403, "STS-XPEP-0109",
-                          "an account act from another site is refused");
+            return refuse(
+                403,
+                "STS-XPEP-0109",
+                "an account act from another site is refused",
+            );
         }
         let application_of = |client: &str| -> String {
             config
@@ -1839,10 +2055,13 @@ impl Proxy {
                             })
                         })
                         .collect();
-                    return json_answer(200, json!({
-                        "accounts": accounts,
-                        "max": self.pep.options.now().proxy_max_accounts
-                    }));
+                    return json_answer(
+                        200,
+                        json!({
+                            "accounts": accounts,
+                            "max": self.pep.options.now().proxy_max_accounts
+                        }),
+                    );
                 }
                 own_page(
                     200,
@@ -1860,9 +2079,12 @@ impl Proxy {
                             && !r.is_public()
                     })
                 else {
-                    return refuse(404, "STS-XPEP-0110",
-                                  "the page to return to is not on a route \
-                                   that holds several accounts");
+                    return refuse(
+                        404,
+                        "STS-XPEP-0110",
+                        "the page to return to is not on a route \
+                                   that holds several accounts",
+                    );
                 };
                 let again = given
                     .get("account")
@@ -1884,24 +2106,37 @@ impl Proxy {
                     None => (back.clone(), None),
                 };
                 match self
-                    .no_session(route, pulled, config, transport, true,
-                                &path_part, query_part.as_deref(), false,
-                                Some(set_id), options)
+                    .no_session(
+                        route,
+                        pulled,
+                        config,
+                        transport,
+                        true,
+                        &path_part,
+                        query_part.as_deref(),
+                        false,
+                        Some(set_id),
+                        options,
+                    )
                     .await
                 {
                     Established::Answer(response) => response,
                     Established::Refused(refusal) => {
                         self.refuse(&refusal, asked, pulled)
                     }
-                    Established::Who(_) => refuse(500, "STS-XPEP-0110",
-                                                  "no sign-in was started"),
+                    Established::Who(_) => {
+                        refuse(500, "STS-XPEP-0110", "no sign-in was started")
+                    }
                 }
             }
             ("POST", ACCOUNTS_SWITCH_PATH) => {
                 let account = given.get("account").cloned().unwrap_or_default();
                 if stores.switch_account(&set_id, &account).is_none() {
-                    return refuse(404, "STS-XPEP-0111",
-                                  "this browser holds no such account");
+                    return refuse(
+                        404,
+                        "STS-XPEP-0111",
+                        "this browser holds no such account",
+                    );
                 }
                 tracing::info!(
                     "xacml-pep: proxy: a browser switched its active account."
@@ -1911,16 +2146,22 @@ impl Proxy {
             ("POST", ACCOUNTS_LOGOUT_PATH) => {
                 let account = given.get("account").cloned().unwrap_or_default();
                 let Some(one) = stores.account_of(&set_id, &account) else {
-                    return refuse(404, "STS-XPEP-0111",
-                                  "this browser holds no such account");
+                    return refuse(
+                        404,
+                        "STS-XPEP-0111",
+                        "this browser holds no such account",
+                    );
                 };
                 self.end_session(&one.session_id, &one.client_id);
                 tracing::info!(
                     "xacml-pep: proxy: one account of a browser's set signed \
                      out here; the others are kept."
                 );
-                see_other(&format!("{}?return={}", ACCOUNTS_PATH,
-                                   encode(&back)))
+                see_other(&format!(
+                    "{}?return={}",
+                    ACCOUNTS_PATH,
+                    encode(&back)
+                ))
             }
             ("POST", ACCOUNTS_LOGOUT_ALL_PATH) => {
                 for one in stores.sessions_of_set(&set_id) {
@@ -1965,30 +2206,25 @@ impl Proxy {
                 let shown = if a.name.is_empty() || a.name == *name {
                     html_escape(name)
                 } else {
-                    format!(
-                        "{} — {}",
-                        html_escape(name),
-                        html_escape(&a.name)
-                    )
+                    format!("{} — {}", html_escape(name), html_escape(&a.name))
                 };
                 let act = if active {
                     let (path, query) = match back.split_once('?') {
                         Some((p, q)) => (p, q),
                         None => (back, ""),
                     };
-                    let fields: String = query_pairs(
-                        (!query.is_empty()).then_some(query),
-                    )
-                    .into_iter()
-                    .map(|(k, v)| {
-                        format!(
-                            "<input type=\"hidden\" name=\"{}\" \
+                    let fields: String =
+                        query_pairs((!query.is_empty()).then_some(query))
+                            .into_iter()
+                            .map(|(k, v)| {
+                                format!(
+                                    "<input type=\"hidden\" name=\"{}\" \
                              value=\"{}\">",
-                            html_escape(&k),
-                            html_escape(&v)
-                        )
-                    })
-                    .collect();
+                                    html_escape(&k),
+                                    html_escape(&v)
+                                )
+                            })
+                            .collect();
                     format!(
                         "<form method=\"get\" action=\"{}\">{}<button \
                          class=\"portal\" type=\"submit\">Continue with \
@@ -2054,7 +2290,11 @@ impl Proxy {
              {} accounts can be signed in here.</p><div class=\"next\">\
              <a class=\"portal\" href=\"{}?return={}\">Add another account\
              </a>{}</div>",
-            list, max, ACCOUNTS_ADD_PATH, html_escape(&encode(back)), all
+            list,
+            max,
+            ACCOUNTS_ADD_PATH,
+            html_escape(&encode(back)),
+            all
         )
     }
 
@@ -2668,12 +2908,8 @@ pub async fn serve_https(
         let proxy = proxy.clone();
         let job = runtime.clone();
         runtime.hand_off(stream, move |stream| async move {
-            let Some(tls) = HttpsListener::accept_tls(
-                stream,
-                &acceptor,
-                &job,
-            )
-            .await
+            let Some(tls) =
+                HttpsListener::accept_tls(stream, &acceptor, &job).await
             else {
                 return;
             };
@@ -2718,6 +2954,9 @@ pub mod logged {
             Ok(g) => g,
             Err(p) => p.into_inner(),
         };
-        held.iter().filter(|l| l.contains(needle)).cloned().collect()
+        held.iter()
+            .filter(|l| l.contains(needle))
+            .cloned()
+            .collect()
     }
 }

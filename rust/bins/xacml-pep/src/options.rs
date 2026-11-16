@@ -49,8 +49,8 @@ pub struct Options {
     /// [`plain_http`] for the precedence and the notices.
     pub http: PlainHttp,
     /// `PEP_CRL_HTTP` (2026-11-14): `Some(true)` or `Some(false)` as set,
-    /// `None` unset (the default: bind the CRL-only listener when `http`
-    /// is off and `crl_dir` exists), and the unreadable text, if any.
+    /// `None` unset (the default, since phase 4 of #1827's follow-up: the
+    /// CRL-only listener is NOT bound), and the unreadable text, if any.
     pub crl_http: (Option<bool>, Option<String>),
     pub poll_interval_ms: u64,
     pub heartbeat_interval_ms: u64,
@@ -58,8 +58,12 @@ pub struct Options {
     pub backoff_max_ms: u64,
     pub timeout_ms: u64,
     pub max_body_bytes: usize,
-    pub client_certificate: Option<Vec<u8>>,
-    pub client_key: Option<Vec<u8>>,
+    /// `PEP_TLS_CERT` and `PEP_TLS_KEY` as set, never read as files
+    /// (phase 4 of #1827's follow-up): the PEP presents no client
+    /// certificate to the service, so they are kept only to say so once
+    /// at start (`STS-XPEP-0135`). `PEP_TLS_KEY` is still the fallback
+    /// assertion key (`assertion_key`).
+    pub retired_client_certificate: RetiredClientCertificate,
     /// Where this PEP's own credential's CRLs are, served at `/crl/<name>`.
     pub crl_dir: Option<PathBuf>,
     pub pdp_ca: Option<Vec<u8>>,
@@ -137,6 +141,100 @@ pub struct Options {
     pub log_level: String,
     /// What the service set (#1760), shared by every clone.
     pub managed: Arc<Held>,
+    /// The decision records shipped to the service (#1827): `PEP_AUDIT`,
+    /// on by default; `false` queues nothing and starts no loop.
+    pub audit_enabled: bool,
+    /// How often the queue is shipped, `PEP_AUDIT_INTERVAL_MS`.
+    pub audit_interval_ms: u64,
+    /// The most records in one batch, `PEP_AUDIT_BATCH`, held to 1..=500
+    /// (the service's bound) where it is used.
+    pub audit_batch: usize,
+    /// The most records held waiting, `PEP_AUDIT_BUFFER`; full, the
+    /// oldest is dropped.
+    pub audit_buffer: usize,
+    /// The public client the self-assertion grant goes through,
+    /// `PEP_CLIENT_ID` (`PEP_AUDIT_CLIENT_ID`, its name before every call
+    /// carried a token, is still read when it is unset).
+    pub client_id: String,
+    /// The key the self-assertion and every DPoP proof are signed with:
+    /// `PEP_ASSERTION_KEY`, else `PEP_TLS_KEY` (`credential.rs`). Read
+    /// by the credential, again on the listener pair's reload interval.
+    pub assertion_key: crate::credential::KeySource,
+}
+
+/// THE CLIENT CERTIFICATE THE PEP NO LONGER PRESENTS (#1827's follow-up,
+/// phase 4, rcbj 2026-11-16). Through phase 3 `PEP_TLS_CERT` and
+/// `PEP_TLS_KEY` were the client certificate presented on every call to the
+/// service beside the token; since phase 4 every call carries the
+/// DPoP-bound token alone, and the two are ignored for that. `PEP_TLS_KEY`
+/// keeps its other role, the fallback assertion key (`STS-XPEP-0127`), so a
+/// PEP whose certificate's key was registered as its RFC 7523 key keeps
+/// working.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RetiredClientCertificate {
+    /// `PEP_TLS_CERT`, empty when unset.
+    pub cert_path: String,
+    /// `PEP_TLS_KEY`, empty when unset.
+    pub key_path: String,
+}
+
+impl RetiredClientCertificate {
+    /// What `STS-XPEP-0135` says at start, or `None` when there is nothing
+    /// to say: `PEP_TLS_CERT` set, or `PEP_TLS_KEY` set where
+    /// `PEP_ASSERTION_KEY` is too (it is then not read at all). `assertion`
+    /// is `PEP_ASSERTION_KEY`, empty when unset.
+    pub fn notice(&self, assertion: &str) -> Option<String> {
+        let cert = !self.cert_path.trim().is_empty();
+        let key = !self.key_path.trim().is_empty();
+        let key_unused = key && !assertion.trim().is_empty();
+        if !cert && !key_unused {
+            return None;
+        }
+        let mut named = Vec::new();
+        if cert {
+            named.push(format!("PEP_TLS_CERT ({})", self.cert_path.trim()));
+        }
+        if key && (cert || key_unused) {
+            named.push(format!("PEP_TLS_KEY ({})", self.key_path.trim()));
+        }
+        Some(format!(
+            "{} {} set, and this PEP no longer presents a client \
+             certificate to the service: every call carries a DPoP-bound \
+             access token from its assertion key instead. Give it a key of \
+             its own with PEP_ASSERTION_KEY (the service's \
+             issue-pep-credential certifies its request) and unset {}.{}",
+            named.join(" and "),
+            if named.len() > 1 { "are" } else { "is" },
+            if named.len() > 1 { "them" } else { "it" },
+            if key && !key_unused {
+                " PEP_TLS_KEY is still read as the assertion key while \
+                 PEP_ASSERTION_KEY is unset."
+            } else {
+                ""
+            }
+        ))
+    }
+}
+
+/// `PEP_CLIENT_ID`, else its old name `PEP_AUDIT_CLIENT_ID`, else
+/// `sts-remote-pep` — from the two values given, so a test does not touch
+/// the environment. The second member is the variable it came from.
+pub fn client_id_of(
+    primary: Option<&str>,
+    alias: Option<&str>,
+) -> (String, &'static str) {
+    let set = |v: Option<&str>| {
+        v.map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    if let Some(id) = set(primary) {
+        return (id, "PEP_CLIENT_ID");
+    }
+    if let Some(id) = set(alias) {
+        return (id, "PEP_AUDIT_CLIENT_ID");
+    }
+    ("sts-remote-pep".to_string(), "")
 }
 
 /// THE SETTINGS IN FORCE NOW: the service's value where it set one, else
@@ -174,6 +272,12 @@ pub struct Now {
     pub proxy_signals_poll_ms: u64,
     pub proxy_signals_stale_ms: u64,
     pub proxy_strip_cookies: String,
+    /// The decision records (#1827): whether they are queued and sent, how
+    /// often, how many to a batch, and how many may wait.
+    pub audit: bool,
+    pub audit_interval_ms: u64,
+    pub audit_batch: usize,
+    pub audit_buffer: usize,
 }
 
 impl Now {
@@ -200,7 +304,11 @@ impl Now {
             "proxyRpAllowInsecure": self.proxy_rp_allow_insecure,
             "proxySignalsPollMs": self.proxy_signals_poll_ms,
             "proxySignalsStaleMs": self.proxy_signals_stale_ms,
-            "proxyStripCookies": self.proxy_strip_cookies
+            "proxyStripCookies": self.proxy_strip_cookies,
+            "auditEnabled": self.audit,
+            "auditIntervalMs": self.audit_interval_ms,
+            "auditBatch": self.audit_batch,
+            "auditBuffer": self.audit_buffer
         });
         match value {
             serde_json::Value::Object(map) => map,
@@ -424,8 +532,9 @@ pub fn plain_http(
             let relied = port.map(|p| !p.trim().is_empty()).unwrap_or(false);
             (false, relied.then_some(PlainHttpNotice::Relied))
         }
-        Some(other) => (false, Some(PlainHttpNotice::Unreadable(
-            other.to_string()))),
+        Some(other) => {
+            (false, Some(PlainHttpNotice::Unreadable(other.to_string())))
+        }
     }
 }
 
@@ -450,7 +559,7 @@ fn say_notify_rejected(variable: &str, url: &str) {
         std::sync::Mutex::new(Vec::new());
     let key = format!("{}={}", variable, url);
     let mut said = SAID.lock().unwrap_or_else(|e| e.into_inner());
-    if said.iter().any(|one| *one == key) {
+    if said.contains(&key) {
         return;
     }
     said.push(key);
@@ -491,12 +600,14 @@ pub enum DerivedFrom {
 impl DerivedFrom {
     fn describe(self) -> &'static str {
         match self {
-            DerivedFrom::CertificateHostname =>
+            DerivedFrom::CertificateHostname => {
                 "the HTTPS listener certificate's DNS name that is this \
-                 PEP's hostname",
-            DerivedFrom::Certificate =>
+                 PEP's hostname"
+            }
+            DerivedFrom::Certificate => {
                 "the first DNS name of the HTTPS listener certificate, none \
-                 of its names being the hostname",
+                 of its names being the hostname"
+            }
             DerivedFrom::Name => "PEP_NAME",
             DerivedFrom::Hostname => "the hostname",
         }
@@ -525,7 +636,9 @@ pub fn is_dns_name(text: &str) -> bool {
             && label.len() <= 63
             && !label.starts_with('-')
             && !label.ends_with('-')
-            && label.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
     });
     good && labels
         .last()
@@ -550,10 +663,7 @@ pub fn derive_notify_url(
 ) -> Option<DerivedNotify> {
     let names = served?;
     let bare = |n: &str| n.trim().trim_end_matches('.').to_ascii_lowercase();
-    let own = hostname
-        .map(str::trim)
-        .filter(|h| is_dns_name(h))
-        .map(bare);
+    let own = hostname.map(str::trim).filter(|h| is_dns_name(h)).map(bare);
     let pick = own
         .as_ref()
         .and_then(|own| {
@@ -582,7 +692,11 @@ pub fn derive_notify_url(
                 .filter(|n| is_dns_name(n))
                 .map(|n| (n.to_string(), DerivedFrom::Hostname))
         })?;
-    let host = pick.0.strip_suffix('.').unwrap_or(&pick.0).to_ascii_lowercase();
+    let host = pick
+        .0
+        .strip_suffix('.')
+        .unwrap_or(&pick.0)
+        .to_ascii_lowercase();
     Some(DerivedNotify {
         url: format!("https://{}:{}/notify", host, https_port),
         from: pick.1,
@@ -647,12 +761,16 @@ pub fn crl_http_switch(said: Option<&str>) -> (Option<bool>, Option<String>) {
 /// convention (RFC 5280 section 4.2.1.13: one behind TLS would have to be
 /// validated with itself), and the credential tool points a PEP's
 /// credential's CRL distribution point at `http://<pep>:9090/crl`, which
-/// the service fetches under hard-fail in product — so with plain HTTP off
+/// the service fetched under hard-fail in product — so with plain HTTP off
 /// by default (#1760) and nothing on 9090, the credential stopped
-/// verifying and every pull was refused as unauthenticated. Bound when
-/// `PEP_CRL_HTTP=true`, or by default when there is a CRL directory to
-/// serve; `PEP_CRL_HTTP=false` never. With `PEP_HTTP=true` the API's own
-/// listener serves `/crl/` as it always did, and this is not bound.
+/// verifying and every pull was refused as unauthenticated. It existed for
+/// THE PEP'S OWN CLIENT CERTIFICATE, and phase 4 of #1827's follow-up (rcbj,
+/// 2026-11-16) retired that certificate: the service fetches none of these
+/// lists any more. So it is bound ONLY with `PEP_CRL_HTTP=true`; unset or
+/// `false` it is not, and a CRL directory that would have bound it before
+/// is said once at start (`STS-XPEP-0136`, [`crl_listener_notice`]). With
+/// `PEP_HTTP=true` the API's own listener serves `/crl/` as it always did,
+/// and this is not bound.
 pub fn crl_listener(options: &Options) -> bool {
     if let Some(text) = &options.crl_http.1 {
         tracing::error!(
@@ -665,19 +783,41 @@ pub fn crl_listener(options: &Options) -> bool {
     if options.http.on {
         return false;
     }
-    match options.crl_http.0 {
-        Some(on) => on,
-        None => options.crl_dir.as_ref().is_some_and(|dir| dir.is_dir()),
+    options.crl_http.0 == Some(true)
+}
+
+/// What `STS-XPEP-0136` says at start, or `None`: a CRL directory that
+/// the listener would have served by default before phase 4, with
+/// `PEP_CRL_HTTP` unset (or unreadable) and the API's plain HTTP off.
+pub fn crl_listener_notice(options: &Options) -> Option<String> {
+    if options.http.on || options.crl_http.0.is_some() {
+        return None;
     }
+    let dir = options.crl_dir.as_ref().filter(|dir| dir.is_dir())?;
+    Some(format!(
+        "there is a CRL directory at {} and PEP_CRL_HTTP is not set, so the \
+         CRL-only listener on PEP_PORT ({}) is not bound. It served the CRLs \
+         of the client certificate this PEP no longer presents to the \
+         service; set PEP_CRL_HTTP=true if something still fetches them.",
+        dir.display(),
+        options.port
+    ))
 }
 
 /// [`plain_http`] over the environment.
-pub fn plain_http_from_env(switch: &'static str,
-                           port_var: &'static str) -> PlainHttp {
+pub fn plain_http_from_env(
+    switch: &'static str,
+    port_var: &'static str,
+) -> PlainHttp {
     let said = std::env::var(switch).ok();
     let port = std::env::var(port_var).ok();
     let (on, notice) = plain_http(said.as_deref(), port.as_deref());
-    PlainHttp { on, switch, port_var, notice }
+    PlainHttp {
+        on,
+        switch,
+        port_var,
+        notice,
+    }
 }
 
 impl PlainHttp {
@@ -817,6 +957,14 @@ impl Options {
                 "proxyStripCookies",
                 &self.proxy_strip_cookies,
             ),
+            audit: flag("auditEnabled", self.audit_enabled),
+            audit_interval_ms: int("auditIntervalMs", self.audit_interval_ms)
+                .max(1),
+            audit_batch: (int("auditBatch", self.audit_batch as u64) as usize)
+                .clamp(1, 500),
+            audit_buffer: (int("auditBuffer", self.audit_buffer as u64)
+                as usize)
+                .max(1),
         }
     }
 
@@ -832,10 +980,12 @@ impl Options {
         if let Some(bad) = m.rejected_notify.as_ref() {
             say_notify_rejected(
                 "the service's notifyUrl setting (this PEP's Settings tab)",
-                bad);
+                bad,
+            );
             return (String::new(), bad.clone());
         }
-        if let Some(set) = m.str(settings::DERIVED_KEY)
+        if let Some(set) = m
+            .str(settings::DERIVED_KEY)
             .filter(|s| !s.trim().is_empty())
         {
             return (set, String::new());
@@ -860,8 +1010,7 @@ impl Options {
     pub fn refresh_derived_notify(&self, served: Option<&[String]>) -> bool {
         let name = std::env::var("PEP_NAME").ok();
         let host = system_hostname();
-        self.refresh_derived_notify_as(served, name.as_deref(),
-                                       host.as_deref())
+        self.refresh_derived_notify_as(served, name.as_deref(), host.as_deref())
     }
 
     /// `refresh_derived_notify()` with `PEP_NAME` and the hostname given,
@@ -872,8 +1021,8 @@ impl Options {
         pep_name: Option<&str>,
         hostname: Option<&str>,
     ) -> bool {
-        let derived = derive_notify_url(served, pep_name, hostname,
-                                        self.https_port);
+        let derived =
+            derive_notify_url(served, pep_name, hostname, self.https_port);
         let url = derived.as_ref().map(|d| d.url.as_str()).unwrap_or("");
         if !self.managed.set_derived_notify(url) {
             return false;
@@ -903,7 +1052,11 @@ impl Options {
             None => tracing::info!(
                 "xacml-pep: no notify URL is derived: the HTTPS listener \
                  serves no certificate yet{}.",
-                if in_force { "" } else { " (an explicit one is in force)" }
+                if in_force {
+                    ""
+                } else {
+                    " (an explicit one is in force)"
+                }
             ),
         }
         true
@@ -922,10 +1075,14 @@ impl Options {
                 .and_then(|v| v.get_mut(settings::DERIVED_KEY))
                 .and_then(serde_json::Value::as_object_mut)
             {
-                one.insert("value".to_string(),
-                           serde_json::Value::from(now.notify_rejected));
-                one.insert("rejected".to_string(),
-                           serde_json::Value::Bool(true));
+                one.insert(
+                    "value".to_string(),
+                    serde_json::Value::from(now.notify_rejected),
+                );
+                one.insert(
+                    "rejected".to_string(),
+                    serde_json::Value::Bool(true),
+                );
             }
         }
         report
@@ -961,7 +1118,8 @@ impl Options {
             port: int_from_env("PEP_PORT", 9090),
             http: plain_http_from_env("PEP_HTTP", "PEP_PORT"),
             crl_http: crl_http_switch(
-                std::env::var("PEP_CRL_HTTP").ok().as_deref()),
+                std::env::var("PEP_CRL_HTTP").ok().as_deref(),
+            ),
             poll_interval_ms: int_from_env("PEP_POLL_INTERVAL_MS", 15000),
             heartbeat_interval_ms: int_from_env(
                 "PEP_HEARTBEAT_INTERVAL_MS",
@@ -970,8 +1128,10 @@ impl Options {
             backoff_max_ms: int_from_env("PEP_BACKOFF_MAX_MS", 300000),
             timeout_ms: int_from_env("PEP_TIMEOUT_MS", 5000),
             max_body_bytes: int_from_env("PEP_MAX_BODY_BYTES", 4 * 1024 * 1024),
-            client_certificate: file_from_env("PEP_TLS_CERT"),
-            client_key: file_from_env("PEP_TLS_KEY"),
+            retired_client_certificate: RetiredClientCertificate {
+                cert_path: cert_path.clone(),
+                key_path: std::env::var("PEP_TLS_KEY").unwrap_or_default(),
+            },
             crl_dir,
             pdp_ca: file_from_env("PEP_TLS_CA"),
             insecure: std::env::var("PEP_TLS_INSECURE").as_deref()
@@ -1001,8 +1161,7 @@ impl Options {
             .max(1),
             proxy_enabled: std::env::var("PEP_PROXY").as_deref() != Ok("false"),
             proxy_port: int_from_env("PEP_PROXY_PORT", 9180),
-            proxy_http: plain_http_from_env("PEP_PROXY_HTTP",
-                                            "PEP_PROXY_PORT"),
+            proxy_http: plain_http_from_env("PEP_PROXY_HTTP", "PEP_PROXY_PORT"),
             proxy_https_port: int_from_env("PEP_PROXY_HTTPS_PORT", 9543),
             proxy_session_recheck_ms: int_from_env(
                 "PEP_PROXY_SESSION_RECHECK_MS",
@@ -1018,11 +1177,8 @@ impl Options {
                 10_000usize,
             )
             .max(1),
-            proxy_max_accounts: int_from_env(
-                "PEP_PROXY_MAX_ACCOUNTS",
-                5usize,
-            )
-            .clamp(1, 32),
+            proxy_max_accounts: int_from_env("PEP_PROXY_MAX_ACCOUNTS", 5usize)
+                .clamp(1, 32),
             proxy_jwks_ttl_ms: int_from_env(
                 "PEP_PROXY_JWKS_TTL_MS",
                 300_000u64,
@@ -1052,6 +1208,21 @@ impl Options {
                 .unwrap_or_default(),
             log_level: std::env::var("PEP_LOG_LEVEL").unwrap_or_default(),
             managed: Arc::new(Held::from_env()),
+            audit_enabled: std::env::var("PEP_AUDIT").as_deref() != Ok("false"),
+            audit_interval_ms: int_from_env("PEP_AUDIT_INTERVAL_MS", 5000u64)
+                .max(1),
+            audit_batch: int_from_env("PEP_AUDIT_BATCH", 200usize)
+                .clamp(1, 500),
+            audit_buffer: int_from_env("PEP_AUDIT_BUFFER", 10000usize).max(1),
+            client_id: client_id_of(
+                std::env::var("PEP_CLIENT_ID").ok().as_deref(),
+                std::env::var("PEP_AUDIT_CLIENT_ID").ok().as_deref(),
+            )
+            .0,
+            assertion_key: crate::credential::KeySource::choose(
+                std::env::var("PEP_ASSERTION_KEY").ok().as_deref(),
+                std::env::var("PEP_TLS_KEY").ok().as_deref(),
+            ),
         }
     }
 }
@@ -1147,6 +1318,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pep_client_id_wins_and_pep_audit_client_id_is_its_alias() {
+        assert_eq!(
+            client_id_of(Some("a"), Some("b")),
+            ("a".to_string(), "PEP_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(Some(" "), Some("b")),
+            ("b".to_string(), "PEP_AUDIT_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(None, None),
+            ("sts-remote-pep".to_string(), "")
+        );
+    }
+
+    #[test]
     fn callers_are_read_strictly() {
         let fp = "AB:".repeat(31) + "AB";
         let raw = format!(
@@ -1177,16 +1364,23 @@ mod tests {
         assert_eq!(plain_http(Some(" true "), Some("9090")), (true, None));
         assert_eq!(plain_http(Some("false"), Some("9090")), (false, None));
         // The port alone does not turn it on, and is told so.
-        assert_eq!(plain_http(None, Some("9090")),
-                   (false, Some(PlainHttpNotice::Relied)));
-        assert_eq!(plain_http(Some(""), Some("9180")),
-                   (false, Some(PlainHttpNotice::Relied)));
+        assert_eq!(
+            plain_http(None, Some("9090")),
+            (false, Some(PlainHttpNotice::Relied))
+        );
+        assert_eq!(
+            plain_http(Some(""), Some("9180")),
+            (false, Some(PlainHttpNotice::Relied))
+        );
         assert_eq!(plain_http(None, Some("  ")), (false, None));
         // A value that is neither stays off, never on.
         for odd in ["TRUE", "yes", "1", "on"] {
-            assert_eq!(plain_http(Some(odd), None),
-                       (false, Some(PlainHttpNotice::Unreadable(
-                           odd.to_string()))), "{}", odd);
+            assert_eq!(
+                plain_http(Some(odd), None),
+                (false, Some(PlainHttpNotice::Unreadable(odd.to_string()))),
+                "{}",
+                odd
+            );
         }
     }
 
@@ -1201,36 +1395,108 @@ mod tests {
         assert!(pdp_identifier_of("not a url").is_none());
     }
 
-    /// The CRL-only listener: bound by default where there is a CRL
-    /// directory and the API's plain HTTP is off, never alongside it, and
-    /// as `PEP_CRL_HTTP` says otherwise.
+    /// The CRL-only listener: since phase 4 of #1827's follow-up bound
+    /// ONLY with `PEP_CRL_HTTP=true` and the API's plain HTTP off — a CRL
+    /// directory alone binds nothing, and is said once (`STS-XPEP-0136`).
     #[test]
-    fn the_crl_point_stays_up_with_http_off() {
+    fn the_crl_point_binds_only_when_asked() {
         assert_eq!(crl_http_switch(None), (None, None));
         assert_eq!(crl_http_switch(Some("true")), (Some(true), None));
         assert_eq!(crl_http_switch(Some(" false ")), (Some(false), None));
-        assert_eq!(crl_http_switch(Some("yes")),
-                   (None, Some("yes".to_string())));
-        let dir = std::env::temp_dir().join(format!(
-            "pep-crl-{}", std::process::id()));
+        assert_eq!(
+            crl_http_switch(Some("yes")),
+            (None, Some("yes".to_string()))
+        );
+        let dir = std::env::temp_dir()
+            .join(format!("pep-crl-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let mut options = Options::from_env("0.0.0");
         options.http.on = false;
         options.crl_dir = Some(dir.clone());
         options.crl_http = (None, None);
-        assert!(crl_listener(&options), "a CRL directory binds it");
+        assert!(
+            !crl_listener(&options),
+            "a CRL directory alone binds nothing (phase 4)"
+        );
+        let said = crl_listener_notice(&options).expect("a notice");
+        assert!(said.contains("PEP_CRL_HTTP=true"), "{}", said);
+        options.crl_http = (None, Some("yes".to_string()));
+        assert!(
+            !crl_listener(&options),
+            "an unreadable switch binds nothing"
+        );
+        assert!(crl_listener_notice(&options).is_some());
         options.crl_dir = Some(dir.join("absent"));
+        options.crl_http = (None, None);
         assert!(!crl_listener(&options), "nothing to serve, nothing bound");
+        assert!(
+            crl_listener_notice(&options).is_none(),
+            "no directory, nothing to say"
+        );
         options.crl_http = (Some(true), None);
         assert!(crl_listener(&options), "PEP_CRL_HTTP=true binds it");
+        assert!(crl_listener_notice(&options).is_none());
         options.crl_dir = Some(dir.clone());
         options.crl_http = (Some(false), None);
         assert!(!crl_listener(&options), "PEP_CRL_HTTP=false never");
-        options.crl_http = (None, None);
+        assert!(
+            crl_listener_notice(&options).is_none(),
+            "turned off on purpose, nothing to say"
+        );
+        options.crl_http = (Some(true), None);
         options.http.on = true;
-        assert!(!crl_listener(&options),
-                "with PEP_HTTP=true the API's listener serves /crl/");
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            !crl_listener(&options),
+            "with PEP_HTTP=true the API's listener serves /crl/"
+        );
+        assert!(crl_listener_notice(&options).is_none());
+        if std::fs::remove_dir_all(&dir).is_err() {
+            eprintln!("could not remove the test directory {:?}", dir);
+        }
+    }
+
+    /// Phase 4 of #1827's follow-up: `PEP_TLS_CERT` is never presented,
+    /// and the start says so (`STS-XPEP-0135`) — for the certificate, and
+    /// for `PEP_TLS_KEY` where `PEP_ASSERTION_KEY` makes it unused; a
+    /// `PEP_TLS_KEY` alone is the fallback assertion key and says nothing.
+    #[test]
+    fn the_client_certificate_is_retired_and_said_once() {
+        let none = RetiredClientCertificate::default();
+        assert_eq!(none.notice(""), None);
+        assert_eq!(none.notice("/k/a.key"), None);
+        let key_only = RetiredClientCertificate {
+            cert_path: String::new(),
+            key_path: "/certs/pep.key".into(),
+        };
+        assert_eq!(key_only.notice(""), None, "the fallback key: 0127's");
+        let unused = key_only.notice("/certs/pep-assertion.key").unwrap();
+        assert!(unused.starts_with("PEP_TLS_KEY (/certs/pep.key) is set"));
+        assert!(unused.contains("unset it."));
+        let both = RetiredClientCertificate {
+            cert_path: "/certs/pep.crt".into(),
+            key_path: "/certs/pep.key".into(),
+        };
+        let said = both.notice("").unwrap();
+        assert!(said.starts_with(
+            "PEP_TLS_CERT (/certs/pep.crt) and PEP_TLS_KEY (/certs/pep.key) \
+             are set"
+        ));
+        assert!(said.contains("PEP_ASSERTION_KEY"));
+        assert!(said.contains("issue-pep-credential"));
+        assert!(said.ends_with(
+            "PEP_TLS_KEY is still read as the assertion key while \
+             PEP_ASSERTION_KEY is unset."
+        ));
+        let with_key = both.notice("/certs/pep-assertion.key").unwrap();
+        assert!(with_key.contains("unset them."));
+        assert!(!with_key.contains("still read"));
+        let cert_only = RetiredClientCertificate {
+            cert_path: "/certs/pep.crt".into(),
+            key_path: String::new(),
+        };
+        let one = cert_only.notice("/k").unwrap();
+        assert!(one.starts_with("PEP_TLS_CERT (/certs/pep.crt) is set"));
+        assert!(!one.contains("PEP_TLS_KEY"));
     }
 
     /// THE DERIVED NOTIFY URL'S HOST, best first ("option 1"): the served
@@ -1245,71 +1511,131 @@ mod tests {
         let url = |d: Option<DerivedNotify>| d.map(|d| (d.url, d.from));
         // THE 8081 DEPLOY'S CERTIFICATE: the registered name first, which
         // nothing resolves, then the hostname — the hostname's is picked.
-        let deployed = names(&["remote-pep-1", "xacml-pep", "localhost",
-                               "127.0.0.1"]);
+        let deployed =
+            names(&["remote-pep-1", "xacml-pep", "localhost", "127.0.0.1"]);
         assert_eq!(
-            url(derive_notify_url(Some(&deployed), Some("remote-pep-1"),
-                                  Some("xacml-pep"), 9443)),
-            Some(("https://xacml-pep:9443/notify".to_string(),
-                  DerivedFrom::CertificateHostname)));
+            url(derive_notify_url(
+                Some(&deployed),
+                Some("remote-pep-1"),
+                Some("xacml-pep"),
+                9443
+            )),
+            Some((
+                "https://xacml-pep:9443/notify".to_string(),
+                DerivedFrom::CertificateHostname
+            ))
+        );
         // Compared without case or a trailing dot, either side.
         let dotted = names(&["a.example", "Pep.Example."]);
         assert_eq!(
-            url(derive_notify_url(Some(&dotted), None,
-                                  Some("PEP.example"), 9443)),
-            Some(("https://pep.example:9443/notify".to_string(),
-                  DerivedFrom::CertificateHostname)));
+            url(derive_notify_url(
+                Some(&dotted),
+                None,
+                Some("PEP.example"),
+                9443
+            )),
+            Some((
+                "https://pep.example:9443/notify".to_string(),
+                DerivedFrom::CertificateHostname
+            ))
+        );
         assert_eq!(
-            url(derive_notify_url(Some(&dotted), None,
-                                  Some("pep.example."), 9443)),
-            Some(("https://pep.example:9443/notify".to_string(),
-                  DerivedFrom::CertificateHostname)));
+            url(derive_notify_url(
+                Some(&dotted),
+                None,
+                Some("pep.example."),
+                9443
+            )),
+            Some((
+                "https://pep.example:9443/notify".to_string(),
+                DerivedFrom::CertificateHostname
+            ))
+        );
         // The hostname FIRST is still the hostname's rule.
         let first = names(&["xacml-pep", "other.example"]);
         assert_eq!(
-            url(derive_notify_url(Some(&first), None, Some("xacml-pep"),
-                                  9443)),
-            Some(("https://xacml-pep:9443/notify".to_string(),
-                  DerivedFrom::CertificateHostname)));
+            url(derive_notify_url(
+                Some(&first),
+                None,
+                Some("xacml-pep"),
+                9443
+            )),
+            Some((
+                "https://xacml-pep:9443/notify".to_string(),
+                DerivedFrom::CertificateHostname
+            ))
+        );
         // A hostname the certificate holds only as a wildcard or an IP
         // address is not matched: those stay skipped.
         let wild = names(&["*.example", "10.0.0.1", "pep-1.example"]);
         for host in ["*.example", "10.0.0.1"] {
             assert_eq!(
                 url(derive_notify_url(Some(&wild), None, Some(host), 9443)),
-                Some(("https://pep-1.example:9443/notify".to_string(),
-                      DerivedFrom::Certificate)), "{}", host);
+                Some((
+                    "https://pep-1.example:9443/notify".to_string(),
+                    DerivedFrom::Certificate
+                )),
+                "{}",
+                host
+            );
         }
         // From the certificate's first DNS name, when none is the
         // hostname: the first name a host can be.
-        let served = names(&["*.example", "10.0.0.1", "PEP.Example.",
-                             "other.example"]);
+        let served =
+            names(&["*.example", "10.0.0.1", "PEP.Example.", "other.example"]);
         assert_eq!(
-            url(derive_notify_url(Some(&served), Some("pep-1"),
-                                  Some("abc123"), 9443)),
-            Some(("https://pep.example:9443/notify".to_string(),
-                  DerivedFrom::Certificate)));
+            url(derive_notify_url(
+                Some(&served),
+                Some("pep-1"),
+                Some("abc123"),
+                9443
+            )),
+            Some((
+                "https://pep.example:9443/notify".to_string(),
+                DerivedFrom::Certificate
+            ))
+        );
         // From PEP_NAME, when the certificate names no DNS host.
         let none: Vec<String> = Vec::new();
         assert_eq!(
-            url(derive_notify_url(Some(&none), Some("xacml-pep"),
-                                  Some("abc123"), 9443)),
-            Some(("https://xacml-pep:9443/notify".to_string(),
-                  DerivedFrom::Name)));
+            url(derive_notify_url(
+                Some(&none),
+                Some("xacml-pep"),
+                Some("abc123"),
+                9443
+            )),
+            Some((
+                "https://xacml-pep:9443/notify".to_string(),
+                DerivedFrom::Name
+            ))
+        );
         // From the hostname, when PEP_NAME is not a DNS name or unset.
         for name in [Some("pep_1"), Some("a pep"), Some(""), None] {
             assert_eq!(
-                url(derive_notify_url(Some(&none), name, Some("4f1c0de"),
-                                      9555)),
-                Some(("https://4f1c0de:9555/notify".to_string(),
-                      DerivedFrom::Hostname)), "{:?}", name);
+                url(derive_notify_url(
+                    Some(&none),
+                    name,
+                    Some("4f1c0de"),
+                    9555
+                )),
+                Some((
+                    "https://4f1c0de:9555/notify".to_string(),
+                    DerivedFrom::Hostname
+                )),
+                "{:?}",
+                name
+            );
         }
         // Nothing usable at all, and no listener at all.
-        assert_eq!(derive_notify_url(Some(&none), Some("-x"), None, 9443),
-                   None);
-        assert_eq!(derive_notify_url(None, Some("xacml-pep"),
-                                     Some("host"), 9443), None,
-                   "no HTTPS certificate served, nothing advertised");
+        assert_eq!(
+            derive_notify_url(Some(&none), Some("-x"), None, 9443),
+            None
+        );
+        assert_eq!(
+            derive_notify_url(None, Some("xacml-pep"), Some("host"), 9443),
+            None,
+            "no HTTPS certificate served, nothing advertised"
+        );
     }
 
     /// THE FRESH INSTALL (#1760): the PEP reports its hostname, the
@@ -1324,25 +1650,47 @@ mod tests {
         // What the service names by default for a PEP registered as
         // remote-pep-1 with no notify URL: its name, then the hostname.
         let defaults = vec!["remote-pep-1".to_string(), reported.clone()];
-        let d = derive_notify_url(Some(&defaults), Some("remote-pep-1"),
-                                  Some("xacml-pep"), 9443).unwrap();
+        let d = derive_notify_url(
+            Some(&defaults),
+            Some("remote-pep-1"),
+            Some("xacml-pep"),
+            9443,
+        )
+        .unwrap();
         assert_eq!(d.url, "https://xacml-pep:9443/notify");
         assert_eq!(d.from, DerivedFrom::CertificateHostname);
         // Without it (an older service, or an older PEP) the defaults are
         // the name alone, and the derivation falls to it, as before.
         let before = vec!["remote-pep-1".to_string()];
-        assert_eq!(derive_notify_url(Some(&before), Some("remote-pep-1"),
-                                     Some("xacml-pep"), 9443).unwrap().url,
-                   "https://remote-pep-1:9443/notify");
+        assert_eq!(
+            derive_notify_url(
+                Some(&before),
+                Some("remote-pep-1"),
+                Some("xacml-pep"),
+                9443
+            )
+            .unwrap()
+            .url,
+            "https://remote-pep-1:9443/notify"
+        );
     }
 
     /// Only a DNS name is reported, as the service accepts.
     #[test]
     fn only_a_dns_hostname_is_reported() {
-        assert_eq!(reported_hostname_of(Some(" 4f1c0de2a3b4\n")),
-                   Some("4f1c0de2a3b4".to_string()));
-        for bad in [None, Some(""), Some("10.0.0.1"), Some("::1"),
-                    Some("a_b"), Some("123456"), Some("*.example")] {
+        assert_eq!(
+            reported_hostname_of(Some(" 4f1c0de2a3b4\n")),
+            Some("4f1c0de2a3b4".to_string())
+        );
+        for bad in [
+            None,
+            Some(""),
+            Some("10.0.0.1"),
+            Some("::1"),
+            Some("a_b"),
+            Some("123456"),
+            Some("*.example"),
+        ] {
             assert_eq!(reported_hostname_of(bad), None, "{:?}", bad);
         }
         let long = "a".repeat(254);
@@ -1351,12 +1699,23 @@ mod tests {
 
     #[test]
     fn a_dns_name_is_a_dns_name() {
-        for good in ["a", "xacml-pep", "pep.example.com", "pep.example.",
-                     "x1.y2"] {
+        for good in
+            ["a", "xacml-pep", "pep.example.com", "pep.example.", "x1.y2"]
+        {
             assert!(is_dns_name(good), "{}", good);
         }
-        for bad in ["", "*.example", "-a", "a-", "a..b", "a_b", "1.2.3.4",
-                    "a b", "pep:9443", "a".repeat(64).as_str()] {
+        for bad in [
+            "",
+            "*.example",
+            "-a",
+            "a-",
+            "a..b",
+            "a_b",
+            "1.2.3.4",
+            "a b",
+            "pep:9443",
+            "a".repeat(64).as_str(),
+        ] {
             assert!(!is_dns_name(bad), "{}", bad);
         }
     }
@@ -1376,28 +1735,38 @@ mod tests {
         assert_eq!(options.managed.source(row), "default");
         let derived = vec!["pep.example".to_string()];
         assert!(options.refresh_derived_notify(Some(&derived)));
-        assert_eq!(options.now().notify_url,
-                   "https://pep.example:9443/notify");
+        assert_eq!(options.now().notify_url, "https://pep.example:9443/notify");
         assert_eq!(options.managed.source(row), "derived");
-        assert_eq!(options.settings_report()["values"]["notifyUrl"],
-                   serde_json::json!({
+        assert_eq!(
+            options.settings_report()["values"]["notifyUrl"],
+            serde_json::json!({
                        "value": "https://pep.example:9443/notify",
-                       "source": "derived" }));
+                       "source": "derived" })
+        );
         // PEP_NOTIFY_URL wins over the derived one.
         options.notify_url = "https://by-env:9443/notify".to_string();
         options.managed = Arc::new(Held::with_env_set(&["PEP_NOTIFY_URL"]));
-        options.managed.set_derived_notify("https://pep.example:9443/notify");
+        options
+            .managed
+            .set_derived_notify("https://pep.example:9443/notify");
         assert_eq!(options.now().notify_url, "https://by-env:9443/notify");
         assert_eq!(options.managed.source(row), "environment");
         // And the service's wins over both.
-        options.managed.apply(Managed::parse("t", true, &serde_json::json!({
-            "notifyUrl": "https://by-service:9443/notify" })));
-        assert_eq!(options.now().notify_url,
-                   "https://by-service:9443/notify");
+        options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({
+            "notifyUrl": "https://by-service:9443/notify" }),
+        ));
+        assert_eq!(options.now().notify_url, "https://by-service:9443/notify");
         assert_eq!(options.managed.source(row), "service");
         // An empty one from the service is not set: the next one down.
-        options.managed.apply(Managed::parse("t", true, &serde_json::json!({
-            "notifyUrl": "" })));
+        options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({
+            "notifyUrl": "" }),
+        ));
         assert_eq!(options.now().notify_url, "https://by-env:9443/notify");
         assert_eq!(options.managed.source(row), "environment");
         // AN http PEP_NOTIFY_URL IS REJECTED: in force, so nothing is
@@ -1407,42 +1776,57 @@ mod tests {
         let now = options.now();
         assert_eq!(now.notify_url, "");
         assert_eq!(now.notify_rejected, "http://old:9090/notify");
-        assert_eq!(options.managed.derived_notify(),
-                   "https://pep.example:9443/notify",
-                   "a derived one is held, and still not used");
+        assert_eq!(
+            options.managed.derived_notify(),
+            "https://pep.example:9443/notify",
+            "a derived one is held, and still not used"
+        );
         assert_eq!(options.managed.source(row), "environment");
-        assert_eq!(options.settings_report()["values"]["notifyUrl"],
-                   serde_json::json!({ "value": "http://old:9090/notify",
+        assert_eq!(
+            options.settings_report()["values"]["notifyUrl"],
+            serde_json::json!({ "value": "http://old:9090/notify",
                                        "source": "environment",
-                                       "rejected": true }));
+                                       "rejected": true })
+        );
         // An https one from the service still wins over it.
-        options.managed.apply(Managed::parse("t", true, &serde_json::json!({
-            "notifyUrl": "https://by-service:9443/notify" })));
-        assert_eq!(options.now().notify_url,
-                   "https://by-service:9443/notify");
+        options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({
+            "notifyUrl": "https://by-service:9443/notify" }),
+        ));
+        assert_eq!(options.now().notify_url, "https://by-service:9443/notify");
         assert_eq!(options.now().notify_rejected, "");
         assert!(options.settings_report()["values"]["notifyUrl"]
-            .get("rejected").is_none());
+            .get("rejected")
+            .is_none());
         // AN http notifyUrl FROM THE SERVICE IS REJECTED TOO: the service's,
         // in force over a good PEP_NOTIFY_URL and the derived one, and
         // advertised as nothing.
         options.notify_url = "https://by-env:9443/notify".to_string();
-        options.managed.apply(Managed::parse("t", true, &serde_json::json!({
-            "notifyUrl": "http://by-service:9090/notify" })));
+        options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({
+            "notifyUrl": "http://by-service:9090/notify" }),
+        ));
         let now = options.now();
         assert_eq!(now.notify_url, "");
         assert_eq!(now.notify_rejected, "http://by-service:9090/notify");
         assert_eq!(options.managed.source(row), "service");
-        assert_eq!(options.settings_report()["values"]["notifyUrl"],
-                   serde_json::json!({
+        assert_eq!(
+            options.settings_report()["values"]["notifyUrl"],
+            serde_json::json!({
                        "value": "http://by-service:9090/notify",
-                       "source": "service", "rejected": true }));
+                       "source": "service", "rejected": true })
+        );
         // Unset at both, the derived one is advertised again.
         options.notify_url = String::new();
         options.managed = Arc::new(Held::default());
-        options.managed.set_derived_notify("https://pep.example:9443/notify");
-        assert_eq!(options.now().notify_url,
-                   "https://pep.example:9443/notify");
+        options
+            .managed
+            .set_derived_notify("https://pep.example:9443/notify");
+        assert_eq!(options.now().notify_url, "https://pep.example:9443/notify");
         assert_eq!(options.now().notify_rejected, "");
     }
 
@@ -1451,25 +1835,44 @@ mod tests {
     #[test]
     fn a_notify_url_that_is_not_https_is_rejected() {
         use crate::settings::{notify_rejected, Managed};
-        for bad in ["http://pep:9090/notify", "HTTP://pep/notify",
-                    " http://pep/notify ", "ftp://pep/notify", "pep:9443",
-                    "httpsx://pep/notify"] {
+        for bad in [
+            "http://pep:9090/notify",
+            "HTTP://pep/notify",
+            " http://pep/notify ",
+            "ftp://pep/notify",
+            "pep:9443",
+            "httpsx://pep/notify",
+        ] {
             assert!(notify_rejected(bad), "{}", bad);
         }
-        for good in ["", "  ", "https://pep:9443/notify",
-                     "HTTPS://pep:9443/notify"] {
+        for good in [
+            "",
+            "  ",
+            "https://pep:9443/notify",
+            "HTTPS://pep:9443/notify",
+        ] {
             assert!(!notify_rejected(good), "{:?}", good);
         }
         // From the service: rejected, not refused (no fallback named).
-        let managed = Managed::parse("t", true, &serde_json::json!({
-            "notifyUrl": "http://pep:9090/notify" }));
-        assert_eq!(managed.rejected_notify.as_deref(),
-                   Some("http://pep:9090/notify"));
+        let managed = Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({
+            "notifyUrl": "http://pep:9090/notify" }),
+        );
+        assert_eq!(
+            managed.rejected_notify.as_deref(),
+            Some("http://pep:9090/notify")
+        );
         assert!(managed.refused.is_empty());
         assert!(managed.str("notifyUrl").is_none());
         // An https one with a user name is still refused, as before.
-        let managed = Managed::parse("t", true, &serde_json::json!({
-            "notifyUrl": "https://u:p@pep/notify" }));
+        let managed = Managed::parse(
+            "t",
+            true,
+            &serde_json::json!({
+            "notifyUrl": "https://u:p@pep/notify" }),
+        );
         assert!(managed.rejected_notify.is_none());
         assert_eq!(managed.refused.len(), 1);
     }
@@ -1478,10 +1881,14 @@ mod tests {
     #[test]
     fn only_an_https_notify_url_is_advertised() {
         assert_eq!(advertised_notify_url(""), "");
-        assert_eq!(advertised_notify_url("https://pep:9443/notify"),
-                   "https://pep:9443/notify");
-        assert_eq!(advertised_notify_url("HTTPS://pep:9443/notify"),
-                   "HTTPS://pep:9443/notify");
+        assert_eq!(
+            advertised_notify_url("https://pep:9443/notify"),
+            "https://pep:9443/notify"
+        );
+        assert_eq!(
+            advertised_notify_url("HTTPS://pep:9443/notify"),
+            "HTTPS://pep:9443/notify"
+        );
         assert_eq!(advertised_notify_url("http://pep:9090/notify"), "");
         assert_eq!(advertised_notify_url("ftp://pep/notify"), "");
     }

@@ -5,21 +5,24 @@
 # File: deploy/aws/runner/pep-credential.sh
 #
 # ---------------------------------------------------------------------------
-# THE SUITE TASK'S FIRST CONTAINER: the remote PEP's client certificate.
+# THE SUITE TASK'S FIRST CONTAINER: the remote PEP's assertion key.
 #
 # What ./run-tests.sh's mintThePepCredential() does, for the task in
-# environment/runner.tf: wait for the load balancer, mint a Root, an Issuing
-# CA and a TLS client leaf with tests/tools/pep-credential.js (which adds the
-# Root through POST /admin-api/tls/trust/add), and leave them on the task's shared volume at
-# /shared/pep, with server/ made for the listener pair the job writes later.
+# environment/runner.tf: generate the key the PEP signs its RFC 7523
+# self-assertion and DPoP proofs with, and its certificate request, with
+# tests/tools/pep-credential.js --assertion --csr-only, and leave them on the
+# task's shared volume at /shared/pep, with server/ made for the listener
+# pair the job writes later. sts_xacml_remote_pep sends the request to
+# issue-pep-credential once it has made the PEP's entry in its realm.
 #
-# THE LEAF IS NOT STORED ON AN ENTRY HERE (#1061). An outside authority's
-# certificate is an identity only while it is stored in userCertificate on
-# the PEP's entry, and that entry lives in the realm sts_xacml_remote_pep
-# creates later; the job reads /shared/pep/pep.crt (beside
-# XACML_PEP_SERVER_CERT_DIR) and stores it itself before admitting the PEP.
+# NO CLIENT CERTIFICATE SINCE PHASE 4 OF #1827's FOLLOW-UP (rcbj,
+# 2026-11-16). Until then this also minted a Root, an Issuing CA and a TLS
+# client leaf (adding the Root through POST /admin-api/tls/trust/add, with a
+# management API token), named the PEP's CRL distribution point, and the job
+# stored the leaf on the PEP's entry. The PEP no longer presents a client
+# certificate, so none of that is done and the container needs no secret.
 #
-# A FAILURE IS NOT THE RUN'S: the PEP starts without a certificate, every
+# A FAILURE IS NOT THE RUN'S: the PEP starts without a key, every
 # /xacml/pep call it makes is refused, and sts_xacml_remote_pep says so. The
 # container exits 0 either way so the PEP's `COMPLETE` dependency is met.
 # ---------------------------------------------------------------------------
@@ -28,7 +31,6 @@ set -uo pipefail
 URL="${STS_SUITE_SERVICE_URL:?STS_SUITE_SERVICE_URL is required}"
 URL="${URL%/}"
 OUT=/shared/pep
-SUBJECT="${XACML_PEP_SUBJECT:-CN=remote-pep-1,OU=remote-peps,O=iya-sts}"
 
 mkdir -p "${OUT}/server"
 chmod 0777 "${OUT}" "${OUT}/server"
@@ -58,36 +60,18 @@ do
   sleep 5
 done
 
-# A PRODUCT-MODE SERVICE ACCEPTS AN ANCHOR ONLY THROUGH /admin-api
-# (2026-09-18), so the credential step mints the management API's token when
-# the task hands it the client secret; since #597 it is pep-credential.js's
-# only door, so without the secret there is no credential.
-if [ -n "${STS_ADMIN_API_CLIENT_SECRET:-}" ];
+# THE ASSERTION KEY AND ITS REQUEST (#1827's follow-up, phase 3): the PEP
+# signs its RFC 7523 self-assertion with it (PEP_ASSERTION_KEY), and
+# sts_xacml_remote_pep sends the request to issue-pep-credential once it has
+# made the PEP's entry in its realm, which does not exist yet here. The key
+# never leaves this volume. 0644: the PEP container is another user.
+if node tests/tools/pep-credential.js --assertion --csr-only --out="${OUT}" \
+     --name="${XACML_PEP_NAME:-remote-pep-1}" > /dev/null;
 then
-  STS_ADMIN_API_TOKEN="$(node tests/tools/admin-api-token.js "${URL}")" || \
-    STS_ADMIN_API_TOKEN=""
-  export STS_ADMIN_API_TOKEN
-fi
-
-# THE CREDENTIAL'S CRLs ARE SERVED BY THE PEP CONTAINER (#174): a product-mode
-# service refuses a chain whose CAs name no list, and this container exits
-# long before the chain is presented. The PEP shares this task's address (the
-# same one its PEP_NOTIFY_URL is built from, read from ${OUT}/task-ip above)
-# and serves ${OUT}/crl at /crl/.
-CRL_BASE_ARG=()
-if [ -n "${TASK_IP}" ];
-then
-  CRL_BASE_ARG=(--crl-base="http://${TASK_IP}:9090/crl")
-fi
-
-if node tests/tools/pep-credential.js --url="${URL}" --out="${OUT}" \
-     --subject="${SUBJECT}" "${CRL_BASE_ARG[@]}";
-then
-  # The PEP container runs as another user; this key lives for one run.
-  chmod 0644 "${OUT}/pep.key" 2>/dev/null || true
-  echo "pep-credential: minted ${SUBJECT} into ${OUT}."
+  chmod 0644 "${OUT}/pep-assertion.key" 2>/dev/null || true
+  echo "pep-credential: generated the assertion key and its request in ${OUT}."
 else
-  echo "pep-credential: the credential could not be minted; the PEP starts" \
-       "without one and sts_xacml_remote_pep will say so." >&2
+  echo "pep-credential: the assertion key could not be generated; the PEP" \
+       "cannot authenticate and sts_xacml_remote_pep will say so." >&2
 fi
 exit 0
