@@ -44,6 +44,32 @@
 // exists for, so its header is believed as it stands (`isRelayed()`).
 // The answer's `Set-Cookie` lines are still wrapped here: the relaying cell
 // copies them onto its response as they arrive, without translating them.
+//
+// A REQUEST A WORKER ANSWERS IS TRANSLATED BY THAT WORKER'S VIEW OF THE
+// REALM'S MODE, NOT THIS PROCESS'S (GitHub Actions run 43884417831, mariadb
+// mode). The names follow the realm's mode, and `config/set global.mode` is
+// answered by a request worker; this process learns of it from the change
+// log about a second later. Translating by its own view, it wrote a realm's
+// cookie unprefixed just after the realm went to product and then, caught
+// up, dropped that cookie as unprefixed on the next request: the EST nonce
+// cookie ("The request carried no EST nonce cookie") and a session cookie
+// (the sign-in screen again instead of a code), each within a second of the
+// switch. The worker that answers has the realm's mode as the read barrier
+// left it, and that barrier already makes a browser's request wait for an
+// administrator's write (`common/request_pool.js`, SHARED_KEY). So:
+//
+//   * this process still translates the header for itself (it routes on the
+//     session and pin cookies, and answers what it keeps), and keeps the
+//     header as it arrived on `req.stsWireCookie`;
+//   * the pool sends a worker that raw header and TLS_HEADER, which it strips
+//     from what a client sent, and the worker translates it (inWorker());
+//   * the worker says on PREFIX_HEADER whether its `Set-Cookie` lines are to
+//     be prefixed, and this process wraps them, or not, as told.
+//
+// HSTS stays here: only this process sees the socket, and a header a second
+// late on one answer costs nothing. A relayed request carries neither the
+// raw header nor the flag, so the worker leaves it alone and this process
+// wraps as before.
 // ---------------------------------------------------------------------------
 
 import workerThreads = require('worker_threads');
@@ -59,6 +85,13 @@ const SPARED = ['sts_pool', 'sts_pool_surfaces'];
 // The cookie this service writes as `__Secure-` whatever `authn.cookieDomain`
 // says: DBSC's site-scoped one.
 const SCOPED = /^sts_session_bound/;
+// From the front process to a worker: this request arrived over TLS, and its
+// `Cookie` header is as the browser sent it. Stripped from what a client sent
+// by `common/request_pool.js` before it is written.
+const TLS_HEADER = 'x-sts-wire-tls';
+// From a worker back to the front process: `1` where this answer's `Set-Cookie`
+// lines take the prefix, `0` where they do not. Never passed to the client.
+const PREFIX_HEADER = 'x-sts-wire-prefix';
 
 class CookieWire {
   // Hot path: every request and every Set-Cookie line. No Entering/Leaving
@@ -165,7 +198,61 @@ class CookieWire {
   }
 
   /**
-   * The middleware. In a worker it does nothing.
+   * Puts a request's `Cookie` header into the inside names, in place, where
+   * the realm's mode prefixes them.
+   *
+   * @param req - the request
+   * @param prefixes - whether the realm's mode prefixes cookies
+   */
+  // Hot path: every request. No Entering/Leaving pair — one would drown the
+  // log.
+  static unwrapRequest(req: any, prefixes: boolean): void {
+    if (!prefixes || !req.headers.cookie) {
+      return;
+    }
+    const header = CookieWire.unwrapHeader(req.headers.cookie,
+      !!config.value('authn.cookieDomain'));
+    if (header) {
+      req.headers.cookie = header;
+    } else {
+      delete req.headers.cookie;
+    }
+  }
+
+  /**
+   * The worker's half: a request the front process marked with TLS_HEADER is
+   * translated here, by this process's view of the realm's mode, and the
+   * answer tells the front on PREFIX_HEADER whether to prefix its cookies.
+   * Anything else is left alone. A method of its own so that a test can drive
+   * it from the main thread.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns whether the request was marked
+   */
+  // Hot path: every dispatched request. No Entering/Leaving pair — one would
+  // drown the log.
+  static inWorker(req: any, res: any): boolean {
+    const marked = req.headers[TLS_HEADER] === '1';
+    delete req.headers[TLS_HEADER];
+    if (!marked) {
+      return false;
+    }
+    const prefixes = mode.prefixesCookies();
+    CookieWire.unwrapRequest(req, prefixes);
+    // AT THE FLUSH, for `common/app.js`'s reason: a framework's error handler
+    // clears the headers set before it.
+    const writeHead = res.writeHead;
+    res.writeHead = function () {
+      res.setHeader(PREFIX_HEADER, prefixes ? '1' : '0');
+      return writeHead.apply(res, arguments);
+    };
+    return true;
+  }
+
+  /**
+   * The middleware. In a worker it translates only what the front process
+   * marked (inWorker()).
    *
    * @returns an express middleware
    */
@@ -173,42 +260,48 @@ class CookieWire {
     log.debug("Entering CookieWire.middleware().");
     log.debug("Leaving CookieWire.middleware().");
     return function cookieWire(req, res, next) {
-      if (!workerThreads.isMainThread ||
-          !(req.socket && req.socket.encrypted)) {
+      if (!workerThreads.isMainThread) {
+        CookieWire.inWorker(req, res);
+        return next();
+      }
+      if (!(req.socket && req.socket.encrypted)) {
         return next();
       }
       const prefixes = mode.prefixesCookies();
       const hsts = !mode.omitsStrictTransportSecurity();
-      if (prefixes && req.headers.cookie && !CookieWire.isRelayed(req)) {
-        const header = CookieWire.unwrapHeader(req.headers.cookie,
-          !!config.value('authn.cookieDomain'));
-        if (header) {
-          req.headers.cookie = header;
-        } else {
-          delete req.headers.cookie;
+      if (!CookieWire.isRelayed(req)) {
+        // For the pool, should a worker answer: see the header above.
+        req.stsWireTls = true;
+        req.stsWireCookie = req.headers.cookie;
+        CookieWire.unwrapRequest(req, prefixes);
+      }
+      // AT THE FLUSH, for `common/app.js`'s reason: a framework's error
+      // handler clears the headers set before it. Installed whatever this
+      // process thinks of the mode, because a worker's answer may say
+      // otherwise (`res.stsWirePrefix`, set by the pool).
+      const writeHead = res.writeHead;
+      res.writeHead = function () {
+        if (hsts) {
+          res.setHeader('Strict-Transport-Security', 'max-age=31536000' +
+            (config.value('security.hstsIncludeSubDomains')
+              ? '; includeSubDomains' : ''));
         }
-      }
-      if (prefixes || hsts) {
-        // AT THE FLUSH, for `common/app.js`'s reason: a framework's error
-        // handler clears the headers set before it.
-        const writeHead = res.writeHead;
-        res.writeHead = function () {
-          if (hsts) {
-            res.setHeader('Strict-Transport-Security', 'max-age=31536000' +
-              (config.value('security.hstsIncludeSubDomains')
-                ? '; includeSubDomains' : ''));
-          }
-          const lines = prefixes ? res.getHeader('Set-Cookie') : undefined;
-          if (lines !== undefined) {
-            res.setHeader('Set-Cookie',
-                          ([] as any[]).concat(lines).map(CookieWire.wrapLine));
-          }
-          return writeHead.apply(res, arguments);
-        };
-      }
+        const wrap = typeof res.stsWirePrefix === 'boolean'
+          ? res.stsWirePrefix : prefixes;
+        const lines = wrap ? res.getHeader('Set-Cookie') : undefined;
+        if (lines !== undefined) {
+          res.setHeader('Set-Cookie',
+                        ([] as any[]).concat(lines).map(CookieWire.wrapLine));
+        }
+        return writeHead.apply(res, arguments);
+      };
       return next();
     };
   }
+
+  static readonly TLS_HEADER = TLS_HEADER;
+
+  static readonly PREFIX_HEADER = PREFIX_HEADER;
 }
 
 export = CookieWire;

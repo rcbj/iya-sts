@@ -1260,6 +1260,13 @@ class WebAnswers {
       return '/admin/applications?' + new URLSearchParams({
         application: String(answer.application.identifier) }).toString();
     }
+    // A PERSON DELETED (2026-11-16) has no page left to come back to: the
+    // list the page was reached from, without the person.
+    if (page === '/admin/users' && action === 'delete') {
+      at.searchParams.delete('user');
+      const query = at.searchParams.toString();
+      return '/admin/users' + (query ? '?' + query : '');
+    }
     if (page === '/admin/groups' && answer.dn &&
         (action === 'create' || action === 'add-member')) {
       at.searchParams.set('group', String(answer.dn));
@@ -1500,6 +1507,22 @@ class WebAnswers {
                        ? via.concat([{ label: pep, href: back }])
                        : via },
                html: WebAnswers.pepCertificate(answer, t) };
+    }
+    // A PEP'S ASSERTION KEY CERTIFIED FROM ITS OWN REQUEST (#1827's
+    // follow-up, phase 3): the certificate, its kid and urn, and the
+    // environment the PEP is started with. No private key is in it — this
+    // service never had one — so the page is drawn once for the reader to
+    // copy the environment, not to save a secret.
+    if (page === '/admin/xacml/peps' &&
+        action === 'issue-pep-credential' && answer.ok &&
+        answer.certificatePem) {
+      const title = t.text('consoleAnswers.once.pepCredential');
+      return { title: title,
+               active: '/admin/xacml',
+               up: { href: '/admin/xacml', leaf: title,
+                     via: [{ label: t.text('console.nav.xacml-peps'),
+                             href: '/admin/xacml#xacml-tab-peps' }] },
+               html: WebAnswers.pepCredential(answer, back, t) };
     }
     // A JOIN THAT DISCARDED A PEP'S OWN CONFIGURATION (#1760): the
     // documents it held, offered once as a download, since the PEP no
@@ -2060,6 +2083,47 @@ class WebAnswers {
       '<p>' + t.html('consoleAnswers.pep.anchor') + '</p><pre>' +
       kit.esc(result.anchorPem) + '</pre>' +
       WebAnswers.backButton('/admin/xacml#xacml-tab-peps',
+                            t.text('consoleAnswers.pep.back'));
+  }
+
+  /**
+   * A remote PEP's RFC 7523 assertion key, certified from its own request
+   * (#1827's follow-up, phase 3): the certificate and the environment. No
+   * private key: this service never had it.
+   *
+   * @param result - `issue-pep-credential`'s answer
+   * @param back - the page the form was on
+   * @param t - optional; the translator, the default when left out
+   * @returns the HTML
+   */
+  static pepCredential(result: Json, back: string, t?: Json): string {
+    t = t || kit.context().t;
+    const env = result.environment || {};
+    const lines = ['PEP_NAME=' + String(env.PEP_NAME || result.pep || ''),
+                   'PEP_CLIENT_ID=' + String(env.PEP_CLIENT_ID || ''),
+                   'PEP_ASSERTION_KEY=' +
+                   t.text('consoleAnswers.pepCredential.keyPath')].join('\n');
+    const file = String(result.pep || 'pep') + '-assertion.crt';
+    return kit.note('<p>' + kit.esc(result.what) + '</p>') +
+      '<table><tr><th>PEP</th><td><code>' + kit.esc(result.pep) +
+      '</code></td></tr><tr><th>' + t.html('consoleAnswers.realm') +
+      '</th><td><code>' + kit.esc(result.realm) + '</code></td></tr>' +
+      '<tr><th>' + t.html('consoleAnswers.pepCredential.urn') +
+      '</th><td><code>' + kit.esc(result.urn) + '</code></td></tr>' +
+      '<tr><th>kid</th><td><code>' + kit.esc(result.kid) +
+      '</code></td></tr><tr><th>' + t.html('consoleAnswers.serial') +
+      '</th><td><code>' + kit.esc(result.serialHex) + '</code></td></tr>' +
+      '<tr><th>' + t.html('consoleAnswers.validUntil') + '</th><td>' +
+      kit.esc(result.notAfter) + '</td></tr></table>' +
+      '<p>' + t.html('consoleAnswers.pepCredential.env') + '</p><pre>' +
+      kit.esc(lines) + '</pre>' +
+      '<p>' + t.html('consoleAnswers.pepCredential.chain') + '</p>' +
+      '<p><a class="btn" download="' + kit.esc(file) + '" href="' +
+      kit.esc('data:application/x-pem-file;base64,' +
+              kit.base64Utf8(String(result.fullChainPem || ''))) + '">' +
+      t.html('consoleAnswers.pepCredential.download') + '</a></p><pre>' +
+      kit.esc(result.fullChainPem) + '</pre>' +
+      WebAnswers.backButton(back || '/admin/xacml#xacml-tab-peps',
                             t.text('consoleAnswers.pep.back'));
   }
 

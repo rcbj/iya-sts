@@ -152,7 +152,8 @@ function request(port, method, urlPath, cred, body, headers) {
 
 // The members each closed answer may hold.
 const CLOSED = {
-  basic: ['valid', 'sub', 'username', 'retryAfterS', 'ticket'],
+  basic: ['valid', 'sub', 'username', 'ticket'],
+  tooMany: ['error', 'error_description', 'retryAfterS'],
   introspect: ['active', 'sub', 'username', 'scope', 'client_id', 'aud',
                'iss', 'exp', 'iat', 'token_type', 'cnf'],
   saml: ['valid', 'subject', 'username', 'issuer', 'notOnOrAfter',
@@ -402,6 +403,13 @@ async function childBody() {
       public: true }] }, 'STS-XACML-0193'],
     ['a path with no leading slash', { routes: [{ id: 'a', path: 'a',
       public: true }] }, 'STS-XACML-0193'],
+    // #1830: the proxy's own prefix, which an updated PEP refuses whole.
+    ['the reserved prefix itself', { routes: [{ id: 'a', path: '/.iya-pep',
+      public: true }] }, 'STS-XACML-0300'],
+    ['the reserved callback', { routes: [{ id: 'a',
+      path: '/.iya-pep/callback', public: true }] }, 'STS-XACML-0300'],
+    ['a path under the reserved prefix', { routes: [{ id: 'a',
+      path: '/.iya-pep/x/y', public: true }] }, 'STS-XACML-0300'],
     ['match glob', { routes: [{ id: 'a', path: '/a', match: 'glob',
       public: true }] }, 'STS-XACML-0194'],
     ['an unknown method', { routes: [{ id: 'a', path: '/a',
@@ -502,6 +510,13 @@ async function childBody() {
     { publicBaseUrl: 'http://xacml-pep:9180' }));
   t.check(devClear.ok, 'A5. in development it is accepted',
           JSON.stringify(devClear));
+  // A6 (#1830): only the prefix and what is under it are reserved.
+  const nearReserved = pepProxy.validate(Object.assign(example(), {
+    routes: [{ id: 'a', path: '/.iya-peps', public: true },
+             { id: 'b', path: '/x/.iya-pep', public: true }] }));
+  t.check(nearReserved.ok,
+          'A6. /.iya-peps and /x/.iya-pep are not the reserved prefix',
+          JSON.stringify(nearReserved));
 
   // -------------------------------------------------------------------------
   // THE STACK: a realm, a remote PEP's credential, a listener.
@@ -624,6 +639,10 @@ async function childBody() {
   // -------------------------------------------------------------------------
   // B. THE REGISTER CARRIES THE ATTRIBUTE.
   // -------------------------------------------------------------------------
+  // The PEP below authenticates by its certificate, an operator's opt-in
+  // since phase 4 of #1827's follow-up made xacml.pepAuthentication
+  // default to `token`. Process-wide, so the realm falls back to it.
+  config.setOverride('xacml.pepAuthentication', 'either');
   let r = await request(port, 'POST', PREFIX + '/xacml/pep/register',
                         pepCred, { version: 'test' });
   t.check(r.status === 201 || r.status === 200,
@@ -876,6 +895,18 @@ async function childBody() {
           !r.json.proxy && /does not validate/.test(r.json.note),
           'C9. a stored value that does not validate is pulled as ' +
           'configured: false', brief(r));
+  // C9b (#1830): a document stored before the reserved prefix was refused
+  // fails the same validation, and is pulled as configured: false.
+  const storedReserved = Object.assign(example(), {
+    routes: [{ id: 'cb', path: '/.iya-pep/callback', public: true }] });
+  inRealm(function () {
+    peps.setProxy(NAME, JSON.stringify(storedReserved));
+  });
+  r = await request(port, 'GET', PULL, pepCred);
+  t.check(r.status === 200 && r.json && r.json.configured === false &&
+          !r.json.proxy && /does not validate/.test(r.json.note),
+          'C9b. a stored route under /.iya-pep/ is pulled as configured: ' +
+          'false (STS-XACML-0200 in the log)', brief(r));
 
   // -------------------------------------------------------------------------
   // D. THE FOUR VALIDATION DOORS.
@@ -1766,12 +1797,26 @@ async function childBody() {
   t.check(refusedIn(productCatalogue) ===
             'proxyUpstreamInsecure,proxyRpAllowInsecure' &&
           refusedIn(devCatalogue) === '' &&
-          devCatalogue.settings.length === 25 &&
+          // 25, and since #1827 the four decision-record settings.
+          devCatalogue.settings.length === 29 &&
+          ['auditEnabled', 'auditIntervalMs', 'auditBatch', 'auditBuffer']
+            .every(function (key) {
+              return devCatalogue.settings.some(function (one) {
+                return one.key === key;
+              });
+            }) &&
           devCatalogue.bootstrap.map(function (one) {
             return one.env;
           }).indexOf('PEP_PDP_URL') >= 0 &&
+          ['PEP_CLIENT_ID', 'PEP_ASSERTION_KEY', 'PEP_AUDIT_CLIENT_ID']
+            .every(function (env) {
+              return devCatalogue.bootstrap.map(function (one) {
+                return one.env;
+              }).indexOf(env) >= 0;
+            }) &&
           devCatalogue.precedence.join(',') === 'service,environment,default',
-          'S10. the catalogue names the 25 settings, the bootstrap ' +
+          'S10. the catalogue names the 29 settings (the four decision-' +
+          'record ones among them), the bootstrap ' +
           'environment and the precedence; refusedInProduct follows the mode',
           refusedIn(productCatalogue) + ' / ' + refusedIn(devCatalogue));
   // Kept across a registration and a heartbeat; the report held to its
@@ -2185,6 +2230,7 @@ async function childBody() {
   const leaf = issuedL.json && issuedL.json.certificatePem
     ? new nodeCrypto.X509Certificate(issuedL.json.certificatePem) : null;
   t.check(issuedL.status === 200 && issuedL.json.issued === true &&
+          !('ok' in issuedL.json) &&
           issuedL.headers['cache-control'] === 'no-store' &&
           !/PRIVATE KEY/.test(issuedL.text) && leaf &&
           leaf.publicKey.export({ type: 'spki', format: 'pem' }) ===
@@ -2197,6 +2243,14 @@ async function childBody() {
           'L9. the listener\'s certificate certifies the PEP\'s own key, ' +
           'names the definition\'s names and not the request\'s, with its ' +
           'chain, no-store and no key', brief(issuedL));
+  // L9b. THE ANSWER IS THE MODEL'S (#1830): closed, so the internal `ok`
+  // it carried until then would fail here.
+  const certWrong = require('./tools/pep_model').problems(
+    'pep-control-plane.json', 'postListenerCertificate', issuedL.status,
+    issuedL.json);
+  t.check(certWrong.length === 0,
+          'L9b. the listener certificate\'s 200 is the model\'s answer, ' +
+          'with no ok member', certWrong.join('; '));
   const againL = await request(port, 'POST', CERT, pepCred,
                                { listener: 'pub', csr: csrPem });
   t.check(againL.status === 200 && againL.json.issued === false &&
@@ -2605,8 +2659,9 @@ async function childBody() {
     }
   }
   t.check(blocked && blocked.status === 429 && blocked.json &&
-          blocked.json.valid === false && blocked.json.retryAfterS > 0 &&
-          closedTo(blocked.json, 'basic') &&
+          blocked.json.error === 'too_many_requests' &&
+          blocked.json.retryAfterS > 0 &&
+          closedTo(blocked.json, 'tooMany') &&
           Number(blocked.headers['retry-after']) > 0,
           'G3. product: past the sign-in door\'s limit it is 429 with ' +
           'retryAfterS', blocked ? brief(blocked) : 'never blocked');

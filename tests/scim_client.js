@@ -42,7 +42,9 @@
 //      group's members changed by PATCH add and PATCH remove by value;
 //   M. a 409 uniqueness adopts the resource found by EXTERNALID (a linked
 //      id gone, the resource re-created there under another id); a 409
-//      without uniqueness is a dead letter, nothing adopted;
+//      without uniqueness is a dead letter, nothing adopted; and a User found
+//      by userName whose externalId is another entry's — a deleted person's,
+//      left deactivated — is not adopted by a namesake (STS-SCIMC-0035);
 //   N. a required enterprise extension is sent (empty); any other required
 //      extension is a dead letter naming it (STS-SCIMC-0029); the required
 //      attributes (STS-SCIMC-0030); a replace clears what the entry lost
@@ -1058,6 +1060,41 @@ async function adoption(t, base, ca) {
           /409/.test(dead[0].why) && !userNamed('frank' + RUN),
           'M2. a 409 without uniqueness is a dead letter, nothing adopted',
           JSON.stringify(dead));
+  // M3 (2026-11-16, #1612's rule): a person deleted, their User left there
+  // deactivated, and a person made again under the name. The userName
+  // clashes, and the User found by it carries the deleted person's
+  // externalId, so it is not adopted.
+  const gina = 'hana' + RUN;
+  ldap.createUser(gina, { attributes: { givenName: 'Hana', sn: 'Bell' } });
+  await drain();
+  const deletedUuid = uuidOf(gina);
+  const kept = userNamed(gina);
+  ldap.deletePerson('uid=' + gina + ',' + ldap.usersDn());
+  await drain();
+  ldap.createUser(gina, { attributes: { givenName: 'Hana', sn: 'Ross' } });
+  const namesakeUuid = uuidOf(gina);
+  await drain(3);
+  const there = Object.keys(sp.users).map(function (k) {
+    return sp.users[k];
+  }).filter(function (r) {
+    return r.body.userName === gina;
+  });
+  const refused = deadOf(id).filter(function (one) {
+    return one.errorCode === 'STS-SCIMC-0035';
+  });
+  t.check(!!kept && deletedUuid !== namesakeUuid && there.length === 1 &&
+          there[0].id === kept.id &&
+          String(there[0].body.externalId).toLowerCase() === deletedUuid &&
+          there[0].body.active === false &&
+          !(there[0].body.name && there[0].body.name.familyName === 'Ross') &&
+          refused.length === 1,
+          'M3. a 409 uniqueness does not adopt the User found by userName ' +
+          'when its externalId is another entry\'s (a deleted person\'s, ' +
+          'left deactivated): a dead letter, STS-SCIMC-0035, and that User ' +
+          'is untouched',
+          JSON.stringify({ there: there, refused: refused,
+                           deletedUuid: deletedUuid,
+                           namesakeUuid: namesakeUuid }));
   await act({ action: 'remove-client', id: id });
   log.debug('Leaving adoption().');
 }

@@ -402,7 +402,9 @@ async fn service(
         match (user, pass) {
             ("locked", _) => (
                 StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({ "error": "blocked", "retryAfterS": 30 })),
+                Json(json!({ "error": "too_many_requests",
+                        "error_description": "locked out",
+                        "retryAfterS": 30 })),
             ),
             (_, "right") => (
                 StatusCode::OK,
@@ -544,17 +546,21 @@ async fn service(
                     }
                     "carol".into()
                 }
+                // The service's refusal envelope (`identityRefusal()`):
+                // no code is ever in it (#1830).
                 _ => {
                     return (
                         StatusCode::UNPROCESSABLE_ENTITY,
-                        Json(json!({ "code": "STS-XACML-0235" })),
+                        Json(json!({ "error": "invalid_request",
+                            "error_description": "unusable evidence" })),
                     )
                 }
             };
             if who == "denied" {
                 return (
                     StatusCode::FORBIDDEN,
-                    Json(json!({ "code": "STS-XACML-0234" })),
+                    Json(json!({ "error": "access_denied",
+                        "error_description": "refused" })),
                 );
             }
             match route.as_str() {
@@ -3661,4 +3667,218 @@ async fn a_first_answer_that_holds_nothing_is_404_not_503() {
     // A failed later pull keeps what was received: still 404.
     h.sync.receive_proxy(&json!({ "configured": true }), None);
     assert_eq!(h.get("/public/page").send().await.unwrap().status(), 404);
+}
+
+/// THE PROXY'S DECISION RECORDS (#1827): one per request that reached its
+/// route's authorization — forwarded, refused by the policy, refused by
+/// authentication — with the route, the status, the person by username and
+/// the path without its query; none for a path no route matches, and none
+/// while no configuration has been received (`STS-XPEP-0118`).
+#[tokio::test]
+async fn queues_a_record_for_each_request_its_route_decided() {
+    let h = harness().await;
+    let audit = h.proxied.audit();
+    let r = h
+        .get("/api/x?token=s3cret")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = h
+        .get("/api/x")
+        .basic_auth("mallory", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let r = h
+        .get("/api/x")
+        .basic_auth("alice", Some("wrong"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    let r = h.get("/nowhere-at-all").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let records = audit.queued_for_test();
+    assert_eq!(records.len(), 3, "{:?}", records);
+
+    let allowed = &records[0];
+    assert_eq!(
+        (
+            allowed.kind.as_str(),
+            allowed.route.as_deref(),
+            allowed.status
+        ),
+        ("proxy", Some("api"), Some(200))
+    );
+    assert!(allowed.allowed && !allowed.fault);
+    assert_eq!(allowed.decision, "Permit");
+    assert_eq!(
+        (
+            allowed.subject.as_str(),
+            allowed.resource.as_str(),
+            allowed.action.as_str()
+        ),
+        ("alice", "/api/x", "GET")
+    );
+    assert_eq!(allowed.policies, ["t"]);
+    assert_eq!(allowed.code, "");
+    let sent = serde_json::to_string(allowed).unwrap();
+    assert!(!sent.contains("s3cret"), "no query string: {}", sent);
+    assert!(!sent.contains("right"), "no credential: {}", sent);
+
+    let refused = &records[1];
+    assert_eq!((refused.status, refused.allowed), (Some(403), false));
+    assert_eq!(refused.code, "STS-XPEP-0086");
+    assert_eq!(refused.subject, "mallory");
+    assert!(!refused.decision.is_empty() && refused.decision != "Permit");
+    assert!(!refused.why.is_empty() && !refused.fault);
+
+    let unauthenticated = &records[2];
+    assert_eq!(unauthenticated.status, Some(401));
+    assert_eq!(unauthenticated.subject, "", "nobody was established");
+    assert_eq!(unauthenticated.decision, "", "no policy was asked");
+    assert!(unauthenticated.code.starts_with("STS-XPEP-"));
+    // A record's members on the wire: the twenty, and route and status.
+    let wire = serde_json::to_value(unauthenticated).unwrap();
+    assert_eq!(wire.as_object().unwrap().len(), 22);
+
+    // NOT CONFIGURED YET: a 503, and no record.
+    let waiting = harness_unconfigured(|_| {}).await;
+    let r = waiting
+        .get("/api/x")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 503);
+    assert!(waiting.proxied.audit().queued_for_test().is_empty());
+}
+
+/// THE PROXY'S OWN ANSWERS ARE THE MODEL'S (#1830): the JSON the proxy's
+/// fixed paths and its refusal envelope give, read by the types
+/// `models/pep/pep_proxy.tsp` generates into `sts-model-pep`, whose objects
+/// are closed.
+#[tokio::test]
+async fn the_proxy_s_answers_are_the_model_s() {
+    use sts_model_pep::pep_proxy::{components, read_answer};
+    let h = harness().await;
+    let held = |operation: &str, status: u16, body: &Value| {
+        let read = read_answer(operation, status, body);
+        assert!(
+            matches!(read, Some(Ok(()))),
+            "{}: {:?}\n{}",
+            operation,
+            read,
+            body
+        );
+    };
+    let out = h.get("/.iya-pep/logout").send().await.unwrap();
+    assert_eq!(out.status(), 200);
+    held("getLogout", 200, &out.json().await.unwrap());
+    let accounts = h.accounts_of("").await;
+    held("getAccounts", 200, &accounts);
+    for path in ["/nowhere", "/api/x"] {
+        let refused = h
+            .get(path)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .unwrap();
+        assert!(refused.status().is_client_error(), "{}", path);
+        let body: Value = refused.json().await.unwrap();
+        let read: Result<components::Refusal, _> =
+            serde_json::from_value(body.clone());
+        assert!(read.is_ok(), "{}: {}", path, body);
+    }
+}
+
+/// THE PROXY'S OWN PATHS (#1830): the callback and the sign-out take GET
+/// and HEAD and refuse any other method 405 with `Allow`, through the
+/// refusal envelope; and `/.iya-pep/` is the proxy's whole, so a path
+/// under it that is none of its pages is 404 even under a prefix route at
+/// `/` that would otherwise forward it.
+#[tokio::test]
+async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
+    use sts_model_pep::pep_proxy::components;
+    let h = harness().await;
+    for (method, path, code) in [
+        (reqwest::Method::POST, "/.iya-pep/callback?state=s", "0132"),
+        (reqwest::Method::PUT, "/.iya-pep/callback", "0132"),
+        (reqwest::Method::POST, "/.iya-pep/logout", "0133"),
+        (reqwest::Method::DELETE, "/.iya-pep/logout", "0133"),
+    ] {
+        let r = h
+            .http
+            .request(method.clone(), format!("{}{}", h.proxy, path))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 405, "{} {}", method, path);
+        assert_eq!(r.headers()["allow"], "GET, HEAD", "{} {}", method, path);
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body["error"], "method_not_allowed");
+        let read: Result<components::Refusal, _> =
+            serde_json::from_value(body.clone());
+        assert!(read.is_ok(), "{}: {}", path, body);
+        assert!(
+            !proxy::logged::holding(&format!("STS-XPEP-{}", code)).is_empty(),
+            "{} is logged",
+            code
+        );
+    }
+    // HEAD is the sign-out's GET.
+    let r = h
+        .http
+        .head(format!("{}/.iya-pep/logout", h.proxy))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    // A prefix route at `/` takes every path but the proxy's own.
+    let before = hits(&h);
+    let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
+    let mut doc = configuration(&h.upstream_base, &h.service_base, &cert);
+    doc["proxy"]["routes"].as_array_mut().unwrap().push(json!({
+        "id": "everything",
+        "path": "/",
+        "match": "prefix",
+        "methods": ["GET", "HEAD", "POST"],
+        "authorization": public_on("t")
+    }));
+    h.sync.receive_proxy(&doc, None);
+    let r = h.get("/elsewhere/page").send().await.unwrap();
+    assert_eq!(r.status(), 200, "the route at / forwards");
+    assert_eq!(hits(&h), before + 1);
+    for path in [
+        "/.iya-pep/nothing",
+        "/.iya-pep/",
+        "/.iya-pep",
+        "/.iya-pep/accounts-x",
+    ] {
+        let r = h
+            .get(path)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 404, "{}", path);
+        let body: Value = r.json().await.unwrap();
+        assert_eq!(body["error"], "not_found", "{}", path);
+    }
+    let r = h
+        .http
+        .post(format!("{}/.iya-pep/logo.png", h.proxy))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404, "the logo's other methods are reserved too");
+    assert_eq!(
+        hits(&h),
+        before + 1,
+        "nothing under /.iya-pep/ went upstream"
+    );
+    assert!(!proxy::logged::holding("STS-XPEP-0134").is_empty());
 }

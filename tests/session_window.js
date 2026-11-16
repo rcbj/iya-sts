@@ -978,6 +978,45 @@ async function upgradedElsewhereCase(t) {
   log.debug("Leaving upgradedElsewhereCase().");
 }
 
+// RUN #325'S CELLS MODE (2026-11-16, `sts_jar_admin_client`). A row another
+// process wrote is read when its change-log page is prepared and applied
+// later; a sign-in this process committed in between left its slot clean,
+// and the arrival read before it was admitted over the sign-in — the next
+// request here found the session not live (STS-AUTHN-0346).
+async function staleAfterCommitCase(t) {
+  log.debug("Entering staleAfterCommitCase().");
+  t.log.info('on: a row read before a local sign-in committed does not ' +
+             'put the arrival back over it');
+  freshWindow();
+  const rows = arrivalAndSignIn('stale-after-commit');
+  authn.sessions.set(rows.signedIn.id, rows.signedIn);
+  await minted.flush();
+  t.equal(sessionWindow.slotState(REALM, rows.signedIn.id).pinned, false,
+          'the local sign-in committed, and its slot is clean');
+  answer.read = { body: sealSession(rows.arrival) };
+  await minted.applyChange({ key: changeKey(rows.arrival.id), realm: REALM });
+  const read = sessionWindow.get(REALM, rows.arrival.id);
+  t.check(read.ok && liveSignOn(read.session),
+          'THE STALE ARRIVAL IS MERGED, NOT ADMITTED: the session is still ' +
+          'the live sign-in', JSON.stringify(read.session || read));
+  t.equal(read.ok && read.session.lastSeenAt, 500,
+          'and the arriving row\'s later lastSeenAt is kept');
+
+  // The other way round: a clean arrival here still takes a sign-in made
+  // elsewhere.
+  freshWindow();
+  const up = arrivalAndSignIn('clean-upgraded');
+  authn.sessions.set(up.arrival.id, up.arrival);
+  await minted.flush();
+  answer.read = { body: sealSession(up.signedIn) };
+  await minted.applyChange({ key: changeKey(up.arrival.id), realm: REALM });
+  const upgraded = sessionWindow.get(REALM, up.arrival.id);
+  t.check(upgraded.ok && liveSignOn(upgraded.session),
+          'and a clean arrival still becomes a sign-in made elsewhere',
+          JSON.stringify(upgraded.session || upgraded));
+  log.debug("Leaving staleAfterCommitCase().");
+}
+
 async function restoreCase(t) {
   log.debug("Entering restoreCase().");
   t.log.info('on: restore does not load session bodies');
@@ -1474,6 +1513,7 @@ async function onHalf(t) {
   await dirtyCase(t);
   await dirtyClientCase(t);
   await upgradedElsewhereCase(t);
+  await staleAfterCommitCase(t);
   await restoreCase(t);
   upgradeCase(t);
   partialWalkCase(t);

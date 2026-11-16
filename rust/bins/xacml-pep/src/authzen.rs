@@ -55,6 +55,7 @@ use sts_xacml::model::{Decision, StatusCode};
 use sts_xacml::pdp::{AttributeResolver, EvaluationOptions};
 use sts_xacml::request::{Response, Status};
 
+use crate::audit::{self, Record};
 use crate::authzen_map::{self, Trusted};
 use crate::enforce::Enforcer;
 use crate::listener::Transport;
@@ -172,19 +173,20 @@ pub fn endpoint_name(path: &str) -> &'static str {
 /// HTTP scheme to name).
 pub fn admit(
     options: &Options,
-    asks_for_certificates: bool,
+    verifies_certificates: bool,
     transport: &Transport,
     callers: &Callers,
     endpoint: &str,
 ) -> Result<Caller, Reply> {
-    if !asks_for_certificates {
+    if !verifies_certificates {
         return Err(Reply::error(
             401,
             "STS-XPEP-0039",
             "This edge PDP authenticates its caller by a client certificate \
-             (mutual TLS) on its HTTPS listener, and it is configured with \
-             no authority to verify one against (PEP_AUTHZEN_CLIENT_CA), so \
-             it admits nobody.",
+             (mutual TLS), and the listener this request arrived on asks \
+             for none it can verify (no PEP_AUTHZEN_CLIENT_CA or trust \
+             anchors, or its tuning asks for no certificate), so it admits \
+             nobody here.",
         ));
     }
     let peer = match (&transport.peer, transport.https) {
@@ -537,7 +539,8 @@ async fn forward_to(
         headers.push(("X-Request-ID", id));
     }
     let answer = client
-        .call_with(
+        .call_authorized_with(
+            crate::credential::Resource::Access,
             reqwest::Method::POST,
             EVALUATION_PATH,
             Some(Body::Json(forwarded_body(body, application))),
@@ -666,9 +669,21 @@ impl Pep {
             );
         }
         let callers = self.sync.callers();
+        // THE LISTENER THE REQUEST ARRIVED ON (#1830): an HTTPS listener
+        // admits by a certificate only if ITS acceptor asked for one and
+        // verifies it — the environment's listener's client CA says
+        // nothing about a listener the service defined, or one whose tuning
+        // asks for none. A plain-HTTP request has no certificate to ask
+        // about, and is answered as it always was: by whether the
+        // environment's HTTPS listener could admit it (0035), or not (0039).
+        let verifies = if transport.https {
+            transport.verifies_client_certificates
+        } else {
+            self.listener.verifies_client_certificates()
+        };
         let caller = match admit(
             &self.options,
-            self.listener.asks_for_client_certificates(),
+            verifies,
             transport,
             &callers,
             endpoint_name(if batch {
@@ -864,8 +879,9 @@ impl Pep {
         Reply::decision(json!({ "evaluations": out }))
     }
 
-    /// Decides one evaluation for an admitted caller, and records it — the
-    /// container's record being a log line, since it has no audit log.
+    /// Decides one evaluation for an admitted caller, and records it — a
+    /// log line, and (unless it was FORWARDED, which the service recorded
+    /// itself) a decision record sent to the service's audit log (#1827).
     async fn evaluate_one(
         &self,
         body: &Value,
@@ -892,7 +908,9 @@ impl Pep {
             }
         };
         // THE SERVICE'S TO DECIDE (#564, P7): forwarded, never answered
-        // from the root, and counted and logged here like any other.
+        // from the root, and counted and logged here like any other — but
+        // NOT queued for the service's audit log (#1827): the service
+        // decided it and wrote its own row under the same request id.
         if forwards(catalogue, &application) {
             let timeout = self.options.now().authzen_forward_timeout_ms;
             let one = forward_to(
@@ -1048,6 +1066,41 @@ impl Pep {
                 )
             }
         );
+        // THE RECORD FOR THE SERVICE carries what the line carries and
+        // nothing more: the subject is "" because its id is the caller's.
+        self.audit.record(Record {
+            at: sts_core::time::iso_now(),
+            kind: "authzen".into(),
+            decision: if outcome.fault {
+                String::new()
+            } else {
+                outcome.xacml_decision.clone()
+            },
+            allowed: outcome.decision,
+            fault: outcome.fault,
+            code: code.to_string(),
+            resource: evaluation.resource_type.clone(),
+            action: evaluation.action_name.clone(),
+            bias: Bias::DenyBiased.as_str().to_string(),
+            why: if outcome.fault {
+                outcome.why.clone()
+            } else {
+                String::new()
+            },
+            policies: answer
+                .policy_identifiers
+                .iter()
+                .map(|p| audit::policy_name(&p.id, &p.version))
+                .collect(),
+            discharged: outcome.discharged.clone(),
+            undischargeable: outcome.undischargeable.clone(),
+            caller: caller.name.clone(),
+            application: application.clone(),
+            subject_type: evaluation.subject_type.clone(),
+            endpoint: endpoint.to_string(),
+            request_id: batch_id.to_string(),
+            ..Record::default()
+        });
         if outcome.fault {
             tracing::error!("{}{} {}", tag(code), line, outcome.why);
             return ItemResult::failed(
@@ -1099,6 +1152,7 @@ mod tests {
             https: true,
             remote: None,
             crl_only: false,
+            verifies_client_certificates: true,
             peer: Some(Peer {
                 sha256: sha256.to_string(),
                 subject: "CN=pep".into(),
@@ -1345,6 +1399,65 @@ mod tests {
         assert_eq!(out["context"]["region"], "eu");
     }
 
+    /// THE WIRE IS THE MODEL'S (#1830): every request the shared cases say
+    /// this edge accepts reads as `models/pep/pep_authzen.tsp`'s
+    /// `EvaluationRequest`, and the decision, a batch's failed item and an
+    /// error, as this file builds them, read as its answers.
+    #[test]
+    fn the_wire_is_the_model_s() {
+        use crate::authzen_map::{outcome, reasons};
+        use crate::enforce::Enforcer;
+        use crate::options::Bias;
+        use sts_model_pep::pep_authzen::{components, read_answer, read_body};
+        use sts_xacml::request::{Response, Status};
+        let cases = crate::authzen_map::tests::shared_cases();
+        let mut accepted = 0;
+        for case in cases["requests"].as_array().unwrap() {
+            if case["code"] != "" {
+                continue;
+            }
+            accepted += 1;
+            let read = read_body("postEvaluation", &case["body"]);
+            assert!(
+                matches!(read, Some(Ok(()))),
+                "{}: {:?}",
+                case["what"],
+                read
+            );
+        }
+        assert!(accepted > 0, "the shared cases accept some requests");
+        let answer = Response {
+            decision: Decision::Permit,
+            status: Status {
+                code: sts_xacml::model::StatusCode::Ok,
+                message: None,
+            },
+            obligations: Vec::new(),
+            advice: Vec::new(),
+            policy_identifiers: Vec::new(),
+        };
+        let enforced = Enforcer::new(Bias::DenyBiased)
+            .enforce(answer.decision, &answer.obligations);
+        let decided = outcome(&answer, &enforced, false);
+        for body in [
+            answer_of(decided.decision, None),
+            answer_of(decided.decision, Some(reasons(&decided))),
+        ] {
+            let read = read_answer("postEvaluation", 200, &body);
+            assert!(matches!(read, Some(Ok(()))), "{}: {:?}", body, read);
+        }
+        let failed = Reply::error(400, "STS-AUTHZEN-0001", "not an object");
+        let batch = json!({ "evaluations": [
+            answer_of(true, Some(reasons(&decided))),
+            { "decision": false, "context": { "error": failed.body["error"] } }
+        ] });
+        let read = read_answer("postEvaluations", 200, &batch);
+        assert!(matches!(read, Some(Ok(()))), "{}: {:?}", batch, read);
+        let error: Result<components::Error, _> =
+            serde_json::from_value(failed.body.clone());
+        assert!(error.is_ok(), "{}", failed.body);
+    }
+
     fn answered(status: u16, body: Value) -> Answer {
         Answer {
             status,
@@ -1581,6 +1694,116 @@ mod tests {
             forward_to(&nowhere, &ask("read"), "payments", "", 1000).await;
         assert_eq!((down.status, down.code), (502, "STS-XPEP-0055"));
         assert!(!down.decision);
+    }
+
+    /// The decision records (#1827): an evaluation decided HERE is queued
+    /// with what its log line carries and no id the caller sent; one
+    /// FORWARDED to the service is not, because the service recorded it.
+    #[tokio::test]
+    async fn queues_what_it_decides_and_not_what_it_forwards() {
+        use axum::routing::post;
+        use std::sync::Arc;
+
+        let router = axum::Router::new().route(
+            "/access/v1/evaluation",
+            post(|| async { axum::Json(json!({ "decision": true })) }),
+        );
+        let socket =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            // A failure to serve shows as the forward below failing.
+            if let Err(error) = axum::serve(socket, router).await {
+                eprintln!("the mock service stopped: {}", error);
+            }
+        });
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = format!("http://127.0.0.1:{}", port);
+        options.audit_enabled = true;
+        let client = PdpClient::new(&options).unwrap();
+        let sync =
+            Arc::new(crate::sync::Sync::new(client.clone(), options.clone()));
+        let pep = crate::service::Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            crate::pip::RemotePip::new(client, false),
+            Arc::new(crate::listener::HttpsListener::new(
+                "", "", 0, 5000, None,
+            )),
+        );
+        let audit = pep.audit.clone();
+        let catalogue = Catalogue {
+            fga_applications: Arc::new(vec!["payments".to_string()]),
+            ..Catalogue::default()
+        };
+        let caller = Caller {
+            name: "edge-caller".into(),
+            applications: vec!["payments".into(), "todo-app".into()],
+        };
+        let ask = |application: &str| {
+            json!({ "subject": { "type": "user", "id": "alice" },
+                    "action": { "name": "read" },
+                    "resource": { "type": "document", "id": "d1" },
+                    "context": { "application": application } })
+        };
+        let forwarded = pep
+            .evaluate_one(
+                &ask("payments"),
+                &caller,
+                &catalogue,
+                "r-1",
+                EVALUATION_PATH,
+            )
+            .await;
+        assert!(forwarded.error.is_none() && forwarded.decision);
+        assert_eq!(audit.overview()["queued"], 0, "a forward is not queued");
+        let here = pep
+            .evaluate_one(
+                &ask("todo-app"),
+                &caller,
+                &catalogue,
+                "r-2",
+                EVALUATION_PATH,
+            )
+            .await;
+        assert!(here.error.is_none() && !here.decision);
+        assert_eq!(audit.overview()["queued"], 1);
+        let record = audit.queued_for_test();
+        assert_eq!(record.len(), 1);
+        let one = &record[0];
+        assert_eq!(
+            (one.kind.as_str(), one.decision.as_str(), one.allowed),
+            ("authzen", "NotApplicable", false)
+        );
+        assert_eq!(
+            (
+                one.subject.as_str(),
+                one.resource.as_str(),
+                one.action.as_str()
+            ),
+            ("", "document", "read")
+        );
+        assert_eq!(
+            (
+                one.caller.as_str(),
+                one.application.as_str(),
+                one.subject_type.as_str(),
+                one.request_id.as_str(),
+                one.endpoint.as_str(),
+                one.bias.as_str()
+            ),
+            (
+                "edge-caller",
+                "todo-app",
+                "user",
+                "r-2",
+                EVALUATION_PATH,
+                "deny-biased"
+            )
+        );
+        let sent = serde_json::to_string(one).unwrap();
+        assert!(!sent.contains("alice") && !sent.contains("d1"));
     }
 
     #[test]

@@ -1062,6 +1062,23 @@ section of `tests/scim_client.js`:
 * a 409 ADOPTS only on `scimType` `uniqueness`; any other 409 is a dead
   letter — adopting a resource on a conflict the provider did not call
   uniqueness would be overwriting somebody else's resource on a guess;
+* **and never ANOTHER ENTRY'S resource (2026-11-16, #1612's rule: a person
+  deleted and made again under the same name inherits nothing).** A person
+  deleted under `deprovision: deactivate` leaves their User there, inactive,
+  with their `entryUUID` as `externalId`; a person made again under the name
+  has a new one, so the externalId search finds nothing, the `userName`
+  search found the deleted person's User, and the PUT handed it — and
+  everything the service provider kept under it — to the namesake. `create()`
+  now compares: a resource found by `userName` or `displayName` whose
+  `externalId` is set and is not this entry's is not adopted, not deleted (the
+  operator chose to keep it) and not retried — a dead letter,
+  `STS-SCIMC-0035`; the operator removes it there, or chooses
+  `deprovision: delete`. A resource with NO `externalId` is adopted as before:
+  one somebody made there, which no entry ever claimed. A resource carrying
+  ANOTHER client's `externalId` is refused the same way, which it should
+  always have been — RFC 7643 section 3.1 makes `externalId` the client's
+  own identifier. Nothing linked changes: a person already linked is found
+  by the link and never reaches the search (`tests/scim_client.js` M3);
 * a REQUIRED extension from `/ResourceTypes` is honoured: the enterprise one is
   added, empty if need be (RFC 7643 section 4.3 requires none of its
   attributes), and any other is a dead letter naming it (`STS-SCIMC-0029`) —

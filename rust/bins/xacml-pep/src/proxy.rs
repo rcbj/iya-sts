@@ -73,7 +73,7 @@ use sts_core::log::tag;
 use tokio::net::TcpListener;
 
 use crate::identity::{self, Jar, Jars, Tokens};
-use crate::listener::{peer_of, HttpsListener, Transport};
+use crate::listener::{peer_of, ClientAuth, HttpsListener, Transport};
 use crate::listener_pool::{drive, ListenerRuntime};
 use crate::pdp_client::PdpClient;
 use crate::proxy_auth::{self, Authenticator, Identity, Refusal};
@@ -91,6 +91,8 @@ use crate::service::Pep;
 use crate::sync::encode;
 use oidc_caep_risc::{AuthorizeOptions, EndSessionOptions};
 
+/// Every path under it is the proxy's own (#1830): its pages, or 404.
+pub const RESERVED_PREFIX: &str = crate::proxy_config::RESERVED_PREFIX;
 pub const CALLBACK_PATH: &str = "/.iya-pep/callback";
 pub const LOGOUT_PATH: &str = "/.iya-pep/logout";
 /// SEVERAL ACCOUNTS IN ONE BROWSER (#1760): the chooser and its acts.
@@ -136,6 +138,48 @@ struct Asked<'a> {
     /// Who the request was established as, once it was: the page's
     /// *Signed in as*.
     who: String,
+    /// The request's decision record (#1827), filled in as it is answered;
+    /// `None` where a refusal is not about the request being answered.
+    note: Option<&'a Mutex<Noted>>,
+}
+
+/// WHAT A PROXIED REQUEST'S DECISION RECORD SAYS (#1827), filled in as the
+/// request is answered and queued once it is. Only a request that reached
+/// its route's authorization is recorded (`decided`): one to a route that
+/// takes its method, from the moment it matched — refused by the
+/// application's state, by authentication or by the policy, or forwarded.
+/// NOT the 503 before the first configuration (`STS-XPEP-0118`), a path
+/// refused or matching no route, a method the route does not take, a body
+/// too large, a redirect to sign in, the proxy's own pages (the logo, the
+/// start page, `/.iya-pep/*`): none of those is a decision about access.
+#[derive(Debug, Default)]
+struct Noted {
+    decided: bool,
+    route: String,
+    method: String,
+    /// The normalised path: never the query string, which can carry a
+    /// secret.
+    path: String,
+    /// The person the request was established as, by username: never a
+    /// token, a cookie or a session id.
+    subject: String,
+    decision: String,
+    policy: String,
+    bias: String,
+    code: String,
+    why: String,
+    incident: String,
+}
+
+/// Changes the note, if there is one; a poisoned lock is taken back.
+fn noting(note: Option<&Mutex<Noted>>, change: impl FnOnce(&mut Noted)) {
+    if let Some(note) = note {
+        let mut noted = match note.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        change(&mut noted);
+    }
 }
 
 /// A mechanism's outcome.
@@ -562,6 +606,11 @@ impl Proxy {
         } else {
             String::new()
         };
+        noting(asked.note, |n| {
+            n.code = refusal.code.to_string();
+            n.why = refusal.why.clone();
+            n.incident = incident.clone();
+        });
         // A 5xx, and a route whose policy is not held, are the operator's
         // to see; a refusal of the request itself is information.
         let warn = refusal.status >= 500 || refusal.code == "STS-XPEP-0117";
@@ -625,7 +674,9 @@ impl Proxy {
             }
         }
         if refusal.status == 405 {
-            if let Some(route) = asked.route {
+            if let Some(allow) = refusal.allow {
+                headers.insert(header::ALLOW, HeaderValue::from_static(allow));
+            } else if let Some(route) = asked.route {
                 if let Ok(v) = HeaderValue::from_str(&route.methods.join(", "))
                 {
                     headers.insert(header::ALLOW, v);
@@ -733,7 +784,60 @@ impl Proxy {
         }
     }
 
+    /// The decision records' queue, for a test (#1827).
+    #[cfg(test)]
+    pub fn audit(&self) -> Arc<crate::audit::Audit> {
+        self.pep.audit.clone()
+    }
+
+    /// One request answered, and — when it reached its route's
+    /// authorization — its decision record queued for the service (#1827).
     async fn answer(&self, request: Request<Body>) -> (Response<Body>, bool) {
+        let note = Mutex::new(Noted::default());
+        let (response, forwarded) = self.answer_noted(request, &note).await;
+        let noted = match note.into_inner() {
+            Ok(noted) => noted,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if noted.decided {
+            self.record(noted, response.status().as_u16(), forwarded);
+        }
+        (response, forwarded)
+    }
+
+    /// A proxied request's decision record: `allowed` is whether it was
+    /// forwarded, and a `fault` is a 5xx of the proxy's own, never one the
+    /// application answered.
+    fn record(&self, noted: Noted, status: u16, forwarded: bool) {
+        self.pep.audit.record(crate::audit::Record {
+            at: sts_core::time::iso_now(),
+            kind: "proxy".into(),
+            decision: noted.decision,
+            allowed: forwarded,
+            fault: !forwarded && status >= 500,
+            code: noted.code,
+            subject: noted.subject,
+            resource: noted.path,
+            action: noted.method,
+            bias: noted.bias,
+            why: noted.why,
+            policies: if noted.policy.is_empty() {
+                Vec::new()
+            } else {
+                vec![noted.policy]
+            },
+            request_id: noted.incident,
+            route: Some(noted.route),
+            status: Some(status),
+            ..crate::audit::Record::default()
+        });
+    }
+
+    async fn answer_noted(
+        &self,
+        request: Request<Body>,
+        note: &Mutex<Noted>,
+    ) -> (Response<Body>, bool) {
         let (parts, body) = request.into_parts();
         let transport = parts
             .extensions
@@ -751,6 +855,7 @@ impl Proxy {
             route: None,
             html: wants_html(&parts.headers),
             who: String::new(),
+            note: Some(note),
         };
         let path = match normalise_path(&raw_path) {
             Ok(path) => path,
@@ -799,11 +904,38 @@ impl Proxy {
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
         };
+        // THE CALLBACK AND THE SIGN-OUT ARE GET (#1830): what a provider
+        // redirects with and what a link sends, and HEAD with it. Any other
+        // method is 405 with `Allow`, through the refusal envelope; the
+        // callback's state is not looked up, so it is not spent.
+        let gets = method == "GET" || method == "HEAD";
+        if path == CALLBACK_PATH && !gets {
+            let refusal = Refusal {
+                allow: Some("GET, HEAD"),
+                ..Refusal::new(
+                    405,
+                    "STS-XPEP-0132",
+                    "the sign-in callback takes GET and HEAD only",
+                )
+            };
+            return (self.refuse(&refusal, &asked, &pulled), false);
+        }
         if path == CALLBACK_PATH {
             let answer = self
                 .callback(query.as_deref(), &pulled, &transport, &asked)
                 .await;
             return (answer, false);
+        }
+        if path == LOGOUT_PATH && !gets {
+            let refusal = Refusal {
+                allow: Some("GET, HEAD"),
+                ..Refusal::new(
+                    405,
+                    "STS-XPEP-0133",
+                    "the sign-out takes GET and HEAD only",
+                )
+            };
+            return (self.refuse(&refusal, &asked, &pulled), false);
         }
         if path == LOGOUT_PATH {
             return (self.logout(&parts.headers, &pulled, &transport), false);
@@ -832,6 +964,21 @@ impl Proxy {
                 .await;
             return (answer, false);
         }
+        // `/.iya-pep/` IS THE PROXY'S, WHOLE (#1830): a path under it that
+        // is none of the proxy's own is 404 here and never reaches the route
+        // table, so a prefix route at `/` cannot forward it upstream. The
+        // configuration refuses a route there too (`proxy_config.rs`).
+        if path == RESERVED_PREFIX.trim_end_matches('/')
+            || path.starts_with(RESERVED_PREFIX)
+        {
+            let refusal = Refusal::new(
+                404,
+                "STS-XPEP-0134",
+                "the path is under /.iya-pep/, which is the proxy's own, and \
+                 is none of its pages",
+            );
+            return (self.refuse(&refusal, &asked, &pulled), false);
+        }
         let Some(route) = config.route_for(&path) else {
             if front_door(&method, &path, asked.html) {
                 return (self.front_page(), false);
@@ -856,6 +1003,15 @@ impl Proxy {
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
+        // FROM HERE THE REQUEST IS ABOUT ACCESS TO THE ROUTE, and is
+        // recorded however it ends (#1827), save the two exits below.
+        noting(Some(note), |n| {
+            n.decided = true;
+            n.route = route.id.clone();
+            n.method = method.clone();
+            n.path = path.clone();
+            n.policy = route.authorization.policy.clone();
+        });
         // D10: the route's application as the service resolved it at the
         // pull. Not usable (deleted, or no longer qualifying) is refused,
         // never admitted on what an earlier pull said.
@@ -894,6 +1050,8 @@ impl Proxy {
                 "STS-XPEP-0067",
                 "the request body is larger than maxBodyBytes",
             );
+            // A size limit, not a decision about access: not recorded.
+            noting(Some(note), |n| n.decided = false);
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
         let identity = if route.is_public() {
@@ -916,7 +1074,12 @@ impl Proxy {
                 Established::Refused(refusal) => {
                     return (self.refuse(&refusal, &asked, &pulled), false)
                 }
-                Established::Answer(response) => return (response, false),
+                Established::Answer(response) => {
+                    // A redirect to sign in, or the proxy's own page: the
+                    // decision comes when the person returns.
+                    noting(Some(note), |n| n.decided = false);
+                    return (response, false);
+                }
             }
         };
         // EVERY ROUTE IS DECIDED IN XACML, BY ITS OWN POLICY (#1760), a
@@ -935,6 +1098,13 @@ impl Proxy {
             .pep
             .decide_proxy(subject, resource, action, &authorization.policy)
             .await;
+        noting(Some(note), |n| {
+            n.subject = subject.to_string();
+            if let Some((decision, outcome)) = &decided {
+                n.decision = decision.as_str().to_string();
+                n.bias = outcome.bias.as_str().to_string();
+            }
+        });
         let Some((decision, outcome)) = decided else {
             // Whatever the bias: a route whose policy is missing is not a
             // NotApplicable, and a permit-biased PEP admitting it would
@@ -984,6 +1154,12 @@ impl Proxy {
         {
             Ok(delivery) => delivery,
             Err(refusal) => {
+                // The refusal the session's end answers for, noted before
+                // the page that ends it is drawn.
+                noting(Some(note), |n| {
+                    n.code = refusal.code.to_string();
+                    n.why = refusal.why.clone();
+                });
                 if let Some(ended) = self
                     .ended_behind(
                         &refusal,
@@ -1502,6 +1678,7 @@ impl Proxy {
                     route: Some(route),
                     html: wants_html(headers),
                     who: String::new(),
+                    note: None,
                 },
                 pulled,
             )),
@@ -2743,6 +2920,7 @@ pub async fn serve_on(
                 peer: None,
                 remote: Some(remote),
                 crl_only: false,
+                verifies_client_certificates: false,
             };
             let cfg = job.http();
             drive(stream, tower_service(proxy, transport), cfg, false, job)
@@ -2771,7 +2949,7 @@ pub async fn serve_https(
         let Ok((stream, remote)) = listener.accept().await else {
             continue;
         };
-        let Some(acceptor) = https.current() else {
+        let Some((acceptor, client_auth)) = https.current_served() else {
             continue;
         };
         let proxy = proxy.clone();
@@ -2792,6 +2970,8 @@ pub async fn serve_https(
                 peer: peer_of(tls.ssl()),
                 remote: Some(remote),
                 crl_only: false,
+                verifies_client_certificates: client_auth
+                    == ClientAuth::Verifying,
             };
             drive(tls, tower_service(proxy, transport), cfg, offer_h2, job)
                 .await;

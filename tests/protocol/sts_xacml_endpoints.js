@@ -522,6 +522,24 @@ function pepRequest(method, url, identity, payload, rawBody) {
           // whole rather than as a parse failure.
           body = null;
         }
+        // `POST /xacml/pip` ANSWERS EVERY REFUSAL AS A <PIPError> (#1830) —
+        // the gate's 403 and the off switches' 501 as well as its own —
+        // so its two members are read out of the XML into the shape the
+        // assertions below read from every other door, with `xml: true`
+        // saying where they came from.
+        const pipError = body === null ? /<PIPError\b[^>]*\berror="([^"]*)"[^>]*>\s*<Description>([\s\S]*?)<\/Description>/
+          .exec(text) : null;
+        if (pipError) {
+          const unescape = function (value) {
+            log.debug("Entering unescape().");
+            log.debug("Leaving unescape().");
+            return value.replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+              .replace(/&quot;/g, "\"").replace(/&apos;/g, "'")
+              .replace(/&amp;/g, "&");
+          };
+          body = { error: unescape(pipError[1]),
+                   error_description: unescape(pipError[2]), xml: true };
+        }
         log.debug("Leaving pepRequest(). status=" + response.statusCode);
         // `type` as well, because the fetch-based `get()` reports it and the
         // one assertion that reads it — GET /xacml must be HTML for a person —
@@ -1126,6 +1144,49 @@ async function anUndischargeableObligationRefuses() {
 // cheap enough to be the contract — and THE PULL IS THE CONTRACT is the claim
 // the whole remote-PEP design rests on.
 // ===========================================================================
+// ---------------------------------------------------------------------------
+// THE SAME PULL ON THE PEP'S OWN KEY (#1827's follow-up, phase 3). The
+// admitted PEP's entry is given an RFC 7523 key this job generates — only
+// its certificate request is sent, through issue-pep-credential — and the
+// pull is made on the DPoP-bound token that key earns through
+// `sts-remote-pep`, with no client certificate: the same answer as the
+// certificate's. `xacml.pepAuthentication` is `either` here
+// (`aCertificateIsAnOptIn()`).
+// ---------------------------------------------------------------------------
+async function aRemotePepPullsOnItsKey() {
+  log.debug("Entering aRemotePepPullsOnItsKey().");
+  log.info("=== What a remote PEP pulls, on its own key ===");
+  const key = await credentials.assertionRequest({ keyAlg: "ec-p256",
+                                                   name: PEP_CN });
+  const issued = await credentials.issueAssertionCredential(
+    { post: postJson }, base, "/realm/" + REALM, PEP_CN, key.csrPem);
+  check("issue-pep-credential certifies the PEP's own key as urn:sts:sa:",
+        function () {
+    assert.strictEqual(issued.urn, "urn:sts:sa:" + PEP_CN);
+  });
+  const got = await credentials.pepAccessToken(realmUrl(""), PEP_CN,
+    key.privateKeyPem, "xacml:pep", "/xacml/pep");
+  assert.ok(got.status === 200 && got.token,
+    "the PEP's self-assertion grant answered " + got.status + " " +
+    String(got.text).slice(0, 300));
+  const where = realmUrl("/xacml/pep/policies");
+  const r = await fetchJson(where, { headers: credentials.dpopHeaders(
+    key.privateKeyPem, "GET", where, got.token) });
+  check("the pull on the PEP's DPoP-bound token answers the enabled " +
+        "policies, with no certificate", function () {
+    assert.strictEqual(r.status, 200, "the pull answered " + r.status + " " +
+                       String(r.text).slice(0, 300));
+    assert.strictEqual((r.body.policies || []).length, 1);
+    assert.strictEqual(r.body.root, POLICY);
+  });
+  // The key is taken off again: the realm is left standing, and a key whose
+  // private half was a variable in this process protects nothing.
+  await postJson(api("/pki/revoke"), { target: "person",
+    identifier: PEP_CN, purpose: "jwt", handle: issued.kid,
+    reason: "cessationOfOperation" });
+  log.debug("Leaving aRemotePepPullsOnItsKey().");
+}
+
 async function aRemotePepPulls() {
   log.debug("Entering aRemotePepPulls().");
   log.info("=== What a remote PEP pulls ===");
@@ -1702,6 +1763,9 @@ async function turningItOff() {
           "xacml.remotePeps") > 0,
         "and the 501 should name the setting AND say that the register is " +
         "untouched; it says: " + r.body.error_description);
+      // The PIP's 501 is its own XML (#1830), every other door's JSON.
+      assert.strictEqual(!!r.body.xml, path === "/xacml/pip",
+        method + " " + path + " answered its 501 as " + r.type);
     });
   }
   const stillDeciding = await decisionFor(ADMIN_PERSON, "GET");
@@ -1735,6 +1799,9 @@ async function turningItOff() {
       assert.ok(String(r.body.error_description).indexOf("xacml.enabled") > 0,
         "the 501 should name xacml.enabled; it says: " +
         r.body.error_description);
+      // The PIP's 501 is its own XML (#1830), every other door's JSON.
+      assert.strictEqual(!!r.body.xml, path === "/xacml/pip",
+        method + " " + path + " answered its 501 as " + r.type);
     });
   }
 
@@ -1974,6 +2041,10 @@ async function theGateSplitsOnTheRole() {
                   .indexOf("client certificate") > 0,
         "and the refusal should say what to present; it says " +
         JSON.stringify(anonymous.body).slice(0, 300));
+      // The PIP's 403 is its own XML (#1830), every other door's JSON.
+      assert.strictEqual(!!(anonymous.body && anonymous.body.xml),
+        path === "/xacml/pip",
+        method + " " + path + " answered its 403 as " + anonymous.type);
     });
 
     const stranger = await drive(method, path, rogue);
@@ -2345,6 +2416,49 @@ async function admitTheCertificates() {
   log.debug("Leaving admitTheCertificates().");
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE AT THE PEP DOOR IS AN OPERATOR'S OPT-IN (#1827's follow-up,
+// phase 4, rcbj 2026-11-16). `xacml.pepAuthentication` defaults to `token`,
+// so the admitted PEP's certificate alone is refused (401, STS-XACML-0289)
+// and the refusal names `either`, the setting an upgraded deployment whose
+// PEPs still present a certificate needs. THIS JOB'S SUBJECT IS THE
+// CERTIFICATE DOOR, so it then sets `either` in its realm — an opt-in that
+// stays for good — and every section after drives the door as it always
+// did; `aRemotePepPullsOnItsKey()` drives the token beside it.
+// ---------------------------------------------------------------------------
+async function aCertificateIsAnOptIn() {
+  log.debug("Entering aCertificateIsAnOptIn().");
+  log.info("=== A certificate at the PEP door is an operator's opt-in ===");
+  const peps = await get(api("/xacml/peps"));
+  check("xacml.pepAuthentication is token by default", function () {
+    assert.strictEqual(peps.status, 200,
+      "GET /admin-api/xacml/peps answered " + peps.status);
+    assert.strictEqual(peps.body.pepAuthentication, "token",
+      "the realm reports pepAuthentication " +
+      JSON.stringify(peps.body.pepAuthentication));
+  });
+  const refused = await pepGet("/xacml/pep/policies");
+  check("under the default the admitted certificate alone is refused, " +
+        "naming either", function () {
+    assert.strictEqual(refused.status, 401,
+      "the certificate-only pull answered " + refused.status + " " +
+      String(refused.text).slice(0, 300));
+    assert.ok(/under either/.test(String(refused.text)) &&
+              /PEP_ASSERTION_KEY/.test(String(refused.text)),
+      "the refusal should say that either accepts the certificate and name " +
+      "the assertion key; it says " + String(refused.text).slice(0, 400));
+  });
+  await setSetting("xacml.pepAuthentication", "either");
+  const admitted = await pepGet("/xacml/pep/policies");
+  check("and under either, the operator's opt-in, it is admitted",
+        function () {
+    assert.strictEqual(admitted.status, 200,
+      "the certificate's pull under either answered " + admitted.status +
+      " " + String(admitted.text).slice(0, 300));
+  });
+  log.debug("Leaving aCertificateIsAnOptIn().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving IYA STS's XACML endpoints at " + base + "/xacml");
@@ -2366,6 +2480,7 @@ async function test() {
   try {
     await createThePeople();
     await admitTheCertificates();
+    await aCertificateIsAnOptIn();
     await theGateSplitsOnTheRole();
     await theSurfaceDescribesItself();
     await anEmptyRepositoryDecidesNothing();
@@ -2373,6 +2488,7 @@ async function test() {
     await aMalformedRequestIsRefused();
     await anUndischargeableObligationRefuses();
     await aRemotePepPulls();
+    await aRemotePepPullsOnItsKey();
     await registeringAPep();
     await aSaveDoesNotWaitOnTheNudge();
     await thePipAnswersInXacmlsOwnXml();

@@ -9810,6 +9810,55 @@ class Credentials {
     return held || null;
   }
 
+  // A DELETED PERSON'S CEREMONIES GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). The pending authenticator-app secret and the pending security-key
+  // challenge are keyed by the NAME, so a person made again under it inside
+  // their lifetime (`authn.pendingTtlS`, minutes) could finish the deleted
+  // one's enrolment — a secret, or a key bound to the deleted entry's user
+  // handle, written onto the new entry. The directory's one person delete
+  // (`removePersonEntry()`) calls this. Two keys, and the administrators'
+  // ceremonies (`pendingAdminKeys`, keyed by both names) walked for either
+  // name: that store holds only ceremonies begun in the last few minutes,
+  // which `sweepPendingAdminKeys()` walks on every read already, so the
+  // cost is theirs and not the directory's. A re-homing keeps them.
+  /**
+   * Forgets every enrolment pending for a deleted person: the authenticator
+   * app, their security key, and an administrator's ceremony for them or by
+   * them.
+   *
+   * @param username - the deleted person's name
+   * @returns how many were pending
+   */
+  forgetPending(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.forgetPending().");
+    const name = String(username || '').trim().toLowerCase();
+    if (!name) {
+      log.debug("Leaving Credentials.forgetPending(). Nobody named.");
+      return 0;
+    }
+    let gone = 0;
+    [pendingTotp, pendingKeys].forEach(function (store) {
+      if (store.has(name)) {
+        gone += 1;
+      }
+      store.delete(name);
+    });
+    const admin: string[] = [];
+    pendingAdminKeys.forEach(function (value, key) {
+      const parts = String(key).split('\n');
+      if (parts[0] === name || parts[1] === name) {
+        admin.push(String(key));
+      }
+    });
+    admin.forEach(function (key) {
+      pendingAdminKeys.delete(key);
+    });
+    gone += admin.length;
+    log.debug("Leaving Credentials.forgetPending(). " + gone);
+    return gone;
+  }
+
   /**
    * Forgets a pending security key enrolment.
    *
@@ -12904,6 +12953,7 @@ export = {
   beginKeyEnrolment: slot.forward('beginKeyEnrolment'),
   pendingKeyEnrolmentFor: slot.forward('pendingKeyEnrolmentFor'),
   abandonKeyEnrolment: slot.forward('abandonKeyEnrolment'),
+  forgetPending: slot.forward('forgetPending'),
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
   // Upgrading a classical passkey to an ML-DSA one (#939).
   keyUpgradeHistory: Credentials.keyUpgradeHistory,

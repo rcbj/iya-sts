@@ -49,8 +49,8 @@ pub struct Options {
     /// [`plain_http`] for the precedence and the notices.
     pub http: PlainHttp,
     /// `PEP_CRL_HTTP` (2026-11-14): `Some(true)` or `Some(false)` as set,
-    /// `None` unset (the default: bind the CRL-only listener when `http`
-    /// is off and `crl_dir` exists), and the unreadable text, if any.
+    /// `None` unset (the default, since phase 4 of #1827's follow-up: the
+    /// CRL-only listener is NOT bound), and the unreadable text, if any.
     pub crl_http: (Option<bool>, Option<String>),
     pub poll_interval_ms: u64,
     pub heartbeat_interval_ms: u64,
@@ -58,8 +58,12 @@ pub struct Options {
     pub backoff_max_ms: u64,
     pub timeout_ms: u64,
     pub max_body_bytes: usize,
-    pub client_certificate: Option<Vec<u8>>,
-    pub client_key: Option<Vec<u8>>,
+    /// `PEP_TLS_CERT` and `PEP_TLS_KEY` as set, never read as files
+    /// (phase 4 of #1827's follow-up): the PEP presents no client
+    /// certificate to the service, so they are kept only to say so once
+    /// at start (`STS-XPEP-0135`). `PEP_TLS_KEY` is still the fallback
+    /// assertion key (`assertion_key`).
+    pub retired_client_certificate: RetiredClientCertificate,
     /// Where this PEP's own credential's CRLs are, served at `/crl/<name>`.
     pub crl_dir: Option<PathBuf>,
     pub pdp_ca: Option<Vec<u8>>,
@@ -137,6 +141,100 @@ pub struct Options {
     pub log_level: String,
     /// What the service set (#1760), shared by every clone.
     pub managed: Arc<Held>,
+    /// The decision records shipped to the service (#1827): `PEP_AUDIT`,
+    /// on by default; `false` queues nothing and starts no loop.
+    pub audit_enabled: bool,
+    /// How often the queue is shipped, `PEP_AUDIT_INTERVAL_MS`.
+    pub audit_interval_ms: u64,
+    /// The most records in one batch, `PEP_AUDIT_BATCH`, held to 1..=500
+    /// (the service's bound) where it is used.
+    pub audit_batch: usize,
+    /// The most records held waiting, `PEP_AUDIT_BUFFER`; full, the
+    /// oldest is dropped.
+    pub audit_buffer: usize,
+    /// The public client the self-assertion grant goes through,
+    /// `PEP_CLIENT_ID` (`PEP_AUDIT_CLIENT_ID`, its name before every call
+    /// carried a token, is still read when it is unset).
+    pub client_id: String,
+    /// The key the self-assertion and every DPoP proof are signed with:
+    /// `PEP_ASSERTION_KEY`, else `PEP_TLS_KEY` (`credential.rs`). Read
+    /// by the credential, again on the listener pair's reload interval.
+    pub assertion_key: crate::credential::KeySource,
+}
+
+/// THE CLIENT CERTIFICATE THE PEP NO LONGER PRESENTS (#1827's follow-up,
+/// phase 4, rcbj 2026-11-16). Through phase 3 `PEP_TLS_CERT` and
+/// `PEP_TLS_KEY` were the client certificate presented on every call to the
+/// service beside the token; since phase 4 every call carries the
+/// DPoP-bound token alone, and the two are ignored for that. `PEP_TLS_KEY`
+/// keeps its other role, the fallback assertion key (`STS-XPEP-0127`), so a
+/// PEP whose certificate's key was registered as its RFC 7523 key keeps
+/// working.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RetiredClientCertificate {
+    /// `PEP_TLS_CERT`, empty when unset.
+    pub cert_path: String,
+    /// `PEP_TLS_KEY`, empty when unset.
+    pub key_path: String,
+}
+
+impl RetiredClientCertificate {
+    /// What `STS-XPEP-0135` says at start, or `None` when there is nothing
+    /// to say: `PEP_TLS_CERT` set, or `PEP_TLS_KEY` set where
+    /// `PEP_ASSERTION_KEY` is too (it is then not read at all). `assertion`
+    /// is `PEP_ASSERTION_KEY`, empty when unset.
+    pub fn notice(&self, assertion: &str) -> Option<String> {
+        let cert = !self.cert_path.trim().is_empty();
+        let key = !self.key_path.trim().is_empty();
+        let key_unused = key && !assertion.trim().is_empty();
+        if !cert && !key_unused {
+            return None;
+        }
+        let mut named = Vec::new();
+        if cert {
+            named.push(format!("PEP_TLS_CERT ({})", self.cert_path.trim()));
+        }
+        if key && (cert || key_unused) {
+            named.push(format!("PEP_TLS_KEY ({})", self.key_path.trim()));
+        }
+        Some(format!(
+            "{} {} set, and this PEP no longer presents a client \
+             certificate to the service: every call carries a DPoP-bound \
+             access token from its assertion key instead. Give it a key of \
+             its own with PEP_ASSERTION_KEY (the service's \
+             issue-pep-credential certifies its request) and unset {}.{}",
+            named.join(" and "),
+            if named.len() > 1 { "are" } else { "is" },
+            if named.len() > 1 { "them" } else { "it" },
+            if key && !key_unused {
+                " PEP_TLS_KEY is still read as the assertion key while \
+                 PEP_ASSERTION_KEY is unset."
+            } else {
+                ""
+            }
+        ))
+    }
+}
+
+/// `PEP_CLIENT_ID`, else its old name `PEP_AUDIT_CLIENT_ID`, else
+/// `sts-remote-pep` — from the two values given, so a test does not touch
+/// the environment. The second member is the variable it came from.
+pub fn client_id_of(
+    primary: Option<&str>,
+    alias: Option<&str>,
+) -> (String, &'static str) {
+    let set = |v: Option<&str>| {
+        v.map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    if let Some(id) = set(primary) {
+        return (id, "PEP_CLIENT_ID");
+    }
+    if let Some(id) = set(alias) {
+        return (id, "PEP_AUDIT_CLIENT_ID");
+    }
+    ("sts-remote-pep".to_string(), "")
 }
 
 /// THE SETTINGS IN FORCE NOW: the service's value where it set one, else
@@ -174,6 +272,12 @@ pub struct Now {
     pub proxy_signals_poll_ms: u64,
     pub proxy_signals_stale_ms: u64,
     pub proxy_strip_cookies: String,
+    /// The decision records (#1827): whether they are queued and sent, how
+    /// often, how many to a batch, and how many may wait.
+    pub audit: bool,
+    pub audit_interval_ms: u64,
+    pub audit_batch: usize,
+    pub audit_buffer: usize,
 }
 
 impl Now {
@@ -200,7 +304,11 @@ impl Now {
             "proxyRpAllowInsecure": self.proxy_rp_allow_insecure,
             "proxySignalsPollMs": self.proxy_signals_poll_ms,
             "proxySignalsStaleMs": self.proxy_signals_stale_ms,
-            "proxyStripCookies": self.proxy_strip_cookies
+            "proxyStripCookies": self.proxy_strip_cookies,
+            "auditEnabled": self.audit,
+            "auditIntervalMs": self.audit_interval_ms,
+            "auditBatch": self.audit_batch,
+            "auditBuffer": self.audit_buffer
         });
         match value {
             serde_json::Value::Object(map) => map,
@@ -653,12 +761,16 @@ pub fn crl_http_switch(said: Option<&str>) -> (Option<bool>, Option<String>) {
 /// convention (RFC 5280 section 4.2.1.13: one behind TLS would have to be
 /// validated with itself), and the credential tool points a PEP's
 /// credential's CRL distribution point at `http://<pep>:9090/crl`, which
-/// the service fetches under hard-fail in product — so with plain HTTP off
+/// the service fetched under hard-fail in product — so with plain HTTP off
 /// by default (#1760) and nothing on 9090, the credential stopped
-/// verifying and every pull was refused as unauthenticated. Bound when
-/// `PEP_CRL_HTTP=true`, or by default when there is a CRL directory to
-/// serve; `PEP_CRL_HTTP=false` never. With `PEP_HTTP=true` the API's own
-/// listener serves `/crl/` as it always did, and this is not bound.
+/// verifying and every pull was refused as unauthenticated. It existed for
+/// THE PEP'S OWN CLIENT CERTIFICATE, and phase 4 of #1827's follow-up (rcbj,
+/// 2026-11-16) retired that certificate: the service fetches none of these
+/// lists any more. So it is bound ONLY with `PEP_CRL_HTTP=true`; unset or
+/// `false` it is not, and a CRL directory that would have bound it before
+/// is said once at start (`STS-XPEP-0136`, [`crl_listener_notice`]). With
+/// `PEP_HTTP=true` the API's own listener serves `/crl/` as it always did,
+/// and this is not bound.
 pub fn crl_listener(options: &Options) -> bool {
     if let Some(text) = &options.crl_http.1 {
         tracing::error!(
@@ -671,10 +783,25 @@ pub fn crl_listener(options: &Options) -> bool {
     if options.http.on {
         return false;
     }
-    match options.crl_http.0 {
-        Some(on) => on,
-        None => options.crl_dir.as_ref().is_some_and(|dir| dir.is_dir()),
+    options.crl_http.0 == Some(true)
+}
+
+/// What `STS-XPEP-0136` says at start, or `None`: a CRL directory that
+/// the listener would have served by default before phase 4, with
+/// `PEP_CRL_HTTP` unset (or unreadable) and the API's plain HTTP off.
+pub fn crl_listener_notice(options: &Options) -> Option<String> {
+    if options.http.on || options.crl_http.0.is_some() {
+        return None;
     }
+    let dir = options.crl_dir.as_ref().filter(|dir| dir.is_dir())?;
+    Some(format!(
+        "there is a CRL directory at {} and PEP_CRL_HTTP is not set, so the \
+         CRL-only listener on PEP_PORT ({}) is not bound. It served the CRLs \
+         of the client certificate this PEP no longer presents to the \
+         service; set PEP_CRL_HTTP=true if something still fetches them.",
+        dir.display(),
+        options.port
+    ))
 }
 
 /// [`plain_http`] over the environment.
@@ -830,6 +957,14 @@ impl Options {
                 "proxyStripCookies",
                 &self.proxy_strip_cookies,
             ),
+            audit: flag("auditEnabled", self.audit_enabled),
+            audit_interval_ms: int("auditIntervalMs", self.audit_interval_ms)
+                .max(1),
+            audit_batch: (int("auditBatch", self.audit_batch as u64) as usize)
+                .clamp(1, 500),
+            audit_buffer: (int("auditBuffer", self.audit_buffer as u64)
+                as usize)
+                .max(1),
         }
     }
 
@@ -993,8 +1128,10 @@ impl Options {
             backoff_max_ms: int_from_env("PEP_BACKOFF_MAX_MS", 300000),
             timeout_ms: int_from_env("PEP_TIMEOUT_MS", 5000),
             max_body_bytes: int_from_env("PEP_MAX_BODY_BYTES", 4 * 1024 * 1024),
-            client_certificate: file_from_env("PEP_TLS_CERT"),
-            client_key: file_from_env("PEP_TLS_KEY"),
+            retired_client_certificate: RetiredClientCertificate {
+                cert_path: cert_path.clone(),
+                key_path: std::env::var("PEP_TLS_KEY").unwrap_or_default(),
+            },
             crl_dir,
             pdp_ca: file_from_env("PEP_TLS_CA"),
             insecure: std::env::var("PEP_TLS_INSECURE").as_deref()
@@ -1071,6 +1208,21 @@ impl Options {
                 .unwrap_or_default(),
             log_level: std::env::var("PEP_LOG_LEVEL").unwrap_or_default(),
             managed: Arc::new(Held::from_env()),
+            audit_enabled: std::env::var("PEP_AUDIT").as_deref() != Ok("false"),
+            audit_interval_ms: int_from_env("PEP_AUDIT_INTERVAL_MS", 5000u64)
+                .max(1),
+            audit_batch: int_from_env("PEP_AUDIT_BATCH", 200usize)
+                .clamp(1, 500),
+            audit_buffer: int_from_env("PEP_AUDIT_BUFFER", 10000usize).max(1),
+            client_id: client_id_of(
+                std::env::var("PEP_CLIENT_ID").ok().as_deref(),
+                std::env::var("PEP_AUDIT_CLIENT_ID").ok().as_deref(),
+            )
+            .0,
+            assertion_key: crate::credential::KeySource::choose(
+                std::env::var("PEP_ASSERTION_KEY").ok().as_deref(),
+                std::env::var("PEP_TLS_KEY").ok().as_deref(),
+            ),
         }
     }
 }
@@ -1166,6 +1318,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn pep_client_id_wins_and_pep_audit_client_id_is_its_alias() {
+        assert_eq!(
+            client_id_of(Some("a"), Some("b")),
+            ("a".to_string(), "PEP_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(Some(" "), Some("b")),
+            ("b".to_string(), "PEP_AUDIT_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(None, None),
+            ("sts-remote-pep".to_string(), "")
+        );
+    }
+
+    #[test]
     fn callers_are_read_strictly() {
         let fp = "AB:".repeat(31) + "AB";
         let raw = format!(
@@ -1227,11 +1395,11 @@ mod tests {
         assert!(pdp_identifier_of("not a url").is_none());
     }
 
-    /// The CRL-only listener: bound by default where there is a CRL
-    /// directory and the API's plain HTTP is off, never alongside it, and
-    /// as `PEP_CRL_HTTP` says otherwise.
+    /// The CRL-only listener: since phase 4 of #1827's follow-up bound
+    /// ONLY with `PEP_CRL_HTTP=true` and the API's plain HTTP off — a CRL
+    /// directory alone binds nothing, and is said once (`STS-XPEP-0136`).
     #[test]
-    fn the_crl_point_stays_up_with_http_off() {
+    fn the_crl_point_binds_only_when_asked() {
         assert_eq!(crl_http_switch(None), (None, None));
         assert_eq!(crl_http_switch(Some("true")), (Some(true), None));
         assert_eq!(crl_http_switch(Some(" false ")), (Some(false), None));
@@ -1246,23 +1414,89 @@ mod tests {
         options.http.on = false;
         options.crl_dir = Some(dir.clone());
         options.crl_http = (None, None);
-        assert!(crl_listener(&options), "a CRL directory binds it");
+        assert!(
+            !crl_listener(&options),
+            "a CRL directory alone binds nothing (phase 4)"
+        );
+        let said = crl_listener_notice(&options).expect("a notice");
+        assert!(said.contains("PEP_CRL_HTTP=true"), "{}", said);
+        options.crl_http = (None, Some("yes".to_string()));
+        assert!(
+            !crl_listener(&options),
+            "an unreadable switch binds nothing"
+        );
+        assert!(crl_listener_notice(&options).is_some());
         options.crl_dir = Some(dir.join("absent"));
+        options.crl_http = (None, None);
         assert!(!crl_listener(&options), "nothing to serve, nothing bound");
+        assert!(
+            crl_listener_notice(&options).is_none(),
+            "no directory, nothing to say"
+        );
         options.crl_http = (Some(true), None);
         assert!(crl_listener(&options), "PEP_CRL_HTTP=true binds it");
+        assert!(crl_listener_notice(&options).is_none());
         options.crl_dir = Some(dir.clone());
         options.crl_http = (Some(false), None);
         assert!(!crl_listener(&options), "PEP_CRL_HTTP=false never");
-        options.crl_http = (None, None);
+        assert!(
+            crl_listener_notice(&options).is_none(),
+            "turned off on purpose, nothing to say"
+        );
+        options.crl_http = (Some(true), None);
         options.http.on = true;
         assert!(
             !crl_listener(&options),
             "with PEP_HTTP=true the API's listener serves /crl/"
         );
+        assert!(crl_listener_notice(&options).is_none());
         if std::fs::remove_dir_all(&dir).is_err() {
             eprintln!("could not remove the test directory {:?}", dir);
         }
+    }
+
+    /// Phase 4 of #1827's follow-up: `PEP_TLS_CERT` is never presented,
+    /// and the start says so (`STS-XPEP-0135`) — for the certificate, and
+    /// for `PEP_TLS_KEY` where `PEP_ASSERTION_KEY` makes it unused; a
+    /// `PEP_TLS_KEY` alone is the fallback assertion key and says nothing.
+    #[test]
+    fn the_client_certificate_is_retired_and_said_once() {
+        let none = RetiredClientCertificate::default();
+        assert_eq!(none.notice(""), None);
+        assert_eq!(none.notice("/k/a.key"), None);
+        let key_only = RetiredClientCertificate {
+            cert_path: String::new(),
+            key_path: "/certs/pep.key".into(),
+        };
+        assert_eq!(key_only.notice(""), None, "the fallback key: 0127's");
+        let unused = key_only.notice("/certs/pep-assertion.key").unwrap();
+        assert!(unused.starts_with("PEP_TLS_KEY (/certs/pep.key) is set"));
+        assert!(unused.contains("unset it."));
+        let both = RetiredClientCertificate {
+            cert_path: "/certs/pep.crt".into(),
+            key_path: "/certs/pep.key".into(),
+        };
+        let said = both.notice("").unwrap();
+        assert!(said.starts_with(
+            "PEP_TLS_CERT (/certs/pep.crt) and PEP_TLS_KEY (/certs/pep.key) \
+             are set"
+        ));
+        assert!(said.contains("PEP_ASSERTION_KEY"));
+        assert!(said.contains("issue-pep-credential"));
+        assert!(said.ends_with(
+            "PEP_TLS_KEY is still read as the assertion key while \
+             PEP_ASSERTION_KEY is unset."
+        ));
+        let with_key = both.notice("/certs/pep-assertion.key").unwrap();
+        assert!(with_key.contains("unset them."));
+        assert!(!with_key.contains("still read"));
+        let cert_only = RetiredClientCertificate {
+            cert_path: "/certs/pep.crt".into(),
+            key_path: String::new(),
+        };
+        let one = cert_only.notice("/k").unwrap();
+        assert!(one.starts_with("PEP_TLS_CERT (/certs/pep.crt) is set"));
+        assert!(!one.contains("PEP_TLS_KEY"));
     }
 
     /// THE DERIVED NOTIFY URL'S HOST, best first ("option 1"): the served

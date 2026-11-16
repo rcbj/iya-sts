@@ -335,6 +335,7 @@ const EXACT: Record<string, string> = {
   'ucred-password': 'authentication.html#passwords',
   'ucred-service': 'service-accounts.html',
   'ucred-keys': 'pki.html#a-persons-credentials-on-their-own-page',
+  'ucred-self-issued': 'oid4vp.html#self-issued-id-tokens-siopv2',
   'ucred-kerberos': 'kerberos.html',
   'utab-federation': 'federation.html',
   'utab-gnap': 'gnap.html',
@@ -343,6 +344,7 @@ const EXACT: Record<string, string> = {
   'utab-import-export':
     'admin-console.html#exporting-and-importing-a-person-as-ldif',
   'utab-signout': 'signing-out.html',
+  'utab-delete': 'admin-console.html#deleting-a-person',
   'gtab-group': 'admin-console.html#groups--admingroups',
   'gtab-owners': 'management-api.html#owners',
   'rtab-role': 'admin-console.html#roles--adminroles',

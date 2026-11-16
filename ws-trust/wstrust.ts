@@ -180,6 +180,8 @@ import WsTrustMetadata = require('./wstrust_metadata');
 // WS-MetadataExchange at POST /sts/mex (#958), a leaf over the same
 // documents.
 import WsTrustMex = require('./wstrust_mex');
+// The names a leaf gives its holder, defined once (#1827).
+import SubjectUrn = require('../common/subject_urn');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -1930,7 +1932,8 @@ class WsTrust {
     // there by its own code. Development believes a name, so the door holds it.
     const trust = require('../common/certificate_trust');
     if (trust.applies('wss-x509-token')) {
-      const issuedHere = gates.signingIdentityOf(certificate);
+      const issuedHere = gates.signingIdentityOf(certificate,
+                                                 { anyHolderForm: true });
       const stored = !!(issuedHere && issuedHere.ok);
       if (!(issuedHere && issuedHere.issuedHere) &&
           (stored || !mode.verifiesCredentials())) {
@@ -1944,7 +1947,13 @@ class WsTrust {
         }
       }
     }
-    const identity = gates.signingIdentityOf(certificate);
+    // ANY HOLDER FORM (#1827, rcbj 2026-11-16: "any user with valid
+    // credentials should be able to authenticate through WS-Trust"): a
+    // valid signer's leaf naming an existing entry authenticates it whether
+    // it spells the holder `urn:sts:person:` or `urn:sts:sa:`. The other
+    // doors keep the gate's form check (STS-TLS-0063).
+    const identity = gates.signingIdentityOf(certificate,
+                                             { anyHolderForm: true });
     const verifies = mode.verifiesCredentials();
     if (!verifies) {
       let name = identity.ok ? String(identity.username) : '';
@@ -1953,12 +1962,11 @@ class WsTrust {
         try {
           const x509 = stsCrypto.parseCertificate(identity.leaf ||
             Buffer.from(certificate, 'base64'));
-          const sans = String(x509.subjectAltName || '').split(/,\s*/);
-          const urn = sans.filter(function (one: string): boolean {
-            return /^URI:urn:sts:(person|application):./.test(one);
-          })[0] || '';
-          isClient = urn.indexOf('URI:urn:sts:application:') === 0;
-          name = urn ? urn.replace(/^URI:urn:sts:(person|application):/, '')
+          // A person in either spelling (#1827) or an application.
+          const urn = SubjectUrn.namesIn(String(x509.subjectAltName || ''),
+                                         ['person', 'sa', 'application'])[0];
+          isClient = !!urn && urn.kind === 'application';
+          name = urn ? urn.name
             : ((/(?:^|\n)CN=([^\n]*)/.exec(String(x509.subject || '')) ||
                 [])[1] || '');
         } catch (e) {
@@ -2418,7 +2426,9 @@ class WsTrust {
     let gates: any = null;
     try {
       gates = loadTlsClientCertificates();
-      gate = gates.checkSocket(socket, { stored: true });
+      // Any holder form, as for a signer (#1827, above).
+      gate = gates.checkSocket(socket, { stored: true,
+                                         anyHolderForm: true });
     } catch (e) {
       log.debug("Caught in WsTrust.connectionCertificate(): " +
                 ((e && e.message) || e));
@@ -5087,11 +5097,12 @@ class WsTrust {
         const x509 = ref.kind === 'token'
           ? this.deps.stsCrypto.parseCertificate(
             Buffer.from(String(ref.certB64), 'base64')) : null;
-        const urn = x509 ? String(x509.subjectAltName || '').split(/,\s*/)
-          .filter(function (one: string): boolean {
-            return one.indexOf('URI:urn:sts:person:') === 0;
-          })[0] || '' : '';
-        signer = urn.replace('URI:urn:sts:person:', '');
+        // A person in either spelling (#1827): a service account is homed
+        // like anybody else, and the home cell checks the claim.
+        const urn = x509 ? SubjectUrn.namesIn(
+          String(x509.subjectAltName || ''), SubjectUrn.PERSON_FORMS)[0]
+          : null;
+        signer = urn ? urn.name : '';
       } catch (e) {
         log.debug("Caught in WsTrust.homeNameOf(): " +
                   ((e && e.message) || e));

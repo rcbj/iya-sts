@@ -4348,8 +4348,8 @@
     "text": "Godta ett TLS-klientcertifikat"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person: eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
+    "en": "a9bb56c470b2a73f",
+    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person:, urn:sts:sa: (ett tjänstekonto) eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7778,6 +7778,14 @@
   "xacml.pepRequireCertificate|description": {
     "en": "e41d92adf65ec5bc",
     "text": "PÅ som standard. Det var en gång det ENDA avslaget i den här familjen; varje /xacml-slutpunkt ber nu om ett certifikat, och det den här inställningen fortfarande styr är just REGISTRERINGEN — den skriver en post, den är vad konsolen listar, och den är adressen som en knuff skickas till, så \"vilken PEP är det här\" är precis frågan där och ett klientcertifikat är svaret. Åtkomstpolicylagret ovanför är en annan och starkare kontroll (roles.remotePepGroup, och xacml.enforceAccess för att stänga av den); den här handlar om huruvida en registrering UTAN certifikat över huvud taget accepteras och märks som oautentiserad. Som varje annan grind i den här tjänsten är den ett VÄNDKORS: certifikatet behöver inte kedja till något, eftersom RFC 8705:s argument gäller oförändrat — det som bevisas är att samma nyckel slutförde handskakningen. Att stänga av den låter en PEP registrera sig över okrypterad HTTP, vilket är vad en körning med global.https avstängd behöver; en sådan registrering märks som OAUTENTISERAD på sin post och i konsolen i stället för att i tysthet inte gå att skilja från en som bevisade något."
+  },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Hur en fjärr-PEP autentiserar sig"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token, standardvärdet sedan 1.1.0: en fjärr-PEP når /xacml/pep/* och POST /xacml/pip endast med en DPoP-bunden åtkomsttoken (RFC 9449) som den får från sitt eget RFC 7523-självintygande via klienten sts-remote-pep, med denna realms /xacml/pep som mottagare och med xacml:pep; ett klientcertifikat ensamt avvisas. either: token eller ett klientcertifikat som denna tjänst verifierar; när en token visas är det den som avgör — sätt det före uppgraderingen så länge någon PEP fortfarande autentiserar sig med sitt certifikat. certificate: endast certifikatet, och Authorization-huvudet läses inte. I alla fall måste PEP:ens post ha REMOTE_PEPS (roles.remotePepGroup) och åtkomstpolicyn avgör. Samma svar gäller en fjärr-PEP:s token vid /access/v1, edge-PDP:ns vidarebefordran av en finkornig utvärdering, oavsett vad authzen.callerAuthentication säger."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

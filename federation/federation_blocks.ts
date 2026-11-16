@@ -132,6 +132,33 @@ export = class FederationBlocks {
     return out;
   }
 
+  // A DELETED PERSON'S BLOCKS GO WITH THEM (2026-11-16, rcbj's rule on
+  // #1612). A row is keyed by the relationship and the NAME, so a person
+  // made again under it was refused through every partner that had stopped
+  // the deleted one. The directory's one person delete
+  // (`removePersonEntry()`) calls this with the realm's relationships: one
+  // key per relationship, which is configuration, never a walk of the
+  // blocks. A re-homing keeps them.
+  /**
+   * Lifts a deleted person's block through each of the relationships named.
+   *
+   * @param username - the deleted person's name
+   * @param fedIds - the realm's relationships
+   * @returns how many were lifted
+   */
+  static forgetPerson(username: string, fedIds: string[]): number {
+    const { log } = helpers;
+    log.debug("Entering FederationBlocks.forgetPerson().");
+    let lifted = 0;
+    (fedIds || []).forEach(function (fedId: string): void {
+      if (fedId && FederationBlocks.unblock(fedId, username)) {
+        lifted += 1;
+      }
+    });
+    log.debug("Leaving FederationBlocks.forgetPerson(). " + lifted);
+    return lifted;
+  }
+
   /**
    * Lifts every block through a relationship, as deleting it does.
    *

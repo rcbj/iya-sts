@@ -388,8 +388,8 @@ carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
 
 | Tab | What it holds |
 |---|---|
-| **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
-| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused — at the sign-in screen, the token endpoint (password grant, RFC 7523, RFC 7522), WS-Trust, Kerberos, LDAP, a TLS client certificate and SPNEGO — sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
+| **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it, most recent first and ten a page |
+| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused — at the sign-in screen, the token endpoint (password grant, RFC 7523, RFC 7522), WS-Trust, Kerberos, LDAP, a TLS client certificate and SPNEGO — sessions refused, and an existing session presented to an application for single sign-on (method *existing session*), ten a page by default |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials; and a line counting the authentications that started no session and issued nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), each of which is on Authentication attempts. Each table shows ten rows a page and the session blocks five, with the usual pager; the rows-per-page box changes both |
 | **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
@@ -586,6 +586,49 @@ The API is `POST /admin-api/users/export-ldif`
 (`{"user": "…", "credentials": true}`, answering the LDIF as `ldif` and as
 a file) and `POST /admin-api/users/import-ldif` (`{"ldif": "…"}`).
 
+#### Deleting a person
+
+A person's page has a **Delete** tab (Admin Write), last, as an
+[application's page](applications.md) has its **Remove** tab. **A delete
+cannot be undone.** The button stays disabled until you tick the box
+saying so.
+
+The console, `POST /admin-api/users/delete` (`{"user": "…"}`), SCIM's
+`DELETE /scim/v2/Users/{id}` and an LDAP delete are one act:
+
+* The entry goes, with everything stored on it: credentials, passkeys,
+  certificates and the profile photo.
+* Every group and role that named the person lets them go, and so does
+  every owner list. A service account whose last owner this was is owned by
+  the realm's Admin Write group (see [Service accounts](service-accounts.md)).
+* RISC receivers are sent `account-purged`.
+* Everything the person held is ended, as a disable ends it: sign-on
+  sessions (with CAEP `session-revoked` and back-channel Logout Tokens),
+  tokens, codes and connections.
+* The person's devices are removed and their certificates revoked.
+* What was kept under the person's name goes too: post-login progress,
+  declined mail categories, federation blocks, GNAP approvals, the row on
+  the Users list, pending enrolments and allowed authorization details.
+* Somebody made again under the same name starts with nothing: a new
+  subject, no groups, no roles, and a fresh RISC register row (the deleted
+  account's is kept under its old subject).
+
+It is refused for:
+
+| Refusal | Code |
+|---|---|
+| Nobody of that name in this realm | `STS-LDAP-0013` |
+| The realm's bootstrap administrator | `STS-LDAP-0077` |
+| An entry with entries beneath it | `STS-LDAP-0014` |
+| Your own entry | `STS-ADMIN-0943` |
+| The last person the realm's roster lists for Admin Write or the Security Administrator | `STS-ADMIN-0944` |
+
+The last two are the console's and the API's only: SCIM and LDAP have no
+administrator to protect. Deleting a person who holds the Security
+Administrator's role takes that role
+([Security administrator](security-administrator.md)). The delete needs a
+recent sign-in, and its audit row is `user.delete`.
+
 #### Creating a person — `/admin/users/new`
 
 The list page has one control: a name, and a button to **`/admin/users/new`**,
@@ -734,7 +777,8 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   Issuing CA issued the person, with **Revoke** per valid row, and a form (a
   label, the key algorithm, a file password twice) that issues one. The
   subject is the person's directory name, and the subjectAltName is
-  `urn:sts:person:<username>`, which is what admits a remote PEP that
+  `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service
+  account), which is what admits a remote PEP that
   presents the certificate. The leaf is not stored in `userCertificate`.
   The answer is the `.p12`, the key and the chain, once.
   `POST /admin-api/users/issue-tls-client-certificate` and

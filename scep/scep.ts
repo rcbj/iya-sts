@@ -1319,7 +1319,8 @@ class Scep {
   //
   //   * **signed by a certificate this realm issued** (RenewalReq, GetCert,
   //     GetCRL, and a PKCSReq in the historical renewal form) — the person
-  //     its `urn:sts:person:` subjectAltName names goes to their home cell;
+  //     its `urn:sts:person:` subjectAltName (a service account's
+  //     `urn:sts:sa:`, #1827) names goes to their home cell;
   //   * **a PKCSReq under a challenge password** — the challenge names the
   //     entry it was issued for (`cert_enrollment.ts`'s `credentialId()`): a
   //     person's request goes to their home cell, where the challenge is

@@ -2574,7 +2574,8 @@ mode.
   owner attributes by its DN (#1306) — that is how a service account under
   `ou=users` is found without paging the people. Past 1,000 answers it says so
   (`STS-ADMIN-0923`). A device's `owner` is its holder, not an authority, and
-  is left to the device register. `tests/deleted_references.js` holds both.
+  is left to the device register (whose `forgetOwner()` removes a deleted
+  person's devices, below). `tests/deleted_references.js` holds both.
 
   **AND AN APPLICATION'S OWN ROLES GO WITH IT (rcbj's decision of 2026-11-13
   on #1612).** A role made for one application (#310: `<role>@<app>`,
@@ -2595,6 +2596,57 @@ mode.
   REQUIRE the role (`appRequiredRole`), because finding them would read every
   application's view. Only `roleApplication` decides: a realm-wide role whose
   NAME merely ends in `@<id>` (writable only over the socket) is kept.
+
+  **AND EVERY CERTIFICATE IT HAD IS REVOKED AND LEAVES ITS NAME (2026-11-16).**
+  The TLS client and message-signing register finds a holder by the name in
+  its slot, so a person or application made again under the name was listed
+  the deleted one's certificates. `removePersonEntry()` and
+  `noteApplicationRemoved()` call `forgetHolderCertificates()`, which hands the
+  holder, its `urn:uuid:` and the deleted entry's attributes to
+  `common/tls_client_certificates.js`'s `forgetDeletedHolder()`
+  (`common/CLAUDE.md` 3ag argues it). `deletePerson()`'s `moved` — a
+  re-homing to another cell — skips it.
+
+  **AND EVERYTHING ELSE KEPT UNDER THE NAME OR THE DN (2026-11-16, rcbj:
+  "address all those things a recreated user inherits").** A person made
+  again under the username has the same name and DN and a new `entryUUID`,
+  so every store keyed by either handed the deleted person's rows over.
+  `removePersonEntry()` (not on `moved`) calls `forgetPersonHoldings()`,
+  which runs each store's own door in the entry's realm, SYNCHRONOUSLY —
+  before the delete is answered, so nothing made under the name afterwards
+  is what gets forgotten: `devices.forgetOwner()` (the devices the person
+  owned are REMOVED and their certificates revoked, found by the owner index;
+  `common/CLAUDE.md`, the device register), `post_login.forgetPerson()`,
+  `mail.forgetPerson()`, `federation_blocks.forgetPerson()` (a key per
+  relationship), `gnap_signals.forgetApprover()` (a list per application),
+  `admin_stats.forgetIdentity()`, `credentials.forgetPending()`,
+  `authorization_details.forgetPerson()`, `risk_engine.forgetStanding()`
+  (this process's copy) and `krb5_principals.retirePerson()` — the Kerberos
+  record is RETIRED, not removed, so it keeps the sign-out stamp and the next
+  person under the name gets a RID, a SID, of their own; a product record is
+  also bound to its entry's `entryUUID`, the lazy migration keeping every
+  existing RID (`kerberos/CLAUDE.md`). An ACME account is bound to the
+  entry's `entryUUID` as well as its name, so a deleted holder's account orders nothing for a
+  namesake (`acme/CLAUDE.md`). Each one's cost is the person's
+  rows, or configuration (relationships, applications), or a store of
+  minutes-long rows its own writes already walk — never the directory. A
+  step that throws is logged `STS-LDAP-0222` and the rest go on. **The RISC
+  register is the exception, on purpose**: its `purged` row is the evidence
+  `account-purged` went out, so it is not forgotten here; `ssf/risc.ts`'s
+  `retireNamesake()` moves it out of the name when a write names a new entry
+  under it (`ssf/CLAUDE.md`). **What is left**, each needing a decision of
+  its own: another process's own row of `admin_stats.users` (`merge: 'own'`,
+  display only) and its risk standing (ages out). The outbound SCIM client no
+  longer adopts a deactivated remote User found by `userName` when its
+  `externalId` is another entry's (`STS-SCIMC-0035`, `scim/CLAUDE.md`), and
+  `authzen_access_request.forgetSubject()` ends the AuthZEN tasks naming the
+  person — by username, `urn:uuid:` subject or mail — through its subject
+  index (`authzen/CLAUDE.md`). SAML's NameID is left as it is (rcbj,
+  2026-11-16). The development seed's entries keep their name-derived
+  `entryUUID`, so a realm deleted and made again under its id seeds alice
+  with her old subject; every entry a door creates is random
+  (`tests/cluster_autocreate_subject.js`).
+  `tests/deleted_person_inherits_nothing.js` holds it.
 
 ---
 
@@ -4184,13 +4236,16 @@ the handler), a SCIM create of a User or a Group, and `POST
   `autoCreateUser()` is `recordAuthentication()`'s SYNCHRONOUS observer inside
   every protocol's credential check, and because it is development mode only
   (`mode.autoCreates()`), reachable with several processes in a development
-  dispatch run or cluster. **Resolved 2026-09-14 by rcbj's choice**: where
-  another process can race, `putEntry()` gives a sign-in's entry a name-derived
-  (v5) `entryUUID`, so both nodes create the same entry and the merge makes them
-  one — at the cost of a name deleted and signed in again getting the same
-  subject there; a single process keeps random values.
-  `directory_create_claims.ts`'s header has it, and
-  `tests/cluster_autocreate_subject.js` holds both halves.
+  dispatch run or cluster. **From 2026-09-14 (rcbj's choice) until 2026-11-16**
+  `putEntry()` gave a sign-in's entry a name-derived (v5) `entryUUID` where
+  another process could race, so both nodes created the same entry — at the
+  cost of a name deleted and signed in again getting the deleted person's
+  subject, and every store keyed by it. **Since 2026-11-16 (#1612's rule, a
+  namesake inherits nothing) it is random on every node**: the losing node's
+  value survives as an alias through `mergeCreateRace()` (above), which is all
+  the race needs. An entry created under the old rule carries its value
+  through every overwrite, so no existing subject changed.
+  `tests/cluster_autocreate_subject.js` holds it.
 
 ## SASL EXTERNAL: A PERSON BOUND BY THE CERTIFICATE THIS SERVICE ISSUED (#1047, 2026-10-27)
 
@@ -4215,7 +4270,9 @@ changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
 * **ONLY A CERTIFICATE THIS SERVICE ISSUED, TO A PERSON WHO HAS AN ENTRY.**
   `common/tls_client_certificates.js`'s `checkSocket()` (its `identityOf()`
   under the bind's realm) decides; the name is the `urn:sts:person:`
-  subjectAltName; `stillHeld()` and revocation are asked; a disabled account
+  subjectAltName (a service account's `urn:sts:sa:` since #1827, the same
+  person entry; one naming an entry that is not a service account is not an
+  identity, `0183`, logged STS-TLS-0063 — `common/CLAUDE.md` 3df); `stillHeld()` and revocation are asked; a disabled account
   is refused; nothing is read off a CN or subject and no entry is created.
   An APPLICATION's certificate is refused (`0185`) by #106's rule that only a
   person binds. **A certificate from an outside authority trusted through

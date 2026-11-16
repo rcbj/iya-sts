@@ -98,7 +98,7 @@
   "tls.key": "Nyckel",
   "tls.goodUntil": "Giltigt till",
   "tls.how": "<strong>Så använder applikationen det.</strong> Presentera det på TLS-anslutningen till tokenslutpunkten med <code>client_id={client}</code> och <code>token_endpoint_auth_method</code> satt till <code>tls_client_auth</code> på posten: RFC 8705 avsnitt 2.1 autentiserar det eftersom den här sfären utfärdade det till den här applikationen, utan att något annat behöver registreras. Varje åtkomsttoken som utfärdas på den anslutningen bär <code>cnf[\"x5t#S256\"]</code> för certifikatet (avsnitt 3), så applikationen presenterar samma certifikat för resursservrarna. <code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
-  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a mutual-TLS client does with the chain <code>{chain}</code> and the key <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "Sfär",
   "pep.names": "Namn",
   "validUntil": "Giltig till",
@@ -116,5 +116,11 @@
   "cluster.back": "Tillbaka till klustret",
   "cluster.discardedDownload": "Ladda ned det som kastades",
   "cluster.discardedLead": "PEP:en har inte längre egen omvänd proxy, egna inställningar eller lyssnare: den hämtar klustrets. Detta är vad den hade, en gång.",
-  "cluster.discardedTitle": "En PEP gick med i ett kluster"
+  "cluster.discardedTitle": "En PEP gick med i ett kluster",
+  "once.pepCredential": "PEP:ens påståendenyckel",
+  "pepCredential.keyPath": "(sökvägen till nyckelfilen du skapade begäran med)",
+  "pepCredential.urn": "Namn",
+  "pepCredential.env": "Starta PEP:en med den här miljön. Den privata nyckeln lämnade aldrig maskinen som skapade begäran; tjänsten har ingen att ge.",
+  "pepCredential.chain": "Certifikatet och dess kedja upp till tjänstens rot. Offentligt: PEP:en behöver det inte för att autentisera sig, och det finns i postens nyckellista.",
+  "pepCredential.download": "Ladda ner certifikatet"
 }

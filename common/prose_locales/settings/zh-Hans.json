@@ -4348,8 +4348,8 @@
     "text": "接受 TLS 客户端证书"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person: 或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
+    "en": "a9bb56c470b2a73f",
+    "text": "由此领域签发的客户端证书，验证至其中间 CA，并通过其中的 urn:sts:person:、urn:sts:sa:（服务账户）或 urn:sts:application: 名称映射到其条目（RFC 7030 第 3.3.2 节）。在没有 Basic 凭据的情况下进行 simplereenroll 时必需。"
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7778,6 +7778,14 @@
   "xacml.pepRequireCertificate|description": {
     "en": "e41d92adf65ec5bc",
     "text": "默认开启。它曾是此协议族中唯一的拒绝；现在每个 /xacml 端点都要求证书，而此设置仍专门管辖的是注册——注册会写入一个条目，是控制台所列出的内容，也是发送提醒的地址，因此“这是哪个 PEP”恰恰是那里的问题，而客户端证书就是答案。其上的访问策略层是另一种更强的检查（roles.remotePepGroup，以及用于关闭它的 xacml.enforceAccess）；此项关注的是没有证书的注册是否会被接受并标记为未认证。与本服务中其他所有门禁一样，它是一道闸机：不要求证书链接到任何东西，因为 RFC 8705 的论证同样适用——所证明的是同一个密钥完成了握手。关闭它允许 PEP 通过明文 HTTP 注册，这是 global.https 关闭的运行所需要的；此类注册会在其条目和控制台上被标记为未认证，而不是悄无声息地与经过证明的注册无从区分。"
+  },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "远程 PEP 的认证方式"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "223363d0264d3558",
+    "text": "token，自 1.1.0 起的默认值：远程 PEP 只能凭借经 DPoP 绑定的访问令牌（RFC 9449）访问 /xacml/pep/* 和 POST /xacml/pip，该令牌由其自身的 RFC 7523 自断言通过客户端 sts-remote-pep 获得，受众为本领域的 /xacml/pep 并带有 xacml:pep；仅有客户端证书会被拒绝。either：令牌或本服务验证的客户端证书；出示令牌时由令牌决定——只要仍有 PEP 使用证书进行身份验证，请在升级前设置此值。certificate：仅证书，并且不读取 Authorization 标头。无论哪种情况，PEP 的条目都必须持有 REMOTE_PEPS（roles.remotePepGroup），并由访问控制策略作出决定。同一答案也适用于远程 PEP 在 /access/v1 的令牌，即边缘 PDP 对细粒度评估的转发，无论 authzen.callerAuthentication 如何设置。"
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

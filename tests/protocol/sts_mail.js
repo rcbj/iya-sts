@@ -242,11 +242,16 @@ function refusalsApi(path) {
   return base + "/realm/" + REFUSALS + "/admin-api" + path;
 }
 
-async function newestSeq() {
-  log.debug("Entering newestSeq().");
+async function newestAt() {
+  log.debug("Entering newestAt().");
   const r = await call("GET", refusalsApi("/audit?per=1"));
-  log.debug("Leaving newestSeq().");
-  return (r.json && r.json.newestSeq) || 0;
+  log.debug("Leaving newestAt().");
+  // BY TIME (#465): `seq` is unique across processes and rises within
+  // each, but it is not one order across them, so a row a request worker
+  // numbered from a lower block than the newest row here would be missed.
+  // A reader resumes by `at`, as the audit API says.
+  const newest = (r.json && r.json.events && r.json.events[0]) || {};
+  return newest.at || 0;
 }
 
 async function codesSince(since, wanted) {
@@ -255,7 +260,7 @@ async function codesSince(since, wanted) {
   for (let i = 0; i < 20 && found.indexOf(wanted) < 0; i += 1) {
     const r = await call("GET", refusalsApi("/audit?per=200"));
     found = ((r.json && r.json.events) || []).filter(function (row) {
-      return row.seq > since && row.errorCode;
+      return row.at > since && row.errorCode;
     }).map(function (row) {
       return row.errorCode;
     });
@@ -276,7 +281,7 @@ async function settings(values) {
 
 async function refusedTest(code, what) {
   log.debug("Entering refusedTest().");
-  const since = await newestSeq();
+  const since = await newestAt();
   const r = await call("POST", refusalsApi("/mail/test"), { user: "mr-one" });
   const codes = await codesSince(since, code);
   check("7. " + what + " (400, " + code + " on the audit row)", function () {

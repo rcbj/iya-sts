@@ -41,6 +41,8 @@ and the nudge.
 | `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
+| `xacml_pep_credential.ts` | `issue-pep-credential` (#1827's follow-up, phase 3): the key in a remote PEP's OWN PKCS #10 request certified by the realm's Issuing CA as `urn:sts:sa:<name>` and registered as the entry's RFC 7523 key (`person_assertions.certifyRequest()`); the entry must exist, be a service account and hold REMOTE_PEPS. No private key anywhere. A library; `xacml_admin.ts` routes the act. |
+| `pep_token.ts` | A remote PEP's DPoP-bound access token from `sts-remote-pep`, read for the PEP door (`/xacml/pep`, `xacml:pep`) and the AuthZEN door (`/access/v1`, `authzen:evaluate`): ours, the PEP's client, this audience and scope, a DPoP proof that holds, one `ou=users` entry. Writes no response (#1827's follow-up). |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
 | `xacml_pep_listeners.ts` | **A remote PEP's listeners (#1760)**: the environment's four, the ones defined on its page (`xacmlPepListeners`), their validation, the pull's section and the reading of what the PEP reports (`xacmlPepListenersInUse`). A LIBRARY. See *A remote PEP's listeners* below. |
@@ -182,6 +184,116 @@ access-control document, or points `roles.remotePepGroup` at a group of their
 own, changes this answer with everything else. `xacml.enforceAccess` turns the
 layer off and the old `xacml.pepRequireCertificate` refusal is what answers
 underneath.
+
+### A TOKEN IN PLACE OF THE CERTIFICATE (#1827's follow-up, rcbj-approved plan, 2026-11-16, phase 1)
+
+**Links 1 and 2 have a second answer: a DPoP-bound access token from
+`sts-remote-pep`.** The PEP signs an RFC 7523 self-assertion with ONE key,
+presents it through that public client with a DPoP proof by the same key,
+and is issued, per audience, a token bound to it: `xacml:pep` on
+`sts-xacml-pep-api` (audience the realm's `/xacml/pep`) for every
+`/xacml/pep/*` call and `POST /xacml/pip`; `xacml:pep-audit` for the push;
+`authzen:evaluate` for the forward. REMOTE_PEPS authorizes `xacml:pep` at
+issuance (`roles.js`'s row names a list now) and links 3 and 4 decide on
+every call, unchanged.
+
+* **ONE READING, `pep_token.ts`**, shared with the AuthZEN door: this
+  realm's token, issued to `sts-remote-pep` (`STS-XACML-0294` otherwise),
+  for this path (`0293`) and scope while the client holds the grant (`0295`),
+  `cnf.jkt` and sent as DPoP (`0292`), a proof `dpop.verifyProof()` accepts
+  — replay, `ath`, the server nonce (`0296`, with `use_dpop_nonce` and a
+  `DPoP-Nonce` when it wanted one) — and a `sub` that is exactly one
+  `ou=users` entry (`0297`). Anything else about the token is `0291`. Each is
+  a 401 with a `DPoP` challenge; the policy's refusal stays a 403.
+* **`pepIdentity()` IS THE PEP DOOR, `callerIdentity()` STAYS THE
+  HANDSHAKE.** `pepAccess()`, `validationDoor()` and the PIP read
+  `pepIdentity()`, which reads the token or the certificate as
+  `xacml.pepAuthentication` (per realm, `token` by default since phase 4;
+  `either` until then) allows, once per request (a proof is good for one
+  request). `xacmlAccess()` and the AuthZEN
+  certificate door read `callerIdentity()`, which never reads a header.
+  **A token, where one is presented and accepted, DECIDES** — a refused one
+  is not passed over for the certificate underneath. `token` refuses a
+  request carrying none (`0289`); `certificate` does not read the header and
+  refuses a token-only request (`0290`).
+* **PHASE 4 (rcbj, 2026-11-16): `token` IS THE DEFAULT, `certificate` AND
+  `either` ARE OPT-INS FOR GOOD.** The PEP image no longer presents a client
+  certificate (`xacml-pep/CLAUDE.md`, `STS-XPEP-0135`), so `certificate`
+  admits only an older PEP image or another implementation. **The upgrade is
+  the compatibility question**: a 1.0.0 deployment's PEPs authenticate by a
+  certificate, and the new default refuses them. A value an operator stored
+  (console, `/admin-api/config/set`, a realm's overrides) or set in an
+  appconfig file wins as every value does; with neither, the operator sets
+  `either` before upgrading (`docs/release-notes.md`, `docs/remote-pep.md`
+  *Upgrading a deployment whose PEPs use a certificate*), and the upgrade
+  script does that for a SQL store (below). So the refusal is
+  never silent: where the refused request presented a certificate that
+  VERIFIES, `0289`'s description says `either` would accept it and names
+  `PEP_ASSERTION_KEY`, and `warnCertificateRefused()` logs a warning under
+  `0289` once per realm and process. **The upgrade script writes `either`
+  for every realm with a row under its `ou=peps`** (rcbj, 2026-11-16:
+  "create a migration script"; `postgres/upgrade-1.0.0.sql`,
+  `mariadb/upgrade-1.0.0.sql`, argued in `postgres/CLAUDE.md`), since every
+  PEP 1.0.0 registered authenticated by certificate; the manual step is left
+  for a store the script does not reach (LDIF, a split cell database). An
+  anonymous request is now `0289`'s 401 where it was the policy's 403
+  (`STS-XACML-0007`) under `either`.
+* **THE NAME IS THE USERNAME**, `commonName` of the identity — what a
+  certificate this service issued carried — so the `ou=peps` row, the
+  heartbeat's row and a cluster's membership are unchanged; the row's
+  `thumbprint` is the DPoP key's RFC 7638 thumbprint, `certificateSubject`
+  empty.
+* **WHAT IT COSTS** (measured in process by `tests/remote_pep_token_door.js`
+  C1): every call verifies one ES256 proof and writes its `jti` — the
+  cluster claim `dpop.proofClaims()` takes on arrival and a `dpop.seenJtis`
+  row. On a store, the second makes a pull or a PIP query a WRITING response
+  that the barrier holds until it commits, where with a certificate it was a
+  read.
+
+`tests/remote_pep_token_door.js` drives it in process over plain HTTP (X14
+the default, X13/X15 the opt-ins); `tests/authzen_evaluation.js` K0/K0a hold
+the default's refusal of a verified certificate over a real handshake, and
+K2a/K2b the precedence under `either`. `tests/stored_certificates.js` and
+`tests/xacml_pep_proxy.js` opt in to `either`, since they drive the
+certificate door.
+
+### PROVISIONING THE KEY: `issue-pep-credential` (phase 3, rcbj 2026-11-16)
+
+**The service never holds the PEP's private key** (rcbj), and the
+certificate is **issued by the realm's internal CA** (decision 4). The PEP or
+`tests/tools/pep-credential.js --assertion` generates the key and sends a
+PKCS #10 request; `xacml_pep_credential.ts` checks the entry and hands the
+request to `person_assertions.certifyRequest()`, the one CSR door for a
+person's RFC 7523 key (`common/CLAUDE.md` 3ab).
+
+* **WHO.** `name` (or `pep`) is a USERNAME under this realm's `ou=users`, not
+  an `ou=peps` row — a PEP is provisioned before it ever registers. Refused:
+  no such entry (`STS-XACML-0298`), not a service account (`0299`), not
+  holding REMOTE_PEPS (`0301`), asked of `roles.rolesOf()` by DN as
+  `pepAccess()` asks. A key for an entry every PEP door refuses would read as
+  a broken PEP rather than a missing membership.
+* **WHAT.** The leaf names the entry (`urn:sts:sa:<name>`, CN the username);
+  the request's subject and SANs are read for nothing. EC P-256 or RSA ≥ 2048
+  (`STS-PKI-0281`); a request that does not prove possession is the
+  enrollment reader's `STS-ENROLL-0033`.
+* **ROTATION ADDS** (#1290's rule for a person's keys): the old key keeps
+  working until the PEP is moved; `revokePrevious: true` revokes the entry's
+  other valid RFC 7523 keys after the new one is written, or before it when
+  the entry is at `pki.personSigningKeyMax`. A failed revocation is `0302`
+  with the new key registered.
+* **THE ANSWER** is public material and the environment (`PEP_NAME`,
+  `PEP_CLIENT_ID`, `PEP_ASSERTION_KEY` as a reminder, not a path); audited as
+  `xacml.pep.credential` without the certificate. On the console: a form on
+  the PEP's Overview and one under the Remote PEPs table (with a name field),
+  the answer drawn once by `WebAnswers.pepCredential()`.
+* **THE STACKS** generate the key (`--assertion --csr-only`) and mount it
+  as `PEP_ASSERTION_KEY`; `sts_xacml_remote_pep.js` sends the request once it
+  has made the PEP's entry in its realm, and the PEP's token fetches succeed
+  from then on (it retries every five seconds). Since phase 4 they mint no
+  client certificate for the PEP at all, and nothing carries its calls until
+  the key is registered.
+
+`tests/pep_assertion_credential.js` holds it in process.
 
 ### The entry is a SERVICE ACCOUNT, owned by the realm's administrators (#1760)
 
@@ -1284,6 +1396,64 @@ token that moves when nothing sent moved costs a re-pull and no more.)
 `current` is therefore a COMPARISON this service performs rather than a claim
 the PEP makes about itself.
 
+## What modelling the control plane corrected (#1830, 2026-11-16)
+
+`models/pep/pep_control_plane.tsp` describes every `/xacml/pep/*` answer and
+`POST /xacml/pip` (`xacml-pep/CLAUDE.md`, *THE MODEL OF EVERY ENDPOINT*), and
+writing it found seven places where the service was irregular; an eighth
+came from the PEP's side. Each is fixed, and each keeps what a deployed PEP
+relies on — it treats any answer but 200, 201 and 304 as a failure and reads
+only the members the model names:
+
+* **A pull touches the CERTIFICATE's row.** `GET /xacml/pep/policies?pep=`
+  moved that row's `lastSeen` whatever the certificate said, so any
+  `REMOTE_PEPS` holder could keep another PEP looking alive after it had
+  gone. The name is `pepNameOf()`'s now, as on every other door: `?pep=` is
+  read only with no certificate. A PEP sends its own name, which is its
+  certificate's. (`authzen_evaluation.js` X11.)
+* **`If-None-Match` is read on all five pulls** (`unchanged()`): RFC 9110
+  section 13.1.2, `*` or a list, weak comparison. Only `?since=` answered
+  304 before, so the header the PEP sends on the settings and proxy pulls
+  was answered 200 with the whole body every time. `?since=` stays. (X12.)
+* **Register and heartbeat answer the registry's status**, carried on every
+  refusal and argued at `PepResult` in `xacml_pep_registry.ts`: 400 a bad
+  name or hostname, 404 a heartbeat from no row, **503** no directory
+  (`STS-XACML-0026`), **507** the directory refused the write — which
+  `writePep()` does only at `xacml.maxPeps` or the entry cap (`0027`).
+  Register answered every refusal 400 and the heartbeat every one 404, so a
+  fault of this service's read as the PEP's. (`xacml_pep.js` 4, X13.)
+* **`POST /xacml/pip` answers EVERY refusal as a `<PIPError>`** — the gate's
+  403 (`error="access_denied"`) and the off switches' 501
+  (`not_implemented`) as well as its own 400 and 429 — through an `xml` flag
+  on `offCheck()`, `remotePepOffCheck()` and `pepAccess()` that only the PIP
+  passes. The codes recorded are unchanged; every other door stays JSON.
+  (X14; `sts_xacml_endpoints.js` reads the two members out of the XML.)
+* **The listener certificate's 200 carries no `ok`**, which was
+  `issueForListener()`'s own flag sent whole. (`xacml_pep_proxy.js` L9b.)
+* **The nudge's `pdp` names the realm's PDP**: every caller passed `''`, so
+  it was always empty. An empty issuer asks `PepNotifier`'s `pdpIdentity()`
+  — the base `/xacml/pep/*` is served under, pinned where a listener or
+  `global.publicBaseUrl` pins it, else that of the request that made the
+  change (`helpers.urlOf()`), realm prefix included; `''` only with neither,
+  the rule every request-less URL here follows. KEPT rather than removed,
+  because the model and the PEP's generated type require it; the PEP reads
+  nothing in the body but `full`. (`pep_listener_certificate.js` F1d.)
+* **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0300`,
+  `PepProxy.reservedPath()`): the proxy keeps that prefix for its callback
+  and sign-out and answers 404 (`STS-XPEP-0134`) to the rest, and an updated
+  PEP refuses the whole configuration holding such a route and keeps its
+  last good one. A document stored before this fails the pull's validation
+  like any stored document the grammar refuses — logged `STS-XACML-0200`,
+  pulled as `configured: false`, so the proxy answers 404 until an
+  administrator saves it again. (`xacml_pep_proxy.js` A3, A6, C9b.)
+* **Every validation door answers ONE 429 shape**: `{ error:
+  "too_many_requests", error_description, retryAfterS }`, with `Retry-After`.
+  `basic`'s own lockout (`STS-XACML-0205`) answered `{ valid: false,
+  retryAfterS }` and the doors' shared limiter (`0215`) an `Error` with no
+  wait in the body, so one status had two bodies. The PEP reads
+  `retryAfterS`, else the header, from any 429, so a deployed one reads the
+  new body as it read the old. (`xacml_pep_proxy.js` G3.)
+
 ## `GET /xacml/pep/authzen-catalogue` — the pull's other half (#1179)
 
 **The container answers AuthZEN as an edge PDP** (`xacml-pep/CLAUDE.md`), and
@@ -1472,6 +1642,46 @@ the two actions.
   no console form posts it now, and the tab draws no identity form.
 
 `tests/xacml_pep_proxy.js` holds all of it in a child process.
+
+## A remote PEP's decision records (#1827, 2026-11-16)
+
+**A remote PEP decides in its own process, so until #1827 the only record of
+what it decided was a line on its own standard output**: the heartbeat
+carried the counts and nothing else, and a removed container took its
+decisions with it. Now the PEP queues a record per decision it MADE — a
+`/protected` enforcement, an AuthZEN evaluation decided at the edge (never
+one it forwarded: the service decided that one and wrote its own
+`authzen.decision` row), and a reverse-proxy request to a route — and pushes
+them in order, at least once, to `POST /admin-api/pep-audit`
+(`mgmt-api/CLAUDE.md` argues the door, the scope, the role and the token).
+`xacml/pep_audit.ts` turns each into one audit row:
+`xacml.remote.enforcement`, `authzen.remote.decision` or
+`xacml.remote.proxy`.
+
+* **ONLY A PEP REGISTERED IN THIS REALM'S `ou=peps`**, under the name its
+  token's subject carries (`STS-XACML-0287`, 404) — the heartbeat's rule. A
+  cluster member is registered as itself, so its rows name the member.
+* **TWO TIMES.** A row's `at` is when the service received it, because the
+  audit chain is the order this process wrote rows in; `decidedAt` in the
+  detail is the PEP's. Neither is rewritten into the other.
+* **A REPEAT IS RECOGNISABLE, NOT SUPPRESSED.** The PEP removes a record only
+  once `acknowledged` (the highest `seq` of the batch) covers it, so an
+  answer lost on the way back sends it again; every row names the PEP, its
+  process `instance` and the record's `seq`. Suppressing repeats across the
+  nodes of a cluster would need a mark on the `ou=peps` entry — a new
+  attribute, its OID and seven catalogs — and was left out on that cost.
+* **WHAT A ROW CARRIES** is what the PEP's log line carries: never a property
+  value or an id an AuthZEN caller sent (decision 9 on #563), never a query
+  string, cookie or token from a proxied request. The PEP's error code goes
+  on the row where the table knows it, and the rows are `summarised`: the
+  PEP logged each already.
+* **A RECORD THE SERVICE CANNOT READ** (no positive integer `seq`, a kind it
+  does not know) is counted `ignored` and logged once a push
+  (`STS-XACML-0288`); a body that is no push is 400 (`STS-XACML-0286`) and
+  the PEP drops that batch rather than send it forever.
+* **NOTHING CHANGES ON THE ROW OR THE MONITOR**: the heartbeat's counters
+  are still the source of the counts on `/admin/xacml/peps` and
+  `/admin/xacml/monitor`.
 
 ## A remote PEP's own page, and the settings it manages (#1760)
 

@@ -134,11 +134,16 @@ function apiOf(realm) {
   return base + "/realm/" + realm + "/admin-api";
 }
 
-async function newestSeq(realm) {
-  log.debug("Entering newestSeq().");
+async function newestAt(realm) {
+  log.debug("Entering newestAt().");
   const r = await send(apiOf(realm) + "/audit?per=1");
-  log.debug("Leaving newestSeq().");
-  return (r.body && r.body.newestSeq) || 0;
+  log.debug("Leaving newestAt().");
+  // BY TIME (#465): `seq` is unique across processes and rises within
+  // each, but it is not one order across them, so a row a request worker
+  // numbered from a lower block than the newest row here would be missed.
+  // A reader resumes by `at`, as the audit API says.
+  const newest = (r.body && r.body.events && r.body.events[0]) || {};
+  return newest.at || 0;
 }
 
 // The rows recorded in a realm after `since` that carry a code.
@@ -148,7 +153,7 @@ async function codedSince(realm, since, wanted) {
   for (let i = 0; i < 20; i += 1) {
     const r = await send(apiOf(realm) + "/audit?per=200");
     found = ((r.body && r.body.events) || []).filter(function (row) {
-      return row.seq > since && row.errorCode;
+      return row.at > since && row.errorCode;
     });
     if (!wanted || found.some(function (row) {
       return row.errorCode === wanted;
@@ -208,7 +213,7 @@ async function declarations() {
     assert.deepStrictEqual(declared, { saml: ["saml2"], oauth: ["oauth2"],
                                        none: [] });
   });
-  const since = await newestSeq(PRODUCT);
+  const since = await newestAt(PRODUCT);
   const saml = await token(PRODUCT, "pd-saml2");
   const rows = await codedSince(PRODUCT, since, "STS-OAUTH-0191");
   const policyRow = rows.filter(function (row) {

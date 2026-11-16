@@ -1859,6 +1859,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sts-model-pep"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sts-xacml"
 version = "0.1.0"
 dependencies = [
@@ -2490,6 +2498,7 @@ name = "xacml-pep"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.23.1",
  "chrono",
  "hyper",
  "hyper-util",
@@ -2502,6 +2511,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sts-core",
+ "sts-model-pep",
  "sts-xacml",
  "tokio",
  "tokio-openssl",

@@ -94,6 +94,8 @@ const realms = require('./realms');
 const errorCodes = require('./error_codes');
 const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
+// THE HOLDER'S NAME, DEFINED ONCE (#1827): `common/subject_urn.ts`.
+const SubjectUrn = require('./subject_urn');
 const x509 = require('./crypto_impl/x509');
 const keyMaterial = require('./crypto_impl/key_material');
 // CAEP credential-change when this file changes a person's credential
@@ -157,6 +159,10 @@ const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
  * and the three enrollment protocols'.
  */
 const IDENTITY_USE_CASES = ['tls-client', 'acme', 'est', 'scep'];
+
+// The three enrollment protocols' authorities, whose leaves are recorded on
+// the entry they were issued to (`cert_enrollment.ts`) rather than here.
+const ENROLLMENT_FAMILIES = ['acme', 'est', 'scep'];
 
 // ---------------------------------------------------------------------------
 // TWO PURPOSES SINCE #521 (rcbj, 2026-10-28), AND A LEAF SERVES ONE.
@@ -222,11 +228,16 @@ function purposeOf(purpose) {
 const SLOTTED_USE_CASES = ['tls-client', MESSAGE_SIGNING_USE_CASE];
 
 const CLIENT_AUTH_OID = '1.3.6.1.5.5.7.3.2';
-const PERSON_URN = 'urn:sts:person:';
+/**
+ * The subjectAltName URI prefix naming a person who is not a service account.
+ * A service account's is `SubjectUrn.SERVICE_ACCOUNT` (#1827), chosen at
+ * issue by `holderUrn()`.
+ */
+const PERSON_URN = SubjectUrn.PERSON;
 /**
  * The subjectAltName URI prefix naming an application.
  */
-const APPLICATION_URN = 'urn:sts:application:';
+const APPLICATION_URN = SubjectUrn.APPLICATION;
 /**
  * The shortest password a PKCS#12 file is protected with.
  */
@@ -277,6 +288,64 @@ function slotFor(holder, kind) {
     crypto.randomBytes(6).toString('hex');
 }
 
+// ---------------------------------------------------------------------------
+// THE NAME A HOLDER'S LEAF CARRIES (#1827, rcbj 2026-11-16).
+//
+// An application's is `urn:sts:application:<id>`. A person's is
+// `urn:sts:person:<name>` — unless the entry is a SERVICE ACCOUNT now, when
+// it is `urn:sts:sa:<name>`: "underneath, it's a regular user object", so
+// every door reads it as the person, and the spelling says which kind of
+// person. Asked of the directory at the act (`service_accounts.ts`, reached
+// LAZILY — this module is required by `pki.js`'s neighbours and must not pull
+// the register in at load), in the realm the leaf is issued in. A leaf issued
+// before the entry became one keeps `urn:sts:person:`, which is read for ever.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the URI subjectAltName a holder's leaf names it by.
+ *
+ * @param realmId - the realm (the ambient one when empty)
+ * @param kind - 'person' or 'application'
+ * @param holder - the username or the application's identifier
+ * @returns the URI
+ */
+function holderUrn(realmId, kind, holder) {
+  log.debug("Entering holderUrn().");
+  const k = kindOf(kind) || 'person';
+  if (k !== 'person') {
+    log.debug("Leaving holderUrn(). An application.");
+    return SubjectUrn.forHolder(k, holder);
+  }
+  const flagged = isServiceAccountIn(realmId, holder);
+  log.debug("Leaving holderUrn(). " + (flagged ? 'sa' : 'person'));
+  return SubjectUrn.forPerson(holder, flagged);
+}
+
+/**
+ * Says whether a person is a service account now, in a realm.
+ *
+ * @param realmId - the realm (the ambient one when empty)
+ * @param username - the person
+ * @returns true for a service account; false otherwise and where nothing
+ *   can say
+ */
+function isServiceAccountIn(realmId, username) {
+  log.debug("Entering isServiceAccountIn().");
+  let out = false;
+  try {
+    const realm = realmId ? realms.get(String(realmId)) : null;
+    const ask = function () {
+      return require('./service_accounts')
+        .isServiceAccountName(String(username)) === true;
+    };
+    out = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug("Caught in isServiceAccountIn(): " + ((e && e.message) || e));
+    out = false;
+  }
+  log.debug("Leaving isServiceAccountIn(). " + out);
+  return out;
+}
+
 // `{ kind, id }` for a slot this module wrote, or null.
 /**
  * Reads the holder out of a register slot this module wrote.
@@ -312,6 +381,25 @@ function scopeOf(realmId) {
   const id = realmId ? String(realmId) : realms.currentId();
   log.debug("Leaving scopeOf().");
   return id;
+}
+
+// The `urn:uuid:` subject of the person a name belongs to now in a realm, or
+// '' where nobody has it or no directory answers (a process with none).
+function currentSubjectOf(scope, username) {
+  log.debug("Entering currentSubjectOf().");
+  const realm = realms.get(scope);
+  let subject = '';
+  try {
+    subject = realm && username ? String(realms.run(realm, function () {
+      return require('./helpers').subjectForName(username);
+    }) || '') : '';
+  } catch (e) {
+    log.debug("Caught in currentSubjectOf(): " + ((e && e.message) || e));
+    // No directory to ask: the caller matches by name, as before subjects.
+    subject = '';
+  }
+  log.debug("Leaving currentSubjectOf(). " + (subject ? 'Found.' : 'None.'));
+  return subject;
 }
 
 function maxPerPerson() {
@@ -367,9 +455,23 @@ function listFor(realmId, username, kind, purpose) {
   const wantedKind = kindOf(kind) || 'person';
   const useCase = PURPOSES[purposeOf(purpose) || 'tls-client'].useCase;
   const now = Date.now();
+  // A PERSON'S CERTIFICATES ARE THE ENTRY'S, NOT THE NAME'S (2026-11-16). A
+  // record carrying the holder's `urn:uuid:` subject is listed for whoever
+  // that subject is now — a renamed person included — and never for a
+  // namesake: a person deleted and made again under the name was listed every
+  // certificate the deleted one had (rcbj's rule on #1612, a deleted object
+  // inherits nothing). The delete detaches them (`forgetDeletedHolder()`);
+  // this holds for a record a delete before that left behind. A record
+  // written before the subject was recorded is matched by its slot's name.
+  const current = wantedKind === 'person' ? currentSubjectOf(scope, wanted)
+                                          : '';
   const rows = pki.certificatesFor(scope, useCase).filter(function (one) {
     const holder = slotHolder(one.slot);
-    return !!holder && holder.kind === wantedKind && holder.id === wanted;
+    if (!holder || holder.kind !== wantedKind) {
+      return false;
+    }
+    return current && one.holderSubject ? one.holderSubject === current
+                                        : holder.id === wanted;
   }).map(function (one) {
     let revoked = null;
     try {
@@ -467,17 +569,25 @@ function directoryDnNames() {
   Object.keys(x509.DN_ATTRS).forEach(function (name) {
     out[name.toLowerCase()] = name;
   });
-  // LDAP's long names, where they are not the short name above.
-  out.givenname = 'GN';
-  out.surname = 'SN';
-  out.domaincomponent = 'DC';
-  out.commonname = 'CN';
-  out.organization = 'O';
-  out.organisationalunit = 'OU';
-  out.organizationalunit = 'OU';
-  out.countryname = 'C';
-  out.localityname = 'L';
-  out.userid = 'UID';
+  // LDAP's long names, where they are not the short name above. A TABLE OF
+  // ATTRIBUTE TYPE NAMES, never a read of an entry: it is a literal rather
+  // than `out.givenname = …`, which tests/model_entry_reads.js would take
+  // for a store's lower-cased key being read by name (#1579).
+  const longNames = {
+    givenname: 'GN',
+    surname: 'SN',
+    domaincomponent: 'DC',
+    commonname: 'CN',
+    organization: 'O',
+    organisationalunit: 'OU',
+    organizationalunit: 'OU',
+    countryname: 'C',
+    localityname: 'L',
+    userid: 'UID'
+  };
+  Object.keys(longNames).forEach(function (name) {
+    out[name] = longNames[name];
+  });
   log.debug('Leaving directoryDnNames().');
   return out;
 }
@@ -872,7 +982,10 @@ async function issue(realmId, spec) {
   });
 
   const pair = await keyMaterial.generateKeyPair(keyAlgId);
-  const names = [{ kind: 'uri', value: KINDS[kind].urn + username }];
+  // A SERVICE ACCOUNT'S LEAF SAYS SO (#1827): `urn:sts:sa:<name>`, decided
+  // now from the entry; anybody else's is the kind's own prefix.
+  const holderUri = holderUrn(scope, kind, username);
+  const names = [{ kind: 'uri', value: holderUri }];
   const email = kind === 'person' ? String(s.email || '').trim() : '';
   if (email && /^[^\s@]+@[^\s@]+$/.test(email)) {
     // RFC 5280 section 4.2.1.6's rfc822Name. It is what several browsers and
@@ -956,6 +1069,9 @@ async function issue(realmId, spec) {
       purpose: purposeId,
       kind: kind,
       username: username,
+      // The name in the leaf, which is what RFC 8705's implicit mapping and
+      // every other door reads (#1827).
+      implicitName: holderUri,
       keyAlg: keyAlgId,
       keyDesc: keyDesc,
       serialHex: made.record.serialHex,
@@ -1202,6 +1318,195 @@ function revoke(realmId, username, serialHex, reasonId, kind, purpose) {
 }
 
 // ---------------------------------------------------------------------------
+// A DELETED HOLDER'S CERTIFICATES ARE REVOKED AND DETACHED (2026-11-16).
+//
+// rcbj's rule of 2026-11-10 (#1612, #1613): a person or an application
+// deleted and made again under the same name inherits NOTHING. The register
+// this module keeps is the one record of a holder that lives OUTSIDE the
+// entry and is found by NAME (the slot, `person:<name>:<random>`), so a
+// namesake was listed every certificate the deleted holder had — seen on
+// `/admin-api/users`' `mfa.tls.certificates` after a remote PEP's person was
+// deleted and made again. The identity gate already refused such a
+// certificate where its record carries the holder's subject
+// (`currentHolderOf()`, `HOLDER_GONE`); the listing, the cap a namesake is
+// counted against, and a record written before subjects were recorded did
+// not.
+//
+// So the directory's ONE delete (`removePersonEntry()` for a person, SCIM's,
+// LDAP's, `/admin-api/users/delete`'s; `noteApplicationRemoved()` for an
+// application) calls this, and for every certificate the holder had:
+//
+//   * A STILL-VALID ONE IS REVOKED, `cessationOfOperation` — RFC 5280's
+//     "no longer needed", which is what a holder that no longer exists is.
+//     The serial goes on the authority's list and STAYS there: `revoked` is a
+//     union no save loses, and the CRL and OCSP keep answering for it. An
+//     expired or already revoked one is left as it is (the earlier entry wins,
+//     `pki_revocation.js`).
+//   * THE REGISTER'S RECORD IS DETACHED from the name (`pki.detachCertificate()`):
+//     moved out of the slot into the issued register, keyed by the deleted
+//     holder's `urn:uuid:` and never by a name, so nobody is listed it and a
+//     rebuilt authority does not re-mint it. The serial and its history stay.
+//   * THE CERTIFICATES ON THE ENTRY — a person's RFC 7523 and RFC 7522 key
+//     pairs (`person_assertions.js`) and an enrolled ACME, EST or SCEP leaf
+//     (`cert_enrollment.ts`) — went with the entry and are inherited by
+//     nobody, but were still valid at their responders; they are revoked the
+//     same way, read out of the attributes the entry had.
+//
+// A person's record is theirs by its subject where it carries one, so a
+// renamed person's old-named slot is found and a namesake's own certificate
+// under the same name is not touched; a record with no subject is matched by
+// name. A RE-HOMING to another cell is not a delete and does not come here
+// (`common/cell_rehome.ts`). Nothing here throws: a revocation or a detach
+// that fails is logged under its code and the rest goes on.
+// ---------------------------------------------------------------------------
+/**
+ * Revokes every still-valid certificate a deleted person or application had
+ * and detaches this module's register records from its name.
+ *
+ * @param spec - `kind` ('person' or 'application'), `id` (the username or
+ *   application identifier), `subject` (a person's `urn:uuid:` subject),
+ *   `attributes` (the deleted entry's, names lower-cased), `realm` (the
+ *   ambient realm when absent) and `door` (who deleted it, for the notes)
+ * @returns `{ revoked, detached, failed }`, counts
+ */
+function forgetDeletedHolder(spec) {
+  log.debug("Entering forgetDeletedHolder().");
+  const s = spec || {};
+  const kind = kindOf(s.kind) || 'person';
+  const id = String(s.id || '');
+  const subject = kind === 'person' ? String(s.subject || '') : '';
+  const scope = scopeOf(s.realm);
+  const door = String(s.door || 'a directory delete');
+  const attributes = s.attributes || {};
+  const out = { revoked: 0, detached: 0, failed: 0 };
+  if (!id) {
+    log.debug("Leaving forgetDeletedHolder(). Nobody named.");
+    return out;
+  }
+  const now = Date.now();
+  const label = (kind === 'application' ? 'the application ' : 'the person ') +
+    '"' + id + '"';
+  const revokeOne = function (caId, serialHex, certSubject, notAfter) {
+    log.debug("Entering forgetDeletedHolder() revokeOne. " + caId);
+    if (!caId || !serialHex ||
+        (notAfter && new Date(notAfter).getTime() < now)) {
+      log.debug("Leaving forgetDeletedHolder() revokeOne. Nothing to do.");
+      return;
+    }
+    let done = null;
+    try {
+      done = revocation().revoke(scope, String(caId), {
+        serialHex: String(serialHex),
+        reason: 'cessationOfOperation',
+        subject: String(certSubject || ''),
+        note: 'revoked because ' + label + ' was deleted (' + door + ')'
+      });
+    } catch (e) {
+      log.debug("Caught in forgetDeletedHolder(): " + ((e && e.message) || e));
+      done = { ok: false, errors: [String((e && e.message) || e)] };
+    }
+    if (done && done.ok) {
+      out.revoked += done.already ? 0 : 1;
+      log.debug("Leaving forgetDeletedHolder() revokeOne. Revoked.");
+      return;
+    }
+    out.failed += 1;
+    log.error(errorCodes.tag('STS-PKI-0279') + 'pki: the certificate ' +
+              serialHex + ' of ' + label + ', issued by the "' + caId +
+              '" authority in "' + (scope || 'default') + '", was not ' +
+              'revoked when its holder was deleted (' + door + '): ' +
+              ((done && done.errors) || []).join(' ') + ' Revoke it on ' +
+              '/admin/pki.');
+    log.debug("Leaving forgetDeletedHolder() revokeOne. Failed.");
+  };
+
+  // THIS MODULE'S REGISTER: revoked, then detached from the name.
+  SLOTTED_USE_CASES.forEach(function (useCase) {
+    pki.certificatesFor(scope, useCase).filter(function (one) {
+      const holder = slotHolder(one.slot);
+      if (!holder || holder.kind !== kind) {
+        return false;
+      }
+      return subject && one.holderSubject ? one.holderSubject === subject
+                                          : holder.id === id;
+    }).forEach(function (one) {
+      revokeOne(useCase, one.serialHex, one.subject, one.notAfter);
+      let moved = null;
+      try {
+        moved = pki.detachCertificate(scope, useCase, one.slot,
+                                      { kind: kind, subject: subject });
+      } catch (e) {
+        log.debug("Caught in forgetDeletedHolder(): " +
+                  ((e && e.message) || e));
+        moved = { ok: false, errors: [String((e && e.message) || e)] };
+      }
+      if (moved && moved.ok) {
+        out.detached += 1;
+        return;
+      }
+      out.failed += 1;
+      log.error(errorCodes.tag('STS-PKI-0280') + 'pki: the ' + useCase +
+                ' certificate ' + one.serialHex + ' of ' + label + ' is ' +
+                'still recorded under its name after the holder was ' +
+                'deleted (' + door + '), so a holder made again under the ' +
+                'name is listed it: ' +
+                ((moved && moved.errors) || []).join(' '));
+    });
+  });
+
+  // THE CERTIFICATES THE ENTRY HELD, out of the attributes it had.
+  const valuesOf = function (name) {
+    log.debug("Entering forgetDeletedHolder() valuesOf.");
+    const held = attributes[String(name).toLowerCase()];
+    log.debug("Leaving forgetDeletedHolder() valuesOf.");
+    return Array.isArray(held) ? held : (held ? [held] : []);
+  };
+  const parsed = function (text) {
+    log.debug("Entering forgetDeletedHolder() parsed.");
+    let record = null;
+    try {
+      record = JSON.parse(String(text));
+    } catch (e) {
+      // A value that is not a record (a damaged one) names no certificate.
+      log.debug("Caught in forgetDeletedHolder(): " + ((e && e.message) || e));
+      record = null;
+    }
+    log.debug("Leaving forgetDeletedHolder() parsed.");
+    return record && typeof record === 'object' ? record : null;
+  };
+  if (kind === 'person') {
+    const pairs = require('./person_assertions').KEY_PAIR_ATTRIBUTES;
+    Object.keys(pairs).forEach(function (purpose) {
+      valuesOf(pairs[purpose].keys).forEach(function (text) {
+        const record = parsed(text);
+        if (record && !record.withdrawnAt) {
+          revokeOne(record.caId, record.serialHex, record.subject,
+                    record.notAfter);
+        }
+      });
+    });
+  }
+  const enrolled = require('./cert_enrollment').ATTRIBUTES[kind];
+  valuesOf(enrolled ? enrolled.certificate : '').forEach(function (text) {
+    const record = parsed(text);
+    if (record && !record.revoked &&
+        ENROLLMENT_FAMILIES.indexOf(String(record.family)) >= 0) {
+      revokeOne(record.family, record.serialHex, record.subject,
+                record.notAfter);
+    }
+  });
+
+  if (out.revoked || out.detached || out.failed) {
+    log.info('pki: ' + label + ' was deleted (' + door + '): ' + out.revoked +
+             ' certificate(s) revoked (cessationOfOperation), ' +
+             out.detached + ' detached from the name' +
+             (out.failed ? ', ' + out.failed + ' failed' : '') + '.');
+  }
+  log.debug("Leaving forgetDeletedHolder().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE ANCHOR THE CLIENT TRUSTSTORE ADDS, or '' when it adds none.
 //
 // Read per call, so a Root rebuilt on /admin/pki is what the next
@@ -1327,13 +1632,28 @@ function currentHolderOf(answer) {
   }
   const serial = normal(answer.serialHex);
   const ca = String(answer.authority.ca);
+  // A slotted certificate whose holder was deleted is no longer in its slot:
+  // `forgetDeletedHolder()` moved it to the issued register (2026-11-16), and
+  // it is looked for there too, so the move does not turn it into a
+  // certificate with no subject recorded, answered by the name it carries.
   const records = SLOTTED_USE_CASES.indexOf(ca) >= 0
     ? pki.certificatesFor(answer.realm, ca)
+      .concat(pki.issuedKeyPairsFor(answer.realm, ca))
     : pki.issuedKeyPairsFor(answer.realm, ca);
   const record = records.filter(function (one) {
     return one && normal(one.serialHex) === serial;
   })[0];
+  const detached = !!record &&
+    /^deleted-/.test(String(record.subjectKind || ''));
   const subject = record && record.holderSubject;
+  if (detached && !subject) {
+    log.debug("Leaving currentHolderOf(). Detached from a deleted holder.");
+    return { issuedHere: true, accepted: false, error: 'HOLDER_GONE',
+             why: 'the certificate was issued to the person "' +
+                  answer.username + '", who was deleted; a person created ' +
+                  'since under that name is somebody else',
+             authority: answer.authority, serialHex: answer.serialHex };
+  }
   if (!subject) {
     log.debug("Leaving currentHolderOf(). No subject recorded.");
     return answer;
@@ -1354,6 +1674,66 @@ function currentHolderOf(answer) {
   return named === answer.username ? answer
     : Object.assign({}, answer, { username: named,
                                   certifiedName: answer.username });
+}
+
+// ---------------------------------------------------------------------------
+// `urn:sts:sa:` IS A CLAIM THE DIRECTORY HAS TO BEAR OUT (#1827).
+//
+// This realm's authorities write `urn:sts:sa:<name>` only for an entry that
+// IS a service account when the leaf is issued (`holderUrn()`), and an entry
+// never stops being one (rcbj, 2026-11-15: "once a service account, always
+// one", `service_accounts.ts`). So a leaf saying `urn:sts:sa:` of somebody
+// who is not one — an entry deleted and a person made at the same name, or a
+// leaf this service did not build — is refused here, for every door that
+// asks this gate: `NOT_A_SERVICE_ACCOUNT`, marked STS-TLS-0063 on the answer
+// and logged under it. Each door refuses it as it refuses any certificate
+// that is not an identity, under its own code.
+//
+// **WS-TRUST ASKS WITHOUT IT** (rcbj, 2026-11-16: "any user with valid
+// credentials should be able to authenticate through WS-Trust"): it passes
+// `anyHolderForm`, and a valid leaf naming an existing entry authenticates
+// that entry whichever spelling names it. Every other door keeps the check
+// (rcbj approved the one gate code).
+//
+// The other way round is NOT refused: `urn:sts:person:` naming a service
+// account is a leaf issued before the entry became one (or before #1827),
+// and rcbj's 1.0.0 rule is that it keeps working wherever it worked.
+//
+// Asked per call and never memoised, in the realm the leaf was issued in,
+// for `currentHolderOf()`'s reason, and AFTER it: the name asked about is the
+// holder's current one.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses an accepted identity whose leaf names a service account the
+ * directory does not hold as one.
+ *
+ * @param answer - `currentHolderOf()`'s answer
+ * @returns the answer, or a refusal with `error` 'NOT_A_SERVICE_ACCOUNT'
+ */
+function serviceAccountChecked(answer) {
+  log.debug("Entering serviceAccountChecked().");
+  if (!answer || !answer.accepted || answer.kind !== 'person' ||
+      answer.holderForm !== 'sa') {
+    log.debug("Leaving serviceAccountChecked(). Nothing to check.");
+    return answer;
+  }
+  if (isServiceAccountIn(answer.realm, answer.username)) {
+    log.debug("Leaving serviceAccountChecked(). A service account.");
+    return answer;
+  }
+  const why = 'the certificate names "' + answer.username + '" as a ' +
+              'service account (' + SubjectUrn.forPerson(answer.username,
+                                                          true) +
+              '), and in the "' + answer.realm + '" realm that entry is ' +
+              'not one';
+  log.warn(errorCodes.tag('STS-TLS-0063') + 'tls_client_certificates: ' +
+           'refused serial ' + String(answer.serialHex || '') + ': ' + why +
+           '.');
+  log.debug("Leaving serviceAccountChecked(). Not a service account.");
+  return errorCodes.mark({ issuedHere: true, accepted: false,
+                           error: 'NOT_A_SERVICE_ACCOUNT', why: why,
+                           authority: answer.authority,
+                           serialHex: answer.serialHex }, 'STS-TLS-0063');
 }
 
 // ---------------------------------------------------------------------------
@@ -1492,7 +1872,12 @@ function identityOf(input, options) {
     if (!answer.issuedHere && opts.stored === true) {
       return storedIdentityOf(leafBytes, opts.realm);
     }
-    return currentHolderOf(answer);
+    // `anyHolderForm` (#1827, rcbj): a door that authenticates whoever a
+    // valid credential names, whichever spelling it names them in, skips the
+    // form check and nothing else — WS-Trust, "any user with valid
+    // credentials should be able to authenticate through WS-Trust".
+    return opts.anyHolderForm === true ? currentHolderOf(answer)
+      : serviceAccountChecked(currentHolderOf(answer));
   };
   if (memo.has(key)) {
     memoCount.hit();
@@ -1513,19 +1898,21 @@ function identityOf(input, options) {
     const leaf = crypto.parseCertificate(leafBytes);
     const commonName = subjectCnOf(leaf);
     const eku = Array.isArray(leaf.keyUsage) ? leaf.keyUsage : [];
-    const uris = String(leaf.subjectAltName || '').split(/,\s*/)
-      .filter(function (one) { return one.indexOf('URI:') === 0; })
-      .map(function (one) { return one.slice(4); });
-    const named = function (prefix) {
-      log.debug("Entering named().");
-      const all = uris.filter(function (one) {
-        return one.indexOf(prefix) === 0 && one.length > prefix.length;
-      }).map(function (one) { return one.slice(prefix.length); });
-      log.debug("Leaving named().");
-      return all;
-    };
-    const people = named(PERSON_URN);
-    const applications = named(APPLICATION_URN);
+    // A PERSON IN EITHER SPELLING (#1827): `urn:sts:person:` or, for a
+    // service account, `urn:sts:sa:` — one person entry either way, and a
+    // leaf naming the same person twice is still two names, refused below as
+    // it always was. Which spelling it was is kept on the answer, because
+    // `urn:sts:sa:` is a claim the directory has to bear out at every call
+    // (`serviceAccountChecked()`), never in the memo.
+    const personNames = SubjectUrn.namesIn(String(leaf.subjectAltName || ''),
+                                           SubjectUrn.PERSON_FORMS);
+    const people = personNames.map(function (one) { return one.name; });
+    const applications = SubjectUrn.namesIn(
+      String(leaf.subjectAltName || ''), ['application'])
+      .map(function (one) { return one.name; });
+    const personPrefix = personNames.length
+      ? SubjectUrn.prefixOf(personNames[0].form) : PERSON_URN;
+    const spelling = people.length ? personPrefix : APPLICATION_URN;
     const authority = first && first.authority ? first.authority : null;
     const scope = authority ? String(authority.scope) : '';
     const isRealmScope = !!authority && scope !== pki.SERVICE_SCOPE &&
@@ -1562,14 +1949,13 @@ function identityOf(input, options) {
       } else if (people.length + applications.length !== 1) {
         error = 'NOT_A_SIGNING_CERTIFICATE';
         why = 'the certificate does not name exactly one person or ' +
-              'application in a urn:sts:person: or urn:sts:application: ' +
-              'subjectAltName, so there is no one entry it could be the ' +
-              'identity of';
+              'application in a urn:sts:person:, urn:sts:sa: or ' +
+              'urn:sts:application: subjectAltName, so there is no one ' +
+              'entry it could be the identity of';
       } else if ((people.length ? people[0] : applications[0]) !==
                  commonName) {
         error = 'NOT_A_SIGNING_CERTIFICATE';
-        why = 'the certificate\'s common name and its ' +
-              (people.length ? 'urn:sts:person:' : 'urn:sts:application:') +
+        why = 'the certificate\'s common name and its ' + spelling +
               ' subjectAltName do not name the same ' +
               (people.length ? 'person' : 'application');
       } else if (!realms.get(scope)) {
@@ -1598,8 +1984,9 @@ function identityOf(input, options) {
     } else if (people.length + applications.length !== 1) {
       error = 'NOT_A_TLS_CLIENT_CERTIFICATE';
       why = 'the certificate does not name exactly one person or application ' +
-            'in a urn:sts:person: or urn:sts:application: subjectAltName, ' +
-            'so there is no one entry it could be the identity of';
+            'in a urn:sts:person:, urn:sts:sa: or urn:sts:application: ' +
+            'subjectAltName, so there is no one entry it could be the ' +
+            'identity of';
     } else if (authority.ca === USE_CASE &&
                (people.length ? people[0] : applications[0]) !== commonName) {
       // `issue()` writes the CN and the SAN from one name — a username, or
@@ -1607,8 +1994,7 @@ function identityOf(input, options) {
       // they differ was not built by it, and it is refused rather than
       // believed on whichever of the two a door would read.
       error = 'NOT_A_TLS_CLIENT_CERTIFICATE';
-      why = 'the certificate\'s common name and its ' +
-            (people.length ? 'urn:sts:person:' : 'urn:sts:application:') +
+      why = 'the certificate\'s common name and its ' + spelling +
             ' subjectAltName do not name the same ' +
             (people.length ? 'person' : 'application');
     } else if (!realms.get(scope)) {
@@ -1624,6 +2010,10 @@ function identityOf(input, options) {
           authority: authority, serialHex: first ? first.serialHex : '' }
       : { issuedHere: true, accepted: true, realm: scope, kind: kind,
           username: name, subject: leaf.subject,
+          // `sa` where the leaf names a service account (#1827); the
+          // directory is asked whether it is one at every call.
+          holderForm: kind === 'person' && personNames.length
+            ? personNames[0].form : kind,
           serialHex: first.serialHex, authority: authority,
           why: 'issued to the ' + kind + ' ' + name + ' by the "' + scope +
                '" realm\'s "' + authority.ca + '" Issuing CA' };
@@ -1787,7 +2177,8 @@ function signingIdentityOf(certificate, options) {
              why: 'the certificate expired at ' + x509.validTo };
   }
   const identity = identityOf({ leaf: leaf, chain: [], verified: true },
-    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient });
+    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient,
+      anyHolderForm: opts.anyHolderForm === true });
   if (!identity.accepted) {
     log.debug("Leaving signingIdentityOf(). " + identity.error);
     return Object.assign({}, identity, { ok: false, leaf: leaf,
@@ -2026,6 +2417,7 @@ module.exports = {
   USE_CASE: USE_CASE,
   IDENTITY_USE_CASES: IDENTITY_USE_CASES,
   APPLICATION_URN: APPLICATION_URN,
+  holderUrn: holderUrn,
   KEY_ALGS: KEY_ALGS,
   DEFAULT_KEY_ALG: DEFAULT_KEY_ALG,
   REVOCATION_REASONS: REVOCATION_REASONS,
@@ -2045,6 +2437,7 @@ module.exports = {
   bundle: bundle,
   pemFiles: pemFiles,
   revoke: revoke,
+  forgetDeletedHolder: forgetDeletedHolder,
   trustAnchorPem: trustAnchorPem,
   identityOf: identityOf,
   checkSocket: checkSocket,

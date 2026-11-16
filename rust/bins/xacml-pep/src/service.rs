@@ -38,6 +38,7 @@ use sts_xacml::pdp::{AttributeResolver, EvaluationOptions, Pdp};
 use sts_xacml::policy::PolicyNode;
 use sts_xacml::request::{ResolvedObligation, Status};
 
+use crate::audit::{self, Audit, Record};
 use crate::authzen::{self, Reply};
 use crate::enforce::Enforcer;
 use crate::listener::{HttpsListener, Transport};
@@ -67,6 +68,8 @@ pub struct Pep {
     pub(crate) pip: RemotePip,
     pub(crate) pdp: Pdp,
     pub listener: Arc<HttpsListener>,
+    /// The decision records' queue (#1827).
+    pub audit: Arc<Audit>,
     last_pip_report: Mutex<Option<Value>>,
     crl_name: Option<Regex>,
 }
@@ -129,6 +132,9 @@ impl Pep {
         pip: RemotePip,
         listener: Arc<HttpsListener>,
     ) -> Pep {
+        // The decision records' queue (#1827), built from the same options
+        // so it reads the same managed settings.
+        let audit = Arc::new(Audit::new(&options));
         Pep {
             options,
             version,
@@ -136,6 +142,7 @@ impl Pep {
             pip,
             pdp: Pdp::new(),
             listener,
+            audit,
             last_pip_report: Mutex::new(None),
             crl_name: Regex::new(r"(?i)^[a-z0-9-]+\.crl$").ok(),
         }
@@ -143,10 +150,42 @@ impl Pep {
 
     /// ONE HANDLER FOR BOTH LISTENERS. No `instrument` on it: it is the hot
     /// path of the container and would drown its log.
+    ///
+    /// **HEAD IS GET WITHOUT THE BODY (#1830)** for `/`, `/healthcheck`,
+    /// `/crl/<name>` and the AuthZEN metadata: the same status and headers,
+    /// `Content-Length` the GET's, no body. **Not for `/protected`**, whose
+    /// GET is a DECISION — the PIP asked at the PDP, the enforcement counted
+    /// and reported on the heartbeat — and a HEAD is what a monitor or a
+    /// link checker sends without meaning one; it stays the generic 404, as
+    /// every other method this handler does not answer.
     pub async fn handle(
         self: Arc<Self>,
-        request: Request<Body>,
+        mut request: Request<Body>,
     ) -> Response<Body> {
+        if request.method() != Method::HEAD {
+            return self.answer(request).await;
+        }
+        if request.uri().path() != "/protected" {
+            *request.method_mut() = Method::GET;
+        }
+        let response = self.answer(request).await;
+        let (mut parts, body) = response.into_parts();
+        // Every answer here is a small document already in memory (a CRL
+        // file read whole), so it is measured rather than streamed.
+        let length = axum::body::to_bytes(body, usize::MAX)
+            .await
+            .map(|b| b.len())
+            .unwrap_or(0);
+        if parts.status != StatusCode::NO_CONTENT {
+            parts
+                .headers
+                .insert(header::CONTENT_LENGTH, HeaderValue::from(length));
+        }
+        Response::from_parts(parts, Body::empty())
+    }
+
+    /// Every method but HEAD, which [`Self::handle`] answers through this.
+    async fn answer(self: Arc<Self>, request: Request<Body>) -> Response<Body> {
         let method = request.method().clone();
         let uri = request.uri().clone();
         let path = uri.path().to_string();
@@ -219,11 +258,14 @@ impl Pep {
             return response;
         }
         if method == Method::GET && path == authzen::METADATA_PATH {
+            // `Host`, else the URI's authority (#1830): an HTTP/2 client
+            // sends `:authority` and no `Host`, and hyper puts it in the URI.
             let host = request
                 .headers()
                 .get(header::HOST)
                 .and_then(|v| v.to_str().ok())
-                .map(str::to_string);
+                .map(str::to_string)
+                .or_else(|| uri.authority().map(|a| a.as_str().to_string()));
             let reply = self.authzen_metadata(&transport, host.as_deref());
             return reply_response(&reply);
         }
@@ -343,9 +385,14 @@ impl Pep {
                     );
                 }
             });
-            let mut response =
-                json_response(StatusCode::NO_CONTENT, &json!({}));
-            *response.body_mut() = Body::empty();
+            // NO CONTENT-TYPE ON A 204 (#1830): there is no content to
+            // type. Cache-Control stays, as on every answer here.
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = StatusCode::NO_CONTENT;
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("no-store"),
+            );
             return response;
         }
         tracing::info!(
@@ -362,7 +409,8 @@ impl Pep {
                     POST /notify, GET /healthcheck, GET /crl/<name> for its \
                     own credential's lists, and the AuthZEN edge PDP: POST \
                     /access/v1/evaluation, POST /access/v1/evaluations and \
-                    GET /.well-known/authzen-configuration."
+                    GET /.well-known/authzen-configuration. HEAD is answered \
+                    for each GET but /protected."
             }),
         )
     }
@@ -377,11 +425,14 @@ impl Pep {
         std::fs::read(dir.join(name)).ok()
     }
 
-    /// A decision here, with what was pulled — and the remote PIP asked
-    /// BEFORE evaluation, because the engine's resolver is synchronous.
-    async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
-        let get = |k: &str| query.get(k).cloned().unwrap_or_default();
-        let subject = get("subject");
+    /// The subject, resource and action a `/protected` request names, the
+    /// last two with their defaults — what the decision is about, and what
+    /// its record says it was about.
+    fn named(
+        &self,
+        query: &IndexMap<String, String>,
+    ) -> (String, String, String) {
+        let subject = query.get("subject").cloned().unwrap_or_default();
         let resource = query
             .get("resource")
             .filter(|r| !r.is_empty())
@@ -395,6 +446,13 @@ impl Pep {
             .filter(|a| !a.is_empty())
             .cloned()
             .unwrap_or_else(|| "GET".to_string());
+        (subject, resource, action)
+    }
+
+    /// A decision here, with what was pulled — and the remote PIP asked
+    /// BEFORE evaluation, because the engine's resolver is synchronous.
+    async fn decide(&self, query: &IndexMap<String, String>) -> Answer {
+        let (subject, resource, action) = self.named(query);
         // THROUGH THE ONE BUILDER (#306), the four categories named first
         // so an empty subject is still sent as the empty category it was.
         let mut req = AuthorizationRequest::default();
@@ -586,6 +644,39 @@ impl Pep {
             .enforcer()
             .enforce(answer.decision, &answer.obligations);
         self.sync.count_decision(&outcome);
+        if self.audit.enabled() {
+            let (subject, resource, action) = self.named(query);
+            let policies = answer
+                .policy_identifiers
+                .iter()
+                .map(|p| {
+                    audit::policy_name(
+                        p["id"].as_str().unwrap_or(""),
+                        p["version"].as_str().unwrap_or(""),
+                    )
+                })
+                .collect();
+            self.audit.record(Record {
+                at: sts_core::time::iso_now(),
+                kind: "enforcement".into(),
+                decision: answer.decision.as_str().to_string(),
+                allowed: outcome.allowed,
+                code: if answer.decision == Decision::Indeterminate {
+                    "STS-XPEP-0006".into()
+                } else {
+                    String::new()
+                },
+                subject,
+                resource,
+                action,
+                bias: outcome.bias.as_str().to_string(),
+                why: outcome.why.clone(),
+                policies,
+                discharged: outcome.discharged.clone(),
+                undischargeable: outcome.undischargeable.clone(),
+                ..Record::default()
+            });
+        }
         let obligations: Vec<Value> = answer
             .obligations
             .iter()
@@ -631,7 +722,12 @@ impl Pep {
         let o = &self.options;
         let mut out = self.sync.authzen_json();
         if let Some(map) = out.as_object_mut() {
-            map.insert("enabled".into(), json!(o.authzen_enabled));
+            // THE VALUES IN FORCE (#1830), the service's managed ones when
+            // it set them — what the edge PDP actually does — and never the
+            // environment's alone; `settings.values` says where each came
+            // from.
+            let now = o.now();
+            map.insert("enabled".into(), json!(now.authzen));
             map.insert(
                 "endpoints".into(),
                 json!([
@@ -662,10 +758,10 @@ impl Pep {
             );
             map.insert(
                 "pdpIdentifier".into(),
-                if o.authzen_pdp_identifier.is_empty() {
+                if now.authzen_pdp_identifier.is_empty() {
                     Value::Null
                 } else {
-                    json!(o.authzen_pdp_identifier)
+                    json!(now.authzen_pdp_identifier)
                 },
             );
             map.insert(
@@ -679,8 +775,9 @@ impl Pep {
                        service (who holds AUTHZEN_PEPS as its policy decides \
                        it, and each caller's application scope), narrowed by \
                        PEP_AUTHZEN_CALLERS when that is set; an outside \
-                       authority's revocation is not checked, and each \
-                       decision is a log line rather than an audit row."
+                       authority's revocation is not checked. Each decision \
+                       made here is a log line, and a record sent to the \
+                       service's audit log (audit, below; #1827)."
                 ),
             );
         }
@@ -741,7 +838,7 @@ impl Pep {
                 } else {
                     Value::Null
                 },
-                "credentialed": o.client_certificate.is_some(),
+                "credentialed": self.sync.client().credential().has_key(),
                 "lastQuery": last_query,
                 "what": pip_what
             },
@@ -769,6 +866,8 @@ impl Pep {
             "https": self.listener.overview(),
             "authzen": self.authzen_overview(),
             "proxy": self.sync.proxy_json(),
+            "audit": self.audit.overview(),
+            "credential": self.sync.client().credential().overview(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,
@@ -857,21 +956,96 @@ mod tests {
         path: &str,
         transport: Transport,
     ) -> (StatusCode, String) {
+        let (status, _, body) = answer(pep, method, path, transport, &[], "");
+        (status, body)
+    }
+
+    /// One request with `headers`, answered whole: status, headers, body.
+    fn answer(
+        pep: &Arc<Pep>,
+        method: Method,
+        path: &str,
+        transport: Transport,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> (StatusCode, axum::http::HeaderMap, String) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            let mut request = Request::builder()
-                .method(method)
-                .uri(path)
-                .body(Body::empty())
-                .unwrap();
+            let mut builder = Request::builder().method(method).uri(path);
+            for (name, value) in headers {
+                builder = builder.header(*name, *value);
+            }
+            let mut request =
+                builder.body(Body::from(body.to_string())).unwrap();
             request.extensions_mut().insert(transport);
             let response = pep.clone().handle(request).await;
             let status = response.status();
+            let headers = response.headers().clone();
             let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
                 .await
                 .unwrap_or_default();
-            (status, String::from_utf8_lossy(&bytes).to_string())
+            (status, headers, String::from_utf8_lossy(&bytes).to_string())
         })
+    }
+
+    /// THE ANSWERS ARE THE MODEL'S (#1830): every JSON answer this handler
+    /// gives is read by the type `models/pep/pep_service.tsp` generates into
+    /// `sts-model-pep`, whose objects are closed, so a member the code adds,
+    /// drops or retypes and the model does not fails here.
+    #[test]
+    fn the_answers_are_the_model_s() {
+        use sts_model_pep::pep_service::{components, read_answer};
+        let pep = a_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let json = |text: &str| -> serde_json::Value {
+            serde_json::from_str(text).unwrap()
+        };
+        for (operation, path) in
+            [("getOverview", "/"), ("getHealthcheck", "/healthcheck")]
+        {
+            let (status, body) = ask(&pep, Method::GET, path, https.clone());
+            assert_eq!(status, StatusCode::OK, "{}", path);
+            let read = read_answer(operation, 200, &json(&body));
+            assert!(
+                matches!(read, Some(Ok(()))),
+                "{}: {:?}\n{}",
+                path,
+                read,
+                body
+            );
+        }
+        let (status, body) = ask(
+            &pep,
+            Method::GET,
+            "/protected?subject=alice&employeeType=staff",
+            https.clone(),
+        );
+        assert_eq!(status, StatusCode::FORBIDDEN, "no policy is held");
+        let decision: components::Decision =
+            serde_json::from_value(json(&body)).unwrap();
+        assert!(!decision.allowed && decision.note.is_some());
+        for (method, path, transport) in [
+            (Method::GET, "/nowhere", https.clone()),
+            (Method::GET, "/crl/root.crl", https.clone()),
+            (Method::POST, "/notify", Transport::default()),
+            (
+                Method::GET,
+                "/",
+                Transport {
+                    crl_only: true,
+                    ..Transport::default()
+                },
+            ),
+        ] {
+            let (status, body) = ask(&pep, method, path, transport);
+            assert_eq!(status, StatusCode::NOT_FOUND, "{}", path);
+            let refusal: Result<components::NotFound, _> =
+                serde_json::from_value(json(&body));
+            assert!(refusal.is_ok(), "{}: {}", path, body);
+        }
     }
 
     /// THE NUDGE IS HTTPS ONLY (2026-11-14): over plain HTTP it is refused
@@ -887,8 +1061,224 @@ mod tests {
             https: true,
             ..Transport::default()
         };
-        let (secure, _) = ask(&pep, Method::POST, "/notify", https);
+        // The service's nudge, `full` included (#1829), is the model's
+        // `Nudge`, and is answered as any nudge is.
+        let sent = r#"{"event":"policy-repository-changed","at":"2026-11-16T00:00:00.000Z","pdp":"","full":true}"#;
+        let nudge: sts_model_pep::pep_service::components::Nudge =
+            serde_json::from_str(sent).unwrap();
+        assert_eq!(nudge.full, Some(true));
+        let (secure, headers, body) =
+            answer(&pep, Method::POST, "/notify", https, &[], sent);
         assert_eq!(secure, StatusCode::NO_CONTENT);
+        // A 204 has no content, so no Content-Type (#1830).
+        assert!(body.is_empty());
+        assert!(headers.get(header::CONTENT_TYPE).is_none(), "{:?}", headers);
+        assert_eq!(
+            headers.get(header::CACHE_CONTROL).map(|v| v.as_bytes()),
+            Some(&b"no-store"[..])
+        );
+    }
+
+    /// A PEP that has pulled (no policies) and holds an AuthZEN catalogue,
+    /// its env listener asking for no client certificate and no identifier
+    /// set: the edge PDP reaches its admission and its metadata.
+    fn a_ready_pep() -> Arc<Pep> {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.pip_enabled = false;
+        options.authzen_enabled = true;
+        options.authzen_pdp_identifier = String::new();
+        options.authzen_callers_configured = false;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = Arc::new(Sync::new(client.clone(), options.clone()));
+        sync.load_for_test(&json!({ "syncToken": "p1", "policies": [] }));
+        sync.load_catalogue_for_test(&json!({
+            "syncToken": "c1", "realm": "", "apiObject": "sts-authzen-api",
+            "rows": [], "settings": { "enabled": true, "batchEnabled": true }
+        }));
+        Arc::new(Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            RemotePip::new(client, false).governed_by(options.clone()),
+            Arc::new(HttpsListener::new("", "", 0, 1000, None)),
+        ))
+    }
+
+    /// GET / REPORTS THE VALUES IN FORCE (#1830): the managed `authzen` and
+    /// `authzenPdpIdentifier` once the service sets them, and the
+    /// environment's again when it clears them.
+    #[test]
+    fn the_overview_reports_the_authzen_values_in_force() {
+        let pep = a_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let env = pep.options.authzen_enabled;
+        let overview = |pep: &Arc<Pep>| -> Value {
+            let (_, body) = ask(pep, Method::GET, "/", https.clone());
+            serde_json::from_str(&body).unwrap()
+        };
+        let before = overview(&pep);
+        assert_eq!(before["authzen"]["enabled"], json!(env));
+        pep.options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &json!({ "authzen": !env,
+                     "authzenPdpIdentifier": "https://pdp.example" }),
+        ));
+        let after = overview(&pep);
+        assert_eq!(after["authzen"]["enabled"], json!(!env));
+        assert_eq!(after["authzen"]["pdpIdentifier"], "https://pdp.example");
+        assert_eq!(
+            after["settings"]["values"]["authzen"]["value"],
+            json!(!env),
+            "the same value settings.values reports"
+        );
+        pep.options.managed.apply(Managed::default());
+        assert_eq!(overview(&pep)["authzen"]["enabled"], json!(env));
+    }
+
+    /// HEAD IS GET WITHOUT THE BODY (#1830) for every GET but /protected,
+    /// whose GET is a decision; HEAD /protected is the generic 404.
+    #[test]
+    fn head_is_get_without_the_body() {
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        for path in [
+            "/",
+            "/healthcheck",
+            "/crl/root.crl",
+            "/.well-known/authzen-configuration",
+        ] {
+            let (get, get_headers, body) = answer(
+                &pep,
+                Method::GET,
+                path,
+                https.clone(),
+                &[("host", "pep.example:9443")],
+                "",
+            );
+            let (head, headers, empty) = answer(
+                &pep,
+                Method::HEAD,
+                path,
+                https.clone(),
+                &[("host", "pep.example:9443")],
+                "",
+            );
+            assert_eq!(head, get, "{}", path);
+            assert!(empty.is_empty(), "{}: {}", path, empty);
+            assert_eq!(
+                headers.get(header::CONTENT_TYPE),
+                get_headers.get(header::CONTENT_TYPE),
+                "{}",
+                path
+            );
+            if path != "/" {
+                // The overview's clock moves between the two requests.
+                assert_eq!(
+                    headers
+                        .get(header::CONTENT_LENGTH)
+                        .and_then(|v| v.to_str().ok()),
+                    Some(body.len().to_string().as_str()),
+                    "{}",
+                    path
+                );
+            }
+        }
+        let (status, _, body) =
+            answer(&pep, Method::HEAD, "/protected", https.clone(), &[], "");
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.is_empty());
+        let (status, _) = ask(&pep, Method::HEAD, "/notify", https);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        // The CRL-only listener answers a HEAD of a CRL path as its GET.
+        let crl = Transport {
+            crl_only: true,
+            ..Transport::default()
+        };
+        let (status, body) = ask(&pep, Method::HEAD, "/healthcheck", crl);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.is_empty());
+    }
+
+    /// THE METADATA OVER HTTP/2 (#1830): no `Host`, the authority in the
+    /// URI, as hyper hands an h2 request's `:authority` over; `Host` wins
+    /// when both are there; neither is still STS-XPEP-0045's 404.
+    #[test]
+    fn the_metadata_names_the_authority_an_h2_client_sends() {
+        use sts_model_pep::pep_authzen::read_answer;
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let url = "https://pep.example:9443/.well-known/authzen-configuration";
+        let (status, _, body) =
+            answer(&pep, Method::GET, url, https.clone(), &[], "");
+        assert_eq!(status, StatusCode::OK, "{}", body);
+        let said: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(said["policy_decision_point"], "https://pep.example:9443");
+        let read = read_answer("getAuthzenConfiguration", 200, &said);
+        assert!(matches!(read, Some(Ok(()))), "{:?}", read);
+        let (_, _, body) = answer(
+            &pep,
+            Method::GET,
+            url,
+            https.clone(),
+            &[("host", "front.example")],
+            "",
+        );
+        let said: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(said["policy_decision_point"], "https://front.example");
+        let (status, _) = ask(
+            &pep,
+            Method::GET,
+            "/.well-known/authzen-configuration",
+            https,
+        );
+        assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// ADMISSION ASKS THE LISTENER THE REQUEST ARRIVED ON (#1830): the
+    /// environment's listener here verifies nothing, and a request that
+    /// came in on a listener that does is admitted past STS-XPEP-0039 (to
+    /// 0050, no caller list pulled yet); one on a listener that does not is
+    /// 0039, and plain HTTP is answered by the environment's as before.
+    #[test]
+    fn admission_asks_the_listener_the_request_arrived_on() {
+        let pep = a_ready_pep();
+        let body = r#"{"subject":{"type":"user","id":"a"},"action":{"name":"r"},"resource":{"type":"t","id":"1"}}"#;
+        let peer = Some(crate::listener::Peer {
+            sha256: "ab".repeat(32),
+            subject: "CN=caller".into(),
+            verified: true,
+            why: String::new(),
+        });
+        let on = |verifies: bool| Transport {
+            https: true,
+            peer: peer.clone(),
+            verifies_client_certificates: verifies,
+            ..Transport::default()
+        };
+        let path = "/access/v1/evaluation";
+        let (status, _, said) =
+            answer(&pep, Method::POST, path, on(true), &[], body);
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{}", said);
+        assert!(said.contains("not yet pulled"), "{}", said);
+        let (status, _, said) =
+            answer(&pep, Method::POST, path, on(false), &[], body);
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(said.contains("arrived on asks"), "{}", said);
+        let (status, _, said) =
+            answer(&pep, Method::POST, path, Transport::default(), &[], body);
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(said.contains("arrived on asks"), "{}", said);
     }
 
     /// THE CRL-ONLY LISTENER answers GET /crl/<name> and nothing else.

@@ -539,9 +539,36 @@ function unionsAndExceptions(t) {
   log.debug("Leaving unionsAndExceptions().");
 }
 
+// The `/admin/ldap/*` pages `/admin-api/ldap/*` answers, each built by the
+// view `ldap/ldap_server.js` hands `admin.setDirectoryPages()`, against the
+// directory this child loaded. A view that answers a promise is awaited; one
+// that throws is recorded as the failure, so the check names it.
+async function directoryPages() {
+  log.debug("Entering directoryPages().");
+  const adminViews = require('../admin-core/admin_views');
+  const out = {};
+  const names = ['service', 'directory', 'applications', 'federations',
+    'spiffe', 'roles', 'policies', 'peps', 'devices'];
+  for (const name of names) {
+    const req = { query: {}, headers: {}, cookies: {},
+      get: function () {
+        return undefined;
+      } };
+    try {
+      out[name] = { json: await Promise.resolve(
+        adminViews.directoryPageJson(name, req)) };
+    } catch (e) {
+      log.debug("Caught in directoryPages(): " + ((e && e.message) || e));
+      out[name] = { error: String((e && e.stack) || e).slice(0, 600) };
+    }
+  }
+  log.debug("Leaving directoryPages().");
+  return out;
+}
+
 // IN A CHILD: the operation tables are complete only with the whole stack loaded,
 // which runs load-time effects this runner's other files must not inherit.
-function buildDocuments(out) {
+async function buildDocuments(out) {
   log.debug("Entering buildDocuments().");
   require(ROOT + '/common/protocol_stack');
   const spec = require('../mgmt-api/admin_api_spec');
@@ -570,6 +597,9 @@ function buildDocuments(out) {
     // `/admin-api/persistence`, from the module itself (run 22: a counter
     // added there and not to the model answered both 500).
     barrier: require('../cluster/cluster_barrier').report(),
+    // What each `/admin-api/ldap/*` operation answers, from its own view
+    // (#1760: `jsonBlob` on the PEP schema's rows answered 500).
+    directoryPages: await directoryPages(),
     admin: spec.buildSpec(adminApi.ROUTES, { authRequired: true }),
     // The two as `/admin-api/openapi.json` and its console twin serve them, for
     // the published pages (`tests/tools/openapi_pages.js`).
@@ -683,6 +713,115 @@ function theBarrierReportMeetsEveryModel(t, docs) {
             'and the model is closed', '');
   });
   log.debug("Leaving theBarrierReportMeetsEveryModel().");
+}
+
+// The 200 model of the management API operation at `GET <path>`, or null.
+function okModelOf(doc, at) {
+  log.debug("Entering okModelOf().");
+  const op = (doc.paths[at] || {}).get;
+  const content = op && op.responses && op.responses['200'] &&
+    op.responses['200'].content;
+  const model = content && content['application/json'] &&
+    content['application/json'].schema;
+  log.debug("Leaving okModelOf().");
+  return model || null;
+}
+
+// EVERY `/admin-api/ldap/*` ANSWER, BUILT BY ITS OWN VIEW, MEETS ITS MODEL.
+// 2026-11-16: #1760 marked six `xacmlPep*` attributes `jsonBlob: true` in
+// `models/directory/xacml_pep.tsp`, the generator copies that onto each row
+// of the SCHEMA table, and `GET /admin-api/ldap/peps` publishes the table
+// whole, so the answer carried a member its model did not declare and was a
+// 500 (STS-API-0139) on every call. Nothing in process built the answer, and
+// the stack job that walks every read (`sts_admin_api_operations.js`) never
+// ran on develop after it: the mode jobs are skipped when the unit job
+// fails. The pages' answers come from the views themselves, against the
+// directory the child loaded, so a member the model lacks is caught here.
+function everyDirectoryPageMeetsItsModel(t, docs) {
+  log.debug("Entering everyDirectoryPageMeetsItsModel().");
+  const Ajv = require('ajv');
+  const addFormats = require('ajv-formats');
+  const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
+                        useDefaults: false });
+  addFormats(ajv);
+  const doc = docs.admin;
+  const pages = docs.directoryPages || {};
+  // The pages that publish an owning module's SCHEMA table, which must each
+  // be built with it, or this check would pass by building nothing.
+  const withSchema = ['applications', 'federations', 'spiffe', 'roles',
+    'policies', 'peps', 'devices'];
+  Object.keys(pages).forEach(function (name) {
+    const at = '/admin-api/ldap/' + name;
+    const model = okModelOf(doc, at);
+    t.check(!!model, 'GET ' + at + ' has a 200 model', '');
+    const page = pages[name];
+    t.check(!page.error && page.json && typeof page.json === 'object',
+            'GET ' + at + ': its view builds an answer',
+            String(page.error || ''));
+    if (!model || !page.json || typeof page.json !== 'object') {
+      return;
+    }
+    if (withSchema.indexOf(name) >= 0) {
+      t.check(page.json.schema &&
+              Array.isArray(page.json.schema.attributes) &&
+              page.json.schema.attributes.length > 0,
+              'GET ' + at + ' publishes its SCHEMA table',
+              JSON.stringify(Object.keys(page.json)));
+    }
+    const validate = ajv.compile({ allOf: [model],
+                                   components: doc.components });
+    t.check(validate(page.json), 'GET ' + at + '\'s answer meets its model',
+            JSON.stringify((validate.errors || []).slice(0, 5)));
+  });
+  t.check(Object.keys(pages).length === 9,
+          'all nine directory pages were built: ' +
+          Object.keys(pages).join(', '), '');
+  log.debug("Leaving everyDirectoryPageMeetsItsModel().");
+}
+
+// EVERY ROW THE MODEL'S GENERATOR WRITES INTO A SCHEMA TABLE MEETS THE
+// PUBLISHED ROW MODEL. Each directory object's table is read from
+// `models/generated/<id>.schema.json` and the `/admin-api/ldap/*` pages
+// publish a module's table whole as `schema` (`WithObjectClassesAttributes`),
+// so a key `models/lib/model_lib.mjs`'s `ROW_KEYS` passes through and the row
+// model does not declare is a 500 on the first page that publishes that
+// object, as `jsonBlob` was. Every table is held, published today or not.
+function everySchemaRowMeetsTheRowModel(t, docs) {
+  log.debug("Entering everySchemaRowMeetsTheRowModel().");
+  const Ajv = require('ajv');
+  const ajv = new Ajv({ strict: false, allErrors: true });
+  const doc = docs.admin;
+  let model = okModelOf(doc, '/admin-api/ldap/peps') || {};
+  if (model.$ref) {
+    model = doc.components.schemas[model.$ref.split('/').pop()] || {};
+  }
+  const schemaModel = (model.properties || {}).schema;
+  t.check(!!schemaModel, 'the PEP page models its SCHEMA table', '');
+  if (!schemaModel) {
+    log.debug("Leaving everySchemaRowMeetsTheRowModel(). No model.");
+    return;
+  }
+  const validate = ajv.compile({ allOf: [schemaModel],
+                                 components: doc.components });
+  const dir = path.join(ROOT, 'models', 'generated');
+  const tables = fs.readdirSync(dir).filter(function (f) {
+    return /\.schema\.json$/.test(f);
+  });
+  t.check(tables.length > 10, 'the generated tables were found: ' +
+          tables.length, '');
+  const wrong = [];
+  tables.forEach(function (f) {
+    const table = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    const shown = { objectClasses: table.objectClasses || [],
+                    attributes: table.attributes || [] };
+    if (!validate(shown)) {
+      wrong.push(f + ': ' + JSON.stringify((validate.errors || [])
+        .slice(0, 3)));
+    }
+  });
+  t.check(wrong.length === 0, 'every generated SCHEMA table\'s rows meet ' +
+          'the published row model: ' + wrong.join('; '), '');
+  log.debug("Leaving everySchemaRowMeetsTheRowModel().");
 }
 
 // AN ERROR CODE IS AN OPERATOR'S NAME, RECORDED AND NEVER SENT, with the one
@@ -827,9 +966,12 @@ function ruleOverDocuments(t) {
   const docs = documents();
   aFinishedGrantMeetsEveryModel(t, docs);
   theBarrierReportMeetsEveryModel(t, docs);
+  everyDirectoryPageMeetsItsModel(t, docs);
+  everySchemaRowMeetsTheRowModel(t, docs);
   codesOnlyWhereDrawn(t, docs);
   delete docs.finalization;
   delete docs.barrier;
+  delete docs.directoryPages;
   let total = 0;
   Object.keys(docs).forEach(function (api) {
     const rows = rowsOf(api, docs[api]);
@@ -979,8 +1121,13 @@ async function run(t) {
 }
 
 if (require.main === module && process.argv[2] === '--build') {
-  buildDocuments(process.argv[3]);
-  process.exit(0);
+  buildDocuments(process.argv[3]).then(function () {
+    process.exit(0);
+  }, function (e) {
+    log.debug("Caught in the --build child: " + ((e && e.message) || e));
+    process.stderr.write(String((e && e.stack) || e) + '\n');
+    process.exit(1);
+  });
 }
 
 module.exports = {

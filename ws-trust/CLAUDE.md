@@ -764,7 +764,8 @@ session, the token) reads the answer without knowing which it was.
   still the party its message names.
 * **ONE MAPPING.** `common/tls_client_certificates.js`'s `checkSocket()`
   (an identity in THIS realm: a realm's TLS client or enrollment Issuing
-  CA, clientAuth, exactly one `urn:sts:person:` or `urn:sts:application:`,
+  CA, clientAuth, exactly one `urn:sts:person:`, `urn:sts:sa:` (a service
+  account, #1827) or `urn:sts:application:`,
   the holder resolved through a rename) and `stillHeld()` (RFC 8705's
   implicit-mapping rule: the holder's record still lists it). **A chain to
   an anchor installed at `/admin-api/tls/trust` was NOT a credential here
@@ -885,7 +886,17 @@ structure and its certificate reference and believes the holder: the mapped
 entry, else the urn:sts: SAN, else the CN. Nothing else is checked, and the
 authentication row's note says so — the posture a UsernameToken has there.
 
-**IN CELLS** a signed request is placed by the `urn:sts:person:` name of a
+**A REQUESTER IS AUTHENTICATED WHICHEVER SPELLING NAMES IT** (#1827, rcbj
+2026-11-16: "any user with valid credentials should be able to authenticate
+through WS-Trust"). A valid signer's or connection's leaf naming an existing
+entry as `urn:sts:person:` or `urn:sts:sa:` authenticates that entry, even
+where the spelling does not match what the entry is: this door asks the TLS
+gate with `anyHolderForm`, which skips only the form check
+(`common/CLAUDE.md` 3df). STS-WSTRUST-0074, which refused it here for a
+while, is retired.
+
+**IN CELLS** a signed request is placed by the `urn:sts:person:` (or
+`urn:sts:sa:`) name of a
 BinarySecurityToken's certificate (`homeNameOf()`), read unverified as a
 UsernameToken's name is; any other signer is served where it arrived.
 

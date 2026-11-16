@@ -378,6 +378,30 @@ class Acme {
   }
 
   // ---------------------------------------------------------------------------
+  // AN ACCOUNT IS BOUND TO AN ENTRY, NOT TO A NAME (2026-11-16, rcbj's rule on
+  // #1612: a person or application deleted and made again under the same
+  // name inherits nothing). An account records the entry its External
+  // Account Binding key named by KIND AND NAME, and every order resolved that
+  // name — so the deleted holder's ACME client, still holding its account
+  // key, ordered certificates for whoever was made again under the name, and
+  // could revoke theirs. Since this date the account also records the
+  // entry's `entryUUID` (`entryUuid`), and an entry under the name with
+  // another one is not the account's: refused as the entry being gone
+  // (STS-ACME-0048), which for this account it is. An account made before
+  // carries none and is answered by the name, as it always was.
+  // ---------------------------------------------------------------------------
+  sameHolder(account, resolved) {
+    const { log } = this.deps;
+    log.debug("Entering Acme.sameHolder().");
+    const bound = String((account && account.entryUuid) || '');
+    const now = String((resolved && resolved.ok && resolved.uuid) || '');
+    const same = !!(resolved && resolved.ok) &&
+      (!bound || !now || bound === now);
+    log.debug("Leaving Acme.sameHolder(). " + same);
+    return same;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE ONE ERROR RESPONSE (RFC 7807 problem document, section 6.7). The code
   // is marked on the response and never written into it; a refusal is counted
   // against the caller for the throttle except where the refusal is the
@@ -1233,7 +1257,10 @@ class Acme {
     });
     (requested.uris || []).forEach(function (one) {
       const named = core.entryFromUri(one);
-      if (named && named.kind === entry.kind) {
+      // Either spelling of a person (#1827), but `urn:sts:sa:` only of a
+      // service account.
+      if (named && named.kind === entry.kind &&
+          !core.serviceAccountUriRefusal(one)) {
         have[keyOf('permanent-identifier', named.id)] = true;
       } else {
         bad.push('URI ' + one);
@@ -1737,7 +1764,10 @@ class Acme {
         contact: contacts.contacts,
         termsOfServiceAgreed: body.termsOfServiceAgreed === true,
         eabKid: eab.kid,
-        entry: found.entry
+        entry: found.entry,
+        // The entry's own identity, beside its name (2026-11-16): see
+        // sameHolder().
+        entryUuid: resolved.uuid || ''
       });
       ctx.principal = 'account:' + account.id;
       audit.record({
@@ -1894,7 +1924,7 @@ class Acme {
         ctx.profile = profile.profile;
       }
       const resolved = core.resolveEntry(account.entry.kind, account.entry.id);
-      if (!resolved.ok) {
+      if (!resolved.ok || !self.sameHolder(account, resolved)) {
         log.debug("Leaving the ACME new-order. The entry is gone.");
         return self.acmeProblem(ctx, 403, 'unauthorized', 'STS-ACME-0048',
                                 'The entry this account is bound to no ' +
@@ -1916,6 +1946,13 @@ class Acme {
         }
         let value = jws.normalIdentifier(one.type, one.value);
         if (one.type === 'permanent-identifier' && value) {
+          // `urn:sts:sa:` of somebody who is not a service account (#1827).
+          const notOne = core.serviceAccountUriRefusal(value);
+          if (notOne) {
+            log.debug("Leaving the ACME new-order. Not a service account.");
+            return self.acmeProblem(ctx, 400, 'rejectedIdentifier',
+                                    'STS-ENROLL-0097', notOne.why);
+          }
           const named = core.entryFromUri(value);
           value = named && named.kind === account.entry.kind ? named.id : value;
         }
@@ -2385,7 +2422,9 @@ class Acme {
       let authorized = false;
       if (signed.account) {
         authorized = signed.account.entry.kind === found.entry.kind &&
-                     signed.account.entry.id === found.entry.id;
+                     signed.account.entry.id === found.entry.id &&
+                     self.sameHolder(signed.account,
+                       core.resolveEntry(found.entry.kind, found.entry.id));
       } else {
         const spki = jws.spkiOfJwk(signed.accountKey.jwk);
         authorized = !!spki && spki.equals(facts.spkiDer);

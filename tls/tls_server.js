@@ -5886,8 +5886,9 @@ function screenCertificateHolder(req) {
 // What it now also does is get WRITTEN DOWN. `/admin/users` answers "who has
 // this service seen, in an interaction that succeeded", and a mutual-TLS client
 // that verified is exactly that — leaving it out made the console's answer
-// wrong by omission. The actor is the mapped person (`urn:sts:person:` on a
-// leaf this realm issued, or the one entry storing an outside leaf). Filing
+// wrong by omission. The actor is the mapped person (`urn:sts:person:`, or a
+// service account's `urn:sts:sa:` (#1827), on a leaf this realm issued, or
+// the one entry storing an outside leaf). Filing
 // the subject DN instead put the row on a name the person's page does not
 // ask for. So this calls `stats.recordAuthentication()`, the same funnel
 // the other thirteen families pass through, and the LDAP entry follows from the

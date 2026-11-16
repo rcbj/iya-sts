@@ -129,6 +129,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   it, not the whole mode. A row off in product is logged (`STS-PKI-0239`) and
   drawn red on `/admin/pki/trust`, which also lists every pinned certificate
   and its status.
+* **A revoked certificate is never re-issued.** Renewing, reissuing or
+  importing an Issuing CA re-issues only the certificates that are still
+  valid; a revoked or expired one keeps its serial and its revocation entry.
+  Importing an Issuing CA puts the one it replaces on its Intermediate's
+  list. After replacing the Root, remove the old Root from every trust store:
+  nothing can sign a revocation list for the old tree any more. See
+  [Editing it](pki.md#editing-it).
 
 ## Passwords
 
@@ -174,7 +181,8 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   self-issued IDs, the email address and a wallet credential offer; the person
   is sent to sign in again and returned to the page. An administrator changing a
   person's password, second factor, passkey, recovery codes, email address or
-  app passwords through the console or `/admin-api` must have signed in within
+  app passwords, exporting or importing a person, or deleting one, through the
+  console or `/admin-api` must have signed in within
   the same time: the console asks them to sign in again and carries on, and the
   API answers RFC 9470's `insufficient_user_authentication`. A program using the
   API with its own credentials is not asked.

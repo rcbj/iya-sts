@@ -68,7 +68,8 @@ using IyaSts.Api.Common;
               `admin:write`:"Change anything this API can change (every other method), except a security change.",
               `admin:security`:"A security change, in place of admin:write: a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked, and the account of a person who holds it. Issued only to a subject holding SECURITY_ADMIN.",
               `admin:console`:"The admin console's own operations, under /admin-api/console (#454). Issued only to the console's client, sts-admin-console, through the ADMIN_CONSOLE role it confers.",
-              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it."
+              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it.",
+              `xacml:pep-audit`:"Push a remote PEP's decision records through POST /admin-api/pep-audit, and nothing else. Issued to the PEP's own RFC 7523 self-assertion through sts-remote-pep, only while its entry is in the remote PEPs' group (REMOTE_PEPS)."
             }
           }
         }
@@ -588,6 +589,8 @@ namespace IyaSts.Api.Console {
         `count`?: integer;
       })[];
     };
+    `authenticationHistory`?: (WithAtProtocolMethodEtc12)[];
+    `authenticationHistoryPaging`?: WithPagePagesPerPageEtc8;
     `page`?: {
       `key`?: string;
       `riskAsked`?: boolean;
@@ -1537,6 +1540,7 @@ namespace IyaSts.Api.Console {
     `syncToken`?: NullableString;
     `staleAfterS`?: numeric;
     `requiresCertificate`?: boolean;
+    `pepAuthentication`?: "certificate" | "token" | "either";
     `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
     `peps`?: (WithNameDnIdentityEtc25)[];
     `elsewhere`?: (WithIdNameCount)[];

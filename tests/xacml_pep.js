@@ -446,6 +446,50 @@ async function run(t) {
           'leaving the caller to guess');
   t.equal(registry.all().length, 1, 'and created nothing');
 
+  // EVERY REFUSAL CARRIES THE STATUS IT IS ANSWERED WITH (#1830): register
+  // and heartbeat answer the registry's status, so each is asserted here,
+  // where each refusal can be reached.
+  t.check(orphan.status === 404 &&
+          errorCodes.codeOf(orphan) === 'STS-XACML-0021',
+          'a heartbeat from a PEP never registered is 404 (STS-XACML-0021)',
+          JSON.stringify(orphan));
+  const nameless = registry.register({ name: '   ', authenticated: false });
+  t.check(!nameless.ok && nameless.status === 400 &&
+          errorCodes.codeOf(nameless) === 'STS-XACML-0019',
+          'a registration with no usable name is 400 (STS-XACML-0019)',
+          JSON.stringify(nameless));
+  registry.setDirectory(null);
+  const noDirRegister = registry.register({ name: 'pep-2' });
+  const noDirHeartbeat = registry.heartbeat('pep-1', { decisions: 1 });
+  registry.setDirectory(directory);
+  t.check(!noDirRegister.ok && noDirRegister.status === 503 &&
+          errorCodes.codeOf(noDirRegister) === 'STS-XACML-0026' &&
+          !noDirHeartbeat.ok && noDirHeartbeat.status === 503 &&
+          errorCodes.codeOf(noDirHeartbeat) === 'STS-XACML-0026',
+          'with no directory, register and heartbeat are 503 ' +
+          '(STS-XACML-0026): the fault is this service\'s, not the PEP\'s',
+          JSON.stringify({ register: noDirRegister,
+                           heartbeat: noDirHeartbeat }));
+  const full = Object.assign({}, directory, {
+    writePep: function () {
+      log.debug("Entering writePep(). Full.");
+      log.debug("Leaving writePep(). Full.");
+      return false;
+    }
+  });
+  registry.setDirectory(full);
+  const fullRegister = registry.register({ name: 'pep-2' });
+  const fullHeartbeat = registry.heartbeat('pep-1', { decisions: 1 });
+  registry.setDirectory(directory);
+  t.check(!fullRegister.ok && fullRegister.status === 507 &&
+          errorCodes.codeOf(fullRegister) === 'STS-XACML-0027' &&
+          !fullHeartbeat.ok && fullHeartbeat.status === 507 &&
+          errorCodes.codeOf(fullHeartbeat) === 'STS-XACML-0027',
+          'when the directory refuses the write (ou=peps full), register ' +
+          'and heartbeat are 507 (STS-XACML-0027)',
+          JSON.stringify({ register: fullRegister,
+                           heartbeat: fullHeartbeat }));
+
   // A FAILED NUDGE IS RECORDED AND DOES NOT MOVE `lastSeen`. That distinction
   // is the whole value of the field: a nudge that failed is evidence the PEP
   // is NOT reachable, and stamping liveness with it would make an unreachable

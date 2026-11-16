@@ -46,7 +46,8 @@
 //   limits (`websecurity.doorBlocked/doorFailed/doorSucceeded`, door
 //   `xacml-pep-basic`). A refusal is `{ valid: false }` and nothing else, so
 //   it is no oracle for which usernames exist; the reason is in the log and
-//   the audit row. Blocked is the one other answer, 429 with `retryAfterS`.
+//   the audit row. Blocked is the one other answer: 429, `too_many_requests`
+//   with `retryAfterS`, the shape the doors' shared limiter answers (#1830).
 //   The password door named to `verifyAsync()` is `xacml-pep`, the sixth of
 //   `common/app_password_doors.js`'s doors (#1760): a password alone cannot
 //   ask for a second factor, so in product a person who holds or owes one
@@ -343,6 +344,13 @@ const RESERVED_HEADERS = ['authorization', 'cookie', 'host', 'content-length',
                           'proxy-authenticate', 'proxy-connection',
                           'forwarded', 'set-cookie'];
 const TEXT_MAX = 1024;
+
+/**
+ * The path prefix the proxy keeps for itself (#1830): its session
+ * mechanism's `/.iya-pep/callback` and `/.iya-pep/logout`. No route may be
+ * this path or under it.
+ */
+const RESERVED_PREFIX = '/.iya-pep';
 // The reserved callback path of the session mechanism (the issue's D6).
 const CALLBACK_PATH = '/.iya-pep/callback';
 const SAML2_ASSERTION = 'urn:oasis:names:tc:SAML:2.0:assertion';
@@ -637,6 +645,20 @@ class PepProxy {
     }
     log.debug("Leaving PepProxy.urlProblem(). Usable.");
     return '';
+  }
+
+  /**
+   * Whether a route path is the proxy's own prefix or under it (#1830).
+   *
+   * @param path - a path that `pathProblem()` accepted
+   * @returns true for `/.iya-pep` and anything under `/.iya-pep/`
+   */
+  static reservedPath(path: string): boolean {
+    helpers.log.debug("Entering PepProxy.reservedPath().");
+    const out = path === RESERVED_PREFIX ||
+      path.indexOf(RESERVED_PREFIX + '/') === 0;
+    helpers.log.debug("Leaving PepProxy.reservedPath(). " + out);
+    return out;
   }
 
   // A route path: starts with `/`, no `.` or `..` segment, no `//`, no `%`,
@@ -1000,6 +1022,21 @@ class PepProxy {
       log.debug("Leaving PepProxy.validateRoute(). Path.");
       return this.refuse(where + ' ("' + id + '"): ' + pathProblem + '.',
                          'STS-XACML-0193');
+    }
+    // THE PROXY'S OWN PREFIX (#1830). `/.iya-pep/callback` and
+    // `/.iya-pep/logout` are the session mechanism's, answered before any
+    // route, and the PEP answers 404 (STS-XPEP-0134) to anything else under
+    // the prefix — so a route there could never be reached, and an updated
+    // PEP refuses the whole configuration holding one and keeps its last
+    // good one. Refused here so it is never saved; a document stored before
+    // this fails the pull's validation and is pulled as configured: false
+    // (STS-XACML-0200), as any stored document this grammar refuses is.
+    if (PepProxy.reservedPath(String(route.path))) {
+      log.debug("Leaving PepProxy.validateRoute(). Reserved.");
+      return this.refuse(where + ' ("' + id + '"): a route `path` may not ' +
+        'be ' + RESERVED_PREFIX + ' or under ' + RESERVED_PREFIX + '/, ' +
+        'which the proxy keeps for its own callback and sign-out.',
+        'STS-XACML-0300');
     }
     const match = route.match === undefined ? 'prefix' : route.match;
     if (typeof match !== 'string' || MATCHES.indexOf(match) < 0) {
@@ -1663,7 +1700,13 @@ class PepProxy {
       log.debug("Leaving PepProxy.basic(). Blocked.");
       return { status: 429, code: 'STS-XACML-0205', actor: username,
                reason: 'too many failed attempts',
-               body: { valid: false,
+               // THE SAME SHAPE AS THE DOORS' SHARED LIMITER'S 429 (#1830):
+               // until then this was `{ valid, retryAfterS }` and the
+               // limiter's an `Error`, so one status had two bodies. A PEP
+               // reads `retryAfterS` (else the header) from either.
+               body: { error: 'too_many_requests',
+                       error_description: 'This account\'s sign-ins are ' +
+                         'refused for now: too many failed attempts.',
                        retryAfterS: Number(blocked.retryAfterS) || 1 } };
     }
     const checked = await this.deps.loadCredentials().verifyAsync(

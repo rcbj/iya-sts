@@ -147,7 +147,7 @@ async function tabText(driver, tab) {
 }
 
 // Submits the form on the open tab that holds this field.
-async function submitFormHolding(driver, tab, selector, fields) {
+async function submitFormHolding(driver, tab, selector, fields, answerMs) {
   log.debug("Entering submitFormHolding(). " + selector);
   await driver.wait(async function () {
     return (await driver.findElements(
@@ -175,7 +175,7 @@ async function submitFormHolding(driver, tab, selector, fields) {
       "const path = '/admin-api/pki/trust/' + arguments[0];" +
       "return performance.getEntriesByType('resource')" +
       ".some(function (one) { return one.name.endsWith(path); });", action);
-  }, 30000, "no answer to the " + action + " form");
+  }, answerMs || 30000, "no answer to the " + action + " form");
   await waitForDrawn(driver);
   log.debug("Leaving submitFormHolding(). From " + before);
 }
@@ -296,7 +296,13 @@ async function test() {
 
     log.info("=== c. the inventory and the job ===");
     await tabText(driver, "pins");
-    await submitFormHolding(driver, "pins", "input[value='recheck']");
+    // RECHECK IS THE WHOLE AUDIT, ANSWERED WHEN IT IS DONE: every pin of the
+    // default realm (one per AWS region and the rest) and every truststore
+    // entry assessed afresh (`CertificateTrust.auditRealm()`). On the two-cell
+    // stack under the suite's load that was over the 30 s an add or a remove
+    // gets (GitHub Actions run 43884417831, cells mode), so it gets 120 s.
+    await submitFormHolding(driver, "pins", "input[value='recheck']",
+                            undefined, 120000);
     const rechecked = await api("GET", "/admin-api/pki/trust");
     check("Recheck writes what the page draws", function () {
       assert.ok(rechecked.json.assessedAt > 0, rechecked.raw.slice(0, 300));

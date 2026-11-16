@@ -656,6 +656,26 @@ or the two drift with both suites green.
   `docs/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
   forwarding rules it out no more than it did.
 
+### The forward on the PEP's token (#1827's follow-up)
+
+**rcbj's decision 3 on the PEP token plan (2026-11-16): the edge PDP's
+forward is accepted on the PEP's DPoP-bound token under EVERY
+`authzen.callerAuthentication`, `mtls` included.** It is the same caller on a
+different credential, so it is scoped exactly as the certificate-holding
+PEP: `authenticate()` asks `xacml/pep_token.ts`'s `isPepToken()` first (a
+token this realm issued to `sts-remote-pep`), and `byPepToken()` reads it
+for this realm's `/access/v1` and `authzen:evaluate` and answers the caller
+as `kind: 'entry'`, the PEP's DN — what its certificate named — so
+`mayAsk()`'s AUTHZEN_PEPS and `scopeOf()`'s `stsAuthzenApplication` decide
+as before. **It must name a REMOTE_PEPS holder as well** (`0120`): every PEP
+shares the client, and the token is not a way for anybody else in
+AUTHZEN_PEPS to arrive. `authzen:evaluate` is not role-gated at issuance
+(AUTHZEN_PEPS authorizes no permission), so a non-PEP person can be issued
+one through `sts-remote-pep` and is refused here; AUTHZEN_PEPS is widened
+for nobody. A token of any other client goes through the realm's door as
+it always did. A refusal carries a `DPoP` challenge, not the Bearer one.
+`tests/remote_pep_token_door.js` Z.
+
 ### The callers the edge PDP admits (#1189)
 
 **rcbj's decision on #1189: the edge admits by pulling who this service
@@ -757,6 +777,22 @@ header argues each. What a maintainer needs quickly:
   expired by `task()`) and the `authzen.access-requests` cluster job, realm
   scope, every minute, which also removes rows past `keepUntil` (a day after
   finishing, or the approval's end).
+* **A DELETED SUBJECT'S TASKS END WITH THEM (2026-11-16, #1612's rule: a
+  person deleted and made again under the same name inherits nothing).** A
+  task names its subject as the PEP sent it — a username, often — and
+  `verify()` matches that exactly, so a namesake was the subject of the
+  deleted person's approvals. `ldap_server.js`'s `forgetPersonHoldings()`
+  calls `forgetSubject()` with the username, the `urn:uuid:` subject and the
+  mail addresses: a pending task is cancelled and an approval revoked, each
+  with its audit row (actor `the directory`). They are found through a
+  SUBJECT INDEX, not a walk: `subject:<SHA-256 of the lower-cased id>` in
+  `authzen.accessRequestIndex` — the module's existing per-realm,
+  cell-tier store, so no new store and no new tier — holding that subject's
+  task ids and kept as long as the latest of them. `save()` writes it (one
+  get, a set only when it changes) and the sweep takes a removed task out.
+  **A task from before the index** is noted by the sweep job, which walks
+  every task already: the backfill, within a minute of the upgrade and never
+  on the delete path; a delete inside that minute misses such a task.
 * Not built: `evaluation_id` binding by reference, `approval.state`, the
   hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
   CATALOG, a `failed` transition, and revocation from the portal (the console
@@ -843,4 +879,7 @@ the callback, the job and the mail; 0100–0115 the token-exchange binding
 the exchange question's answer, 0111–0113 a scope's, 0114 an expired subject
 token, 0115 the no-broadening check; 0116 an answer that is not its model's
 (#1579); 0117 a request whose `Content-Type` is not `application/json`
-(#936).
+(#936); 0118–0121 a remote PEP's DPoP-bound token from `sts-remote-pep`
+(#1827's follow-up): 0118 refused as a token, 0119 without
+`authzen:evaluate`, 0120 naming no entry or one outside REMOTE_PEPS, 0121
+`xacml.pepAuthentication` set to `certificate`.

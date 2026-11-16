@@ -11,9 +11,10 @@
 //! | `basic` | never | always `validation.basic`; its 429 is passed on |
 //! | `session` | the ID Token at sign-in, the cookie | `validation.session` liveness (`proxy.rs`) |
 //!
-//! **Each validation call goes through the ONE client** (`PdpClient`), so
-//! the PEP's certificate is presented and the PDP verified as for every
-//! pull. **No log line here carries a token, an assertion, a password or a
+//! **Each validation call goes through the ONE client** (`PdpClient`), with
+//! the PEP's DPoP-bound `/xacml/pep` token (and its certificate where it has
+//! one), the PDP verified as for every pull. The realm's JWKS alone is
+//! fetched anonymously. **No log line here carries a token, an assertion, a password or a
 //! session id** — the refusal's reason and code only.
 
 use std::sync::{Arc, Mutex};
@@ -23,6 +24,7 @@ use reqwest::Method;
 use serde_json::{json, Map, Value};
 use sts_core::log::tag;
 
+use crate::credential::Resource;
 use crate::jwt::{self, Key, Local};
 use crate::listener::Transport;
 use crate::pdp_client::{Answer, Body, PdpClient};
@@ -100,6 +102,9 @@ pub struct Refusal {
     pub why: String,
     pub token_refused: bool,
     pub retry_after: Option<String>,
+    /// A 405's `Allow` for one of the proxy's own paths, which has no route
+    /// to take the list from (#1830).
+    pub allow: Option<&'static str>,
 }
 
 impl Refusal {
@@ -110,6 +115,7 @@ impl Refusal {
             why: why.to_string(),
             token_refused: false,
             retry_after: None,
+            allow: None,
         }
     }
 
@@ -258,6 +264,8 @@ impl Authenticator {
         }
         let answer = self
             .client
+            // THE JWKS IS ANONYMOUS: a public document, asked without a
+            // token so a PEP whose grant is refused can still verify.
             .call_url(Method::GET, uri, None, &[], None)
             .await;
         let fetched = answer
@@ -385,7 +393,8 @@ impl Authenticator {
         }
         let answer = self
             .client
-            .call_url(
+            .call_authorized_url(
+                Resource::Pep,
                 Method::POST,
                 url,
                 Some(Body::Json(json!({ "token": token }))),
@@ -509,7 +518,8 @@ impl Authenticator {
         }
         let answer = self
             .client
-            .call_url(
+            .call_authorized_url(
+                Resource::Pep,
                 Method::POST,
                 url,
                 Some(Body::Json(json!({ "assertion": encoded,
@@ -571,7 +581,8 @@ impl Authenticator {
         }
         let answer = self
             .client
-            .call_url(
+            .call_authorized_url(
+                Resource::Pep,
                 Method::POST,
                 url,
                 Some(Body::Json(json!({ "username": username,
@@ -658,21 +669,25 @@ impl Authenticator {
         }
         let answer = self
             .client
-            .call_url(Method::POST, url, Some(Body::Json(body)), &[], None)
+            .call_authorized_url(
+                Resource::Pep,
+                Method::POST,
+                url,
+                Some(Body::Json(body)),
+                &[],
+                None,
+            )
             .await;
+        // DECIDED BY THE STATUS ALONE (#1830). The service's 403 body is
+        // `{ error, error_description }` and carries no code — its code is
+        // on its own audit row — so nothing in it is read here.
         if answer.error.is_none() && answer.status == 403 {
             return Err(Refusal::new(
                 403,
                 "STS-XPEP-0095",
                 &format!(
-                    "the service refused the identity for route {} (403{})",
-                    route.id,
-                    answer
-                        .json
-                        .as_ref()
-                        .and_then(|j| j["code"].as_str())
-                        .map(|c| format!(", {}", c))
-                        .unwrap_or_default()
+                    "the service refused the identity for route {} (403)",
+                    route.id
                 ),
             ));
         }
@@ -715,7 +730,8 @@ impl Authenticator {
         }
         let answer = self
             .client
-            .call_url(
+            .call_authorized_url(
+                Resource::Pep,
                 Method::POST,
                 url,
                 Some(Body::Json(json!({ "sid": sid }))),

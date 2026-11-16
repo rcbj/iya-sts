@@ -3277,6 +3277,41 @@ function renameIdentity(from, to) {
 }
 
 // ---------------------------------------------------------------------------
+// A DELETED PERSON'S ROW GOES WITH THEM (2026-11-16, rcbj's rule on #1612: a
+// person deleted and made again under the same name inherits nothing). Both
+// stores are keyed by the NAME, so /admin/users drew the new person's row
+// with the deleted one's sign-ins, counts and first-seen time. Called by the
+// directory's one person delete (`removePersonEntry()`); never by a
+// re-homing, and a rename moves the row instead (renameIdentity()).
+//
+// One key each, blind: a delete of a key this process does not hold is
+// still written (`realms.map()`'s delete). WHAT IT CANNOT REACH: another
+// process's own row of `admin_stats.users` (`merge: 'own'`, one row per
+// origin, `persistence/CLAUDE.md`), which only that process writes. Those
+// rows are display only — what the console counts, never a decision — and
+// they are what an earlier start or another node saw of the deleted
+// person, until their own retention ends them.
+// ---------------------------------------------------------------------------
+/**
+ * Forgets a deleted person's register row and token-holder row.
+ *
+ * @param username - the deleted person's name
+ * @returns true when either was held
+ */
+function forgetIdentity(username) {
+  log.debug("Entering forgetIdentity().");
+  const key = identityKeyOf(username);
+  if (!key) {
+    log.debug("Leaving forgetIdentity(). Nobody named.");
+    return false;
+  }
+  const held = users.delete(key);
+  const holder = tokenHolders.delete(key);
+  log.debug("Leaving forgetIdentity(). " + (held || holder));
+  return !!(held || holder);
+}
+
+// ---------------------------------------------------------------------------
 // ONE RECORD FOLDED INTO ANOTHER — a rename's two rows, and the fan-in below.
 //
 // Counts are SUMMED, first and last seen are the earliest and latest, the
@@ -8441,6 +8476,7 @@ module.exports = {
   identityKeyOf: identityKeyOf,
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
+  forgetIdentity: forgetIdentity,
   userRows: userRows,
   userRowsAsync: userRowsAsync,
   userCountsAsync: userCountsAsync,
