@@ -987,10 +987,18 @@ heartbeat carries:
 |---|---|---|
 | `GET /protected` | `xacml.remote.enforcement` | the XACML decision, allowed or refused, the bias and the reason, the applicable policies, the obligations discharged and refused, and the subject, resource and action the request named |
 | an AuthZEN evaluation decided at the edge | `authzen.remote.decision` | what the PEP's own log line carries: the caller, the application, the subject type, the resource type, the action, the request id, the decision and the obligations — **never a property value, an id the caller sent, or a credential** |
+| a reverse proxy request its route decided | `xacml.remote.proxy` | the route, the HTTP status the proxy answered, whether it was forwarded, the method, the path **without its query string**, the person the request was established as (by username, never a token or a cookie), the route's policy and its decision, and for a refusal its reason and the error page's incident ID |
 
 **An AuthZEN evaluation the edge forwards to the service** (an application that
 enforces fine-grained authorization) is not sent: the service decided it and
 already wrote its own `authzen.decision` row under the same request id.
+
+**A reverse proxy request is recorded once it reached its route's
+authorization**: forwarded, or refused because the route's application is not
+usable, because authentication failed, or because the policy said no. A
+request that never got that far has no row — the `503` before the proxy's
+first configuration, a path no route matches, a method the route does not
+take, a body too large, a redirect to sign in, and the proxy's own pages.
 
 The row's own time is when the service **received** it; the instant the PEP
 **decided** is in its detail (`decidedAt`), beside the PEP's name, its
@@ -999,11 +1007,12 @@ logged for that decision, if any.
 
 ### How it gets there
 
-The PEP queues each record in memory and, every `PEP_AUDIT_INTERVAL_MS`, sends
-the oldest (up to `PEP_AUDIT_BATCH`) to `POST /admin-api/pep-audit`. A record
-leaves the queue only when the service acknowledges it, so delivery is **at
-least once**, and the service's mark on the PEP's row keeps a record it has
-already taken from being written twice.
+The PEP queues each record in memory and, every `auditIntervalMs`, sends the
+oldest (up to `auditBatch`) to `POST /admin-api/pep-audit`. A record leaves the
+queue only when the service acknowledges it, so delivery is **at least once**:
+a record sent again because an acknowledgement was lost is recorded again, and
+each row names the PEP, its `instance` and the record's `seq`, which together
+identify it.
 
 The call carries an access token the PEP gets for itself: it signs an
 [RFC 7523](jwt-assertions.md) assertion naming itself (`PEP_NAME`) with the key
@@ -1040,24 +1049,40 @@ name. The key must be RSA or EC P-256; any other is refused by name in the
 PEP's log.
 
 Without step 2 the PEP keeps deciding, and keeps its records queued:
-`audit.tokenHeld` stays `false` and its log says `STS-XPEP-0120`.
+`audit.tokenHeld` stays `false` and its log says `STS-XPEP-0121`.
 
 ### What can be lost
 
 - **A restart** loses every record not yet acknowledged. Each decision is
   still on the container's own log.
-- **A full queue** (`PEP_AUDIT_BUFFER`) drops its oldest record, counted in
-  `audit.dropped` and logged as `STS-XPEP-0119`. A decision never waits for the
+- **A full queue** (`auditBuffer`) drops its oldest record, counted in
+  `audit.dropped` and logged as `STS-XPEP-0120`. A decision never waits for the
   queue.
 - **A batch the service refuses as malformed** (`400`) is dropped rather than
-  sent forever (`STS-XPEP-0122`).
+  sent forever (`STS-XPEP-0123`).
 
 Anything else — the service down, a `403`, a `5xx` — keeps the records and
-tries again on the next interval (`STS-XPEP-0121`).
+tries again on the next interval (`STS-XPEP-0122`).
 
-`PEP_AUDIT=false` turns it off at the PEP; the realm's `xacml.remotePepAudit`
-setting turns it off at the service, which then acknowledges and records
-nothing, so the PEP's queue drains and `audit.lastShipWhy` says why.
+### Its settings
+
+Four of them are **managed settings**: set on the PEP's own console page (its
+Settings tab, under *Logging*), pulled by the PEP and applied while it runs,
+with the environment variable as the fallback where the page sets nothing.
+
+| Setting | Variable | Default | |
+|---|---|---|---|
+| `auditEnabled` | `PEP_AUDIT` | `true` | send the records. Off, nothing new is queued; what is already queued is still sent |
+| `auditIntervalMs` | `PEP_AUDIT_INTERVAL_MS` | `5000` | how often the queue is sent, from the next round |
+| `auditBatch` | `PEP_AUDIT_BATCH` | `200` | the most records in one request, 1 to 500 |
+| `auditBuffer` | `PEP_AUDIT_BUFFER` | `10000` | the most records waiting. A lower value applies to new records: nothing already queued is dropped for it, and each new record displaces the oldest until the queue has drained below it |
+
+`PEP_AUDIT_CLIENT_ID` (default `sts-remote-pep`) stays in the environment: it
+is how the PEP authenticates to send them.
+
+The realm's `xacml.remotePepAudit` setting turns it off at the service, which
+then acknowledges and records nothing, so the PEP's queue drains and
+`audit.lastShipWhy` says why.
 
 ## Reading `GET /` when something is wrong
 
@@ -1948,10 +1973,10 @@ environment's, then the default.
 | `PEP_AUTHZEN_CALLERS` | — | optional: a JSON array of `{ "name", "sha256", "applications" }`. Set, it narrows the callers pulled from the service to the certificates it names, and decides alone until the first caller pull; unset, the pulled list alone decides |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | the PDP identifier the metadata names, an `https` origin with no path. Unset, the origin the request arrived at — *managed*: `authzenPdpIdentifier` |
 | `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | how long an evaluation forwarded to the service (an application that enforces fine-grained authorization) may take before the caller is answered `504` — *managed*: `authzenForwardTimeoutMs` |
-| `PEP_AUDIT` | `true` | send each decision made here to the service's audit log. `false` sends nothing |
-| `PEP_AUDIT_INTERVAL_MS` | `5000` | how often the queued records are sent |
-| `PEP_AUDIT_BATCH` | `200` | the most records in one request, 1 to 500 |
-| `PEP_AUDIT_BUFFER` | `10000` | the most records waiting; full, the oldest is dropped |
+| `PEP_AUDIT` | `true` | send each decision made here to the service's audit log. `false` queues nothing new — *managed*: `auditEnabled` |
+| `PEP_AUDIT_INTERVAL_MS` | `5000` | how often the queued records are sent — *managed*: `auditIntervalMs` |
+| `PEP_AUDIT_BATCH` | `200` | the most records in one request, 1 to 500 — *managed*: `auditBatch` |
+| `PEP_AUDIT_BUFFER` | `10000` | the most records waiting; full, the oldest is dropped — *managed*: `auditBuffer` |
 | `PEP_AUDIT_CLIENT_ID` | `sts-remote-pep` | the client the PEP gets its token through |
 | `PEP_PROXY` | `true` | the reverse proxy. Until it has received its first configuration since it started, it answers `503` with `Retry-After` to everything; while the configuration it received is empty or switched off, `404` |
 | `PEP_PROXY_PORT` | `9180` | the proxy's plain-HTTP port, bound only with `PEP_PROXY_HTTP=true` |
