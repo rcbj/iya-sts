@@ -15737,12 +15737,24 @@ response is validated against it, always.** There is no setting, in either mode.
 
 Three modules exist for it. `docs/product-security.md` is the user's account.
 
-**`cookie_wire.ts` runs in the main thread only**, right after `enterRealm` and
+**`cookie_wire.ts` runs in the main thread**, right after `enterRealm` and
 before the request pool routes on a cookie's name: a worker is behind a unix
 socket and cannot see TLS. Inside the service a cookie keeps its plain name; on
 the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
 needs nothing, and a cookie whose NAME a document must state asks
 `CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
+
+**A request a worker answers is named by THE WORKER'S view of the realm's mode**
+(2026-11-16, GitHub Actions run 43884417831). The names follow the realm's mode,
+a worker answers `config/set global.mode`, and the front learns of it from the
+change log up to a second later; translating by its own view it wrote a cookie
+unprefixed just after a realm went to product and dropped it as unprefixed on
+the next request. So the front translates for its own routing only, and the
+pool sends the worker the header as it arrived with `x-sts-wire-tls` (stripped
+from clients first); the worker translates (`CookieWire.inWorker()`) and says on
+`x-sts-wire-prefix` whether the front is to prefix its cookies. The read
+barrier already holds a browser's request behind an administrator's write, so
+the worker's view is the current one. A relayed request carries neither header.
 
 **`bootstrap_name.ts` derives a generated name and stores nothing**: an HMAC under
 the cluster's `csrf` key, so nodes and restarts agree. Read the name through
