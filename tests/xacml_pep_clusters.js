@@ -34,8 +34,9 @@
 //      route with signals on (saved: each member polls its own stream),
 //      the resource refusal, a notify URL on the cluster;
 //   G. a member's own per-PEP actions refused, naming the cluster; and
-//      Sync: refused with no notify URL or with nudging stopped, a
-//      member nudged alone and its cluster named, a lost nudge refused;
+//      Sync: refused with no notify URL, a member nudged alone for a full
+//      pull and its cluster named, a PEP whose nudges are stopped dialled
+//      all the same, a lost nudge refused;
 //   H. leave with keep (its routes' policies `pep-<pep>-<route>`) and with
 //      empty; delete refused with members, then released;
 //   I. the view, `GET /admin-api/xacml/pep-clusters`' answer;
@@ -439,6 +440,7 @@ async function childBody() {
       const realAllowed = notifier.notifyAllowed;
       const realProblem = notifier.urlProblem;
       const dialled = [];
+      const asked = [];
       let deliver = true;
       notifier.notifyAllowed = function () {
         log.debug("Entering notifyAllowed().");
@@ -450,9 +452,10 @@ async function childBody() {
         log.debug("Leaving urlProblem().");
         return null;
       };
-      notifier.nudge = function (url) {
+      notifier.nudge = function (url, issuer, options) {
         log.debug("Entering nudge().");
         dialled.push(String(url));
+        asked.push(options || null);
         log.debug("Leaving nudge().");
         return Promise.resolve(deliver
           ? { ok: true, status: 204, why: 'Delivered (204).' }
@@ -473,9 +476,11 @@ async function childBody() {
         const synced = await act({ action: 'sync-pep', name: 'pep-2' });
         t.check(synced.ok && synced.delivered === true &&
                 synced.cluster === 'orders' && synced.pep === 'pep-2' &&
-                dialled.length === 1 && /^https:\/\//.test(dialled[0]),
-                'G4. Sync of a cluster member nudges that one PEP and ' +
-                'names its cluster', JSON.stringify([synced, dialled]));
+                dialled.length === 1 && /^https:\/\//.test(dialled[0]) &&
+                asked[0] && asked[0].full === true,
+                'G4. Sync of a cluster member nudges that one PEP for a full ' +
+                'pull and names its cluster',
+                JSON.stringify([synced, dialled, asked]));
         t.check(/Delivered \(204\)/
                   .test(String(peps.read('pep-2').lastNotify)),
                 'G5. the nudge is recorded on the row',
@@ -483,9 +488,8 @@ async function childBody() {
         act({ action: 'disable-pep', name: 'pep-2' });
         const stopped = await act({ action: 'sync-pep', name: 'pep-2' });
         act({ action: 'enable-pep', name: 'pep-2' });
-        t.check(!stopped.ok && codeOf(stopped) === 'STS-XACML-0283' &&
-                dialled.length === 1,
-                'G6. Sync of a PEP nobody may nudge is refused (0283)',
+        t.check(stopped.ok && dialled.length === 2,
+                'G6. Sync dials a PEP whose change nudges are stopped',
                 JSON.stringify(stopped));
         deliver = false;
         const lost = await act({ action: 'sync-pep', name: 'pep-2' });

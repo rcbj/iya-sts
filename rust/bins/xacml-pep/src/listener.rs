@@ -333,13 +333,7 @@ fn acceptor_for(
         .map_err(|e| AcceptorFault::Pair(e.to_string()))?;
     let mut faults = Vec::new();
     apply_tls_knobs(&mut builder, tuning, &mut faults);
-    apply_client_auth(
-        &mut builder,
-        client_ca,
-        ask_any,
-        tuning,
-        &mut faults,
-    );
+    apply_client_auth(&mut builder, client_ca, ask_any, tuning, &mut faults);
     if !faults.is_empty() {
         tracing::error!(
             "{}xacml-pep: a listener's TLS settings were not all applied: \
@@ -395,11 +389,7 @@ fn apply_tls_knobs(
     }
     let suites = tls13_suites(&tuning.tls13_cipher_suites, tuning.pqc_only);
     if !suites.is_empty() {
-        knob(
-            faults,
-            "TLS 1.3 suites",
-            builder.set_ciphersuites(&suites),
-        );
+        knob(faults, "TLS 1.3 suites", builder.set_ciphersuites(&suites));
     }
     let groups = groups_list(&tuning.groups, tuning.pqc_only);
     if !groups.is_empty() {
@@ -454,8 +444,8 @@ fn apply_client_auth(
     tuning: &Tuning,
     faults: &mut Vec<String>,
 ) {
-    let want = tuning.ask_client_certificate
-        || tuning.require_client_certificate;
+    let want =
+        tuning.ask_client_certificate || tuning.require_client_certificate;
     if !want {
         return;
     }
@@ -472,10 +462,7 @@ fn apply_client_auth(
                 }
             },
             Err(error) => {
-                faults.push(format!(
-                    "trust anchors file: {}",
-                    error
-                ));
+                faults.push(format!("trust anchors file: {}", error));
             }
         }
     }
@@ -513,13 +500,16 @@ fn apply_client_auth(
     if require {
         mode |= SslVerifyMode::FAIL_IF_NO_PEER_CERT;
     }
-    builder.set_verify_callback(mode, move |preverify, _| {
-        if require {
-            preverify
-        } else {
-            true
-        }
-    });
+    builder.set_verify_callback(
+        mode,
+        move |preverify, _| {
+            if require {
+                preverify
+            } else {
+                true
+            }
+        },
+    );
     knob(
         faults,
         "session context",
@@ -773,7 +763,10 @@ impl HttpsListener {
     /// serves none.
     pub fn dns_names(&self) -> Option<Vec<String>> {
         let status = self.status();
-        status.certificate.as_ref().map(|_| status.dns_names.clone())
+        status
+            .certificate
+            .as_ref()
+            .map(|_| status.dns_names.clone())
     }
 
     pub fn mark_listening(&self, port: u16) {
@@ -959,10 +952,7 @@ impl HttpsListener {
         let ssl = match openssl::ssl::Ssl::new(acceptor.context()) {
             Ok(ssl) => ssl,
             Err(error) => {
-                tracing::debug!(
-                    "TLS handshake was not started: {}",
-                    error
-                );
+                tracing::debug!("TLS handshake was not started: {}", error);
                 runtime.note_handshake_failure();
                 return None;
             }
@@ -970,10 +960,7 @@ impl HttpsListener {
         let mut tls = match tokio_openssl::SslStream::new(ssl, stream) {
             Ok(tls) => tls,
             Err(error) => {
-                tracing::debug!(
-                    "TLS handshake was not started: {}",
-                    error
-                );
+                tracing::debug!("TLS handshake was not started: {}", error);
                 runtime.note_handshake_failure();
                 return None;
             }
@@ -1140,47 +1127,76 @@ mod tests {
         assert!(!listener.reload());
         assert_eq!(listener.dns_names(), None, "no certificate, no names");
         assert!(!options.refresh_derived_notify_as(
-            listener.dns_names().as_deref(), None, HOST));
+            listener.dns_names().as_deref(),
+            None,
+            HOST
+        ));
         assert_eq!(options.now().notify_url, "", "no listener, none");
-        let (cert, key) = pair_naming(&["*.pep.example", "pep-a.example",
-                                        "pep-b.example"]);
+        let (cert, key) =
+            pair_naming(&["*.pep.example", "pep-a.example", "pep-b.example"]);
         std::fs::write(&cert_path, &cert).unwrap();
         std::fs::write(&key_path, &key).unwrap();
         assert!(listener.reload());
         assert!(options.refresh_derived_notify_as(
-            listener.dns_names().as_deref(), None, HOST));
-        assert_eq!(options.now().notify_url,
-                   "https://pep-a.example:9443/notify",
-                   "the first DNS name a host can be; the wildcard is not");
-        assert!(!options.refresh_derived_notify_as(
-            listener.dns_names().as_deref(), None, HOST),
-            "the same certificate");
+            listener.dns_names().as_deref(),
+            None,
+            HOST
+        ));
+        assert_eq!(
+            options.now().notify_url,
+            "https://pep-a.example:9443/notify",
+            "the first DNS name a host can be; the wildcard is not"
+        );
+        assert!(
+            !options.refresh_derived_notify_as(
+                listener.dns_names().as_deref(),
+                None,
+                HOST
+            ),
+            "the same certificate"
+        );
         let (cert, key) = pair_naming(&["pep-c.example"]);
         std::fs::write(&cert_path, &cert).unwrap();
         std::fs::write(&key_path, &key).unwrap();
         assert!(!listener.reload(), "a reload, not a first start");
-        assert!(options.refresh_derived_notify_as(
-            listener.dns_names().as_deref(), None, HOST),
-            "a new name derives again");
-        assert_eq!(options.now().notify_url,
-                   "https://pep-c.example:9443/notify");
+        assert!(
+            options.refresh_derived_notify_as(
+                listener.dns_names().as_deref(),
+                None,
+                HOST
+            ),
+            "a new name derives again"
+        );
+        assert_eq!(
+            options.now().notify_url,
+            "https://pep-c.example:9443/notify"
+        );
         // OPTION 1 ON A RELOAD: a certificate naming the hostname, not
         // first, derives the hostname's name.
         let (cert, key) = pair_naming(&["pep-c.example", "PEP-E.example"]);
         std::fs::write(&cert_path, &cert).unwrap();
         std::fs::write(&key_path, &key).unwrap();
         assert!(!listener.reload());
-        assert!(options.refresh_derived_notify_as(
-            listener.dns_names().as_deref(), None, HOST),
-            "the hostname's name, not the first");
-        assert_eq!(options.now().notify_url,
-                   "https://pep-e.example:9443/notify");
+        assert!(
+            options.refresh_derived_notify_as(
+                listener.dns_names().as_deref(),
+                None,
+                HOST
+            ),
+            "the hostname's name, not the first"
+        );
+        assert_eq!(
+            options.now().notify_url,
+            "https://pep-e.example:9443/notify"
+        );
         let installed = HttpsListener::in_memory(0, None, false);
         assert_eq!(installed.dns_names(), None);
         let (cert, key) = pair_naming(&["pep-d.example"]);
         installed.install(&cert, &key).unwrap();
-        assert_eq!(installed.dns_names(),
-                   Some(vec!["pep-d.example".to_string()]));
+        assert_eq!(
+            installed.dns_names(),
+            Some(vec!["pep-d.example".to_string()])
+        );
         std::fs::remove_file(&cert_path).unwrap();
         std::fs::remove_file(&key_path).unwrap();
     }
@@ -1203,23 +1219,17 @@ mod tests {
         let (cert, key) = pair();
         let purpose = if ask_any { "proxy" } else { "api" };
         let tuning = Tuning::defaults(purpose, true);
-        let (acceptor, _) = acceptor_for(
-            &cert,
-            &key,
-            client_ca,
-            ask_any,
-            &tuning,
-            false,
-        )
-        .unwrap_or_else(|fault| {
-            panic!(
-                "acceptor: {}",
-                match fault {
-                    AcceptorFault::Pair(error) => error,
-                    AcceptorFault::Tuning => "tuning".to_string(),
-                }
-            )
-        });
+        let (acceptor, _) =
+            acceptor_for(&cert, &key, client_ca, ask_any, &tuning, false)
+                .unwrap_or_else(|fault| {
+                    panic!(
+                        "acceptor: {}",
+                        match fault {
+                            AcceptorFault::Pair(error) => error,
+                            AcceptorFault::Tuning => "tuning".to_string(),
+                        }
+                    )
+                });
         let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = server.local_addr().unwrap().port();
         let thread = std::thread::spawn(move || {

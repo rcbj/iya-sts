@@ -354,7 +354,15 @@ fn worker(inner: Arc<PoolInner>) {
             }
         };
         inner.busy.fetch_add(1, Ordering::AcqRel);
-        let _ = std::panic::catch_unwind(AssertUnwindSafe(|| job(&rt)));
+        // A job that panics is ONE connection lost, never the worker: the
+        // panic is caught, said, and the worker takes the next job.
+        if std::panic::catch_unwind(AssertUnwindSafe(|| job(&rt))).is_err() {
+            tracing::error!(
+                "{}xacml-pep: a listener thread-pool job panicked; its \
+                 connection is lost and the worker carries on.",
+                sts_core::log::tag("STS-XPEP-0121")
+            );
+        }
         inner.busy.fetch_sub(1, Ordering::AcqRel);
         inner.completed.fetch_add(1, Ordering::Relaxed);
     }
@@ -649,7 +657,13 @@ where
         // not to read another one, which is this service's
         // maxRequestsPerSocket (0 means there is no cap).
         if self.max > 0 && n + 1 >= self.max {
-            let _ = self.shutdown.try_send(());
+            // A full channel already holds the signal, and a closed one
+            // means the connection is ending anyway: neither is a fault.
+            if self.shutdown.try_send(()).is_err() {
+                tracing::debug!(
+                    "xacml-pep: the connection's shutdown was already asked"
+                );
+            }
         }
         self.inner.call(req)
     }

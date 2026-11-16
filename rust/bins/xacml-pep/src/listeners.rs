@@ -141,8 +141,11 @@ pub fn parse(said: &Value) -> (Vec<Def>, Vec<String>) {
     };
     for (i, one) in list.iter().enumerate() {
         if out.len() >= MAX_LISTENERS {
-            refused.push(format!("listener {} is past the {}", i + 1,
-                                 MAX_LISTENERS));
+            refused.push(format!(
+                "listener {} is past the {}",
+                i + 1,
+                MAX_LISTENERS
+            ));
             continue;
         }
         match parse_one(one) {
@@ -221,8 +224,11 @@ fn parse_one(one: &Value) -> Result<Def, String> {
     }
     let key_alg = one["keyAlg"].as_str().unwrap_or("").to_string();
     if https && !KEY_ALGS.contains(&key_alg.as_str()) {
-        return Err(format!("{}'s key is not one of {}", id,
-                           KEY_ALGS.join(", ")));
+        return Err(format!(
+            "{}'s key is not one of {}",
+            id,
+            KEY_ALGS.join(", ")
+        ));
     }
     let purpose = if proxy { "proxy" } else { "api" };
     Ok(Def {
@@ -329,8 +335,7 @@ pub struct PlainStatus {
 
 impl PlainStatus {
     pub fn set(&self, state: &'static str, reason: &'static str) {
-        *self.inner.lock().unwrap_or_else(|e| e.into_inner()) =
-            (state, reason);
+        *self.inner.lock().unwrap_or_else(|e| e.into_inner()) = (state, reason);
     }
 
     fn get(&self) -> (&'static str, &'static str) {
@@ -578,8 +583,11 @@ impl ListenerSet {
             https.set_tuning(def.tuning.clone());
             let due = match &entry.held {
                 None => true,
-                Some(h) => changed_names || h.key != def.certificate_key()
-                    || h.due(Utc::now()),
+                Some(h) => {
+                    changed_names
+                        || h.key != def.certificate_key()
+                        || h.due(Utc::now())
+                }
             };
             if due {
                 match self.obtain(&def, &https).await {
@@ -676,12 +684,13 @@ impl ListenerSet {
         let key_pem = key
             .private_key_to_pem_pkcs8()
             .map_err(|e| ("other", e.to_string()))?;
-        let served = https.install(chain.as_bytes(), &key_pem).map_err(|e| {
-            (
-                "certificate-refused",
-                format!("the certificate answered is not usable: {}", e),
-            )
-        })?;
+        let served =
+            https.install(chain.as_bytes(), &key_pem).map_err(|e| {
+                (
+                    "certificate-refused",
+                    format!("the certificate answered is not usable: {}", e),
+                )
+            })?;
         let time = |k: &str| {
             served[k]
                 .as_str()
@@ -807,17 +816,12 @@ async fn serve(
         let job = runtime.clone();
         runtime.hand_off(stream, move |stream| async move {
             if let Some(acceptor) = acceptor {
-                let Some(tls) = HttpsListener::accept_tls(
-                    stream,
-                    &acceptor,
-                    &job,
-                )
-                .await
+                let Some(tls) =
+                    HttpsListener::accept_tls(stream, &acceptor, &job).await
                 else {
                     return;
                 };
-                let alpn_h2 =
-                    tls.ssl().selected_alpn_protocol() == Some(b"h2");
+                let alpn_h2 = tls.ssl().selected_alpn_protocol() == Some(b"h2");
                 let peer = peer_of(tls.ssl());
                 let cfg = job.http();
                 let offer_h2 = cfg.http2 && alpn_h2;
@@ -915,9 +919,17 @@ mod tests {
             proxy,
             address: "127.0.0.1".parse().unwrap(),
             port,
-            dns_names: if https { vec!["localhost".into()] } else { vec![] },
+            dns_names: if https {
+                vec!["localhost".into()]
+            } else {
+                vec![]
+            },
             ip_addresses: vec![],
-            key_alg: if https { "ec-p256".into() } else { String::new() },
+            key_alg: if https {
+                "ec-p256".into()
+            } else {
+                String::new()
+            },
             renew: 0,
             // One or two workers: the suite binds many listeners, and the
             // production defaults (proxy 16) would start a pool each time.
@@ -945,8 +957,10 @@ mod tests {
         b.set_subject_name(&name).unwrap();
         b.set_issuer_name(&name).unwrap();
         b.set_pubkey(&ca_key).unwrap();
-        b.set_not_before(&Asn1Time::days_from_now(0).unwrap()).unwrap();
-        b.set_not_after(&Asn1Time::days_from_now(2).unwrap()).unwrap();
+        b.set_not_before(&Asn1Time::days_from_now(0).unwrap())
+            .unwrap();
+        b.set_not_after(&Asn1Time::days_from_now(2).unwrap())
+            .unwrap();
         b.append_extension(
             openssl::x509::extension::BasicConstraints::new()
                 .critical()
@@ -988,10 +1002,11 @@ mod tests {
                     .unwrap();
                 b.set_not_after(&Asn1Time::days_from_now(1).unwrap())
                     .unwrap();
-                let san = openssl::x509::extension::SubjectAlternativeName::new()
-                    .dns("localhost")
-                    .build(&b.x509v3_context(Some(&ca), None))
-                    .unwrap();
+                let san =
+                    openssl::x509::extension::SubjectAlternativeName::new()
+                        .dns("localhost")
+                        .build(&b.x509v3_context(Some(&ca), None))
+                        .unwrap();
                 b.append_extension(san).unwrap();
                 b.sign(&ca_key, MessageDigest::sha256()).unwrap();
                 let mut chain = b.build().to_pem().unwrap();
@@ -1004,17 +1019,19 @@ mod tests {
 
     fn refusing() -> Certify {
         Arc::new(|_id: String, _csr: String| {
-            Box::pin(async {
-                Err((true, "the PDP answered 400".to_string()))
-            }) as Pin<Box<dyn Future<Output = Certified> + Send>>
+            Box::pin(async { Err((true, "the PDP answered 400".to_string())) })
+                as Pin<Box<dyn Future<Output = Certified> + Send>>
         })
     }
 
     async fn get(port: u16) -> Option<String> {
-        let mut stream =
-            tokio::net::TcpStream::connect(("127.0.0.1", port)).await.ok()?;
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .ok()?;
         stream
-            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .write_all(
+                b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+            )
             .await
             .ok()?;
         let mut out = String::new();
@@ -1032,8 +1049,9 @@ mod tests {
             .unwrap()
             .into_ssl("localhost")
             .unwrap();
-        let tcp =
-            tokio::net::TcpStream::connect(("127.0.0.1", port)).await.ok()?;
+        let tcp = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .ok()?;
         let mut tls = tokio_openssl::SslStream::new(ssl, tcp).ok()?;
         Pin::new(&mut tls).connect().await.ok()?;
         let serial = tls
@@ -1043,11 +1061,15 @@ mod tests {
             .to_bn()
             .ok()?
             .to_string();
-        tls.write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
-            .await
-            .ok()?;
+        tls.write_all(
+            b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n",
+        )
+        .await
+        .ok()?;
         let mut out = String::new();
-        let _ = tls.read_to_string(&mut out).await;
+        // The peer closing without close_notify ends the read with an
+        // error after the answer arrived; what was read is the answer.
+        tls.read_to_string(&mut out).await.unwrap_or_default();
         Some((out, serial))
     }
 
@@ -1093,8 +1115,10 @@ mod tests {
         let listeners = set(refusing(), true);
         let (api, proxy) = (free_port(), free_port());
         listeners
-            .reconcile(vec![def("one", false, false, api),
-                            def("two", false, true, proxy)])
+            .reconcile(vec![
+                def("one", false, false, api),
+                def("two", false, true, proxy),
+            ])
             .await;
         assert!(get(api).await.unwrap().ends_with("api"));
         assert!(get(proxy).await.unwrap().ends_with("proxy"));
@@ -1104,20 +1128,27 @@ mod tests {
         assert_eq!(rows[0]["state"], "listening");
         assert_eq!(rows[0]["source"], "service");
         // Removed: the port is free at once.
-        listeners.reconcile(vec![def("two", false, true, proxy)]).await;
+        listeners
+            .reconcile(vec![def("two", false, true, proxy)])
+            .await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         assert!(get(api).await.is_none(), "unbound");
         assert!(get(proxy).await.unwrap().ends_with("proxy"), "kept");
         // Moved to another port: unbound and bound again.
         let moved = free_port();
-        listeners.reconcile(vec![def("two", false, true, moved)]).await;
+        listeners
+            .reconcile(vec![def("two", false, true, moved)])
+            .await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         assert!(get(proxy).await.is_none());
         assert!(get(moved).await.unwrap().ends_with("proxy"));
         listeners.reconcile(vec![]).await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         assert!(get(moved).await.is_none(), "none defined, none bound");
-        assert!(listeners.report()["listeners"].as_array().unwrap().is_empty());
+        assert!(listeners.report()["listeners"]
+            .as_array()
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1125,15 +1156,23 @@ mod tests {
         let listeners = set(refusing(), false);
         let held = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = held.local_addr().unwrap().port();
-        listeners.reconcile(vec![def("busy", false, false, port)]).await;
-        assert_eq!(listeners.states(),
-                   vec![("busy".to_string(), "failed", "address-in-use")]);
+        listeners
+            .reconcile(vec![def("busy", false, false, port)])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("busy".to_string(), "failed", "address-in-use")]
+        );
         let report = listeners.report();
         assert_eq!(report["listeners"][0]["reason"], "address-in-use");
         drop(held);
-        listeners.reconcile(vec![def("busy", false, false, port)]).await;
-        assert_eq!(listeners.states(),
-                   vec![("busy".to_string(), "listening", "none")]);
+        listeners
+            .reconcile(vec![def("busy", false, false, port)])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("busy".to_string(), "listening", "none")]
+        );
         assert!(get(port).await.unwrap().ends_with("api"));
     }
 
@@ -1142,8 +1181,10 @@ mod tests {
         let listeners = set(refusing(), false);
         let port = free_port();
         listeners.reconcile(vec![def("p", false, true, port)]).await;
-        assert_eq!(listeners.states(),
-                   vec![("p".to_string(), "off", "proxy-off")]);
+        assert_eq!(
+            listeners.states(),
+            vec![("p".to_string(), "off", "proxy-off")]
+        );
         assert!(get(port).await.is_none());
     }
 
@@ -1154,14 +1195,18 @@ mod tests {
         let port = free_port();
         let mut one = def("tls", true, false, port);
         listeners.reconcile(vec![one.clone()]).await;
-        assert_eq!(listeners.states(),
-                   vec![("tls".to_string(), "listening", "none")]);
+        assert_eq!(
+            listeners.states(),
+            vec![("tls".to_string(), "listening", "none")]
+        );
         let (body, first) = get_tls(port, &ca).await.unwrap();
         assert!(body.ends_with("api"));
         assert_eq!(asked.load(Ordering::SeqCst), 1);
         let report = listeners.report();
-        assert_eq!(report["listeners"][0]["certificate"]["subject"],
-                   "CN=pep-1");
+        assert_eq!(
+            report["listeners"][0]["certificate"]["subject"],
+            "CN=pep-1"
+        );
         // The same definition again asks for nothing.
         listeners.reconcile(vec![one.clone()]).await;
         assert_eq!(asked.load(Ordering::SeqCst), 1, "held, not asked again");
@@ -1178,9 +1223,13 @@ mod tests {
     async fn a_refused_certificate_request_leaves_it_waiting_unbound() {
         let listeners = set(refusing(), false);
         let port = free_port();
-        listeners.reconcile(vec![def("tls", true, false, port)]).await;
-        assert_eq!(listeners.states(), vec![(
-            "tls".to_string(), "waiting", "certificate-request-refused")]);
+        listeners
+            .reconcile(vec![def("tls", true, false, port)])
+            .await;
+        assert_eq!(
+            listeners.states(),
+            vec![("tls".to_string(), "waiting", "certificate-request-refused")]
+        );
         assert!(get(port).await.is_none(), "not bound without a certificate");
     }
 
@@ -1203,10 +1252,16 @@ mod tests {
     fn a_plain_listener_nobody_turned_on_is_reported_http_off() {
         let listeners = set(refusing(), false);
         let status = Arc::new(PlainStatus::default());
-        listeners.environment("api-http", 9090,
-                              plain_kind(false, status.clone()));
-        listeners.environment("proxy-http", 9180,
-                              plain_kind(false, status.clone()));
+        listeners.environment(
+            "api-http",
+            9090,
+            plain_kind(false, status.clone()),
+        );
+        listeners.environment(
+            "proxy-http",
+            9180,
+            plain_kind(false, status.clone()),
+        );
         let report = listeners.report();
         for i in 0..2 {
             assert_eq!(report["listeners"][i]["state"], "off");
@@ -1228,8 +1283,11 @@ mod tests {
         let status = Arc::new(PlainStatus::default());
         status.set("listening", "crl-only");
         listeners.environment("api-http", 9090, EnvKind::Crl(status.clone()));
-        listeners.environment("api-https", 9443,
-                              EnvKind::Plain(Arc::new(PlainStatus::default())));
+        listeners.environment(
+            "api-https",
+            9443,
+            EnvKind::Plain(Arc::new(PlainStatus::default())),
+        );
         let report = listeners.report();
         assert_eq!(report["listeners"][0]["id"], "api-http");
         assert_eq!(report["listeners"][0]["purpose"], "crl");
@@ -1241,8 +1299,10 @@ mod tests {
             Some(4),
             "api-http starts at the API pool even when it serves CRLs"
         );
-        assert_eq!(report["listeners"][1]["purpose"], "api",
-                   "only the CRL-only listener changes purpose");
+        assert_eq!(
+            report["listeners"][1]["purpose"], "api",
+            "only the CRL-only listener changes purpose"
+        );
         // A CRL listener that failed to bind is still a CRL listener.
         status.set("failed", "other");
         assert_eq!(listeners.report()["listeners"][0]["purpose"], "crl");
