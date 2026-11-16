@@ -343,6 +343,13 @@ const RESERVED_HEADERS = ['authorization', 'cookie', 'host', 'content-length',
                           'proxy-authenticate', 'proxy-connection',
                           'forwarded', 'set-cookie'];
 const TEXT_MAX = 1024;
+
+/**
+ * The path prefix the proxy keeps for itself (#1830): its session
+ * mechanism's `/.iya-pep/callback` and `/.iya-pep/logout`. No route may be
+ * this path or under it.
+ */
+const RESERVED_PREFIX = '/.iya-pep';
 // The reserved callback path of the session mechanism (the issue's D6).
 const CALLBACK_PATH = '/.iya-pep/callback';
 const SAML2_ASSERTION = 'urn:oasis:names:tc:SAML:2.0:assertion';
@@ -637,6 +644,20 @@ class PepProxy {
     }
     log.debug("Leaving PepProxy.urlProblem(). Usable.");
     return '';
+  }
+
+  /**
+   * Whether a route path is the proxy's own prefix or under it (#1830).
+   *
+   * @param path - a path that `pathProblem()` accepted
+   * @returns true for `/.iya-pep` and anything under `/.iya-pep/`
+   */
+  static reservedPath(path: string): boolean {
+    helpers.log.debug("Entering PepProxy.reservedPath().");
+    const out = path === RESERVED_PREFIX ||
+      path.indexOf(RESERVED_PREFIX + '/') === 0;
+    helpers.log.debug("Leaving PepProxy.reservedPath(). " + out);
+    return out;
   }
 
   // A route path: starts with `/`, no `.` or `..` segment, no `//`, no `%`,
@@ -1000,6 +1021,21 @@ class PepProxy {
       log.debug("Leaving PepProxy.validateRoute(). Path.");
       return this.refuse(where + ' ("' + id + '"): ' + pathProblem + '.',
                          'STS-XACML-0193');
+    }
+    // THE PROXY'S OWN PREFIX (#1830). `/.iya-pep/callback` and
+    // `/.iya-pep/logout` are the session mechanism's, answered before any
+    // route, and the PEP answers 404 (its own code) to anything else under
+    // the prefix — so a route there could never be reached, and an updated
+    // PEP refuses the whole configuration holding one and keeps its last
+    // good one. Refused here so it is never saved; a document stored before
+    // this fails the pull's validation and is pulled as configured: false
+    // (STS-XACML-0200), as any stored document this grammar refuses is.
+    if (PepProxy.reservedPath(String(route.path))) {
+      log.debug("Leaving PepProxy.validateRoute(). Reserved.");
+      return this.refuse(where + ' ("' + id + '"): a route `path` may not ' +
+        'be ' + RESERVED_PREFIX + ' or under ' + RESERVED_PREFIX + '/, ' +
+        'which the proxy keeps for its own callback and sign-out.',
+        'STS-XACML-0298');
     }
     const match = route.match === undefined ? 'prefix' : route.match;
     if (typeof match !== 'string' || MATCHES.indexOf(match) < 0) {

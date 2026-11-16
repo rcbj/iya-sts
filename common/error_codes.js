@@ -23649,6 +23649,11 @@ const CODES = [
       'delivered: the connection failed, the certificate did not verify, ' +
       'or the PEP refused it. The result is recorded on the PEP\'s row.',
     spec: 'HTTP 400 on /admin-api' },
+  { code: 'STS-XACML-0298',
+    summary: 'A reverse-proxy route\'s `path` is /.iya-pep or under ' +
+      '/.iya-pep/, the prefix the proxy reserves for its own callback and ' +
+      'sign-out (#1830): an updated PEP refuses the whole configuration.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

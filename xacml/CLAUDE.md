@@ -1288,9 +1288,10 @@ the PEP makes about itself.
 
 `models/pep/pep_control_plane.tsp` describes every `/xacml/pep/*` answer and
 `POST /xacml/pip` (`xacml-pep/CLAUDE.md`, *THE MODEL OF EVERY ENDPOINT*), and
-writing it found six places where the service was irregular. Each is fixed,
-and each keeps what a deployed PEP relies on — it treats any answer but 200,
-201 and 304 as a failure and reads only the members the model names:
+writing it found six places where the service was irregular; a seventh
+came from the PEP's side. Each is fixed, and each keeps what a deployed PEP
+relies on — it treats any answer but 200, 201 and 304 as a failure and reads
+only the members the model names:
 
 * **A pull touches the CERTIFICATE's row.** `GET /xacml/pep/policies?pep=`
   moved that row's `lastSeen` whatever the certificate said, so any
@@ -1325,6 +1326,14 @@ and each keeps what a deployed PEP relies on — it treats any answer but 200,
   the rule every request-less URL here follows. KEPT rather than removed,
   because the model and the PEP's generated type require it; the PEP reads
   nothing in the body but `full`. (`pep_listener_certificate.js` F1d.)
+* **A route may not be `/.iya-pep` or under `/.iya-pep/`** (`STS-XACML-0298`,
+  `PepProxy.reservedPath()`): the proxy keeps that prefix for its callback
+  and sign-out and answers 404 (`STS-XPEP-0124`) to the rest, and an updated
+  PEP refuses the whole configuration holding such a route and keeps its
+  last good one. A document stored before this fails the pull's validation
+  like any stored document the grammar refuses — logged `STS-XACML-0200`,
+  pulled as `configured: false`, so the proxy answers 404 until an
+  administrator saves it again. (`xacml_pep_proxy.js` A3, A6, C9b.)
 
 ## `GET /xacml/pep/authzen-catalogue` — the pull's other half (#1179)
 
