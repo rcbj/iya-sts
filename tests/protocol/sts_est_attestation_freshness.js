@@ -46,7 +46,6 @@ const est = require("./est_client.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
-const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -439,9 +438,6 @@ async function test() {
   log.info("=== 6. product mode on the realm ===");
   await ok(api + "/config/set", { key: "global.mode", value: "product" },
            "put this realm in product mode");
-  // The front process learns of the switch from the change log, and names
-  // the nonce cookie by the mode it holds: `service_facts.awaitFrontMode()`.
-  await facts.awaitFrontMode(base, true);
   let refused = null;
   let accepted = null;
   let acceptedKey = null;
