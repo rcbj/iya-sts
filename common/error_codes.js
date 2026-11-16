@@ -23713,6 +23713,57 @@ const CODES = [
       '(#1827). The rest of the batch is recorded and the record is ' +
       'counted as ignored.',
     spec: 'none; counted as ignored in the answer' },
+  // #1827's follow-up: a remote PEP's DPoP-bound access token at the PEP
+  // door (/xacml/pep/* and POST /xacml/pip), xacml/pep_token.ts.
+  { code: 'STS-XACML-0289',
+    summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with no ' +
+      'access token while xacml.pepAuthentication is token: a client ' +
+      'certificate alone is not accepted in this realm (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_request"' },
+  { code: 'STS-XACML-0290',
+    summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with an ' +
+      'access token and no client certificate while ' +
+      'xacml.pepAuthentication is certificate: the token is not read in ' +
+      'this realm (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0291',
+    summary: 'A remote PEP\'s access token at the PEP door was not one this ' +
+      'realm issued and holds: its signature did not verify, it expired, ' +
+      'it is not an access token, another authorization server issued it, ' +
+      'it was revoked, or its certificate binding did not hold (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0292',
+    summary: 'A remote PEP\'s access token at the PEP door is not ' +
+      'DPoP-bound (no cnf.jkt), or a DPoP-bound one was sent as Bearer ' +
+      '(#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0293',
+    summary: 'A remote PEP\'s access token at the PEP door is not ' +
+      'audienced to this realm\'s /xacml/pep (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0294',
+    summary: 'An access token at the PEP door was issued to a client other ' +
+      'than sts-remote-pep, the one a remote PEP\'s token comes from ' +
+      '(#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0295',
+    summary: 'A remote PEP\'s access token at the PEP door does not carry ' +
+      'xacml:pep, or sts-remote-pep no longer holds the delegated ' +
+      'permission grant of it on sts-xacml-pep-api (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="insufficient_scope"' },
+  { code: 'STS-XACML-0296',
+    summary: 'A remote PEP\'s DPoP proof at the PEP door was refused: ' +
+      'missing, malformed, not for this method and URL, outside its iat ' +
+      'window, a replay, without the token\'s ath, by another key than ' +
+      'the token is bound to, or without the server nonce the realm asks ' +
+      'for (#1827). The log line names the proof\'s own STS-OAUTH code.',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or ' +
+      '"use_dpop_nonce" with a DPoP-Nonce header (RFC 9449 section 9)' },
+  { code: 'STS-XACML-0297',
+    summary: 'A remote PEP\'s access token at the PEP door names no entry ' +
+      'under this realm\'s ou=users: its sub is not urn:uuid: of exactly ' +
+      'one person\'s entry, the PEP\'s own (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24886,6 +24937,29 @@ const CODES = [
       'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
       'requires; refused before its body was read (#936).',
     spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16)' },
+  { code: 'STS-AUTHZEN-0118',
+    summary: 'A remote PEP\'s access token from sts-remote-pep at ' +
+      '/access/v1 was refused: not one this realm issued and holds, not ' +
+      'DPoP-bound or sent as Bearer, not audienced to this realm\'s ' +
+      '/access/v1, or its DPoP proof was refused (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or ' +
+      '"use_dpop_nonce"' },
+  { code: 'STS-AUTHZEN-0119',
+    summary: 'A remote PEP\'s access token at /access/v1 does not carry ' +
+      'authzen:evaluate, or sts-remote-pep no longer holds the delegated ' +
+      'permission grant of it on sts-authzen-api (#1827).',
+    spec: 'HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope"' },
+  { code: 'STS-AUTHZEN-0120',
+    summary: 'A remote PEP\'s access token at /access/v1 names no entry ' +
+      'under this realm\'s ou=users, or one that does not hold ' +
+      'REMOTE_PEPS: the token of the client every PEP shares admits only ' +
+      'a remote PEP (#1827).',
+    spec: 'HTTP 401 (no entry) or 403 (not a remote PEP)' },
+  { code: 'STS-AUTHZEN-0121',
+    summary: 'A remote PEP\'s access token arrived at /access/v1 while ' +
+      'xacml.pepAuthentication is certificate, which accepts a remote PEP ' +
+      'only by its client certificate (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

@@ -3301,6 +3301,7 @@ namespace IyaSts.Api.Management {
     `syncToken`?: NullableString;
     `staleAfterS`?: numeric;
     `requiresCertificate`?: boolean;
+    `pepAuthentication`?: "certificate" | "token" | "either";
     `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
     `peps`?: (WithNameDnIdentityEtc25)[];
     `elsewhere`?: (WithIdNameCount)[];
@@ -28719,6 +28720,7 @@ op `getXacmlPeps`(@js(#{`maxLength`:128}) `parameters/0/schema`: string,
     `syncToken`?: NullableString;
     `staleAfterS`?: numeric;
     `requiresCertificate`?: boolean;
+    `pepAuthentication`?: "certificate" | "token" | "either";
     `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
     `peps`?: (WithNameDnIdentityEtc25)[];
     `elsewhere`?: (WithIdNameCount)[];

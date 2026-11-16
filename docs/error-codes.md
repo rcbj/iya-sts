@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5672** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5686** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 759
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 74
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
@@ -86,9 +86,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 210
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 219
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 125
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 94
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 291
@@ -2551,6 +2551,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1009` | An access-token status index was not published because the block claim's fence was lost before its status row committed (#884). The access token is not minted on that index. | none (recorded only) |
 | `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
 | `STS-OAUTH-1011` *(retired)* | An assertion's x5c leaf, issued by this realm, names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16): the assertion grant follows WS-Trust and authenticates the person whichever spelling names them. | — |
+| `STS-OAUTH-1012` | A token request through sts-remote-pep, the public client a remote PEP presents its RFC 7523 self-assertion through, carried no DPoP proof: every token issued to that client is DPoP-bound (RFC 9449) to the PEP's assertion key (#1827's follow-up). | invalid_dpop_proof (HTTP 400) |
 
 ## STS-SAML
 
@@ -5156,6 +5157,15 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0286` | A remote PEP pushed decision records to POST /admin-api/pep-audit in a body that is not { instance, events } with events a non-empty array of objects, or with more events than one batch may carry (#1827). Nothing in the batch is recorded. | HTTP 400, an error message |
 | `STS-XACML-0287` | A remote PEP pushed decision records to POST /admin-api/pep-audit and is not registered in this realm's ou=peps under the name its token's subject carries (#1827). It must register (POST /xacml/pep/register) before its records are taken. | HTTP 404, an error message |
 | `STS-XACML-0288` | A decision record a remote PEP pushed to POST /admin-api/pep-audit was not recorded: it had no positive integer seq, or a kind other than enforcement, authzen or proxy (#1827). The rest of the batch is recorded and the record is counted as ignored. | none; counted as ignored in the answer |
+| `STS-XACML-0289` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with no access token while xacml.pepAuthentication is token: a client certificate alone is not accepted in this realm (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_request" |
+| `STS-XACML-0290` | A remote PEP reached /xacml/pep/* or POST /xacml/pip with an access token and no client certificate while xacml.pepAuthentication is certificate: the token is not read in this realm (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0291` | A remote PEP's access token at the PEP door was not one this realm issued and holds: its signature did not verify, it expired, it is not an access token, another authorization server issued it, it was revoked, or its certificate binding did not hold (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0292` | A remote PEP's access token at the PEP door is not DPoP-bound (no cnf.jkt), or a DPoP-bound one was sent as Bearer (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0293` | A remote PEP's access token at the PEP door is not audienced to this realm's /xacml/pep (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0294` | An access token at the PEP door was issued to a client other than sts-remote-pep, the one a remote PEP's token comes from (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0295` | A remote PEP's access token at the PEP door does not carry xacml:pep, or sts-remote-pep no longer holds the delegated permission grant of it on sts-xacml-pep-api (#1827). | HTTP 401, WWW-Authenticate: DPoP error="insufficient_scope" |
+| `STS-XACML-0296` | A remote PEP's DPoP proof at the PEP door was refused: missing, malformed, not for this method and URL, outside its iat window, a replay, without the token's ath, by another key than the token is bound to, or without the server nonce the realm asks for (#1827). The log line names the proof's own STS-OAUTH code. | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or "use_dpop_nonce" with a DPoP-Nonce header (RFC 9449 section 9) |
+| `STS-XACML-0297` | A remote PEP's access token at the PEP door names no entry under this realm's ou=users: its sub is not urn:uuid: of exactly one person's entry, the PEP's own (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
 
 ## STS-XPEP
 
@@ -5393,6 +5403,10 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
 | `STS-AUTHZEN-0116` | An AuthZEN answer carried a member its model in models/authzen/authzen_members.tsp does not name, one of a type or value the model does not allow, or lacked a member it requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
 | `STS-AUTHZEN-0117` | An AuthZEN evaluation, batch or search request did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16) |
+| `STS-AUTHZEN-0118` | A remote PEP's access token from sts-remote-pep at /access/v1 was refused: not one this realm issued and holds, not DPoP-bound or sent as Bearer, not audienced to this realm's /access/v1, or its DPoP proof was refused (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or "use_dpop_nonce" |
+| `STS-AUTHZEN-0119` | A remote PEP's access token at /access/v1 does not carry authzen:evaluate, or sts-remote-pep no longer holds the delegated permission grant of it on sts-authzen-api (#1827). | HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope" |
+| `STS-AUTHZEN-0120` | A remote PEP's access token at /access/v1 names no entry under this realm's ou=users, or one that does not hold REMOTE_PEPS: the token of the client every PEP shares admits only a remote PEP (#1827). | HTTP 401 (no entry) or 403 (not a remote PEP) |
+| `STS-AUTHZEN-0121` | A remote PEP's access token arrived at /access/v1 while xacml.pepAuthentication is certificate, which accepts a remote PEP only by its client certificate (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
 
 ## STS-FGA
 
