@@ -52,6 +52,10 @@
 //      certificate, a scope, an issued certificate and its revocation, and
 //      the realm's door; and the policies' and the catalogue's tokens that
 //      do not.
+//   X. THE CONTROL PLANE IS THE MODEL'S (#1830): register, heartbeat, the
+//      five pulls, a refusal and two validation doors, each real answer held
+//      to xacml-pep/openapi/pep-control-plane.json (tests/tools/
+//      pep_model.js), whose objects are closed.
 //   O. OFF: authzen.enabled off answers 501.
 // ---------------------------------------------------------------------------
 
@@ -1446,6 +1450,196 @@ async function childBody() {
           'P12. the policies\' and the catalogue\'s tokens do not move with ' +
           'the callers: three pulls, three contracts', policiesToken + ' / ' +
           catalogueToken);
+
+  // -------------------------------------------------------------------------
+  // X. THE CONTROL PLANE IS THE MODEL'S (#1830)
+  //
+  // `models/pep/pep_control_plane.tsp` describes what this service answers a
+  // remote PEP, and `sts-model-pep` is generated from it for the PEP to read
+  // with. Each real answer below is held to the generated document, whose
+  // objects are closed: a member written here and not modelled, or modelled
+  // as required and not written, fails.
+  // -------------------------------------------------------------------------
+  const pepModel = require('./tools/pep_model');
+  const heldToModel = function (label, operationId, answer) {
+    log.debug("Entering heldToModel().");
+    const wrong = answer.json === null ? ['not JSON: ' + brief(answer)] :
+      pepModel.problems('pep-control-plane.json', operationId,
+        answer.status, answer.json);
+    t.check(wrong.length === 0, label + ': ' + operationId + ' ' +
+            answer.status + ' is the model\'s answer', wrong.join('; '));
+    log.debug("Leaving heldToModel().");
+  };
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pullCred,
+    { name: 'azpull', notifyUrl: '', bias: 'deny-biased', resource: '',
+      version: '0.0.0', description: '' });
+  heldToModel('X1', 'postRegister', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pullCred,
+    { name: 'azpull', syncToken: '', policyCount: 0, decisions: 0,
+      allowed: 0, refused: 0, undischargeable: 0, bias: 'deny-biased',
+      resource: '', version: '0.0.0', notifyUrl: '' });
+  heldToModel('X2', 'postHeartbeat', r);
+  for (const one of [['X3', 'getPolicies', '/xacml/pep/policies'],
+    ['X4', 'getAuthzenCatalogue', '/xacml/pep/authzen-catalogue'],
+    ['X5', 'getAuthzenCallers', '/xacml/pep/authzen-callers'],
+    ['X6', 'getSettings', '/xacml/pep/settings'],
+    ['X7', 'getProxy', '/xacml/pep/proxy']]) {
+    r = await request(port, 'GET', PREFIX + one[2], pullCred);
+    t.check(r.status === 200, one[0] + '. ' + one[2] + ' answers 200',
+            brief(r));
+    heldToModel(one[0], one[1], r);
+  }
+  r = await request(port, 'GET', PREFIX + '/xacml/pep/policies', null);
+  heldToModel('X8 (a refusal)', 'getPolicies', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/session', pullCred,
+    { sid: 'no-such-session' });
+  heldToModel('X9', 'postSession', r);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/introspect',
+    pullCred, { token: 'not-a-token' });
+  heldToModel('X10', 'postIntrospect', r);
+
+  // X11. `?pep=` NAMES NOBODY WHEN A CERTIFICATE WAS PRESENTED (#1830): a
+  // pull by `azpull` naming another PEP's row touches azpull's, never the
+  // other one's.
+  const pepRegistry = require(ROOT + '/xacml/xacml_pep_registry');
+  const seenOf = function (name) {
+    log.debug("Entering seenOf().");
+    log.debug("Leaving seenOf().");
+    return inRealm(function () {
+      const row = pepRegistry.read(name);
+      return row ? row.lastSeen : null;
+    });
+  };
+  const foreign = inRealm(function () {
+    return pepRegistry.register({ name: 'azforeign', authenticated: false });
+  });
+  t.check(foreign && foreign.ok, 'X11. setup: another PEP\'s row exists',
+          JSON.stringify(foreign));
+  const foreignSeen = seenOf('azforeign');
+  const pullSeen = seenOf('azpull');
+  await new Promise(function (ok) {
+    setTimeout(ok, 5);
+  });
+  r = await request(port, 'GET',
+                    PREFIX + '/xacml/pep/policies?pep=azforeign', pullCred);
+  t.check(r.status === 200 && seenOf('azforeign') === foreignSeen &&
+          seenOf('azpull') !== pullSeen,
+          'X11. a pull naming another PEP with ?pep= touches the ' +
+          'certificate\'s row (azpull) and leaves the named one alone',
+          JSON.stringify({ status: r.status, foreign: [foreignSeen,
+            seenOf('azforeign')], own: [pullSeen, seenOf('azpull')] }));
+  inRealm(function () {
+    pepRegistry.remove('azforeign');
+  });
+
+  // X12. IF-NONE-MATCH IS READ (#1830), on all five pulls, by RFC 9110's
+  // rule: the ETag as sent, weak, in a list, and `*` answer 304; another
+  // tag answers 200; `?since=` still answers 304 on its own.
+  for (const one of [['getPolicies', '/xacml/pep/policies'],
+    ['getAuthzenCatalogue', '/xacml/pep/authzen-catalogue'],
+    ['getAuthzenCallers', '/xacml/pep/authzen-callers'],
+    ['getSettings', '/xacml/pep/settings'],
+    ['getProxy', '/xacml/pep/proxy']]) {
+    const full = await request(port, 'GET', PREFIX + one[1], pullCred);
+    const etag = String(full.headers.etag || '');
+    const bare = etag.replace(/^"|"$/g, '');
+    const asked = [etag, 'W/' + etag, '"other", ' + etag, '*'];
+    const answers = [];
+    for (const field of asked) {
+      const got = await request(port, 'GET', PREFIX + one[1], pullCred,
+                                undefined, { 'if-none-match': field });
+      answers.push(got.status + (got.headers.etag === etag ? '' : '!etag'));
+    }
+    const other = await request(port, 'GET', PREFIX + one[1], pullCred,
+                                undefined, { 'if-none-match': '"other"' });
+    const since = await request(port, 'GET', PREFIX + one[1] + '?since=' +
+                                encodeURIComponent(bare), pullCred);
+    t.check(full.status === 200 && /^"[^"]+"$/.test(etag) &&
+            answers.join() === '304,304,304,304' && other.status === 200 &&
+            since.status === 304,
+            'X12. ' + one[1] + ' answers 304 to If-None-Match (as sent, ' +
+            'weak, in a list, *), 200 to another tag, and 304 to ?since=',
+            JSON.stringify({ etag: etag, answers: answers,
+                             other: other.status, since: since.status }));
+    heldToModel('X12', one[0], other);
+  }
+
+  // X13. THE HEARTBEAT AND THE REGISTRATION ANSWER THE REGISTRY'S STATUS
+  // (#1830): 404 for a row that is gone, 503 with no directory — which
+  // was 404 and 400 until then.
+  const beat = { syncToken: '', policyCount: 0, decisions: 0, allowed: 0,
+                 refused: 0, undischargeable: 0 };
+  inRealm(function () {
+    pepRegistry.remove('azpull');
+  });
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/heartbeat', pullCred,
+                    beat);
+  t.check(r.status === 404 && markedSince(since, 'STS-XACML-0021'),
+          'X13. a heartbeat from a PEP that is not registered is 404 ' +
+          '(STS-XACML-0021)', brief(r));
+  heldToModel('X13', 'postHeartbeat', r);
+  const directoryWas = pepRegistry.directoryInstalled();
+  pepRegistry.setDirectory(null);
+  since = marks.length;
+  const noDirBeat = await request(port, 'POST',
+    PREFIX + '/xacml/pep/heartbeat', pullCred, beat);
+  const sinceRegister = marks.length;
+  const noDirRegister = await request(port, 'POST',
+    PREFIX + '/xacml/pep/register', pullCred, { name: 'azpull' });
+  pepRegistry.setDirectory(directoryWas);
+  t.check(noDirBeat.status === 503 && markedSince(since, 'STS-XACML-0026') &&
+          noDirRegister.status === 503 &&
+          markedSince(sinceRegister, 'STS-XACML-0026'),
+          'X13. with no directory the heartbeat and the registration are ' +
+          '503 (STS-XACML-0026), not 404 and 400',
+          brief(noDirBeat) + ' / ' + brief(noDirRegister));
+  heldToModel('X13', 'postHeartbeat', noDirBeat);
+  heldToModel('X13', 'postRegister', noDirRegister);
+  r = await request(port, 'POST', PREFIX + '/xacml/pep/register', pullCred,
+                    { name: 'azpull' });
+  t.check(r.status === 201, 'X13. and azpull registers again', brief(r));
+
+  // X14. POST /xacml/pip ANSWERS THE GATE AND THE OFF SWITCH IN ITS OWN XML
+  // (#1830), as it does its own refusals; the codes recorded are the same.
+  const pipRefusal = function (answer, status, error) {
+    log.debug("Entering pipRefusal().");
+    log.debug("Leaving pipRefusal().");
+    return answer.status === status && answer.json === null &&
+      /^application\/xml/.test(String(answer.headers['content-type'])) &&
+      new RegExp('<PIPError xmlns="urn:sts:xacml:pip:1\\.0" error="' +
+                 error + '">').test(answer.text);
+  };
+  const pipAsked = '<PIPRequest xmlns="urn:sts:xacml:pip:1.0"/>';
+  const xmlType = { 'content-type': 'application/xml' };
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pip', null, pipAsked,
+                    xmlType);
+  t.check(pipRefusal(r, 403, 'access_denied') &&
+          markedSince(since, 'STS-XACML-0007'),
+          'X14. the gate\'s refusal at /xacml/pip is a 403 PIPError, ' +
+          'access_denied (STS-XACML-0007)', brief(r));
+  r = await request(port, 'GET', PREFIX + '/xacml/pep/policies', null);
+  t.check(r.status === 403 && r.json && r.json.error === 'access_denied',
+          'X14. and the same refusal on /xacml/pep/* stays JSON', brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.remotePeps', false);
+  });
+  since = marks.length;
+  r = await request(port, 'POST', PREFIX + '/xacml/pip', pullCred, pipAsked,
+                    xmlType);
+  const offPolicies = await request(port, 'GET',
+    PREFIX + '/xacml/pep/policies', pullCred);
+  inRealm(function () {
+    config.setOverride('xacml.remotePeps', true);
+  });
+  t.check(pipRefusal(r, 501, 'not_implemented') &&
+          markedSince(since, 'STS-XACML-0002') &&
+          offPolicies.status === 501 && offPolicies.json &&
+          offPolicies.json.error === 'not_implemented',
+          'X14. with remote PEPs off /xacml/pip is a 501 PIPError, ' +
+          'not_implemented (STS-XACML-0002), and /xacml/pep/* a JSON 501',
+          brief(r) + ' / ' + brief(offPolicies));
 
   // -------------------------------------------------------------------------
   // O. OFF

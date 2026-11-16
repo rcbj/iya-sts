@@ -9,6 +9,7 @@ resolver = "2"
 members = [
   "crates/sts-core",
   "crates/sts-xacml",
+  "crates/sts-model-pep",
   "bins/xacml-pep",
 ]
 
@@ -24,6 +25,7 @@ publish = false
 [workspace.dependencies]
 sts-core = { path = "crates/sts-core" }
 sts-xacml = { path = "crates/sts-xacml" }
+sts-model-pep = { path = "crates/sts-model-pep" }
 axum = "0.8"
 base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

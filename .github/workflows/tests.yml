@@ -71,7 +71,7 @@ on:
   # mode jobs and the two OpenID conformance jobs are hours of runner time
   # each, and the account has a finite number of them. A push or a pull
   # request runs the cheap jobs (mirror, dependency-windows, build, unit,
-  # openapi-breaking); the whole suite is `gh workflow run tests.yml --ref
+  # rust, openapi-breaking); the whole suite is `gh workflow run tests.yml --ref
   # develop`, started deliberately once a batch of fixes has landed.
   # `coverage` adds the coverage run to a dispatch.
   workflow_dispatch:
@@ -626,6 +626,32 @@ jobs:
   # whose FROMs come from the private mirror, so it logs in (it failed on
   # every pull request with a 401 until 2026-11-14) and frees disk first.
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # THE RUST WORKSPACE'S OWN TESTS (#1830). `cargo test` ran nowhere in CI
+  # until this job: the remote PEP's image builds the binary (`cargo build`)
+  # and never tests it, so the PEP's unit tests, the XACML engine's OASIS
+  # conformance and the tests that hold the PEP's answers to its generated
+  # model (`sts-model-pep`) ran only on a laptop. A cheap job, on every push
+  # and pull request: the formatting check, then every test of the
+  # workspace, in the mirrored Rust image the PEP's image is built with.
+  # ---------------------------------------------------------------------------
+  rust:
+    needs: mirror
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Format, then test the workspace
+        run: >-
+          docker run --rm -v "${PWD}:/src" -w /src/rust
+          -e CARGO_TERM_COLOR=always -e CARGO_INCREMENTAL=0
+          ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+          bash -c "rustup component add rustfmt && cargo fmt --check && cargo test --workspace --locked"
+
   openapi-breaking:
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')
     needs: mirror

@@ -22744,12 +22744,12 @@ const CODES = [
   { code: 'STS-XACML-0001',
     summary: 'A request reached an XACML endpoint while the family is ' +
       'switched off (xacml.enabled).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0002',
     summary: 'A request reached a remote-PEP endpoint or POST /xacml/pip ' +
       'while remote enforcement points are switched off ' +
       '(xacml.remotePeps).',
-    spec: 'HTTP 501 not_implemented' },
+    spec: 'HTTP 501 not_implemented (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0003',
     summary: 'The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) ' +
       'was refused to a caller that presented no client certificate.',
@@ -22775,17 +22775,17 @@ const CODES = [
   { code: 'STS-XACML-0008',
     summary: 'A remote-PEP endpoint was refused to a caller whose client ' +
       'certificate did not verify against this service\'s truststore.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0009',
     summary: 'A remote-PEP endpoint was refused to a verified certificate ' +
       'whose subject resolves to no directory entry holding ' +
       'REMOTE_PEPS (not in roles.remotePepGroup).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0010',
     summary: 'A remote-PEP endpoint was refused by the access policy to a ' +
       'verified caller that does hold REMOTE_PEPS — an ' +
       'operator-edited access-control document denied it.',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0011',
     summary: 'A decision request to POST /xacml/pdp was not a well-formed ' +
       'JSON Profile request.',
@@ -22861,14 +22861,14 @@ const CODES = [
       'because no embedded directory is loaded in this process.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '503 server_error' },
   { code: 'STS-XACML-0027',
     summary: 'The embedded directory refused a write or removal in ' +
       'ou=policies, ou=peps or ou=roles — usually a container at its ' +
       'maximum.',
     spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
       '400 { ok: false, errors }; remote PEP register/heartbeat: HTTP ' +
-      '400/404 invalid_request' },
+      '507 server_error' },
   { code: 'STS-XACML-0028',
     summary: 'A policy document was refused at write: it does not parse or ' +
       'fails XACML static type checking.',
@@ -23229,13 +23229,13 @@ const CODES = [
       'outside certificate authority that is not stored in ' +
       'userCertificate on any entry of the realm, so it resolved to ' +
       'nobody (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0180',
     summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
       'POST /xacml/pip): the client certificate verified and is from an ' +
       'outside certificate authority that is stored in userCertificate ' +
       'on more than one entry of the realm (#1061).',
-    spec: 'HTTP 403 access_denied' },
+    spec: 'HTTP 403 access_denied (PIPError XML on /xacml/pip)' },
   { code: 'STS-XACML-0181',
     summary: 'The access gate had no decider, or its decider answered ' +
       'nothing: refused in product mode, allowed in development (#1450).',
@@ -23846,6 +23846,11 @@ const CODES = [
       'urn:sts:sa:<name> (#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0300',
+    summary: 'A reverse-proxy route\'s `path` is /.iya-pep or under ' +
+      '/.iya-pep/, the prefix the proxy reserves for its own callback and ' +
+      'sign-out (#1830): an updated PEP refuses the whole configuration.',
+    spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
   { code: 'STS-XACML-0301',
     summary: 'issue-pep-credential named a service account that does not ' +
       'hold REMOTE_PEPS (it is not in the group roles.remotePepGroup ' +
@@ -24059,7 +24064,10 @@ const CODES = [
     summary: 'The remote PEP has no usable PEP_AUTHZEN_CLIENT_CA (unset, ' +
       'unreadable or holding no certificate), so its HTTPS listener asks ' +
       'no caller for a certificate and its AuthZEN edge PDP admits nobody ' +
-      '(#1179).',
+      '(#1179); or an AuthZEN request arrived on an HTTPS listener whose ' +
+      'acceptor asks for no certificate it can verify (no client CA or ' +
+      'trust anchors, or its tuning asks for none) — asked of that ' +
+      'listener, not of the environment\'s (#1830).',
     spec: 'HTTP 401 from the AuthZEN endpoints; logged at start' },
   { code: 'STS-XPEP-0040',
     summary: 'The remote PEP could not reach the PDP to pull the AuthZEN ' +
@@ -24087,7 +24095,8 @@ const CODES = [
     spec: 'HTTP 501, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
-      'identifier to name (plain HTTP and no PEP_AUTHZEN_PDP_IDENTIFIER), ' +
+      'identifier to name (no identifier set, and plain HTTP or no usable ' +
+      'Host header or HTTP/2 authority), ' +
       'or PEP_AUTHZEN_PDP_IDENTIFIER is not an https origin with no path ' +
       'and was ignored (#1179).',
     spec: 'HTTP 404 from GET /.well-known/authzen-configuration; logged at ' +
@@ -24602,6 +24611,23 @@ const CODES = [
       'again after the PEP dropped it and fetched a new one. The PEP ' +
       'retries once only; the call\'s answer stands.',
     spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0132',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-in ' +
+      'callback, /.iya-pep/callback, with a method other than GET or HEAD; ' +
+      'it was refused before its state was looked up, so no pending ' +
+      'sign-in was spent (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0133',
+    summary: 'A request reached a remote PEP reverse proxy\'s sign-out, ' +
+      '/.iya-pep/logout, with a method other than GET or HEAD; no session ' +
+      'was ended (#1830).',
+    spec: 'HTTP 405, method_not_allowed, Allow: GET, HEAD' },
+  { code: 'STS-XPEP-0134',
+    summary: 'A request on a remote PEP reverse proxy named a path under ' +
+      '/.iya-pep/ that is none of the proxy\'s own pages. The prefix is ' +
+      'the proxy\'s whole, so the path never reaches the route table and ' +
+      'is never forwarded upstream (#1830).',
+    spec: 'HTTP 404, not_found' },
   // #1827's follow-up, phase 4 (rcbj, 2026-11-16): the PEP's client
   // certificate retired for authenticating to the service. 0132-0134 are
   // #1830's.

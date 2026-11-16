@@ -249,6 +249,7 @@ shim) are in git history.
 | `enforcement_cases.json` | **Section 7.2 as a table**, the seven cases BOTH enforcement points are held to — see *The enforcement rule*. |
 | `authzen_cases.json` | **The AuthZEN mapping contract as a table** (#1179): the catalogue values and requests the service's `authzen/` and this container's port are BOTH held to — see *The AuthZEN edge PDP*. |
 | `certs/` | The compose files' default certificate mount; empty and gitignored. |
+| `openapi/` | **GENERATED (#1830)**: one OpenAPI 3.1 document per surface, from `models/pep/` — see *THE MODEL OF EVERY ENDPOINT*. Never edited by hand. |
 
 | Rust module (`rust/bins/xacml-pep/src/`) | What it is (the Node file it replaces) |
 |---|---|
@@ -280,6 +281,8 @@ shim) are in git history.
 | Test | What it holds |
 |---|---|
 | `cargo test -p xacml-pep` | **The SHAPE**: the PIP walk over ONE document holding a designator in five places (a target, a condition, a variable definition, an obligation assignment, a policy reached by `PolicyIdReference`) and NOT the resource-category one beside them; the PIP answer read with the engine's own request reader; the listener's reload rules and a real mutual-TLS handshake read by `peer_of()`; the enforcement rule against `enforcement_cases.json`; and the AuthZEN mapping against `authzen_cases.json`, the request it builds, the fail-closed result, the pulled caller list's grammar, admission by it and by the local narrowing, and the application scope; and (#564, P7) the catalogue's `fgaApplications` read whole or not at all, which applications are forwarded, the forwarded body, the service's every answer mapped to a decision or an error (never `false`), and the forward over a real socket to a mock service — the realm's path, `X-Request-ID`, a 500, a refusal of the PEP, a timeout and nobody listening; and (#1760) the reverse proxy — see *THE REVERSE PROXY*, *What holds it*. |
+| `tests/model_pep.js` | **THE MODEL (#1830)**: the committed documents and `sts-model-pep`'s types are what `models/pep/` makes, each document well formed, and NO DRIFT either way between the documents' paths, the paths the PEP's dispatch matches and the `/xacml/pep/*` routes `xacml/xacml.ts` registers. |
+| `tests/authzen_evaluation.js` X | **The service's real control-plane answers against the model (#1830)**: register, heartbeat, the five pulls, a refusal and two validation doors, each held to `pep-control-plane.json` with Ajv (`tests/tools/pep_model.js`). |
 | `tests/authzen_map.js` S | **The service's mapping against the same `authzen_cases.json`** — so the two readings of one request are checked against one expectation, as the two enforcement rules are. |
 | `tests/authzen_evaluation.js` K, P | The PDP's side of the two AuthZEN pulls, `GET /xacml/pep/authzen-catalogue` (K) and `GET /xacml/pep/authzen-callers` (P), in process — P holding each pulled caller's name to the one the certificate door gives a real handshake. |
 | `cargo test -p sts-xacml` | The engine against the vendored OASIS suite, case for case as `tests/xacml_conformance.js` holds the service's. |
@@ -511,11 +514,17 @@ could sign one.
 request out in two seconds by default, and holding it open for the length of a
 pull would make a slow pull look like an unreachable PEP on somebody's console.
 
-**Its body is not read and nothing in it is trusted.** A nudge says only that
-something changed; what changed is discovered by pulling from this PEP's own
-configured PDP URL. A nudge that could tell this PEP what the policy now is, or
-where to fetch it, would be an unauthenticated caller supplying policy — and the
-whole reason a nudge is affordable on the PDP's side is that it carries nothing.
+**Nothing in its body is trusted, and one member is read.** A nudge says only
+that something changed; what changed is discovered by pulling from this PEP's
+own configured PDP URL. A nudge that could tell this PEP what the policy now
+is, or where to fetch it, would be an unauthenticated caller supplying policy —
+and the whole reason a nudge is affordable on the PDP's side is that it carries
+nothing. **`full` (#1829) is the one member read**: a Sync from the console
+asks for every document whole rather than answered 304, which fetches nothing
+a pull does not, and is honoured at most once a poll interval
+(`STS-XPEP-0120`) because anybody reaching the listener can send it. The 204
+has no body and so no `Content-Type` (#1830); it keeps `Cache-Control:
+no-store`.
 
 **`GET /` says which pull last changed the holding** (2026-09-26):
 `holding.lastChangeCause` is `start`, `poll`, `nudge` or `heartbeat`, set only
@@ -1024,6 +1033,21 @@ because the AuthZEN handler can say why it refused where a handshake alert
 cannot. `listener.rs`'s `peer_of()` reads what was presented and whether it
 verified; `main.rs` puts it on every request of the connection.
 
+**The first question is asked of the listener the request ARRIVED ON**
+(#1830). Each acceptor records what it was built to do about a client
+certificate (`ClientAuth`: nothing, ask and verify against an authority, or
+ask anybody), and the connection's `Transport` carries
+`verifies_client_certificates` read together with the acceptor that took it.
+A listener the service defined, or one whose tuning asks for none, is
+therefore answered for itself: until #1830 the door asked whether the
+ENVIRONMENT's listener had a client CA, so a request on a defined listener
+that verified nothing went on to `-0035` and one on a defined listener
+that did was refused `-0039` when the environment had none. Plain HTTP
+still asks the environment's HTTPS listener, so its answer (`-0035` when
+that one could admit, `-0039` when not) is what it always was. The same
+record is `https.asksForClientCertificates` on `GET /`: what the served
+acceptor does, and before one is served what its tuning will build.
+
 Then **the service's own answer decides** (#1189, rcbj's decision): `sync.rs`
 pulls `GET /xacml/pep/authzen-callers` after the catalogue, with its own token
 and `?since=`, keeps the last good list on a failure (`STS-XPEP-0047`,
@@ -1052,7 +1076,8 @@ is unreachable or older than #1189 (whose `404` keeps no list loaded). Unset,
 the pulled list alone decides, and nothing is answered before it loads.
 
 Each refusal is the service's status for the same situation and an `XPEP`
-code of its own: no certificate or plain HTTP 401 (`-0035`), one that did not
+code of its own: a listener that asks for no certificate it can verify 401
+(`-0039`), no certificate or plain HTTP 401 (`-0035`), one that did not
 verify 401 (`-0036`), nothing pulled and no local list 503 (`-0050`), a
 realm whose door is a token 401 (`-0052` — `bearer` and `mtls+bearer` admit
 no certificate alone, so the service sends no caller), a certificate the
@@ -1107,12 +1132,27 @@ before the first pull, one not on the local list 403 (`-0037`). No
 
 ### The metadata
 
-`policy_decision_point` is `PEP_AUTHZEN_PDP_IDENTIFIER` or, unset, the
+`policy_decision_point` is the identifier in force (the managed
+`authzenPdpIdentifier`, else `PEP_AUTHZEN_PDP_IDENTIFIER`) or, unset, the
 origin the HTTPS request arrived at — section 9.2.3 has a PEP refuse a
 document whose identifier is not the base it built the URL from, and the
 endpoints are served at this container's root, so an identifier with a path
 is refused at start (`STS-XPEP-0045`). It names the batch endpoint only
 while the realm has it on, and nothing unimplemented, as the service's does.
+
+**The origin is the `Host` header, else the request's authority** (#1830):
+an HTTP/2 client sends `:authority` and no `Host`, and hyper puts it in the
+URI, so reading `Host` alone answered every h2 request without an identifier
+set 404 (`-0045`). `Host` wins when both are there. `GET /`'s
+`authzen.enabled` and `authzen.pdpIdentifier` are the values in force too,
+since #1830 — they reported the environment's while the managed ones decided.
+
+**HEAD on the API listeners** (#1830) is answered as GET without the body
+for `/`, `/healthcheck`, `/crl/<name>` and this metadata: same status and
+headers, `Content-Length` the GET's. **Not for `/protected`**, whose GET is a
+decision — the PIP asked at the PDP, the enforcement counted and reported on
+the heartbeat — which a monitor's or a link checker's HEAD does not mean to
+ask for; it stays the generic 404 (`STS-XPEP-0009`), as before.
 
 ## THE REVERSE PROXY (#1760)
 
@@ -1254,7 +1294,15 @@ whole. The pair is upgraded together.
    forwarded**, so the route that decided and the resource the application
    serves are one string.
 2. `/.iya-pep/callback` and `/.iya-pep/logout` are the session mechanism's,
-   ahead of the route table.
+   ahead of the route table, and take GET and HEAD: any other method is 405
+   with `Allow: GET, HEAD` (`STS-XPEP-0132`, `-0133`; #1830), the callback's
+   state not looked up and so not spent. **`/.iya-pep/` is the proxy's
+   WHOLE** (#1830): after the accounts pages, any other path under it is 404
+   (`STS-XPEP-0134`) and never reaches the route table, so a prefix route at
+   `/` cannot forward one upstream; and a configured route there is refused
+   with the configuration (`proxy_config.rs`'s `path_problem()`), as a path
+   holding `//` is. Until #1830 only the eight paths were the proxy's and
+   the callback and sign-out answered any method.
 3. **The route**: the FIRST whose path matches — exact, or prefix at a
    segment boundary (`/api` is `/api` and `/api/…`, never `/apix`; a
    configured trailing `/` is dropped). No route, or no configuration
@@ -1906,11 +1954,84 @@ without one; `0118` every path before the first configuration since the
 start (503, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
-says is not usable (D10); `0095`–`0098` the identity (D11). **No log line carries
+says is not usable (D10); `0095`–`0098` the identity (D11); `0132` and `0133`
+a method other than GET or HEAD on the callback and the sign-out, `0134` a
+path under `/.iya-pep/` that is none of the proxy's (#1830). **No log line carries
 a token, an assertion, a password, a session id or a query string**: the
 method, the normalised path (at most 200 characters, quoted), the route and
 the reason.
 
+
+## THE MODEL OF EVERY ENDPOINT (#1830)
+
+**rcbj, 2026-11-16: a TypeSpec model of every endpoint of the remote PEP, the
+control plane included and the reverse proxy's configured routes not, with
+OpenAPI generated for each and Rust data types.** It is `models/pep/`, four
+`@apiDocument`s written with the API namespace's decorators
+(`models/lib/api_lib.tsp`), so the OpenAPI writer is the one the five
+published APIs use:
+
+| Source | Document (`xacml-pep/openapi/`) | Rust module (`sts-model-pep`) | What |
+|---|---|---|---|
+| `pep_service.tsp` | `pep-service.json` | `pep_service` | `GET /`, `/healthcheck`, `/protected`, `POST /notify` (with the service's nudge as its body), `GET /crl/{name}` |
+| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations and metadata |
+| `pep_proxy.tsp` | `pep-proxy.json` | `pep_proxy` | the proxy's own paths: `/.iya-pep/*` and the start page; what EVERY route answers whatever its configuration is in the document's description and `Refusal` |
+| `pep_control_plane.tsp` | `pep-control-plane.json` | `pep_control_plane` | what the SERVICE serves the PEP: `/xacml/pep/*` and `POST /xacml/pip` |
+
+**No WSDL**: nothing here is SOAP. The PIP's XML bodies are declared by media
+type, with their root, namespace and content in the schema's description.
+
+**`models/tools/generate_pep.mjs` writes both, and both are COMMITTED** —
+unlike `models/generated/`, because `cargo` and this image build from a
+checkout and run no TypeSpec compiler. `tests/tools/regenerate-pep-model.sh`
+runs it in the tests image. **A change to an endpoint here owes its model in
+the same commit**: `tests/model_pep.js` fails when a path is matched and not
+described, described and not matched, or a committed file is not what the
+model makes; the three `the_*_model_s` tests in `cargo test -p xacml-pep`
+fail when an answer this binary gives has a member the model does not
+declare or lacks one it requires; and `authzen_evaluation.js` X does the
+same for the service's answers.
+
+**#1836's surface is in it too** (its token credential, merged into #1830 on
+rcbj's order of landing): `GET /`'s `audit` and `credential`, the four
+`audit*` managed settings, and on the control plane the `dpop` security
+scheme beside `mutualTLS` with every operation's 401 (a DPoP challenge,
+STS-XACML-0289 to 0297; a `<PIPError>` at `/xacml/pip`, like its other
+refusals). The two paths the PEP CALLS that the service publishes and
+another model already describes — `POST /admin-api/pep-audit`
+(`models/api/management.tsp`) and `POST /oauth2/token` (`models/oauth/`)
+— are not described again: `tests/model_pep.js`'s `CALLED_ELSEWHERE`
+exempts them from the drift check by name and holds each to its model.
+
+**`sts-model-pep` is its own crate, depending on no runtime crate**: the
+Rust conversion's renderer (`models/lib/rust_lib.mjs`, #444 D15, copied
+byte for byte from `feature/444`) writes a crate per document and a shared
+`sts-model-base`; `models/lib/pep_lib.mjs` folds that into one crate with a
+module per document, so the types read a member by the same rules the
+runtime's do (optional is `Option`, nullable `Option<Option<_>>`, closed
+objects `deny_unknown_fields`). The binary takes it as a DEV-dependency
+today: the tests hold its answers to the types, and the hand-written readers
+in `sync.rs`, `proxy_config.rs` and `authzen_map.rs` are unchanged. Moving
+them onto the generated types is the next step, and it is a refactor of
+those readers, not of the model.
+
+**What modelling found, and every item of it was FIXED (#1830)** rather than
+declared. The PEP's own (the nudge's 204, `full`, the identity door's
+`code`, the PIP's Accept, `GET /`'s values in force, HEAD, `:authority`,
+admission per listener, the proxy's methods and its reserved `/.iya-pep/`
+prefix, STS-XPEP-0132 to 0134) are argued where each lives in this file. The
+service's are argued in `xacml/CLAUDE.md`, *What modelling the control plane
+corrected (#1830)*: a pull touches the certificate's row and not `?pep=`'s;
+all five pulls answer 304 to a matching `If-None-Match` (RFC 9110 13.1.2)
+as well as to `?since=`, so this PEP's `If-None-Match` is no longer wasted;
+register and heartbeat answer each registry refusal's own status (400, 404,
+503 no directory, 507 directory refused); `POST /xacml/pip` answers every
+refusal, the gate's 403 and the off switches' 501 included, as a PIPError;
+the listener certificate's 200 has no `ok`; the nudge's `pdp` names the
+realm's PDP; every validation door answers one 429 shape,
+`{error, error_description, retryAfterS}`; and the service refuses to save a
+route under `/.iya-pep/` (STS-XACML-0300), a stored one being pulled as
+`configured: false`.
 
 ## THE DECISION RECORDS GO TO THE SERVICE (#1827)
 

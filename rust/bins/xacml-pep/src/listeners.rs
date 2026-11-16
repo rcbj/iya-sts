@@ -63,7 +63,9 @@ use sts_core::log::tag;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
-use crate::listener::{bind_reason, peer_of, HttpsListener, Transport};
+use crate::listener::{
+    bind_reason, peer_of, ClientAuth, HttpsListener, Transport,
+};
 use crate::listener_pool::{drive, memory_json, paths_json, ListenerRuntime};
 use crate::listener_tuning::Tuning;
 
@@ -806,8 +808,8 @@ async fn serve(
             continue;
         };
         let acceptor = match &https {
-            Some(https) => match https.current() {
-                Some(acceptor) => Some(acceptor),
+            Some(https) => match https.current_served() {
+                Some(served) => Some(served),
                 None => continue,
             },
             None => None,
@@ -815,7 +817,7 @@ async fn serve(
         let make = make.clone();
         let job = runtime.clone();
         runtime.hand_off(stream, move |stream| async move {
-            if let Some(acceptor) = acceptor {
+            if let Some((acceptor, client_auth)) = acceptor {
                 let Some(tls) =
                     HttpsListener::accept_tls(stream, &acceptor, &job).await
                 else {
@@ -830,6 +832,8 @@ async fn serve(
                     peer,
                     remote: if proxy { Some(remote) } else { None },
                     crl_only: false,
+                    verifies_client_certificates: client_auth
+                        == ClientAuth::Verifying,
                 };
                 drive(tls, make(transport), cfg, offer_h2, job).await;
             } else {
@@ -839,6 +843,7 @@ async fn serve(
                     peer: None,
                     remote: if proxy { Some(remote) } else { None },
                     crl_only: false,
+                    verifies_client_certificates: false,
                 };
                 drive(stream, make(transport), cfg, false, job).await;
             }

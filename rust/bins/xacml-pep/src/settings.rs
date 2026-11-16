@@ -202,7 +202,11 @@ pub const SETTINGS: &[Row] = &[
     // THE DECISION RECORDS (#1827). `PEP_CLIENT_ID` (`PEP_AUDIT_CLIENT_ID`
     // its alias) and `PEP_ASSERTION_KEY` are not here: they are how the PEP
     // authenticates EVERY call (`credential.rs`), so they are bootstrap.
-    Row { key: "auditEnabled", env: "PEP_AUDIT", kind: Kind::Bool },
+    Row {
+        key: "auditEnabled",
+        env: "PEP_AUDIT",
+        kind: Kind::Bool,
+    },
     Row {
         key: "auditIntervalMs",
         env: "PEP_AUDIT_INTERVAL_MS",
