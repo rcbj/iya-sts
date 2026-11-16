@@ -120,6 +120,9 @@ import pepHttp = require('./xacml_pep_http');
 // A remote PEP's HTTPS listener certificate (2026-09-13). A LIBRARY over
 // `common/pki.js` and the register above, registering nothing.
 import pepTls = require('./xacml_pep_tls');
+// A remote PEP's RFC 7523 assertion key, certified from its own request
+// (#1827's follow-up, phase 3). A LIBRARY, registering nothing.
+import PepCredential = require('./xacml_pep_credential');
 // The remote PEP's reverse proxy (#1760): the grammar `set-pep-proxy` is
 // held to and the session mechanism's client. A LIBRARY, registering nothing.
 import pepProxy = require('./xacml_pep_proxy');
@@ -194,6 +197,7 @@ interface XacmlAdminDeps {
   peps: any;
   pepHttp: any;
   pepTls: any;
+  pepCredential: any;
   pepProxy: any;
   routePolicies: any;
   pepSettings: any;
@@ -281,8 +285,13 @@ interface PepOwner {
 // settings, pulled from `GET /xacml/pep/settings`.
 // `sync-pep` (2026-11-16) nudges one PEP to pull everything now and, like
 // `issue-pep-certificate`, answers a PROMISE: it waits for the nudge.
+// `issue-pep-credential` (#1827's follow-up, phase 3) certifies the key in a
+// PEP's own certificate request as its RFC 7523 assertion key
+// (`xacml_pep_credential.ts`) and answers a PROMISE too. It needs no
+// registered row: it is how a PEP is provisioned before it ever registers.
 const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep', 'sync-pep',
-                     'issue-pep-certificate', 'set-pep-proxy',
+                     'issue-pep-certificate', 'issue-pep-credential',
+                     'set-pep-proxy',
                      'clear-pep-proxy', 'set-pep-route-identity',
                      'set-pep-settings', 'clear-pep-settings',
                      'set-pep-listener', 'remove-pep-listener',
@@ -438,6 +447,7 @@ class XacmlAdmin {
       peps: peps,
       pepHttp: pepHttp,
       pepTls: pepTls,
+      pepCredential: new PepCredential(PepCredential.defaultDeps()),
       pepProxy: pepProxy,
       routePolicies: pepRoutePolicies,
       pepSettings: pepSettings,
@@ -864,6 +874,10 @@ class XacmlAdmin {
       staleAfterS: peps.staleAfterS(),
       requiresCertificate:
         config.value('xacml.pepRequireCertificate') !== false,
+      // #1827's follow-up: which credential a remote PEP may present here.
+      pepAuthentication: ['certificate', 'token', 'either'].indexOf(
+        String(config.value('xacml.pepAuthentication') || '')) >= 0
+        ? String(config.value('xacml.pepAuthentication')) : 'either',
       notify: {
         on: pepHttp.notifyAllowed(),
         allowedHosts: pepHttp.allowedHosts(),
@@ -1101,7 +1115,7 @@ class XacmlAdmin {
    * `issue-pep-certificate`
    */
   pepAction(given?: any): any {
-    const { log, audit, errorCodes, peps, pepTls } = this.deps;
+    const { log, audit, errorCodes, peps, pepTls, pepCredential } = this.deps;
     log.debug('Entering XacmlAdmin.pepAction(). action=' + (given || {}).action);
     const action = String((given || {}).action || '');
     // `pep` AS WELL AS `name` (2026-11-14). `GET /admin-api/xacml/peps` names
@@ -1124,6 +1138,11 @@ class XacmlAdmin {
       log.debug('Leaving XacmlAdmin.pepAction(). Issuing a listener ' +
                 'certificate.');
       return pepTls.issue(body);
+    }
+    if (action === 'issue-pep-credential') {
+      log.debug('Leaving XacmlAdmin.pepAction(). Certifying an assertion ' +
+                'key.');
+      return pepCredential.issue(body);
     }
     const name = String((body || {}).name || '');
     if (!name) {

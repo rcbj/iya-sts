@@ -66,6 +66,7 @@ use sts_xacml::policy::PolicyNode;
 use sts_xacml::xml;
 
 use crate::authzen_catalogue::{self, Row};
+use crate::credential::Resource;
 use crate::enforce::Outcome;
 use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
@@ -750,7 +751,12 @@ impl Sync {
         }
         let answer = self
             .client
-            .call(Method::POST, "/xacml/pep/register", Some(Body::Json(body)))
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pep/register",
+                Some(Body::Json(body)),
+            )
             .await;
         let complain = |code: &str, why: &str| {
             if first {
@@ -808,13 +814,18 @@ impl Sync {
         let said = answer.json.unwrap_or(Value::Null);
         let name = said["name"].as_str().unwrap_or(&o.name).to_string();
         let authenticated = said["authenticated"].as_bool().unwrap_or(false);
+        // THE CREDENTIAL IT WAS ACTUALLY MADE ON (rcbj, 2026-11-16): a
+        // token, a client certificate, or neither — never "mutual TLS" of a
+        // registration made on a token.
+        let on = self.client.credential().used_on(answer.no_token.as_deref());
         let why = if authenticated {
-            format!("Registered over mutual TLS as \"{}\".", name)
+            format!("Registered as \"{}\" on {}.", name, on)
         } else {
             format!(
-                "Registered as \"{}\" WITHOUT a client certificate; the PDP \
-                 has marked this row unauthenticated and is right to.",
-                name
+                "Registered as \"{}\" on {}, and the PDP could not name \
+                 this PEP from it; it has marked this row unauthenticated \
+                 and is right to.",
+                name, on
             )
         };
         let notify = said.get("notify").filter(|n| !n.is_null()).cloned();
@@ -943,7 +954,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call_with(
+            .call_authorized_with(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/settings{}", query),
                 None,
@@ -1133,7 +1145,12 @@ impl Sync {
         };
         let answer = self
             .client
-            .call(Method::GET, &format!("/xacml/pep/policies{}", query), None)
+            .call_authorized(
+                Resource::Pep,
+                Method::GET,
+                &format!("/xacml/pep/policies{}", query),
+                None,
+            )
             .await;
         if let Some(error) = &answer.error {
             self.keep(
@@ -1172,12 +1189,13 @@ impl Sync {
             );
             return;
         };
-        self.load(&said, cause);
+        let on = self.client.credential().used_on(answer.no_token.as_deref());
+        self.load(&said, cause, &on);
     }
 
     /// Parses and STATICALLY VALIDATES every pulled document with this PEP's
     /// own engine — never taken on trust because the PDP accepted it.
-    fn load(&self, said: &Value, cause: &str) {
+    fn load(&self, said: &Value, cause: &str, on: &str) {
         let rows = said["policies"].as_array().cloned().unwrap_or_default();
         let mut repository = HashMap::new();
         let mut by_name: HashMap<String, PolicyNode> = HashMap::new();
@@ -1290,13 +1308,14 @@ impl Sync {
             refused,
         };
         tracing::info!(
-            "{}xacml-pep: pulled {} policy(ies), token {}. {}",
+            "{}xacml-pep: pulled {} policy(ies) on {}, token {}. {}",
             if has_root {
                 String::new()
             } else {
                 tag("STS-XPEP-0021")
             },
             count,
+            on,
             state.held.sync_token,
             why
         );
@@ -1305,7 +1324,7 @@ impl Sync {
     /// A pulled policy set handed straight in, for a test that has no PDP.
     #[cfg(test)]
     pub fn load_for_test(&self, said: &Value) {
-        self.load(said, "test");
+        self.load(said, "test", "a test");
     }
 
     /// A failed pull keeps what is held. `lastPullAt` is NOT touched: it
@@ -1360,7 +1379,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call(
+            .call_authorized(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/authzen-catalogue{}", query),
                 None,
@@ -1524,7 +1544,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call(
+            .call_authorized(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/authzen-callers{}", query),
                 None,
@@ -1672,7 +1693,8 @@ impl Sync {
         };
         let answer = self
             .client
-            .call_with(
+            .call_authorized_with(
+                Resource::Pep,
                 Method::GET,
                 &format!("/xacml/pep/proxy{}", query),
                 None,
@@ -2084,7 +2106,12 @@ impl Sync {
         }
         let answer = self
             .client
-            .call(Method::POST, "/xacml/pep/heartbeat", Some(Body::Json(body)))
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pep/heartbeat",
+                Some(Body::Json(body)),
+            )
             .await;
         if answer.error.is_some() || answer.status != 200 {
             // Debug, not warn: a PEP that cannot REPORT is still enforcing.

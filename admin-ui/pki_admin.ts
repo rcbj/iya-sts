@@ -1319,7 +1319,9 @@ class PkiAdmin {
     const issued = await pki.issueSigningKeyPair(undefined, {
       identifier: identifier,
       purpose: purpose,
-      // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE, which is what
+      // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE — or, for a
+      // service account, `urn:sts:sa:<name>`, decided by `pki.js` from the
+      // entry (#1827) — which is what
       // `assertion_grant.js` reads off a presented x5c to hold the person to
       // asserting about themselves. A leaf issued here without it would be
       // indistinguishable from an application's.

@@ -290,7 +290,8 @@ certificate.
 ### A person's own certificate, from the portal
 
 The certificate is issued from the realm's TLS client CA, names the person
-(`CN=<username>` and `urn:sts:person:<username>`) and carries `clientAuth`. It
+(`CN=<username>` and `urn:sts:person:<username>`, or `urn:sts:sa:<username>`
+for a service account) and carries `clientAuth`. It
 signs the person in to the realm whose CA issued it. No anchor needs adding.
 Taken from `sts_portal_signing_key.js` (the portal) and
 `tests/tls_client_certificates.js` (the sign-in).

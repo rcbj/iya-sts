@@ -516,7 +516,8 @@ class AccountSigningKey {
       const issued: Json = await pki.issueSigningKeyPair(undefined, {
         identifier: username,
         purpose: profile.id,
-        // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE, and the whole
+        // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE (a service
+        // account's `urn:sts:sa:<name>`, #1827, `pki.js` decides), and the whole
         // reason this page may exist: it holds the key to asserting about its
         // own holder even when it is presented on its `x5c` alone.
         subjectKind: 'person',

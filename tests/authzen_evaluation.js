@@ -1103,6 +1103,30 @@ async function childBody() {
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0009'),
           'K2. an AuthZEN caller is not a remote PEP: AUTHZEN_PEPS without ' +
           'REMOTE_PEPS is 403 (STS-XACML-0009)', brief(r));
+  // #1827's follow-up: the PEP door reads a TOKEN where one is presented.
+  // Over a real handshake with a certificate that would be admitted, a
+  // token that does not hold decides (401, a DPoP challenge, STS-XACML-0291)
+  // rather than being passed over for the certificate; with
+  // xacml.pepAuthentication certificate the header is not read and the
+  // certificate decides. tests/remote_pep_token_door.js drives a real token.
+  const notAToken = { Authorization: 'DPoP not.a.token', DPoP: 'x' };
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pullCred, undefined, notAToken);
+  t.check(r.status === 401 && markedSince(since, 'STS-XACML-0291') &&
+          /^DPoP /.test(String(r.headers['www-authenticate'] || '')),
+          'K2a. a token beside an admitted certificate decides: one that ' +
+          'does not verify is 401 with a DPoP challenge (STS-XACML-0291)',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'certificate');
+  });
+  r = await request(port, 'GET', CATALOGUE, pullCred, undefined, notAToken);
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'either');
+  });
+  t.check(r.status === 200,
+          'K2b. under xacml.pepAuthentication certificate the header is not ' +
+          'read and the certificate admits the pull', brief(r));
   const pulled = await request(port, 'GET', CATALOGUE, pullCred);
   const pulledRows = (pulled.json && pulled.json.rows) || [];
   const classification = pulledRows.filter(function (row) {

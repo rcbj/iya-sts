@@ -4348,8 +4348,8 @@
     "text": "Accepter un certificat client TLS"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Un certificat client émis par CE DOMAINE, vérifié jusqu’à son intermédiaire et associé à son entrée par le nom urn:sts:person: ou urn:sts:application: qu’il contient (RFC 7030 section 3.3.2). Requis pour simplereenroll sans identifiant Basic."
+    "en": "a9bb56c470b2a73f",
+    "text": "Un certificat client émis par CE DOMAINE, vérifié jusqu’à son intermédiaire et associé à son entrée par le nom urn:sts:person:, urn:sts:sa: (un compte de service) ou urn:sts:application: qu’il contient (RFC 7030 section 3.3.2). Requis pour simplereenroll sans identifiant Basic."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",
@@ -7778,6 +7778,14 @@
   "xacml.pepRequireCertificate|description": {
     "en": "e41d92adf65ec5bc",
     "text": "ACTIVÉ par défaut. C’était autrefois le SEUL refus de cette famille ; chaque endpoint /xacml demande désormais un certificat, et ce que ce paramètre régit encore, c’est spécifiquement l’ENREGISTREMENT — il écrit une entrée, c’est ce que la console liste, et c’est l’adresse à laquelle une notification est envoyée ; « quel PEP est-ce » est donc exactement la question qui s’y pose, et un certificat client en est la réponse. La couche de politique d’accès au-dessus est une vérification différente et plus forte (roles.remotePepGroup, et xacml.enforceAccess pour la désactiver) ; celle-ci porte sur l’acceptation même d’un enregistrement SANS certificat, marqué non authentifié. Comme toute autre barrière de ce service, c’est un TOURNIQUET : le certificat n’a pas besoin de remonter à quoi que ce soit, car l’argument de RFC 8705 s’applique sans changement — ce qui est prouvé, c’est que la même clé a mené à bien la poignée de main. Le désactiver permet à un PEP de s’enregistrer en HTTP simple, ce dont a besoin une exécution avec global.https désactivé ; un tel enregistrement est marqué NON AUTHENTIFIÉ sur son entrée et dans la console plutôt que d’être discrètement impossible à distinguer d’un enregistrement qui a prouvé quelque chose."
+  },
+  "xacml.pepAuthentication|label": {
+    "en": "1666c238e5c498af",
+    "text": "Comment un PEP distant s’authentifie"
+  },
+  "xacml.pepAuthentication|description": {
+    "en": "8d19137204b63401",
+    "text": "either, la valeur par défaut : un PEP distant atteint /xacml/pep/* et POST /xacml/pip avec un certificat client que ce service vérifie, ou avec un jeton d’accès lié par DPoP (RFC 9449) qu’il obtient de sa propre auto-assertion RFC 7523 via le client sts-remote-pep, dont l’audience est le /xacml/pep de ce domaine et qui porte xacml:pep ; lorsqu’un jeton est présenté, c’est lui qui décide. token : le jeton seulement, et un certificat seul est refusé. certificate : le certificat seulement, et l’en-tête Authorization n’est pas lu. Dans tous les cas, l’entrée du PEP doit détenir REMOTE_PEPS (roles.remotePepGroup) et la politique de contrôle d’accès décide. La même réponse régit le jeton d’un PEP distant sur /access/v1, le transfert par le PDP de périphérie d’une évaluation fine, quelle que soit la valeur de authzen.callerAuthentication."
   },
   "xacml.pepPlainHttpProxyListeners|label": {
     "en": "25b7e415e05fa392",

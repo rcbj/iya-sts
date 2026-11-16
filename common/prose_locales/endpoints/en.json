@@ -251,6 +251,7 @@
   "endpoints.route./admin-api/devices.name": "The device register",
   "endpoints.route./admin-api/devices/:action.name": "Device register actions",
   "endpoints.route./admin-api/device-compliance.name": "The device compliance feed (MDM / posture)",
+  "endpoints.route./admin-api/pep-audit.name": "A remote PEP's decision records",
   "endpoints.route./admin-api/device-registration.name": "Device registration",
   "endpoints.route./admin-api/service-accounts.name": "Service accounts and their rotation",
   "endpoints.route./admin-api/ownership.name": "Who owns an object, and whether its owners may administer it",

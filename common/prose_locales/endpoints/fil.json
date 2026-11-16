@@ -1007,6 +1007,10 @@
     "en": "1b28ca2ff0e0999f",
     "text": "Ang device compliance feed (MDM / posture)"
   },
+  "endpoints.route./admin-api/pep-audit.name": {
+    "en": "df3ac1026eab32fe",
+    "text": "Mga talaan ng desisyon ng isang remote na PEP"
+  },
   "endpoints.route./admin-api/device-registration.name": {
     "en": "f8fcb8ceb53f6ebf",
     "text": "Device registration"

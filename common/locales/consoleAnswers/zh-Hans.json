@@ -116,5 +116,11 @@
   "cluster.back": "返回集群",
   "cluster.discardedDownload": "下载被丢弃的内容",
   "cluster.discardedLead": "该 PEP 不再拥有自己的反向代理、设置或侦听器：它拉取集群的配置。以下是它原有的内容，仅显示一次。",
-  "cluster.discardedTitle": "一个 PEP 加入了集群"
+  "cluster.discardedTitle": "一个 PEP 加入了集群",
+  "once.pepCredential": "PEP 断言密钥",
+  "pepCredential.keyPath": "（您生成请求时使用的密钥文件的路径）",
+  "pepCredential.urn": "名称",
+  "pepCredential.env": "使用以下环境变量启动 PEP。私钥从未离开生成请求的机器；本服务没有私钥可以提供。",
+  "pepCredential.chain": "证书及其到服务根证书的链。公开信息：PEP 进行身份验证时不需要它，它也列在该条目的密钥列表中。",
+  "pepCredential.download": "下载证书"
 }

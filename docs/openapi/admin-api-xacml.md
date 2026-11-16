@@ -26,6 +26,66 @@ Unless an operation below says otherwise, any status it does not list answers th
 | `status` | integer |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/pep-audit
+
+`reportPepDecisions`
+
+**Push a remote PEP's decision records (#1827)**
+
+A remote XACML PEP pushes the records of the decisions it made in its own process — `/protected` enforcements (`kind` `enforcement`) the AuthZEN evaluations it decided (`kind` `authzen`; never one it forwarded, which this service decided and recorded itself) and its reverse proxy's requests to a route (`kind` `proxy`, #1760, with `route` and the `status` it answered) — and each becomes one audit row, `xacml.remote.enforcement`, `authzen.remote.decision` or `xacml.remote.proxy`, read on GET /admin-api/audit. `instance` names the PEP process; every record carries `seq`, a positive integer increasing within that process, and the answer's `acknowledged` is the highest `seq` the batch carried, so the PEP removes everything up to it. Delivery is at least once: a record sent again is recorded again, and the row names the PEP, the instance and the seq that identify it. A record with no positive integer `seq` or an unknown `kind` is counted in `ignored` (STS-XACML-0288) and the rest are recorded. At most 500 records a push. The PEP must be registered in this realm (POST /xacml/pep/register) under the name its token's subject carries (STS-XACML-0287, 404). **The access token must carry `xacml:pep-audit`**: the PEP's own RFC 7523 self-assertion (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`, `iss` and `sub` its own username, its certificate's key registered on its entry) presented through the seeded public client `sts-remote-pep` with a DPoP proof by that key, so the token is bound to it (RFC 9449; over mutual TLS it is bound to the certificate as well, and through phase 3 of the PEP's token plan a certificate-bound token is still honoured where its certificate is presented). It is issued and honoured only while the PEP's entry is in the group roles.remotePepGroup names (REMOTE_PEPS); a token carrying anything else is refused here, and that scope reaches no other operation (STS-API-0147).
+
+**Mirrors** `no console form — a remote PEP pushing what it decided; the records are read on GET /admin/audit` on the admin console.
+
+Scope: `xacml:pep-audit`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `events` | list | yes |  |
+| `events[].action` | string |  |  |
+| `events[].allowed` | boolean |  |  |
+| `events[].application` | string |  |  |
+| `events[].at` | string |  |  |
+| `events[].bias` | string |  |  |
+| `events[].caller` | string |  |  |
+| `events[].code` | string |  |  |
+| `events[].decision` | one of `Permit`, `Deny`, `NotApplicable`, `Indeterminate`, empty |  |  |
+| `events[].discharged` | list |  |  |
+| `events[].discharged[]` | string |  |  |
+| `events[].endpoint` | string |  |  |
+| `events[].fault` | boolean |  |  |
+| `events[].kind` | string | yes |  |
+| `events[].policies` | list |  |  |
+| `events[].policies[]` | string |  |  |
+| `events[].requestId` | string |  |  |
+| `events[].resource` | string |  |  |
+| `events[].route` | string |  |  |
+| `events[].seq` | integer | yes |  |
+| `events[].status` | integer |  |  |
+| `events[].subject` | string |  |  |
+| `events[].subjectType` | string |  |  |
+| `events[].undischargeable` | list |  |  |
+| `events[].undischargeable[]` | string |  |  |
+| `events[].why` | string |  |  |
+| `instance` | string | yes |  |
+| `name` | string |  |  |
+
+**200**: `acknowledged` — the highest `seq` the batch carried — and how many records were `recorded` and `ignored`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `acknowledged` | integer | yes |  |
+| `ignored` | integer | yes |  |
+| `recorded` | integer | yes |  |
+
 ## GET /admin-api/xacml
 
 `getXacml`
@@ -509,6 +569,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -630,6 +694,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -732,6 +800,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -853,6 +925,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -2528,6 +2604,10 @@ Scope: `admin:write`.
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -2567,6 +2647,10 @@ Scope: `admin:write`.
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -2753,6 +2837,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -2874,6 +2962,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -2976,6 +3068,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -3097,6 +3193,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -3357,6 +3457,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -3478,6 +3582,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -3580,6 +3688,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -3701,6 +3813,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -4932,6 +5048,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -5053,6 +5173,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -5155,6 +5279,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -5276,6 +5404,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -5597,6 +5729,110 @@ Scope: `admin:write`.
 | `serialHex` | string |  |  |
 | `subject` | string |  |  |
 | `thumbprint` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/issue-pep-credential
+
+`issueXacmlPepCredential`
+
+**Certify a remote PEP's own key as its RFC 7523 assertion key**
+
+Certifies the public key in a remote PEP's own PKCS #10 certificate request (`csr`) from THIS REALM's Issuing CA and registers the leaf as the RFC 7523 (purpose=jwt) key of the PEP's entry, which is what lets the PEP sign its self-assertion for a DPoP-bound access token from `sts-remote-pep` (#1827's follow-up, phase 3). **This service never generates, sees or keeps the private key**: the PEP, or `tests/tools/pep-credential.js --assertion`, generates the key pair and sends only the request; no private value is written to the entry (`source` `issued-from-csr`).
+
+The request's signature must verify with the key it carries (proof of possession, the PKCS #10 reader ACME, EST and SCEP use), and the key must be EC P-256 (ES256, preferred) or RSA of 2048 bits or more; anything else is refused naming the two. **The request's subject and names are ignored**: the leaf names the ENTRY, `urn:sts:sa:<name>`. Like any issued leaf it is in its Issuing CA's register, so its CRL and OCSP responder answer for it and revoking it on /admin/users refuses the grant.
+
+`name` (or `pep`) is the USERNAME of the PEP's entry under this realm's ou=users — no registered ou=peps row is needed, because this is how a PEP is provisioned before it ever registers. The entry must exist (STS-XACML-0298), be a service account (STS-XACML-0299) and hold REMOTE_PEPS through the group roles.remotePepGroup names (STS-XACML-0301).
+
+A new key is ADDED beside any the entry holds, up to pki.personSigningKeyMax valid ones, so a running PEP keeps working until it is moved onto the new key. `revokePrevious: true` revokes every other valid RFC 7523 key of the entry (cessationOfOperation) after the new one is written — before it, where the entry is at the cap; a revocation that fails is STS-XACML-0302 with the new key registered.
+
+The answer carries the certificate, its chain, `fullChainPem` (through the Root), the `kid`, the `urn` and the `environment` the PEP is started with: `PEP_NAME`, `PEP_CLIENT_ID` and `PEP_ASSERTION_KEY` (the key file the caller kept). Audited as `xacml.pep.credential`, with no key material.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `csr` | string |  | The PEP's PKCS #10 certificate request, PEM or base64 DER, signed with the key to be certified (EC P-256 or RSA of 2048 bits or more). Its subject and names are ignored. |
+| `days` | integer |  | The lifetime. Defaults to `pki.leafLifetimeDays`, and is shortened to the Issuing CA's own expiry. |
+| `label` | string |  | A short name for the key on the entry's key list. Defaults to `remote PEP`. |
+| `name` | string |  | The username of the remote PEP's entry under this realm's ou=users: a service account in the remote PEPs group. |
+| `pep` | string |  | The same, under the member GET /admin-api/xacml/peps calls it. Send `pep` or `name`; both, they must name the same PEP. |
+| `revokePrevious` | boolean |  | Revoke every other valid RFC 7523 key of the entry once this one is registered. Default false: a running PEP keeps its old key until it is moved onto this one. |
+
+**200**: The key was certified and registered.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string |  |  |
+| `chainPem` | list |  | The Issuing CA and the realm Intermediate, leaf excluded. |
+| `chainPem[]` | string |  |  |
+| `environment` | object |  | What the PEP is started with. |
+| `environment.PEP_ASSERTION_KEY` | string | yes | A reminder, not a path: the key file the caller generated the request with. This service never had it. |
+| `environment.PEP_CLIENT_ID` | string | yes | The client its token is issued through, sts-remote-pep. |
+| `environment.PEP_NAME` | string | yes | The PEP's name: its entry's username, the iss and sub of its self-assertion. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `fullChainPem` | string |  | The leaf followed by its chain through the service Root. |
+| `jwsAlg` | string |  | The JWS algorithm the PEP signs with. |
+| `keyAlg` | string |  | The key algorithm, ec-p256 or rsa-&lt;bits>. |
+| `kid` | string |  | The key's kid on the entry's JWKS. |
+| `message` | string |  |  |
+| `notAfter` | string |  |  |
+| `notBefore` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `realm` | string |  | The realm whose Issuing CA certified it; empty for the default realm. |
+| `revoked` | list |  | The kids of the entry's other keys revokePrevious revoked. |
+| `revoked[]` | string |  |  |
+| `serialHex` | string |  |  |
+| `subject` | string |  |  |
+| `urn` | string |  | The URI subjectAltName the leaf carries, urn:sts:sa:&lt;name>. |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing was certified (except STS-XACML-0302, which says which other key is still valid).
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string |  |  |
+| `chainPem` | list |  | The Issuing CA and the realm Intermediate, leaf excluded. |
+| `chainPem[]` | string |  |  |
+| `environment` | object |  | What the PEP is started with. |
+| `environment.PEP_ASSERTION_KEY` | string | yes | A reminder, not a path: the key file the caller generated the request with. This service never had it. |
+| `environment.PEP_CLIENT_ID` | string | yes | The client its token is issued through, sts-remote-pep. |
+| `environment.PEP_NAME` | string | yes | The PEP's name: its entry's username, the iss and sub of its self-assertion. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `fullChainPem` | string |  | The leaf followed by its chain through the service Root. |
+| `jwsAlg` | string |  | The JWS algorithm the PEP signs with. |
+| `keyAlg` | string |  | The key algorithm, ec-p256 or rsa-&lt;bits>. |
+| `kid` | string |  | The key's kid on the entry's JWKS. |
+| `message` | string |  |  |
+| `notAfter` | string |  |  |
+| `notBefore` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `realm` | string |  | The realm whose Issuing CA certified it; empty for the default realm. |
+| `revoked` | list |  | The kids of the entry's other keys revokePrevious revoked. |
+| `revoked[]` | string |  |  |
+| `serialHex` | string |  |  |
+| `subject` | string |  |  |
+| `urn` | string |  | The URI subjectAltName the leaf carries, urn:sts:sa:&lt;name>. |
 | `what` | string |  |  |
 | `why` | string |  |  |
 
@@ -5989,6 +6225,10 @@ Scope: `admin:read`.
 | `clusters[].proxyRoutes[].usable` | boolean |  |  |
 | `clusters[].proxyRoutes[].why` | string, or null |  |  |
 | `clusters[].settings` | object |  |  |
+| `clusters[].settings.auditBatch` | integer |  |  |
+| `clusters[].settings.auditBuffer` | integer |  |  |
+| `clusters[].settings.auditEnabled` | boolean |  |  |
+| `clusters[].settings.auditIntervalMs` | integer |  |  |
 | `clusters[].settings.authzen` | boolean |  |  |
 | `clusters[].settings.authzenForwardTimeoutMs` | integer |  |  |
 | `clusters[].settings.authzenPdpIdentifier` | string |  |  |
@@ -6342,6 +6582,7 @@ Scope: `admin:read`.
 | `notify.transport.skipTlsVerification` | boolean |  |  |
 | `notify.transport.skipTlsVerificationSet` | boolean |  |  |
 | `pep` | string |  |  |
+| `pepAuthentication` | one of `certificate`, `token`, `either` |  |  |
 | `peps` | list |  |  |
 | `peps[].allowed` | number, or null |  |  |
 | `peps[].authenticated` | boolean |  |  |
@@ -6633,6 +6874,10 @@ Scope: `admin:read`.
 | `peps[].registeredAt` | string |  |  |
 | `peps[].resource` | string |  |  |
 | `peps[].settings` | object |  |  |
+| `peps[].settings.auditBatch` | integer |  |  |
+| `peps[].settings.auditBuffer` | integer |  |  |
+| `peps[].settings.auditEnabled` | boolean |  |  |
+| `peps[].settings.auditIntervalMs` | integer |  |  |
 | `peps[].settings.authzen` | boolean |  |  |
 | `peps[].settings.authzenForwardTimeoutMs` | integer |  |  |
 | `peps[].settings.authzenPdpIdentifier` | string |  |  |
@@ -6663,6 +6908,18 @@ Scope: `admin:read`.
 | `peps[].settingsInUse.at` | string |  |  |
 | `peps[].settingsInUse.token` | string |  |  |
 | `peps[].settingsInUse.values` | object |  |  |
+| `peps[].settingsInUse.values.auditBatch` | object |  |  |
+| `peps[].settingsInUse.values.auditBatch.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.auditBatch.value` | integer |  |  |
+| `peps[].settingsInUse.values.auditBuffer` | object |  |  |
+| `peps[].settingsInUse.values.auditBuffer.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.auditBuffer.value` | integer |  |  |
+| `peps[].settingsInUse.values.auditEnabled` | object |  |  |
+| `peps[].settingsInUse.values.auditEnabled.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.auditEnabled.value` | boolean |  |  |
+| `peps[].settingsInUse.values.auditIntervalMs` | object |  |  |
+| `peps[].settingsInUse.values.auditIntervalMs.source` | one of `service`, `environment`, `default` |  |  |
+| `peps[].settingsInUse.values.auditIntervalMs.value` | integer |  |  |
 | `peps[].settingsInUse.values.authzen` | object |  |  |
 | `peps[].settingsInUse.values.authzen.source` | one of `service`, `environment`, `default` |  |  |
 | `peps[].settingsInUse.values.authzen.value` | boolean |  |  |
@@ -7134,6 +7391,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -7255,6 +7516,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -7357,6 +7622,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -7478,6 +7747,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -7607,6 +7880,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -7728,6 +8005,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -7830,6 +8111,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -7951,6 +8236,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -8080,6 +8369,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -8201,6 +8494,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -8303,6 +8600,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -8424,6 +8725,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -9292,6 +9597,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -9413,6 +9722,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -9515,6 +9828,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -9636,6 +9953,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -9768,6 +10089,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -9889,6 +10214,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -9991,6 +10320,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -10112,6 +10445,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -10241,6 +10578,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -10362,6 +10703,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -10464,6 +10809,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -10585,6 +10934,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -10717,6 +11070,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -10838,6 +11195,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -10940,6 +11301,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -11061,6 +11426,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -11190,6 +11559,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -11311,6 +11684,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -11413,6 +11790,10 @@ Scope: `admin:write`.
 | `discarded.proxy.upstream` | string |  |  |
 | `discarded.proxy.upstreamTimeoutMs` | integer |  |  |
 | `discarded.settings` | object |  |  |
+| `discarded.settings.auditBatch` | integer |  |  |
+| `discarded.settings.auditBuffer` | integer |  |  |
+| `discarded.settings.auditEnabled` | boolean |  |  |
+| `discarded.settings.auditIntervalMs` | integer |  |  |
 | `discarded.settings.authzen` | boolean |  |  |
 | `discarded.settings.authzenForwardTimeoutMs` | integer |  |  |
 | `discarded.settings.authzenPdpIdentifier` | string |  |  |
@@ -11534,6 +11915,10 @@ Scope: `admin:write`.
 | `released` | list |  | delete-pep-cluster: the members that kept a copy. |
 | `released[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -12617,6 +13002,10 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `auditBatch` | integer |  | Sets `auditBatch` at the PEP: the most decision records in one request; absent, null or empty is not set, so the PEP uses PEP_AUDIT_BATCH or its default, 200. |
+| `auditBuffer` | integer |  | Sets `auditBuffer` at the PEP: the most decision records queued, a lower value applying to new records; absent, null or empty is not set, so the PEP uses PEP_AUDIT_BUFFER or its default, 10000. |
+| `auditEnabled` | boolean |  | Sets `auditEnabled` at the PEP: whether it sends its decision records to this service's audit log (#1827); absent, null or empty is not set, so the PEP uses PEP_AUDIT or its default, true. |
+| `auditIntervalMs` | integer |  | Sets `auditIntervalMs` at the PEP: how often its queued decision records are sent; absent, null or empty is not set, so the PEP uses PEP_AUDIT_INTERVAL_MS or its default, 5000. |
 | `authzen` | boolean |  | Sets `authzen` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `authzenForwardTimeoutMs` | integer |  | Sets `authzenForwardTimeoutMs` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
 | `authzenPdpIdentifier` | string |  | Sets `authzenPdpIdentifier` at the PEP; absent, null or empty is not set, so the PEP uses its environment variable or its default. |
@@ -12658,6 +13047,10 @@ Scope: `admin:write`.
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |
@@ -12697,6 +13090,10 @@ Scope: `admin:write`.
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `settings` | object |  |  |
+| `settings.auditBatch` | integer |  |  |
+| `settings.auditBuffer` | integer |  |  |
+| `settings.auditEnabled` | boolean |  |  |
+| `settings.auditIntervalMs` | integer |  |  |
 | `settings.authzen` | boolean |  |  |
 | `settings.authzenForwardTimeoutMs` | integer |  |  |
 | `settings.authzenPdpIdentifier` | string |  |  |

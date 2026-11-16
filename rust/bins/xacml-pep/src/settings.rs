@@ -11,7 +11,8 @@
 //!   built-in default. So every variable that configured this container
 //!   before keeps doing so wherever the service is silent.
 //! * **WHAT IS NOT HERE IS BOOTSTRAP**: the PDP's URL, this PEP's name, its
-//!   client certificate, key and anchors, the files its TLS stacks read and
+//!   client certificate, key and anchors, its assertion key and the client
+//!   its token is asked through, the files its TLS stacks read and
 //!   the ports it binds. Those are needed before the first pull, or name
 //!   something on this container's own disk, and stay in the environment
 //!   (`xacml-pep/CLAUDE.md`, *Configuration*).
@@ -197,6 +198,25 @@ pub const SETTINGS: &[Row] = &[
         key: "proxyStripCookies",
         env: "PEP_PROXY_STRIP_COOKIES",
         kind: Kind::Text(1024),
+    },
+    // THE DECISION RECORDS (#1827). `PEP_CLIENT_ID` (`PEP_AUDIT_CLIENT_ID`
+    // its alias) and `PEP_ASSERTION_KEY` are not here: they are how the PEP
+    // authenticates EVERY call (`credential.rs`), so they are bootstrap.
+    Row { key: "auditEnabled", env: "PEP_AUDIT", kind: Kind::Bool },
+    Row {
+        key: "auditIntervalMs",
+        env: "PEP_AUDIT_INTERVAL_MS",
+        kind: Kind::Int(1000, DAY_MS),
+    },
+    Row {
+        key: "auditBatch",
+        env: "PEP_AUDIT_BATCH",
+        kind: Kind::Int(1, 500),
+    },
+    Row {
+        key: "auditBuffer",
+        env: "PEP_AUDIT_BUFFER",
+        kind: Kind::Int(1, 1_000_000),
     },
 ];
 
