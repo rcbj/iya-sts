@@ -424,8 +424,8 @@
     "text": "POST 一個 JSON Profile 請求，取得一個 JSON Profile 回應。這裡涉及兩個身分，而且它們不是同一個。呼叫端由本服務驗證的客戶端證書進行驗證，並解析為持有 XACML_USER 的目錄項目——這決定誰可以驅動引擎。決策所「針對」的主體則在請求中，連線上的任何資訊都不會影響它：PDP 並非授權邊界，它回答的是關於他人授權的問題，若針對持有證書者做決策，那就是另一種元件了。格式錯誤的請求會得到 400 而不是 Indeterminate——Indeterminate 是「關於」某個請求的回答，而 400 表示根本沒有可供回答的請求。"
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "位於「另一個程序」中的原則強制執行點（PEP）透過同一連接埠上的相互 TLS 宣告自己存在——server.js 已設定 requestCert: true，因此不需要新的接聽程式。這是此系列中唯一要求認證資訊的端點，而它問的問題與 /xacml/pdp 不同：不是決策針對誰，而是這是「哪一個」PEP——因為註冊會寫入一個項目，並提供一個本服務稍後會連線的地址。它和此處其他每道閘門一樣只是一道旋轉門（憑證不必鏈結至任何對象，即 RFC 8705 第 3 節的論點），而且它並不是讓 PEP 能夠強制執行的條件：未註冊的 PEP 一樣能拉取並做決策。xacml.pepRequireCertificate 可將其關閉。"
+    "en": "f25896a0df078725",
+    "text": "位於「另一個程序」中的原則強制執行點（PEP）透過同一連接埠上的相互 TLS 宣告自己存在——server.js 已設定 requestCert: true，因此不需要新的接聽程式。這是此系列中唯一要求認證資訊的端點，而它問的問題與 /xacml/pdp 不同：不是決策針對誰，而是這是「哪一個」PEP——因為註冊會寫入一個項目，並提供一個本服務稍後會連線的地址。它和此處其他每道閘門一樣只是一道旋轉門（憑證不必鏈結至任何對象，即 RFC 8705 第 3 節的論點），而且它並不是讓 PEP 能夠強制執行的條件：未註冊的 PEP 一樣能拉取並做決策。xacml.pepRequireCertificate 可將其關閉。 由 sts-remote-pep 簽發、受眾為 /xacml/pep 並帶有 xacml:pep 的 DPoP 綁定存取權杖，可在此處以及每個 /xacml/pep 端點及 /xacml/pip 上代替證書，視乎 xacml.pepAuthentication 的設定；此時 PEP 以其項目的用戶名稱命名。"
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -610,6 +610,10 @@
   "stsmetadata.endpoints./admin/*.what": {
     "en": "fb526fdd286ba6e8",
     "text": "非規格端點。與 /admin 相同的文件，適用於每個主控台路徑（#446）：路徑指名頁面，由瀏覽器讀取，因此深層連結與瀏覽紀錄都能運作。/admin/callback 是登入帶著代碼返回的位置；提供它時會像依賴方過去那樣，在主控台的客戶端項目上註冊此回呼（開發模式下自動學習，產品模式下除非已註冊否則拒絕）。"
+  },
+  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
+    "en": "16b6c492ce9b90e3",
+    "text": "非規格端點。Natural Earth 的公有領域 1:50m 國家資料，與 admin-ui/natural_earth/countries.json 所附帶的相同；主控台只擷取一次，並在瀏覽器中據此繪製 監控 → Geolocation 的地圖（#444）。與腳本一樣公開。"
   },
   "stsmetadata.endpoints./portal.what": {
     "en": "773d1d1c4e26f434",
@@ -1466,9 +1470,5 @@
   "stsmetadata.protocols.Email codes and links.what": {
     "en": "735e17b751640f86",
     "text": "「不是協定」。寄送至一個人「已驗證」地址的六位數代碼或一次性連結，在 /admin/policies 上的驗證原則允許時作為第一或第二要素——預設「關閉」，因為 NIST SP 800-63B-4 section 3.1.3.1 規定電郵「不得」用於頻外驗證。每個密鑰都是登入步驟上的 scrypt 雜湊，最多有效十分鐘，在叢集中只能用掉一次；連結只會在開始登入的瀏覽器中完成；一個人在 /portal/mfa 上選擇加入第二要素，並在連續失敗 100 次後失去它（section 3.2.2）。amr \"otp\"（RFC 8176 沒有電郵的值）；它永遠不會滿足風險升級驗證，而簽發原則可以拒絕建立在其上的工作階段（refuseEmailFactor）。"
-  },
-  "stsmetadata.endpoints./admin/geo-outlines.json.what": {
-    "en": "16b6c492ce9b90e3",
-    "text": "非規格端點。Natural Earth 的公有領域 1:50m 國家資料，與 admin-ui/natural_earth/countries.json 所附帶的相同；主控台只擷取一次，並在瀏覽器中據此繪製 監控 → Geolocation 的地圖（#444）。與腳本一樣公開。"
   }
 }

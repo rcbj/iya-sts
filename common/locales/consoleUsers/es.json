@@ -629,6 +629,8 @@
   "userCredentialsSection.labelField": "Nombre (opcional)",
   "userCredentialsSection.labelHint": "lo que lo usará",
   "userCredentialsSection.addHeading": "Añadir un par de claves",
+  "userCredentialsSection.issueHeading": "Emitir uno desde la CA de este dominio",
+  "userCredentialsSection.uploadHeading": "Subir un certificado que ya tiene",
   "userCredentialsSection.atCap": "Tiene {max} pares de claves válidos para este perfil, que es <code>pki.personSigningKeyMax</code>. Revoque uno antes de emitir o subir otro.",
   "userCredentialsSection.addNote": "<strong>De cualquier forma se AÑADE un par de claves a esta entrada</strong>, y los que ya tiene siguen funcionando, hasta {max} válidos por perfil. Emitir genera aquí un par de claves nuevo y lo firma con la CA emisora de este dominio; la clave privada se sella en la entrada y se <strong>muestra una vez</strong>, en la página que abre el botón. Subir registra un certificado que la persona ya tiene, y este servicio no guarda ninguna clave privada para él. Un certificado de la autoridad de ESTE dominio se puede subir solo, y debe haberse emitido a esta persona. <strong>Uno de cualquier otra autoridad debe venir con su cadena completa</strong> &mdash; cada intermedio y la raíz autofirmada &mdash; y se verifica cada eslabón. Se rechaza una subida que incluya una clave privada.",
   "userCredentialsSection.upload": "Subir el certificado",
@@ -976,5 +978,6 @@
   "mfaSection.pubStateDeactivated": "Desactivado",
   "mfaSection.pubDeactivate": "Desactivar",
   "mfaSection.pubDeactivateTip": "Desactiva este DID para siempre: su dirección responde 410 Gone, su historial sigue siendo resoluble y deja de iniciar la sesión de la persona y de entregarse en el claim did.",
-  "mfaSection.pubNeedsWrite": "Desactivar uno requiere <strong>Admin Write</strong>."
+  "mfaSection.pubNeedsWrite": "Desactivar uno requiere <strong>Admin Write</strong>.",
+  "keySource.issuedFromCsr": "Certificada aquí a partir de su propia solicitud &mdash; la CA emisora de este dominio certificó una clave que generaron. Ellos tienen la clave privada; este servicio nunca la tuvo."
 }

@@ -98,7 +98,7 @@
   "tls.key": "密钥",
   "tls.goodUntil": "有效期至",
   "tls.how": "<strong>应用如何使用它。</strong>在连接令牌端点的 TLS 连接上出示它，使用 <code>client_id={client}</code>，并在条目上设置 <code>token_endpoint_auth_method</code> 为 <code>tls_client_auth</code>：RFC 8705 第 2.1 节会对其进行认证，因为此领域将其签发给了此应用，无需注册其他任何内容。在该连接上签发的每个访问令牌都带有此证书的 <code>cnf[\"x5t#S256\"]</code>（第 3 节），因此应用需向资源服务器出示同一证书。<code>curl --cert {chain} --key {key} --pass &lt;file password&gt; -d grant_type=client_credentials -d client_id={client} &lt;base&gt;/oauth2/token</code>",
-  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a remote PEP does with <code>PEP_TLS_CERT</code> set to <code>{chain}</code> and <code>PEP_TLS_KEY</code> set to <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
+  "tls.howPerson": "<strong>How this person uses it.</strong> Present the certificate on the TLS connection to this service, as a mutual-TLS client does with the chain <code>{chain}</code> and the key <code>{key}</code> (or the PKCS#12). The subjectAltName <code>{name}</code> is the person this realm issued it to, so the connection is admitted as that person with nothing else registered.",
   "realm": "领域",
   "pep.names": "名称",
   "validUntil": "有效期至",
@@ -116,5 +116,11 @@
   "cluster.back": "返回集群",
   "cluster.discardedDownload": "下载被丢弃的内容",
   "cluster.discardedLead": "该 PEP 不再拥有自己的反向代理、设置或侦听器：它拉取集群的配置。以下是它原有的内容，仅显示一次。",
-  "cluster.discardedTitle": "一个 PEP 加入了集群"
+  "cluster.discardedTitle": "一个 PEP 加入了集群",
+  "once.pepCredential": "PEP 断言密钥",
+  "pepCredential.keyPath": "（您生成请求时使用的密钥文件的路径）",
+  "pepCredential.urn": "名称",
+  "pepCredential.env": "使用以下环境变量启动 PEP。私钥从未离开生成请求的机器；本服务没有私钥可以提供。",
+  "pepCredential.chain": "证书及其到服务根证书的链。公开信息：PEP 进行身份验证时不需要它，它也列在该条目的密钥列表中。",
+  "pepCredential.download": "下载证书"
 }

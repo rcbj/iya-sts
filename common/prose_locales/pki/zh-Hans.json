@@ -48,8 +48,8 @@
     "text": "本领域的 KDC 用来签署其 PKINIT 回复的证书（RFC 4556）：其扩展密钥用法中包含 id-pkinit-KPKdc，id-pkinit-san 中包含本领域的票据授予服务 krbtgt/REALM@REALM。每个进程一张，在首次使用 PKINIT 时生成；私钥从不离开生成它的进程。"
   },
   "pki.useCases.acme.what": {
-    "en": "85c88fe668bcb64d",
-    "text": "通过 ACME（RFC 8555）在 /enroll/acme 签发的证书，签发给为其签发了 External Account Binding 密钥的人员或应用条目。每张叶证书都在 urn:sts:person: 或 urn:sts:application: subjectAltName 中指明该条目。"
+    "en": "2f0eeec1390c0623",
+    "text": "通过 ACME（RFC 8555）在 /enroll/acme 签发的证书，签发给为其签发了 External Account Binding 密钥的人员或应用条目。每张叶证书都在 urn:sts:person:（服务账户为 urn:sts:sa:）或 urn:sts:application: subjectAltName 中指明该条目。"
   },
   "pki.useCases.est.what": {
     "en": "20925fe97c792b47",
@@ -60,12 +60,12 @@
     "text": "通过 SCEP（RFC 8894）在 /enroll/scep 签发的证书，签发给为其签发了一次性质询密码的条目。SCEP 用来加密请求的 RA 证书也是此 CA 的叶证书，使用 RSA 密钥，因为 SCEP 的密钥传输是 RSA。"
   },
   "pki.useCases.tls-client.what": {
-    "en": "903e048677f8ab58",
-    "text": "人们在用户门户上为自己签发的 TLS 客户端证书：clientAuth、此人的 urn:sts:person: 名称，以及以 PKCS#12 形式只交付一次的私钥。由该颁发机构签发的证书可在本领域主端口的 GET /tls/sign-in 处让持有人登录；本服务任何其他颁发机构签发的证书则不能，尽管它们都链接到同一个根 CA。"
+    "en": "1b378238cd4bc7ec",
+    "text": "人们在用户门户上为自己签发的 TLS 客户端证书：clientAuth、此人的 urn:sts:person: 名称（服务账户为 urn:sts:sa:），以及以 PKCS#12 形式只交付一次的私钥。由该颁发机构签发的证书可在本领域主端口的 GET /tls/sign-in 处让持有人登录；本服务任何其他颁发机构签发的证书则不能，尽管它们都链接到同一个根 CA。"
   },
   "pki.useCases.message-signing.what": {
-    "en": "4aacf430b5a390f0",
-    "text": "个人或应用用来签名 WS-Trust 请求的证书（对 SOAP Body 和 Timestamp 的 WS-Security 1.1 签名）：只有 digitalSignature、持有者的 urn:sts:person: 或 urn:sts:application: 名称，以及以 PKCS#12 形式只交付一次的私钥。由管理员从控制台或 /admin-api 签发。此颁发机构的证书在此领域中将其持有者认证为已签名 RST 的请求者；本服务的 TLS 客户端证书不能这样做，而此证书也不通过 TLS 让任何人登录。"
+    "en": "f585bff7b006f247",
+    "text": "个人或应用用来签名 WS-Trust 请求的证书（对 SOAP Body 和 Timestamp 的 WS-Security 1.1 签名）：只有 digitalSignature、持有者的 urn:sts:person:、urn:sts:sa:（服务账户）或 urn:sts:application: 名称，以及以 PKCS#12 形式只交付一次的私钥。由管理员从控制台或 /admin-api 签发。此颁发机构的证书在此领域中将其持有者认证为已签名 RST 的请求者；本服务的 TLS 客户端证书不能这样做，而此证书也不通过 TLS 让任何人登录。"
   },
   "pki.useCases.policy-signing.what": {
     "en": "9dd7e80fa0d8f1eb",

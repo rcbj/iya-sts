@@ -1093,6 +1093,28 @@ async function childBody() {
   // K. THE CATALOGUE A REMOTE PEP PULLS (#1179)
   // -------------------------------------------------------------------------
   const CATALOGUE = PREFIX + '/xacml/pep/authzen-catalogue';
+  // PHASE 4 OF #1827's FOLLOW-UP MADE `token` THE DEFAULT of
+  // xacml.pepAuthentication. Under it a certificate that WOULD be admitted
+  // is refused alone (401, STS-XACML-0289), and the description names
+  // `either` — what an upgraded deployment whose PEPs still present a
+  // certificate meets first. The rest of K drives the certificate door, so
+  // the realm opts in to `either`, the operator's choice it stays.
+  inRealm(function () {
+    t.check(config.value('xacml.pepAuthentication') === 'token',
+            'K0. xacml.pepAuthentication defaults to token',
+            String(config.value('xacml.pepAuthentication')));
+  });
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pullCred);
+  t.check(r.status === 401 && markedSince(since, 'STS-XACML-0289') &&
+          /under either/.test(r.text) &&
+          /PEP_ASSERTION_KEY/.test(r.text),
+          'K0a. under the default an admitted certificate alone is refused ' +
+          '(401, STS-XACML-0289), naming either and the assertion key',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'either');
+  });
   since = marks.length;
   r = await request(port, 'GET', CATALOGUE, null);
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0007'),
@@ -1103,6 +1125,30 @@ async function childBody() {
   t.check(r.status === 403 && markedSince(since, 'STS-XACML-0009'),
           'K2. an AuthZEN caller is not a remote PEP: AUTHZEN_PEPS without ' +
           'REMOTE_PEPS is 403 (STS-XACML-0009)', brief(r));
+  // #1827's follow-up: the PEP door reads a TOKEN where one is presented.
+  // Over a real handshake with a certificate that would be admitted, a
+  // token that does not hold decides (401, a DPoP challenge, STS-XACML-0291)
+  // rather than being passed over for the certificate; with
+  // xacml.pepAuthentication certificate the header is not read and the
+  // certificate decides. tests/remote_pep_token_door.js drives a real token.
+  const notAToken = { Authorization: 'DPoP not.a.token', DPoP: 'x' };
+  since = marks.length;
+  r = await request(port, 'GET', CATALOGUE, pullCred, undefined, notAToken);
+  t.check(r.status === 401 && markedSince(since, 'STS-XACML-0291') &&
+          /^DPoP /.test(String(r.headers['www-authenticate'] || '')),
+          'K2a. a token beside an admitted certificate decides: one that ' +
+          'does not verify is 401 with a DPoP challenge (STS-XACML-0291)',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'certificate');
+  });
+  r = await request(port, 'GET', CATALOGUE, pullCred, undefined, notAToken);
+  inRealm(function () {
+    config.setOverride('xacml.pepAuthentication', 'either');
+  });
+  t.check(r.status === 200,
+          'K2b. under xacml.pepAuthentication certificate the header is not ' +
+          'read and the certificate admits the pull', brief(r));
   const pulled = await request(port, 'GET', CATALOGUE, pullCred);
   const pulledRows = (pulled.json && pulled.json.rows) || [];
   const classification = pulledRows.filter(function (row) {
