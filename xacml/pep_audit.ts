@@ -27,7 +27,8 @@
 // group `roles.remotePepGroup` names, asked at issuance and on every call;
 // and the token is the PEP's own RFC 7523 self-assertion
 // (`person_assertions.js`) presented through the seeded public client
-// `sts-remote-pep`, bound to the PEP's certificate. Nothing here asks any of
+// `sts-remote-pep`, bound to the PEP's certificate or, since the PEP's token
+// credential (#1827's follow-up), its DPoP key. Nothing here asks any of
 // that again. What this file asks is the one question the gate cannot: is
 // the caller a PEP REGISTERED in this realm's `ou=peps`, the register the
 // console's PEP list is drawn from — the heartbeat's rule, for its reason.

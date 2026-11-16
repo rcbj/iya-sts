@@ -1076,7 +1076,18 @@ so must `admin-ui/admin.ts`.
    the configured `adminApi.audience` where there is none. A token for any
    other resource is untouched: binding stays the client's choice there, and
    the rule is the one resource server where a stolen token administers the
-   service. **The gate holds the other end** (`STS-API-0137`,
+   service. **ONE CLIENT'S DPoP KEY STANDS FOR ITS CERTIFICATE (#1827's
+   follow-up, through phase 3 of the PEP token plan):** `sts-remote-pep`
+   declares the section 3.4 flag from #1827 and is a DPoP-bound public client
+   since the plan, so `sender_constraints.js`'s
+   `dpopStandsForCertificate()` names it, and for it a verified DPoP proof at
+   the token endpoint satisfies `declaredRefusal()` (`boundByDpop`, so no
+   `0487`), a `jkt` satisfies `adminApiBindingRefusal()` (no `0489`), and
+   `/admin-api` lets a `cnf.jkt` token through `0137`. A list of one,
+   named; phase 4 drops the flag and the exception with it. A token request
+   from it with no proof is `STS-OAUTH-1012` — in phases 1-3 the flag's
+   `0487` answers first, since nothing on the connection can be bound to.
+   **The gate holds the other end** (`STS-API-0137`,
    `mgmt-api/CLAUDE.md`), reading the declaration NOW, so a token issued
    before the rule or before the declaration is refused too. In every mode,
    for `declaredRefusal()`'s reason. `tests/rfc8705_mtls.js` section m.

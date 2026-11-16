@@ -2561,9 +2561,23 @@ the device feed's above, made a second time:
   entry that already exists is otherwise left alone and the grant would name
   nothing on a service upgraded from 1.1.0.
 
+* **AND ON A DPoP KEY SINCE THE PEP'S TOKEN CREDENTIAL (#1827's
+  follow-up, rcbj-approved plan, 2026-11-16).** `sts-remote-pep` is a
+  DPoP-bound public client now (`sender_constraints.js`), and through phase 3
+  of that plan its DPoP binding STANDS FOR the certificate binding its entry
+  still declares (`dpopStandsForCertificate()`, a list of that one client):
+  the token endpoint issues its `/admin-api` token bound to the PEP's key
+  with no certificate on the connection, and `STS-API-0137` lets a `cnf.jkt`
+  token of that client through, whose proof RFC 9449 section 7's check below
+  it then asks for. `accessTokenRefusal()`'s `certificateStands` keeps a
+  certificate-bound token of that client honoured where its certificate is
+  presented. Phase 4 drops the declaration, and with it this exception.
+
 `admin_api_spec.ts`'s `scopeForMethod()` states the exception and
 `tests/admin_api_document_security.js` holds the two together.
-`tests/remote_pep_audit.js` drives the whole path in process.
+`tests/remote_pep_audit.js` drives the whole path in process, and
+`tests/remote_pep_token_door.js` (A1) the push on a DPoP-bound token over a
+connection with no certificate.
 
 ## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
 

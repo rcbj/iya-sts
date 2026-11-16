@@ -76,8 +76,8 @@
     "text": "Isang public client na walang pinatunayan."
   },
   "roles.builtIn.REMOTE_PEPS.what": {
-    "en": "c88edce6cfb601d9",
-    "text": "Isang remote XACML Policy Enforcement Point: sinumang miyembro ng group na pinangangalanan ng `roles.remotePepGroup` (default \"remote-peps\"). Ito ang kailangan ng `/xacml/pep/register`, `/xacml/pep/policies` at `/xacml/pep/heartbeat`, at ang party na may hawak nito ay karaniwang client-certificate DN at hindi tao — sinasabi ng certificate kung SINO, at sinasabi ng group na ito kung puwede sila. Pinahihintulutan nito ang permisong xacml:pep-audit: ang pagpapadala sa audit log ng serbisyong ito ng mga talaan ng mga desisyong ginawa ng PEP, sa pamamagitan ng POST /admin-api/pep-audit, at wala nang iba pa sa /admin-api."
+    "en": "091be0a92ce428e3",
+    "text": "Isang remote XACML Policy Enforcement Point: sinumang miyembro ng group na pinangangalanan ng `roles.remotePepGroup` (default \"remote-peps\"). Ito ang kailangan ng `/xacml/pep/register`, `/xacml/pep/policies` at `/xacml/pep/heartbeat`, at ang party na may hawak nito ay karaniwang client-certificate DN at hindi tao — sinasabi ng certificate kung SINO, at sinasabi ng group na ito kung puwede sila. Pinahihintulutan nito ang permisong xacml:pep-audit: ang pagpapadala sa audit log ng serbisyong ito ng mga talaan ng mga desisyong ginawa ng PEP, sa pamamagitan ng POST /admin-api/pep-audit, at wala nang iba pa sa /admin-api. Pinahihintulutan din nito ang xacml:pep na permiso: ang maabot ang /xacml/pep/* at POST /xacml/pip gamit ang DPoP-bound na access token sa halip na client certificate."
   },
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",

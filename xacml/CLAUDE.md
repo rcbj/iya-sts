@@ -41,6 +41,7 @@ and the nudge.
 | `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
+| `pep_token.ts` | A remote PEP's DPoP-bound access token from `sts-remote-pep`, read for the PEP door (`/xacml/pep`, `xacml:pep`) and the AuthZEN door (`/access/v1`, `authzen:evaluate`): ours, the PEP's client, this audience and scope, a DPoP proof that holds, one `ou=users` entry. Writes no response (#1827's follow-up). |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
 | `xacml_pep_listeners.ts` | **A remote PEP's listeners (#1760)**: the environment's four, the ones defined on its page (`xacmlPepListeners`), their validation, the pull's section and the reading of what the PEP reports (`xacmlPepListenersInUse`). A LIBRARY. See *A remote PEP's listeners* below. |
@@ -182,6 +183,52 @@ access-control document, or points `roles.remotePepGroup` at a group of their
 own, changes this answer with everything else. `xacml.enforceAccess` turns the
 layer off and the old `xacml.pepRequireCertificate` refusal is what answers
 underneath.
+
+### A TOKEN IN PLACE OF THE CERTIFICATE (#1827's follow-up, rcbj-approved plan, 2026-11-16, phase 1)
+
+**Links 1 and 2 have a second answer: a DPoP-bound access token from
+`sts-remote-pep`.** The PEP signs an RFC 7523 self-assertion with ONE key,
+presents it through that public client with a DPoP proof by the same key,
+and is issued, per audience, a token bound to it: `xacml:pep` on
+`sts-xacml-pep-api` (audience the realm's `/xacml/pep`) for every
+`/xacml/pep/*` call and `POST /xacml/pip`; `xacml:pep-audit` for the push;
+`authzen:evaluate` for the forward. REMOTE_PEPS authorizes `xacml:pep` at
+issuance (`roles.js`'s row names a list now) and links 3 and 4 decide on
+every call, unchanged.
+
+* **ONE READING, `pep_token.ts`**, shared with the AuthZEN door: this
+  realm's token, issued to `sts-remote-pep` (`STS-XACML-0294` otherwise),
+  for this path (`0293`) and scope while the client holds the grant (`0295`),
+  `cnf.jkt` and sent as DPoP (`0292`), a proof `dpop.verifyProof()` accepts
+  — replay, `ath`, the server nonce (`0296`, with `use_dpop_nonce` and a
+  `DPoP-Nonce` when it wanted one) — and a `sub` that is exactly one
+  `ou=users` entry (`0297`). Anything else about the token is `0291`. Each is
+  a 401 with a `DPoP` challenge; the policy's refusal stays a 403.
+* **`pepIdentity()` IS THE PEP DOOR, `callerIdentity()` STAYS THE
+  HANDSHAKE.** `pepAccess()`, `validationDoor()` and the PIP read
+  `pepIdentity()`, which reads the token or the certificate as
+  `xacml.pepAuthentication` (per realm, `either` by default) allows, once per
+  request (a proof is good for one request). `xacmlAccess()` and the AuthZEN
+  certificate door read `callerIdentity()`, which never reads a header.
+  **A token, where one is presented and accepted, DECIDES** — a refused one
+  is not passed over for the certificate underneath. `token` refuses a
+  request carrying none (`0289`); `certificate` does not read the header and
+  refuses a token-only request (`0290`).
+* **THE NAME IS THE USERNAME**, `commonName` of the identity — what a
+  certificate this service issued carried — so the `ou=peps` row, the
+  heartbeat's row and a cluster's membership are unchanged; the row's
+  `thumbprint` is the DPoP key's RFC 7638 thumbprint, `certificateSubject`
+  empty.
+* **WHAT IT COSTS** (measured in process by `tests/remote_pep_token_door.js`
+  C1): every call verifies one ES256 proof and writes its `jti` — the
+  cluster claim `dpop.proofClaims()` takes on arrival and a `dpop.seenJtis`
+  row. On a store, the second makes a pull or a PIP query a WRITING response
+  that the barrier holds until it commits, where with a certificate it was a
+  read.
+
+`tests/remote_pep_token_door.js` drives it in process over plain HTTP;
+`tests/authzen_evaluation.js` K2a/K2b hold the precedence over a real
+handshake.
 
 ### The entry is a SERVICE ACCOUNT, owned by the realm's administrators (#1760)
 

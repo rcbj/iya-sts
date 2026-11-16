@@ -1722,6 +1722,7 @@ using IyaSts.Api.Common;
     },
     #{`name`:"Risk",`description`:""},
     #{`name`:"Devices",`description`:""},
+    #{`name`:"XACML",`description`:""},
     #{
       `name`:"Users",
       `description`:"Who it has authenticated, and what each of them holds."
@@ -1784,7 +1785,6 @@ using IyaSts.Api.Common;
     #{`name`:"SAML 1.1",`description`:""},
     #{`name`:"Authorization servers",`description`:""},
     #{`name`:"Applications",`description`:""},
-    #{`name`:"XACML",`description`:""},
     #{
       `name`:"GNAP",
       `description`:"The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand."
@@ -1839,7 +1839,8 @@ using IyaSts.Api.Common;
               `admin:write`:"Change anything this API can change (every other method), except a security change.",
               `admin:security`:"A security change, in place of admin:write: a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked, and the account of a person who holds it. Issued only to a subject holding SECURITY_ADMIN.",
               `admin:console`:"The admin console's own operations, under /admin-api/console (#454). Issued only to the console's client, sts-admin-console, through the ADMIN_CONSOLE role it confers.",
-              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it."
+              `device:compliance`:"Report device compliance through POST /admin-api/device-compliance, and nothing else — the scope an MDM or posture feed holds (#164). Issued only to a client that declares it.",
+              `xacml:pep-audit`:"Push a remote PEP's decision records through POST /admin-api/pep-audit, and nothing else. Issued to the PEP's own RFC 7523 self-assertion through sts-remote-pep, only while its entry is in the remote PEPs' group (REMOTE_PEPS)."
             }
           }
         }
@@ -14100,7 +14101,7 @@ op `reportDeviceCompliance`(@js(#{
   #{
     `operationId`:"reportPepDecisions",
     `summary`:"Push a remote PEP's decision records (#1827)",
-    `description`:"A remote XACML PEP pushes the records of the decisions it made in its own process — `/protected` enforcements (`kind` `enforcement`) the AuthZEN evaluations it decided (`kind` `authzen`; never one it forwarded, which this service decided and recorded itself) and its reverse proxy's requests to a route (`kind` `proxy`, #1760, with `route` and the `status` it answered) — and each becomes one audit row, `xacml.remote.enforcement`, `authzen.remote.decision` or `xacml.remote.proxy`, read on GET /admin-api/audit. `instance` names the PEP process; every record carries `seq`, a positive integer increasing within that process, and the answer's `acknowledged` is the highest `seq` the batch carried, so the PEP removes everything up to it. Delivery is at least once: a record sent again is recorded again, and the row names the PEP, the instance and the seq that identify it. A record with no positive integer `seq` or an unknown `kind` is counted in `ignored` (STS-XACML-0288) and the rest are recorded. At most 500 records a push. The PEP must be registered in this realm (POST /xacml/pep/register) under the name its token's subject carries (STS-XACML-0287, 404). **The access token must carry `xacml:pep-audit`**: the PEP's own RFC 7523 self-assertion (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`, `iss` and `sub` its own username, its certificate's key registered on its entry) presented through the seeded public client `sts-remote-pep` over mutual TLS, so the token is bound to that certificate. It is issued and honoured only while the PEP's entry is in the group roles.remotePepGroup names (REMOTE_PEPS); a token carrying anything else is refused here, and that scope reaches no other operation (STS-API-0147).\n\n**Mirrors** `no console form — a remote PEP pushing what it decided; the records are read on GET /admin/audit` on the admin console.",
+    `description`:"A remote XACML PEP pushes the records of the decisions it made in its own process — `/protected` enforcements (`kind` `enforcement`) the AuthZEN evaluations it decided (`kind` `authzen`; never one it forwarded, which this service decided and recorded itself) and its reverse proxy's requests to a route (`kind` `proxy`, #1760, with `route` and the `status` it answered) — and each becomes one audit row, `xacml.remote.enforcement`, `authzen.remote.decision` or `xacml.remote.proxy`, read on GET /admin-api/audit. `instance` names the PEP process; every record carries `seq`, a positive integer increasing within that process, and the answer's `acknowledged` is the highest `seq` the batch carried, so the PEP removes everything up to it. Delivery is at least once: a record sent again is recorded again, and the row names the PEP, the instance and the seq that identify it. A record with no positive integer `seq` or an unknown `kind` is counted in `ignored` (STS-XACML-0288) and the rest are recorded. At most 500 records a push. The PEP must be registered in this realm (POST /xacml/pep/register) under the name its token's subject carries (STS-XACML-0287, 404). **The access token must carry `xacml:pep-audit`**: the PEP's own RFC 7523 self-assertion (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`, `iss` and `sub` its own username, its certificate's key registered on its entry) presented through the seeded public client `sts-remote-pep` with a DPoP proof by that key, so the token is bound to it (RFC 9449; over mutual TLS it is bound to the certificate as well, and through phase 3 of the PEP's token plan a certificate-bound token is still honoured where its certificate is presented). It is issued and honoured only while the PEP's entry is in the group roles.remotePepGroup names (REMOTE_PEPS); a token carrying anything else is refused here, and that scope reaches no other operation (STS-API-0147).\n\n**Mirrors** `no console form — a remote PEP pushing what it decided; the records are read on GET /admin/audit` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{

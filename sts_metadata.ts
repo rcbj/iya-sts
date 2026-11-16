@@ -3718,7 +3718,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a turnstile like every other gate here (the certificate need ' +
           'not chain to anything, RFC 8705 section 3\'s argument) and it is ' +
           'NOT what lets a PEP enforce: an unregistered one pulls and ' +
-          'decides just as well. xacml.pepRequireCertificate turns it off.' },
+          'decides just as well. xacml.pepRequireCertificate turns it off. ' +
+          'A DPoP-bound access token from sts-remote-pep, audienced to ' +
+          '/xacml/pep and carrying xacml:pep, may stand for the certificate ' +
+          'here and at every /xacml/pep endpoint and /xacml/pip, as ' +
+          'xacml.pepAuthentication allows; the PEP is then named by its ' +
+          'entry\'s username.' },
   { path: '/xacml/pep/policies', group: 'XACML',
     name: 'The repository, for a remote PEP to LOAD', specs: ['xacml30'],
     what: 'Every ENABLED policy and which one is the root, plus a sync ' +

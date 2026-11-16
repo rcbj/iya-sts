@@ -76,8 +76,8 @@
     "text": "En publik klient som inte bevisade någonting."
   },
   "roles.builtIn.REMOTE_PEPS.what": {
-    "en": "c88edce6cfb601d9",
-    "text": "En fjärransluten XACML Policy Enforcement Point: den som är medlem i gruppen som namnges av `roles.remotePepGroup` (standard \"remote-peps\"). Det är vad `/xacml/pep/register`, `/xacml/pep/policies` och `/xacml/pep/heartbeat` kräver, och parten som har den är normalt ett klientcertifikats DN snarare än en person — certifikatet säger VEM, och den här gruppen säger om de får. Den ger behörigheten xacml:pep-audit: att skicka posterna om de beslut PEP:en fattat till den här tjänstens granskningslogg, via POST /admin-api/pep-audit, och inget annat på /admin-api."
+    "en": "091be0a92ce428e3",
+    "text": "En fjärransluten XACML Policy Enforcement Point: den som är medlem i gruppen som namnges av `roles.remotePepGroup` (standard \"remote-peps\"). Det är vad `/xacml/pep/register`, `/xacml/pep/policies` och `/xacml/pep/heartbeat` kräver, och parten som har den är normalt ett klientcertifikats DN snarare än en person — certifikatet säger VEM, och den här gruppen säger om de får. Den ger behörigheten xacml:pep-audit: att skicka posterna om de beslut PEP:en fattat till den här tjänstens granskningslogg, via POST /admin-api/pep-audit, och inget annat på /admin-api. Den ger också behörigheten xacml:pep: att nå /xacml/pep/* och POST /xacml/pip med en DPoP-bunden åtkomsttoken i stället för ett klientcertifikat."
   },
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",
