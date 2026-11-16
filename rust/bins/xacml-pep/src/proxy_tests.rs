@@ -3439,3 +3439,84 @@ async fn a_first_answer_that_holds_nothing_is_404_not_503() {
     h.sync.receive_proxy(&json!({ "configured": true }), None);
     assert_eq!(h.get("/public/page").send().await.unwrap().status(), 404);
 }
+
+/// THE PROXY'S DECISION RECORDS (#1827): one per request that reached its
+/// route's authorization — forwarded, refused by the policy, refused by
+/// authentication — with the route, the status, the person by username and
+/// the path without its query; none for a path no route matches, and none
+/// while no configuration has been received (`STS-XPEP-0118`).
+#[tokio::test]
+async fn queues_a_record_for_each_request_its_route_decided() {
+    let h = harness().await;
+    let audit = h.proxied.audit();
+    let r = h
+        .get("/api/x?token=s3cret")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = h
+        .get("/api/x")
+        .basic_auth("mallory", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let r = h
+        .get("/api/x")
+        .basic_auth("alice", Some("wrong"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 401);
+    let r = h.get("/nowhere-at-all").send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let records = audit.queued_for_test();
+    assert_eq!(records.len(), 3, "{:?}", records);
+
+    let allowed = &records[0];
+    assert_eq!(
+        (allowed.kind.as_str(), allowed.route.as_deref(), allowed.status),
+        ("proxy", Some("api"), Some(200))
+    );
+    assert!(allowed.allowed && !allowed.fault);
+    assert_eq!(allowed.decision, "Permit");
+    assert_eq!(
+        (allowed.subject.as_str(), allowed.resource.as_str(),
+         allowed.action.as_str()),
+        ("alice", "/api/x", "GET")
+    );
+    assert_eq!(allowed.policies, ["t"]);
+    assert_eq!(allowed.code, "");
+    let sent = serde_json::to_string(allowed).unwrap();
+    assert!(!sent.contains("s3cret"), "no query string: {}", sent);
+    assert!(!sent.contains("right"), "no credential: {}", sent);
+
+    let refused = &records[1];
+    assert_eq!((refused.status, refused.allowed), (Some(403), false));
+    assert_eq!(refused.code, "STS-XPEP-0086");
+    assert_eq!(refused.subject, "mallory");
+    assert!(!refused.decision.is_empty() && refused.decision != "Permit");
+    assert!(!refused.why.is_empty() && !refused.fault);
+
+    let unauthenticated = &records[2];
+    assert_eq!(unauthenticated.status, Some(401));
+    assert_eq!(unauthenticated.subject, "", "nobody was established");
+    assert_eq!(unauthenticated.decision, "", "no policy was asked");
+    assert!(unauthenticated.code.starts_with("STS-XPEP-"));
+    // A record's members on the wire: the twenty, and route and status.
+    let wire = serde_json::to_value(unauthenticated).unwrap();
+    assert_eq!(wire.as_object().unwrap().len(), 22);
+
+    // NOT CONFIGURED YET: a 503, and no record.
+    let waiting = harness_unconfigured(|_| {}).await;
+    let r = waiting
+        .get("/api/x")
+        .basic_auth("alice", Some("right"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 503);
+    assert!(waiting.proxied.audit().queued_for_test().is_empty());
+}

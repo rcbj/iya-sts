@@ -26,9 +26,12 @@
 //!   start, so a restart that counts from 1 again is not mistaken for old
 //!   records by the service's deduplication mark.
 //! * **The queue is bounded and never blocks a decision.** Full, the OLDEST
-//!   record is dropped and counted (`STS-XPEP-0119`); a batch the service
-//!   refuses as malformed (400) is dropped too (`STS-XPEP-0122`), rather
+//!   record is dropped and counted (`STS-XPEP-0120`); a batch the service
+//!   refuses as malformed (400) is dropped too (`STS-XPEP-0123`), rather
 //!   than sent forever.
+//! * **THE REVERSE PROXY'S REQUESTS ARE QUEUED TOO** (#1760): one record,
+//!   `kind: "proxy"` with `route` and `status`, per request that reached its
+//!   route's authorization (`proxy.rs`, `Noted`).
 //! * **A FORWARDED AuthZEN evaluation is not queued** (#564): the service
 //!   decided it and wrote its own row under the same request id.
 //! * **An AuthZEN record carries exactly what its log line carries** — no
@@ -81,7 +84,7 @@ pub struct Record {
     /// When it was DECIDED, UTC to the millisecond — the service keeps it
     /// apart from when it received it.
     pub at: String,
-    /// `enforcement` or `authzen`.
+    /// `enforcement`, `authzen` or `proxy`.
     pub kind: String,
     /// The XACML decision; `""` for an AuthZEN fault.
     pub decision: String,
@@ -103,6 +106,13 @@ pub struct Record {
     pub subject_type: String,
     pub endpoint: String,
     pub request_id: String,
+    /// The reverse proxy's (`kind: "proxy"`, #1760) alone: the route the
+    /// request matched and the HTTP status the proxy answered. Absent from
+    /// the other kinds rather than empty.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
 }
 
 /// A policy identifier as a record names it.
@@ -326,7 +336,7 @@ impl Audit {
                      the service is full (PEP_AUDIT_BUFFER, {}), so the \
                      oldest was dropped; {} dropped so far. Enforcement goes \
                      on, and each dropped decision is still on this log.",
-                    tag("STS-XPEP-0119"),
+                    tag("STS-XPEP-0120"),
                     buffer,
                     state.dropped
                 );
@@ -440,14 +450,14 @@ impl Audit {
             tracing::warn!(
                 "{}xacml-pep: decision records not delivered to POST {}: {}. \
                  They stay queued and are sent again.",
-                tag("STS-XPEP-0121"),
+                tag("STS-XPEP-0122"),
                 AUDIT_PATH,
                 why
             );
         } else {
             tracing::debug!(
                 "{}xacml-pep: decision records still not delivered: {}",
-                tag("STS-XPEP-0121"),
+                tag("STS-XPEP-0122"),
                 why
             );
         }
@@ -462,13 +472,13 @@ impl Audit {
                  This PEP's entry must hold its client certificate as an \
                  assertion key and be in the remote PEPs group. The decision \
                  records stay queued.",
-                tag("STS-XPEP-0120"),
+                tag("STS-XPEP-0121"),
                 why
             );
         } else {
             tracing::debug!(
                 "{}xacml-pep: still no access token: {}",
-                tag("STS-XPEP-0120"),
+                tag("STS-XPEP-0121"),
                 why
             );
         }
@@ -593,7 +603,7 @@ impl Audit {
                 return true;
             }
             let Some(token) = self.token(client).await else {
-                self.note(false, "no access token (STS-XPEP-0120)");
+                self.note(false, "no access token (STS-XPEP-0121)");
                 return false;
             };
             let answer = client
@@ -637,7 +647,7 @@ impl Audit {
                         "{}xacml-pep: the service refused a batch of {} \
                          decision record(s) as malformed, so they were \
                          dropped; each is still on this log. It said: {}",
-                        tag("STS-XPEP-0122"),
+                        tag("STS-XPEP-0123"),
                         batch.len(),
                         said
                     );
@@ -680,7 +690,8 @@ impl Audit {
             "tokenHeld": state.token.is_some(),
             "instance": self.instance,
             "what": "Each decision made HERE — a /protected enforcement, an \
-                     AuthZEN evaluation not forwarded — is queued and sent \
+                     AuthZEN evaluation not forwarded, a reverse proxy \
+                     request its route decided — is queued and sent \
                      to the service's audit log through POST /admin-api/\
                      pep-audit, with a token this PEP obtains by an \
                      RFC 7523 self-assertion signed with its client \

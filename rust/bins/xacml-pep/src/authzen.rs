@@ -1649,7 +1649,6 @@ mod tests {
         let client = PdpClient::new(&options).unwrap();
         let sync =
             Arc::new(crate::sync::Sync::new(client.clone(), options.clone()));
-        let audit = Arc::new(crate::audit::Audit::new(&options));
         let pep = crate::service::Pep::new(
             options.clone(),
             sts_core::version::load(std::path::Path::new(".")),
@@ -1658,8 +1657,8 @@ mod tests {
             Arc::new(crate::listener::HttpsListener::new(
                 "", "", 0, 5000, None,
             )),
-            audit.clone(),
         );
+        let audit = pep.audit.clone();
         let catalogue = Catalogue {
             fga_applications: Arc::new(vec!["payments".to_string()]),
             ..Catalogue::default()

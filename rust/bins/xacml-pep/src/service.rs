@@ -131,8 +131,10 @@ impl Pep {
         sync: Arc<Sync>,
         pip: RemotePip,
         listener: Arc<HttpsListener>,
-        audit: Arc<Audit>,
     ) -> Pep {
+        // The decision records' queue (#1827), built from the same options
+        // so it reads the same managed settings.
+        let audit = Arc::new(Audit::new(&options));
         Pep {
             options,
             version,

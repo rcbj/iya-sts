@@ -55,7 +55,6 @@ use sts_core::log::{self, tag};
 use sts_core::version;
 use tokio::net::TcpListener;
 
-use crate::audit::Audit;
 use crate::listener::{peer_of, HttpsListener, Transport};
 use crate::listener_pool::{drive, ListenerRuntime};
 use crate::listeners::{plain_kind, EnvKind, ListenerSet, PlainStatus};
@@ -352,15 +351,14 @@ async fn start(options: Options, info: version::VersionInfo) {
         options.https_reload_interval_ms,
         options.authzen_client_ca.as_deref(),
     ));
-    let audit = Arc::new(Audit::new(&options));
     let pep = Arc::new(Pep::new(
         options.clone(),
         info,
         sync.clone(),
         pip,
         https.clone(),
-        audit.clone(),
     ));
+    let audit = pep.audit.clone();
 
     // The reverse proxy (#1760) is built here so the poll can reconcile
     // its relying parties after every pull; its listeners start below.
