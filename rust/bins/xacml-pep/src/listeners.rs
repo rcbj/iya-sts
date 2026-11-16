@@ -857,7 +857,8 @@ pub fn certify_with(client: crate::pdp_client::PdpClient) -> Certify {
         let client = client.clone();
         Box::pin(async move {
             let answer = client
-                .call(
+                .call_authorized(
+                    crate::credential::Resource::Pep,
                     reqwest::Method::POST,
                     "/xacml/pep/listener-certificate",
                     Some(crate::pdp_client::Body::Json(json!({

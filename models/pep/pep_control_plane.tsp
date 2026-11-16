@@ -46,12 +46,17 @@ using IyaSts.ApiLib;
   `servers`:#[
     #{`url`:"https://localhost:8081",`description`:"PEP_PDP_URL: the service, with /realm/<id> for a realm."}
   ],
-  `security`:#[#{`mutualTLS`:#[]}],
+  `security`:#[#{`mutualTLS`:#[]},#{`dpop`:#["xacml:pep"]}],
   `components`:#{
     `securitySchemes`:#{
       `mutualTLS`:#{
         `type`:"mutualTLS",
-        `description`:"The PEP's PEP_TLS_CERT, verified by the service, stored on an entry that holds REMOTE_PEPS. The PEP's register name is the certificate's CN (else its DN), folded to [A-Za-z0-9._-] and 128 characters; a name in the request is read only when no certificate was presented."
+        `description`:"The PEP's PEP_TLS_CERT, verified by the service, stored on an entry that holds REMOTE_PEPS. The PEP's register name is the certificate's CN (else its DN), folded to [A-Za-z0-9._-] and 128 characters; a name in the request is read only when no certificate was presented. Accepted when the realm's xacml.pepAuthentication is certificate or either."
+      },
+      `dpop`:#{
+        `type`:"http",
+        `scheme`:"DPoP",
+        `description`:"RFC 9449 (#1827): Authorization: DPoP <token> with a DPoP proof for this method and URL. The token is the client sts-remote-pep's, from an RFC 7523 self-assertion, audienced to the realm's /xacml/pep, carrying xacml:pep, its subject the PEP's own entry. Accepted when xacml.pepAuthentication is token or either. A refusal is 401 with a DPoP challenge, error=... and algs=\"ES256 RS256\" (and a DPoP-Nonce header for use_dpop_nonce): no token where one is required (STS-XACML-0289), a token where a certificate is (0290), not this realm's or revoked (0291), not DPoP-bound (0292), another audience (0293), another client (0294), without xacml:pep (0295), a refused proof (0296), a subject naming no entry (0297)."
       }
     }
   },
@@ -60,7 +65,7 @@ using IyaSts.ApiLib;
 namespace IyaSts.Pep.ControlPlane {
 
 @component model `Error` {
-  `error`: "not_implemented" | "access_denied" | "invalid_client" | "invalid_request" | "server_error" | "too_many_requests";
+  `error`: "not_implemented" | "access_denied" | "invalid_client" | "invalid_request" | "invalid_token" | "insufficient_scope" | "use_dpop_nonce" | "server_error" | "too_many_requests";
   `error_description`: string;
 }
 
@@ -110,7 +115,7 @@ namespace IyaSts.Pep.ControlPlane {
     `200`:#{`description`:"Registered again.",`content`:#{`application/json`:#{`schema`:null}}},
     `201`:#{`description`:"Registered for the first time.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
-    `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client.",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
     `503`:#{`description`:"No embedded directory in this process (STS-XACML-0026): server_error; a later attempt can succeed.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -282,6 +287,7 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `responses`:#{
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"No name (STS-XACML-0020) or a bad hostname (0261).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -292,6 +298,7 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
 op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatRequest`,
   `responses/200/content/application~1json/schema`: `HeartbeatAnswer`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`,
@@ -333,11 +340,13 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -384,12 +393,14 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   `responses`:#{
     `200`:#{`description`:"The catalogue. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"The fine-grained authorization applications could not be read (STS-FGA-0108); answered before since or If-None-Match is compared.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `AuthzenCatalogue`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/500/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
@@ -438,11 +449,13 @@ op `getAuthzenCatalogue`(`responses/200/content/application~1json/schema`: `Auth
   `responses`:#{
     `200`:#{`description`:"The callers. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `AuthzenCallers`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -555,11 +568,13 @@ op `getAuthzenCallers`(`responses/200/content/application~1json/schema`: `Authze
   `responses`:#{
     `200`:#{`description`:"The configuration. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -592,6 +607,10 @@ op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
   @js(#{`minimum`:100,`maximum`:3600000}) `proxySignalsPollMs`?: int64;
   @js(#{`minimum`:1,`maximum`:86400000}) `proxySignalsStaleMs`?: int64;
   @js(#{`maxLength`:1024}) `proxyStripCookies`?: string;
+  @js(#{`description`:"PEP_AUDIT: whether this PEP sends its decision records to the service's audit log (#1827)."}) `auditEnabled`?: boolean;
+  @js(#{`minimum`:1000,`maximum`:86400000}) `auditIntervalMs`?: int64;
+  @js(#{`minimum`:1,`maximum`:500}) `auditBatch`?: int64;
+  @js(#{`minimum`:1,`maximum`:1000000}) `auditBuffer`?: int64;
 }
 
 @component model `ListenerTuning` {
@@ -661,11 +680,13 @@ op `getProxy`(`responses/200/content/application~1json/schema`: `ProxyPull`,
   `responses`:#{
     `200`:#{`description`:"The settings. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/501/content/application~1json/schema`: `Error`): void;
 
@@ -697,6 +718,7 @@ op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull
   `responses`:#{
     `200`:#{`description`:"Issued, or the one held.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0253).",`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"Issuance failed (STS-XACML-0255).",`content`:#{`application/json`:#{`schema`:null}}},
@@ -706,6 +728,7 @@ op `getSettings`(`responses/200/content/application~1json/schema`: `SettingsPull
 op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `ListenerCertificateRequest`,
   `responses/200/content/application~1json/schema`: `ListenerCertificate`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `Error`,
   `responses/500/content/application~1json/schema`: `Error`,
@@ -815,6 +838,7 @@ op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `Li
   `responses`:#{
     `200`:#{`description`:"The token's reading.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"No token, or too long (STS-XACML-0207).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -824,6 +848,7 @@ op `postListenerCertificate`(`requestBody/content/application~1json/schema`: `Li
 op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectRequest`,
   `responses/200/content/application~1json/schema`: `Introspection`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
@@ -837,6 +862,7 @@ op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectR
   `responses`:#{
     `200`:#{`description`:"Valid or not; the reason is audited (STS-XACML-0206).",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Malformed (STS-XACML-0204).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"Locked out (STS-XACML-0205), or the limiter (0215): one shape either way. Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -846,6 +872,7 @@ op `postIntrospect`(`requestBody/content/application~1json/schema`: `IntrospectR
 op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
   `responses/200/content/application~1json/schema`: `BasicValidation`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
@@ -859,6 +886,7 @@ op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
   `responses`:#{
     `200`:#{`description`:"Valid or not.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Malformed (STS-XACML-0208).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -868,6 +896,7 @@ op `postBasic`(`requestBody/content/application~1json/schema`: `BasicRequest`,
 op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
   `responses/200/content/application~1json/schema`: `SamlValidation`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
@@ -881,6 +910,7 @@ op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
   `responses`:#{
     `200`:#{`description`:"Live or ended.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Malformed (STS-XACML-0214).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `500`:#{`description`:"STS-XACML-0216.",`content`:#{`application/json`:#{`schema`:null}}},
@@ -890,6 +920,7 @@ op `postSaml`(`requestBody/content/application~1json/schema`: `SamlRequest`,
 op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest`,
   `responses/200/content/application~1json/schema`: `SessionLiveness`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
   `responses/500/content/application~1json/schema`: `Error`,
@@ -903,6 +934,7 @@ op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest
   `responses`:#{
     `200`:#{`description`:"The identity.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Malformed, or claims the route does not name (STS-XACML-0229).",`content`:#{`application/json`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"The gate; not one of this PEP's non-public routes (STS-XACML-0230); the evidence invalid or not for the application (0231); the ticket unknown, expired or another PEP's (0232); the issuance policy refused (0234).",`content`:#{`application/json`:#{`schema`:null}}},
     `422`:#{`description`:"The route not usable, no SAML entity ID or no directory entry (STS-XACML-0233); issuance failed (0235).",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0215).",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -913,6 +945,7 @@ op `postSession`(`requestBody/content/application~1json/schema`: `SessionRequest
 op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityRequest`,
   `responses/200/content/application~1json/schema`: `IdentityAnswer`,
   `responses/400/content/application~1json/schema`: `Error`,
+  `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/422/content/application~1json/schema`: `Error`,
   `responses/429/content/application~1json/schema`: `TooManyRequests`,
@@ -938,6 +971,7 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
   `responses`:#{
     `200`:#{`description`:"The attributes. Cache-Control: no-store.",`content`:#{`application/xml`:#{`schema`:null}}},
     `400`:#{`description`:"Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025).",`content`:#{`application/xml`:#{`schema`:null}}},
+    `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate, the body a PIPError.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/xml`:#{`schema`:null}}},
     `403`:#{`description`:"The gate (the codes in the document's description), error=\"access_denied\".",`content`:#{`application/xml`:#{`schema`:null}}},
     `429`:#{`description`:"The limiter (STS-XACML-0022). Retry-After.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/xml`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off (STS-XACML-0001, 0002), error=\"not_implemented\".",`content`:#{`application/xml`:#{`schema`:null}}}
@@ -946,6 +980,7 @@ op `postIdentity`(`requestBody/content/application~1json/schema`: `IdentityReque
 op `postPip`(`requestBody/content/application~1xml/schema`: `PipRequest`,
   `responses/200/content/application~1xml/schema`: `PipResponse`,
   `responses/400/content/application~1xml/schema`: `PipError`,
+  `responses/401/content/application~1xml/schema`: `PipError`,
   `responses/403/content/application~1xml/schema`: `PipError`,
   `responses/429/content/application~1xml/schema`: `PipError`,
   `responses/501/content/application~1xml/schema`: `PipError`): void;

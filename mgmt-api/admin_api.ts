@@ -3784,6 +3784,45 @@ class AdminApi {
           log.debug("Leaving the management API device compliance feed.");
         } },
 
+      // ---------------------------------------------------------------------
+      // A REMOTE PEP'S DECISION RECORDS (#1827). The MDM feed's shape: not
+      // an administrator's operation, its token carries `xacml:pep-audit`
+      // and REMOTE_PEPS authorizes it (`isPepAuditFeed()` and the gate's
+      // hard check). `xacml/pep_audit.ts` records each record as an audit
+      // row; the register and that file are required at the call, because
+      // the XACML family loads at 23c, after this module (19).
+      // ---------------------------------------------------------------------
+      { method: 'POST', path: BASE + PEP_AUDIT_PATH, tag: 'XACML',
+        operationId: 'reportPepDecisions',
+        mirrors: 'no console form — a remote PEP pushing what it decided; ' +
+                 'the records are read on GET /admin/audit',
+        parameters: [],
+        handler: function (req, res) {
+          log.debug("Entering the management API remote PEP decision " +
+                    "records.");
+          const body = parseBody(req);
+          // THE PEP IS THE TOKEN'S SUBJECT. Where the gate is off
+          // (development's adminApi.authRequired) there is none, and the
+          // body's `name` stands in, as the heartbeat's does without a
+          // certificate.
+          const pep = self.callerNameOf(res) ||
+            (self.tokenRequired() ? '' : String((body && body.name) || ''));
+          const PepAudit = require('../xacml/pep_audit');
+          const answer = PepAudit.record(body, pep, {
+            log: log,
+            audit: audit,
+            errorCodes: errorCodes,
+            registry: require('../xacml/xacml_pep_registry'),
+            realmId: realms.currentId()
+          });
+          if (!answer.ok) {
+            errorCodes.mark(res, answer.code);
+          }
+          self.sendJson(res, answer.status, answer.body);
+          log.debug("Leaving the management API remote PEP decision " +
+                    "records.");
+        } },
+
       { method: 'GET', path: BASE + '/devices/monitor', tag: 'Devices',
         operationId: 'getDevicesMonitor',
         mirrors: 'GET /admin/devices/monitor',
@@ -10964,6 +11003,24 @@ class AdminApi {
                                      path === BASE + DEVICE_COMPLIANCE_PATH);
   }
 
+  // Whether this request is a remote PEP pushing its decision records
+  // (#1827), `POST /admin-api/pep-audit` — the MDM feed's shape.
+  /**
+   * Says whether the request is a remote PEP's decision-record push, `POST
+   * /admin-api/pep-audit`.
+   *
+   * @param req - the request
+   * @returns whether it is
+   */
+  isPepAuditFeed(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.isPepAuditFeed().");
+    const path = String(req.path || '').replace(/\/+$/, '');
+    log.debug("Leaving AdminApi.isPepAuditFeed().");
+    return req.method === 'POST' && (path === PEP_AUDIT_PATH ||
+                                     path === BASE + PEP_AUDIT_PATH);
+  }
+
   // ---------------------------------------------------------------------------
   // THE OBJECT AN OWNER WOULD ADMINISTER (#607): the row of OWNER_OPERATIONS
   // the request is, the object it names, the action, and — for an
@@ -11188,8 +11245,10 @@ class AdminApi {
     const clientId = String(claims.client_id || '');
     // The device compliance feed's scope (#164) is held to the same rule,
     // and an owner's two (#607).
+    // And a remote PEP's (#1827).
     const held = scopePolicy.ADMIN_SCOPES
-      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE])
+      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE,
+               scopePolicy.PEP_AUDIT_SCOPE])
       .concat(scopePolicy.OWNER_SCOPES);
     const undeclared = realms.run(realms.get(tokenRealm), function () {
       return scopes.filter(function (one) {
@@ -11726,6 +11785,12 @@ class AdminApi {
         // the MDM feed takes `device:compliance` and its role, and nothing
         // else here takes that scope — see DevicesAdmin.mdmFeed().
         const mdmFeed = self.isDeviceComplianceFeed(req);
+        // AND THE SECOND (#1827): a remote PEP pushing the records of what
+        // it decided takes `xacml:pep-audit` and REMOTE_PEPS, the built-in
+        // role of the remote PEPs' group — rcbj: "Tie access to the built in
+        // group of remote PEPs" — and nothing else here takes that scope.
+        // See `xacml/pep_audit.ts`.
+        const pepFeed = self.isPepAuditFeed(req);
         // THE CONSOLE'S OWN OPERATIONS (#454) take `admin:console`, the
         // permission of the ADMIN_CONSOLE role the console's client confers
         // on everybody who signs in through it — see withConsoleRoutes().
@@ -11734,9 +11799,10 @@ class AdminApi {
         // permission of SECURITY_ADMIN, INSTEAD of `admin:write`: a Security
         // Administrator need not hold Admin Write, and Admin Write alone may
         // not make it — see `common/security_operations.ts`.
-        const securityChange = mdmFeed || consoleOp ? null
+        const securityChange = mdmFeed || pepFeed || consoleOp ? null
           : self.securityChangeOf(req);
         const scopesWanted = mdmFeed ? 'device:compliance'
+          : pepFeed ? 'xacml:pep-audit'
           : (consoleOp ? 'admin:console'
             : (securityChange ? 'admin:security'
               : (req.method === 'GET' ? 'admin:read' : 'admin:write')));
@@ -11746,14 +11812,19 @@ class AdminApi {
           // The scope to ask for: the feed's or the console's own (#454)
           // where the operation is one of theirs, both admin scopes
           // otherwise.
-          const hint = mdmFeed || consoleOp || securityChange ? scopesWanted
-                                            : 'admin:read admin:write';
+          const hint = mdmFeed || pepFeed || consoleOp || securityChange
+            ? scopesWanted : 'admin:read admin:write';
           res.set('WWW-Authenticate',
                   'Bearer realm="' + BASE + '", scope="' + hint + '"');
           errorCodes.mark(res, 'STS-API-0001');
           return self.sendJson(res, 401, { error: 'unauthorized', errors: [
             'This API requires an OAuth 2.0 access token. Ask ' +
-            '/oauth2/token for one with `grant_type=client_credentials`, ' +
+            '/oauth2/token for one with `grant_type=' + (pepFeed
+              // A remote PEP's own RFC 7523 self-assertion (#1827).
+              ? 'urn:ietf:params:oauth:grant-type:jwt-bearer` (an ' +
+                'assertion the PEP signs about itself), `client_id=' +
+                'sts-remote-pep`, over mutual TLS, '
+              : 'client_credentials`, ') +
             '`scope=' + hint +
             '` and `resource=' +
             self.wantedAudience(req) +
@@ -12034,7 +12105,15 @@ class AdminApi {
         // whether it is a credential here at all. In every mode: the client
         // asked for it.
         // ---------------------------------------------------------------------
-        if (!mtls.boundThumbprintOf(claims)) {
+        // A REMOTE PEP'S DPoP KEY STANDS FOR ITS CERTIFICATE (#1827's
+        // follow-up): `sts-remote-pep` declares certificate-bound tokens
+        // through phase 3 of the PEP's token plan, and a token bound to the
+        // PEP's DPoP key is bound; the proof is asked for below (RFC 9449
+        // section 7), as of any `cnf.jkt` token.
+        const dpopStands = !!dpop.jktOf(claims) &&
+          senderConstraints.dpopStandsForCertificate(
+            String(claims.client_id || ''));
+        if (!mtls.boundThumbprintOf(claims) && !dpopStands) {
           const holder = String(claims.client_id || '');
           const declaration = holder
             ? realms.run(realms.get(tokenRealm), function () {
@@ -12134,6 +12213,10 @@ class AdminApi {
           where: 'the management API',
           dpopRequired: dpopRequired,
           clientBound: clientBound,
+          // A remote PEP's certificate-bound token, through phase 3 of its
+          // token plan (#1827's follow-up).
+          certificateStands:
+            senderConstraints.dpopStandsForCertificate(issuedTo),
           boundJkt: boundJkt,
           proofOk: proofOk,
           boundThumbprint: mtls.boundThumbprintOf(claims),
@@ -12192,7 +12275,8 @@ class AdminApi {
         const ownerScope = req.method === 'GET' ? 'owner:read' : 'owner:write';
         // Never for a security change (#645): naming a policy on an object
         // you own is still naming a policy.
-        const ownerPath = !mdmFeed && !consoleOp && !securityChange &&
+        const ownerPath = !mdmFeed && !pepFeed && !consoleOp &&
+          !securityChange &&
           carried.indexOf(scopesWanted) < 0 &&
           carried.indexOf(ownerScope) >= 0;
         const owned = ownerPath ? self.ownedOperationOf(req) : null;
@@ -12223,6 +12307,11 @@ class AdminApi {
             'holds the scope it uses. ' + (mdmFeed
               ? 'Declare device:compliance on the MDM feed\'s ' +
                 'application\'s oauthAllowedScope.'
+              : pepFeed
+              ? 'A remote PEP\'s token is issued through sts-remote-pep, ' +
+                'which holds a delegated permission grant of ' +
+                'urn:sts:admin-api:xacml:pep-audit; give the client that ' +
+                'grant back (POST /admin-api/permissions/grant-permission).'
               : 'An admin or owner scope is held by a delegated permission ' +
                 'grant on sts-management-api (#1141): give the client a ' +
                 'delegated permission grant of ' +
@@ -12246,6 +12335,10 @@ class AdminApi {
               ? 'An owner\'s scope is authorized by owning something in ' +
                 'the realm that issued the token: be named an owner of a ' +
                 'role, group, service account or application there'
+              : neededScope === 'xacml:pep-audit'
+              // #1827: the remote PEPs' group, not a configured role.
+              ? 'Put the PEP\'s entry in the group roles.remotePepGroup ' +
+                'names (POST /admin-api/groups/add-member)'
               : effective.subject.kind !== 'application' &&
              neededScope !== 'device:compliance'
               ? 'Grant the console role on /admin/rbac (or POST ' +
@@ -12282,6 +12375,38 @@ class AdminApi {
             (scopes.length ? scopes.join(', ') : '(no scope)') + '. A ' +
             'Security Administrator grants the role on /admin/rbac (POST ' +
             BASE + '/rbac/grant with role=security).'] });
+        }
+        // ---------------------------------------------------------------------
+        // A REMOTE PEP'S PUSH, AND ONLY THAT (#1827), refused HERE as well as
+        // by the policy, for the security change's reason above: with
+        // `xacml.enforceAccess` off the policy allows everything. The push
+        // needs a token carrying `xacml:pep-audit` whose subject holds
+        // REMOTE_PEPS now (held ∩ carried); and that scope reaches nothing
+        // but the push, so a PEP's token is never an administrator's.
+        // ---------------------------------------------------------------------
+        const pepToken = carried.indexOf('xacml:pep-audit') >= 0;
+        if ((pepFeed && (scopes.indexOf('xacml:pep-audit') < 0 ||
+                         effective.roles.indexOf('REMOTE_PEPS') < 0)) ||
+            (!pepFeed && pepToken && carried.indexOf(scopesWanted) < 0 &&
+             !ownerPath)) {
+          log.info('admin-api: refusing ' + req.method + ' ' +
+                   (req.originalUrl || req.url) + ' for ' + who + ': ' +
+                   (pepFeed ? 'a remote PEP\'s push without xacml:pep-audit ' +
+                              'and REMOTE_PEPS'
+                            : 'a remote PEP\'s token at another operation') +
+                   '.');
+          errorCodes.mark(res, 'STS-API-0147');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            pepFeed
+              ? 'A remote PEP pushes its decision records here on a token ' +
+                'carrying xacml:pep-audit whose subject — the PEP\'s own ' +
+                'entry — is in the group roles.remotePepGroup names ' +
+                '(REMOTE_PEPS). This token carries ' +
+                (carried.length ? carried.join(', ') : '(no scope)') + '.'
+              : 'xacml:pep-audit reaches POST ' + BASE + PEP_AUDIT_PATH +
+                ' and no other operation: it is a remote PEP\'s, and this ' +
+                'token carries nothing else this operation takes (' +
+                scopesWanted + ').'] });
         }
         if (tokenRealm !== realms.DEFAULT_ID) {
           const realmRefusal = self.realmTokenRefusal(claims, req);
@@ -12331,6 +12456,7 @@ class AdminApi {
         const frameOnly = path === '/console' ||
           path === '/console/operations' || path === '/console/language';
         const requiredRoles = mdmFeed ? ['DEVICE_COMPLIANCE']
+          : pepFeed ? ['REMOTE_PEPS']
           : (consoleOp ? ['ADMIN_CONSOLE']
             : (path === '/me' ? ['ADMIN_READ', 'ADMIN_CONSOLE']
               : (securityChange ? ['SECURITY_ADMIN']
@@ -12397,6 +12523,8 @@ class AdminApi {
             'role(s) ' + (held.length ? held.join(', ') : '(none)') + '. ' +
             (mdmFeed ? 'The device compliance feed needs device:compliance ' +
                        '(DEVICE_COMPLIANCE), and only that'
+              : pepFeed ? 'A remote PEP\'s decision records need ' +
+                          'xacml:pep-audit (REMOTE_PEPS), and only that'
               : (consoleOp
                 ? 'A console operation needs admin:console (ADMIN_CONSOLE)' +
                   (requiredAllRoles.length ? ' and ' +
@@ -12752,6 +12880,8 @@ const BASE = '/admin-api';
 // The device compliance feed's path below BASE (#164 phase 3): the one
 // operation whose token carries device:compliance rather than an admin scope.
 const DEVICE_COMPLIANCE_PATH = '/device-compliance';
+// A remote PEP's decision records (#1827).
+const PEP_AUDIT_PATH = '/pep-audit';
 // ---------------------------------------------------------------------------
 // THE OPERATIONS AN OWNER MAY ASK (#607), below BASE: one object of the four
 // kinds a person may own, read or changed. `ownedOperationOf()` reads a

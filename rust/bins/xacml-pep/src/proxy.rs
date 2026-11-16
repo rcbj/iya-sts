@@ -138,6 +138,48 @@ struct Asked<'a> {
     /// Who the request was established as, once it was: the page's
     /// *Signed in as*.
     who: String,
+    /// The request's decision record (#1827), filled in as it is answered;
+    /// `None` where a refusal is not about the request being answered.
+    note: Option<&'a Mutex<Noted>>,
+}
+
+/// WHAT A PROXIED REQUEST'S DECISION RECORD SAYS (#1827), filled in as the
+/// request is answered and queued once it is. Only a request that reached
+/// its route's authorization is recorded (`decided`): one to a route that
+/// takes its method, from the moment it matched — refused by the
+/// application's state, by authentication or by the policy, or forwarded.
+/// NOT the 503 before the first configuration (`STS-XPEP-0118`), a path
+/// refused or matching no route, a method the route does not take, a body
+/// too large, a redirect to sign in, the proxy's own pages (the logo, the
+/// start page, `/.iya-pep/*`): none of those is a decision about access.
+#[derive(Debug, Default)]
+struct Noted {
+    decided: bool,
+    route: String,
+    method: String,
+    /// The normalised path: never the query string, which can carry a
+    /// secret.
+    path: String,
+    /// The person the request was established as, by username: never a
+    /// token, a cookie or a session id.
+    subject: String,
+    decision: String,
+    policy: String,
+    bias: String,
+    code: String,
+    why: String,
+    incident: String,
+}
+
+/// Changes the note, if there is one; a poisoned lock is taken back.
+fn noting(note: Option<&Mutex<Noted>>, change: impl FnOnce(&mut Noted)) {
+    if let Some(note) = note {
+        let mut noted = match note.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        change(&mut noted);
+    }
 }
 
 /// A mechanism's outcome.
@@ -564,6 +606,11 @@ impl Proxy {
         } else {
             String::new()
         };
+        noting(asked.note, |n| {
+            n.code = refusal.code.to_string();
+            n.why = refusal.why.clone();
+            n.incident = incident.clone();
+        });
         // A 5xx, and a route whose policy is not held, are the operator's
         // to see; a refusal of the request itself is information.
         let warn = refusal.status >= 500 || refusal.code == "STS-XPEP-0117";
@@ -737,7 +784,60 @@ impl Proxy {
         }
     }
 
+    /// The decision records' queue, for a test (#1827).
+    #[cfg(test)]
+    pub fn audit(&self) -> Arc<crate::audit::Audit> {
+        self.pep.audit.clone()
+    }
+
+    /// One request answered, and — when it reached its route's
+    /// authorization — its decision record queued for the service (#1827).
     async fn answer(&self, request: Request<Body>) -> (Response<Body>, bool) {
+        let note = Mutex::new(Noted::default());
+        let (response, forwarded) = self.answer_noted(request, &note).await;
+        let noted = match note.into_inner() {
+            Ok(noted) => noted,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if noted.decided {
+            self.record(noted, response.status().as_u16(), forwarded);
+        }
+        (response, forwarded)
+    }
+
+    /// A proxied request's decision record: `allowed` is whether it was
+    /// forwarded, and a `fault` is a 5xx of the proxy's own, never one the
+    /// application answered.
+    fn record(&self, noted: Noted, status: u16, forwarded: bool) {
+        self.pep.audit.record(crate::audit::Record {
+            at: sts_core::time::iso_now(),
+            kind: "proxy".into(),
+            decision: noted.decision,
+            allowed: forwarded,
+            fault: !forwarded && status >= 500,
+            code: noted.code,
+            subject: noted.subject,
+            resource: noted.path,
+            action: noted.method,
+            bias: noted.bias,
+            why: noted.why,
+            policies: if noted.policy.is_empty() {
+                Vec::new()
+            } else {
+                vec![noted.policy]
+            },
+            request_id: noted.incident,
+            route: Some(noted.route),
+            status: Some(status),
+            ..crate::audit::Record::default()
+        });
+    }
+
+    async fn answer_noted(
+        &self,
+        request: Request<Body>,
+        note: &Mutex<Noted>,
+    ) -> (Response<Body>, bool) {
         let (parts, body) = request.into_parts();
         let transport = parts
             .extensions
@@ -755,6 +855,7 @@ impl Proxy {
             route: None,
             html: wants_html(&parts.headers),
             who: String::new(),
+            note: Some(note),
         };
         let path = match normalise_path(&raw_path) {
             Ok(path) => path,
@@ -902,6 +1003,15 @@ impl Proxy {
             );
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
+        // FROM HERE THE REQUEST IS ABOUT ACCESS TO THE ROUTE, and is
+        // recorded however it ends (#1827), save the two exits below.
+        noting(Some(note), |n| {
+            n.decided = true;
+            n.route = route.id.clone();
+            n.method = method.clone();
+            n.path = path.clone();
+            n.policy = route.authorization.policy.clone();
+        });
         // D10: the route's application as the service resolved it at the
         // pull. Not usable (deleted, or no longer qualifying) is refused,
         // never admitted on what an earlier pull said.
@@ -940,6 +1050,8 @@ impl Proxy {
                 "STS-XPEP-0067",
                 "the request body is larger than maxBodyBytes",
             );
+            // A size limit, not a decision about access: not recorded.
+            noting(Some(note), |n| n.decided = false);
             return (self.refuse(&refusal, &asked, &pulled), false);
         }
         let identity = if route.is_public() {
@@ -962,7 +1074,12 @@ impl Proxy {
                 Established::Refused(refusal) => {
                     return (self.refuse(&refusal, &asked, &pulled), false)
                 }
-                Established::Answer(response) => return (response, false),
+                Established::Answer(response) => {
+                    // A redirect to sign in, or the proxy's own page: the
+                    // decision comes when the person returns.
+                    noting(Some(note), |n| n.decided = false);
+                    return (response, false);
+                }
             }
         };
         // EVERY ROUTE IS DECIDED IN XACML, BY ITS OWN POLICY (#1760), a
@@ -981,6 +1098,13 @@ impl Proxy {
             .pep
             .decide_proxy(subject, resource, action, &authorization.policy)
             .await;
+        noting(Some(note), |n| {
+            n.subject = subject.to_string();
+            if let Some((decision, outcome)) = &decided {
+                n.decision = decision.as_str().to_string();
+                n.bias = outcome.bias.as_str().to_string();
+            }
+        });
         let Some((decision, outcome)) = decided else {
             // Whatever the bias: a route whose policy is missing is not a
             // NotApplicable, and a permit-biased PEP admitting it would
@@ -1030,6 +1154,12 @@ impl Proxy {
         {
             Ok(delivery) => delivery,
             Err(refusal) => {
+                // The refusal the session's end answers for, noted before
+                // the page that ends it is drawn.
+                noting(Some(note), |n| {
+                    n.code = refusal.code.to_string();
+                    n.why = refusal.why.clone();
+                });
                 if let Some(ended) = self
                     .ended_behind(
                         &refusal,
@@ -1548,6 +1678,7 @@ impl Proxy {
                     route: Some(route),
                     html: wants_html(headers),
                     who: String::new(),
+                    note: None,
                 },
                 pulled,
             )),

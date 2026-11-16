@@ -321,13 +321,56 @@ namespace IyaSts.Pep.Service {
 
 @component model `Settings` {
   `token`: string;
-  @js(#{`description`:"Every managed setting, by key: description, resource, notifyUrl, bias, pip, pollIntervalMs, heartbeatIntervalMs, backoffMaxMs, timeoutMs, maxBodyBytes, httpsReloadIntervalMs, logLevel, authzen, authzenPdpIdentifier, authzenForwardTimeoutMs and the proxy's settings."})
+  @js(#{`description`:"Every managed setting, by key: description, resource, notifyUrl, bias, pip, pollIntervalMs, heartbeatIntervalMs, backoffMaxMs, timeoutMs, maxBodyBytes, httpsReloadIntervalMs, logLevel, authzen, authzenPdpIdentifier, authzenForwardTimeoutMs, the proxy's settings and the decision records' (auditEnabled, auditIntervalMs, auditBatch, auditBuffer)."})
   `values`: Record<`SettingValue`>;
   `lastPullAt`: string;
   `lastPullOk`: boolean;
   `lastPullWhy`: string;
   `offered`: boolean;
   `configured`: boolean;
+}
+
+@js(#{`description`:"The decision records this PEP sends to the service's audit log (#1827): POST /admin-api/pep-audit, with its DPoP-bound token for /admin-api. Delivery is at least once; dropped counts records lost to a full queue (PEP_AUDIT_BUFFER) or to a batch the service refused as malformed."})
+@component model `AuditStatus` {
+  `enabled`: boolean;
+  `queued`: int64;
+  `shipped`: int64;
+  `dropped`: int64;
+  `lastShipAt`: string | null;
+  `lastShipOk`: boolean | null;
+  `lastShipWhy`: string;
+  `tokenHeld`: boolean;
+  @js(#{`description`:"This process's id, which a batch carries so the service can tell two instances under one name apart."})
+  `instance`: string;
+  `what`: string;
+}
+
+@component model `CredentialToken` {
+  @js(#{`description`:"The audience: this realm's /xacml/pep, /admin-api or /access/v1."})
+  `resource`: string;
+  `scope`: string;
+  `held`: boolean;
+  `expiresAt`: string | null;
+  @js(#{`description`:"Why the last token request was refused; null when none was."})
+  `lastRefusal`: string | null;
+}
+
+@js(#{`description`:"How this PEP authenticates to the service (#1827): a DPoP-bound access token per audience, from an RFC 7523 self-assertion signed with one key, which signs every DPoP proof too."})
+@component model `CredentialStatus` {
+  `keyFile`: string | null;
+  @js(#{`description`:"The variable the key came from: PEP_ASSERTION_KEY, else PEP_TLS_KEY."})
+  `keySource`: string | null;
+  `fallback`: boolean;
+  `keyType`: string | null;
+  `alg`: string | null;
+  `jwkThumbprint`: string | null;
+  `keyProblem`: string | null;
+  @js(#{`const`:"sts-remote-pep"}) `clientId`: string;
+  @js(#{`description`:"PEP_NAME: the username of this PEP's entry."}) `subject`: string;
+  @js(#{`description`:"Whether PEP_TLS_CERT is presented as well."}) `clientCertificate`: boolean;
+  @js(#{`description`:"By audience: xacml-pep, admin-api and access-v1."})
+  `tokens`: Record<`CredentialToken`>;
+  `what`: string;
 }
 
 @component model `Overview` {
@@ -341,6 +384,8 @@ namespace IyaSts.Pep.Service {
   `https`: `Https`;
   `authzen`: `AuthzenStatus`;
   `proxy`: `ProxyStatus`;
+  `audit`: `AuditStatus`;
+  `credential`: `CredentialStatus`;
   `holding`: `Holding`;
   @js(#{`description`:"lastPullAt is empty, unreadable, or older than staleAfterMs."})
   `stale`: boolean;

@@ -3418,7 +3418,12 @@ class XacmlPage {
       proxySignalsStaleMs:
         t.html('consoleXacml.pepSettings.key.proxySignalsStaleMs'),
       proxyStripCookies:
-        t.html('consoleXacml.pepSettings.key.proxyStripCookies')
+        t.html('consoleXacml.pepSettings.key.proxyStripCookies'),
+      // The decision records sent to the audit log (#1827).
+      auditEnabled: t.html('consoleXacml.pepSettings.key.auditEnabled'),
+      auditIntervalMs: t.html('consoleXacml.pepSettings.key.auditIntervalMs'),
+      auditBatch: t.html('consoleXacml.pepSettings.key.auditBatch'),
+      auditBuffer: t.html('consoleXacml.pepSettings.key.auditBuffer')
     };
     return Object.prototype.hasOwnProperty.call(labels, key)
       ? labels[key] : esc(key);
@@ -3465,7 +3470,11 @@ class XacmlPage {
       proxySignalsStaleMs:
         t.text('consoleXacml.tip.setting.proxySignalsStaleMs'),
       proxyStripCookies:
-        t.text('consoleXacml.tip.setting.proxyStripCookies')
+        t.text('consoleXacml.tip.setting.proxyStripCookies'),
+      auditEnabled: t.text('consoleXacml.tip.setting.auditEnabled'),
+      auditIntervalMs: t.text('consoleXacml.tip.setting.auditIntervalMs'),
+      auditBatch: t.text('consoleXacml.tip.setting.auditBatch'),
+      auditBuffer: t.text('consoleXacml.tip.setting.auditBuffer')
     };
     const values = row.type === 'integer'
       ? t.text('consoleXacml.pepSettings.range',

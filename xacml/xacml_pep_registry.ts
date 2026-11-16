@@ -1038,7 +1038,12 @@ class PepRegistry {
     }
     log.info('xacml: remote PEP "' + name + '" ' +
              (existing ? 're-registered' : 'registered') +
-             (given.authenticated
+             (given.authenticated && !given.certificateSubject
+               // #1827's follow-up: a token names no certificate subject;
+               // the thumbprint is its DPoP key's.
+               ? ' with a DPoP-bound access token (key ' +
+                 String(given.thumbprint || '') + ')'
+               : given.authenticated
                ? ' with client certificate ' + given.certificateSubject
                : ' WITHOUT a client certificate ' +
                  '(xacml.pepRequireCertificate is off)') + '.');

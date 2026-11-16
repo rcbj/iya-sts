@@ -46,6 +46,16 @@ const PEP_SRC = path.join(ROOT, 'rust', 'bins', 'xacml-pep', 'src');
 
 const METHODS = ['get', 'put', 'post', 'patch', 'delete', 'head', 'options'];
 
+// PATHS THE PEP CALLS THAT ANOTHER MODEL DESCRIBES (#1827, #1836): a
+// `*_PATH` constant names a path the PEP dials as well as one it serves, and
+// these two are the service's own published endpoints, each modelled once
+// where it is served — so they are not described again here, and each must
+// still be in the model named.
+const CALLED_ELSEWHERE = {
+  '/admin-api/pep-audit': 'models/api/management.tsp',
+  '/oauth2/token': 'models/oauth/oauth.tsp'
+};
+
 /**
  * A Rust source file without its test module: everything from the first
  * `#[cfg(test)]` on, which is where every file of the PEP keeps its tests.
@@ -197,9 +207,17 @@ function noDrift(t, documents) {
   };
   const served = new Set(pathsOf('pep-service.json')
     .concat(pathsOf('pep-authzen.json'), pathsOf('pep-proxy.json')));
-  const code = pepPaths();
+  const code = pepPaths().filter(function (one) {
+    return !CALLED_ELSEWHERE[one];
+  });
   t.check(code.length >= 10, 'the PEP\'s dispatch is read',
     code.join(', '));
+  Object.keys(CALLED_ELSEWHERE).forEach(function (one) {
+    const model = fs.readFileSync(path.join(ROOT, CALLED_ELSEWHERE[one]),
+      'utf8');
+    t.check(model.indexOf('"' + one + '"') >= 0, one + ', which the PEP ' +
+      'calls, is described in ' + CALLED_ELSEWHERE[one]);
+  });
   const undescribed = code.filter(function (one) {
     return !served.has(one);
   });

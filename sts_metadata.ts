@@ -3718,7 +3718,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'is a turnstile like every other gate here (the certificate need ' +
           'not chain to anything, RFC 8705 section 3\'s argument) and it is ' +
           'NOT what lets a PEP enforce: an unregistered one pulls and ' +
-          'decides just as well. xacml.pepRequireCertificate turns it off.' },
+          'decides just as well. xacml.pepRequireCertificate turns it off. ' +
+          'A DPoP-bound access token from sts-remote-pep, audienced to ' +
+          '/xacml/pep and carrying xacml:pep, may stand for the certificate ' +
+          'here and at every /xacml/pep endpoint and /xacml/pip, as ' +
+          'xacml.pepAuthentication allows; the PEP is then named by its ' +
+          'entry\'s username.' },
   { path: '/xacml/pep/policies', group: 'XACML',
     name: 'The repository, for a remote PEP to LOAD', specs: ['xacml30'],
     what: 'Every ENABLED policy and which one is the root, plus a sync ' +
@@ -6287,6 +6292,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'client that declares it, in both modes) and no admin scope; ' +
           'an admin:write token is refused. Source mdm, the client as ' +
           'actor; a change sends CAEP device-compliance-change.' },
+  { path: '/admin-api/pep-audit', group: 'Management API',
+    name: 'A remote PEP\'s decision records',
+    specs: ['xacml', 'openapi'],
+    effect: 'records a batch of decisions a remote PEP made as audit rows',
+    what: 'NON-SPEC (#1827). A remote XACML PEP pushes the records of the ' +
+          'decisions it made in its own process — /protected enforcements, ' +
+          'the AuthZEN evaluations it decided, never one it forwarded, and ' +
+          'its reverse proxy\'s requests to a route — ' +
+          'at least once and in order, up to 500 a batch, each acknowledged ' +
+          'by its seq. The token carries the PROTECTED xacml:pep-audit ' +
+          'scope and nothing else here takes it: the PEP\'s own RFC 7523 ' +
+          'self-assertion through the seeded public client sts-remote-pep, ' +
+          'bound to its certificate, issued and honoured only while its ' +
+          'entry is in the remote PEPs\' group (REMOTE_PEPS). The PEP must ' +
+          'be registered in the realm. Rows xacml.remote.enforcement, ' +
+          'authzen.remote.decision and, for the reverse proxy\'s requests, ' +
+          'xacml.remote.proxy on /admin/audit.' },
   { path: '/admin-api/device-registration', group: 'Management API',
     name: 'Device registration', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/device-registration over JSON: the ' +

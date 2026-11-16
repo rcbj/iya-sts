@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "En AuthZEN-åtkomstutvärdering avgjordes"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "En fjärr-PEP verkställde ett beslut"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "En fjärr-PEP avgjorde en AuthZEN-åtkomstbedömning"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "En fjärr-PEP:s omvända proxy avgjorde en begäran"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "En AuthZEN-sökning besvarades"
@@ -1843,6 +1855,18 @@
     "en": "82df232dbe72d709",
     "text": "En fjärransluten PEP glömdes"
   },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "En fjärr-PEP:s konfiguration för omvänd proxy angavs"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "En fjärr-PEP:s konfiguration för omvänd proxy togs bort"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "En fjärr-PEP:s proxy bad att en autentiseringsuppgift skulle valideras"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "En XACML-policy skrevs"
@@ -1926,17 +1950,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "En testhändelse som skickats till ett granskningsexportmål"
-  },
-  "audit.actions.xacml.pep.proxy.set.label": {
-    "en": "b27a6eab052ea9fa",
-    "text": "En fjärr-PEP:s konfiguration för omvänd proxy angavs"
-  },
-  "audit.actions.xacml.pep.proxy.clear.label": {
-    "en": "faee586bfee3cbf0",
-    "text": "En fjärr-PEP:s konfiguration för omvänd proxy togs bort"
-  },
-  "audit.actions.xacml.pep.validate.label": {
-    "en": "c3a780c6921b5dd8",
-    "text": "En fjärr-PEP:s proxy bad att en autentiseringsuppgift skulle valideras"
   }
 }

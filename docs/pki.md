@@ -647,7 +647,8 @@ A third card on `/portal/signing-key` issues a **TLS client certificate** to the
 signed-in person, from the realm's own **TLS Client Issuing CA**:
 
 * it carries `clientAuth`, `CN=<username>`, a `urn:sts:person:<username>`
-  subjectAltName and, where the directory holds one, your email address;
+  subjectAltName (`urn:sts:sa:<username>` for a
+  [service account](service-accounts.md)) and, where the directory holds one, your email address;
 * you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384);
   there is no file password;
 * the new certificate's row in the card's list then offers two downloads,
@@ -671,7 +672,7 @@ thumbprint, the revocation verdict and whether a session was started.
 Trusting the Root does not make every certificate this service issues a way in.
 A verified chain through the Root is an identity only for a leaf from a TLS client
 (or ACME, EST or SCEP enrollment) Issuing CA, with `clientAuth` and one
-`urn:sts:person:` or `urn:sts:application:` name; an application's assertion key
+`urn:sts:person:`, `urn:sts:sa:` or `urn:sts:application:` name; an application's assertion key
 pair or an SVID completes the handshake and is refused as an identity — the
 sign-in says so and starts nothing.
 
@@ -694,7 +695,8 @@ a remote PEP presents to this service.
 
 * The subject is the directory entry's name: common name and UID, then the
   entry's own naming attributes, then the organisation and country. The
-  subjectAltName is still `urn:sts:person:<username>`.
+  subjectAltName is still `urn:sts:person:<username>`, or
+  `urn:sts:sa:<username>` for a service account.
 * The key, a label and a file password typed twice are chosen there. The
   page that comes back offers a `.p12`, an encrypted key and the chain,
   once. Nothing keeps the private key, and the leaf is not written to
@@ -718,8 +720,8 @@ comes from the realm's own **Message Signing Issuing CA** and is one thing
 only:
 
 * it carries `digitalSignature` and no extended key usage, `CN=<holder>` and a
-  `urn:sts:person:<username>` or `urn:sts:application:<identifier>`
-  subjectAltName — the name a signed request is mapped back to, with nothing
+  `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service
+  account) or `urn:sts:application:<identifier>` subjectAltName — the name a signed request is mapped back to, with nothing
   else registered;
 * **an administrator issues it** — to a person from their `/admin/users` page
   (Credentials, Key pairs, **Message-signing certificates**), to an

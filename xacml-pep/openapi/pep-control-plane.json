@@ -14,13 +14,23 @@
   "security": [
     {
       "mutualTLS": []
+    },
+    {
+      "dpop": [
+        "xacml:pep"
+      ]
     }
   ],
   "components": {
     "securitySchemes": {
       "mutualTLS": {
         "type": "mutualTLS",
-        "description": "The PEP's PEP_TLS_CERT, verified by the service, stored on an entry that holds REMOTE_PEPS. The PEP's register name is the certificate's CN (else its DN), folded to [A-Za-z0-9._-] and 128 characters; a name in the request is read only when no certificate was presented."
+        "description": "The PEP's PEP_TLS_CERT, verified by the service, stored on an entry that holds REMOTE_PEPS. The PEP's register name is the certificate's CN (else its DN), folded to [A-Za-z0-9._-] and 128 characters; a name in the request is read only when no certificate was presented. Accepted when the realm's xacml.pepAuthentication is certificate or either."
+      },
+      "dpop": {
+        "type": "http",
+        "scheme": "DPoP",
+        "description": "RFC 9449 (#1827): Authorization: DPoP <token> with a DPoP proof for this method and URL. The token is the client sts-remote-pep's, from an RFC 7523 self-assertion, audienced to the realm's /xacml/pep, carrying xacml:pep, its subject the PEP's own entry. Accepted when xacml.pepAuthentication is token or either. A refusal is 401 with a DPoP challenge, error=... and algs=\"ES256 RS256\" (and a DPoP-Nonce header for use_dpop_nonce): no token where one is required (STS-XACML-0289), a token where a certificate is (0290), not this realm's or revoked (0291), not DPoP-bound (0292), another audience (0293), another client (0294), without xacml:pep (0295), a refused proof (0296), a subject naming no entry (0297)."
       }
     },
     "schemas": {
@@ -34,6 +44,9 @@
               "access_denied",
               "invalid_client",
               "invalid_request",
+              "invalid_token",
+              "insufficient_scope",
+              "use_dpop_nonce",
               "server_error",
               "too_many_requests"
             ]
@@ -1746,6 +1759,25 @@
           "proxyStripCookies": {
             "type": "string",
             "maxLength": 1024
+          },
+          "auditEnabled": {
+            "type": "boolean",
+            "description": "PEP_AUDIT: whether this PEP sends its decision records to the service's audit log (#1827)."
+          },
+          "auditIntervalMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "auditBatch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "auditBuffer": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
           }
         },
         "additionalProperties": false,
@@ -2505,7 +2537,7 @@
             }
           },
           "401": {
-            "description": "No certificate (STS-XACML-0017, 0018): invalid_client.",
+            "description": "No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2585,6 +2617,28 @@
           },
           "400": {
             "description": "No name (STS-XACML-0020) or a bad hostname (0261).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2708,6 +2762,28 @@
               }
             }
           },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "The gate.",
             "content": {
@@ -2778,6 +2854,28 @@
               "ETag": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -2866,6 +2964,28 @@
               }
             }
           },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "The gate.",
             "content": {
@@ -2946,6 +3066,28 @@
               "ETag": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -3034,6 +3176,28 @@
               }
             }
           },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "The gate.",
             "content": {
@@ -3084,6 +3248,28 @@
           },
           "400": {
             "description": "Not a defined https listener of this PEP (STS-XACML-0253), or a bad CSR or key (0254).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3163,6 +3349,28 @@
           },
           "400": {
             "description": "No token, or too long (STS-XACML-0207).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3257,6 +3465,28 @@
               }
             }
           },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "The gate.",
             "content": {
@@ -3335,6 +3565,28 @@
           },
           "400": {
             "description": "Malformed (STS-XACML-0208).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3429,6 +3681,28 @@
               }
             }
           },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "403": {
             "description": "The gate.",
             "content": {
@@ -3507,6 +3781,28 @@
           },
           "400": {
             "description": "Malformed, or claims the route does not name (STS-XACML-0229).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -3603,6 +3899,28 @@
           },
           "400": {
             "description": "Not a well-formed PIPRequest (STS-XACML-0023), too many designators (0024), a value too long (0025).",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate, the body a PIPError.",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "DPoP-Nonce": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/xml": {
                 "schema": {

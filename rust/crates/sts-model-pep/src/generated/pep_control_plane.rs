@@ -207,6 +207,12 @@ pub mod components {
         InvalidClient,
         #[serde(rename = "invalid_request")]
         InvalidRequest,
+        #[serde(rename = "invalid_token")]
+        InvalidToken,
+        #[serde(rename = "insufficient_scope")]
+        InsufficientScope,
+        #[serde(rename = "use_dpop_nonce")]
+        UseDpopNonce,
         #[serde(rename = "server_error")]
         ServerError,
         #[serde(rename = "too_many_requests")]
@@ -707,6 +713,16 @@ pub mod components {
         pub proxy_signals_stale_ms: Option<i64>,
         #[serde(rename = "proxyStripCookies", default, skip_serializing_if = "Option::is_none")]
         pub proxy_strip_cookies: Option<String>,
+        /// PEP_AUDIT: whether this PEP sends its decision records to the service's
+        /// audit log (#1827).
+        #[serde(rename = "auditEnabled", default, skip_serializing_if = "Option::is_none")]
+        pub audit_enabled: Option<bool>,
+        #[serde(rename = "auditIntervalMs", default, skip_serializing_if = "Option::is_none")]
+        pub audit_interval_ms: Option<i64>,
+        #[serde(rename = "auditBatch", default, skip_serializing_if = "Option::is_none")]
+        pub audit_batch: Option<i64>,
+        #[serde(rename = "auditBuffer", default, skip_serializing_if = "Option::is_none")]
+        pub audit_buffer: Option<i64>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

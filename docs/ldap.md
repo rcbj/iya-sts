@@ -83,7 +83,8 @@ exists** — none is created:
 
 * one **this service issued to a person**: a TLS client certificate from the
   person's portal (`/portal/signing-key`), or one enrolled over ACME, EST or
-  SCEP, naming the person in its `urn:sts:person:` subjectAltName;
+  SCEP, naming the person in its `urn:sts:person:` subjectAltName (a service
+  account's `urn:sts:sa:`);
 * one from an **outside certificate authority** trusted through
   `/admin/tls/trust`, **stored byte for byte in `userCertificate` on exactly
   one person entry** of the bind's realm. Its common name and subject are

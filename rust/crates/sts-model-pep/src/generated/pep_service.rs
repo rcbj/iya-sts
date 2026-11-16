@@ -23,6 +23,31 @@ pub mod components {
         pub version: String,
     }
 
+    /// The decision records this PEP sends to the service's audit log (#1827): POST
+    /// /admin-api/pep-audit, with its DPoP-bound token for /admin-api. Delivery is
+    /// at least once; dropped counts records lost to a full queue
+    /// (PEP_AUDIT_BUFFER) or to a batch the service refused as malformed.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct AuditStatus {
+        pub enabled: bool,
+        pub queued: i64,
+        pub shipped: i64,
+        pub dropped: i64,
+        #[serde(rename = "lastShipAt")]
+        pub last_ship_at: Option<String>,
+        #[serde(rename = "lastShipOk")]
+        pub last_ship_ok: Option<bool>,
+        #[serde(rename = "lastShipWhy")]
+        pub last_ship_why: String,
+        #[serde(rename = "tokenHeld")]
+        pub token_held: bool,
+        /// This process's id, which a batch carries so the service can tell two
+        /// instances under one name apart.
+        pub instance: String,
+        pub what: String,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct AuthzenAnswered {
@@ -110,6 +135,51 @@ pub mod components {
         pub last_pull_ok: bool,
         #[serde(rename = "lastPullWhy")]
         pub last_pull_why: String,
+    }
+
+    /// How this PEP authenticates to the service (#1827): a DPoP-bound access token
+    /// per audience, from an RFC 7523 self-assertion signed with one key, which
+    /// signs every DPoP proof too.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct CredentialStatus {
+        #[serde(rename = "keyFile")]
+        pub key_file: Option<String>,
+        /// The variable the key came from: PEP_ASSERTION_KEY, else PEP_TLS_KEY.
+        #[serde(rename = "keySource")]
+        pub key_source: Option<String>,
+        pub fallback: bool,
+        #[serde(rename = "keyType")]
+        pub key_type: Option<String>,
+        pub alg: Option<String>,
+        #[serde(rename = "jwkThumbprint")]
+        pub jwk_thumbprint: Option<String>,
+        #[serde(rename = "keyProblem")]
+        pub key_problem: Option<String>,
+        #[serde(rename = "clientId")]
+        pub client_id: String,
+        /// PEP_NAME: the username of this PEP's entry.
+        pub subject: String,
+        /// Whether PEP_TLS_CERT is presented as well.
+        #[serde(rename = "clientCertificate")]
+        pub client_certificate: bool,
+        /// By audience: xacml-pep, admin-api and access-v1.
+        pub tokens: serde_json::Map<String, serde_json::Value>,
+        pub what: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct CredentialToken {
+        /// The audience: this realm's /xacml/pep, /admin-api or /access/v1.
+        pub resource: String,
+        pub scope: String,
+        pub held: bool,
+        #[serde(rename = "expiresAt")]
+        pub expires_at: Option<String>,
+        /// Why the last token request was refused; null when none was.
+        #[serde(rename = "lastRefusal")]
+        pub last_refusal: Option<String>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -360,6 +430,8 @@ pub mod components {
         pub https: crate::pep_service::components::Https,
         pub authzen: crate::pep_service::components::AuthzenStatus,
         pub proxy: crate::pep_service::components::ProxyStatus,
+        pub audit: crate::pep_service::components::AuditStatus,
+        pub credential: crate::pep_service::components::CredentialStatus,
         pub holding: crate::pep_service::components::Holding,
         /// lastPullAt is empty, unreadable, or older than staleAfterMs.
         pub stale: bool,
@@ -624,7 +696,9 @@ pub mod components {
         /// Every managed setting, by key: description, resource, notifyUrl, bias,
         /// pip, pollIntervalMs, heartbeatIntervalMs, backoffMaxMs, timeoutMs,
         /// maxBodyBytes, httpsReloadIntervalMs, logLevel, authzen,
-        /// authzenPdpIdentifier, authzenForwardTimeoutMs and the proxy's settings.
+        /// authzenPdpIdentifier, authzenForwardTimeoutMs, the proxy's settings and
+        /// the decision records' (auditEnabled, auditIntervalMs, auditBatch,
+        /// auditBuffer).
         pub values: serde_json::Map<String, serde_json::Value>,
         #[serde(rename = "lastPullAt")]
         pub last_pull_at: String,

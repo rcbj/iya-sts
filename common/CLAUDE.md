@@ -9,6 +9,7 @@ more than one family needs it, not because it felt general.
 | `compiled_tree.js` | **IS THIS TREE COMPILED (#50, 2026-09-16)?** Lists every `dir/x.ts` with no `x.js` beside it; `server.js` and `tests/run.js` call `refuseUncompiledTree()` first, which exits with `STS-CORE-0093` and says to use the containers. Requires nothing of this service and has no logger, for `config_file.js`'s reason. |
 | `xml_model.ts` | **AN XML FAMILY'S MODEL, AS THE CODE READS IT (#1579).** The one reader of the facts `models/lib/saml_lib.mjs` writes — a vocabulary's terms, a message's attributes and children in their order, a parameter set — over one or more generated files merged (`saml.json`; `ws.json` with `saml.json`, so an RSTR's assertion is held to SAML's own model). `term()`, `terms()`, `read()`, the writers' order (`attributes()`, `children()`, which throw on a part the model does not name) and `hold()`, which logs a gap under the family's code and answers the document unchanged; a fragment whose prefixes its document declares is held with them (`declarations`). `saml/saml_model.ts` and `ws-trust/ws_model.ts` are its instances. A leaf. |
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
+| `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
@@ -8982,7 +8983,9 @@ the one that would have been missed: a key found on the person's entry, and a
 CERTIFICATE presented in the assertion's `x5c` that this service can see it
 issued. The chain path does not consult the registry at all — that is the point
 of it — so `common/pki.js` puts the answer IN the certificate, as a URI
-subjectAltName of `urn:sts:person:<name>`, and `assertion_grant.js` reads
+subjectAltName of `urn:sts:person:<name>` (a service account's
+`urn:sts:sa:<name>` since #1827, read as the person — *3df*), and
+`assertion_grant.js` reads
 it there. Before people could hold a key pair, *it chains here* and *it may
 assert about somebody* were one sentence; that SAN is what keeps them apart.
 **The name in the certificate stands on its own**, with no entry required: a
@@ -9175,6 +9178,55 @@ hand-over still holds; what changed is the storage and the lifecycle.
   (`atCap()`), and again in `write()` (`STS-PKI-0223`); a label is held to the
   TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
   nothing under is `STS-PKI-0224`.
+
+## 3df. `subject_urn.ts`: A SERVICE ACCOUNT'S CERTIFICATES NAME IT `urn:sts:sa:` (#1827, 2026-11-16)
+
+rcbj: "Instead of urn:sts:person:remote-pep-N use the format urn:sts:sa:blah
+for service accounts, but underneath, it's a regular user object", and "Let's
+make these references more centrally defined and easy to change."
+
+* **ONE TABLE.** Every `urn:sts:<form>:` a leaf names its holder by is in
+  `SubjectUrn.FORMS`, and every writer and reader goes through it:
+  `pki.js` (`SUBJECT_KINDS`, the federation leaves, `registerCertificate()`'s
+  widening rule), `tls_client_certificates.js` (`holderUrn()`,
+  `identityOf()`), `cert_enrollment.ts` (`entryUri()`, `entryFromUri()`,
+  the device URN), `cell_channel.ts`, `assertion_grant.js`'s
+  `keyFromChain()`, `wstrust.ts`, `admin_actions.ts`.
+  `tests/subject_urn_literals.js` fails on a prefix spelt in executable code
+  anywhere else (a sentence that names one is prose and is allowed; the test
+  reads tokens, so a wrapped concatenation is still read as one).
+* **FORM AND KIND.** `sa` is a FORM whose KIND is `person`: the entry is a
+  person with `stsServiceAccount` (*3cd*), so every person rule holds for it
+  — "a person may assert only about themselves" (STS-OAUTH-0049),
+  `registerCertificate()`'s widening rule both ways round, LDAP's person-only
+  EXTERNAL bind — and it is never an application. Readers ask `kind`.
+* **DECIDED AT ISSUE, FROM THE ENTRY.** `holderUrn()`, `pki.js`'s
+  `subjectUriFor()` and `CertEnrollment.entryUri()` ask
+  `service_accounts.isServiceAccountName()` LAZILY, in the realm the leaf is
+  issued in; `pki.issueSigningKeyPair()` takes `serviceAccount` to say it
+  instead. `subject_urn.ts` never asks, so it stays a leaf.
+* **BOTH SPELLINGS ARE READ FOR EVER (rcbj's 1.0.0 rule).** A leaf issued
+  with `urn:sts:person:` to an entry that is, or has since become, a service
+  account keeps working everywhere it worked; an enrollment request asking
+  for that spelling is issued the entry's own, `urn:sts:sa:`.
+* **`urn:sts:sa:` IS A CLAIM, AND A FALSE ONE IS REFUSED** — this service
+  writes it only for a service account, and an entry never stops being one,
+  so naming somebody who is not one (or nobody) is a leaf it did not build or
+  an entry recreated at the name: STS-TLS-0063 at the TLS client gate (each
+  door then refuses under its own "not an identity" code), STS-PKI-0277 on an upload, STS-ENROLL-0097 in ACME, EST and
+  SCEP. Asked per call, never memoised. rcbj approved the one gate code over
+  a code per door (2026-11-16).
+* **EXCEPT IN WS-TRUST AND THE RFC 7523 GRANT** (rcbj, 2026-11-16: "any
+  user with valid credentials should be able to authenticate through
+  WS-Trust", and the grant follows it): WS-Trust asks the gate with
+  `anyHolderForm`, which skips the form check and nothing else, and the
+  grant's `x5c` path reads `sa` as the person without asking the directory,
+  so a valid leaf authenticates the person it names in either spelling (the
+  grant's self-only rule, STS-OAUTH-0049, still holds). STS-WSTRUST-0074 and
+  STS-OAUTH-1011, which refused it there, were retired before release.
+  Registering (STS-PKI-0277) and enrolling (STS-ENROLL-0097) still refuse a
+  mismatch, so this service never builds or records one.
+* `tests/service_account_certificate_names.js`.
 
 ## 3de. `signature_policy.ts`: which algorithm a realm signs with and accepts (#1368)
 
@@ -11524,7 +11576,8 @@ because a leaf failing two at once hid two deleted checks in the first round:
   `IDENTITY_USE_CASES`: `tls-client`, and `acme`, `est` and `scep`, whose enrolled
   leaves the enrollment session asked to count;
 * it carries `clientAuth`;
-* it names exactly ONE `urn:sts:person:` or `urn:sts:application:` subjectAltName,
+* it names exactly ONE `urn:sts:person:` (or a service account's `urn:sts:sa:`,
+  *3df*) or `urn:sts:application:` subjectAltName,
   which is the identity (an enrolled leaf's CN need not be the username);
 * for `tls-client`, that name is also the CN, which `issue()` writes from one
   username.

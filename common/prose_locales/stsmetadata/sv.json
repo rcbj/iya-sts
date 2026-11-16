@@ -768,8 +768,8 @@
     "text": "Varje policy så som PDP:n ser den, DOKUMENTEN INRÄKNADE, med de statiska typkontrollproblemen för var och en. Dokumenten visas avsiktligt, till skillnad från de hemligheter som /admin/ldap/* döljer: en policy är en regel snarare än en inloggningsuppgift, och en regel som ingen kan läsa är en regel som ingen kan kontrollera. VEM SOM FÅR LÄSA DEN ÄR EN ANNAN FRÅGA ÄN OM DEN ÄR MASKERAD, och detta kräver XACML_USER: sedan åtkomst- och utfärdande-PEP:arna bäddades in är dessa dokument de som den här tjänsten fattar beslut om sina egna insläpp med, och att ge en anonym anropare de exakta villkoren för när den släpper in folk är inte samma handling som att publicera en demonstrationspolicy. Lagret är ou=policies i den inbäddade katalogen — den behållaren ÄR förrådet."
   },
   "stsmetadata.endpoints./xacml/pep/register.what": {
-    "en": "2d66266ac296ab90",
-    "text": "En Policy Enforcement Point i en ANNAN PROCESS meddelar att den finns, över ömsesidig TLS på samma port — server.js sätter redan requestCert: true, så detta behövde ingen ny lyssnare. DEN ENDA SLUTPUNKTEN I DEN HÄR FAMILJEN SOM BER OM EN INLOGGNINGSUPPGIFT, och den ställer en annan fråga än /xacml/pdp: inte vem beslutet gäller, utan VILKEN PEP detta är — eftersom en registrering skriver en post och anger en adress som den här tjänsten senare kommer att ringa upp. Det är en vändkors som varje annan grind här (certifikatet behöver inte kedja till något, argumentet i RFC 8705 avsnitt 3) och det är INTE det som låter en PEP upprätthålla beslut: en oregistrerad hämtar och beslutar lika bra. xacml.pepRequireCertificate stänger av den."
+    "en": "f25896a0df078725",
+    "text": "En Policy Enforcement Point i en ANNAN PROCESS meddelar att den finns, över ömsesidig TLS på samma port — server.js sätter redan requestCert: true, så detta behövde ingen ny lyssnare. DEN ENDA SLUTPUNKTEN I DEN HÄR FAMILJEN SOM BER OM EN INLOGGNINGSUPPGIFT, och den ställer en annan fråga än /xacml/pdp: inte vem beslutet gäller, utan VILKEN PEP detta är — eftersom en registrering skriver en post och anger en adress som den här tjänsten senare kommer att ringa upp. Det är en vändkors som varje annan grind här (certifikatet behöver inte kedja till något, argumentet i RFC 8705 avsnitt 3) och det är INTE det som låter en PEP upprätthålla beslut: en oregistrerad hämtar och beslutar lika bra. xacml.pepRequireCertificate stänger av den. En DPoP-bunden åtkomsttoken från sts-remote-pep, med /xacml/pep som mottagare och med xacml:pep, kan ersätta certifikatet här och vid varje /xacml/pep-slutpunkt och /xacml/pip, så som xacml.pepAuthentication tillåter; PEP:n namnges då av sin posts användarnamn."
   },
   "stsmetadata.endpoints./xacml/pep/policies.what": {
     "en": "f21e16beea449f7d",
@@ -1894,6 +1894,14 @@
   "stsmetadata.endpoints./admin-api/device-compliance.effect": {
     "en": "3ca2a7e72576096b",
     "text": "sätter efterlevnaden för en enhet eller en grupp"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). En fjärr-XACML-PEP skickar posterna om de beslut den fattat i sin egen process — verkställanden på /protected, de AuthZEN-bedömningar den själv avgjort, aldrig en den vidarebefordrat, och dess omvända proxys begäranden till en route — minst en gång och i ordning, upp till 500 per sats, var och en kvitterad med sitt seq. Token bär den SKYDDADE omfattningen xacml:pep-audit och inget annat här tar emot den: PEP:ens egen RFC 7523-självförsäkran via den förinstallerade publika klienten sts-remote-pep, bunden till dess certifikat, utfärdad och godtagen bara så länge dess post finns i fjärr-PEP-gruppen (REMOTE_PEPS). PEP:en måste vara registrerad i domänen. Raderna xacml.remote.enforcement, authzen.remote.decision och, för den omvända proxyns begäranden, xacml.remote.proxy på /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "registrerar en sats beslut som en fjärr-PEP fattat som granskningsrader"
   },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",

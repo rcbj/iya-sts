@@ -266,8 +266,11 @@ class RolePermissions {
       log.debug("Leaving permissionOf().");
       return row.permission;
     };
+    // And since #1827 `xacml:pep-audit`, by REMOTE_PEPS: every built-in role
+    // that authorizes a permission, not only the owner pair.
     const native = roles.NATIVE_ROLES.map(permissionOf)
-      .concat(roles.OWNER_ROLES.map(permissionOf)).indexOf(value) >= 0;
+      .concat(roles.AUTHORIZING_BUILT_INS.map(permissionOf))
+      .indexOf(value) >= 0;
     if (native) {
       log.debug("Leaving RolePermissions.isGated(). Native.");
       return true;
@@ -497,9 +500,25 @@ class RolePermissions {
           });
         }
       }
+      // A BUILT-IN ROLE THAT AUTHORIZES A PERMISSION AND IS HELD BY WHAT
+      // THE SUBJECT IS (#1827): REMOTE_PEPS, by being in the group
+      // `roles.remotePepGroup` names, which `rolesOf()` has just read from
+      // the directory. It goes with the configured ones for the owner
+      // roles' reason above — what can authorize is what this list is —
+      // and the owner roles are not among them here, because `rolesOf()`
+      // is not told what anybody owns.
+      roles.AUTHORIZING_BUILT_INS.forEach(function (row) {
+        if (builtIn.indexOf(row.name) >= 0 &&
+            configured.indexOf(row.name) < 0) {
+          configured.push(row.name);
+        }
+      });
       log.debug("Leaving RolePermissions.heldRoles(). " +
                 (configured.join(', ') || 'no configured role'));
-      return { all: builtIn.concat(configured), configured: configured,
+      // Once each: REMOTE_PEPS is in both lists now (#1827).
+      return { all: builtIn.concat(configured.filter(function (one) {
+                 return builtIn.indexOf(one) < 0;
+               })), configured: configured,
                why: why };
     });
   }
@@ -645,9 +664,20 @@ class RolePermissions {
     roles.NATIVE_ROLES.forEach(function (row) {
       out[row.name] = [row.permission];
     });
-    // And the two owner roles (#607), built in and each authorizing its own.
-    roles.OWNER_ROLES.forEach(function (row) {
-      out[row.name] = [row.permission];
+    // And the built-in roles that authorize one (#607's two owner roles,
+    // #1827's REMOTE_PEPS), each authorizing its own. REMOTE_PEPS has two
+    // rows since the PEP's token credential (`xacml:pep-audit`,
+    // `xacml:pep`), so a row ADDS to what an earlier row of the same role
+    // put here rather than replacing it.
+    const seen: string[] = [];
+    roles.AUTHORIZING_BUILT_INS.forEach(function (row) {
+      if (seen.indexOf(row.name) < 0) {
+        seen.push(row.name);
+        out[row.name] = [];
+      }
+      if (out[row.name].indexOf(row.permission) < 0) {
+        out[row.name].push(row.permission);
+      }
     });
     log.debug("Leaving RolePermissions.permissionsByRole().");
     return out;
@@ -1048,10 +1078,19 @@ class RolePermissions {
             held.configured.push(role);
           }
         });
+      // A BUILT-IN ROLE THAT AUTHORIZES A PERMISSION (#1827: REMOTE_PEPS)
+      // is not taken from here: it is in `held.configured` when it is held,
+      // and comes through `effective` below only where the token carries its
+      // permission — held ∩ carried, as for a configured role. Taken from
+      // here it would stand whatever the token carried, so an `admin:write`
+      // token whose subject is in the remote PEPs' group would be a PEP's.
+      const authorizing = roles.AUTHORIZING_BUILT_INS.map(function (row) {
+        return row.name;
+      });
       const builtIn = roles.rolesOf({ kind: subject.kind, name: subject.name,
                                       authenticated: true, scopes: scopes })
         .filter(function (one) {
-          return roles.isBuiltIn(one);
+          return roles.isBuiltIn(one) && authorizing.indexOf(one) < 0;
         });
       const authorizes = self.permissionsByRole();
       const effective = held.configured.filter(function (role) {
@@ -1081,7 +1120,10 @@ class RolePermissions {
         !String(subject.name || '').trim())
         ? held.why
         : subject.name + ' holds no role authorizing ' + withdrawn.join(', ');
-      return { roles: builtIn.concat(effective), withdrawn: withdrawn,
+      // Once each: REMOTE_PEPS is built in AND authorizes (#1827).
+      return { roles: builtIn.concat(effective.filter(function (one) {
+                 return builtIn.indexOf(one) < 0;
+               })), withdrawn: withdrawn,
                why: why, subject: subject };
     });
   }

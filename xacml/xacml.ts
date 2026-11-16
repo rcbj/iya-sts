@@ -266,6 +266,15 @@ interface CallerIdentity {
   // An outside authority's certificate stored on no entry ('NOT_STORED') or
   // on several ('STORED_TWICE'), so its `dn` is empty (#1061).
   unmapped?: string;
+  // What the caller proved itself with at the PEP door (#1827's follow-up):
+  // 'certificate', 'token' (a DPoP-bound access token from sts-remote-pep,
+  // `pep_token.ts`), or '' for nothing.
+  credential?: string;
+  // A refusal the PEP door made before any policy was asked — a token that
+  // did not hold, or a credential `xacml.pepAuthentication` does not
+  // accept. `pepAccess()` answers it with a 401 and this code.
+  refusal?: { code: string; error: string; description: string;
+              needNonce?: boolean };
 }
 
 // What `xacmlAccess()` and `pepAccess()` answer.
@@ -366,6 +375,13 @@ interface XacmlSurfaceDeps {
                               { rows: any[]; problems: string[] };
                             valueOf(row: any): string };
   sha256Base64(text: string): string;
+  // `xacml/pep_token.ts`, the one reading of a remote PEP's access token
+  // (#1827's follow-up), built when a token first arrives.
+  loadPepToken(): { verify(req: Req, want: { path: string; scope: string }):
+                      any };
+  // A fresh DPoP server nonce (`dpop.issueNonce()`), for a proof refused
+  // for want of one.
+  loadPepTokenNonce(): string;
 }
 
 // The role those four endpoints require. Named once here rather than written
@@ -377,6 +393,30 @@ const XACML_USER_ROLE = 'XACML_USER';
 // each call site, so that a rename in `roles.js`'s catalogue (where the name
 // is defined) is one line to follow here rather than several to hunt for.
 const REMOTE_PEP_ROLE = 'REMOTE_PEPS';
+
+// A REMOTE PEP'S ACCESS TOKEN (#1827's follow-up): the path its audience
+// names and the scope it carries, at every `/xacml/pep/*` call and `POST
+// /xacml/pip`. `pep_token.ts` reads it.
+const PEP_TOKEN_PATH = '/xacml/pep';
+const PEP_TOKEN_SCOPE = 'xacml:pep';
+
+// The three answers `xacml.pepAuthentication` may give.
+const PEP_CREDENTIALS = Object.freeze(['certificate', 'token', 'either']);
+
+// Where a request's PEP identity is kept once read, so the DPoP proof — good
+// for one request — is verified once whichever door reads it first.
+const PEP_IDENTITY = Symbol('sts.xacmlPepIdentity');
+
+// The code each `pep_token.ts` refusal is marked with at this door.
+const PEP_TOKEN_CODES: Record<string, string> = Object.freeze({
+  invalid: 'STS-XACML-0291',
+  'not-dpop': 'STS-XACML-0292',
+  audience: 'STS-XACML-0293',
+  client: 'STS-XACML-0294',
+  scope: 'STS-XACML-0295',
+  proof: 'STS-XACML-0296',
+  subject: 'STS-XACML-0297'
+});
 
 // ---------------------------------------------------------------------------
 // The scalar parameters the XACML readers never see.
@@ -521,6 +561,17 @@ class XacmlSurface {
         helpers.log.debug("Entering sha256Base64().");
         helpers.log.debug("Leaving sha256Base64().");
         return require('../common/crypto').digest('sha256', text, 'base64');
+      },
+      loadPepToken: function (): any {
+        helpers.log.debug("Entering loadPepToken().");
+        const PepToken = require('./pep_token');
+        helpers.log.debug("Leaving loadPepToken().");
+        return new PepToken(PepToken.defaultDeps());
+      },
+      loadPepTokenNonce: function (): string {
+        helpers.log.debug("Entering loadPepTokenNonce().");
+        helpers.log.debug("Leaving loadPepTokenNonce().");
+        return String(require('../oauth-oidc/dpop').issueNonce());
       }
     };
   }
@@ -1283,6 +1334,139 @@ class XacmlSurface {
     return identity;
   }
 
+  // ===========================================================================
+  // THE PEP DOOR'S IDENTITY: A CERTIFICATE OR A TOKEN (#1827's follow-up,
+  // rcbj-approved plan, 2026-11-16, phase 1).
+  //
+  // A remote PEP proves who it is on every `/xacml/pep/*` call and `POST
+  // /xacml/pip` by its client certificate (`callerIdentity()` above) or, in
+  // its place, by a DPoP-bound access token from `sts-remote-pep`
+  // (`pep_token.ts`, links 1 and 2 for a token). `xacml.pepAuthentication`
+  // says which this realm accepts: `certificate`, `token`, or `either` —
+  // the default through phase 3 of the plan, when phase 4 makes it `token`.
+  //
+  // **A TOKEN, WHERE ONE IS PRESENTED AND ACCEPTED, DECIDES.** A PEP in the
+  // middle of the move may present both — its certificate still at the
+  // handshake, its token in the header — and the token is the credential it
+  // chose to send. A token that does not hold is REFUSED rather than passed
+  // over for the certificate underneath: a credential that fails is an
+  // answer, and quietly trying the other would hide which one is wrong.
+  // Under `certificate` the header is not read at all and the certificate
+  // decides, as before this plan.
+  //
+  // **WHAT A TOKEN NAMES IS WHAT A CERTIFICATE THIS SERVICE ISSUED NAMED**:
+  // `dn` the PEP's entry, `commonName` its username, so the `ou=peps` row,
+  // the heartbeat's row and a cluster's membership are the ones the PEP had.
+  // The row's `thumbprint` is the DPoP key's JWK thumbprint (RFC 7638), the
+  // key the token is bound to, where a certificate's was its x5t#S256.
+  // Links 3 and 4 — REMOTE_PEPS and the policy — are `pepAccess()`'s,
+  // unchanged.
+  //
+  // ONLY THE PEP DOOR READS A TOKEN. `xacmlAccess()` (`XACML_USER`, a
+  // person at `GET /xacml` and the PDP) and the AuthZEN certificate door
+  // read `callerIdentity()`, which reads the handshake alone.
+  // ===========================================================================
+  /**
+   * The realm's answer to which credential a remote PEP may present
+   * (`xacml.pepAuthentication`): `certificate`, `token` or `either`.
+   *
+   * @returns the credential kind, `either` for anything else
+   */
+  pepAuthentication(): string {
+    const { log, config } = this.deps;
+    log.debug('Entering XacmlSurface.pepAuthentication().');
+    const asked = String(config.value('xacml.pepAuthentication') || '');
+    log.debug('Leaving XacmlSurface.pepAuthentication(). ' + asked);
+    return PEP_CREDENTIALS.indexOf(asked) >= 0 ? asked : 'either';
+  }
+
+  /**
+   * What a remote PEP proved itself with at the PEP door: its client
+   * certificate or its access token, as `xacml.pepAuthentication` allows.
+   * Read once per request.
+   *
+   * @param req - the request
+   * @returns the caller's identity, never a verdict; `refusal` set when the
+   *   credential presented is one this door refuses before any policy
+   */
+  pepIdentity(req: Req): CallerIdentity {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.pepIdentity().');
+    const held = (req as any)[PEP_IDENTITY];
+    if (held) {
+      log.debug('Leaving XacmlSurface.pepIdentity(). Read already.');
+      return held;
+    }
+    const accepts = self.pepAuthentication();
+    const header = String(req.headers.authorization || '');
+    const token = /^(Bearer|DPoP)\s+\S/i.test(header);
+    const nobody = function (code: string, description: string,
+                             extra?: any): CallerIdentity {
+      log.debug('Entering nobody().');
+      log.debug('Leaving nobody(). ' + code);
+      return { authenticated: false, verified: false, subject: '',
+               thumbprint: '', dn: '', commonName: '', why: description,
+               credential: '', refusal: Object.assign({ code: code,
+                 error: 'invalid_token', description: description },
+               extra || {}) };
+    };
+    let identity: CallerIdentity;
+    if (token && accepts !== 'certificate') {
+      identity = self.tokenIdentity(req);
+    } else if (!token && accepts === 'token') {
+      identity = nobody('STS-XACML-0289', 'This realm accepts a remote ' +
+        'PEP only on a DPoP-bound access token from sts-remote-pep ' +
+        '(xacml.pepAuthentication is token), and this request carried ' +
+        'none. A client certificate alone is not accepted here.',
+        { error: 'invalid_request' });
+    } else {
+      identity = self.callerIdentity(req);
+      identity.credential = identity.authenticated ? 'certificate' : '';
+      if (token && !identity.authenticated) {
+        identity.refusal = { code: 'STS-XACML-0290', error: 'invalid_token',
+          description: 'This realm accepts a remote PEP only by its client ' +
+            'certificate (xacml.pepAuthentication is certificate), and this ' +
+            'request carried an access token and no certificate.' };
+      }
+    }
+    (req as any)[PEP_IDENTITY] = identity;
+    log.debug('Leaving XacmlSurface.pepIdentity(). ' +
+              (identity.credential || 'none') + ' ' + identity.dn);
+    return identity;
+  }
+
+  // The token half of `pepIdentity()`: `pep_token.ts`'s reading, as the
+  // identity a certificate this service issued would have given.
+  private tokenIdentity(req: Req): CallerIdentity {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.tokenIdentity().');
+    const read = this.deps.loadPepToken().verify(req,
+      { path: PEP_TOKEN_PATH, scope: PEP_TOKEN_SCOPE });
+    if (!read.ok) {
+      const code = PEP_TOKEN_CODES[read.reason] || 'STS-XACML-0291';
+      log.info('xacml: a remote PEP\'s access token was refused (' +
+               read.reason + (read.proofCode ? ', ' + read.proofCode : '') +
+               '): ' + read.description);
+      log.debug('Leaving XacmlSurface.tokenIdentity(). Refused.');
+      return { authenticated: false, verified: false, subject: '',
+               thumbprint: '', dn: '', commonName: '',
+               why: String(read.description || ''), credential: 'token',
+               refusal: { code: code,
+                          error: read.needNonce ? 'use_dpop_nonce'
+                            : read.reason === 'scope' ? 'insufficient_scope'
+                            : 'invalid_token',
+                          description: String(read.description || ''),
+                          needNonce: !!read.needNonce } };
+    }
+    log.debug('Leaving XacmlSurface.tokenIdentity(). ' + read.dn);
+    return { authenticated: true, verified: true, subject: '',
+             thumbprint: String(read.jkt || ''), dn: String(read.dn),
+             commonName: String(read.username || ''),
+             why: 'a DPoP-bound access token from sts-remote-pep',
+             credential: 'token' };
+  }
+
   // THE NAMING HALF OF THE DOOR, shared by `callerIdentity()` (a handshake)
   // and `certificateCaller()` (a certificate in hand, #1189), so the two
   // cannot name one certificate differently.
@@ -1448,7 +1632,18 @@ class XacmlSurface {
     // request — and, worse, two places that could come to disagree about who
     // the caller is. Omitting it is what the other three doors do and is
     // unchanged.
-    const identity = known || self.callerIdentity(req);
+    const identity = known || self.pepIdentity(req);
+    // A CREDENTIAL THE DOOR REFUSED BEFORE ANY POLICY (#1827's follow-up): a
+    // token that did not hold, or a kind `xacml.pepAuthentication` does not
+    // take. A 401 with RFC 9449's challenge, so a PEP can tell "get a new
+    // token" (invalid_token) and "prove with this nonce" (use_dpop_nonce)
+    // from a policy's 403.
+    if (identity.refusal) {
+      self.pepCredentialRefused(res, identity, !!xml);
+      log.debug('Leaving XacmlSurface.pepAccess(). The credential was ' +
+                'refused.');
+      return { allowed: false };
+    }
     // THE NAME IS THE VERIFIED DN OR NOTHING AT ALL. An unverified
     // certificate's DN must never reach `rolesOf()`: it would be an
     // unauthenticated caller naming itself into a group, which is the one thing
@@ -1490,7 +1685,9 @@ class XacmlSurface {
     self.refuse(res, !!xml, 403, 'access_denied',
       'The access policy refused this request. ' + policy.why +
       ' A remote Policy Enforcement Point reaches these endpoints by ' +
-      'presenting a client certificate this service VERIFIES — the issuing ' +
+      'presenting a DPoP-bound access token from sts-remote-pep (where ' +
+      'xacml.pepAuthentication allows one) or a client certificate this ' +
+      'service VERIFIES — the issuing ' +
       'CA goes in with ' + trustAnchorDoor() + ' — and that is STORED, ' +
       'byte for byte, in userCertificate on the PEP\'s directory entry, ' +
       'an entry that is a member of the group named by ' +
@@ -1501,6 +1698,10 @@ class XacmlSurface {
       (identity.verified && identity.unmapped
         ? 'presented a certificate that VERIFIED and resolved to no ' +
           'entry: ' + identity.why + '.'
+        : identity.verified && identity.credential === 'token'
+        ? 'presented a DPoP-bound access token that VERIFIED, naming "' +
+          name + '", which holds ' +
+          (held.length ? held.join(', ') : 'no role') + '.'
         : identity.verified
         ? 'presented a certificate that VERIFIED, resolved to "' + name +
           '", and holds ' + (held.length ? held.join(', ') : 'no role') + '.'
@@ -1510,6 +1711,31 @@ class XacmlSurface {
       ' xacml.enforceAccess turns this layer off.');
     log.debug('Leaving XacmlSurface.pepAccess(). Refused.');
     return { allowed: false };
+  }
+
+  // The 401 for a credential the PEP door refused (#1827's follow-up), with
+  // a DPoP challenge (RFC 9449 section 7.1) and, where the proof wanted one,
+  // a fresh server nonce. At `POST /xacml/pip` the body is a `<PIPError>`
+  // like every other refusal there (#1830); the challenge is the same.
+  // error-code: none — marked below with the identity's own code.
+  private pepCredentialRefused(res: Res, identity: CallerIdentity,
+                               xml: boolean): void {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.pepCredentialRefused().');
+    const refusal = identity.refusal || { code: 'STS-XACML-0291',
+      error: 'invalid_token', description: '' };
+    if (refusal.needNonce) {
+      res.set('DPoP-Nonce', self.deps.loadPepTokenNonce());
+    }
+    res.set('WWW-Authenticate', 'DPoP error="' + refusal.error + '"' +
+            (refusal.error === 'insufficient_scope'
+              ? ', scope="' + PEP_TOKEN_SCOPE + '"' : '') +
+            ', algs="ES256 RS256"');
+    errorCodes.mark(res, refusal.code);
+    // error-code: none — marked on the line above with the identity's code.
+    self.refuse(res, xml, 401, refusal.error, refusal.description);
+    log.debug('Leaving XacmlSurface.pepCredentialRefused(). ' + refusal.code);
   }
 
   // ===========================================================================
@@ -1624,7 +1850,7 @@ class XacmlSurface {
         log.debug('Leaving XacmlSurface.validationDoor(). Off.');
         return;
       }
-      const identity = self.callerIdentity(req);
+      const identity = self.pepIdentity(req);
       const within = await websecurity.attemptShared('xacml-pep-validate',
         req, identity.verified ? identity.dn : '',
         config.value('xacml.pipMaxPerWindow'));
@@ -2673,8 +2899,10 @@ class XacmlSurface {
         protocol: 'XACML',
         detail: 'Remote PEP "' + result.name + '" ' +
                 (result.created ? 'registered' : 're-registered') +
-                (identity.authenticated ? ' over mutual TLS.'
-                                        : ' with no client certificate.')
+                (identity.credential === 'token'
+                  ? ' on a DPoP-bound access token.'
+                  : identity.authenticated ? ' over mutual TLS.'
+                                           : ' with no client certificate.')
       });
       const notifyProblem = pepHttp.urlProblem(String(body.notifyUrl ||
                                                       body.notify_url || ''));
@@ -3360,7 +3588,7 @@ class XacmlSurface {
       // about the answer. `pepAccess()` takes it as an argument for exactly
       // this door.
       // ---------------------------------------------------------------------
-      const identity = self.callerIdentity(req);
+      const identity = self.pepIdentity(req);
 
       // ---------------------------------------------------------------------
       // THE RATE LIMIT, AND IT IS BEFORE THE ACCESS CHECK ON PURPOSE.

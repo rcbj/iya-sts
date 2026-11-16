@@ -1305,7 +1305,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/SettingValue"
             },
-            "description": "Every managed setting, by key: description, resource, notifyUrl, bias, pip, pollIntervalMs, heartbeatIntervalMs, backoffMaxMs, timeoutMs, maxBodyBytes, httpsReloadIntervalMs, logLevel, authzen, authzenPdpIdentifier, authzenForwardTimeoutMs and the proxy's settings."
+            "description": "Every managed setting, by key: description, resource, notifyUrl, bias, pip, pollIntervalMs, heartbeatIntervalMs, backoffMaxMs, timeoutMs, maxBodyBytes, httpsReloadIntervalMs, logLevel, authzen, authzenPdpIdentifier, authzenForwardTimeoutMs, the proxy's settings and the decision records' (auditEnabled, auditIntervalMs, auditBatch, auditBuffer)."
           },
           "lastPullAt": {
             "type": "string"
@@ -1333,6 +1333,221 @@
           "offered",
           "configured"
         ]
+      },
+      "AuditStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "shipped": {
+            "type": "integer"
+          },
+          "dropped": {
+            "type": "integer"
+          },
+          "lastShipAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastShipOk": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastShipWhy": {
+            "type": "string"
+          },
+          "tokenHeld": {
+            "type": "boolean"
+          },
+          "instance": {
+            "type": "string",
+            "description": "This process's id, which a batch carries so the service can tell two instances under one name apart."
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "queued",
+          "shipped",
+          "dropped",
+          "lastShipAt",
+          "lastShipOk",
+          "lastShipWhy",
+          "tokenHeld",
+          "instance",
+          "what"
+        ],
+        "description": "The decision records this PEP sends to the service's audit log (#1827): POST /admin-api/pep-audit, with its DPoP-bound token for /admin-api. Delivery is at least once; dropped counts records lost to a full queue (PEP_AUDIT_BUFFER) or to a batch the service refused as malformed."
+      },
+      "CredentialToken": {
+        "type": "object",
+        "properties": {
+          "resource": {
+            "type": "string",
+            "description": "The audience: this realm's /xacml/pep, /admin-api or /access/v1."
+          },
+          "scope": {
+            "type": "string"
+          },
+          "held": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRefusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the last token request was refused; null when none was."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "resource",
+          "scope",
+          "held",
+          "expiresAt",
+          "lastRefusal"
+        ]
+      },
+      "CredentialStatus": {
+        "type": "object",
+        "properties": {
+          "keyFile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keySource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The variable the key came from: PEP_ASSERTION_KEY, else PEP_TLS_KEY."
+          },
+          "fallback": {
+            "type": "boolean"
+          },
+          "keyType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "alg": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "jwkThumbprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keyProblem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clientId": {
+            "type": "string",
+            "const": "sts-remote-pep"
+          },
+          "subject": {
+            "type": "string",
+            "description": "PEP_NAME: the username of this PEP's entry."
+          },
+          "clientCertificate": {
+            "type": "boolean",
+            "description": "Whether PEP_TLS_CERT is presented as well."
+          },
+          "tokens": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CredentialToken"
+            },
+            "description": "By audience: xacml-pep, admin-api and access-v1."
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "keyFile",
+          "keySource",
+          "fallback",
+          "keyType",
+          "alg",
+          "jwkThumbprint",
+          "keyProblem",
+          "clientId",
+          "subject",
+          "clientCertificate",
+          "tokens",
+          "what"
+        ],
+        "description": "How this PEP authenticates to the service (#1827): a DPoP-bound access token per audience, from an RFC 7523 self-assertion signed with one key, which signs every DPoP proof too."
       },
       "Overview": {
         "type": "object",
@@ -1373,6 +1588,12 @@
           },
           "proxy": {
             "$ref": "#/components/schemas/ProxyStatus"
+          },
+          "audit": {
+            "$ref": "#/components/schemas/AuditStatus"
+          },
+          "credential": {
+            "$ref": "#/components/schemas/CredentialStatus"
           },
           "holding": {
             "$ref": "#/components/schemas/Holding"
@@ -1423,6 +1644,8 @@
           "https",
           "authzen",
           "proxy",
+          "audit",
+          "credential",
           "holding",
           "stale",
           "staleAfterMs",

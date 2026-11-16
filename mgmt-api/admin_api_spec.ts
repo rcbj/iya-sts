@@ -187,8 +187,9 @@ class AdminApiSpec {
   /**
    * Returns the scope an operation needs: `admin:read` for a GET, `admin:write`
    * for any other method, `admin:security` for a write of
-   * `/admin-api/policies/{action}` (#645), and `device:compliance` for `POST
-   * /admin-api/device-compliance`.
+   * `/admin-api/policies/{action}` (#645), `device:compliance` for `POST
+   * /admin-api/device-compliance`, and `xacml:pep-audit` for `POST
+   * /admin-api/pep-audit` (#1827).
    *
    * A second copy of the gate's rule; `tests/admin_api_document_security.js`
    * compares the two.
@@ -204,6 +205,11 @@ class AdminApiSpec {
     if (String(method).toUpperCase() === 'POST' &&
         String(path || '') === '/admin-api/device-compliance') {
       return 'device:compliance';
+    }
+    // A remote PEP's decision records (#1827), the gate's `pepFeed`.
+    if (String(method).toUpperCase() === 'POST' &&
+        String(path || '') === '/admin-api/pep-audit') {
+      return 'xacml:pep-audit';
     }
     // THE CONSOLE'S OWN OPERATIONS (#454), as the gate's `consoleOp` reads
     // them: everything under `/admin-api/console` takes `admin:console`.
@@ -271,7 +277,14 @@ class AdminApiSpec {
                                    '/admin-api/device-compliance, and ' +
                                    'nothing else — the scope an MDM or ' +
                                    'posture feed holds (#164). Issued only ' +
-                                   'to a client that declares it.'
+                                   'to a client that declares it.',
+              // #1827.
+              'xacml:pep-audit': 'Push a remote PEP\'s decision records ' +
+                                 'through POST /admin-api/pep-audit, and ' +
+                                 'nothing else. Issued to the PEP\'s own ' +
+                                 'RFC 7523 self-assertion through ' +
+                                 'sts-remote-pep, only while its entry is ' +
+                                 'in the remote PEPs\' group (REMOTE_PEPS).'
             }
           }
         }
