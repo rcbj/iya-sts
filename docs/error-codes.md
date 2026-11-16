@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5667** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5668** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -74,7 +74,7 @@ is an ordinary outcome.
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 176
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
-* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 62
@@ -3660,6 +3660,7 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0032` | In a service deployed as cells, another cell did not answer scim-client-group-share (#553): a group's owner cell could not learn every cell's share before deleting the group or replacing its members on a service provider without PATCH, or a cell could not tell the owner its share changed. Nothing is deleted or replaced; the delivery is retried, and the provider is not paused. | none — nothing is sent |
 | `STS-SCIMC-0033` | An outbound SCIM client act named a `cell` it cannot go to (#553): the service is not deployed as cells, the service has no such cell, or the act is on the client itself (add, change, remove, issue a certificate, test the connection) rather than on a cell's queue. Nothing was done. | HTTP 400 (/admin-api) |
 | `STS-SCIMC-0034` | In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell's result as unreachable). | HTTP 400 (/admin-api) when the act named that cell; none otherwise |
+| `STS-SCIMC-0035` | A create answered 409 uniqueness (RFC 7644 section 3.3) and the resource found by userName or displayName carries the externalId of another entry — a deleted person's User that deprovisioning left there, or another client's — so it was not adopted (a person made again under a deleted person's name inherits nothing, #1612); dead-lettered for an operator. | none |
 
 ## STS-SCIM
 

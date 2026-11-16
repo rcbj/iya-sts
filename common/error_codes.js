@@ -16796,6 +16796,9 @@ const CODES = [
     summary: 'In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell\'s result as unreachable).',
     spec: 'HTTP 400 (/admin-api) when the act named that cell; none ' +
       'otherwise' },
+  { code: 'STS-SCIMC-0035',
+    summary: 'A create answered 409 uniqueness (RFC 7644 section 3.3) and the resource found by userName or displayName carries the externalId of another entry — a deleted person\'s User that deprovisioning left there, or another client\'s — so it was not adopted (a person made again under a deleted person\'s name inherits nothing, #1612); dead-lettered for an operator.',
+    spec: 'none' },
   { code: 'STS-SCIM-0001',
     summary: 'A SCIM endpoint (or HOBA key registration) was called while ' +
       'SCIM is turned off (scim.enabled).',
