@@ -3297,6 +3297,52 @@ class ScimClients {
     return answer;
   }
 
+  // A MOVE REACHES THE GROUP FIRST (run #325, `sts_cells_scim_client` 5).
+  // A person moved out of this cell leaves this cell's share of each group
+  // they are in, and the group's row and the person's row are both queued
+  // here. Where the group's row was taken first, the person had not been
+  // handed over yet (handOver(), from nothingToSend()), so the group's link
+  // still named them as this cell's, and patchShare() took them out of a
+  // group their new home cell had just put them back in. So a member this
+  // cell linked who is missing from its share, and is not resident here,
+  // is asked of the routing index first: homed in another cell, they are
+  // handed over now, and are never this cell's to remove. Nobody holding
+  // them is a person gone everywhere, whom this cell does take out.
+  private async handOverMovedMembers(c: Json, link: Json | null,
+                                     share: string[]): Promise<void> {
+    const { log, directory, realms } = this.deps;
+    log.debug("Entering ScimClients.handOverMovedMembers().");
+    const before: string[] = link && Array.isArray(link.members)
+      ? link.members.map(String) : [];
+    const leaving = before.filter(function (id: string) {
+      return id && share.indexOf(id) < 0;
+    });
+    if (!leaving.length || !this.multi()) {
+      log.debug("Leaving ScimClients.handOverMovedMembers(). None.");
+      return;
+    }
+    const prefix = c.identifier + '|User|';
+    const uuids: string[] = [];
+    this.links.realmMap(realms.currentId()).forEach(function (one: Json,
+                                                             key: string) {
+      if (key.indexOf(prefix) === 0 && one &&
+          leaving.indexOf(String(one.remoteId || '')) >= 0) {
+        uuids.push(key.slice(prefix.length));
+      }
+    });
+    const dir = directory();
+    for (const uuid of uuids) {
+      const stored = dir.entryByUuid(uuid);
+      const resident = !!stored && dir.isPersonEntry(stored) &&
+        !this.projectedHere(uuid);
+      if (!resident && await this.homedElsewhere(uuid)) {
+        this.handOver(c, uuid);
+      }
+    }
+    log.debug("Leaving ScimClients.handOverMovedMembers(). " +
+              uuids.length + " asked.");
+  }
+
   // One group in a service deployed as cells.
   private async syncGroupCells(c: Json, disc: Json, row: Json):
       Promise<Json> {
@@ -3307,6 +3353,8 @@ class ScimClients {
     const group = stored ? dir.readGroupEntry(stored.dn) : null;
     const defined = !!group && this.groupDefined(c, group);
     const share = defined ? this.shareOf(c, group, true) : [];
+    await this.handOverMovedMembers(c, this.linkOf(c, 'Group', row.uuid),
+                                    share);
     const link = this.linkOf(c, 'Group', row.uuid);
     const facts: Json = {
       group: group, defined: defined, share: share, link: link,

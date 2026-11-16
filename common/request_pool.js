@@ -1976,6 +1976,14 @@ const LISTENER_HEADER = 'x-sts-listener';
  */
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
+// The cookie names' translation, loaded on first use for the JA4 reader's
+// reason: a leaf this module needs only once a request is proxied.
+function cookieWireModule() {
+  log.debug("Entering cookieWireModule().");
+  log.debug("Leaving cookieWireModule().");
+  return require('./cookie_wire');
+}
+
 // The JA4 reader, loaded on first use — see the note at the requires.
 function clientHelloModule() {
   log.debug("Entering clientHelloModule().");
@@ -7819,6 +7827,25 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // Nothing a client says about whose directory connections should close may be
   // believed. See LDAP_DROP_HEADER.
   delete headers[LDAP_DROP_HEADER];
+  // THE COOKIE HEADER AS THE BROWSER SENT IT, AND THAT IT CAME OVER TLS, so
+  // that the worker translates the names by ITS view of the realm's mode
+  // (`common/cookie_wire.ts`, A REQUEST A WORKER ANSWERS; GitHub Actions run
+  // 43884417831). This process translated by its own view, which lags a
+  // worker's `config/set global.mode` by up to a second. Both headers are
+  // stripped from what the client sent first, as the certificate's are: a
+  // client that could set the flag could have a cleartext request read as
+  // TLS. A relayed request carries neither, and goes as translated.
+  const wire = cookieWireModule();
+  delete headers[wire.TLS_HEADER];
+  delete headers[wire.PREFIX_HEADER];
+  if (req.stsWireTls) {
+    headers[wire.TLS_HEADER] = '1';
+    if (req.stsWireCookie) {
+      headers.cookie = req.stsWireCookie;
+    } else {
+      delete headers.cookie;
+    }
+  }
   // THE POOL'S OWN COOKIE IS THE POOL'S. Removed from what the worker sees so
   // that no handler can come to depend on a routing detail, and so that it
   // cannot be confused with an application cookie by anything that enumerates
@@ -7828,7 +7855,8 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // worker has no more business seeing the protocol pool's pin than its own.
   if (headers.cookie) {
     const kept = String(headers.cookie).split(';').filter(function (bit) {
-      const trimmed = bit.trim();
+      // Under its wire name too, now that the header may be the raw one.
+      const trimmed = bit.trim().replace(/^__(?:Host|Secure)-/, '');
       return trimmed.indexOf(POOL_COOKIE + '=') !== 0 &&
              trimmed.indexOf(SURFACE_POOL_COOKIE + '=') !== 0;
     });
@@ -8110,12 +8138,19 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     for (let i = 0; i + 1 < raw.length; i += 2) {
       spelled[String(raw[i]).toLowerCase()] = String(raw[i]);
     }
+    // WHETHER THE WORKER'S COOKIES TAKE THE PREFIX, which the worker decided
+    // by its view of the realm's mode; `common/cookie_wire.ts` wraps them at
+    // the flush as told. Believed only where this process asked.
+    const wirePrefix = answer.headers[wire.PREFIX_HEADER];
+    if (req.stsWireTls && (wirePrefix === '1' || wirePrefix === '0')) {
+      res.stsWirePrefix = wirePrefix === '1';
+    }
     Object.keys(answer.headers).forEach(function (name) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
       if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER ||
-          name === REVOKING_HEADER) {
+          name === REVOKING_HEADER || name === wire.PREFIX_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not

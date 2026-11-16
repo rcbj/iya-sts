@@ -382,11 +382,16 @@ async function writeDoors() {
 
 // The newest audit sequence number of a realm, and the codes recorded after
 // one; a response carries no code.
-async function newestSeq(realm) {
-  log.debug("Entering newestSeq().");
+async function newestAt(realm) {
+  log.debug("Entering newestAt().");
   const r = await call("GET", realmBase(realm) + "/admin-api/audit?per=1");
-  log.debug("Leaving newestSeq().");
-  return (r.json && r.json.newestSeq) || 0;
+  log.debug("Leaving newestAt().");
+  // BY TIME (#465): `seq` is unique across processes and rises within
+  // each, but it is not one order across them, so a row a request worker
+  // numbered from a lower block than the newest row here would be missed.
+  // A reader resumes by `at`, as the audit API says.
+  const newest = (r.json && r.json.events && r.json.events[0]) || {};
+  return newest.at || 0;
 }
 
 async function codesSince(realm, since, wanted) {
@@ -396,7 +401,7 @@ async function codesSince(realm, since, wanted) {
     const r = await call("GET", realmBase(realm) +
                          "/admin-api/audit?per=200");
     found = ((r.json && r.json.events) || []).filter(function (row) {
-      return row.seq > since && row.errorCode;
+      return row.at > since && row.errorCode;
     }).map(function (row) {
       return row.errorCode;
     });
@@ -504,7 +509,7 @@ async function sha1Codes(SHA, CA) {
   const issued = await ok(realmBase(SHA) + "/admin-api/pki/issue",
     { identifier: PERSON, target: "person", purpose: "saml",
       keyAlg: "rsa-2048" }, "issued an RFC 7522 key pair");
-  let since = await newestSeq(SHA);
+  let since = await newestAt(SHA);
   const off = await sha1Grant(SHA, PERSON, issued);
   // OBSERVED: the grant records its own code, STS-OAUTH-0067 (no
   // signature verified), and the sentence carries the verifier's reason;
@@ -528,7 +533,7 @@ async function sha1Codes(SHA, CA) {
     assert.ok(on.json.access_token);
   });
   await setting(SHA, "global.mode", "product");
-  since = await newestSeq(SHA);
+  since = await newestAt(SHA);
   const product = await sha1Grant(SHA, PERSON, issued);
   const productCodes = await codesSince(SHA, since, "STS-OAUTH-0067");
   check("product, saml.allowSha1Signatures still on: refused again for " +
@@ -547,7 +552,7 @@ async function sha1Codes(SHA, CA) {
     assert.strictEqual(devBuild.status, 200, devBuild.text.slice(0, 300));
   });
   await setting(CA, "global.mode", "product");
-  since = await newestSeq(CA);
+  since = await newestAt(CA);
   const prodBuild = await call("POST", realmBase(CA) +
     "/admin-api/pki/build", { keyAlg: "rsa-2048", signatureAlg: "sha1-rsa" });
   const buildCodes = await codesSince(CA, since, "STS-PKI-0191");

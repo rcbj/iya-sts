@@ -138,11 +138,16 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
-async function newestSeq() {
-  log.debug("Entering newestSeq().");
+async function newestAt() {
+  log.debug("Entering newestAt().");
   const r = await send(api + "/audit?per=1");
-  log.debug("Leaving newestSeq().");
-  return (r.body && r.body.newestSeq) || 0;
+  log.debug("Leaving newestAt().");
+  // BY TIME (#465): `seq` is unique across processes and rises within
+  // each, but it is not one order across them, so a row a request worker
+  // numbered from a lower block than the newest row here would be missed.
+  // A reader resumes by `at`, as the audit API says.
+  const newest = (r.body && r.body.events && r.body.events[0]) || {};
+  return newest.at || 0;
 }
 
 // The codes recorded in this realm after `since`; a response carries none.
@@ -152,7 +157,7 @@ async function codesSince(since, wanted) {
   for (let i = 0; i < 20; i += 1) {
     const r = await send(api + "/audit?per=200");
     found = ((r.body && r.body.events) || []).filter(function (row) {
-      return row.seq > since && row.errorCode;
+      return row.at > since && row.errorCode;
     }).map(function (row) {
       return row.errorCode;
     });
@@ -167,7 +172,7 @@ async function codesSince(since, wanted) {
 
 async function refused(url, payload, code, what) {
   log.debug("Entering refused().");
-  const since = await newestSeq();
+  const since = await newestAt();
   const r = await postJson(url, payload);
   const codes = await codesSince(since, code);
   check(what + " (400, " + code + " on the audit row)", function () {
@@ -445,7 +450,7 @@ async function ownMembers() {
       oauthTokenEndpointAuthMethod: "client_secret_post",
       oauthGrantType: ["client_credentials"] } }, "a client");
   for (const type of ["constructor", "toString", "__proto__"]) {
-    const since = await newestSeq();
+    const since = await newestAt();
     const r = await send(realmBase + "/oauth2/token", { method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ grant_type: "client_credentials",

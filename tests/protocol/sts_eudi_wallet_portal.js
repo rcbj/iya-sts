@@ -606,9 +606,30 @@ async function walletConsent(driver, what) {
     "document.querySelector('#consent-approve') && " +
     "!document.querySelector('#consent-approve').disabled",
     "the wallet's consent dialog (" + what + ")");
-  const text = String(await driver.executeScript(
-    "var d = document.querySelector('#consent-dialog');" +
-    "return d ? d.innerText : '';") || "");
+  // THE DIALOG IS DRAWN TWICE. The wallet draws a presentation request's
+  // candidates from the request's summary first — the bare `vct`, "No
+  // status" — and draws them again once its own `api/credentials/{id}` read
+  // of each one answers (eudi-dev's loadCandidateDetails()). Run #325 read
+  // the first drawing. So the text is read until it holds still: three
+  // equal reads 200 ms apart, within ten seconds.
+  const read = async function () {
+    log.debug("Entering read().");
+    const shown = String(await driver.executeScript(
+      "var d = document.querySelector('#consent-dialog');" +
+      "return d ? d.innerText : '';") || "");
+    log.debug("Leaving read().");
+    return shown;
+  };
+  let text = await read();
+  let steady = 0;
+  for (let i = 0; i < 50 && steady < 2; i += 1) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 200);
+    });
+    const again = await read();
+    steady = again === text ? steady + 1 : 0;
+    text = again;
+  }
   log.info("  the wallet asks (" + what + "): " +
            text.replace(/\s+/g, " ").slice(0, 400));
   log.debug("Leaving walletConsent().");
