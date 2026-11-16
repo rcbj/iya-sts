@@ -1,0 +1,1590 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "IYA STS remote PEP",
+    "version": "1",
+    "description": "The remote XACML policy enforcement point's own API: its status overview, its liveness, the demonstration decision at /protected, the PDP's policy nudge and its own credential's CRLs. Served on the plain listener (PEP_PORT, 9090, only with PEP_HTTP=true), the HTTPS listener (PEP_HTTPS_PORT, 9443) and any listener of purpose api the service defines. With PEP_HTTP off and a CRL directory present, 9090 is a CRL-only listener that answers GET /crl/{name} and nothing else (404 STS-XPEP-0114). A method or path not listed here is 404 with the NotFound body (STS-XPEP-0009); nothing answers 405. Error codes are recorded in the PEP's log and never sent."
+  },
+  "servers": [
+    {
+      "url": "https://localhost:9443",
+      "description": "The HTTPS listener, PEP_HTTPS_PORT."
+    },
+    {
+      "url": "http://localhost:9090",
+      "description": "The plain listener, PEP_PORT, with PEP_HTTP=true."
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "getOverview",
+        "summary": "What this PEP holds and how it is doing",
+        "description": "The whole state of the PEP: the policy it holds and whether it is stale, its registration, the PIP, the HTTPS listener, the AuthZEN edge PDP, the reverse proxy, and every managed setting in force with its source. Reads nothing in the request.",
+        "responses": {
+          "200": {
+            "description": "The overview. Cache-Control: no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Overview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On the CRL-only listener (STS-XPEP-0114).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthcheck": {
+      "get": {
+        "operationId": "getHealthcheck",
+        "summary": "Liveness",
+        "description": "Always 200 while the process answers; it says nothing about whether the policy is current (GET / says that). The image's HEALTHCHECK, xacml-pep --healthcheck, asks this over the plain listener with PEP_HTTP=true and over HTTPS, unverified, otherwise. HEAD is 404.",
+        "responses": {
+          "200": {
+            "description": "Alive.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On the CRL-only listener (STS-XPEP-0114).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/protected": {
+      "get": {
+        "operationId": "getProtected",
+        "summary": "The demonstration decision",
+        "description": "Builds an XACML request from the query with the service's request builder, decides it against the held policy (fetching the attributes the policy designates from the PDP's PIP first), applies the bias and the obligation rule of XACML 3.0 section 7.2, and answers 200 when allowed and 403 when not, with the same body. A repeated parameter keeps its last value. Every parameter not named here is a subject attribute, asserted under its own name and as urn:sts:xacml:attribute:<name>. No credential is read: the subject is what the query says.",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "query",
+            "required": false,
+            "description": "The access-subject's subject-id. Absent or empty: no subject attribute.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resource",
+            "in": "query",
+            "required": false,
+            "description": "The resource-id (anyURI). Absent or empty: the resource setting (PEP_RESOURCE), else urn:xacml-pep:protected.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "description": "The action-id. Absent or empty: GET.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subjectKind",
+            "in": "query",
+            "required": false,
+            "description": "application says the subject is an application; any other value says user. Asserted as urn:sts:xacml:subject-kind and forwarded to the PIP.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attributes",
+            "in": "query",
+            "required": false,
+            "style": "form",
+            "explode": true,
+            "description": "Any other parameter: a subject attribute, under both spellings, unbounded and unchecked.",
+            "schema": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not allowed: Deny, NotApplicable or Indeterminate under the bias, or a Permit with an obligation this PEP cannot discharge (STS-XPEP-0004). No policy held is STS-XPEP-0005; Indeterminate STS-XPEP-0006.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Decision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "On the CRL-only listener (STS-XPEP-0114).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notify": {
+      "post": {
+        "operationId": "postNotify",
+        "summary": "The PDP's nudge: pull now",
+        "description": "Answered on an HTTPS listener only. Says only that something may have changed: the body is not read and nothing in the request is trusted or checked. The PEP answers at once and then pulls; the outcome shows on GET / as holding.lastNudgeAt and lastNudgeResult (a failed pull is STS-XPEP-0010).",
+        "requestBody": {
+          "required": false,
+          "description": "Ignored.",
+          "content": {
+            "*/*": {
+              "schema": {}
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Accepted; the pull follows. The answer still carries Content-Type: application/json and Cache-Control: no-store."
+          },
+          "404": {
+            "description": "On a plain listener (STS-XPEP-0112): the PDP nudges over https only. On the CRL-only listener, STS-XPEP-0114.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/crl/{name}": {
+      "get": {
+        "operationId": "getCrl",
+        "summary": "A CRL of this PEP's own credential",
+        "description": "The file {name} in PEP_CRL_DIR (default: the crl directory beside PEP_TLS_CERT), as stored, so that a client verifying this PEP's certificate can check it. Served on every API listener, the CRL-only one included.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "A file name; anything else is 404.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]+\\.[cC][rR][lL]$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The CRL's bytes, as the file holds them (normally DER). No Cache-Control.",
+            "content": {
+              "application/pkix-crl": {
+                "schema": {
+                  "type": "string",
+                  "contentMediaType": "application/pkix-crl"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No CRL directory, a name of another form, or no such readable file (STS-XPEP-0009); error_description is absent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFound"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NotFound": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "not_found"
+            ]
+          },
+          "error_description": {
+            "type": "string",
+            "description": "Absent on a CRL lookup that found nothing."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "const": "Success"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "message"
+        ]
+      },
+      "PipReport": {
+        "type": "object",
+        "properties": {
+          "used": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "designators": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "boolean",
+            "const": true
+          },
+          "resolved": {
+            "type": "integer"
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Unresolved"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "used"
+        ],
+        "description": "What the PIP did for the last evaluation. One of seven forms: used is false with why (PIP off; no subject; no designators, with subject; too many designators, with subject and designators; the query failed or its answer was unreadable, with subject, designators and failed), or used is true with subject, designators, resolved and unresolved."
+      },
+      "Unresolved": {
+        "type": "object",
+        "properties": {
+          "attributeId": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "attributeId",
+          "why"
+        ]
+      },
+      "Pip": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "{pdp}/xacml/pip when enabled."
+          },
+          "credentialed": {
+            "type": "boolean"
+          },
+          "lastQuery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PipReport"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last evaluation's report, the reverse proxy's included; null before any."
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "endpoint",
+          "credentialed",
+          "lastQuery",
+          "what"
+        ]
+      },
+      "Build": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "release": {
+            "type": "boolean"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "at": {
+            "type": "string"
+          },
+          "stamped": {
+            "type": "boolean"
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "number",
+          "release",
+          "commit",
+          "at",
+          "stamped",
+          "what"
+        ]
+      },
+      "ServedCertificate": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "serialHex": {
+            "type": "string"
+          },
+          "subjectAltName": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string"
+          },
+          "validTo": {
+            "type": "string"
+          },
+          "fingerprint256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "subject",
+          "issuer",
+          "serialHex",
+          "subjectAltName",
+          "validFrom",
+          "validTo",
+          "fingerprint256"
+        ]
+      },
+      "Https": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "listening": {
+            "type": "boolean"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "certificate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServedCertificate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loadedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastCheckedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "asksForClientCertificates": {
+            "type": "boolean"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "configured",
+          "listening",
+          "port",
+          "certificate",
+          "loadedAt",
+          "lastCheckedAt",
+          "asksForClientCertificates",
+          "problem",
+          "what"
+        ]
+      },
+      "PulledCallers": {
+        "type": "object",
+        "properties": {
+          "loaded": {
+            "type": "boolean"
+          },
+          "syncToken": {
+            "type": "string"
+          },
+          "door": {
+            "type": "string"
+          },
+          "callers": {
+            "type": "integer"
+          },
+          "certificates": {
+            "type": "integer"
+          },
+          "truncatedByThePdp": {
+            "type": "boolean"
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastPullAt": {
+            "type": "string"
+          },
+          "lastPullOk": {
+            "type": "boolean"
+          },
+          "lastPullWhy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "loaded",
+          "syncToken",
+          "door",
+          "callers",
+          "certificates",
+          "truncatedByThePdp",
+          "refused",
+          "lastPullAt",
+          "lastPullOk",
+          "lastPullWhy"
+        ]
+      },
+      "AuthzenSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "resolveSubjectTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "batchEnabled": {
+            "type": "boolean"
+          },
+          "maxEvaluations": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "maxBodyBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 5242880
+          },
+          "returnReasons": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "resolveSubjectTypes",
+          "batchEnabled",
+          "maxEvaluations",
+          "maxBodyBytes",
+          "returnReasons"
+        ]
+      },
+      "Catalogue": {
+        "type": "object",
+        "properties": {
+          "loaded": {
+            "type": "boolean"
+          },
+          "syncToken": {
+            "type": "string"
+          },
+          "realm": {
+            "type": "string"
+          },
+          "apiObject": {
+            "type": "boolean"
+          },
+          "rows": {
+            "type": "integer"
+          },
+          "fgaApplications": {
+            "type": "integer"
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "leftOutByThePdp": {
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/AuthzenSettings"
+          },
+          "lastPullAt": {
+            "type": "string"
+          },
+          "lastPullOk": {
+            "type": "boolean"
+          },
+          "lastPullWhy": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "loaded",
+          "syncToken",
+          "realm",
+          "apiObject",
+          "rows",
+          "fgaApplications",
+          "refused",
+          "leftOutByThePdp",
+          "settings",
+          "lastPullAt",
+          "lastPullOk",
+          "lastPullWhy"
+        ]
+      },
+      "AuthzenAnswered": {
+        "type": "object",
+        "properties": {
+          "decisions": {
+            "type": "integer"
+          },
+          "true": {
+            "type": "integer"
+          },
+          "false": {
+            "type": "integer"
+          },
+          "errors": {
+            "type": "integer"
+          },
+          "forwarded": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "decisions",
+          "true",
+          "false",
+          "errors",
+          "forwarded"
+        ]
+      },
+      "LocalCallers": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "certificates": {
+            "type": "integer"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "configured",
+          "certificates",
+          "role"
+        ]
+      },
+      "AuthzenStatus": {
+        "type": "object",
+        "properties": {
+          "pulledCallers": {
+            "$ref": "#/components/schemas/PulledCallers"
+          },
+          "catalogue": {
+            "$ref": "#/components/schemas/Catalogue"
+          },
+          "answered": {
+            "$ref": "#/components/schemas/AuthzenAnswered"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "PEP_AUTHZEN as the environment set it; the value in force is settings.values.authzen."
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "localCallers": {
+            "$ref": "#/components/schemas/LocalCallers"
+          },
+          "clientCertificatesAsked": {
+            "type": "boolean"
+          },
+          "pdpIdentifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PEP_AUTHZEN_PDP_IDENTIFIER as the environment set it; the value in force is settings.values.authzenPdpIdentifier."
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "pulledCallers",
+          "catalogue",
+          "answered",
+          "enabled",
+          "endpoints",
+          "localCallers",
+          "clientCertificatesAsked",
+          "pdpIdentifier",
+          "what"
+        ]
+      },
+      "ProxyPorts": {
+        "type": "object",
+        "properties": {
+          "http": {
+            "type": "integer"
+          },
+          "https": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "http",
+          "https"
+        ]
+      },
+      "RoutesByMechanism": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "integer"
+          },
+          "oauth2": {
+            "type": "integer"
+          },
+          "saml2": {
+            "type": "integer"
+          },
+          "basic": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "session",
+          "oauth2",
+          "saml2",
+          "basic"
+        ]
+      },
+      "LibrarySessions": {
+        "type": "object",
+        "properties": {
+          "held": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          },
+          "ttlSec": {
+            "type": "integer"
+          },
+          "evicted": {
+            "type": "integer"
+          },
+          "expired": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "held",
+          "max",
+          "ttlSec",
+          "evicted",
+          "expired"
+        ]
+      },
+      "ProxySignals": {
+        "type": "object",
+        "properties": {
+          "receivers": {
+            "type": "integer"
+          },
+          "healthy": {
+            "type": "integer"
+          },
+          "stale": {
+            "type": "integer"
+          },
+          "staleAfterMs": {
+            "type": "integer"
+          },
+          "pollIntervalMs": {
+            "type": "integer"
+          },
+          "oldestSuccessAgeMs": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mostConsecutiveFailures": {
+            "type": "integer"
+          },
+          "setsAccepted": {
+            "type": "integer"
+          },
+          "setsRefused": {
+            "type": "integer"
+          },
+          "sessionsEnded": {
+            "type": "integer"
+          },
+          "librarySessions": {
+            "$ref": "#/components/schemas/LibrarySessions"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "receivers",
+          "healthy",
+          "stale",
+          "staleAfterMs",
+          "pollIntervalMs",
+          "oldestSuccessAgeMs",
+          "mostConsecutiveFailures",
+          "setsAccepted",
+          "setsRefused",
+          "sessionsEnded",
+          "librarySessions"
+        ]
+      },
+      "ProxyAnswered": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "integer"
+          },
+          "forwarded": {
+            "type": "integer"
+          },
+          "byStatus": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Answers by HTTP status, the status as the key.",
+            "propertyNames": {
+              "pattern": "^[1-5][0-9][0-9]$"
+            }
+          },
+          "signIns": {
+            "type": "integer"
+          },
+          "sessionsEnded": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "requests",
+          "forwarded",
+          "byStatus",
+          "signIns",
+          "sessionsEnded"
+        ]
+      },
+      "ProxySessions": {
+        "type": "object",
+        "properties": {
+          "live": {
+            "type": "integer"
+          },
+          "signInsInFlight": {
+            "type": "integer"
+          },
+          "max": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "live",
+          "signInsInFlight",
+          "max"
+        ]
+      },
+      "ProxyStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "ports": {
+            "$ref": "#/components/schemas/ProxyPorts"
+          },
+          "loaded": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "syncToken": {
+            "type": "string"
+          },
+          "routes": {
+            "type": "integer"
+          },
+          "publicRoutes": {
+            "type": "integer"
+          },
+          "unusableRoutes": {
+            "type": "integer"
+          },
+          "routesByMechanism": {
+            "$ref": "#/components/schemas/RoutesByMechanism"
+          },
+          "sessionClients": {
+            "type": "integer"
+          },
+          "relyingParties": {
+            "type": "integer"
+          },
+          "signalsReceivers": {
+            "type": "integer"
+          },
+          "signingCertificates": {
+            "type": "integer"
+          },
+          "signals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProxySignals"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when the proxy is not running."
+          },
+          "lastPullAt": {
+            "type": "string"
+          },
+          "lastPullOk": {
+            "type": "boolean"
+          },
+          "lastPullWhy": {
+            "type": "string"
+          },
+          "answered": {
+            "$ref": "#/components/schemas/ProxyAnswered"
+          },
+          "sessions": {
+            "$ref": "#/components/schemas/ProxySessions"
+          },
+          "what": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "ports",
+          "loaded",
+          "configured",
+          "active",
+          "syncToken",
+          "routes",
+          "publicRoutes",
+          "unusableRoutes",
+          "routesByMechanism",
+          "sessionClients",
+          "relyingParties",
+          "signalsReceivers",
+          "signingCertificates",
+          "signals",
+          "lastPullAt",
+          "lastPullOk",
+          "lastPullWhy",
+          "answered",
+          "sessions",
+          "what"
+        ]
+      },
+      "RefusedPolicy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "why"
+        ]
+      },
+      "Holding": {
+        "type": "object",
+        "properties": {
+          "loaded": {
+            "type": "boolean"
+          },
+          "syncToken": {
+            "type": "string"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The root policy's id, \"(unnamed)\" when it has none; null when none is held."
+          },
+          "policyCount": {
+            "type": "integer"
+          },
+          "lastPullAt": {
+            "type": "string"
+          },
+          "lastPullOk": {
+            "type": "boolean"
+          },
+          "lastPullWhy": {
+            "type": "string"
+          },
+          "lastChangeCause": {
+            "type": "string",
+            "enum": [
+              "",
+              "start",
+              "poll",
+              "nudge",
+              "heartbeat",
+              "unnamed"
+            ],
+            "description": "start, poll, nudge, heartbeat or unnamed; empty before any change."
+          },
+          "lastChangeAt": {
+            "type": "string"
+          },
+          "lastNudgeAt": {
+            "type": "string"
+          },
+          "lastNudgeResult": {
+            "type": "string",
+            "enum": [
+              "",
+              "failed",
+              "changed",
+              "unchanged"
+            ]
+          },
+          "refused": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefusedPolicy"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "loaded",
+          "syncToken",
+          "root",
+          "policyCount",
+          "lastPullAt",
+          "lastPullOk",
+          "lastPullWhy",
+          "lastChangeCause",
+          "lastChangeAt",
+          "lastNudgeAt",
+          "lastNudgeResult",
+          "refused"
+        ]
+      },
+      "RegistrationNotify": {
+        "type": "object",
+        "properties": {
+          "usable": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true,
+        "description": "The service's register answer's notify member, passed through as it came (POST /xacml/pep/register). The PEP reads usable and why."
+      },
+      "Registration": {
+        "type": "object",
+        "properties": {
+          "registered": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          },
+          "notify": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RegistrationNotify"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "registered",
+          "name",
+          "attempts",
+          "why"
+        ],
+        "description": "registered false: name, attempts and why. registered true adds authenticated and notify."
+      },
+      "Enforced": {
+        "type": "object",
+        "properties": {
+          "decisions": {
+            "type": "integer"
+          },
+          "allowed": {
+            "type": "integer"
+          },
+          "refused": {
+            "type": "integer"
+          },
+          "undischargeable": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "decisions",
+          "allowed",
+          "refused",
+          "undischargeable"
+        ]
+      },
+      "Poll": {
+        "type": "object",
+        "properties": {
+          "intervalMs": {
+            "type": "integer"
+          },
+          "heartbeatMs": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "intervalMs",
+          "heartbeatMs"
+        ]
+      },
+      "SettingValue": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "service",
+              "environment",
+              "derived",
+              "default"
+            ]
+          },
+          "rejected": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value",
+          "source"
+        ],
+        "description": "One managed setting in force: its value (typed by its key), where it came from, and rejected: true on a notifyUrl that was set and refused, whose value is then the refused string."
+      },
+      "Settings": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SettingValue"
+            },
+            "description": "Every managed setting, by key: description, resource, notifyUrl, bias, pip, pollIntervalMs, heartbeatIntervalMs, backoffMaxMs, timeoutMs, maxBodyBytes, httpsReloadIntervalMs, logLevel, authzen, authzenPdpIdentifier, authzenForwardTimeoutMs and the proxy's settings."
+          },
+          "lastPullAt": {
+            "type": "string"
+          },
+          "lastPullOk": {
+            "type": "boolean"
+          },
+          "lastPullWhy": {
+            "type": "string"
+          },
+          "offered": {
+            "type": "boolean"
+          },
+          "configured": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "values",
+          "lastPullAt",
+          "lastPullOk",
+          "lastPullWhy",
+          "offered",
+          "configured"
+        ]
+      },
+      "Overview": {
+        "type": "object",
+        "properties": {
+          "what": {
+            "type": "string"
+          },
+          "pip": {
+            "$ref": "#/components/schemas/Pip"
+          },
+          "version": {
+            "type": "string",
+            "description": "M.N.O.<build>."
+          },
+          "build": {
+            "$ref": "#/components/schemas/Build"
+          },
+          "pdp": {
+            "type": "string",
+            "description": "The PDP's base URL, PEP_PDP_URL."
+          },
+          "bias": {
+            "type": "string",
+            "enum": [
+              "deny-biased",
+              "permit-biased"
+            ]
+          },
+          "protectedAt": {
+            "type": "string",
+            "const": "/protected"
+          },
+          "https": {
+            "$ref": "#/components/schemas/Https"
+          },
+          "authzen": {
+            "$ref": "#/components/schemas/AuthzenStatus"
+          },
+          "proxy": {
+            "$ref": "#/components/schemas/ProxyStatus"
+          },
+          "holding": {
+            "$ref": "#/components/schemas/Holding"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "lastPullAt is empty, unreadable, or older than staleAfterMs."
+          },
+          "staleAfterMs": {
+            "type": "integer"
+          },
+          "registration": {
+            "$ref": "#/components/schemas/Registration"
+          },
+          "enforced": {
+            "$ref": "#/components/schemas/Enforced"
+          },
+          "notify": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The https notify URL in force; null when none is, or the one set was refused."
+          },
+          "poll": {
+            "$ref": "#/components/schemas/Poll"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/Settings"
+          },
+          "contract": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "what",
+          "pip",
+          "version",
+          "build",
+          "pdp",
+          "bias",
+          "protectedAt",
+          "https",
+          "authzen",
+          "proxy",
+          "holding",
+          "stale",
+          "staleAfterMs",
+          "registration",
+          "enforced",
+          "notify",
+          "poll",
+          "settings",
+          "contract"
+        ]
+      },
+      "DecisionStatus": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "urn:oasis:names:tc:xacml:1.0:status:ok",
+              "urn:oasis:names:tc:xacml:1.0:status:missing-attribute",
+              "urn:oasis:names:tc:xacml:1.0:status:syntax-error",
+              "urn:oasis:names:tc:xacml:1.0:status:processing-error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Absent, not null, when the engine gave none."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "code"
+        ]
+      },
+      "Obligation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "discharged": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "discharged"
+        ]
+      },
+      "ApplicablePolicy": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PolicySet",
+              "Policy"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ]
+      },
+      "DecidedBy": {
+        "type": "object",
+        "properties": {
+          "pep": {
+            "type": "string"
+          },
+          "syncToken": {
+            "type": "string",
+            "description": "The policy set's sync token; empty before any pull."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "pep",
+          "syncToken",
+          "note"
+        ]
+      },
+      "Decision": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "Permit",
+              "Deny",
+              "NotApplicable",
+              "Indeterminate"
+            ]
+          },
+          "allowed": {
+            "type": "boolean"
+          },
+          "bias": {
+            "type": "string",
+            "enum": [
+              "deny-biased",
+              "permit-biased"
+            ]
+          },
+          "why": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DecisionStatus"
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Obligation"
+            }
+          },
+          "advice": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Advice ids."
+          },
+          "applicablePolicies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApplicablePolicy"
+            }
+          },
+          "decidedBy": {
+            "$ref": "#/components/schemas/DecidedBy"
+          },
+          "pip": {
+            "$ref": "#/components/schemas/PipReport"
+          },
+          "note": {
+            "type": "string",
+            "description": "Present only when no root policy is held (STS-XPEP-0005)."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "decision",
+          "allowed",
+          "bias",
+          "why",
+          "status",
+          "obligations",
+          "advice",
+          "applicablePolicies",
+          "decidedBy",
+          "pip"
+        ]
+      }
+    }
+  }
+}
