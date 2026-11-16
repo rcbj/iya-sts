@@ -2596,6 +2596,16 @@ mode.
   application's view. Only `roleApplication` decides: a realm-wide role whose
   NAME merely ends in `@<id>` (writable only over the socket) is kept.
 
+  **AND EVERY CERTIFICATE IT HAD IS REVOKED AND LEAVES ITS NAME (2026-11-16).**
+  The TLS client and message-signing register finds a holder by the name in
+  its slot, so a person or application made again under the name was listed
+  the deleted one's certificates. `removePersonEntry()` and
+  `noteApplicationRemoved()` call `forgetHolderCertificates()`, which hands the
+  holder, its `urn:uuid:` and the deleted entry's attributes to
+  `common/tls_client_certificates.js`'s `forgetDeletedHolder()`
+  (`common/CLAUDE.md` 3ag argues it). `deletePerson()`'s `moved` — a
+  re-homing to another cell — skips it.
+
 ---
 
 ## The connection IS the session, so a logout closes it

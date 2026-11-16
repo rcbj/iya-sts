@@ -28143,6 +28143,11 @@ function noteApplicationRemoved(stored, via) {
                   detail: '"' + identifier + '" no longer confers the role "' +
                           role + '": the application was deleted by ' + via });
   });
+  // AND ITS CERTIFICATES ARE REVOKED AND LEAVE ITS IDENTIFIER (2026-11-16):
+  // an application's TLS client certificates are recorded under it, so one
+  // registered again under it was listed them (forgetHolderCertificates()).
+  forgetHolderCertificates('application', identifier, '', a,
+                           String(stored.dn), via);
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -29103,10 +29108,13 @@ function moveOwnerReferences(oldDn, newDn) {
 // marked BY ITS DN (a DN-less touch invalidates every cached listing and makes
 // the next flush diff the whole store), and the consequences are noted: the
 // observers at once, what the person held through the ambient batch.
-function removePersonEntry(stored, door) {
+// `options.moved` is a re-homing (`common/cell_rehome.ts`): the person goes
+// on in another cell, so what they hold outside the entry is not ended here.
+function removePersonEntry(stored, door, options) {
   log.debug('Entering removePersonEntry(). dn=' + stored.dn);
   const goneAttributes = attributeSnapshot(stored);
   const goneName = usernameOfEntry(stored);
+  const goneUuid = entryUuidOf(stored);
   // The passkeys the person held leave the report with them (#942).
   const gonePasskeys = (stored.attributes.stswebauthncredential || [])
     .slice(0);
@@ -29139,7 +29147,34 @@ function removePersonEntry(stored, door) {
   // (#607), and somebody made again at this DN would own it all again
   // (forgetOwnerReferences()).
   forgetOwnerReferences(stored.dn, door);
+  // AND EVERY CERTIFICATE THEY HAD IS REVOKED AND LEAVES THEIR NAME
+  // (2026-11-16, #1612's rule): the TLS client and message-signing register
+  // finds a holder by name, so somebody made again under the username was
+  // listed every certificate this person had (forgetHolderCertificates()).
+  if (!(options && options.moved)) {
+    forgetHolderCertificates('person', goneName,
+                             goneUuid ? 'urn:uuid:' + goneUuid : '',
+                             goneAttributes, stored.dn, door);
+  }
   log.debug('Leaving removePersonEntry().');
+}
+
+// A deleted person's or application's certificates, revoked and detached from
+// its name by `common/tls_client_certificates.js`'s `forgetDeletedHolder()`,
+// which argues it. In the entry's realm, after the entry is gone; nothing it
+// does may stop the delete, which has happened.
+function forgetHolderCertificates(kind, id, subject, attributes, dn, door) {
+  log.debug('Entering forgetHolderCertificates(). ' + kind + ' ' + id);
+  try {
+    require('../common/tls_client_certificates').forgetDeletedHolder({
+      kind: kind, id: id, subject: subject, attributes: attributes,
+      realm: realmFor(dn).id, door: door });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0278') + 'ldap: the certificates of ' +
+              'the deleted ' + kind + ' ' + dn + ' could not be revoked and ' +
+              'detached from its name: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving forgetHolderCertificates().');
 }
 
 // Delete a person's entry. Since 2026-11-10 (#1612, rcbj) it takes that DN out
@@ -29155,7 +29190,8 @@ function removePersonEntry(stored, door) {
  * outside one, as a batch of one.
  *
  * @param dn - the SCIM id or DN
- * @param options - `door`, the words the sign-out names (a SCIM DELETE)
+ * @param options - `door`, the words the sign-out names (a SCIM DELETE);
+ *   `moved`, a re-homing to another cell, which keeps the certificates
  * @returns `{ ok: true, dn }`, or a refusal marked with its error code
  */
 function deletePerson(dn, options) {
@@ -29183,7 +29219,8 @@ function deletePerson(dn, options) {
                  { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
   removePersonEntry(stored,
-                    String((options && options.door) || 'a SCIM DELETE'));
+                    String((options && options.door) || 'a SCIM DELETE'),
+                    { moved: !!(options && options.moved) });
   log.debug('Leaving deletePerson(). ' + entries.size + ' entry/entries left.');
   return { ok: true, dn: stored.dn };
 }

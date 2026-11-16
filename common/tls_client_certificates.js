@@ -158,6 +158,10 @@ const REVOCATION_REASONS = ['cessationOfOperation', 'keyCompromise'];
  */
 const IDENTITY_USE_CASES = ['tls-client', 'acme', 'est', 'scep'];
 
+// The three enrollment protocols' authorities, whose leaves are recorded on
+// the entry they were issued to (`cert_enrollment.ts`) rather than here.
+const ENROLLMENT_FAMILIES = ['acme', 'est', 'scep'];
+
 // ---------------------------------------------------------------------------
 // TWO PURPOSES SINCE #521 (rcbj, 2026-10-28), AND A LEAF SERVES ONE.
 //
@@ -314,6 +318,25 @@ function scopeOf(realmId) {
   return id;
 }
 
+// The `urn:uuid:` subject of the person a name belongs to now in a realm, or
+// '' where nobody has it or no directory answers (a process with none).
+function currentSubjectOf(scope, username) {
+  log.debug("Entering currentSubjectOf().");
+  const realm = realms.get(scope);
+  let subject = '';
+  try {
+    subject = realm && username ? String(realms.run(realm, function () {
+      return require('./helpers').subjectForName(username);
+    }) || '') : '';
+  } catch (e) {
+    log.debug("Caught in currentSubjectOf(): " + ((e && e.message) || e));
+    // No directory to ask: the caller matches by name, as before subjects.
+    subject = '';
+  }
+  log.debug("Leaving currentSubjectOf(). " + (subject ? 'Found.' : 'None.'));
+  return subject;
+}
+
 function maxPerPerson() {
   log.debug("Entering maxPerPerson().");
   log.debug("Leaving maxPerPerson().");
@@ -367,9 +390,23 @@ function listFor(realmId, username, kind, purpose) {
   const wantedKind = kindOf(kind) || 'person';
   const useCase = PURPOSES[purposeOf(purpose) || 'tls-client'].useCase;
   const now = Date.now();
+  // A PERSON'S CERTIFICATES ARE THE ENTRY'S, NOT THE NAME'S (2026-11-16). A
+  // record carrying the holder's `urn:uuid:` subject is listed for whoever
+  // that subject is now — a renamed person included — and never for a
+  // namesake: a person deleted and made again under the name was listed every
+  // certificate the deleted one had (rcbj's rule on #1612, a deleted object
+  // inherits nothing). The delete detaches them (`forgetDeletedHolder()`);
+  // this holds for a record a delete before that left behind. A record
+  // written before the subject was recorded is matched by its slot's name.
+  const current = wantedKind === 'person' ? currentSubjectOf(scope, wanted)
+                                          : '';
   const rows = pki.certificatesFor(scope, useCase).filter(function (one) {
     const holder = slotHolder(one.slot);
-    return !!holder && holder.kind === wantedKind && holder.id === wanted;
+    if (!holder || holder.kind !== wantedKind) {
+      return false;
+    }
+    return current && one.holderSubject ? one.holderSubject === current
+                                        : holder.id === wanted;
   }).map(function (one) {
     let revoked = null;
     try {
@@ -1202,6 +1239,195 @@ function revoke(realmId, username, serialHex, reasonId, kind, purpose) {
 }
 
 // ---------------------------------------------------------------------------
+// A DELETED HOLDER'S CERTIFICATES ARE REVOKED AND DETACHED (2026-11-16).
+//
+// rcbj's rule of 2026-11-10 (#1612, #1613): a person or an application
+// deleted and made again under the same name inherits NOTHING. The register
+// this module keeps is the one record of a holder that lives OUTSIDE the
+// entry and is found by NAME (the slot, `person:<name>:<random>`), so a
+// namesake was listed every certificate the deleted holder had — seen on
+// `/admin-api/users`' `mfa.tls.certificates` after a remote PEP's person was
+// deleted and made again. The identity gate already refused such a
+// certificate where its record carries the holder's subject
+// (`currentHolderOf()`, `HOLDER_GONE`); the listing, the cap a namesake is
+// counted against, and a record written before subjects were recorded did
+// not.
+//
+// So the directory's ONE delete (`removePersonEntry()` for a person, SCIM's,
+// LDAP's, `/admin-api/users/delete`'s; `noteApplicationRemoved()` for an
+// application) calls this, and for every certificate the holder had:
+//
+//   * A STILL-VALID ONE IS REVOKED, `cessationOfOperation` — RFC 5280's
+//     "no longer needed", which is what a holder that no longer exists is.
+//     The serial goes on the authority's list and STAYS there: `revoked` is a
+//     union no save loses, and the CRL and OCSP keep answering for it. An
+//     expired or already revoked one is left as it is (the earlier entry wins,
+//     `pki_revocation.js`).
+//   * THE REGISTER'S RECORD IS DETACHED from the name (`pki.detachCertificate()`):
+//     moved out of the slot into the issued register, keyed by the deleted
+//     holder's `urn:uuid:` and never by a name, so nobody is listed it and a
+//     rebuilt authority does not re-mint it. The serial and its history stay.
+//   * THE CERTIFICATES ON THE ENTRY — a person's RFC 7523 and RFC 7522 key
+//     pairs (`person_assertions.js`) and an enrolled ACME, EST or SCEP leaf
+//     (`cert_enrollment.ts`) — went with the entry and are inherited by
+//     nobody, but were still valid at their responders; they are revoked the
+//     same way, read out of the attributes the entry had.
+//
+// A person's record is theirs by its subject where it carries one, so a
+// renamed person's old-named slot is found and a namesake's own certificate
+// under the same name is not touched; a record with no subject is matched by
+// name. A RE-HOMING to another cell is not a delete and does not come here
+// (`common/cell_rehome.ts`). Nothing here throws: a revocation or a detach
+// that fails is logged under its code and the rest goes on.
+// ---------------------------------------------------------------------------
+/**
+ * Revokes every still-valid certificate a deleted person or application had
+ * and detaches this module's register records from its name.
+ *
+ * @param spec - `kind` ('person' or 'application'), `id` (the username or
+ *   application identifier), `subject` (a person's `urn:uuid:` subject),
+ *   `attributes` (the deleted entry's, names lower-cased), `realm` (the
+ *   ambient realm when absent) and `door` (who deleted it, for the notes)
+ * @returns `{ revoked, detached, failed }`, counts
+ */
+function forgetDeletedHolder(spec) {
+  log.debug("Entering forgetDeletedHolder().");
+  const s = spec || {};
+  const kind = kindOf(s.kind) || 'person';
+  const id = String(s.id || '');
+  const subject = kind === 'person' ? String(s.subject || '') : '';
+  const scope = scopeOf(s.realm);
+  const door = String(s.door || 'a directory delete');
+  const attributes = s.attributes || {};
+  const out = { revoked: 0, detached: 0, failed: 0 };
+  if (!id) {
+    log.debug("Leaving forgetDeletedHolder(). Nobody named.");
+    return out;
+  }
+  const now = Date.now();
+  const label = (kind === 'application' ? 'the application ' : 'the person ') +
+    '"' + id + '"';
+  const revokeOne = function (caId, serialHex, certSubject, notAfter) {
+    log.debug("Entering forgetDeletedHolder() revokeOne. " + caId);
+    if (!caId || !serialHex ||
+        (notAfter && new Date(notAfter).getTime() < now)) {
+      log.debug("Leaving forgetDeletedHolder() revokeOne. Nothing to do.");
+      return;
+    }
+    let done = null;
+    try {
+      done = revocation().revoke(scope, String(caId), {
+        serialHex: String(serialHex),
+        reason: 'cessationOfOperation',
+        subject: String(certSubject || ''),
+        note: 'revoked because ' + label + ' was deleted (' + door + ')'
+      });
+    } catch (e) {
+      log.debug("Caught in forgetDeletedHolder(): " + ((e && e.message) || e));
+      done = { ok: false, errors: [String((e && e.message) || e)] };
+    }
+    if (done && done.ok) {
+      out.revoked += done.already ? 0 : 1;
+      log.debug("Leaving forgetDeletedHolder() revokeOne. Revoked.");
+      return;
+    }
+    out.failed += 1;
+    log.error(errorCodes.tag('STS-PKI-0277') + 'pki: the certificate ' +
+              serialHex + ' of ' + label + ', issued by the "' + caId +
+              '" authority in "' + (scope || 'default') + '", was not ' +
+              'revoked when its holder was deleted (' + door + '): ' +
+              ((done && done.errors) || []).join(' ') + ' Revoke it on ' +
+              '/admin/pki.');
+    log.debug("Leaving forgetDeletedHolder() revokeOne. Failed.");
+  };
+
+  // THIS MODULE'S REGISTER: revoked, then detached from the name.
+  SLOTTED_USE_CASES.forEach(function (useCase) {
+    pki.certificatesFor(scope, useCase).filter(function (one) {
+      const holder = slotHolder(one.slot);
+      if (!holder || holder.kind !== kind) {
+        return false;
+      }
+      return subject && one.holderSubject ? one.holderSubject === subject
+                                          : holder.id === id;
+    }).forEach(function (one) {
+      revokeOne(useCase, one.serialHex, one.subject, one.notAfter);
+      let moved = null;
+      try {
+        moved = pki.detachCertificate(scope, useCase, one.slot,
+                                      { kind: kind, subject: subject });
+      } catch (e) {
+        log.debug("Caught in forgetDeletedHolder(): " +
+                  ((e && e.message) || e));
+        moved = { ok: false, errors: [String((e && e.message) || e)] };
+      }
+      if (moved && moved.ok) {
+        out.detached += 1;
+        return;
+      }
+      out.failed += 1;
+      log.error(errorCodes.tag('STS-PKI-0278') + 'pki: the ' + useCase +
+                ' certificate ' + one.serialHex + ' of ' + label + ' is ' +
+                'still recorded under its name after the holder was ' +
+                'deleted (' + door + '), so a holder made again under the ' +
+                'name is listed it: ' +
+                ((moved && moved.errors) || []).join(' '));
+    });
+  });
+
+  // THE CERTIFICATES THE ENTRY HELD, out of the attributes it had.
+  const valuesOf = function (name) {
+    log.debug("Entering forgetDeletedHolder() valuesOf.");
+    const held = attributes[String(name).toLowerCase()];
+    log.debug("Leaving forgetDeletedHolder() valuesOf.");
+    return Array.isArray(held) ? held : (held ? [held] : []);
+  };
+  const parsed = function (text) {
+    log.debug("Entering forgetDeletedHolder() parsed.");
+    let record = null;
+    try {
+      record = JSON.parse(String(text));
+    } catch (e) {
+      // A value that is not a record (a damaged one) names no certificate.
+      log.debug("Caught in forgetDeletedHolder(): " + ((e && e.message) || e));
+      record = null;
+    }
+    log.debug("Leaving forgetDeletedHolder() parsed.");
+    return record && typeof record === 'object' ? record : null;
+  };
+  if (kind === 'person') {
+    const pairs = require('./person_assertions').KEY_PAIR_ATTRIBUTES;
+    Object.keys(pairs).forEach(function (purpose) {
+      valuesOf(pairs[purpose].keys).forEach(function (text) {
+        const record = parsed(text);
+        if (record && !record.withdrawnAt) {
+          revokeOne(record.caId, record.serialHex, record.subject,
+                    record.notAfter);
+        }
+      });
+    });
+  }
+  const enrolled = require('./cert_enrollment').ATTRIBUTES[kind];
+  valuesOf(enrolled ? enrolled.certificate : '').forEach(function (text) {
+    const record = parsed(text);
+    if (record && !record.revoked &&
+        ENROLLMENT_FAMILIES.indexOf(String(record.family)) >= 0) {
+      revokeOne(record.family, record.serialHex, record.subject,
+                record.notAfter);
+    }
+  });
+
+  if (out.revoked || out.detached || out.failed) {
+    log.info('pki: ' + label + ' was deleted (' + door + '): ' + out.revoked +
+             ' certificate(s) revoked (cessationOfOperation), ' +
+             out.detached + ' detached from the name' +
+             (out.failed ? ', ' + out.failed + ' failed' : '') + '.');
+  }
+  log.debug("Leaving forgetDeletedHolder().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE ANCHOR THE CLIENT TRUSTSTORE ADDS, or '' when it adds none.
 //
 // Read per call, so a Root rebuilt on /admin/pki is what the next
@@ -1327,13 +1553,28 @@ function currentHolderOf(answer) {
   }
   const serial = normal(answer.serialHex);
   const ca = String(answer.authority.ca);
+  // A slotted certificate whose holder was deleted is no longer in its slot:
+  // `forgetDeletedHolder()` moved it to the issued register (2026-11-16), and
+  // it is looked for there too, so the move does not turn it into a
+  // certificate with no subject recorded, answered by the name it carries.
   const records = SLOTTED_USE_CASES.indexOf(ca) >= 0
     ? pki.certificatesFor(answer.realm, ca)
+      .concat(pki.issuedKeyPairsFor(answer.realm, ca))
     : pki.issuedKeyPairsFor(answer.realm, ca);
   const record = records.filter(function (one) {
     return one && normal(one.serialHex) === serial;
   })[0];
+  const detached = !!record &&
+    /^deleted-/.test(String(record.subjectKind || ''));
   const subject = record && record.holderSubject;
+  if (detached && !subject) {
+    log.debug("Leaving currentHolderOf(). Detached from a deleted holder.");
+    return { issuedHere: true, accepted: false, error: 'HOLDER_GONE',
+             why: 'the certificate was issued to the person "' +
+                  answer.username + '", who was deleted; a person created ' +
+                  'since under that name is somebody else',
+             authority: answer.authority, serialHex: answer.serialHex };
+  }
   if (!subject) {
     log.debug("Leaving currentHolderOf(). No subject recorded.");
     return answer;
@@ -2045,6 +2286,7 @@ module.exports = {
   bundle: bundle,
   pemFiles: pemFiles,
   revoke: revoke,
+  forgetDeletedHolder: forgetDeletedHolder,
   trustAnchorPem: trustAnchorPem,
   identityOf: identityOf,
   checkSocket: checkSocket,

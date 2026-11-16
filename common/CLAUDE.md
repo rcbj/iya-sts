@@ -11631,6 +11631,36 @@ carries, or `HOLDER_GONE` when the subject names nobody. `stillHeld()` compares 
 with the certified name, and `cert_enrollment.findEnrolled()` resolves the subject too. A
 record written before the subject was kept is answered by its name, as before.
 
+**A DELETED HOLDER'S CERTIFICATES ARE REVOKED AND LEAVE ITS NAME (2026-11-16, #1612's
+rule).** The gate above refused a deleted person's certificate to a namesake, but the
+LISTING did not: `listFor()` read the holder off the slot, so a person deleted and made
+again under the name was listed every certificate the deleted one had — seen on
+`/admin-api/users`' `mfa.tls.certificates` after a revoked certificate's holder was
+deleted with `users/delete`. Three things now:
+
+* **`forgetDeletedHolder()`, from the directory's one delete** — `removePersonEntry()`
+  (SCIM, an LDAP delete, `/admin-api/users/delete` and the console) and
+  `noteApplicationRemoved()` (every application delete), through `ldap_server.js`'s
+  `forgetHolderCertificates()`. Every certificate the holder had that is still valid is
+  REVOKED `cessationOfOperation`: this module's two registers (`tls-client`,
+  `message-signing`), a person's RFC 7523 and RFC 7522 key pairs and an enrolled ACME,
+  EST or SCEP leaf (the last two read out of the deleted entry's attributes). An expired
+  or already revoked one is left: the earlier revocation wins. A failure is logged
+  `STS-PKI-0277` and the delete stands.
+* **`pki.detachCertificate()`** moves each register record OUT OF ITS SLOT into
+  `issuedKeyPairs`, as `subjectKind` `deleted-person` / `deleted-application`, keyed by
+  the deleted entry's `urn:uuid:` and naming no name. Not forgotten: `issuedList()` still
+  finds the serial, so OCSP does not answer `unknown`, and `revoked` keeps it on the CRL.
+  Not left in `certs` either, where `recertifyUseCase()` would re-mint it under a rebuilt
+  authority. `currentHolderOf()` looks in the issued register too, so a detached record
+  is `HOLDER_GONE` rather than "no subject recorded". `STS-PKI-0278` when it fails.
+* **`listFor()` matches a person's record by `holderSubject`** where it carries one, so a
+  record a delete before this left behind is not listed to the namesake either, and a
+  renamed person is listed their certificates under the new name.
+
+**A re-homing is not a delete**: `cell_rehome.ts` passes `moved`, and nothing is
+revoked. `tests/deleted_certificates.js` holds all of it.
+
 ## 3ag. `cert_enrollment.ts`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 
 Asked for as *implement ACME, EST and SCEP, tied to the embedded CA, isolated

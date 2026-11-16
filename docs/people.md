@@ -54,6 +54,11 @@ A deleted person is gone with everything they held: the console's Delete
 tab, `POST /admin-api/users/delete`, SCIM's `DELETE` and an LDAP delete are
 one act. [Admin console](admin-console.md#deleting-a-person).
 
+A person made again under a deleted person's name inherits none of their
+certificates: every one still valid is revoked (`cessationOfOperation`) by the
+delete, and none is listed on the new person.
+[PKI](pki.md#a-deleted-holders-certificates).
+
 ## The names
 
 | Name | What it is |

@@ -774,6 +774,7 @@ hold (`STS-ADMIN-0904`), a person with no entry (`STS-ADMIN-0905`, and none is
 created), and anything else about the issue (`STS-ADMIN-0901`) or the revoke
 (`STS-ADMIN-0903`).
 
+
 ## Revocation is published, and consulted
 
 | | |
@@ -912,6 +913,22 @@ control labelled *Take the key pair off*, and it is **not** revocation:
 The reply says exactly that, in those words. It is the same distinction the
 sign-out page draws about an assertion already issued: nothing consults this
 service when one is presented, and nothing can be made to.
+
+### A deleted holder's certificates
+
+When a person or an application is deleted — the console, `POST
+/admin-api/users/delete`, SCIM's `DELETE`, an LDAP delete, or an
+application's delete — every certificate it holds that is still valid is
+revoked with the reason `cessationOfOperation`: TLS client and
+message-signing certificates, a person's RFC 7523 and RFC 7522 key pairs,
+and certificates enrolled over ACME, EST or SCEP. An expired certificate is
+left alone, and one already revoked keeps its first reason and date.
+
+The serials stay on the issuing authority's CRL and its OCSP responder goes
+on answering for them, but they are no longer recorded under the holder's
+name, so a person or application created later under the same name is
+listed none of them and cannot use them. A person moved to another cell is
+not deleted, and keeps their certificates.
 
 ## How a certificate path is checked
 

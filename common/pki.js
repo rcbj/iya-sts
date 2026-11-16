@@ -7765,6 +7765,86 @@ function forgetCertificate(scopeId, useCaseId, slot) {
   return { ok: true, pinned: !!was.pinned };
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE WHOSE HOLDER WAS DELETED LEAVES ITS SLOT AND KEEPS ITS SERIAL
+// (2026-11-16, rcbj's rule of 2026-11-10 on #1612/#1613: a deleted person or
+// application made again under the same name inherits NOTHING).
+//
+// A person's or an application's TLS client and message-signing certificates
+// are recorded under a slot that carries the holder's NAME
+// (`tls_client_certificates.js`, `person:<name>:<random>`), so a namesake made
+// after a delete was listed every certificate the deleted holder had — a
+// revoked one included, on `/admin/users` and on the portal. Forgetting the
+// record (`forgetCertificate()`) would cost the serial: an OCSP responder with
+// no record of a serial answers `unknown` about a certificate that sends a
+// relying party here to ask (`pki_revocation.js`'s `issuedList()`).
+//
+// So the record MOVES: out of `certs`, where every reader finds a holder by
+// slot and where `recertifyUseCase()` would re-mint it under a rebuilt
+// authority, into `issuedKeyPairs`, the register of serials this authority
+// issued that no slot holds — as a cluster merge's displaced serial already
+// is (`pki_merge.js`'s `displacedRecord()`). It names no name: `identifier` is
+// the deleted holder's `urn:uuid:` subject where it had one, and
+// `subjectKind` is `deleted-person` or `deleted-application`, which no
+// reader of a holder's certificates asks for. The revocation, where the
+// caller made one, is on the authority's own list and stays there
+// (`revoked` is a union that loses nothing).
+//
+// Both halves survive another node's save: the slot's removal is a plain
+// three-way change of `certs`, and `issuedKeyPairs` is a union by serial.
+// ---------------------------------------------------------------------------
+/**
+ * Moves a certificate whose holder was deleted out of its slot and into the
+ * issued register, so no reader finds it under the holder's name while OCSP
+ * and the revocation pane still know its serial.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param slot - the slot the certificate is recorded under
+ * @param holder - `kind` ('person' or 'application') and `subject`, the
+ *   deleted holder's `urn:uuid:` subject where it had one
+ * @returns `{ ok: true, serialHex }`, or `{ ok: false, errors }` marked with
+ *   its code where the slot holds nothing
+ */
+function detachCertificate(scopeId, useCaseId, slot, holder) {
+  log.debug('Entering detachCertificate().');
+  const id = String(scopeId);
+  const row = rawRowFor(id);
+  const key = slotKey(useCaseId, slot);
+  if (!row || !row.certs || !row.certs[key]) {
+    log.debug('Leaving detachCertificate(). Nothing there.');
+    return errorCodes.mark({ ok: false,
+             errors: ['There is no ' + useCaseId + ' certificate for "' +
+                      slot + '" in that scope.'] }, 'STS-PKI-0025');
+  }
+  const was = row.certs[key];
+  const h = holder || {};
+  const kind = String(h.kind || '') === 'application' ? 'application'
+                                                      : 'person';
+  const subject = String(h.subject || '');
+  const serial = pkiMerge.normalSerial(was.serialHex);
+  row.certs = Object.assign({}, row.certs);
+  delete row.certs[key];
+  row.issuedKeyPairs = (row.issuedKeyPairs || []).filter(function (one) {
+    return !(one && pkiMerge.normalSerial(one.serialHex) === serial &&
+             String(one.useCase || '') === String(useCaseId));
+  }).concat([{
+    serialHex: was.serialHex,
+    subject: was.subject || '',
+    notAfter: was.notAfter || '',
+    identifier: subject,
+    subjectKind: 'deleted-' + kind,
+    holderSubject: kind === 'person' ? subject : '',
+    purpose: 'detached:' + String(useCaseId),
+    useCase: String(useCaseId),
+    issuedAt: new Date(Number(was.createdAt) || Date.now()).toISOString(),
+    detachedAt: new Date().toISOString()
+  }]);
+  saveRow(id, row);
+  log.debug('Leaving detachCertificate(). serial=' + was.serialHex);
+  return { ok: true, serialHex: was.serialHex };
+}
+
 // ===========================================================================
 // A TLS SERVER KEY PAIR FOR SOMETHING THIS SERVICE DOES NOT RUN (2026-09-13):
 // `issueTlsServerKeyPair()`.
@@ -15175,6 +15255,7 @@ module.exports = {
   pinnedKeyFor: pinnedKeyFor,
   publishedCertificateFor: publishedCertificateFor,
   forgetCertificate: forgetCertificate,
+  detachCertificate: detachCertificate,
   issueTlsServerKeyPair: issueTlsServerKeyPair,
   // The realm's KDC certificate and a client certificate's PKINIT facts
   // (#179).
