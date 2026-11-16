@@ -19874,8 +19874,10 @@ require('../common/cell_channel').registerOp('ldap-bind', answerCellBind);
 // ONE MAPPING, NOT A SECOND (#520's rule): the certificate is an entry only
 // where `common/tls_client_certificates.js` says it is an identity in THIS
 // realm (`checkSocket()`, which is `identityOf()` under the ambient realm),
-// issued to a PERSON — `urn:sts:person:<name>` in its subjectAltName, which
-// is the same name a simple bind's entry has — whose record still lists it
+// issued to a PERSON — `urn:sts:person:<name>` in its subjectAltName, or a
+// service account's `urn:sts:sa:<name>` (#1827, refused where the entry is
+// not one), which is the same name a simple bind's entry has — whose record
+// still lists it
 // (`stillHeld()`) and whose entry EXISTS. Nothing is read off a CN or a
 // subject, and no entry is ever created from a certificate. Three things a
 // verified certificate can be that are NOT that, each refused with its own

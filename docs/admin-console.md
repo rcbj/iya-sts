@@ -777,7 +777,8 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   Issuing CA issued the person, with **Revoke** per valid row, and a form (a
   label, the key algorithm, a file password twice) that issues one. The
   subject is the person's directory name, and the subjectAltName is
-  `urn:sts:person:<username>`, which is what admits a remote PEP that
+  `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service
+  account), which is what admits a remote PEP that
   presents the certificate. The leaf is not stored in `userCertificate`.
   The answer is the `.p12`, the key and the chain, once.
   `POST /admin-api/users/issue-tls-client-certificate` and

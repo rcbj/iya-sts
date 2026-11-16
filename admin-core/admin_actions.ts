@@ -2945,8 +2945,9 @@ class AdminActions {
               held.length + " held.");
     return {
       ok: true, kind: kind, holder: name,
-      implicitName: (kind === 'application'
-        ? tlsClientCertificates.APPLICATION_URN : 'urn:sts:person:') + name,
+      // The name a leaf issued NOW would carry (#1827): a service
+      // account's is `urn:sts:sa:`.
+      implicitName: tlsClientCertificates.holderUrn(undefined, kind, name),
       certificates: held,
       active: held.filter(function (cert) {
         return cert.state === 'valid';
@@ -3010,7 +3011,7 @@ class AdminActions {
               held.length + " held.");
     return {
       ok: true, kind: 'person', holder: name,
-      implicitName: 'urn:sts:person:' + name,
+      implicitName: tlsClientCertificates.holderUrn(undefined, 'person', name),
       certificates: held,
       active: held.filter(function (cert) {
         return cert.state === 'valid';
@@ -3107,7 +3108,7 @@ class AdminActions {
               thumbprint: issued.thumbprint,
               certificatePem: issued.certificatePem,
               chainPem: issued.chainPem,
-              implicitName: 'urn:sts:person:' + holder
+              implicitName: issued.implicitName
             },
             files: files
           }, standing());
@@ -3191,9 +3192,7 @@ class AdminActions {
                 thumbprint: issued.thumbprint,
                 certificatePem: issued.certificatePem,
                 chainPem: issued.chainPem,
-                implicitName: (kind === 'application'
-                  ? tlsClientCertificates.APPLICATION_URN
-                  : 'urn:sts:person:') + holder
+                implicitName: issued.implicitName
               },
               files: files
             }, standing());

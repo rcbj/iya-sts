@@ -58,6 +58,25 @@ function squash(text) {
     .replace(/ \)/g, ')').trim();
 }
 
+// THE REMOTE PEPS' CREDENTIAL STEP (#1827's follow-up, phase 4): 1.1.0's
+// default for xacml.pepAuthentication is `token`, and the upgrade keeps
+// `either` for a realm that registered a PEP under 1.0.0 (whose PEPs all
+// authenticated by certificate). Held here: the setting's default in
+// config.js, the step's three writes, each only where nothing is stored, and
+// each reading ou=peps through parent_key. The step was also run against a
+// throwaway postgres:16 and mariadb:11.8 store (twice, the second writing
+// nothing) when it was written; this checks the text stays that step.
+function pepAuthenticationRow() {
+  log.debug("Entering pepAuthenticationRow().");
+  const text = fs.readFileSync(path.join(ROOT, 'common', 'config.js'), 'utf8');
+  const at = text.indexOf("key: 'xacml.pepAuthentication'");
+  const row = at >= 0 ? text.slice(at, at + 600) : '';
+  const dflt = /dflt:\s*'([a-z]+)'/.exec(row);
+  log.debug("Leaving pepAuthenticationRow().");
+  return { found: at >= 0, dflt: dflt ? dflt[1] : '',
+           either: /'either'/.test(row) };
+}
+
 // Release 1.0.0's MariaDB delta is sts_sessions_started and the version
 // row. The upgrade script adds that index online and must not invent
 // sts_sessions_subject_band, which this engine does not have.
@@ -94,6 +113,34 @@ function checkTheReleaseUpgrade(t, sql, schema) {
   }).map(function (one) { return one.name; });
   t.equal(JSON.stringify(online), JSON.stringify(['sts_sessions_started']),
           'F6. the driver\'s online index is the one this script adds');
+  // #1827's follow-up, phase 4: the PEP credential step, as postgres's.
+  const pep = pepAuthenticationRow();
+  t.check(pep.found && pep.dflt === 'token' && pep.either,
+          'F7. xacml.pepAuthentication defaults to token and offers either',
+          JSON.stringify(pep));
+  const pepSteps = code.split('EXECUTE IMMEDIATE').filter(function (one) {
+    return one.indexOf('xacml.pepAuthentication') >= 0 &&
+           /'(INSERT|UPDATE) /.test(one);
+  });
+  t.equal(pepSteps.length, 3,
+          'F8. upgrade-1.0.0.sql writes xacml.pepAuthentication in three ' +
+          'gated steps');
+  t.check(pepSteps.length === 3 && pepSteps.every(function (one) {
+    return /@sts_upgrade_pep_tables = 4/.test(one);
+  }) && /INSERT IGNORE INTO sts_appconfig/.test(pepSteps[0]) &&
+          /realm = ''default'' AND parent_key LIKE ''ou=peps,%''/
+            .test(pepSteps[0]) &&
+          /NOT JSON_CONTAINS_PATH/.test(pepSteps[1]) &&
+          /e\.parent_key LIKE ''ou=peps,%''/.test(pepSteps[1]) &&
+          /NOT JSON_CONTAINS_PATH/.test(pepSteps[2]) &&
+          /''token''/.test(pepSteps[2]) &&
+          /''\$\.raw''\)\) = ''either''/.test(pepSteps[2]) &&
+          (code.match(/SET @sts_upgrade_pep_written := ROW_COUNT\(\);/g) ||
+           []).length === 3 &&
+          (code.match(/@sts_upgrade_pep_written > 0/g) || []).length === 3,
+          'F9. each step writes only where nothing is stored, reads ou=peps ' +
+          'through parent_key, pins token only under a default realm ' +
+          'storing either, and records a change-log row only when it wrote', pepSteps.join('\n---\n'));
   log.debug("Leaving checkTheReleaseUpgrade().");
 }
 

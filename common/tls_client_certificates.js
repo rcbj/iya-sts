@@ -94,6 +94,8 @@ const realms = require('./realms');
 const errorCodes = require('./error_codes');
 const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
+// THE HOLDER'S NAME, DEFINED ONCE (#1827): `common/subject_urn.ts`.
+const SubjectUrn = require('./subject_urn');
 const x509 = require('./crypto_impl/x509');
 const keyMaterial = require('./crypto_impl/key_material');
 // CAEP credential-change when this file changes a person's credential
@@ -226,11 +228,16 @@ function purposeOf(purpose) {
 const SLOTTED_USE_CASES = ['tls-client', MESSAGE_SIGNING_USE_CASE];
 
 const CLIENT_AUTH_OID = '1.3.6.1.5.5.7.3.2';
-const PERSON_URN = 'urn:sts:person:';
+/**
+ * The subjectAltName URI prefix naming a person who is not a service account.
+ * A service account's is `SubjectUrn.SERVICE_ACCOUNT` (#1827), chosen at
+ * issue by `holderUrn()`.
+ */
+const PERSON_URN = SubjectUrn.PERSON;
 /**
  * The subjectAltName URI prefix naming an application.
  */
-const APPLICATION_URN = 'urn:sts:application:';
+const APPLICATION_URN = SubjectUrn.APPLICATION;
 /**
  * The shortest password a PKCS#12 file is protected with.
  */
@@ -279,6 +286,64 @@ function slotFor(holder, kind) {
   log.debug("Leaving slotFor().");
   return KINDS[k].slot + String(holder) + ':' +
     crypto.randomBytes(6).toString('hex');
+}
+
+// ---------------------------------------------------------------------------
+// THE NAME A HOLDER'S LEAF CARRIES (#1827, rcbj 2026-11-16).
+//
+// An application's is `urn:sts:application:<id>`. A person's is
+// `urn:sts:person:<name>` — unless the entry is a SERVICE ACCOUNT now, when
+// it is `urn:sts:sa:<name>`: "underneath, it's a regular user object", so
+// every door reads it as the person, and the spelling says which kind of
+// person. Asked of the directory at the act (`service_accounts.ts`, reached
+// LAZILY — this module is required by `pki.js`'s neighbours and must not pull
+// the register in at load), in the realm the leaf is issued in. A leaf issued
+// before the entry became one keeps `urn:sts:person:`, which is read for ever.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the URI subjectAltName a holder's leaf names it by.
+ *
+ * @param realmId - the realm (the ambient one when empty)
+ * @param kind - 'person' or 'application'
+ * @param holder - the username or the application's identifier
+ * @returns the URI
+ */
+function holderUrn(realmId, kind, holder) {
+  log.debug("Entering holderUrn().");
+  const k = kindOf(kind) || 'person';
+  if (k !== 'person') {
+    log.debug("Leaving holderUrn(). An application.");
+    return SubjectUrn.forHolder(k, holder);
+  }
+  const flagged = isServiceAccountIn(realmId, holder);
+  log.debug("Leaving holderUrn(). " + (flagged ? 'sa' : 'person'));
+  return SubjectUrn.forPerson(holder, flagged);
+}
+
+/**
+ * Says whether a person is a service account now, in a realm.
+ *
+ * @param realmId - the realm (the ambient one when empty)
+ * @param username - the person
+ * @returns true for a service account; false otherwise and where nothing
+ *   can say
+ */
+function isServiceAccountIn(realmId, username) {
+  log.debug("Entering isServiceAccountIn().");
+  let out = false;
+  try {
+    const realm = realmId ? realms.get(String(realmId)) : null;
+    const ask = function () {
+      return require('./service_accounts')
+        .isServiceAccountName(String(username)) === true;
+    };
+    out = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug("Caught in isServiceAccountIn(): " + ((e && e.message) || e));
+    out = false;
+  }
+  log.debug("Leaving isServiceAccountIn(). " + out);
+  return out;
 }
 
 // `{ kind, id }` for a slot this module wrote, or null.
@@ -504,17 +569,25 @@ function directoryDnNames() {
   Object.keys(x509.DN_ATTRS).forEach(function (name) {
     out[name.toLowerCase()] = name;
   });
-  // LDAP's long names, where they are not the short name above.
-  out.givenname = 'GN';
-  out.surname = 'SN';
-  out.domaincomponent = 'DC';
-  out.commonname = 'CN';
-  out.organization = 'O';
-  out.organisationalunit = 'OU';
-  out.organizationalunit = 'OU';
-  out.countryname = 'C';
-  out.localityname = 'L';
-  out.userid = 'UID';
+  // LDAP's long names, where they are not the short name above. A TABLE OF
+  // ATTRIBUTE TYPE NAMES, never a read of an entry: it is a literal rather
+  // than `out.givenname = …`, which tests/model_entry_reads.js would take
+  // for a store's lower-cased key being read by name (#1579).
+  const longNames = {
+    givenname: 'GN',
+    surname: 'SN',
+    domaincomponent: 'DC',
+    commonname: 'CN',
+    organization: 'O',
+    organisationalunit: 'OU',
+    organizationalunit: 'OU',
+    countryname: 'C',
+    localityname: 'L',
+    userid: 'UID'
+  };
+  Object.keys(longNames).forEach(function (name) {
+    out[name] = longNames[name];
+  });
   log.debug('Leaving directoryDnNames().');
   return out;
 }
@@ -909,7 +982,10 @@ async function issue(realmId, spec) {
   });
 
   const pair = await keyMaterial.generateKeyPair(keyAlgId);
-  const names = [{ kind: 'uri', value: KINDS[kind].urn + username }];
+  // A SERVICE ACCOUNT'S LEAF SAYS SO (#1827): `urn:sts:sa:<name>`, decided
+  // now from the entry; anybody else's is the kind's own prefix.
+  const holderUri = holderUrn(scope, kind, username);
+  const names = [{ kind: 'uri', value: holderUri }];
   const email = kind === 'person' ? String(s.email || '').trim() : '';
   if (email && /^[^\s@]+@[^\s@]+$/.test(email)) {
     // RFC 5280 section 4.2.1.6's rfc822Name. It is what several browsers and
@@ -993,6 +1069,9 @@ async function issue(realmId, spec) {
       purpose: purposeId,
       kind: kind,
       username: username,
+      // The name in the leaf, which is what RFC 8705's implicit mapping and
+      // every other door reads (#1827).
+      implicitName: holderUri,
       keyAlg: keyAlgId,
       keyDesc: keyDesc,
       serialHex: made.record.serialHex,
@@ -1598,6 +1677,66 @@ function currentHolderOf(answer) {
 }
 
 // ---------------------------------------------------------------------------
+// `urn:sts:sa:` IS A CLAIM THE DIRECTORY HAS TO BEAR OUT (#1827).
+//
+// This realm's authorities write `urn:sts:sa:<name>` only for an entry that
+// IS a service account when the leaf is issued (`holderUrn()`), and an entry
+// never stops being one (rcbj, 2026-11-15: "once a service account, always
+// one", `service_accounts.ts`). So a leaf saying `urn:sts:sa:` of somebody
+// who is not one — an entry deleted and a person made at the same name, or a
+// leaf this service did not build — is refused here, for every door that
+// asks this gate: `NOT_A_SERVICE_ACCOUNT`, marked STS-TLS-0063 on the answer
+// and logged under it. Each door refuses it as it refuses any certificate
+// that is not an identity, under its own code.
+//
+// **WS-TRUST ASKS WITHOUT IT** (rcbj, 2026-11-16: "any user with valid
+// credentials should be able to authenticate through WS-Trust"): it passes
+// `anyHolderForm`, and a valid leaf naming an existing entry authenticates
+// that entry whichever spelling names it. Every other door keeps the check
+// (rcbj approved the one gate code).
+//
+// The other way round is NOT refused: `urn:sts:person:` naming a service
+// account is a leaf issued before the entry became one (or before #1827),
+// and rcbj's 1.0.0 rule is that it keeps working wherever it worked.
+//
+// Asked per call and never memoised, in the realm the leaf was issued in,
+// for `currentHolderOf()`'s reason, and AFTER it: the name asked about is the
+// holder's current one.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses an accepted identity whose leaf names a service account the
+ * directory does not hold as one.
+ *
+ * @param answer - `currentHolderOf()`'s answer
+ * @returns the answer, or a refusal with `error` 'NOT_A_SERVICE_ACCOUNT'
+ */
+function serviceAccountChecked(answer) {
+  log.debug("Entering serviceAccountChecked().");
+  if (!answer || !answer.accepted || answer.kind !== 'person' ||
+      answer.holderForm !== 'sa') {
+    log.debug("Leaving serviceAccountChecked(). Nothing to check.");
+    return answer;
+  }
+  if (isServiceAccountIn(answer.realm, answer.username)) {
+    log.debug("Leaving serviceAccountChecked(). A service account.");
+    return answer;
+  }
+  const why = 'the certificate names "' + answer.username + '" as a ' +
+              'service account (' + SubjectUrn.forPerson(answer.username,
+                                                          true) +
+              '), and in the "' + answer.realm + '" realm that entry is ' +
+              'not one';
+  log.warn(errorCodes.tag('STS-TLS-0063') + 'tls_client_certificates: ' +
+           'refused serial ' + String(answer.serialHex || '') + ': ' + why +
+           '.');
+  log.debug("Leaving serviceAccountChecked(). Not a service account.");
+  return errorCodes.mark({ issuedHere: true, accepted: false,
+                           error: 'NOT_A_SERVICE_ACCOUNT', why: why,
+                           authority: answer.authority,
+                           serialHex: answer.serialHex }, 'STS-TLS-0063');
+}
+
+// ---------------------------------------------------------------------------
 // STORED: A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS THE ENTRY IT IS STORED ON
 // (#1061, rcbj 2026-10-27).
 //
@@ -1733,7 +1872,12 @@ function identityOf(input, options) {
     if (!answer.issuedHere && opts.stored === true) {
       return storedIdentityOf(leafBytes, opts.realm);
     }
-    return currentHolderOf(answer);
+    // `anyHolderForm` (#1827, rcbj): a door that authenticates whoever a
+    // valid credential names, whichever spelling it names them in, skips the
+    // form check and nothing else — WS-Trust, "any user with valid
+    // credentials should be able to authenticate through WS-Trust".
+    return opts.anyHolderForm === true ? currentHolderOf(answer)
+      : serviceAccountChecked(currentHolderOf(answer));
   };
   if (memo.has(key)) {
     memoCount.hit();
@@ -1754,19 +1898,21 @@ function identityOf(input, options) {
     const leaf = crypto.parseCertificate(leafBytes);
     const commonName = subjectCnOf(leaf);
     const eku = Array.isArray(leaf.keyUsage) ? leaf.keyUsage : [];
-    const uris = String(leaf.subjectAltName || '').split(/,\s*/)
-      .filter(function (one) { return one.indexOf('URI:') === 0; })
-      .map(function (one) { return one.slice(4); });
-    const named = function (prefix) {
-      log.debug("Entering named().");
-      const all = uris.filter(function (one) {
-        return one.indexOf(prefix) === 0 && one.length > prefix.length;
-      }).map(function (one) { return one.slice(prefix.length); });
-      log.debug("Leaving named().");
-      return all;
-    };
-    const people = named(PERSON_URN);
-    const applications = named(APPLICATION_URN);
+    // A PERSON IN EITHER SPELLING (#1827): `urn:sts:person:` or, for a
+    // service account, `urn:sts:sa:` — one person entry either way, and a
+    // leaf naming the same person twice is still two names, refused below as
+    // it always was. Which spelling it was is kept on the answer, because
+    // `urn:sts:sa:` is a claim the directory has to bear out at every call
+    // (`serviceAccountChecked()`), never in the memo.
+    const personNames = SubjectUrn.namesIn(String(leaf.subjectAltName || ''),
+                                           SubjectUrn.PERSON_FORMS);
+    const people = personNames.map(function (one) { return one.name; });
+    const applications = SubjectUrn.namesIn(
+      String(leaf.subjectAltName || ''), ['application'])
+      .map(function (one) { return one.name; });
+    const personPrefix = personNames.length
+      ? SubjectUrn.prefixOf(personNames[0].form) : PERSON_URN;
+    const spelling = people.length ? personPrefix : APPLICATION_URN;
     const authority = first && first.authority ? first.authority : null;
     const scope = authority ? String(authority.scope) : '';
     const isRealmScope = !!authority && scope !== pki.SERVICE_SCOPE &&
@@ -1803,14 +1949,13 @@ function identityOf(input, options) {
       } else if (people.length + applications.length !== 1) {
         error = 'NOT_A_SIGNING_CERTIFICATE';
         why = 'the certificate does not name exactly one person or ' +
-              'application in a urn:sts:person: or urn:sts:application: ' +
-              'subjectAltName, so there is no one entry it could be the ' +
-              'identity of';
+              'application in a urn:sts:person:, urn:sts:sa: or ' +
+              'urn:sts:application: subjectAltName, so there is no one ' +
+              'entry it could be the identity of';
       } else if ((people.length ? people[0] : applications[0]) !==
                  commonName) {
         error = 'NOT_A_SIGNING_CERTIFICATE';
-        why = 'the certificate\'s common name and its ' +
-              (people.length ? 'urn:sts:person:' : 'urn:sts:application:') +
+        why = 'the certificate\'s common name and its ' + spelling +
               ' subjectAltName do not name the same ' +
               (people.length ? 'person' : 'application');
       } else if (!realms.get(scope)) {
@@ -1839,8 +1984,9 @@ function identityOf(input, options) {
     } else if (people.length + applications.length !== 1) {
       error = 'NOT_A_TLS_CLIENT_CERTIFICATE';
       why = 'the certificate does not name exactly one person or application ' +
-            'in a urn:sts:person: or urn:sts:application: subjectAltName, ' +
-            'so there is no one entry it could be the identity of';
+            'in a urn:sts:person:, urn:sts:sa: or urn:sts:application: ' +
+            'subjectAltName, so there is no one entry it could be the ' +
+            'identity of';
     } else if (authority.ca === USE_CASE &&
                (people.length ? people[0] : applications[0]) !== commonName) {
       // `issue()` writes the CN and the SAN from one name — a username, or
@@ -1848,8 +1994,7 @@ function identityOf(input, options) {
       // they differ was not built by it, and it is refused rather than
       // believed on whichever of the two a door would read.
       error = 'NOT_A_TLS_CLIENT_CERTIFICATE';
-      why = 'the certificate\'s common name and its ' +
-            (people.length ? 'urn:sts:person:' : 'urn:sts:application:') +
+      why = 'the certificate\'s common name and its ' + spelling +
             ' subjectAltName do not name the same ' +
             (people.length ? 'person' : 'application');
     } else if (!realms.get(scope)) {
@@ -1865,6 +2010,10 @@ function identityOf(input, options) {
           authority: authority, serialHex: first ? first.serialHex : '' }
       : { issuedHere: true, accepted: true, realm: scope, kind: kind,
           username: name, subject: leaf.subject,
+          // `sa` where the leaf names a service account (#1827); the
+          // directory is asked whether it is one at every call.
+          holderForm: kind === 'person' && personNames.length
+            ? personNames[0].form : kind,
           serialHex: first.serialHex, authority: authority,
           why: 'issued to the ' + kind + ' ' + name + ' by the "' + scope +
                '" realm\'s "' + authority.ca + '" Issuing CA' };
@@ -2028,7 +2177,8 @@ function signingIdentityOf(certificate, options) {
              why: 'the certificate expired at ' + x509.validTo };
   }
   const identity = identityOf({ leaf: leaf, chain: [], verified: true },
-    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient });
+    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient,
+      anyHolderForm: opts.anyHolderForm === true });
   if (!identity.accepted) {
     log.debug("Leaving signingIdentityOf(). " + identity.error);
     return Object.assign({}, identity, { ok: false, leaf: leaf,
@@ -2267,6 +2417,7 @@ module.exports = {
   USE_CASE: USE_CASE,
   IDENTITY_USE_CASES: IDENTITY_USE_CASES,
   APPLICATION_URN: APPLICATION_URN,
+  holderUrn: holderUrn,
   KEY_ALGS: KEY_ALGS,
   DEFAULT_KEY_ALG: DEFAULT_KEY_ALG,
   REVOCATION_REASONS: REVOCATION_REASONS,

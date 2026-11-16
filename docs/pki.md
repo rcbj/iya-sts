@@ -351,6 +351,29 @@ not alike:
 | **Renew certificates** | The same authorities and the same keys, fresh certificates with fresh serials. **Nothing stops verifying.** |
 | **Replace the Root** | Every branch is re-issued under the new Root in the same act. **Anything trusting the old Root stops trusting this service.** |
 
+**A revoked certificate stays revoked through all four.** What is re-issued
+is what is still good: a certificate that is revoked — for any reason, a
+`certificateHold` included — or expired is left exactly as it was, with its
+serial and its revocation entry, and is never given a new serial. Its holder
+issues a new one if they still need one. Before 2026-11-16 a renewal, a
+reissue or an import re-issued every certificate in the register, so a
+person's revoked TLS client certificate came back valid under a new serial.
+
+What answers for a revoked certificate afterwards:
+
+| After | The revoked certificate |
+|---|---|
+| **Renew certificates** | The authority and its key are unchanged, so its CRL lists the serial and its OCSP responder answers `revoked`. |
+| **Reissue this CA**, **Import a CA** | The replaced Issuing CA is on its Intermediate's list as `superseded`, so the certificate chains to a revoked authority and every validator that checks refuses it. The serial stays on the use case's list, which the new authority's CRL carries; the old authority's own responder is gone, and OCSP about it answers `unauthorized`. |
+| **Rebuild this branch** | The old Intermediate is on the Root's list, so the whole old branch is revoked where the Root is trusted. |
+| **Replace the Root** | Nothing of the old tree signs anything any more, so no list about it can be verified: a client that hard-fails on revocation refuses every old certificate, and one that soft-fails accepts every one, a revoked one included. **Remove the old Root from every trust store** once the new one is installed. |
+
+The realm's own signing keys are the exception: a key the realm still signs
+with is certified again whenever the branch is rebuilt or the key set
+changes, whatever happened to its earlier certificate. To stop trusting a
+signing key, rotate it (`signing.rotate-now`), which retires the key and
+revokes its certificates.
+
 ### Your own CAs and your own keys
 
 **Import a CA** — paste a certificate and its private key, as the Root or as one
@@ -647,7 +670,8 @@ A third card on `/portal/signing-key` issues a **TLS client certificate** to the
 signed-in person, from the realm's own **TLS Client Issuing CA**:
 
 * it carries `clientAuth`, `CN=<username>`, a `urn:sts:person:<username>`
-  subjectAltName and, where the directory holds one, your email address;
+  subjectAltName (`urn:sts:sa:<username>` for a
+  [service account](service-accounts.md)) and, where the directory holds one, your email address;
 * you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384);
   there is no file password;
 * the new certificate's row in the card's list then offers two downloads,
@@ -671,7 +695,7 @@ thumbprint, the revocation verdict and whether a session was started.
 Trusting the Root does not make every certificate this service issues a way in.
 A verified chain through the Root is an identity only for a leaf from a TLS client
 (or ACME, EST or SCEP enrollment) Issuing CA, with `clientAuth` and one
-`urn:sts:person:` or `urn:sts:application:` name; an application's assertion key
+`urn:sts:person:`, `urn:sts:sa:` or `urn:sts:application:` name; an application's assertion key
 pair or an SVID completes the handshake and is refused as an identity — the
 sign-in says so and starts nothing.
 
@@ -694,7 +718,8 @@ a remote PEP presents to this service.
 
 * The subject is the directory entry's name: common name and UID, then the
   entry's own naming attributes, then the organisation and country. The
-  subjectAltName is still `urn:sts:person:<username>`.
+  subjectAltName is still `urn:sts:person:<username>`, or
+  `urn:sts:sa:<username>` for a service account.
 * The key, a label and a file password typed twice are chosen there. The
   page that comes back offers a `.p12`, an encrypted key and the chain,
   once. Nothing keeps the private key, and the leaf is not written to
@@ -718,8 +743,8 @@ comes from the realm's own **Message Signing Issuing CA** and is one thing
 only:
 
 * it carries `digitalSignature` and no extended key usage, `CN=<holder>` and a
-  `urn:sts:person:<username>` or `urn:sts:application:<identifier>`
-  subjectAltName — the name a signed request is mapped back to, with nothing
+  `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service
+  account) or `urn:sts:application:<identifier>` subjectAltName — the name a signed request is mapped back to, with nothing
   else registered;
 * **an administrator issues it** — to a person from their `/admin/users` page
   (Credentials, Key pairs, **Message-signing certificates**), to an
@@ -787,7 +812,7 @@ created), and anything else about the issue (`STS-ADMIN-0901`) or the revoke
 | **Behind a port mapping** | The addresses are built from inside the process, so a container must be TOLD where it is reachable: `pki.distributionPort` / `PKI_DISTRIBUTION_PORT` and `pki.distributionLdapPort` / `PKI_DISTRIBUTION_LDAP_PORT` for the published ports, or `pki.distributionBaseUrl` and `pki.distributionLdapHost` for a different name. `docker-compose.yml` publishes 8082 on `STS_PKI_HOST_PORT` and passes it through. A change reaches certificates issued afterwards, never one that exists. |
 | **Per authority and NOT per realm** | A CRL is signed by an ISSUER and lists serials that issuer minted, so a list per realm would be a document with no valid issuer and nothing could sign it. |
 | **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. Each authority's list of issued certificates, and its list of revoked serials with no certificate left, is **paged** — five rows a page at most — each on a parameter of its own (`ca-<scope>-<ca>-issuedPage`, `…-orphansPage`), and **each has a search box** (`…-issuedq`, `…-orphansq`) matching part of a serial, a subject, a name or a reason before the list is paged. A Revoke or Release brings you back to the page and search you were on. `GET /admin-api/pki` answers the same pages, with `issuedPaging`, `orphansPaging`, `issuedSearch`, `orphansSearch` and the totals on each authority. |
-| **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
+| **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`; importing one puts the replaced CA on the Intermediate's list the same way. A leaf already revoked keeps its first entry and is never re-issued (see [Editing it](#editing-it)). |
 | **The holders are told** | Revoking an Issuing CA or an Intermediate, and building, rebuilding, reissuing, renewing, importing or removing an authority, sends a CAEP `credential-change` to every person who holds a live certificate beneath it. That is `update` when this service re-issued the certificate, and `revoke` when it now chains to nothing (#244). A compromise reason adds RISC `credential-compromise`, and a certificate enrolled over ACME, EST or SCEP is never re-issued. See [CAEP events](caep-events.md#credential-change). |
 
 **AND IT CONSULTS THEM.** A certificate PRESENTED to this service is checked

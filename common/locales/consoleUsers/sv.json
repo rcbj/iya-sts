@@ -637,6 +637,8 @@
   "userCredentialsSection.labelField": "Namn (valfritt)",
   "userCredentialsSection.labelHint": "det som ska använda det",
   "userCredentialsSection.addHeading": "Lägg till ett nyckelpar",
+  "userCredentialsSection.issueHeading": "Utfärda ett från denna sfärs CA",
+  "userCredentialsSection.uploadHeading": "Ladda upp ett certifikat de redan har",
   "userCredentialsSection.atCap": "De har {max} giltiga nyckelpar för den här profilen, vilket är <code>pki.personSigningKeyMax</code>. Återkalla ett innan du utfärdar eller laddar upp ett till.",
   "userCredentialsSection.addNote": "<strong>Båda sätten LÄGGER TILL ett nyckelpar på posten</strong>, och de som redan finns fortsätter att fungera, upp till {max} giltiga per profil. Att utfärda genererar ett nytt nyckelpar här och signerar det med den här sfärens utfärdande CA; den privata nyckeln förseglas på posten och <strong>visas en gång</strong>, på sidan som knappen öppnar. Att ladda upp registrerar ett certifikat som personen redan har, och tjänsten behåller ingen privat nyckel för det. Ett certifikat från DEN HÄR sfärens utfärdare får laddas upp ensamt, och måste ha utfärdats till personen. <strong>Ett från någon annan utfärdare måste komma med hela sin kedja</strong> &mdash; varje mellanliggande och den självsignerade roten &mdash; och varje länk verifieras. En uppladdning som innehåller en privat nyckel nekas.",
   "userCredentialsSection.upload": "Ladda upp certifikatet",
@@ -936,6 +938,7 @@
   "mfaSection.certAddLabel": "Certifikat (PEM eller base64-kodad DER)",
   "mfaSection.certAddTip": "Ett enda lövcertifikat. Utfärdaren som utfärdade det läggs i klientförtroendelagren, inte här.",
   "mfaSection.certAdd": "Lagra",
+  "mfaSection.certAddHeading": "Lagra ett certifikat från en annan utfärdare",
   "mfaSection.certAddTitle": "Lagra certifikatet på posten",
   "mfaSection.certNeedsWrite": "Att lagra eller ta bort ett kräver <strong>Admin Write</strong>.",
   "mfaSection.possiblyReplaced": "Kan ha ersatts på sin autentiserare av en nyckel som registrerades {day} under samma användarhandtag och AAGUID. Den räknas inte som en väg in; rensa den om den inte längre fungerar.",
@@ -954,6 +957,7 @@
   "mfaSection.signingPassword": "Fillösenord",
   "mfaSection.signingAgain": "Igen",
   "mfaSection.signingIssue": "Utfärda ett certifikat för meddelandesignering",
+  "mfaSection.signingIssueHeading": "Utfärda ett certifikat för meddelandesignering",
   "mfaSection.signingOnce": "Den privata nyckeln visas en gång, som nedladdningar, och sparas inte.",
   "mfaSection.signingNoCa": "Sfären har ingen certifikatutfärdare än, så det finns inget att utfärda ett certifikat för meddelandesignering från. Bygg en på",
   "mfaSection.signingNeedsWrite": "Att utfärda eller återkalla ett kräver <strong>Admin Write</strong>.",
@@ -962,6 +966,7 @@
   "mfaSection.tlsSubject": "The next certificate's subject will be",
   "mfaSection.tlsEntry": "Modelled on the directory entry",
   "mfaSection.tlsIssue": "Issue a TLS client certificate",
+  "mfaSection.tlsIssueHeading": "Utfärda ett TLS-klientcertifikat",
   "mfaSection.tlsAtMax": "They hold {n} valid TLS client certificates, which is the maximum. Revoke one to issue another.",
   "mfaSection.tlsNoCa": "This realm has no certificate authority yet, so there is nothing to issue a TLS client certificate from. Build one on",
   "mfaSection.tlsNeedsWrite": "Issuing or revoking one needs <strong>Admin Write</strong>.",
@@ -984,5 +989,6 @@
   "mfaSection.pubStateDeactivated": "Avaktiverad",
   "mfaSection.pubDeactivate": "Avaktivera",
   "mfaSection.pubDeactivateTip": "Avaktiverar den här DID:en för gott: dess adress svarar 410 Gone, dess historik går fortfarande att slå upp, och den loggar inte längre in personen eller lämnas ut i did-anspråket.",
-  "mfaSection.pubNeedsWrite": "Att avaktivera en kräver <strong>Admin Write</strong>."
+  "mfaSection.pubNeedsWrite": "Att avaktivera en kräver <strong>Admin Write</strong>.",
+  "keySource.issuedFromCsr": "Certifierad här från deras egen begäran &mdash; denna domäns utfärdande CA certifierade en nyckel de själva genererade. De har den privata nyckeln; tjänsten har aldrig haft den."
 }

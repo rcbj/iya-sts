@@ -704,9 +704,11 @@ const CODES = [
       'the service refused to start.',
     spec: '' },
   { code: 'STS-CORE-0002',
-    summary: 'One or more settings have no value in the appconfig layer or ' +
-      'the environment (env/defaults.js has not been regenerated), so ' +
-      'the service refused to start.',
+    summary: 'One or more settings have no default of their own and no ' +
+      'value in the appconfig layer or the environment, so the service ' +
+      'refused to start. Since 2026-11-16 a setting WITH a default takes it ' +
+      'when env/defaults.js lacks it (STS-CORE-0177) rather than stopping ' +
+      'the start.',
     spec: '' },
   { code: 'STS-CORE-0003',
     summary: 'A runtime setting change could not be handed to persistence. ' +
@@ -1272,6 +1274,27 @@ const CODES = [
       'on a save (STS-CORE-0006).',
     spec: 'saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning ' +
       'logged at startup; nothing is refused' },
+  // AN env/ OLDER THAN THE IMAGE COSTS A WARNING, NOT THE START (2026-11-16).
+  { code: 'STS-CORE-0177',
+    summary: 'One or more settings have no row in env/defaults.js (or the ' +
+      'file is not there) and no value in any layer above it, so each takes ' +
+      'the image\'s own default. The defaults file is older than the image ' +
+      '— usually an env/ directory mounted or copied from an earlier ' +
+      'release. The service starts; the warning names each setting and ' +
+      'the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0178',
+    summary: 'One or more settings in env/defaults.js hold a value that is ' +
+      'not the image\'s default. The file\'s value is used, as before the ' +
+      'upgrade; a defaults file copied from an earlier release pins every ' +
+      'default changed since. The warning names each setting and the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0179',
+    summary: 'env/defaults.js is present and could not be loaded (it does ' +
+      'not parse, or throws), so the service refused to start. A missing ' +
+      'file is not this: the image\'s own defaults are used ' +
+      '(STS-CORE-0177).',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -4531,8 +4554,10 @@ const CODES = [
   { code: 'STS-PKI-0155',
     summary: 'An uploaded certificate this realm issued would widen its ' +
       'holder: for a person, its subjectAltName names somebody else ' +
-      '(another urn:sts:person: or an urn:sts:application:); for an ' +
-      'application, it names a urn:sts:person:.',
+      '(another urn:sts:person: or urn:sts:sa:, or an ' +
+      'urn:sts:application:); for an application, it names a person in ' +
+      'either spelling, urn:sts:person: or a service account\'s urn:sts:sa: ' +
+      '(#1827).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0156',
@@ -5188,6 +5213,18 @@ const CODES = [
       'use case needs, or the use case itself refused (a self-signed ' +
       'leaf, an anchor source out of reach).',
     spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0277',
+    summary: 'A certificate uploaded for a person was issued by this realm as ' +
+      'a service account\'s (urn:sts:sa:<name>, #1827), and that person is ' +
+      'not a service account in this realm.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0278',
+    summary: 'A person\'s RFC 7523 key was to be certified from their own ' +
+      'certificate request, and no request was sent or it could not be ' +
+      'read (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-PKI-0279',
     summary: 'A certificate a deleted person or application still held ' +
       'valid (a TLS client or message-signing certificate, an RFC 7523 or ' +
@@ -5201,6 +5238,12 @@ const CODES = [
       'the certificate register, so a holder made again under that name is ' +
       'listed it.',
     spec: 'none: a log line; the delete is answered as it was' },
+  { code: 'STS-PKI-0281',
+    summary: 'A certificate request for a person\'s RFC 7523 key carries a ' +
+      'key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, ' +
+      'phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -5384,6 +5427,11 @@ const CODES = [
       '/serverkeygen that its own estBasicAuthentication, ' +
       'estCertificateAuthentication or estServerKeyGeneration turns off.',
     spec: 'RFC 7030 HTTP 403' },
+  { code: 'STS-ENROLL-0097',
+    summary: 'An enrollment request, or the certificate presented to ' +
+      're-enroll, names a person as a service account (urn:sts:sa:<name>, ' +
+      '#1827), and in this realm that entry is not one.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
     spec: 'HTTP 503, ACME serverInternal problem' },
@@ -11777,6 +11825,19 @@ const CODES = [
       'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
       'more.',
     spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
+  { code: 'STS-OAUTH-1011',
+    summary: 'An assertion\'s x5c leaf, issued by this realm, names its ' +
+      'holder as a service account (urn:sts:sa:<name>, #1827), and in this ' +
+      'realm that entry is not one. RETIRED before release (#1827, rcbj ' +
+      '2026-11-16): the assertion grant follows WS-Trust and authenticates ' +
+      'the person whichever spelling names them.',
+    spec: '', retired: true },
+  { code: 'STS-OAUTH-1012',
+    summary: 'A token request through sts-remote-pep, the public client a ' +
+      'remote PEP presents its RFC 7523 self-assertion through, carried no ' +
+      'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
+      '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
+    spec: 'invalid_dpop_proof (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12840,6 +12901,15 @@ const CODES = [
       'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +
       '(2004/09), or none, so there is no metadata request to answer.',
     spec: 'SOAP Client (SOAP 1.2: Sender) fault, HTTP 500' },
+  { code: 'STS-WSTRUST-0074',
+    summary: 'A WS-Trust requester\'s certificate (a WS-Security signer, or ' +
+      'the TLS client certificate on the connection) names its holder as a ' +
+      'service account (urn:sts:sa:<name>, #1827), and in this realm that ' +
+      'entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: ' +
+      '"any user with valid credentials should be able to authenticate ' +
+      'through WS-Trust"): WS-Trust authenticates the entry whichever ' +
+      'spelling names it.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -18219,6 +18289,14 @@ const CODES = [
       'closed at once and its alert can be lost to the TCP reset ' +
       '(tls/alert_close.ts, 2026-11-13).',
     spec: 'none (logged once)' },
+  { code: 'STS-TLS-0063',
+    summary: 'A certificate this realm issued names its holder as a service ' +
+      'account (urn:sts:sa:<name>, #1827), and in its realm that entry is ' +
+      'not a service account, or there is none. The TLS client gate ' +
+      '(tls_client_certificates.js identityOf()) refuses it as an identity ' +
+      'at every door that asks it; each door refuses it under its own code ' +
+      'for a certificate that is not an identity.',
+    spec: 'none (logged): the door\'s own refusal' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -23681,6 +23759,107 @@ const CODES = [
       'delivered: the connection failed, the certificate did not verify, ' +
       'or the PEP refused it. The result is recorded on the PEP\'s row.',
     spec: 'HTTP 400 on /admin-api' },
+  // #1827: a remote PEP's decision records pushed to /admin-api.
+  { code: 'STS-XACML-0286',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit in a body that is not { instance, events } ' +
+      'with events a non-empty array of objects, or with more events than ' +
+      'one batch may carry (#1827). Nothing in the batch is recorded.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-XACML-0287',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit and is not registered in this realm\'s ' +
+      'ou=peps under the name its token\'s subject carries (#1827). It ' +
+      'must register (POST /xacml/pep/register) before its records are ' +
+      'taken.',
+    spec: 'HTTP 404, an error message' },
+  { code: 'STS-XACML-0288',
+    summary: 'A decision record a remote PEP pushed to POST ' +
+      '/admin-api/pep-audit was not recorded: it had no positive ' +
+      'integer seq, or a kind other than enforcement, authzen or proxy ' +
+      '(#1827). The rest of the batch is recorded and the record is ' +
+      'counted as ignored.',
+    spec: 'none; counted as ignored in the answer' },
+  // #1827's follow-up: a remote PEP's DPoP-bound access token at the PEP
+  // door (/xacml/pep/* and POST /xacml/pip), xacml/pep_token.ts.
+  { code: 'STS-XACML-0289',
+    summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with no ' +
+      'access token while xacml.pepAuthentication is token, the default ' +
+      'since 1.1.0: a client certificate alone is not accepted in this ' +
+      'realm (#1827). Where the certificate verified, the description says ' +
+      'that either would accept it, and a warning under this code is ' +
+      'logged once per realm and process.',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_request"' },
+  { code: 'STS-XACML-0290',
+    summary: 'A remote PEP reached /xacml/pep/* or POST /xacml/pip with an ' +
+      'access token and no client certificate while ' +
+      'xacml.pepAuthentication is certificate: the token is not read in ' +
+      'this realm (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0291',
+    summary: 'A remote PEP\'s access token at the PEP door was not one this ' +
+      'realm issued and holds: its signature did not verify, it expired, ' +
+      'it is not an access token, another authorization server issued it, ' +
+      'it was revoked, or its certificate binding did not hold (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0292',
+    summary: 'A remote PEP\'s access token at the PEP door is not ' +
+      'DPoP-bound (no cnf.jkt), or a DPoP-bound one was sent as Bearer ' +
+      '(#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0293',
+    summary: 'A remote PEP\'s access token at the PEP door is not ' +
+      'audienced to this realm\'s /xacml/pep (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0294',
+    summary: 'An access token at the PEP door was issued to a client other ' +
+      'than sts-remote-pep, the one a remote PEP\'s token comes from ' +
+      '(#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0295',
+    summary: 'A remote PEP\'s access token at the PEP door does not carry ' +
+      'xacml:pep, or sts-remote-pep no longer holds the delegated ' +
+      'permission grant of it on sts-xacml-pep-api (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="insufficient_scope"' },
+  { code: 'STS-XACML-0296',
+    summary: 'A remote PEP\'s DPoP proof at the PEP door was refused: ' +
+      'missing, malformed, not for this method and URL, outside its iat ' +
+      'window, a replay, without the token\'s ath, by another key than ' +
+      'the token is bound to, or without the server nonce the realm asks ' +
+      'for (#1827). The log line names the proof\'s own STS-OAUTH code.',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or ' +
+      '"use_dpop_nonce" with a DPoP-Nonce header (RFC 9449 section 9)' },
+  { code: 'STS-XACML-0297',
+    summary: 'A remote PEP\'s access token at the PEP door names no entry ' +
+      'under this realm\'s ou=users: its sub is not urn:uuid: of exactly ' +
+      'one person\'s entry, the PEP\'s own (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0298',
+    summary: 'issue-pep-credential named no person in this realm\'s ' +
+      'ou=users, or named none at all: a remote PEP\'s key is certified ' +
+      'for an entry that exists (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0299',
+    summary: 'issue-pep-credential named a person who is not a service ' +
+      'account: a remote PEP\'s identity is one, and its key names it ' +
+      'urn:sts:sa:<name> (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0301',
+    summary: 'issue-pep-credential named a service account that does not ' +
+      'hold REMOTE_PEPS (it is not in the group roles.remotePepGroup ' +
+      'names), so the key would authenticate an entry no PEP door admits ' +
+      '(#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0302',
+    summary: 'issue-pep-credential certified and registered the new key, ' +
+      'and revokePrevious could not revoke one of the entry\'s other RFC ' +
+      '7523 keys; the new key works, and the old one still does too ' +
+      '(#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24311,8 +24490,9 @@ const CODES = [
     spec: 'HTTP 404 not_found' },
   { code: 'STS-XPEP-0115',
     summary: 'PEP_CRL_HTTP holds a value that is neither true nor false; ' +
-      'the CRL-only listener keeps its default (bound when PEP_HTTP is off ' +
-      'and the credential has a CRL directory). Logged once at start.',
+      'the CRL-only listener keeps its default (not bound: since phase 4 ' +
+      'of #1827\'s follow-up only PEP_CRL_HTTP=true binds it). Logged once ' +
+      'at start.',
     spec: 'none; the listener keeps its default' },
   { code: 'STS-XPEP-0116',
     summary: 'A request on a remote PEP proxy route whose methods list is ' +
@@ -24354,6 +24534,94 @@ const CODES = [
       'connection is lost; the worker catches the panic and takes the next ' +
       'job (2026-11-16).',
     spec: 'none — an error in the PEP\'s log' },
+  // #1827: the decision records shipped to the service.
+  { code: 'STS-XPEP-0122',
+    summary: 'The remote PEP\'s queue of decision records waiting for ' +
+      'the service was full, so the oldest record was dropped to make ' +
+      'room (#1827). Enforcement goes on; the dropped decision is still on ' +
+      'the PEP\'s own log. Logged at the first drop and then sparingly, ' +
+      'with the count.',
+    spec: 'none; the PEP keeps enforcing' },
+  { code: 'STS-XPEP-0123',
+    summary: 'The remote PEP sent a batch of decision records to the ' +
+      'management API without an access token, because none could be had ' +
+      '(#1827; STS-XPEP-0129 says why the grant failed). The records stay ' +
+      'queued.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0124',
+    summary: 'The remote PEP could not deliver a batch of decision records ' +
+      'to POST /admin-api/pep-audit: no answer, a refusal of its token, or ' +
+      'a status other than 200 and 400 (#1827). The records stay queued ' +
+      'and are sent again.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0125',
+    summary: 'The service refused a batch of decision records as malformed ' +
+      '(HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped ' +
+      'that batch rather than send it forever (#1827). Each decision is ' +
+      'still on the PEP\'s own log.',
+    spec: 'none; the batch is dropped' },
+  // #1827 follow-up: the PEP's one credential, a DPoP-bound token from the
+  // RFC 7523 self-assertion grant on every call to the service.
+  { code: 'STS-XPEP-0126',
+    summary: 'The remote PEP has no assertion key: neither ' +
+      'PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could ' +
+      'not be read. A key already loaded is kept; without one, every call ' +
+      'to the service goes without an access token and is refused (the PEP ' +
+      'presents no client certificate since phase 4 of #1827\'s ' +
+      'follow-up).',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0127',
+    summary: 'PEP_ASSERTION_KEY is not set, so the remote PEP signs its ' +
+      'self-assertion and its DPoP proofs with the key file PEP_TLS_KEY ' +
+      'names (its client certificate\'s key, before phase 4 of #1827\'s ' +
+      'follow-up retired the certificate). A notice: it works when that ' +
+      'key is the one registered on the PEP\'s entry.',
+    spec: 'none — an info line in the PEP\'s log' },
+  { code: 'STS-XPEP-0128',
+    summary: 'The remote PEP refused its assertion key: it would not ' +
+      'parse, or it is neither RSA (RS256) nor EC P-256 (ES256). A key ' +
+      'already loaded is kept.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0129',
+    summary: 'The remote PEP could not obtain an access token for one of ' +
+      'its three resources (/xacml/pep, /admin-api, /access/v1): the token ' +
+      'endpoint did not answer or refused the RFC 7523 self-assertion ' +
+      'grant. The log names the missing provisioning step — the assertion ' +
+      'key registered on the entry, the client, the remote PEPs group. ' +
+      'Calls to that resource go without a token; the grant is not asked ' +
+      'again for five seconds.',
+    spec: 'none — a warning in the PEP\'s log, at the first refusal and ' +
+      'when the reason changes' },
+  { code: 'STS-XPEP-0130',
+    summary: 'The token endpoint or a resource demanded a DPoP nonce ' +
+      '(use_dpop_nonce) again after the remote PEP retried with the nonce ' +
+      'it handed. The PEP retries once only; the call\'s answer stands.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0131',
+    summary: 'A resource refused the remote PEP\'s access token with a 401 ' +
+      'again after the PEP dropped it and fetched a new one. The PEP ' +
+      'retries once only; the call\'s answer stands.',
+    spec: 'none — a warning in the PEP\'s log' },
+  // #1827's follow-up, phase 4 (rcbj, 2026-11-16): the PEP's client
+  // certificate retired for authenticating to the service. 0132-0134 are
+  // #1830's.
+  { code: 'STS-XPEP-0135',
+    summary: 'PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside ' +
+      'PEP_ASSERTION_KEY, and the remote PEP no longer presents a client ' +
+      'certificate to the service: it authenticates every call with a ' +
+      'DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, ' +
+      'certified by issue-pep-credential). The variable is ignored for ' +
+      'that; PEP_TLS_KEY alone is still read as the fallback assertion key ' +
+      '(STS-XPEP-0127). Logged once at start.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0136',
+    summary: 'The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ ' +
+      'beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only ' +
+      'plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of ' +
+      'the client certificate the PEP no longer presents (phase 4 of ' +
+      '#1827\'s follow-up). PEP_CRL_HTTP=true binds it. Logged once at ' +
+      'start.',
+    spec: 'none — a notice in the PEP\'s log' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -24827,6 +25095,29 @@ const CODES = [
       'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
       'requires; refused before its body was read (#936).',
     spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16)' },
+  { code: 'STS-AUTHZEN-0118',
+    summary: 'A remote PEP\'s access token from sts-remote-pep at ' +
+      '/access/v1 was refused: not one this realm issued and holds, not ' +
+      'DPoP-bound or sent as Bearer, not audienced to this realm\'s ' +
+      '/access/v1, or its DPoP proof was refused (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or ' +
+      '"use_dpop_nonce"' },
+  { code: 'STS-AUTHZEN-0119',
+    summary: 'A remote PEP\'s access token at /access/v1 does not carry ' +
+      'authzen:evaluate, or sts-remote-pep no longer holds the delegated ' +
+      'permission grant of it on sts-authzen-api (#1827).',
+    spec: 'HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope"' },
+  { code: 'STS-AUTHZEN-0120',
+    summary: 'A remote PEP\'s access token at /access/v1 names no entry ' +
+      'under this realm\'s ou=users, or one that does not hold ' +
+      'REMOTE_PEPS: the token of the client every PEP shares admits only ' +
+      'a remote PEP (#1827).',
+    spec: 'HTTP 401 (no entry) or 403 (not a remote PEP)' },
+  { code: 'STS-AUTHZEN-0121',
+    summary: 'A remote PEP\'s access token arrived at /access/v1 while ' +
+      'xacml.pepAuthentication is certificate, which accepts a remote PEP ' +
+      'only by its client certificate (#1827).',
+    spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -27194,6 +27485,14 @@ const CODES = [
       'members, once per set of names; the process needs a restart and the ' +
       'write that polluted it a fix.',
     spec: '' },
+  { code: 'STS-API-0147',
+    summary: 'A remote PEP\'s decision-record push (POST ' +
+      '/admin-api/pep-audit) arrived on a token that does not carry ' +
+      'xacml:pep-audit or whose subject is not in the remote PEPs\' group ' +
+      '(REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented ' +
+      'at another operation (#1827). Refused at the gate itself, so that ' +
+      'the separation does not depend on xacml.enforceAccess.',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

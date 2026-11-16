@@ -335,6 +335,7 @@ const EXACT: Record<string, string> = {
   'ucred-password': 'authentication.html#passwords',
   'ucred-service': 'service-accounts.html',
   'ucred-keys': 'pki.html#a-persons-credentials-on-their-own-page',
+  'ucred-self-issued': 'oid4vp.html#self-issued-id-tokens-siopv2',
   'ucred-kerberos': 'kerberos.html',
   'utab-federation': 'federation.html',
   'utab-gnap': 'gnap.html',

@@ -129,6 +129,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   it, not the whole mode. A row off in product is logged (`STS-PKI-0239`) and
   drawn red on `/admin/pki/trust`, which also lists every pinned certificate
   and its status.
+* **A revoked certificate is never re-issued.** Renewing, reissuing or
+  importing an Issuing CA re-issues only the certificates that are still
+  valid; a revoked or expired one keeps its serial and its revocation entry.
+  Importing an Issuing CA puts the one it replaces on its Intermediate's
+  list. After replacing the Root, remove the old Root from every trust store:
+  nothing can sign a revocation list for the old tree any more. See
+  [Editing it](pki.md#editing-it).
 
 ## Passwords
 

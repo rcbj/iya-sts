@@ -83,5 +83,5 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [WS-Federation](admin-api-ws-federation.html) | 1 |  |
 | [WS-Trust](admin-api-ws-trust.html) | 1 |  |
 | [WebAuthn](admin-api-webauthn.html) | 1 |  |
-| [XACML](admin-api-xacml.html) | 88 |  |
+| [XACML](admin-api-xacml.html) | 90 |  |
 {% endraw %}

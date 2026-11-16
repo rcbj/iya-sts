@@ -321,7 +321,10 @@ EAB key are spent where they are checked. Single-cell mode does none of it.
   (`common/cert_enrollment.ts`'s `credentialId()`) — a person's request goes
   to their HOME, an application's to the cell that minted the key, whose
   binding claim is held there; a revokeCert signed by the certificate's own
-  key goes to the home of the person its `urn:sts:person:` names.
+  key goes to the home of the person its `urn:sts:person:` (or a service
+  account's `urn:sts:sa:`, #1827) names. A `permanent-identifier` or CSR URI
+  `urn:sts:sa:` naming somebody who is not a service account is refused,
+  STS-ENROLL-0097 (`common/CLAUDE.md` 3df).
 * **Two requests carry nothing that says where**: a newAccount naming only
   its key (RFC 8555 section 7.3.1, `onlyReturnExisting`) and RFC 9773's
   renewal-info (its certID is AKI and serial). Both are asked of every other

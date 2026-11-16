@@ -393,7 +393,9 @@ restart-only, on by default. Four things are this directory's:
 * **THE SESSION IS STARTED IN THE CERTIFICATE'S REALM.** `inCertificateRealm()`
   wraps `startCertificateSessionIn()` and the authentication recording in
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
-  username is the leaf's `urn:sts:person:` name. A certificate from an anchor
+  username is the leaf's `urn:sts:person:` name (or a service account's
+  `urn:sts:sa:`, #1827 — refused, STS-TLS-0063, where the entry is not one;
+  `common/CLAUDE.md` 3df). A certificate from an anchor
   somebody installed signs in, since #1061, in the REQUEST's realm as the
   entry storing it (below); it was default realm and common name until then.
 * **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener

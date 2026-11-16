@@ -4270,7 +4270,9 @@ changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
 * **ONLY A CERTIFICATE THIS SERVICE ISSUED, TO A PERSON WHO HAS AN ENTRY.**
   `common/tls_client_certificates.js`'s `checkSocket()` (its `identityOf()`
   under the bind's realm) decides; the name is the `urn:sts:person:`
-  subjectAltName; `stillHeld()` and revocation are asked; a disabled account
+  subjectAltName (a service account's `urn:sts:sa:` since #1827, the same
+  person entry; one naming an entry that is not a service account is not an
+  identity, `0183`, logged STS-TLS-0063 — `common/CLAUDE.md` 3df); `stillHeld()` and revocation are asked; a disabled account
   is refused; nothing is read off a CN or subject and no entry is created.
   An APPLICATION's certificate is refused (`0185`) by #106's rule that only a
   person binds. **A certificate from an outside authority trusted through

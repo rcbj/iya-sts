@@ -4076,7 +4076,7 @@ Scope: `admin:write`.
 
 **Issue somebody a message-signing certificate from this realm's CA**
 
-Generates a key pair and certifies it from the realm's `message-signing` Issuing CA with `digitalSignature` only and `urn:sts:person:<username>` as its subjectAltName. A WS-Trust request whose WS-Security signature over the SOAP Body and Timestamp verifies under it authenticates the person as its requester; it signs nobody in over TLS. An administrator's act: the person has no door to it on the user portal (#521).
+Generates a key pair and certifies it from the realm's `message-signing` Issuing CA with `digitalSignature` only and `urn:sts:person:<username>` as its subjectAltName (`urn:sts:sa:<username>` for a service account, #1827). A WS-Trust request whose WS-Security signature over the SOAP Body and Timestamp verifies under it authenticates the person as its requester; it signs nobody in over TLS. An administrator's act: the person has no door to it on the user portal (#521).
 
 **THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past `pki.messageSigningCertificateMax` valid certificates (`STS-PKI-0220`), for a person with no entry (`STS-ADMIN-0905`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.
 
@@ -4239,7 +4239,7 @@ Scope: `admin:write`.
 
 **Issue somebody a TLS client certificate from this realm's CA**
 
-Generates a key pair and certifies it from the realm's `tls-client` Issuing CA with `clientAuth`. The subject is the person's directory name — common name and UID first, then the entry's own naming attributes, then the organisation and country — and `urn:sts:person:<username>` is its subjectAltName, which is what admits a remote PEP that presents the certificate. It is not stored on the entry as `userCertificate`.
+Generates a key pair and certifies it from the realm's `tls-client` Issuing CA with `clientAuth`. The subject is the person's directory name — common name and UID first, then the entry's own naming attributes, then the organisation and country — and `urn:sts:person:<username>` (`urn:sts:sa:<username>` for a service account, #1827) is its subjectAltName, which is what admits a remote PEP that presents the certificate. It is not stored on the entry as `userCertificate`.
 
 **THIS REPLY IS THE ONLY COPY OF THE PRIVATE KEY.** `files` holds a PKCS#12 (base64), an encrypted PKCS#8 PEM key and the PEM chain, all protected by `password`, which is neither stored nor audited. Refused past the maximum of valid TLS client certificates for a person, for a person with no entry (`STS-ADMIN-0939`), for a file password that is too short or does not match (`STS-ADMIN-0940`), for a key algorithm outside `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384`, and in a realm with no certificate authority.
 
