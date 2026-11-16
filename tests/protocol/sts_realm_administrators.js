@@ -611,8 +611,12 @@ async function aRealmTokenStaysInItsRealm() {
   // D12 (#444): the code behind that refusal, and what a mixed save names,
   // carried over from tests/realm_administrators.js 5. Codes are never
   // sent, so they are read off the realm's own audit log.
-  const auditSeq = await api("GET", R + "/admin-api/audit?per=1");
-  const sinceSeq = (auditSeq.body && auditSeq.body.newestSeq) || 0;
+  // BY TIME (#465): `seq` is not one order across processes, so a row a
+  // request worker numbered from a lower block would be missed; the cluster
+  // mode saw two of the three.
+  const auditNewest = await api("GET", R + "/admin-api/audit?per=1");
+  const sinceAt = ((auditNewest.body && auditNewest.body.events &&
+                    auditNewest.body.events[0]) || {}).at || 0;
   const mixed = await apiAs(token, "POST", R + "/admin-api/config/set-many",
     { "scheduler.runHistoryCount": "2", "admin.readGroup": "x",
       "oauth2.accessTokenTtlS": "600" });
@@ -640,7 +644,7 @@ async function aRealmTokenStaysInItsRealm() {
   for (let i = 0; i < 20 && coded.length < 3; i += 1) {
     const rows = await api("GET", R + "/admin-api/audit?per=200");
     coded = ((rows.body && rows.body.events) || []).filter(function (row) {
-      return row.seq > sinceSeq && row.errorCode === "STS-API-0112";
+      return row.at > sinceAt && row.errorCode === "STS-API-0112";
     });
     if (coded.length < 3) {
       await new Promise(function (resolve) {
