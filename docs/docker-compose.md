@@ -171,6 +171,15 @@ rebuild. The service never writes to it. Setting changes made in the console go
 to the store, which overrides the file. Do not edit `env/defaults.js`; it is
 generated from `common/config.js`.
 
+**On an upgrade the mount is NOT upgraded with the image.** A newer image whose
+release added a setting starts on an older `env/` all the same: the setting
+takes the image's own default and the start logs a warning, `STS-CORE-0177`,
+naming it and the older `env/defaults.js`. A default the release changed is
+kept at the older file's value and logged as `STS-CORE-0178`. Update the
+checkout the mount comes from to the release you run, or mount a directory
+that holds only your own appconfig file and no `defaults.js`. See
+[Upgrading with a mounted env/](configuration.md#upgrading-with-a-mounted-env).
+
 ## Network and SPIFFE addresses
 
 The stack declares its own network, `172.29.0.0/24` (`STS_NETWORK_SUBNET`), and

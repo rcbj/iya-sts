@@ -193,9 +193,10 @@ nothing.
 
 **That port is HTTPS** — every appconfig file in `env/` sets `global.https`, and
 `STS_HTTPS=false` is the supported way back (`env/CLAUDE.md`). **The selected
-file is a layer, not the whole configuration**, and a setting with no value
-anywhere stops the service from starting: `common/CLAUDE.md` argues the five
-levels, `env/CLAUDE.md` lists the files, and `docs/configuration.md`'s *Every
+file is a layer, not the whole configuration**, over `env/defaults.js` and,
+beneath that, each setting's own default in the image — so an older `env/`
+mounted over the image's costs a warning, not the start: `common/CLAUDE.md`
+argues the six levels, `env/CLAUDE.md` lists the files, and `docs/configuration.md`'s *Every
 setting* lists every setting.
 
 ## `docker-compose.yml` carries no comments (2026-10-07)

@@ -704,9 +704,11 @@ const CODES = [
       'the service refused to start.',
     spec: '' },
   { code: 'STS-CORE-0002',
-    summary: 'One or more settings have no value in the appconfig layer or ' +
-      'the environment (env/defaults.js has not been regenerated), so ' +
-      'the service refused to start.',
+    summary: 'One or more settings have no default of their own and no ' +
+      'value in the appconfig layer or the environment, so the service ' +
+      'refused to start. Since 2026-11-16 a setting WITH a default takes it ' +
+      'when env/defaults.js lacks it (STS-CORE-0177) rather than stopping ' +
+      'the start.',
     spec: '' },
   { code: 'STS-CORE-0003',
     summary: 'A runtime setting change could not be handed to persistence. ' +
@@ -1272,6 +1274,27 @@ const CODES = [
       'on a save (STS-CORE-0006).',
     spec: 'saml-schema-assertion-2.0 (Format is xs:anyURI) — a warning ' +
       'logged at startup; nothing is refused' },
+  // AN env/ OLDER THAN THE IMAGE COSTS A WARNING, NOT THE START (2026-11-16).
+  { code: 'STS-CORE-0177',
+    summary: 'One or more settings have no row in env/defaults.js (or the ' +
+      'file is not there) and no value in any layer above it, so each takes ' +
+      'the image\'s own default. The defaults file is older than the image ' +
+      '— usually an env/ directory mounted or copied from an earlier ' +
+      'release. The service starts; the warning names each setting and ' +
+      'the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0178',
+    summary: 'One or more settings in env/defaults.js hold a value that is ' +
+      'not the image\'s default. The file\'s value is used, as before the ' +
+      'upgrade; a defaults file copied from an earlier release pins every ' +
+      'default changed since. The warning names each setting and the file.',
+    spec: 'none — a warning logged at startup; nothing is refused' },
+  { code: 'STS-CORE-0179',
+    summary: 'env/defaults.js is present and could not be loaded (it does ' +
+      'not parse, or throws), so the service refused to start. A missing ' +
+      'file is not this: the image\'s own defaults are used ' +
+      '(STS-CORE-0177).',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
