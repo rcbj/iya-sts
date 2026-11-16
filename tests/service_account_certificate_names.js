@@ -25,7 +25,8 @@
 //   D. THE ASSERTION GRANT: the service account's x5c asserts about itself
 //      and is refused about anybody else (the person rule, STS-OAUTH-0049);
 //      a `urn:sts:sa:` leaf of a person who is not one is refused,
-//      STS-OAUTH-1011; the old spelling still asserts.
+//      nothing about the spelling (STS-OAUTH-1011 retired); the old
+//      spelling still asserts.
 //   E. AN UPLOAD (`registerCertificate()`): the account's own leaf in either
 //      spelling registers for it; a `urn:sts:sa:` leaf for a person who is
 //      not one is refused, STS-PKI-0277; for an application it widens,
@@ -308,10 +309,12 @@ async function inRealm(t, realm) {
     const falseClaim = await assertionGrant.verify({
       assertion: signWith(forcedSa.issued, claimsFor(PERSON, PERSON)),
       audiences: AUD });
-    t.check(!falseClaim.ok && falseClaim.errorCode === 'STS-OAUTH-1011',
+    // rcbj, 2026-11-16: the grant follows WS-Trust — the spelling decides
+    // nothing, and the self-only rule (D2) still holds.
+    t.check(falseClaim.ok,
             'D3. a urn:sts:sa: leaf of a person who is not a service account ' +
-            'is refused, STS-OAUTH-1011', JSON.stringify(falseClaim)
-              .slice(0, 200));
+            'asserts about that person (the spelling decides nothing here)',
+            JSON.stringify(falseClaim).slice(0, 200));
   } else {
     t.bad('D3. the fixture urn:sts:sa: key pair was not issued',
           JSON.stringify(forcedSa.errors || ''));

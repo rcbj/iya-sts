@@ -780,28 +780,6 @@ function issuerEntry(iss) {
   return null;
 }
 
-/**
- * Says whether a person is a service account in the ambient realm (#1827).
- *
- * @param username - the person's username, as a leaf names it
- * @returns true for a service account; false otherwise and where nothing
- *   can say
- */
-function serviceAccountNamed(username) {
-  log.debug('Entering serviceAccountNamed().');
-  let out = false;
-  try {
-    // LAZY: only an `x5c` naming a service account pays for the read.
-    out = require('../common/service_accounts')
-      .isServiceAccountName(String(username)) === true;
-  } catch (e) {
-    log.debug('Caught in serviceAccountNamed(): ' + ((e && e.message) || e));
-    out = false;
-  }
-  log.debug('Leaving serviceAccountNamed(). ' + out);
-  return out;
-}
-
 // ---------------------------------------------------------------------------
 // THE `x5c` PATH, AND WHY IT IS CHECKED RATHER THAN READ.
 //
@@ -938,32 +916,22 @@ async function keyFromChain(header) {
   // A SERVICE ACCOUNT IS A PERSON HERE (#1827): its leaf says
   // `urn:sts:sa:<name>`, and it is read as `person` — so the refusal below
   // ("a person may assert only about themselves") holds for it word for
-  // word. One claim the `sa` spelling makes is checked against the directory
-  // of this realm: that the entry IS a service account. A leaf saying so of
-  // somebody who is not is refused (STS-OAUTH-1011); this realm's authority
-  // writes that name only for one, and an entry never stops being one.
-  // `urn:sts:person:` naming a service account is a leaf issued before it
-  // became one, and keeps working (rcbj's 1.0.0 rule).
+  // word. WHICH SPELLING NAMES THE HOLDER DOES NOT DECIDE ANYTHING HERE
+  // (rcbj, 2026-11-16: the assertion grant follows WS-Trust): a valid leaf
+  // from this realm's authority authenticates the person it names as
+  // `urn:sts:sa:` or `urn:sts:person:`, whether or not that entry is a
+  // service account. STS-OAUTH-1011, which refused a mismatch, is retired;
+  // registering and enrolling still refuse one (STS-PKI-0277,
+  // STS-ENROLL-0097), so this service never builds or records such a leaf.
   const leaf = stsCrypto.parseCertificate(leafPem);
   let subjectKind = '';
   let subjectName = '';
-  let subjectForm = '';
   SubjectUrn.namesIn(String(leaf.subjectAltName || ''),
                      ['application', 'person', 'sa'])
     .forEach(function (one) {
       subjectKind = one.kind;
       subjectName = one.name;
-      subjectForm = one.form;
     });
-  if (subjectForm === 'sa' && !serviceAccountNamed(subjectName)) {
-    log.debug('Leaving keyFromChain(). It names a service account that is ' +
-              'not one.');
-    return { errorCode: 'STS-OAUTH-1011', error: 'the certificate in this ' +
-                    'assertion\'s x5c header names "' + subjectName + '" ' +
-                    'as a service account, and in this realm that entry is ' +
-                    'not one. This service writes that name only for a ' +
-                    'service account.' };
-  }
   log.debug('Leaving keyFromChain(). It chains here, issued to ' +
             (subjectKind || 'something this service cannot name') + ' "' +
             subjectName + '".');

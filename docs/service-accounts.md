@@ -303,10 +303,10 @@ ACME, EST or SCEP.
 - **`urn:sts:sa:` is a claim about the entry.** A certificate naming
   `urn:sts:sa:<name>` where that entry is not a service account, or does
   not exist, is refused. The codes are STS-TLS-0063 (a TLS client
-  certificate), STS-OAUTH-1011 (an assertion's `x5c`), STS-PKI-0277 (an
+  certificate), STS-PKI-0277 (an
   uploaded certificate) and STS-ENROLL-0097 (ACME, EST or SCEP). WS-Trust
-  is the exception: a valid certificate naming an existing user signs in
-  there whichever of the two names it carries.
+  and the RFC 7523 assertion grant are the exceptions: a valid certificate
+  naming a user signs in there whichever of the two names it carries.
 - **An enrollment request may ask for either name.** The certificate it
   gets carries `urn:sts:sa:<username>`.
 
