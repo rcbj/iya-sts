@@ -438,6 +438,29 @@ Scope: `admin:read`.
 | `(shape 2).authenticationEventsPaging.param` | string |  |  |
 | `(shape 2).authenticationEventsPaging.perPage` | integer |  |  |
 | `(shape 2).authenticationEventsPaging.total` | integer |  |  |
+| `(shape 2).authenticationHistory` | list |  |  |
+| `(shape 2).authenticationHistory[].acr` | string |  |  |
+| `(shape 2).authenticationHistory[].address` | string |  |  |
+| `(shape 2).authenticationHistory[].amr` | list, or string |  |  |
+| `(shape 2).authenticationHistory[].amr[]` | string |  |  |
+| `(shape 2).authenticationHistory[].at` | number |  |  |
+| `(shape 2).authenticationHistory[].client_id` | string |  |  |
+| `(shape 2).authenticationHistory[].method` | string |  |  |
+| `(shape 2).authenticationHistory[].note` | string |  |  |
+| `(shape 2).authenticationHistory[].presented` | string |  |  |
+| `(shape 2).authenticationHistory[].protocol` | string |  |  |
+| `(shape 2).authenticationHistory[].realm` | string |  |  |
+| `(shape 2).authenticationHistory[].sessionId` | string |  |  |
+| `(shape 2).authenticationHistory[].sub` | string |  |  |
+| `(shape 2).authenticationHistoryPaging` | object |  |  |
+| `(shape 2).authenticationHistoryPaging.firstRow` | integer |  |  |
+| `(shape 2).authenticationHistoryPaging.lastRow` | integer |  |  |
+| `(shape 2).authenticationHistoryPaging.noun` | string |  |  |
+| `(shape 2).authenticationHistoryPaging.page` | integer |  |  |
+| `(shape 2).authenticationHistoryPaging.pages` | integer |  |  |
+| `(shape 2).authenticationHistoryPaging.param` | string |  |  |
+| `(shape 2).authenticationHistoryPaging.perPage` | integer |  |  |
+| `(shape 2).authenticationHistoryPaging.total` | integer |  |  |
 | `(shape 2).authenticationsWithoutActivity` | object |  | The authentications that start no sign-on session and issue nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), counted by protocol and method over the rows the Authentications tab lists (what the audit log still holds). Sessions &amp; tokens draws its summary line from it; each one is on the Authentications tab. |
 | `(shape 2).authenticationsWithoutActivity.methods` | list |  |  |
 | `(shape 2).authenticationsWithoutActivity.methods[].count` | integer |  |  |

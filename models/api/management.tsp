@@ -2360,6 +2360,8 @@ namespace IyaSts.Api.Management {
         `count`?: integer;
       })[];
     };
+    `authenticationHistory`?: (WithAtProtocolMethodEtc12)[];
+    `authenticationHistoryPaging`?: WithPagePagesPerPageEtc8;
     `page`?: {
       `key`?: string;
       `riskAsked`?: boolean;
