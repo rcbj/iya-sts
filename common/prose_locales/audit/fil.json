@@ -1011,6 +1011,10 @@
     "en": "419007622035492d",
     "text": "May remote PEP na na-issue-han ng HTTPS listener certificate"
   },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "Na-certify ang assertion key ng isang remote PEP mula sa request nito"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "May remote PEP na nagtanong sa PIP ng mga attribute ng isang subject"

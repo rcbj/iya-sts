@@ -1011,6 +1011,10 @@
     "en": "419007622035492d",
     "text": "Un certificat d’écouteur HTTPS a été émis pour un PEP distant"
   },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "La clé d’assertion d’un PEP distant a été certifiée à partir de sa demande"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "Un PEP distant a demandé au PIP les attributs d’un sujet"

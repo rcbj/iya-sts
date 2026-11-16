@@ -1011,6 +1011,10 @@
     "en": "419007622035492d",
     "text": "向远程 PEP 签发了 HTTPS 监听器证书"
   },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "远程 PEP 的断言密钥已根据其请求完成认证"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "远程 PEP 向 PIP 查询某主体的属性"

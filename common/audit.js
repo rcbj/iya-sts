@@ -1149,6 +1149,11 @@ const ACTIONS = [
   // row names the serial, the names and the expiry, and never the key.
   { action: 'xacml.pep.certificate', category: 'authorization',
     label: 'A remote PEP was issued an HTTPS listener certificate' },
+  // A remote PEP's RFC 7523 assertion key was certified from its own
+  // request (#1827's follow-up, phase 3). The row names the urn, the kid,
+  // the serial and the expiry, and never the certificate or a key.
+  { action: 'xacml.pep.credential', category: 'authorization',
+    label: 'A remote PEP\'s assertion key was certified from its request' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 

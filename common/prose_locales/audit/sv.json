@@ -1011,6 +1011,10 @@
     "en": "419007622035492d",
     "text": "En fjärransluten PEP fick ett certifikat för en HTTPS-lyssnare"
   },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "En fjärr-PEP:s påståendenyckel certifierades från dess begäran"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "En fjärransluten PEP frågade PIP:en efter ett subjekts attribut"

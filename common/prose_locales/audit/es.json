@@ -1011,6 +1011,10 @@
     "en": "419007622035492d",
     "text": "Se emitió a un PEP remoto un certificado de escucha HTTPS"
   },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "La clave de aserción de un PEP remoto se certificó a partir de su solicitud"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "Un PEP remoto pidió al PIP los atributos de un sujeto"

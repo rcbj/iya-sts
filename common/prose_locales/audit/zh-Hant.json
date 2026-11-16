@@ -1011,6 +1011,10 @@
     "en": "419007622035492d",
     "text": "遠端 PEP 獲簽發 HTTPS 接聽程式憑證"
   },
+  "audit.actions.xacml.pep.credential.label": {
+    "en": "b86f230b79b40252",
+    "text": "遠端 PEP 的斷言金鑰已根據其請求完成認證"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "遠端 PEP 向 PIP 查詢主體的屬性"

@@ -1033,5 +1033,18 @@
   "tip.remotePeps.method": "The request's method. A path is counted without its query string.",
   "tip.remotePeps.path": "The request's path, with no query string, token or session id.",
   "tip.remotePeps.count": "Requests for this method and path since the process started.",
-  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused."
+  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused.",
+  "credential.legend": "Påståendenyckel",
+  "credential.legendNew": "Tilldela en fjärr-PEP:s påståendenyckel",
+  "credential.lead": "PEP:en genererar sitt eget nyckelpar och skickar en certifikatbegäran; denna domäns utfärdande CA certifierar nyckeln i den som PEP:ens RFC 7523-påståendenyckel, med namnet <code>urn:sts:sa:&lt;name&gt;</code>. Tjänsten ser aldrig den privata nyckeln. <code>node tests/tools/pep-credential.js --assertion</code> skapar nyckeln och begäran.",
+  "credential.name": "PEP-post (användarnamn)",
+  "credential.csr": "Certifikatbegäran (PEM)",
+  "credential.load": "Läs in från fil",
+  "credential.revokePrevious": "Återkalla postens övriga påståendenycklar",
+  "credential.submit": "Certifiera nyckeln",
+  "tip.credential.name": "Användarnamnet för PEP:ens post under denna domäns ou=users: ett tjänstekonto i gruppen för fjärr-PEP:er. Den behöver inte ha registrerat sig än.",
+  "tip.credential.csr": "En PKCS #10-begäran signerad med nyckeln som ska certifieras: EC P-256 (föredras) eller RSA på minst 2048 bitar. Dess subjekt och namn ignoreras; certifikatet namnger posten.",
+  "tip.credential.load": "Läser in en begäransfil i rutan ovan, i webbläsaren. Inget skickas förrän du certifierar.",
+  "tip.credential.revokePrevious": "Av som standard: en körande PEP behåller sin gamla nyckel tills den flyttas till den nya. På hamnar varje annan giltig RFC 7523-nyckel för posten på dess utfärdares spärrlista.",
+  "tip.credential.submit": "Skickar issue-pep-credential. Svaret visar certifikatet och miljön att starta PEP:en med, en gång."
 }

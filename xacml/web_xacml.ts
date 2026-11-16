@@ -984,6 +984,48 @@ class XacmlPage {
       : '<span class="sub">' + t.html('consoleXacml.readOnly') + '</span>';
   }
 
+  // THE PEP'S ASSERTION KEY (#1827's follow-up, phase 3): `issue-pep-
+  // credential`, certifying the key in the PEP's OWN certificate request as
+  // its RFC 7523 key. This service never holds the private key, so the form
+  // takes a request — pasted, or loaded from a file in the browser
+  // (`ConsoleRuntime.wireFileLoads()`) — and nothing else of the key. On a
+  // PEP's page the entry is the row's identity (`username`); under the
+  // Remote PEPs table, where a PEP that has never registered is provisioned,
+  // the name is typed. The answer is drawn once (`WebAnswers.pepCredential`).
+  static credentialForm(t: Json, username: string, idSuffix: string): string {
+    const self = this;
+    const file = 'pep-credential-file-' + idSuffix;
+    const box = 'pep-credential-csr-' + idSuffix;
+    const label = 'consoleXacml.credential.submit';
+    return '<form method="post" action="/admin/xacml/peps" ' +
+      'class="pep-credential-form">' +
+      self.hidden('action', 'issue-pep-credential') +
+      self.defaultSubmit(t.text(label)) +
+      '<p class="sub">' + t.html('consoleXacml.credential.lead') + '</p>' +
+      (username
+        ? self.hidden('name', username)
+        : self.formRow(self.labelled(t, 'consoleXacml.credential.name',
+            'consoleXacml.tip.credential.name', '<input type="text" ' +
+            'name="name" size="32" required placeholder="remote-pep-1">'))) +
+      self.formRow(self.labelled(t, 'consoleXacml.credential.csr',
+        'consoleXacml.tip.credential.csr', '<textarea name="csr" id="' +
+        box + '" rows="8" cols="64" required ' +
+        'placeholder="-----BEGIN CERTIFICATE REQUEST-----"></textarea>')) +
+      self.formRow('<button type="button" class="secondary" ' +
+        'data-load-file="' + file + '"' +
+        self.tipOf(t, 'consoleXacml.tip.credential.load') + '>' +
+        t.html('consoleXacml.credential.load') + '</button>' +
+        '<input type="file" id="' + file + '" hidden ' +
+        'accept=".csr,.pem,.req,text/plain" data-load-into="' + box + '">') +
+      self.formRow('<label' +
+        self.tipOf(t, 'consoleXacml.tip.credential.revokePrevious') + '>' +
+        '<input type="checkbox" name="revokePrevious" value="true"> ' +
+        t.html('consoleXacml.credential.revokePrevious') + '</label>') +
+      self.formRow('<button type="submit"' +
+        self.tipOf(t, 'consoleXacml.tip.credential.submit') + '>' +
+        t.html(label) + '</button>') + '</form>';
+  }
+
   // THE CLUSTERED COLUMN (rcbj, 2026-11-16): whether the row is a member of
   // a remote PEP cluster, as the PEP clusters tab defines one. `cluster` is
   // on the row only for a member (`XacmlPepClusters.effectiveRow()`), so
@@ -1254,6 +1296,10 @@ class XacmlPage {
       self.th(t, 'consoleXacml.th.actions', 'consoleXacml.tip.peps.actions') +
       '</tr>' + rows +
       '</table>') +
+      (ctx.write
+        ? self.fieldGroup(t, 'consoleXacml.credential.legendNew',
+                          self.credentialForm(t, '', 'new'))
+        : '') +
       kit.note(
         '<p>' + t.html('consoleXacml.peps.cert1') +
         '</p><p>' + t.html('consoleXacml.peps.cert2') +
@@ -4514,7 +4560,12 @@ class XacmlPage {
            'consoleXacml.tip.peps.notify') +
       line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
            'consoleXacml.tip.peps.actions') +
-      '</table>') + self.pepClusterPart(ctx, row);
+      '</table>') + self.pepClusterPart(ctx, row) +
+      (ctx.write
+        ? self.fieldGroup(t, 'consoleXacml.credential.legend',
+            self.credentialForm(t, String((row.identityAccount &&
+              row.identityAccount.username) || row.name || ''), 'pep'))
+        : '');
     const decisions = self.wide(t, 'consoleXacml.pepPage.tab.decisions',
       '<table>' +
       line(t.html('consoleXacml.th.enforced'), self.pepCounts(t, row),

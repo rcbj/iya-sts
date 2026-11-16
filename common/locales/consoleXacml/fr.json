@@ -1033,5 +1033,18 @@
   "tip.remotePeps.method": "The request's method. A path is counted without its query string.",
   "tip.remotePeps.path": "The request's path, with no query string, token or session id.",
   "tip.remotePeps.count": "Requests for this method and path since the process started.",
-  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused."
+  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused.",
+  "credential.legend": "Clé d’assertion",
+  "credential.legendNew": "Fournir la clé d’assertion d’un PEP distant",
+  "credential.lead": "Le PEP génère sa propre paire de clés et envoie une demande de certificat ; la CA émettrice de ce domaine certifie la clé qu’elle contient comme clé d’assertion RFC 7523 du PEP, nommée <code>urn:sts:sa:&lt;name&gt;</code>. Ce service ne voit jamais la clé privée. <code>node tests/tools/pep-credential.js --assertion</code> crée la clé et la demande.",
+  "credential.name": "Entrée du PEP (nom d’utilisateur)",
+  "credential.csr": "Demande de certificat (PEM)",
+  "credential.load": "Charger depuis un fichier",
+  "credential.revokePrevious": "Révoquer les autres clés d’assertion de l’entrée",
+  "credential.submit": "Certifier la clé",
+  "tip.credential.name": "Le nom d’utilisateur de l’entrée du PEP sous ou=users de ce domaine : un compte de service du groupe des PEP distants. Il n’a pas besoin de s’être déjà enregistré.",
+  "tip.credential.csr": "Une demande PKCS #10 signée avec la clé à certifier : EC P-256 (de préférence) ou RSA de 2048 bits ou plus. Son sujet et ses noms sont ignorés ; le certificat nomme l’entrée.",
+  "tip.credential.load": "Lit un fichier de demande dans la zone ci-dessus, dans le navigateur. Rien n’est envoyé avant la certification.",
+  "tip.credential.revokePrevious": "Désactivé par défaut : un PEP en cours d’exécution garde son ancienne clé jusqu’à ce qu’il passe à la nouvelle. Activé, toutes les autres clés RFC 7523 valides de l’entrée sont inscrites sur la liste de révocation de leur autorité.",
+  "tip.credential.submit": "Envoie issue-pep-credential. La réponse affiche une seule fois le certificat et l’environnement avec lequel démarrer le PEP."
 }

@@ -1033,5 +1033,18 @@
   "tip.remotePeps.method": "The request's method. A path is counted without its query string.",
   "tip.remotePeps.path": "The request's path, with no query string, token or session id.",
   "tip.remotePeps.count": "Requests for this method and path since the process started.",
-  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused."
+  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused.",
+  "credential.legend": "断言密钥",
+  "credential.legendNew": "为远程 PEP 配置断言密钥",
+  "credential.lead": "PEP 自行生成密钥对并发送证书请求；本领域的签发 CA 将其中的密钥认证为该 PEP 的 RFC 7523 断言密钥，名称为 <code>urn:sts:sa:&lt;name&gt;</code>。本服务从不接触私钥。<code>node tests/tools/pep-credential.js --assertion</code> 可生成密钥和请求。",
+  "credential.name": "PEP 条目（用户名）",
+  "credential.csr": "证书请求（PEM）",
+  "credential.load": "从文件加载",
+  "credential.revokePrevious": "吊销该条目的其他断言密钥",
+  "credential.submit": "认证密钥",
+  "tip.credential.name": "本领域 ou=users 下该 PEP 条目的用户名：远程 PEP 组中的服务账号。它无需已经注册。",
+  "tip.credential.csr": "用待认证密钥签名的 PKCS #10 请求：EC P-256（首选）或 2048 位及以上的 RSA。其主题和名称会被忽略；证书以该条目命名。",
+  "tip.credential.load": "在浏览器中将请求文件读入上方的输入框。在认证之前不会发送任何内容。",
+  "tip.credential.revokePrevious": "默认关闭：运行中的 PEP 会保留旧密钥，直到切换到新密钥。开启后，该条目的其他所有有效 RFC 7523 密钥都会列入其颁发机构的吊销列表。",
+  "tip.credential.submit": "发送 issue-pep-credential。响应会一次性显示证书以及启动 PEP 所需的环境变量。"
 }

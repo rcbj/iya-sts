@@ -3495,7 +3495,9 @@ async function issueFederationClientKeyPair(realmId, opts) {
  *
  * @param realmId - the realm
  * @param opts - `identifier`, `subjectKind`, `purpose`, `keyAlg`,
- *   `signatureAlg`, `commonName` and `days`
+ *   `signatureAlg`, `commonName` and `days`; and `publicKeyPem` (with the
+ *   `keyAlg` it is) for a key the holder generated, which is certified and
+ *   answered with an empty `privateKeyPem`
  * @returns a promise of `{ ok: true, issued }` or `{ ok: false, errors }`
  */
 async function issueSigningKeyPair(realmId, opts) {
@@ -3633,7 +3635,13 @@ async function issueSigningKeyPair(realmId, opts) {
     notAfter.setTime(issuerNotAfter);
   }
 
-  const pair = await keyMaterial.generateKeyPair(keyAlgId);
+  // A KEY THE HOLDER GENERATED (#1827's phase 3, rcbj 2026-11-16): the
+  // caller hands the PUBLIC half — read out of a PKCS #10 request whose proof
+  // of possession `certifySigningRequest()` checked — and no private half
+  // exists here to return. Everything below is the same leaf either way.
+  const pair = options.publicKeyPem
+    ? { publicPem: String(options.publicKeyPem), privatePem: '' }
+    : await keyMaterial.generateKeyPair(keyAlgId);
   const subject = [{ name: 'CN', value: commonName },
                    { name: 'O', value: chain.organisation }]
     .concat(chain.country ? [{ name: 'C', value: chain.country }] : []);
@@ -3852,6 +3860,130 @@ async function issueSigningKeyPair(realmId, opts) {
            record.notAfter + '.');
   log.debug('Leaving issueSigningKeyPair(). kid=' + record.kid);
   return { ok: true, issued: record };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S RFC 7523 KEY CERTIFIED FROM THEIR OWN REQUEST (#1827's phase 3,
+// rcbj 2026-11-16: "the service never holds the PEP's private key").
+//
+// `issueSigningKeyPair()` GENERATES the key pair and hands the private half to
+// its caller, which seals a copy onto the entry (`person_assertions.write()`).
+// That is right for a person who asked this service for a key, and wrong for a
+// workload that can make its own: a remote PEP, or the tool that provisions
+// one, generates the key, sends a PKCS #10 request, and the realm's Issuing CA
+// certifies the PUBLIC key in it. The leaf is the same leaf — the same
+// profile, the same revocation pointers, the same record in `issuedKeyPairs`,
+// so its authority's CRL and OCSP responder answer for it — with nothing
+// private anywhere in this process.
+//
+// THE PROOF OF POSSESSION IS `cert_enrollment.ts`'s `parseCsr()`, the one
+// PKCS #10 reader this service has (ACME, EST, SCEP and a PEP's listener
+// certificate read through it), required LAZILY: that module requires this
+// one, and a request reaches here long after both are built. Not a second
+// parser, so a key family it verifies is verified the same way here.
+//
+// **THE REQUEST'S NAMES ARE READ FOR NOTHING.** Its subject and any
+// subjectAltName it asks for are ignored: the leaf's names are the ENTRY's —
+// its username as CN and `SubjectUrn.forPerson()` as the URI SAN, which is
+// `urn:sts:sa:<name>` for a service account. A requester cannot name somebody
+// else, which is what keeps `assertion_grant.js`'s "a person asserts only
+// about themselves" true of a key nobody here generated.
+//
+// **TWO KEY FAMILIES, BY NAME** (`CSR_SIGNING_KEY_ALGS`): EC P-256 (ES256,
+// the one a PEP is told to prefer) and RSA of 2048 bits or more (RS256 or
+// PS256, the realm's chain decides). These are the two the remote PEP signs a
+// self-assertion and a DPoP proof with (`credential.rs`), and anything else is
+// refused naming the two, rather than certified into a key the holder cannot
+// use.
+// ---------------------------------------------------------------------------
+/**
+ * The key algorithms a holder-generated RFC 7523 key is certified for:
+ * EC P-256 and RSA of at least 2048 bits.
+ */
+const CSR_SIGNING_KEY_ALGS = ['ec-p256', 'rsa-2048', 'rsa-3072', 'rsa-4096'];
+
+/**
+ * Certifies the public key in a person's own PKCS #10 request as an RFC 7523
+ * signing key, from the realm's Issuing CA. Nothing private is generated or
+ * answered.
+ *
+ * The request's signature must verify with its own key (proof of
+ * possession). Its subject and names are ignored: the leaf names the entry
+ * (`urn:sts:sa:<name>` for a service account).
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @param opts - `identifier` (the username), `csr` (PEM or base64 DER),
+ *   `serviceAccount` (the entry's flag, read by the caller), `commonName`
+ *   and `days`
+ * @returns a promise of `{ ok: true, issued }` — `issueSigningKeyPair()`'s
+ *   record with `source` `issued-from-csr` and an empty `privateKeyPem` — or
+ *   `{ ok: false, errors }` marked with its code
+ */
+async function certifySigningRequest(realmId, opts) {
+  log.debug('Entering certifySigningRequest().');
+  const options = opts || {};
+  const text = typeof options.csr === 'string' ? options.csr : '';
+  const der = Buffer.from(text.replace(/-----[A-Z0-9 ]+-----/g, '')
+                            .replace(/\s+/g, ''), 'base64');
+  if (!der.length) {
+    log.debug('Leaving certifySigningRequest(). No request.');
+    return errorCodes.mark({ ok: false,
+             errors: ['No certificate request arrived: `csr` is a PKCS #10 ' +
+                      'request (PEM, or base64 DER) signed with the key to ' +
+                      'be certified. This service never generates or holds ' +
+                      'that key.'] },
+                           'STS-PKI-0278');
+  }
+  let parsed = null;
+  try {
+    parsed = await require('./cert_enrollment').parseCsr(der);
+  } catch (e) {
+    log.debug('Caught in certifySigningRequest(): ' +
+              ((e && e.message) || e));
+    parsed = null;
+  }
+  if (!parsed || !parsed.ok) {
+    log.debug('Leaving certifySigningRequest(). The request was refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The certificate request was refused: ' +
+                      ((parsed && (parsed.why ||
+                                   (parsed.errors || []).join(' '))) ||
+                       'it could not be read.')] },
+             (parsed && errorCodes.codeOf(parsed)) || 'STS-PKI-0278');
+  }
+  if (CSR_SIGNING_KEY_ALGS.indexOf(String(parsed.keyAlg)) < 0) {
+    log.debug('Leaving certifySigningRequest(). Key ' + parsed.keyAlg +
+              ' refused.');
+    return errorCodes.mark({ ok: false,
+             errors: ['The request carries a ' + parsed.keyAlg + ' key. An ' +
+                      'RFC 7523 key certified from a request is EC P-256 ' +
+                      '(ES256, preferred) or RSA of 2048 bits or more — ' +
+                      CSR_SIGNING_KEY_ALGS.join(', ') + '.'] },
+                           'STS-PKI-0279');
+  }
+  const identifier = String(options.identifier || '');
+  const issued = await issueSigningKeyPair(realmId, {
+    identifier: identifier,
+    purpose: 'jwt',
+    subjectKind: 'person',
+    serviceAccount: options.serviceAccount,
+    commonName: String(options.commonName || '') || identifier,
+    keyAlg: parsed.keyAlg,
+    publicKeyPem: parsed.publicKeyPem,
+    days: options.days
+  });
+  if (!issued.ok) {
+    log.debug('Leaving certifySigningRequest(). Not issued.');
+    return issued;
+  }
+  issued.issued.source = 'issued-from-csr';
+  issued.issued.privateKeyPem = '';
+  log.info('pki: the ' + parsed.keyAlg + ' key in a certificate request ' +
+           'from "' + identifier + '" was certified for RFC 7523 as ' +
+           issued.issued.subjectUri + ', serial ' + issued.issued.serialHex +
+           '. Its private key was never here.');
+  log.debug('Leaving certifySigningRequest(). kid=' + issued.issued.kid);
+  return issued;
 }
 
 // ===========================================================================
@@ -15323,6 +15455,8 @@ module.exports = {
   trustAnchorsFor: trustAnchorsFor,
   useCaseChainPems: useCaseChainPems,
   issueSigningKeyPair: issueSigningKeyPair,
+  certifySigningRequest: certifySigningRequest,
+  CSR_SIGNING_KEY_ALGS: CSR_SIGNING_KEY_ALGS,
   issueEncryptionKeyPair: issueEncryptionKeyPair,
   FEDERATION_CLIENT_KEY_ALGS: FEDERATION_CLIENT_KEY_ALGS,
   issueFederationClientKeyPair: issueFederationClientKeyPair,
