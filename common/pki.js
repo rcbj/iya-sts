@@ -10320,18 +10320,82 @@ function tidyPem(text) {
 //                      one this service would have made.
 // ===========================================================================
 
-// Re-mint everything one Issuing CA has certified, from whatever authority it
-// now is. Shared by the reissue and the renewal, which differ only in whether
-// the authority changed first.
+// ---------------------------------------------------------------------------
+// WHAT A REBUILD MAY RE-MINT: ONLY A CERTIFICATE THAT IS STILL GOOD
+// (2026-11-16).
+//
+// **THIS RE-MINTED EVERY SLOT, REVOKED ONES INCLUDED, AND THAT UNDID
+// REVOCATION.** A slot is a person's or an application's TLS client or
+// message-signing certificate, a pinned pair, a remote PEP's listener, the
+// realm's own signing-key certificates. A renewal, a reissue and an import
+// each issued a NEW certificate over the key of every one of them — and a new
+// serial is on no list. So a person who revoked their laptop's certificate
+// for `keyCompromise` had it back, valid, signed by the renewed authority,
+// the next time an operator pressed *Renew certificates*; a hold became a
+// certificate nobody had put on hold.
+//
+// **A REVOKED RECORD (ANY REASON, A HOLD INCLUDED) AND AN EXPIRED ONE ARE LEFT
+// EXACTLY AS THEY ARE**: in their slot, under the authority that signed them,
+// with their serial on that use case's list and its entry — reason and date —
+// untouched. That is what keeps the revocation true wherever it can still be
+// asked:
+//
+//   * a RENEWAL keeps the authority and its key, so its CRL and its OCSP
+//     responder go on answering `revoked` for the serial, which is still in
+//     the register (`issuedHere()`), for as long as the leaf could be valid;
+//   * a REISSUE and an IMPORT replace the authority, and the replaced one is
+//     SUPERSEDED on its Intermediate's list (`reissueUseCase()` always did;
+//     `importCa()` does since this date), so a leaf it signed chains to a
+//     revoked authority — refused by every validator that checks, whatever
+//     the leaf's own status. The leaf's serial stays on the use case's list,
+//     which the new authority's CRL carries.
+//
+// The predicate is `pki_merge.js`'s `notReMintable()`, the one the merge's
+// orphan report asks too. The answer names what was left and why, so a
+// console or a test can see it; the holder of a revoked certificate who still
+// needs one issues a new one, which is what the portal and the console say.
+// ---------------------------------------------------------------------------
 /**
- * Re-mints everything one Issuing CA has certified, from whatever authority
- * it now is.
+ * Splits one use case's recorded certificates into those a rebuild may
+ * re-mint and those it must leave: revoked (any reason) or expired.
  *
  * @param scopeId - a realm id or `PROCESS_SCOPE`
  * @param useCaseId - the use case
- * @returns a promise of `{ ok, recertified, failed }`
+ * @returns `{ held, skipped }`; `skipped` is `{ slot, serialHex, why }`
  */
-async function recertifyUseCase(scopeId, useCaseId) {
+function reMintable(scopeId, useCaseId) {
+  log.debug('Entering reMintable(). scope=' + scopeId + ' use=' + useCaseId);
+  const row = rawRowFor(String(scopeId)) || {};
+  const now = Date.now();
+  const held = [];
+  const skipped = [];
+  certificatesFor(scopeId, useCaseId).forEach(function (one) {
+    const why = pkiMerge.notReMintable(row, one, now);
+    if (why) {
+      skipped.push({ slot: one.slot, serialHex: one.serialHex, why: why });
+    } else {
+      held.push(one);
+    }
+  });
+  log.debug('Leaving reMintable(). ' + held.length + ' to re-mint, ' +
+            skipped.length + ' left.');
+  return { held: held, skipped: skipped };
+}
+
+// Re-mint everything one Issuing CA has certified that is still good, from
+// whatever authority it now is. Shared by the reissue, the renewal and the
+// import, which differ only in whether the authority changed first.
+/**
+ * Re-mints everything one Issuing CA has certified that is still good —
+ * neither revoked nor expired — from whatever authority it now is.
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @param options - optional; `chosen`, a `reMintable()` answer taken before
+ *   the caller changed anything (a reissue supersedes every leaf first)
+ * @returns a promise of `{ ok, recertified, failed, skipped }`
+ */
+async function recertifyUseCase(scopeId, useCaseId, options) {
   log.debug('Entering recertifyUseCase(). scope=' + scopeId + ' use=' +
             useCaseId);
   const id = String(scopeId);
@@ -10342,7 +10406,20 @@ async function recertifyUseCase(scopeId, useCaseId) {
              errors: ['"' + useCaseId + '" is not a use case. They are ' +
                       USE_CASE_IDS.join(', ') + '.'] }, 'STS-PKI-0022');
   }
-  const held = certificatesFor(id, uc.id);
+  const chosen = (options && options.chosen) || reMintable(id, uc.id);
+  const held = chosen.held;
+  const skipped = chosen.skipped.slice();
+  if (skipped.length) {
+    log.info('pki: ' + skipped.length + ' certificate(s) under the ' +
+             uc.label + ' Issuing CA of "' + (id || 'default') + '" were ' +
+             'NOT re-minted, because each is revoked or expired and a new ' +
+             'serial would undo that: ' + skipped.slice(0, 10)
+               .map(function (one) {
+                 return one.slot + ' (' + one.why + ')';
+               }).join('; ') +
+             (skipped.length > 10 ? '; and ' + (skipped.length - 10) +
+                                    ' more' : '') + '.');
+  }
   let done = 0;
   const failed = [];
   for (let i = 0; i < held.length; i++) {
@@ -10351,6 +10428,17 @@ async function recertifyUseCase(scopeId, useCaseId) {
     // RENEW (#263): its x5c is their chain, and a certificate of ours over
     // their key would change what relying parties pin behind their back.
     if (was.pinnedSigner && was.pinnedSigner.operatorCertificate) {
+      continue;
+    }
+    // ASKED AGAIN BEFORE EACH SIGNATURE, for a renewal: every one is an
+    // await, and a holder may revoke their certificate while the ones
+    // before it are signed. Not for a caller that chose first — a reissue
+    // has superseded every leaf by now, on purpose.
+    const lateWhy = (options && options.chosen) ? ''
+      : pkiMerge.notReMintable(rawRowFor(id), was);
+    if (lateWhy) {
+      skipped.push({ slot: was.slot, serialHex: was.serialHex,
+                     why: lateWhy });
       continue;
     }
     // **THE PUBLIC KEY COMES FROM THE CERTIFICATE THAT IS BEING REPLACED**,
@@ -10417,7 +10505,7 @@ async function recertifyUseCase(scopeId, useCaseId) {
              ' Issuing CA could not be re-minted: ' + failed.join('; '));
   }
   log.debug('Leaving recertifyUseCase(). ' + done + ' re-minted.');
-  return { ok: true, recertified: done, failed: failed };
+  return { ok: true, recertified: done, failed: failed, skipped: skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -10439,7 +10527,8 @@ async function recertifyUseCase(scopeId, useCaseId) {
 //
 // Asked again per slot before signing, because the slot may have been
 // certified from the live CA since the merge — by the rebuild's own re-mint,
-// or by a second report of the same merge.
+// or by a second report of the same merge. **A REVOKED OR EXPIRED SLOT IS
+// NEVER CERTIFIED AGAIN (2026-11-16)**, for `reMintable()`'s reason.
 // ---------------------------------------------------------------------------
 /**
  * Certifies again, from the Issuing CA the row now holds, the slots a merge
@@ -10461,6 +10550,12 @@ async function recertifyOrphanedSlots(scopeId, slots) {
     const was = (row.certs || {})[name];
     const ca = was ? (row.issuing || {})[was.useCase] : null;
     if (!was || !ca || (was.chainPem || [])[0] === ca.certificatePem) {
+      continue;
+    }
+    // NOT A REVOKED OR EXPIRED ONE (2026-11-16): `orphanedSlots()` no longer
+    // reports one, and a caller handing one in anyway gets the same answer —
+    // a new serial would undo the revocation (`reMintable()`'s header).
+    if (pkiMerge.notReMintable(row, was)) {
       continue;
     }
     let publicPem = was.subjectPublicKeyPem || '';
@@ -10642,10 +10737,16 @@ async function reissueUseCase(scopeId, useCaseId) {
              errors: ['That Issuing CA could not be re-issued: ' + e.message] },
                            'STS-PKI-0036');
   }
+  // WHAT MAY BE RE-MINTED IS DECIDED FIRST (2026-11-16), before the line
+  // below puts every leaf on the list as `superseded`: after it, a
+  // certificate a person revoked and one that was merely replaced look alike.
+  // `reMintable()`'s header argues why a revoked or expired one is left.
+  const chosen = reMintable(id, uc.id);
   // THE OLD AUTHORITY IS SUPERSEDED, at the Intermediate that signed it — and
   // so is everything it had issued, at the old authority itself. Both are
   // done BEFORE the new one is stored, because `supersede()` reads the row and
-  // the old certificates are what is being listed.
+  // the old certificates are what is being listed. A leaf already revoked
+  // keeps its entry: `revoke()` is idempotent and the earlier entry wins.
   supersede(id, 'intermediate', row.issuing[uc.id],
             'replaced by a reissue of the ' + uc.label + ' Issuing CA');
   certificatesFor(id, uc.id).forEach(function (one) {
@@ -10657,7 +10758,7 @@ async function reissueUseCase(scopeId, useCaseId) {
   fresh.issuing = Object.assign({}, fresh.issuing || {});
   fresh.issuing[uc.id] = made;
   saveRow(id, fresh);
-  const again = await recertifyUseCase(id, uc.id);
+  const again = await recertifyUseCase(id, uc.id, { chosen: chosen });
   log.info('pki: the ' + uc.label + ' Issuing CA in "' + (id || 'default') +
            '" was re-issued with a new key pair, and ' + again.recertified +
            ' certificate(s) under it were re-minted from it.');
@@ -10814,9 +10915,31 @@ async function importCa(scopeId, useCaseId, material) {
                       'Issuing CA is imported INTO a branch.'] },
                            'STS-PKI-0034');
   }
-  row.issuing = Object.assign({}, row.issuing || {});
-  row.issuing[uc.id] = record;
-  saveRow(scopeId, row);
+  // -------------------------------------------------------------------------
+  // **THE AUTHORITY BEING REPLACED IS SUPERSEDED (2026-11-16)**, at its
+  // Intermediate, as a reissue's is. It was left VALID: still chaining to the
+  // Intermediate and the Root, still vouching for every leaf it had signed —
+  // a revoked one included — while its CRL address and its OCSP responder
+  // came to answer for the imported authority instead (`unauthorized` about
+  // anything the old one signed). A certificate somebody revoked under it was
+  // then good to every relying party that could not ask any more. With the
+  // old authority on its Intermediate's list, every leaf it signed chains to
+  // a revoked authority, which is the one claim still published about it.
+  //
+  // Only the AUTHORITY goes on a list, so the leaves' own entries still tell
+  // a revoked one from a good one, and `recertifyUseCase()` asks them itself.
+  // Re-importing the authority already held is the same certificate and
+  // supersedes nothing.
+  // -------------------------------------------------------------------------
+  const replaced = (row.issuing || {})[uc.id] || null;
+  if (replaced && normalSerialsDiffer(replaced.serialHex, record.serialHex)) {
+    supersede(scopeId, 'intermediate', replaced,
+              'replaced by an imported ' + uc.label + ' Issuing CA');
+  }
+  const fresh = rawRowFor(scopeId) || row;
+  fresh.issuing = Object.assign({}, fresh.issuing || {});
+  fresh.issuing[uc.id] = record;
+  saveRow(scopeId, fresh);
   const again = await recertifyUseCase(scopeId, uc.id);
   log.warn('pki: the ' + uc.label + ' Issuing CA in "' +
            (String(scopeId) || 'default') + '" was REPLACED BY AN IMPORTED ' +
