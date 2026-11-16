@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5686** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5692** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -87,7 +87,7 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 219
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 125
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 131
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5297,9 +5297,15 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0120` | A remote PEP was nudged with `full` within a poll interval of its last full pull, so it pulled as usual: a full pull is honoured at most once a poll interval, because POST /notify is not authenticated (2026-11-16). | none — an info line in the PEP's log |
 | `STS-XPEP-0121` | A job on a remote PEP listener's thread pool panicked. Its connection is lost; the worker catches the panic and takes the next job (2026-11-16). | none — an error in the PEP's log |
 | `STS-XPEP-0122` | The remote PEP's queue of decision records waiting for the service was full, so the oldest record was dropped to make room (#1827). Enforcement goes on; the dropped decision is still on the PEP's own log. Logged at the first drop and then sparingly, with the count. | none; the PEP keeps enforcing |
-| `STS-XPEP-0123` | The remote PEP could not obtain an access token for the management API: the RFC 7523 self-assertion grant at the token endpoint failed or was refused (#1827). Its entry must hold its client certificate as an assertion key and be in the group roles.remotePepGroup names. The records stay queued. | none; the records are kept and sent later |
+| `STS-XPEP-0123` | The remote PEP sent a batch of decision records to the management API without an access token, because none could be had (#1827; STS-XPEP-0129 says why the grant failed). The records stay queued. | none; the records are kept and sent later |
 | `STS-XPEP-0124` | The remote PEP could not deliver a batch of decision records to POST /admin-api/pep-audit: no answer, a refusal of its token, or a status other than 200 and 400 (#1827). The records stay queued and are sent again. | none; the records are kept and sent later |
 | `STS-XPEP-0125` | The service refused a batch of decision records as malformed (HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped that batch rather than send it forever (#1827). Each decision is still on the PEP's own log. | none; the batch is dropped |
+| `STS-XPEP-0126` | The remote PEP has no assertion key: neither PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could not be read. A key already loaded is kept; without one, every call to the service goes without an access token, on the client certificate alone where PEP_TLS_CERT is set. | none — a warning in the PEP's log |
+| `STS-XPEP-0127` | PEP_ASSERTION_KEY is not set, so the remote PEP signs its self-assertion and its DPoP proofs with its client certificate's key, PEP_TLS_KEY. A notice: it works when that key is the one registered on the PEP's entry. | none — an info line in the PEP's log |
+| `STS-XPEP-0128` | The remote PEP refused its assertion key: it would not parse, or it is neither RSA (RS256) nor EC P-256 (ES256). A key already loaded is kept. | none — a warning in the PEP's log |
+| `STS-XPEP-0129` | The remote PEP could not obtain an access token for one of its three resources (/xacml/pep, /admin-api, /access/v1): the token endpoint did not answer or refused the RFC 7523 self-assertion grant. The log names the missing provisioning step — the assertion key registered on the entry, the client, the remote PEPs group. Calls to that resource go without a token; the grant is not asked again for five seconds. | none — a warning in the PEP's log, at the first refusal and when the reason changes |
+| `STS-XPEP-0130` | The token endpoint or a resource demanded a DPoP nonce (use_dpop_nonce) again after the remote PEP retried with the nonce it handed. The PEP retries once only; the call's answer stands. | none — a warning in the PEP's log |
+| `STS-XPEP-0131` | A resource refused the remote PEP's access token with a 401 again after the PEP dropped it and fetched a new one. The PEP retries once only; the call's answer stands. | none — a warning in the PEP's log |
 
 ## STS-AUTHZEN
 

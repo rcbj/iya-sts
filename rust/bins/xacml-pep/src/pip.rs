@@ -36,6 +36,7 @@ use sts_xacml::request::Request;
 use sts_xacml::value::Value as XacmlValue;
 use sts_xacml::xml;
 
+use crate::credential::Resource;
 use crate::options::Options;
 use crate::pdp_client::{Body, PdpClient};
 
@@ -452,7 +453,12 @@ impl RemotePip {
             query_document(&subject, &designators, subject_kind_of(request));
         let answered = self
             .client
-            .call(Method::POST, "/xacml/pip", Some(Body::Xml(document)))
+            .call_authorized(
+                Resource::Pep,
+                Method::POST,
+                "/xacml/pip",
+                Some(Body::Xml(document)),
+            )
             .await;
         if answered.error.is_some() || answered.status != 200 {
             let why = match &answered.error {

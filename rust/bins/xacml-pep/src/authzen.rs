@@ -538,7 +538,8 @@ async fn forward_to(
         headers.push(("X-Request-ID", id));
     }
     let answer = client
-        .call_with(
+        .call_authorized_with(
+            crate::credential::Resource::Access,
             reqwest::Method::POST,
             EVALUATION_PATH,
             Some(Body::Json(forwarded_body(body, application))),

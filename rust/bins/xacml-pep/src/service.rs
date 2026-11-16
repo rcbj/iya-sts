@@ -792,7 +792,8 @@ impl Pep {
                 } else {
                     Value::Null
                 },
-                "credentialed": o.client_certificate.is_some(),
+                "credentialed": o.client_certificate.is_some()
+                    || self.sync.client().credential().has_key(),
                 "lastQuery": last_query,
                 "what": pip_what
             },
@@ -821,6 +822,7 @@ impl Pep {
             "authzen": self.authzen_overview(),
             "proxy": self.sync.proxy_json(),
             "audit": self.audit.overview(),
+            "credential": self.sync.client().credential().overview(),
             "holding": self.sync.holding_json(),
             "stale": stale,
             "staleAfterMs": stale_after_ms,

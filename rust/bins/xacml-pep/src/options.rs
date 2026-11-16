@@ -149,8 +149,34 @@ pub struct Options {
     /// oldest is dropped.
     pub audit_buffer: usize,
     /// The public client the self-assertion grant goes through,
-    /// `PEP_AUDIT_CLIENT_ID`.
-    pub audit_client_id: String,
+    /// `PEP_CLIENT_ID` (`PEP_AUDIT_CLIENT_ID`, its name before every call
+    /// carried a token, is still read when it is unset).
+    pub client_id: String,
+    /// The key the self-assertion and every DPoP proof are signed with:
+    /// `PEP_ASSERTION_KEY`, else `PEP_TLS_KEY` (`credential.rs`). Read
+    /// by the credential, again on the listener pair's reload interval.
+    pub assertion_key: crate::credential::KeySource,
+}
+
+/// `PEP_CLIENT_ID`, else its old name `PEP_AUDIT_CLIENT_ID`, else
+/// `sts-remote-pep` — from the two values given, so a test does not touch
+/// the environment. The second member is the variable it came from.
+pub fn client_id_of(
+    primary: Option<&str>,
+    alias: Option<&str>,
+) -> (String, &'static str) {
+    let set = |v: Option<&str>| {
+        v.map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    };
+    if let Some(id) = set(primary) {
+        return (id, "PEP_CLIENT_ID");
+    }
+    if let Some(id) = set(alias) {
+        return (id, "PEP_AUDIT_CLIENT_ID");
+    }
+    ("sts-remote-pep".to_string(), "")
 }
 
 /// THE SETTINGS IN FORCE NOW: the service's value where it set one, else
@@ -1109,7 +1135,15 @@ impl Options {
             audit_batch: int_from_env("PEP_AUDIT_BATCH", 200usize)
                 .clamp(1, 500),
             audit_buffer: int_from_env("PEP_AUDIT_BUFFER", 10000usize).max(1),
-            audit_client_id: env_or("PEP_AUDIT_CLIENT_ID", "sts-remote-pep"),
+            client_id: client_id_of(
+                std::env::var("PEP_CLIENT_ID").ok().as_deref(),
+                std::env::var("PEP_AUDIT_CLIENT_ID").ok().as_deref(),
+            )
+            .0,
+            assertion_key: crate::credential::KeySource::choose(
+                std::env::var("PEP_ASSERTION_KEY").ok().as_deref(),
+                std::env::var("PEP_TLS_KEY").ok().as_deref(),
+            ),
         }
     }
 }
@@ -1203,6 +1237,22 @@ fn authzen_pdp_identifier() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pep_client_id_wins_and_pep_audit_client_id_is_its_alias() {
+        assert_eq!(
+            client_id_of(Some("a"), Some("b")),
+            ("a".to_string(), "PEP_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(Some(" "), Some("b")),
+            ("b".to_string(), "PEP_AUDIT_CLIENT_ID")
+        );
+        assert_eq!(
+            client_id_of(None, None),
+            ("sts-remote-pep".to_string(), "")
+        );
+    }
 
     #[test]
     fn callers_are_read_strictly() {

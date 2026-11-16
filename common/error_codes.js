@@ -24446,11 +24446,10 @@ const CODES = [
       'with the count.',
     spec: 'none; the PEP keeps enforcing' },
   { code: 'STS-XPEP-0123',
-    summary: 'The remote PEP could not obtain an access token for the ' +
-      'management API: the RFC 7523 self-assertion grant at the token ' +
-      'endpoint failed or was refused (#1827). Its entry must hold its ' +
-      'client certificate as an assertion key and be in the group ' +
-      'roles.remotePepGroup names. The records stay queued.',
+    summary: 'The remote PEP sent a batch of decision records to the ' +
+      'management API without an access token, because none could be had ' +
+      '(#1827; STS-XPEP-0129 says why the grant failed). The records stay ' +
+      'queued.',
     spec: 'none; the records are kept and sent later' },
   { code: 'STS-XPEP-0124',
     summary: 'The remote PEP could not deliver a batch of decision records ' +
@@ -24464,6 +24463,46 @@ const CODES = [
       'that batch rather than send it forever (#1827). Each decision is ' +
       'still on the PEP\'s own log.',
     spec: 'none; the batch is dropped' },
+  // #1827 follow-up: the PEP's one credential, a DPoP-bound token from the
+  // RFC 7523 self-assertion grant on every call to the service.
+  { code: 'STS-XPEP-0126',
+    summary: 'The remote PEP has no assertion key: neither ' +
+      'PEP_ASSERTION_KEY nor PEP_TLS_KEY is set, or the file named could ' +
+      'not be read. A key already loaded is kept; without one, every call ' +
+      'to the service goes without an access token, on the client ' +
+      'certificate alone where PEP_TLS_CERT is set.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0127',
+    summary: 'PEP_ASSERTION_KEY is not set, so the remote PEP signs its ' +
+      'self-assertion and its DPoP proofs with its client certificate\'s ' +
+      'key, PEP_TLS_KEY. A notice: it works when that key is the one ' +
+      'registered on the PEP\'s entry.',
+    spec: 'none — an info line in the PEP\'s log' },
+  { code: 'STS-XPEP-0128',
+    summary: 'The remote PEP refused its assertion key: it would not ' +
+      'parse, or it is neither RSA (RS256) nor EC P-256 (ES256). A key ' +
+      'already loaded is kept.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0129',
+    summary: 'The remote PEP could not obtain an access token for one of ' +
+      'its three resources (/xacml/pep, /admin-api, /access/v1): the token ' +
+      'endpoint did not answer or refused the RFC 7523 self-assertion ' +
+      'grant. The log names the missing provisioning step — the assertion ' +
+      'key registered on the entry, the client, the remote PEPs group. ' +
+      'Calls to that resource go without a token; the grant is not asked ' +
+      'again for five seconds.',
+    spec: 'none — a warning in the PEP\'s log, at the first refusal and ' +
+      'when the reason changes' },
+  { code: 'STS-XPEP-0130',
+    summary: 'The token endpoint or a resource demanded a DPoP nonce ' +
+      '(use_dpop_nonce) again after the remote PEP retried with the nonce ' +
+      'it handed. The PEP retries once only; the call\'s answer stands.',
+    spec: 'none — a warning in the PEP\'s log' },
+  { code: 'STS-XPEP-0131',
+    summary: 'A resource refused the remote PEP\'s access token with a 401 ' +
+      'again after the PEP dropped it and fetched a new one. The PEP ' +
+      'retries once only; the call\'s answer stands.',
+    spec: 'none — a warning in the PEP\'s log' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
