@@ -254,6 +254,16 @@ async function inRealm(t, realm) {
           errorCodes.codeOf(falseGot) === 'STS-TLS-0063',
           'C3. urn:sts:sa: naming somebody who is not a service account is ' +
           'refused, STS-TLS-0063', JSON.stringify(falseGot));
+  // WS-TRUST ASKS WITH `anyHolderForm` (rcbj, 2026-11-16: "any user with
+  // valid credentials should be able to authenticate through WS-Trust"):
+  // the same leaf is that person there, the spelling notwithstanding.
+  const anyForm = falseLeaf ? tlsClient.identityOf(asInput(
+    falseLeaf.certificatePem, falseLeaf.chainPem),
+  { anyHolderForm: true }) : {};
+  t.check(anyForm.accepted && anyForm.kind === 'person' &&
+          anyForm.username === PERSON,
+          'C3b. asked as WS-Trust asks (anyHolderForm), the same leaf ' +
+          'authenticates the person it names', JSON.stringify(anyForm));
   const nobodyLeaf = await fixtureLeaf(realmId, 'sa-urn-nobody',
                                        'urn:sts:sa:sa-urn-nobody');
   const nobodyGot = nobodyLeaf ? tlsClient.identityOf(asInput(

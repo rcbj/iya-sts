@@ -886,10 +886,14 @@ structure and its certificate reference and believes the holder: the mapped
 entry, else the urn:sts: SAN, else the CN. Nothing else is checked, and the
 authentication row's note says so — the posture a UsernameToken has there.
 
-**A REQUESTER NAMED `urn:sts:sa:` WHO IS NOT A SERVICE ACCOUNT** — a
-signer's certificate or the connection's — is refused in both modes,
-STS-WSTRUST-0074 (#1827, `common/CLAUDE.md` 3df); development, which
-believes a name, does not believe that one.
+**A REQUESTER IS AUTHENTICATED WHICHEVER SPELLING NAMES IT** (#1827, rcbj
+2026-11-16: "any user with valid credentials should be able to authenticate
+through WS-Trust"). A valid signer's or connection's leaf naming an existing
+entry as `urn:sts:person:` or `urn:sts:sa:` authenticates that entry, even
+where the spelling does not match what the entry is: this door asks the TLS
+gate with `anyHolderForm`, which skips only the form check
+(`common/CLAUDE.md` 3df). STS-WSTRUST-0074, which refused it here for a
+while, is retired.
 
 **IN CELLS** a signed request is placed by the `urn:sts:person:` (or
 `urn:sts:sa:`) name of a

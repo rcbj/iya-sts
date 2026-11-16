@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5674** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5673** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -2763,7 +2763,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
 | `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body that is not XML (STS-WSTRUST-0001) |
 | `STS-WSTRUST-0073` | A request to POST /sts/mex (#958) carried a wsa:Action that is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata (2004/09), or none, so there is no metadata request to answer. | SOAP Client (SOAP 1.2: Sender) fault, HTTP 500 |
-| `STS-WSTRUST-0074` | A WS-Trust requester's certificate (a WS-Security signer, or the TLS client certificate on the connection) names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. Refused in both modes. | wst:FailedAuthentication fault |
+| `STS-WSTRUST-0074` *(retired)* | A WS-Trust requester's certificate (a WS-Security signer, or the TLS client certificate on the connection) names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: "any user with valid credentials should be able to authenticate through WS-Trust"): WS-Trust authenticates the entry whichever spelling names it. | — |
 
 ## STS-WSFED
 

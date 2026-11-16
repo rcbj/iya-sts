@@ -1932,7 +1932,8 @@ class WsTrust {
     // there by its own code. Development believes a name, so the door holds it.
     const trust = require('../common/certificate_trust');
     if (trust.applies('wss-x509-token')) {
-      const issuedHere = gates.signingIdentityOf(certificate);
+      const issuedHere = gates.signingIdentityOf(certificate,
+                                                 { anyHolderForm: true });
       const stored = !!(issuedHere && issuedHere.ok);
       if (!(issuedHere && issuedHere.issuedHere) &&
           (stored || !mode.verifiesCredentials())) {
@@ -1946,18 +1947,14 @@ class WsTrust {
         }
       }
     }
-    const identity = gates.signingIdentityOf(certificate);
+    // ANY HOLDER FORM (#1827, rcbj 2026-11-16: "any user with valid
+    // credentials should be able to authenticate through WS-Trust"): a
+    // valid signer's leaf naming an existing entry authenticates it whether
+    // it spells the holder `urn:sts:person:` or `urn:sts:sa:`. The other
+    // doors keep the gate's form check (STS-TLS-0063).
+    const identity = gates.signingIdentityOf(certificate,
+                                             { anyHolderForm: true });
     const verifies = mode.verifiesCredentials();
-    // A SIGNER NAMED AS A SERVICE ACCOUNT THAT IS NOT ONE (#1827), in both
-    // modes: the gate refuses it (`NOT_A_SERVICE_ACCOUNT`), and development,
-    // which would otherwise read the name off the certificate and believe
-    // it, is told the same — the spelling is a claim about the entry, and
-    // believing a name is not believing a false one.
-    if (!identity.ok && identity.error === 'NOT_A_SERVICE_ACCOUNT') {
-      log.debug("Leaving WsTrust.messageSignature(). Not a service " +
-                "account.");
-      return refused('STS-WSTRUST-0074', String(identity.why));
-    }
     if (!verifies) {
       let name = identity.ok ? String(identity.username) : '';
       let isClient = identity.ok && identity.kind === 'application';
@@ -1969,14 +1966,6 @@ class WsTrust {
           const urn = SubjectUrn.namesIn(String(x509.subjectAltName || ''),
                                          ['person', 'sa', 'application'])[0];
           isClient = !!urn && urn.kind === 'application';
-          if (urn && SubjectUrn.isServiceAccountForm(urn) &&
-              !this.serviceAccountNamed(urn.name)) {
-            log.debug("Leaving WsTrust.messageSignature(). Development: " +
-                      "not a service account.");
-            return refused('STS-WSTRUST-0074', 'the certificate names "' +
-                           urn.name + '" as a service account, and in ' +
-                           'this realm that entry is not one');
-          }
           name = urn ? urn.name
             : ((/(?:^|\n)CN=([^\n]*)/.exec(String(x509.subject || '')) ||
                 [])[1] || '');
@@ -2399,31 +2388,6 @@ class WsTrust {
   // `scim.authClientCert` is) turns the whole credential off; the console's
   // WS-Trust page and `GET /admin-api/wstrust` show it, as settings.
   // ---------------------------------------------------------------------------
-  /**
-   * Says whether a person is a service account in the ambient realm
-   * (#1827): the claim a `urn:sts:sa:` name makes.
-   *
-   * @param username - the person's username
-   * @returns true for a service account; false otherwise and where nothing
-   *   can say
-   */
-  private serviceAccountNamed(username: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering WsTrust.serviceAccountNamed().");
-    let out = false;
-    try {
-      // LAZY: only a certificate naming a service account pays for it.
-      out = require('../common/service_accounts')
-        .isServiceAccountName(String(username)) === true;
-    } catch (e) {
-      log.debug("Caught in WsTrust.serviceAccountNamed(): " +
-                ((e && e.message) || e));
-      out = false;
-    }
-    log.debug("Leaving WsTrust.serviceAccountNamed(). " + out);
-    return out;
-  }
-
   private connectionCertificate(connection?): any {
     const { config, credentials, errorCodes, loadTlsClientCertificates,
             log } = this.deps;
@@ -2462,7 +2426,9 @@ class WsTrust {
     let gates: any = null;
     try {
       gates = loadTlsClientCertificates();
-      gate = gates.checkSocket(socket, { stored: true });
+      // Any holder form, as for a signer (#1827, above).
+      gate = gates.checkSocket(socket, { stored: true,
+                                         anyHolderForm: true });
     } catch (e) {
       log.debug("Caught in WsTrust.connectionCertificate(): " +
                 ((e && e.message) || e));
@@ -2490,14 +2456,6 @@ class WsTrust {
                'issued maps to a directory entry.');
       log.debug("Leaving WsTrust.connectionCertificate(). Not ours.");
       return null;
-    }
-    if (!gate.ok && gate.error === 'NOT_A_SERVICE_ACCOUNT') {
-      // #1827: the leaf names a service account the directory does not
-      // hold as one.
-      log.debug("Leaving WsTrust.connectionCertificate(). Not a service " +
-                "account.");
-      return refused('STS-WSTRUST-0074', String(gate.why || gate.error) +
-                     '.');
     }
     if (!gate.ok) {
       log.debug("Leaving WsTrust.connectionCertificate(). Not an identity " +

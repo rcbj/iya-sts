@@ -12850,8 +12850,11 @@ const CODES = [
     summary: 'A WS-Trust requester\'s certificate (a WS-Security signer, or ' +
       'the TLS client certificate on the connection) names its holder as a ' +
       'service account (urn:sts:sa:<name>, #1827), and in this realm that ' +
-      'entry is not one. Refused in both modes.',
-    spec: 'wst:FailedAuthentication fault' },
+      'entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: ' +
+      '"any user with valid credentials should be able to authenticate ' +
+      'through WS-Trust"): WS-Trust authenticates the entry whichever ' +
+      'spelling names it.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

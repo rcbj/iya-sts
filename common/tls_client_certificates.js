@@ -1440,6 +1440,12 @@ function currentHolderOf(answer) {
 // and logged under it. Each door refuses it as it refuses any certificate
 // that is not an identity, under its own code.
 //
+// **WS-TRUST ASKS WITHOUT IT** (rcbj, 2026-11-16: "any user with valid
+// credentials should be able to authenticate through WS-Trust"): it passes
+// `anyHolderForm`, and a valid leaf naming an existing entry authenticates
+// that entry whichever spelling names it. Every other door keeps the check
+// (rcbj approved the one gate code).
+//
 // The other way round is NOT refused: `urn:sts:person:` naming a service
 // account is a leaf issued before the entry became one (or before #1827),
 // and rcbj's 1.0.0 rule is that it keeps working wherever it worked.
@@ -1617,7 +1623,12 @@ function identityOf(input, options) {
     if (!answer.issuedHere && opts.stored === true) {
       return storedIdentityOf(leafBytes, opts.realm);
     }
-    return serviceAccountChecked(currentHolderOf(answer));
+    // `anyHolderForm` (#1827, rcbj): a door that authenticates whoever a
+    // valid credential names, whichever spelling it names them in, skips the
+    // form check and nothing else — WS-Trust, "any user with valid
+    // credentials should be able to authenticate through WS-Trust".
+    return opts.anyHolderForm === true ? currentHolderOf(answer)
+      : serviceAccountChecked(currentHolderOf(answer));
   };
   if (memo.has(key)) {
     memoCount.hit();
@@ -1917,7 +1928,8 @@ function signingIdentityOf(certificate, options) {
              why: 'the certificate expired at ' + x509.validTo };
   }
   const identity = identityOf({ leaf: leaf, chain: [], verified: true },
-    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient });
+    { purpose: MESSAGE_SIGNING_USE_CASE, stored: true, realm: ambient,
+      anyHolderForm: opts.anyHolderForm === true });
   if (!identity.accepted) {
     log.debug("Leaving signingIdentityOf(). " + identity.error);
     return Object.assign({}, identity, { ok: false, leaf: leaf,
