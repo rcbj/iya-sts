@@ -1497,7 +1497,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithDnCnRuleEtc14 { `dn`?: string; `cn`?: string; `rule`?: string; `description`?: string; `objectClass`?: (string)[]; `origin`?: string; `createdAt`?: NullOrStringOrNumeric; `modifiedAt`?: NullOrStringOrNumeric; `memberCount`?: numeric; `presentCount`?: numeric; `danglingCount`?: numeric; `claimedCount`?: numeric; `ownerCount`?: numeric; `attributeCount`?: numeric }
 
-@hoisted model WithNameWhatKindEtc16 { `name`?: string; `what`?: string; `kind`?: string; `from`?: string; `role`?: string; `standard`?: boolean; `sensitive`?: boolean; `secret`?: boolean; `identifier`?: boolean; `identifierName`?: string; `editable`?: BooleanOrString; `enum`?: (string)[]; `families`?: (string)[]; `familyWhy`?: string; `overrides`?: string; `strictOverride`?: boolean }
+@hoisted model WithNameWhatKindEtc16 { `name`?: string; `what`?: string; `kind`?: string; `from`?: string; `role`?: string; `standard`?: boolean; `sensitive`?: boolean; `secret`?: boolean; `identifier`?: boolean; `identifierName`?: string; `editable`?: BooleanOrString; `enum`?: (string)[]; `families`?: (string)[]; `familyWhy`?: string; `overrides`?: string; `strictOverride`?: boolean; @js(#{`description`:"True when the attribute's value is one JSON document rather than a set of separate fields."}) `jsonBlob`?: boolean }
 
 @hoisted model WithDescriptionPolicyDescriptionEtc4 { @js(#{ `description`:"The directory entry name of the policy to edit — the `cn` under ou=policies, not the PolicyId inside the document." }) `policy`: string; @js(#{ `description`:"The node's address, from GET /admin-api/xacml/editor. ONLY VALID AGAINST THE DOCUMENT IT WAS READ FROM: remove rule 0 and every path naming rule 1 now means rule 0." }) `path`: string }
 
