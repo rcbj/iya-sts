@@ -89,8 +89,10 @@
 //
 // **BOTH LAUNCHERS BRING A REMOTE PEP UP AS PART OF THE STACK** and hand this
 // job three variables — `XACML_PEP_URL`, `XACML_PEP_NAME` and
-// `XACML_PEP_REALM` — plus `XACML_PEP_CA_PEM` (the anchor for the client
-// certificate they mint and mount) and, since 2026-09-13,
+// `XACML_PEP_REALM` — plus, until phase 4 of #1827's follow-up retired the
+// PEP's client certificate (2026-11-16), `XACML_PEP_CA_PEM` (the anchor for
+// the certificate they minted and mounted; read where a launcher still sets
+// it) and, since 2026-09-13,
 // `XACML_PEP_HTTPS_URL` and `XACML_PEP_SERVER_CERT_DIR` for section 1b. That
 // is the primary arrangement and the one CI runs:
 //
@@ -482,11 +484,12 @@ async function mintTheCredential() {
                             + "would otherwise have authenticated as nobody"
                           : "accepted") + ").");
   } else {
-    log.warn("XACML_PEP_CA_PEM is not set, so this job cannot put the PEP " +
-             "container's Root CA back if an earlier job emptied the " +
-             "truststore. Both launchers export it; running this file by " +
-             "hand against your own stack does not, and the container's " +
-             "registration will say whether its certificate verifies.");
+    // PHASE 4 OF #1827's FOLLOW-UP (rcbj, 2026-11-16): the launchers mint
+    // no client certificate for the container any more — it authenticates
+    // on its assertion key alone — so there is no anchor to put back.
+    log.info("XACML_PEP_CA_PEM is not set: the container presents no " +
+             "client certificate (it authenticates on its assertion key), " +
+             "so there is no Root CA of its to put back.");
   }
   log.debug("Leaving mintTheCredential().");
 }
@@ -952,53 +955,32 @@ async function provisionTheContainersIdentity() {
   log.debug("Leaving provisionTheContainersIdentity().");
 }
 
+// THE CONTAINER'S ONE CREDENTIAL: ITS ASSERTION KEY (#1827's follow-up).
+// Through phase 3 a client certificate was minted here too, its Root CA
+// trusted and its leaf stored on the entry; PHASE 4 (rcbj, 2026-11-16)
+// retired the PEP's client certificate, so only the key is made.
 async function mintTheContainersCredential() {
   log.debug("Entering mintTheContainersCredential().");
   await provisionTheContainersIdentity();
-  const cred = await credentials.mint({ subject: containerSubject() });
-  // Recorded before it is posted (#1307).
-  const posted = await credentials.trustRecorded(base, cred.anchorPem,
-                                                 addedAnchors);
-  assert.ok(posted.ok,
-    "POST /admin-api/tls/trust/add should accept the Root CA for the PEP " +
-    "container this " +
-    "job is about to start; it answered " + posted.status + ". Without the " +
-    "anchor that container's certificate verifies against nothing, it " +
-    "registers as an unauthenticated caller, and the PDP refuses it with a " +
-    "403 naming REMOTE_PEPS.");
-
-  // ON DISK BECAUSE `pep.js` READS FILES, and in a directory of this job's
+  // ON DISK BECAUSE THE PEP READS FILES, and in a directory of this job's
   // own rather than the launcher's `tests/report/pep-credential`: two runs on
   // one machine must not share it, and this one is removed with the
   // container. `mkdtemp` rather than a name built from the stamp, so the
   // collision cannot be constructed at all.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "iya-sts-pep-cert-"));
-  // The leaf FOLLOWED BY THE INTERMEDIATE, which is what `certPem` already
-  // is — the service holds only the root, so a container sending the leaf
-  // alone presents a chain that cannot be built.
-  fs.writeFileSync(path.join(dir, "pep.crt"), cred.certPem, { mode: 0o644 });
-  // AND STORED ON THE ENTRY `provisionTheContainersIdentity()` made (#1061,
-  // rcbj 2026-10-27). An outside authority's certificate is the one entry of
-  // this realm storing it in `userCertificate`, never its CN, so a container
-  // whose leaf is stored nowhere authenticates as nobody however well it
-  // verifies.
-  await credentials.storeOnEntry({ get: get, post: postJson }, base,
-                                 "/realm/" + REALM, PEP_NAME, cred.leaf.pem);
-  // 0644 AND NOT 0600, deliberately: the mount is read-only and the process
-  // inside that image is not this user, so a key only this user can read is a
-  // container that starts and quietly has no certificate.
-  fs.writeFileSync(path.join(dir, "pep.key"), cred.keyPem, { mode: 0o644 });
-  // AND THE ASSERTION KEY (#1827's follow-up, phase 3), generated HERE —
-  // the service never sees it — and registered from its request, which is
+  // THE ASSERTION KEY (#1827's follow-up, phase 3), generated HERE — the
+  // service never sees it — and registered from its request, which is
   // what a launcher does with the request it wrote (registerTheKey()).
+  // 0644 AND NOT 0600, deliberately: the mount is read-only and the process
+  // inside that image is not this user, so a key only this user can read
+  // is a container that starts and quietly has no key.
   const made = await credentials.assertionRequest({ keyAlg: "ec-p256",
                                                     name: PEP_NAME });
   fs.writeFileSync(path.join(dir, "pep-assertion.key"), made.privateKeyPem,
                    { mode: 0o644 });
   await registerTheKey(made.csrPem);
-  log.info("Minted the PEP container's client certificate (" + cred.subject +
-           ") and trusted its Root CA, and registered the assertion key " +
-           "it signs its token requests with. Both are mounted at /certs.");
+  log.info("Registered the assertion key the PEP container signs its " +
+           "token requests with; it is mounted at /certs.");
   log.debug("Leaving mintTheContainersCredential().");
   return dir;
 }
@@ -1025,15 +1007,9 @@ async function startThePep() {
     // which is why `docker-compose.yml` sets this too and why `pep.js` logs it
     // on every start rather than once.
     PEP_TLS_INSECURE: "true",
-    // THE CLIENT CERTIFICATE, WHICH IS WHAT THE PDP'S GATE ASKS FOR. The
-    // launchers pass these two through docker-compose as XACML_PEP_TLS_CERT /
-    // XACML_PEP_TLS_KEY onto the same names; here the mount below is /certs
-    // for the same reason it is there.
-    PEP_TLS_CERT: "/certs/pep.crt",
-    PEP_TLS_KEY: "/certs/pep.key",
     // THE ASSERTION KEY (#1827's follow-up, phase 3), as the launchers mount
-    // it: every call carries a DPoP-bound token from it, the certificate
-    // beside it while xacml.pepAuthentication is `either`.
+    // it: every call carries a DPoP-bound token from it, and nothing else —
+    // no PEP_TLS_CERT since phase 4 retired the PEP's client certificate.
     PEP_ASSERTION_KEY: "/certs/pep-assertion.key",
     // THE HTTPS LISTENER'S PAIR (2026-09-13): two paths that are empty when the
     // container starts, exactly as the launchers arrange it — the realm issues
@@ -1473,8 +1449,9 @@ async function registerTheLaunchersKey() {
     log.warn("The launcher wrote no pep-assertion.csr beside " +
              String(process.env.XACML_PEP_SERVER_CERT_DIR || "(unset)") +
              ", so the container has no registered assertion key and " +
-             "authenticates by its client certificate alone. Section 1c " +
-             "asserts what it can without one.");
+             "cannot authenticate (it presents no client certificate since " +
+             "phase 4 of #1827's follow-up). Section 1c asserts what it can " +
+             "without one.");
     log.debug("Leaving registerTheLaunchersKey(). None.");
     return;
   }
@@ -1507,6 +1484,12 @@ async function itAuthenticatesOnItsKey() {
     check("its calls carry a token from PEP_ASSERTION_KEY", function () {
       assert.strictEqual(seen.credential.keySource, "PEP_ASSERTION_KEY",
         "the PEP signs with " + seen.credential.keySource);
+    });
+    // PHASE 4: no client certificate goes beside the token.
+    check("and no client certificate beside it", function () {
+      assert.strictEqual(seen.credential.clientCertificate, false,
+        "GET /'s credential.clientCertificate is " +
+        JSON.stringify(seen.credential.clientCertificate));
     });
   }
 
@@ -1587,8 +1570,10 @@ async function itAuthenticatesOnItsKey() {
 
 // ---------------------------------------------------------------------------
 // SECTION 11: TWO PEPS ON KEYS ALONE, AS 8081 RUNS THEM (#1827's follow-up,
-// phase 3). A realm of their own with `xacml.pepAuthentication` `token`, so a
-// certificate alone is refused there; two entries in its remote-peps group,
+// phase 3). A realm of their own with `xacml.pepAuthentication` `token` —
+// the default since phase 4, set anyway so the section means the same
+// against an older service — so a certificate alone is refused there; two
+// entries in its remote-peps group,
 // each with a key generated here and registered from its request; and two
 // containers with PEP_ASSERTION_KEY and NO PEP_TLS_CERT. Both must register
 // and pull. The key reaches each container by `docker cp` before it starts,
@@ -1715,11 +1700,10 @@ async function itRegistersAndPulls() {
       "it registered as \"" + seen.registration.name + "\" and this job " +
       "drives \"" + PEP_NAME + "\"");
     assert.strictEqual(seen.registration.authenticated, true,
-      "OVER MUTUAL TLS, BETWEEN TWO CONTAINERS. The launcher minted a client " +
-      "certificate with tests/tools/pep-credential.js, added its Root CA " +
-      "through /admin-api/tls/trust/add and mounted the leaf and key into " +
-      "this container; the handshake at /xacml/pep/register carried it. " +
-      "It says " +
+      "ON ITS ASSERTION KEY, BETWEEN TWO CONTAINERS. The launcher generated " +
+      "the key with tests/tools/pep-credential.js --assertion and mounted " +
+      "it; this job registered its request through issue-pep-credential, " +
+      "and the registration carried a DPoP-bound token from it. It says " +
       JSON.stringify(seen.registration) + pepLog());
   });
 
@@ -1921,8 +1905,8 @@ async function itRegistersAndPulls() {
       "It lists " + JSON.stringify((there.register.peps || [])
         .map(function (one) { return one.name; })) + pepLog());
     assert.strictEqual(there.row.authenticated, true,
-      "the row should record that a certificate proved something; it says " +
-      there.row.authenticated);
+      "the row should record that a credential (the PEP's token) proved " +
+      "something; it says " + there.row.authenticated);
     // **EITHER RDN ATTRIBUTE, AND THAT IS NOT A WEAKENING.** What is being
     // asserted is WHICH ENTRY the certificate resolved to, and the entry is
     // named by the RDN's VALUE. Which ATTRIBUTE carries it is a property of
@@ -5677,14 +5661,11 @@ function launcherLeafPem() {
       pem = "";
     }
   }
-  assert.ok(pem.indexOf("BEGIN CERTIFICATE") >= 0,
-    "the launcher's PEP certificate is neither in XACML_PEP_CERT_PEM nor at " +
-    "pep.crt beside XACML_PEP_SERVER_CERT_DIR (" +
-    String(process.env.XACML_PEP_SERVER_CERT_DIR || "unset") + "). Since " +
-    "#1061 an outside certificate is an identity only once it is stored on " +
-    "its entry, so without it the container authenticates as nobody.");
-  log.debug("Leaving launcherLeafPem().");
-  return pem;
+  // '' WHERE THERE IS NONE, which since phase 4 of #1827's follow-up is
+  // the ordinary case: the launchers mint no client certificate.
+  log.debug("Leaving launcherLeafPem(). " +
+            (pem.indexOf("BEGIN CERTIFICATE") >= 0 ? "found" : "none"));
+  return pem.indexOf("BEGIN CERTIFICATE") >= 0 ? pem : "";
 }
 
 async function test() {
@@ -5735,7 +5716,16 @@ async function test() {
     await createThePeople();
     await admit("xacml-user-1", "xacml-users", xacmlUser.leaf.pem);
     if (LAUNCHER_STARTED_IT) {
-      await admit(PEP_NAME, "remote-peps", launcherLeafPem());
+      // PHASE 4 OF #1827's FOLLOW-UP: the launchers mint no client
+      // certificate for the container, so its entry is made and put in the
+      // group without one; a launcher that still writes pep.crt has it
+      // stored as before (an older stack), which costs nothing.
+      const leaf = launcherLeafPem();
+      if (leaf) {
+        await admit(PEP_NAME, "remote-peps", leaf);
+      } else {
+        await provisionTheContainersIdentity();
+      }
       await registerTheLaunchersKey();
     }
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order

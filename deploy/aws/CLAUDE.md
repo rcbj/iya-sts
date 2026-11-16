@@ -97,8 +97,10 @@ in this order:
    The truststore is service-wide and holds 32 (`tls/CLAUDE.md`); removing a
    realm does not take an anchor with it. `isSuiteTrustAnchor()` names the
    subjects. The remote PEP's anchor this run posted is kept when
-   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` adds it before this
-   script runs.
+   `XACML_PEP_CA_PEM` is set, because `pep-credential.sh` added it before this
+   script ran — until phase 4 of #1827's follow-up (2026-11-16), since which
+   it mints no client certificate and posts no anchor, so the variable is
+   unset and nothing is spared.
 
 Only the suite's own names go; `node deploy/aws/reset-environment.js --dry-run
 <url>` lists what would. Until #344 nothing in the default realm was deleted, so
@@ -1475,16 +1477,21 @@ said loudly** — the NAT gateway bills until
 `TF_STACK=suite-callbacks deploy/aws/terraform-local.sh <env> destroy` runs.
 `STS_SUITE_CALLBACKS=0` skips that half.
 
-**THE PEP'S ASSERTION KEY (#1827's follow-up, phase 3).** `pep-credential.sh`
-writes `pep-assertion.key` and `pep-assertion.csr` beside `pep.key` in
-`/shared/pep` (`pep-credential.js --assertion --csr-only`, `XACML_PEP_NAME`
-from the task definition), and the `xacml-pep` container reads the key as
-`PEP_ASSERTION_KEY`. The service never sees it: `sts_xacml_remote_pep` sends
-the request to `issue-pep-credential` once it has made the PEP's entry in
-`pep-e2e`, and the PEP's token fetches succeed from then on. The client
-certificate stays mounted while `xacml.pepAuthentication` is `either`, so a
-key that is never registered costs nothing but a log line. Nothing in
-`reset-environment.js` changes: the key is on an entry of the run's realm.
+**THE PEP'S ASSERTION KEY (#1827's follow-up, phase 3) IS ITS ONE CREDENTIAL
+SINCE PHASE 4 (2026-11-16).** `pep-credential.sh` writes `pep-assertion.key`
+and `pep-assertion.csr` in `/shared/pep` (`pep-credential.js --assertion
+--csr-only`, `XACML_PEP_NAME` from the task definition), and the `xacml-pep`
+container reads the key as `PEP_ASSERTION_KEY`. The service never sees it:
+`sts_xacml_remote_pep` sends the request to `issue-pep-credential` once it
+has made the PEP's entry in `pep-e2e`, and the PEP's token fetches succeed
+from then on. **Phase 4 retired the client certificate**: the container no
+longer mints one or posts its anchor (so it no longer takes the management
+API's client secret, and the task definition's `STS_ADMIN_API_CLIENT_SECRET`,
+`XACML_PEP_SUBJECT`, `PEP_TLS_CERT`/`KEY` and `XACML_PEP_CA_PEM_FILE` are
+gone), and a key that is never registered leaves the PEP unauthenticated.
+**Applying it is a `suite-callbacks` apply** (the task definition changed).
+Nothing in `reset-environment.js` changes: the key is on an entry of the
+run's realm.
 
 It is the one suite for every environment since 2026-09-21: `run-suite-in-aws.sh`
 and `environment/runner.tf`, which `aws-cluster.yml` used for `dev` and `ci`,
