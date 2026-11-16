@@ -4531,8 +4531,10 @@ const CODES = [
   { code: 'STS-PKI-0155',
     summary: 'An uploaded certificate this realm issued would widen its ' +
       'holder: for a person, its subjectAltName names somebody else ' +
-      '(another urn:sts:person: or an urn:sts:application:); for an ' +
-      'application, it names a urn:sts:person:.',
+      '(another urn:sts:person: or urn:sts:sa:, or an ' +
+      'urn:sts:application:); for an application, it names a person in ' +
+      'either spelling, urn:sts:person: or a service account\'s urn:sts:sa: ' +
+      '(#1827).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0156',
@@ -5188,6 +5190,12 @@ const CODES = [
       'use case needs, or the use case itself refused (a self-signed ' +
       'leaf, an anchor source out of reach).',
     spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0277',
+    summary: 'A certificate uploaded for a person was issued by this realm as ' +
+      'a service account\'s (urn:sts:sa:<name>, #1827), and that person is ' +
+      'not a service account in this realm.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -5371,6 +5379,11 @@ const CODES = [
       '/serverkeygen that its own estBasicAuthentication, ' +
       'estCertificateAuthentication or estServerKeyGeneration turns off.',
     spec: 'RFC 7030 HTTP 403' },
+  { code: 'STS-ENROLL-0097',
+    summary: 'An enrollment request, or the certificate presented to ' +
+      're-enroll, names a person as a service account (urn:sts:sa:<name>, ' +
+      '#1827), and in this realm that entry is not one.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
     spec: 'HTTP 503, ACME serverInternal problem' },
@@ -11764,6 +11777,12 @@ const CODES = [
       'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
       'more.',
     spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
+  { code: 'STS-OAUTH-1011',
+    summary: 'An assertion\'s x5c leaf, issued by this realm, names its ' +
+      'holder as a service account (urn:sts:sa:<name>, #1827), and in this ' +
+      'realm that entry is not one.',
+    spec: 'invalid_client or invalid_grant (HTTP 400/401), as the x5c path\'s ' +
+      'other refusals' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12827,6 +12846,12 @@ const CODES = [
       'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +
       '(2004/09), or none, so there is no metadata request to answer.',
     spec: 'SOAP Client (SOAP 1.2: Sender) fault, HTTP 500' },
+  { code: 'STS-WSTRUST-0074',
+    summary: 'A WS-Trust requester\'s certificate (a WS-Security signer, or ' +
+      'the TLS client certificate on the connection) names its holder as a ' +
+      'service account (urn:sts:sa:<name>, #1827), and in this realm that ' +
+      'entry is not one. Refused in both modes.',
+    spec: 'wst:FailedAuthentication fault' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -18192,6 +18217,14 @@ const CODES = [
       'closed at once and its alert can be lost to the TCP reset ' +
       '(tls/alert_close.ts, 2026-11-13).',
     spec: 'none (logged once)' },
+  { code: 'STS-TLS-0063',
+    summary: 'A certificate this realm issued names its holder as a service ' +
+      'account (urn:sts:sa:<name>, #1827), and in its realm that entry is ' +
+      'not a service account, or there is none. The TLS client gate ' +
+      '(tls_client_certificates.js identityOf()) refuses it as an identity ' +
+      'at every door that asks it; each door refuses it under its own code ' +
+      'for a certificate that is not an identity.',
+    spec: 'none (logged): the door\'s own refusal' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

@@ -180,6 +180,8 @@ import WsTrustMetadata = require('./wstrust_metadata');
 // WS-MetadataExchange at POST /sts/mex (#958), a leaf over the same
 // documents.
 import WsTrustMex = require('./wstrust_mex');
+// The names a leaf gives its holder, defined once (#1827).
+import SubjectUrn = require('../common/subject_urn');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -1946,6 +1948,16 @@ class WsTrust {
     }
     const identity = gates.signingIdentityOf(certificate);
     const verifies = mode.verifiesCredentials();
+    // A SIGNER NAMED AS A SERVICE ACCOUNT THAT IS NOT ONE (#1827), in both
+    // modes: the gate refuses it (`NOT_A_SERVICE_ACCOUNT`), and development,
+    // which would otherwise read the name off the certificate and believe
+    // it, is told the same — the spelling is a claim about the entry, and
+    // believing a name is not believing a false one.
+    if (!identity.ok && identity.error === 'NOT_A_SERVICE_ACCOUNT') {
+      log.debug("Leaving WsTrust.messageSignature(). Not a service " +
+                "account.");
+      return refused('STS-WSTRUST-0074', String(identity.why));
+    }
     if (!verifies) {
       let name = identity.ok ? String(identity.username) : '';
       let isClient = identity.ok && identity.kind === 'application';
@@ -1953,12 +1965,19 @@ class WsTrust {
         try {
           const x509 = stsCrypto.parseCertificate(identity.leaf ||
             Buffer.from(certificate, 'base64'));
-          const sans = String(x509.subjectAltName || '').split(/,\s*/);
-          const urn = sans.filter(function (one: string): boolean {
-            return /^URI:urn:sts:(person|application):./.test(one);
-          })[0] || '';
-          isClient = urn.indexOf('URI:urn:sts:application:') === 0;
-          name = urn ? urn.replace(/^URI:urn:sts:(person|application):/, '')
+          // A person in either spelling (#1827) or an application.
+          const urn = SubjectUrn.namesIn(String(x509.subjectAltName || ''),
+                                         ['person', 'sa', 'application'])[0];
+          isClient = !!urn && urn.kind === 'application';
+          if (urn && SubjectUrn.isServiceAccountForm(urn) &&
+              !this.serviceAccountNamed(urn.name)) {
+            log.debug("Leaving WsTrust.messageSignature(). Development: " +
+                      "not a service account.");
+            return refused('STS-WSTRUST-0074', 'the certificate names "' +
+                           urn.name + '" as a service account, and in ' +
+                           'this realm that entry is not one');
+          }
+          name = urn ? urn.name
             : ((/(?:^|\n)CN=([^\n]*)/.exec(String(x509.subject || '')) ||
                 [])[1] || '');
         } catch (e) {
@@ -2380,6 +2399,31 @@ class WsTrust {
   // `scim.authClientCert` is) turns the whole credential off; the console's
   // WS-Trust page and `GET /admin-api/wstrust` show it, as settings.
   // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person is a service account in the ambient realm
+   * (#1827): the claim a `urn:sts:sa:` name makes.
+   *
+   * @param username - the person's username
+   * @returns true for a service account; false otherwise and where nothing
+   *   can say
+   */
+  private serviceAccountNamed(username: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.serviceAccountNamed().");
+    let out = false;
+    try {
+      // LAZY: only a certificate naming a service account pays for it.
+      out = require('../common/service_accounts')
+        .isServiceAccountName(String(username)) === true;
+    } catch (e) {
+      log.debug("Caught in WsTrust.serviceAccountNamed(): " +
+                ((e && e.message) || e));
+      out = false;
+    }
+    log.debug("Leaving WsTrust.serviceAccountNamed(). " + out);
+    return out;
+  }
+
   private connectionCertificate(connection?): any {
     const { config, credentials, errorCodes, loadTlsClientCertificates,
             log } = this.deps;
@@ -2446,6 +2490,14 @@ class WsTrust {
                'issued maps to a directory entry.');
       log.debug("Leaving WsTrust.connectionCertificate(). Not ours.");
       return null;
+    }
+    if (!gate.ok && gate.error === 'NOT_A_SERVICE_ACCOUNT') {
+      // #1827: the leaf names a service account the directory does not
+      // hold as one.
+      log.debug("Leaving WsTrust.connectionCertificate(). Not a service " +
+                "account.");
+      return refused('STS-WSTRUST-0074', String(gate.why || gate.error) +
+                     '.');
     }
     if (!gate.ok) {
       log.debug("Leaving WsTrust.connectionCertificate(). Not an identity " +
@@ -5054,11 +5106,12 @@ class WsTrust {
         const x509 = ref.kind === 'token'
           ? this.deps.stsCrypto.parseCertificate(
             Buffer.from(String(ref.certB64), 'base64')) : null;
-        const urn = x509 ? String(x509.subjectAltName || '').split(/,\s*/)
-          .filter(function (one: string): boolean {
-            return one.indexOf('URI:urn:sts:person:') === 0;
-          })[0] || '' : '';
-        signer = urn.replace('URI:urn:sts:person:', '');
+        // A person in either spelling (#1827): a service account is homed
+        // like anybody else, and the home cell checks the claim.
+        const urn = x509 ? SubjectUrn.namesIn(
+          String(x509.subjectAltName || ''), SubjectUrn.PERSON_FORMS)[0]
+          : null;
+        signer = urn ? urn.name : '';
       } catch (e) {
         log.debug("Caught in WsTrust.homeNameOf(): " +
                   ((e && e.message) || e));

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5669** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5674** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,15 +58,15 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 263
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 264
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 758
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 759
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 73
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 74
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 62
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 166
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
@@ -978,7 +978,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0152` | An uploaded certificate's chain verifies and the certificate was refused on revocation. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0153` *(retired)* | A certificate upload targeted a person. Only an application's key pair is replaced by an uploaded certificate. Retired 2026-09-13: a person's key pair may be replaced by an uploaded certificate too. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0154` | An uploaded certificate verified and one of the attributes it replaces could not be written to the application entry. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0155` | An uploaded certificate this realm issued would widen its holder: for a person, its subjectAltName names somebody else (another urn:sts:person: or an urn:sts:application:); for an application, it names a urn:sts:person:. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0155` | An uploaded certificate this realm issued would widen its holder: for a person, its subjectAltName names somebody else (another urn:sts:person: or urn:sts:sa:, or an urn:sts:application:); for an application, it names a person in either spelling, urn:sts:person: or a service account's urn:sts:sa: (#1827). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0156` | The certificate behind a key that verified an RFC 7523 or RFC 7522 assertion has an INCOMPLETE chain: it is not this realm's, and nothing registered with it reaches a self-signed root (pki.verifySignerChain). | invalid_grant at the grant, invalid_client at client authentication |
 | `STS-PKI-0157` | The chain of the certificate behind a key that verified an RFC 7523 or RFC 7522 assertion does not verify: a signature, an issuer name or a validity window failed — the leaf expired, an intermediate expired, or a pinned self-signed certificate no longer holds. | invalid_grant at the grant, invalid_client at client authentication |
 | `STS-PKI-0158` | A certificate that signs another on a signer's path is not permitted to: no basicConstraints cA=TRUE, a KeyUsage without keyCertSign, or a pathLenConstraint exceeded. Raised for a presented x5c (pki.verifyLeaf) and for a registered chain at use. | invalid_grant at the grant, invalid_client at client authentication |
@@ -1092,6 +1092,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0274` | A realm's certificate authority branch was asked for a composite ML-DSA signing key. Its Intermediate is on the chain of the realm's SPIFFE gRPC listeners, Remote PEP listeners and custom listeners, and OpenSSL cannot read a composite key, so each of them would have refused the chain. Refused before any key is made; nothing is stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0275` | pki.keyAlgorithm names a composite ML-DSA key, which the realm's TLS listeners cannot load, so a realm branch being built without a named algorithm used the classical default instead. | none: a log line; the build goes on |
 | `STS-PKI-0276` | Refused under paranoid PKI mode for policy-signer: the signer of a policy export (#1713); nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0277` | A certificate uploaded for a person was issued by this realm as a service account's (urn:sts:sa:<name>, #1827), and that person is not a service account in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
@@ -1157,6 +1158,7 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0094` | In product mode a certificate was refused to an application declared for some protocol families but not this enrollment protocol (ACME, EST or SCEP); the issuance policy's protocol-not-declared rule decided it. | each protocol's own refusal (an RFC 8555 problem document, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
 | `STS-ENROLL-0095` | The profile is not in the application's own <family>AllowedProfiles, which replaces the realm's list for it. | each protocol's own refusal (ACME invalidProfile, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
 | `STS-ENROLL-0096` | EST refused an application an authentication method or /serverkeygen that its own estBasicAuthentication, estCertificateAuthentication or estServerKeyGeneration turns off. | RFC 7030 HTTP 403 |
+| `STS-ENROLL-0097` | An enrollment request, or the certificate presented to re-enroll, names a person as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. | ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest |
 
 ## STS-ACME
 
@@ -2548,6 +2550,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1008` | Releasing access-token status-list block leases held by a stopped process failed (#884). The leases stay until they expire, so a restarted process keeps wasting blocks until then. | none (recorded only) |
 | `STS-OAUTH-1009` | An access-token status index was not published because the block claim's fence was lost before its status row committed (#884). The access token is not minted on that index. | none (recorded only) |
 | `STS-OAUTH-1010` | An access-token status index handed out without waiting for its own commit (#884's review: a block already proven durable, this process's origin claim fresh) was found, at the response's commit, not to have been written: its block claim's fence was gone, or the write failed. The response carrying the token is refused (STS-CLUSTER-0166), and the block is handed out from no more. | none (recorded; the response is the 503 STS-CLUSTER-0166 names) |
+| `STS-OAUTH-1011` | An assertion's x5c leaf, issued by this realm, names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. | invalid_client or invalid_grant (HTTP 400/401), as the x5c path's other refusals |
 
 ## STS-SAML
 
@@ -2760,6 +2763,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
 | `STS-WSTRUST-0072` | A request to POST /sts/mex (WS-MetadataExchange, #958) was not a SOAP 1.1 or SOAP 1.2 envelope: no body, XML that is not well-formed, or a root that is not soap:Envelope. | SOAP 1.1 Client fault, HTTP 400, as POST /sts answers a body that is not XML (STS-WSTRUST-0001) |
 | `STS-WSTRUST-0073` | A request to POST /sts/mex (#958) carried a wsa:Action that is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata (2004/09), or none, so there is no metadata request to answer. | SOAP Client (SOAP 1.2: Sender) fault, HTTP 500 |
+| `STS-WSTRUST-0074` | A WS-Trust requester's certificate (a WS-Security signer, or the TLS client certificate on the connection) names its holder as a service account (urn:sts:sa:<name>, #1827), and in this realm that entry is not one. Refused in both modes. | wst:FailedAuthentication fault |
 
 ## STS-WSFED
 
@@ -3986,6 +3990,7 @@ Raised from: tls/.
 | `STS-TLS-0060` | A certificate sign-in started no session because the person owes a second factor. | HTTP 200 |
 | `STS-TLS-0061` | A TLS listener already held its bound of connections that failed at the TLS layer, so another was closed at once rather than held for its alert to be read, and the TCP reset could discard the alert (tls/alert_close.ts, 2026-11-13). | none (logged): the connection closes with its alert sent |
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
+| `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
 
 ## STS-VC
 
