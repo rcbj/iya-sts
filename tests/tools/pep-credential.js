@@ -996,38 +996,17 @@ async function storeFromCli(opts, leafPem) {
 
 // ---------------------------------------------------------------------------
 // --assertion (#1827's follow-up, phase 3): see the header. THE KEY AND THE
-// REQUEST ARE MADE WITH THE SAME VENDORED ENGINE the chain above is
-// (`key_material.js`, `x509.js`'s `certificationRequest()`), and the request
-// names the PEP only as a courtesy to a reader: the service ignores its
-// subject and names the entry.
+// REQUEST ARE MADE IN `utilities/pep-assertion-request.js` since 2026-11-16,
+// with the same vendored engine the chain above is: the operator's
+// `utilities/register-remote-pep.js` needs them too and runs from the
+// service image, which ships no tests/, so the code moved to where both can
+// reach it rather than being copied. These two names are re-exported below
+// for the jobs that require them from here.
 // ---------------------------------------------------------------------------
-const ASSERTION_KEY_ALGS = ['ec-p256', 'rsa-2048'];
-
-async function assertionRequest(spec) {
-  log.debug("Entering assertionRequest().");
-  const keyAlg = String((spec && spec.keyAlg) || 'ec-p256');
-  if (ASSERTION_KEY_ALGS.indexOf(keyAlg) < 0) {
-    log.debug("Leaving assertionRequest(). Key algorithm refused.");
-    throw new Error('--key-alg must be one of ' +
-                    ASSERTION_KEY_ALGS.join(', ') + ': the two keys the ' +
-                    'remote PEP signs its self-assertion and its DPoP ' +
-                    'proofs with.');
-  }
-  const pair = await keys.generateKeyPair(keyAlg);
-  const request = await x509.certificationRequest({
-    subject: [{ name: 'CN', value: String((spec && spec.name) ||
-                                          'remote-pep') }],
-    publicKeyPem: pair.publicPem,
-    privateKeyPem: pair.privatePem
-  });
-  const der = Buffer.from(request.der);
-  const csrPem = '-----BEGIN CERTIFICATE REQUEST-----\n' +
-    der.toString('base64').replace(/(.{64})/g, '$1\n').replace(/\n$/, '') +
-    '\n-----END CERTIFICATE REQUEST-----\n';
-  log.debug("Leaving assertionRequest(). " + keyAlg);
-  return { keyAlg: keyAlg, privateKeyPem: pair.privatePem,
-           publicKeyPem: pair.publicPem, csrPem: csrPem };
-}
+const assertionRequests = require(path.join(REPO, 'utilities',
+                                            'pep-assertion-request.js'));
+const ASSERTION_KEY_ALGS = assertionRequests.ASSERTION_KEY_ALGS;
+const assertionRequest = assertionRequests.assertionRequest;
 
 // THE ACT, FROM A JOB (`api` is the job's own verbs, as `storeOnEntry()`
 // takes them) or from the CLI below. Answers the act's JSON body; throws

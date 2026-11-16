@@ -1,12 +1,17 @@
 # Utilities
 
-Load and soak scripts used against a running iya-sts (8081 by default). Apart from `config-dump.js`, they
-are not part of the service: `.dockerignore` keeps them out of the image, and
-no test runs them.
+Load and soak scripts used against a running iya-sts (8081 by default), and
+two operator tools. Apart from `config-dump.js` and
+`register-remote-pep.js` (with `pep-assertion-request.js`, which it needs),
+they are not part of the service: `.dockerignore` keeps them out of the
+image, and no test runs them. `tests/register_remote_pep.js` runs the
+remote PEP tool.
 
 | Script | What it does |
 |---|---|
-| `config-dump.js` | Saves the masked configuration dump (`docs/configuration-dump.md`). The one script here that ships in the image. |
+| `config-dump.js` | Saves the masked configuration dump (`docs/configuration-dump.md`). Ships in the image. |
+| `register-remote-pep.js` | Registers a new remote XACML PEP through the management API: its entry, its membership of the remote PEPs group, its service account, its assertion key (generated locally; only a certificate request is sent), optionally its cluster membership and HTTPS listener pair, and the container's `pep.env` and compose service. Safe to run again; `--dry-run` writes nothing. Ships in the image. `docs/remote-pep.md`, *Registering a new remote PEP, step by step*. |
+| `pep-assertion-request.js` | The key pair and PKCS #10 request the tool above and `tests/tools/pep-credential.js --assertion` both make. A library. |
 | `load-users.js` (`run.sh`) | Adds people to a realm's directory over LDAPS, resumably, through a bind identity it creates and then takes Admin Write back from. |
 | `bulk-import.sh` | Loads people with the offline bulk import (`persistence/bulk_import.js`), one generated LDIF file at a time, with the `sts` container stopped. |
 | `sessions-1m/setup.js` | Prepares the realm for the session test: raises the session, refresh-family and revocation limits, and creates the relying party `sessions-1m-rp`. |

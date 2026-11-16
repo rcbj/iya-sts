@@ -31,6 +31,175 @@ is opt-in: a plain `docker compose up` does not start it.
                                POST /notify  ◀────────────────────── the nudge (optional)
 ```
 
+## Registering a new remote PEP, step by step
+
+A new PEP needs these things from the service, in this order: a directory
+entry whose username is its `PEP_NAME`, that entry in the remote PEPs group,
+the entry a service account, an assertion key certified for it, and (after it
+has registered) its HTTPS listener pair. The sections further down explain
+each one; this is the order to do them in.
+
+### With one command
+
+`utilities/register-remote-pep.js` does every step through the
+[management API](management-api.md), and writes what the container needs to
+a directory you name:
+
+```bash
+export STS_ADMIN_API_TOKEN=...      # admin:read admin:write, for this service
+node utilities/register-remote-pep.js \
+  --url=https://sts.example.net:8081 --realm=acme \
+  --name=remote-pep-3 --out=./remote-pep-3 \
+  --pdp-url=https://sts.example.net:8081/realm/acme \
+  --ca=./service-ca.pem
+```
+
+It needs the service's npm dependencies, so run it from a checkout after
+`npm ci`, or from the service image, which ships it:
+
+```bash
+docker run --rm --network host --user "$(id -u):$(id -g)" \
+  -e STS_ADMIN_API_TOKEN -v "$PWD:/work" -w /work iyasec/iya-sts \
+  node /usr/src/sts/utilities/register-remote-pep.js \
+  --url=https://sts.example.net:8081 --name=remote-pep-3 \
+  --out=/work/remote-pep-3 --ca=/work/service-ca.pem
+```
+
+Without `STS_ADMIN_API_TOKEN` it gets a token itself with the
+client-credentials grant: `--client` (default `sts-api-client`) and the
+secret in `ADMIN_API_CLIENT_SECRET`, `ADMIN_API_CLIENT_SECRET_FILE` or
+`--secret-file`. See [Getting a token](management-api.md#getting-a-token).
+
+It prints one line per step, and **running it again is safe**: an entry, a
+membership, a valid key or a listener pair already there is reported as
+`skipped`. What it does:
+
+| Step | The call | Skipped when |
+|---|---|---|
+| 1. the entry, with no password | `POST /admin-api/users/create` | the entry exists |
+| 2. the entry in `roles.remotePepGroup` | `POST /admin-api/groups/add-member` | it is a member already |
+| 3. a service account | joining makes it one; `--owner` makes it one where the realm has no Admin Write group (`POST /admin-api/users/set-service-account`) | it is one already |
+| 4. the assertion key | generated in `--out`; only the request goes to `POST /admin-api/xacml/issue-pep-credential` | the key in `--out` is registered and valid |
+| 5. the cluster, with `--cluster` | `POST /admin-api/xacml/add-pep-cluster-member` (and `create-pep-cluster` with `--create-cluster`) | it is a member already |
+| 6. the HTTPS listener pair | `POST /admin-api/xacml/issue-pep-certificate` | `--out` holds a pair (`--reissue-https` replaces it) |
+| 7. the environment | writes `pep.env` and `docker-compose.pep.yml` | never; rewritten each run |
+
+**The listener pair waits for the first registration**, because the realm
+issues it only to a PEP that has registered
+([An HTTPS listener](#an-https-listener-certified-by-the-realm-it-registered-to)).
+So run the command once, start the container, then run the same command
+again. The PEP loads the pair without a restart.
+
+What `--out` holds:
+
+| File | What it is |
+|---|---|
+| `pep-assertion.key` | the private key, mode 0600. It is never sent or printed |
+| `pep-assertion.csr`, `pep-assertion.crt` | the request, and the certificate the realm issued for it |
+| `server/pep-server.crt`, `server/pep-server.key` | the listener pair, after the second run |
+| `service-root.pem` | what the PEP's own clients trust, after the second run |
+| `service-ca.pem` | the anchor from `--ca`, given to the PEP as `PEP_TLS_CA` |
+| `pep.env`, `docker-compose.pep.yml` | the container's environment, and a compose service using it |
+
+Other options: `--key-alg=rsa-2048`, `--https-dns` and `--https-ip` (more
+names on the listener certificate), `--new-key` and `--revoke-previous` (a
+new assertion key, the old ones revoked), `--group` (the remote PEPs group,
+if not `roles.remotePepGroup`), `--mount` (where the container mounts
+`--out`, default `/certs`) and `--dry-run`, which writes nothing anywhere and
+says what each step would do. `--help` lists them all.
+
+**TLS.** The tool verifies the service's certificate. Name its anchor with
+`--ca` (or `NODE_EXTRA_CA_CERTS`). `--insecure` turns verification off and
+says so on every run; `NODE_TLS_REJECT_UNAUTHORIZED=0` on its own is refused.
+Plain `http://` is accepted only for a loopback address.
+
+**When a step fails**, the tool stops, prints the step, the service's own
+reason and what to do, and exits 1. The steps before it stay done. The
+commonest one is step 3 in a realm with no Admin Write group: the entry
+joined the group but nobody can own it (`STS-SVCACCT-0051`), so run it again
+with `--owner=<a group or person of the realm>`.
+
+### By hand
+
+The same steps with `curl`. `$API` is `https://<host>/admin-api`, or
+`https://<host>/realm/<id>/admin-api` for a trust realm:
+
+```bash
+api() { curl -s -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d "$2" "$API/$1"; }
+
+# 1. The entry, a service account owned by the realm's Admin Write group
+#    from the start, so no person's attribute policy applies to it.
+api users/create '{"username":"remote-pep-3","invent":false,
+  "credential":"none","serviceAccount":true,"owners":["admin-write"],
+  "attributes":{"cn":"remote-pep-3","displayName":"remote-pep-3"}}'
+
+# 2. The remote PEPs group.
+api groups/add-member '{"group":"remote-peps","member":"remote-pep-3"}'
+
+# 3. The key, made where the PEP runs; only the request is sent.
+openssl ecparam -name prime256v1 -genkey -noout | \
+  openssl pkcs8 -topk8 -nocrypt -out pep-assertion.key
+openssl req -new -key pep-assertion.key -subj /CN=remote-pep-3 \
+  -out pep-assertion.csr
+api xacml/issue-pep-credential "$(jq -n --rawfile csr pep-assertion.csr \
+  '{name: "remote-pep-3", csr: $csr}')"
+```
+
+`users/create` answers 400 for a name that exists, so skip step 1 for an
+entry you already have. On the console, the same steps are **Users → New
+user** (tick **Service account**), the group's **Add member**, and **Certify
+the key** on the XACML page's Remote PEPs tab. Each is described in
+[The PEP's entry is a service account](#the-peps-entry-is-a-service-account)
+and [Provisioning the key](#provisioning-the-key-issue-pep-credential). To
+join a cluster, see [Remote PEP clusters](#remote-pep-clusters).
+
+### Starting it
+
+With the files from the tool:
+
+```bash
+docker run -d --name remote-pep-3 --hostname remote-pep-3 \
+  --env-file ./remote-pep-3/pep.env \
+  -v "$PWD/remote-pep-3:/certs:ro" -p 9444:9443 iyasec/iya-sts-xacml-pep
+```
+
+or `docker compose -f docker-compose.pep.yml up -d` in that directory. The
+environment it needs is `PEP_PDP_URL` (the address the **container** reaches
+the service at, with the realm's prefix), `PEP_NAME`,
+`PEP_CLIENT_ID=sts-remote-pep`, `PEP_ASSERTION_KEY`, `PEP_HTTPS_CERT` and
+`PEP_HTTPS_KEY`, and `PEP_TLS_CA` for the service's anchor. The PEP
+authenticates with its key alone and needs no client certificate
+([How the PEP authenticates to the service](#how-the-pep-authenticates-to-the-service)).
+Every other variable is in [Configuration](#configuration).
+
+Then issue the listener pair: run the tool again, or follow
+[An HTTPS listener](#an-https-listener-certified-by-the-realm-it-registered-to).
+
+### Checking it
+
+* `GET /admin-api/xacml/peps?pep=remote-pep-3` answers `found: true` once
+  it has registered, with `authenticated: true` on its row. The console shows
+  it on the XACML page's **Remote PEPs** tab.
+* The PEP's own `GET /` shows `registration.registered: true`, and
+  `credential` holding a token for each audience. When something is missing,
+  [Reading `GET /`](#reading-get--when-something-is-wrong) says what each
+  field means.
+
+### Removing one
+
+1. Stop the container. A PEP that still runs registers again.
+2. If it is in a cluster, take it out:
+   `POST /admin-api/xacml/remove-pep-cluster-member` with
+   `{"cluster": "...", "pep": "..."}`.
+3. Forget its row: `POST /admin-api/xacml/forget-pep` with `{"name": "..."}`
+   ([Stop nudging, or forget a PEP](configure-xacml.md#stop-nudging-or-forget-a-pep)).
+4. Revoke its key: `POST /admin-api/pki/revoke` with
+   `{"identifier": "...", "target": "person", "handle": "<kid>"}`
+   ([Revoking one](jwt-assertions.md#revoking-one)). The kid is in the tool's
+   output and on the person's page.
+5. Delete the entry: `POST /admin-api/users/delete` with `{"user": "..."}`.
+
 ## The demonstration PEP is this one
 
 Until #596 the service had a Policy Enforcement Point of its own at

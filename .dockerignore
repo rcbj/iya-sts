@@ -216,3 +216,8 @@ kerberos/spnego-pages-spa.js*
 utilities
 # The configuration dump's command-line client ships with the service.
 !utilities/config-dump.js
+# So does the remote PEP registration tool, and the key and certificate
+# request code it shares with tests/tools/pep-credential.js (which the
+# launchers run with the image's copy of the tree, MOCK_STS_DIR).
+!utilities/register-remote-pep.js
+!utilities/pep-assertion-request.js
