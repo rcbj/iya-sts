@@ -23586,6 +23586,27 @@ const CODES = [
       'delivered: the connection failed, the certificate did not verify, ' +
       'or the PEP refused it. The result is recorded on the PEP\'s row.',
     spec: 'HTTP 400 on /admin-api' },
+  // #1827: a remote PEP's decision records pushed to /admin-api.
+  { code: 'STS-XACML-0286',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit in a body that is not { instance, events } ' +
+      'with events a non-empty array of objects, or with more events than ' +
+      'one batch may carry (#1827). Nothing in the batch is recorded.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-XACML-0287',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit and is not registered in this realm\'s ' +
+      'ou=peps under the name its token\'s subject carries (#1827). It ' +
+      'must register (POST /xacml/pep/register) before its records are ' +
+      'taken.',
+    spec: 'HTTP 404, an error message' },
+  { code: 'STS-XACML-0288',
+    summary: 'A decision record a remote PEP pushed to POST ' +
+      '/admin-api/pep-audit was not recorded: it had no positive ' +
+      'integer seq, or a kind other than enforcement, authzen or proxy ' +
+      '(#1827). The rest of the batch is recorded and the record is ' +
+      'counted as ignored.',
+    spec: 'none; counted as ignored in the answer' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24248,6 +24269,33 @@ const CODES = [
       'and the other settings are applied. A thread-pool worker that does ' +
       'not start leaves the workers already running (#1760).',
     spec: 'none — an error in the PEP\'s log' },
+  // #1827: the decision records shipped to the service.
+  { code: 'STS-XPEP-0120',
+    summary: 'The remote PEP\'s queue of decision records waiting for ' +
+      'the service was full, so the oldest record was dropped to make ' +
+      'room (#1827). Enforcement goes on; the dropped decision is still on ' +
+      'the PEP\'s own log. Logged at the first drop and then sparingly, ' +
+      'with the count.',
+    spec: 'none; the PEP keeps enforcing' },
+  { code: 'STS-XPEP-0121',
+    summary: 'The remote PEP could not obtain an access token for the ' +
+      'management API: the RFC 7523 self-assertion grant at the token ' +
+      'endpoint failed or was refused (#1827). Its entry must hold its ' +
+      'client certificate as an assertion key and be in the group ' +
+      'roles.remotePepGroup names. The records stay queued.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0122',
+    summary: 'The remote PEP could not deliver a batch of decision records ' +
+      'to POST /admin-api/pep-audit: no answer, a refusal of its token, or ' +
+      'a status other than 200 and 400 (#1827). The records stay queued ' +
+      'and are sent again.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0123',
+    summary: 'The service refused a batch of decision records as malformed ' +
+      '(HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped ' +
+      'that batch rather than send it forever (#1827). Each decision is ' +
+      'still on the PEP\'s own log.',
+    spec: 'none; the batch is dropped' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -27076,6 +27124,14 @@ const CODES = [
       'members, once per set of names; the process needs a restart and the ' +
       'write that polluted it a fix.',
     spec: '' },
+  { code: 'STS-API-0147',
+    summary: 'A remote PEP\'s decision-record push (POST ' +
+      '/admin-api/pep-audit) arrived on a token that does not carry ' +
+      'xacml:pep-audit or whose subject is not in the remote PEPs\' group ' +
+      '(REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented ' +
+      'at another operation (#1827). Refused at the gate itself, so that ' +
+      'the separation does not depend on xacml.enforceAccess.',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

@@ -919,6 +919,18 @@
     "en": "9a9264e25acb9778",
     "text": "Une évaluation d’accès AuthZEN a été décidée"
   },
+  "audit.actions.xacml.remote.enforcement.label": {
+    "en": "3a824d93232f38d8",
+    "text": "Un PEP distant a appliqué une décision"
+  },
+  "audit.actions.authzen.remote.decision.label": {
+    "en": "da762559d8e1e972",
+    "text": "Un PEP distant a décidé une évaluation d’accès AuthZEN"
+  },
+  "audit.actions.xacml.remote.proxy.label": {
+    "en": "a32829555b5b2525",
+    "text": "Le proxy inverse d’un PEP distant a décidé une requête"
+  },
   "audit.actions.authzen.search.label": {
     "en": "c7d970c13ae99f25",
     "text": "Une recherche AuthZEN a reçu une réponse"
@@ -1843,6 +1855,18 @@
     "en": "82df232dbe72d709",
     "text": "Un PEP distant a été oublié"
   },
+  "audit.actions.xacml.pep.proxy.set.label": {
+    "en": "b27a6eab052ea9fa",
+    "text": "La configuration de proxy inverse d’un PEP distant a été définie"
+  },
+  "audit.actions.xacml.pep.proxy.clear.label": {
+    "en": "faee586bfee3cbf0",
+    "text": "La configuration de proxy inverse d’un PEP distant a été retirée"
+  },
+  "audit.actions.xacml.pep.validate.label": {
+    "en": "c3a780c6921b5dd8",
+    "text": "Le proxy d’un PEP distant a demandé la validation d’un identifiant"
+  },
   "audit.actions.xacml.policy.write.label": {
     "en": "29b7a729b51d40c7",
     "text": "Une politique XACML a été écrite"
@@ -1926,17 +1950,5 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Un événement de test envoyé à une destination d’export d’audit"
-  },
-  "audit.actions.xacml.pep.proxy.set.label": {
-    "en": "b27a6eab052ea9fa",
-    "text": "La configuration de proxy inverse d’un PEP distant a été définie"
-  },
-  "audit.actions.xacml.pep.proxy.clear.label": {
-    "en": "faee586bfee3cbf0",
-    "text": "La configuration de proxy inverse d’un PEP distant a été retirée"
-  },
-  "audit.actions.xacml.pep.validate.label": {
-    "en": "c3a780c6921b5dd8",
-    "text": "Le proxy d’un PEP distant a demandé la validation d’un identifiant"
   }
 }

@@ -195,6 +195,16 @@ const ACCOUNT_SCOPE = 'account:manage';
  */
 const DEVICE_COMPLIANCE_SCOPE = 'device:compliance';
 
+// A REMOTE PEP'S (#1827): the one scope `/admin-api`'s decision-record
+// operation takes, so a remote enforcement point that pushes what it decided
+// holds nothing else there. Protected like the rest — the client must hold a
+// delegated permission grant of it, in both modes — and authorized by the
+// built-in REMOTE_PEPS role, which is the group `roles.remotePepGroup` names.
+/**
+ * A remote PEP's one scope on the management API (#1827).
+ */
+const PEP_AUDIT_SCOPE = 'xacml:pep-audit';
+
 // OPENID CONNECT NATIVE SSO's scope (#130): granted, in every mode, only to
 // a client `applications.nativeSsoOf()` enables — the flag and a group —
 // because what it buys is a device_secret another app can turn into tokens.
@@ -258,6 +268,10 @@ class ScopePolicy {
    * The module's `DEVICE_COMPLIANCE_SCOPE`.
    */
   static readonly DEVICE_COMPLIANCE_SCOPE = DEVICE_COMPLIANCE_SCOPE;
+  /**
+   * The module's `PEP_AUDIT_SCOPE` (#1827).
+   */
+  static readonly PEP_AUDIT_SCOPE = PEP_AUDIT_SCOPE;
   /**
    * The module's `PROTECTED_CODE`.
    */
@@ -341,7 +355,7 @@ class ScopePolicy {
     const names = ADMIN_SCOPES.slice(0).concat(REPORT_SCOPES);
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
-     DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE,
+     DEVICE_COMPLIANCE_SCOPE, PEP_AUDIT_SCOPE, ACCOUNT_SCOPE,
      AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
       .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
               OWNER_SCOPES)
@@ -894,6 +908,7 @@ export = {
   UMA_PROTECTION_SCOPE: UMA_PROTECTION_SCOPE,
   OWNER_SCOPES: OWNER_SCOPES,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
+  PEP_AUDIT_SCOPE: PEP_AUDIT_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,
   UNDECLARED_CODE: UNDECLARED_CODE,
   NARROWED_CODE: NARROWED_CODE,

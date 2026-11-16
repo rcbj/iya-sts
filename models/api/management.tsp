@@ -14093,6 +14093,64 @@ op `reportDeviceCompliance`(@js(#{
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+@endpoint("/admin-api/pep-audit",
+  "post",
+  #{
+    `operationId`:"reportPepDecisions",
+    `summary`:"Push a remote PEP's decision records (#1827)",
+    `description`:"A remote XACML PEP pushes the records of the decisions it made in its own process — `/protected` enforcements (`kind` `enforcement`) the AuthZEN evaluations it decided (`kind` `authzen`; never one it forwarded, which this service decided and recorded itself) and its reverse proxy's requests to a route (`kind` `proxy`, #1760, with `route` and the `status` it answered) — and each becomes one audit row, `xacml.remote.enforcement`, `authzen.remote.decision` or `xacml.remote.proxy`, read on GET /admin-api/audit. `instance` names the PEP process; every record carries `seq`, a positive integer increasing within that process, and the answer's `acknowledged` is the highest `seq` the batch carried, so the PEP removes everything up to it. Delivery is at least once: a record sent again is recorded again, and the row names the PEP, the instance and the seq that identify it. A record with no positive integer `seq` or an unknown `kind` is counted in `ignored` (STS-XACML-0288) and the rest are recorded. At most 500 records a push. The PEP must be registered in this realm (POST /xacml/pep/register) under the name its token's subject carries (STS-XACML-0287, 404). **The access token must carry `xacml:pep-audit`**: the PEP's own RFC 7523 self-assertion (`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`, `iss` and `sub` its own username, its certificate's key registered on its entry) presented through the seeded public client `sts-remote-pep` over mutual TLS, so the token is bound to that certificate. It is issued and honoured only while the PEP's entry is in the group roles.remotePepGroup names (REMOTE_PEPS); a token carrying anything else is refused here, and that scope reaches no other operation (STS-API-0147).\n\n**Mirrors** `no console form — a remote PEP pushing what it decided; the records are read on GET /admin/audit` on the admin console.",
+    `tags`:#["XACML"],
+    `responses`:#{
+      `200`:#{
+        `description`:"`acknowledged` — the highest `seq` the batch carried — and how many records were `recorded` and `ignored`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure: a malformed batch (400, STS-XACML-0286), a PEP not registered in this realm (404, STS-XACML-0287), or a token that is not a remote PEP's (403).",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["xacml:pep-audit"]},#{`bearerAuth`:#[]}]
+  })
+op `reportPepDecisions`(@js(#{
+    `examples`:#[#{`instance`:"5f2c9a0e7b3d41c8a6e2f0d19b7c3a54",`events`:#[#{`seq`:1,`at`:"2026-11-16T15:00:00.123Z",`kind`:"enforcement",`decision`:"Permit",`allowed`:true,`fault`:false,`code`:"",`subject`:"alice",`resource`:"https://xacml-pep/protected",`action`:"read",`bias`:"deny-biased",`why`:"",`policies`:#["urn:example:policy v1"],`discharged`:#[],`undischargeable`:#[],`caller`:"",`application`:"",`subjectType`:"",`endpoint`:"",`requestId`:""}]}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{`minLength`:1,`maxLength`:64,`pattern`:"^[A-Za-z0-9-]{1,64}$"}) `instance`: string;
+    @js(#{`minItems`:1,`maxItems`:500}) `events`: ({
+      @js(#{`minimum`:1}) `seq`: integer;
+      `at`?: string;
+      @js(#{`minLength`:1,`maxLength`:40}) `kind`: string;
+      `decision`?: "Permit" | "Deny" | "NotApplicable" | "Indeterminate" | "";
+      `allowed`?: boolean;
+      `fault`?: boolean;
+      `code`?: string;
+      `subject`?: string;
+      `resource`?: string;
+      `action`?: string;
+      `bias`?: string;
+      `why`?: string;
+      `policies`?: (string)[];
+      `discharged`?: (string)[];
+      `undischargeable`?: (string)[];
+      `caller`?: string;
+      `application`?: string;
+      `subjectType`?: string;
+      `endpoint`?: string;
+      `requestId`?: string;
+      `route`?: string;
+      `status`?: integer
+    })[];
+    `name`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    @js(#{`minimum`:0}) `acknowledged`: integer;
+    @js(#{`minimum`:0}) `recorded`: integer;
+    @js(#{`minimum`:0}) `ignored`: integer
+  },
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 @endpoint("/admin-api/devices/monitor",
   "get",
   #{
