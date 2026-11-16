@@ -300,8 +300,9 @@ pub mod components {
 
     /// What the service sends (POST, https only, the PEP's certificate verified
     /// against the realm's pep-tls chain, redirects not followed) after a commit to
-    /// the policy repository and to every member of a cluster whose configuration
-    /// changed. The PEP reads none of it.
+    /// the policy repository, to every member of a cluster whose configuration
+    /// changed, and on a Sync from the console. The PEP reads full alone and trusts
+    /// nothing else in it.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Nudge {
@@ -310,6 +311,12 @@ pub mod components {
         pub at: String,
         /// Always empty today.
         pub pdp: String,
+        /// true on a Sync from the console: pull every document whole rather than
+        /// answered 304. Honoured at most once a poll interval (STS-XPEP-0120 logs
+        /// one asked for sooner, which pulls as usual); absent, false or any other
+        /// value is an ordinary pull.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub full: Option<bool>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

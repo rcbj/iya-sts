@@ -488,11 +488,17 @@ could sign one.
 request out in two seconds by default, and holding it open for the length of a
 pull would make a slow pull look like an unreachable PEP on somebody's console.
 
-**Its body is not read and nothing in it is trusted.** A nudge says only that
-something changed; what changed is discovered by pulling from this PEP's own
-configured PDP URL. A nudge that could tell this PEP what the policy now is, or
-where to fetch it, would be an unauthenticated caller supplying policy — and the
-whole reason a nudge is affordable on the PDP's side is that it carries nothing.
+**Nothing in its body is trusted, and one member is read.** A nudge says only
+that something changed; what changed is discovered by pulling from this PEP's
+own configured PDP URL. A nudge that could tell this PEP what the policy now
+is, or where to fetch it, would be an unauthenticated caller supplying policy —
+and the whole reason a nudge is affordable on the PDP's side is that it carries
+nothing. **`full` (#1829) is the one member read**: a Sync from the console
+asks for every document whole rather than answered 304, which fetches nothing
+a pull does not, and is honoured at most once a poll interval
+(`STS-XPEP-0120`) because anybody reaching the listener can send it. The 204
+has no body and so no `Content-Type` (#1830); it keeps `Cache-Control:
+no-store`.
 
 **`GET /` says which pull last changed the holding** (2026-09-26):
 `holding.lastChangeCause` is `start`, `poll`, `nudge` or `heartbeat`, set only
@@ -1928,7 +1934,7 @@ unchanged (none is a fix for this ticket):
   empty; the identity door's 403 is read for a `code` the service never sends.
 * On `GET /`, `authzen.enabled` and `authzen.pdpIdentifier` report the
   environment, not the managed values in force (which `settings.values` has).
-* `POST /notify`'s 204 carries `Content-Type: application/json`; the proxy's
+* The proxy's
   callback and sign-out are dispatched for any method; `/.iya-pep/` is not
   reserved as a whole, only its eight paths; HEAD on this handler is 404.
 * The AuthZEN metadata reads only the `Host` header, which an HTTP/2 client

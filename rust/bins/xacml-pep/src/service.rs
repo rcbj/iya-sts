@@ -343,9 +343,14 @@ impl Pep {
                     );
                 }
             });
-            let mut response =
-                json_response(StatusCode::NO_CONTENT, &json!({}));
-            *response.body_mut() = Body::empty();
+            // NO CONTENT-TYPE ON A 204 (#1830): there is no content to
+            // type. Cache-Control stays, as on every answer here.
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = StatusCode::NO_CONTENT;
+            response.headers_mut().insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("no-store"),
+            );
             return response;
         }
         tracing::info!(
@@ -857,20 +862,35 @@ mod tests {
         path: &str,
         transport: Transport,
     ) -> (StatusCode, String) {
+        let (status, _, body) = answer(pep, method, path, transport, &[], "");
+        (status, body)
+    }
+
+    /// One request with `headers`, answered whole: status, headers, body.
+    fn answer(
+        pep: &Arc<Pep>,
+        method: Method,
+        path: &str,
+        transport: Transport,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> (StatusCode, axum::http::HeaderMap, String) {
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            let mut request = Request::builder()
-                .method(method)
-                .uri(path)
-                .body(Body::empty())
-                .unwrap();
+            let mut builder = Request::builder().method(method).uri(path);
+            for (name, value) in headers {
+                builder = builder.header(*name, *value);
+            }
+            let mut request =
+                builder.body(Body::from(body.to_string())).unwrap();
             request.extensions_mut().insert(transport);
             let response = pep.clone().handle(request).await;
             let status = response.status();
+            let headers = response.headers().clone();
             let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
                 .await
                 .unwrap_or_default();
-            (status, String::from_utf8_lossy(&bytes).to_string())
+            (status, headers, String::from_utf8_lossy(&bytes).to_string())
         })
     }
 
@@ -947,8 +967,22 @@ mod tests {
             https: true,
             ..Transport::default()
         };
-        let (secure, _) = ask(&pep, Method::POST, "/notify", https);
+        // The service's nudge, `full` included (#1829), is the model's
+        // `Nudge`, and is answered as any nudge is.
+        let sent = r#"{"event":"policy-repository-changed","at":"2026-11-16T00:00:00.000Z","pdp":"","full":true}"#;
+        let nudge: sts_model_pep::pep_service::components::Nudge =
+            serde_json::from_str(sent).unwrap();
+        assert_eq!(nudge.full, Some(true));
+        let (secure, headers, body) =
+            answer(&pep, Method::POST, "/notify", https, &[], sent);
         assert_eq!(secure, StatusCode::NO_CONTENT);
+        // A 204 has no content, so no Content-Type (#1830).
+        assert!(body.is_empty());
+        assert!(headers.get(header::CONTENT_TYPE).is_none(), "{:?}", headers);
+        assert_eq!(
+            headers.get(header::CACHE_CONTROL).map(|v| v.as_bytes()),
+            Some(&b"no-store"[..])
+        );
     }
 
     /// THE CRL-ONLY LISTENER answers GET /crl/<name> and nothing else.
