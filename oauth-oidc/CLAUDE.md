@@ -1263,7 +1263,9 @@ so must `admin-ui/admin.ts`.
    on the entry and for a certificate presented in an `x5c` that this service
    can see it issued to a person — that second path does not consult the
    registry at all, which is the point of it, so `common/pki.js` puts the answer
-   in the certificate as a `urn:sts:person:<name>` subjectAltName. That
+   in the certificate as a `urn:sts:person:<name>` subjectAltName — a service
+   account's `urn:sts:sa:<name>` since #1827, read as the person, and refused
+   (STS-OAUTH-1011) where the entry is not one (`common/CLAUDE.md` 3df). That
    file argues the whole thing; what belongs here is that `keysForParty()` is
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both
@@ -4375,7 +4377,10 @@ secret.
 **WHAT DID NOT CHANGE, AND SAYS SO.** `urn:sts:client:` (the RFC 9700
 client subject) and the `urn:sts:application:` / `urn:sts:person:`
 certificate SANs are identifiers already inside issued tokens and certificates;
-renaming them is a migration, not a setting.
+renaming them is a migration, not a setting. **#1827 is the one such
+migration, and it is additive**: a service account's NEW leaves say
+`urn:sts:sa:`, and `urn:sts:person:` stays read for it for ever
+(`common/CLAUDE.md` 3df).
 
 
 ## 3x / 3z, CONTINUED: SEVERAL KEY PAIRS PER PERSON (#1290, 2026-11-03)

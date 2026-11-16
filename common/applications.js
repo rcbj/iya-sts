@@ -17421,7 +17421,11 @@ const API_PERMISSIONS = Object.freeze({
       ['owner:read', 'Read what the person owns, through /admin-api ' +
                      '(OWNER_READ)'],
       ['owner:write', 'Change what the person owns, through /admin-api ' +
-                      '(OWNER_WRITE)']]) }),
+                      '(OWNER_WRITE)'],
+      // #1827: a remote PEP pushing the records of what it decided.
+      ['xacml:pep-audit', 'A remote PEP pushing the records of the ' +
+                          'decisions it made to the audit log, at ' +
+                          '/admin-api/pep-audit (REMOTE_PEPS)']]) }),
   'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
     permissions: Object.freeze([
       ['account:manage', 'The person\'s own account, through /account-api']
@@ -17823,6 +17827,59 @@ function internalApplications() {
     // declaring the three scopes those roles authorize. NOT `/account-api`,
     // which acts only on a person (rcbj's decision on #1139): a
     // client_credentials token has no account there to act on.
+    // THE CLIENT A REMOTE PEP GETS ITS MANAGEMENT API TOKEN AS (#1827). rcbj:
+    // "Every log event pushed to iya-sts must be through an authenticated
+    // request on the mgmt API. Tie access to the built in group of remote
+    // PEPs", and the route he chose reuses what exists: a remote PEP is
+    // already a PERSON-kind entry in the `remote-peps` group holding its
+    // client certificate (`xacml/CLAUDE.md`), so it signs an RFC 7523
+    // assertion about ITSELF with that certificate's key
+    // (`person_assertions.js`, 3ab — a person may assert only about
+    // themselves) and presents it as a jwt-bearer grant through this client.
+    //
+    // * PUBLIC, because the credential is the PEP's own assertion and this
+    //   client is only what the grant is presented through; every PEP in the
+    //   realm uses the same one, and none holds a secret for it.
+    // * ONE DELEGATED PERMISSION GRANT, `xacml:pep-audit` on
+    //   `sts-management-api` — the client's half. The person's half is
+    //   REMOTE_PEPS, asked at issuance and on every call (`roles.js`).
+    // * BOUND TOKENS (RFC 8705 section 3): a PEP speaks to this service over
+    //   mutual TLS already, so its token is bound to the certificate it
+    //   presented and is worth nothing off that connection — which is also
+    //   what the token endpoint asks of a client naming `/admin-api`
+    //   (#1050).
+    // * EVERY REALM: a PEP registers to the realm whose policy it pulls.
+    { identifier: 'sts-remote-pep',
+      name: 'Remote PEP',
+      kinds: ['oauth2-client'],
+      protocols: ['OAuth 2.0'],
+      realmScope: 'every',
+      description: 'seeded at startup: the client a remote XACML PEP ' +
+                   'presents its RFC 7523 self-assertion through, for a ' +
+                   'token to push its decision records to /admin-api ' +
+                   '(applications.seedInternal)',
+      attributes: { appAllowedProtocol: ['oauth2'],
+                    oauthDelegatedPermission: delegatedPermissionGrants({
+                      'sts-management-api': ['xacml:pep-audit'] }),
+                    oauthGlobalConsent: ['xacml:pep-audit'],
+                    oauthTlsClientCertificateBoundAccessTokens: 'TRUE' },
+      registration: {
+        client_id: 'sts-remote-pep',
+        client_name: 'Remote PEP',
+        client_id_issued_at: issued,
+        registration_access_token: randomId(24),
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-remote-pep',
+        application_type: 'web',
+        // No redirect URI and no response type: a back-channel client on one
+        // grant, sts-api-client's reason.
+        redirect_uris: [],
+        grant_types: ['urn:ietf:params:oauth:grant-type:jwt-bearer'],
+        response_types: [],
+        scope: '',
+        tls_client_certificate_bound_access_tokens: true,
+        token_endpoint_auth_method: 'none'
+      } },
     { identifier: 'sts-api-client',
       name: 'API client',
       kinds: ['oauth2-client'],
@@ -17956,6 +18013,73 @@ function seedInternalApplication(spec) {
   return true;
 }
 
+// THE PERMISSIONS ADDED TO A SEEDED API AFTER IT WAS FIRST SEEDED (#1827),
+// filled where they are ABSENT. A seeded entry that already exists is left
+// exactly as it is by `seedInternalApplication()`, so without this a service
+// upgraded from 1.1.0 would hold an `sts-management-api` that defines no
+// `xacml:pep-audit`: the delegated permission grant the new `sts-remote-pep`
+// is seeded with would name nothing, and no PEP could ever be issued the
+// scope. Backwards compatibility is required from 1.0.0 (rcbj, 2026-11-11),
+// and this is the upgrade, in #825's shape above: only a NAME the entry does
+// not define is added, a description an administrator wrote is kept, and the
+// list names each addition rather than filling every row of the table, so a
+// permission somebody took off before this release does not come back.
+const PERMISSIONS_ADDED_SINCE_SEED = Object.freeze({
+  'sts-management-api': Object.freeze(['xacml:pep-audit'])
+});
+
+function fillApiPermissions() {
+  log.debug("Entering fillApiPermissions().");
+  let wrote = 0;
+  Object.keys(PERMISSIONS_ADDED_SINCE_SEED).forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const have = valuesOf(record.fields.oauthPermission).map(function (one) {
+      return String(one).split('|')[0].trim();
+    });
+    const defined = API_PERMISSIONS[identifier].permissions;
+    const missing = PERMISSIONS_ADDED_SINCE_SEED[identifier].filter(
+      function (name) {
+        return have.indexOf(name) < 0;
+      });
+    if (!missing.length) {
+      return;
+    }
+    // A multi-valued field: setField() ADDS these to what is held.
+    const values = missing.map(function (name) {
+      const row = defined.filter(function (one) {
+        return one[0] === name;
+      })[0];
+      return permissionValueOf(name, row ? row[1] : '');
+    });
+    if (!setField(record, 'oauthPermission', values) ||
+        !save(record, { quiet: true })) {
+      log.warn(errorCodes.tag('STS-REG-0020') +
+               'applications: "' + identifier + '" was not given the ' +
+               'permission(s) ' + missing.join(', ') + ' — the directory ' +
+               'would not take the write. A client holding a delegated ' +
+               'permission grant of one is issued nothing for it until it ' +
+               'is defined.');
+      return;
+    }
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'internal',
+      channel: 'internal', target: identifier,
+      summary: 'Application "' + identifier + '" was given the ' +
+               'permission(s) ' + missing.join(', ') + ' this release ' +
+               'defines on it',
+      detail: { identifier: identifier, attribute: 'oauthPermission',
+                added: missing.join(', '), seeded: true }
+    });
+    wrote++;
+  });
+  log.debug("Leaving fillApiPermissions(). " + wrote + " written.");
+  return wrote;
+}
+
 // Writes a hosted session bound only where the attribute is ABSENT. A
 // stored number, including one an administrator confirmed, is kept. A
 // value removed with ldapmodify is absent and comes back as the shipped
@@ -18056,6 +18180,8 @@ function seedInternalApplications(options) {
   // Fill only the bound attributes that are absent, and never a number
   // already stored.
   const filled = fillHostedSessionBounds();
+  // #1827: a permission this release added to a seeded API, where absent.
+  fillApiPermissions();
   log.info('applications: ' + made + ' of this service\'s own ' + rows.length +
            ' application(s) were seeded' +
            (wanted === 'default' ? '' : ' into this realm') +

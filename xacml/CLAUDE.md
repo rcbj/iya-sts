@@ -1473,6 +1473,46 @@ the two actions.
 
 `tests/xacml_pep_proxy.js` holds all of it in a child process.
 
+## A remote PEP's decision records (#1827, 2026-11-16)
+
+**A remote PEP decides in its own process, so until #1827 the only record of
+what it decided was a line on its own standard output**: the heartbeat
+carried the counts and nothing else, and a removed container took its
+decisions with it. Now the PEP queues a record per decision it MADE — a
+`/protected` enforcement, an AuthZEN evaluation decided at the edge (never
+one it forwarded: the service decided that one and wrote its own
+`authzen.decision` row), and a reverse-proxy request to a route — and pushes
+them in order, at least once, to `POST /admin-api/pep-audit`
+(`mgmt-api/CLAUDE.md` argues the door, the scope, the role and the token).
+`xacml/pep_audit.ts` turns each into one audit row:
+`xacml.remote.enforcement`, `authzen.remote.decision` or
+`xacml.remote.proxy`.
+
+* **ONLY A PEP REGISTERED IN THIS REALM'S `ou=peps`**, under the name its
+  token's subject carries (`STS-XACML-0287`, 404) — the heartbeat's rule. A
+  cluster member is registered as itself, so its rows name the member.
+* **TWO TIMES.** A row's `at` is when the service received it, because the
+  audit chain is the order this process wrote rows in; `decidedAt` in the
+  detail is the PEP's. Neither is rewritten into the other.
+* **A REPEAT IS RECOGNISABLE, NOT SUPPRESSED.** The PEP removes a record only
+  once `acknowledged` (the highest `seq` of the batch) covers it, so an
+  answer lost on the way back sends it again; every row names the PEP, its
+  process `instance` and the record's `seq`. Suppressing repeats across the
+  nodes of a cluster would need a mark on the `ou=peps` entry — a new
+  attribute, its OID and seven catalogs — and was left out on that cost.
+* **WHAT A ROW CARRIES** is what the PEP's log line carries: never a property
+  value or an id an AuthZEN caller sent (decision 9 on #563), never a query
+  string, cookie or token from a proxied request. The PEP's error code goes
+  on the row where the table knows it, and the rows are `summarised`: the
+  PEP logged each already.
+* **A RECORD THE SERVICE CANNOT READ** (no positive integer `seq`, a kind it
+  does not know) is counted `ignored` and logged once a push
+  (`STS-XACML-0288`); a body that is no push is 400 (`STS-XACML-0286`) and
+  the PEP drops that batch rather than send it forever.
+* **NOTHING CHANGES ON THE ROW OR THE MONITOR**: the heartbeat's counters
+  are still the source of the counts on `/admin/xacml/peps` and
+  `/admin/xacml/monitor`.
+
 ## A remote PEP's own page, and the settings it manages (#1760)
 
 **Each row of the Remote PEPs tab opens the PEP's own page**,

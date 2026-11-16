@@ -159,6 +159,8 @@ const applications = require('../common/applications');
 // refusal that comes with it is its own: a person's key signs an assertion
 // about that person and about nobody else.
 const personAssertions = require('../common/person_assertions');
+// The names a leaf gives its holder, defined once (#1827).
+const SubjectUrn = require('../common/subject_urn');
 const config = require('../common/config');
 const { log, STS } = require('../common/helpers');
 
@@ -778,6 +780,28 @@ function issuerEntry(iss) {
   return null;
 }
 
+/**
+ * Says whether a person is a service account in the ambient realm (#1827).
+ *
+ * @param username - the person's username, as a leaf names it
+ * @returns true for a service account; false otherwise and where nothing
+ *   can say
+ */
+function serviceAccountNamed(username) {
+  log.debug('Entering serviceAccountNamed().');
+  let out = false;
+  try {
+    // LAZY: only an `x5c` naming a service account pays for the read.
+    out = require('../common/service_accounts')
+      .isServiceAccountName(String(username)) === true;
+  } catch (e) {
+    log.debug('Caught in serviceAccountNamed(): ' + ((e && e.message) || e));
+    out = false;
+  }
+  log.debug('Leaving serviceAccountNamed(). ' + out);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THE `x5c` PATH, AND WHY IT IS CHECKED RATHER THAN READ.
 //
@@ -910,18 +934,36 @@ async function keyFromChain(header) {
   // answer nobody holding a PEM file can get to. Node's own parse hands the
   // SAN over as a comma-separated string of `URI:…` members.
   // ---------------------------------------------------------------------
+  //
+  // A SERVICE ACCOUNT IS A PERSON HERE (#1827): its leaf says
+  // `urn:sts:sa:<name>`, and it is read as `person` — so the refusal below
+  // ("a person may assert only about themselves") holds for it word for
+  // word. One claim the `sa` spelling makes is checked against the directory
+  // of this realm: that the entry IS a service account. A leaf saying so of
+  // somebody who is not is refused (STS-OAUTH-1011); this realm's authority
+  // writes that name only for one, and an entry never stops being one.
+  // `urn:sts:person:` naming a service account is a leaf issued before it
+  // became one, and keeps working (rcbj's 1.0.0 rule).
   const leaf = stsCrypto.parseCertificate(leafPem);
-  const sans = String(leaf.subjectAltName || '').split(',')
-    .map(function (one) { return one.trim(); });
   let subjectKind = '';
   let subjectName = '';
-  sans.forEach(function (one) {
-    const match = /^URI:urn:sts:(application|person):(.+)$/.exec(one);
-    if (match) {
-      subjectKind = match[1];
-      subjectName = match[2];
-    }
-  });
+  let subjectForm = '';
+  SubjectUrn.namesIn(String(leaf.subjectAltName || ''),
+                     ['application', 'person', 'sa'])
+    .forEach(function (one) {
+      subjectKind = one.kind;
+      subjectName = one.name;
+      subjectForm = one.form;
+    });
+  if (subjectForm === 'sa' && !serviceAccountNamed(subjectName)) {
+    log.debug('Leaving keyFromChain(). It names a service account that is ' +
+              'not one.');
+    return { errorCode: 'STS-OAUTH-1011', error: 'the certificate in this ' +
+                    'assertion\'s x5c header names "' + subjectName + '" ' +
+                    'as a service account, and in this realm that entry is ' +
+                    'not one. This service writes that name only for a ' +
+                    'service account.' };
+  }
   log.debug('Leaving keyFromChain(). It chains here, issued to ' +
             (subjectKind || 'something this service cannot name') + ' "' +
             subjectName + '".');

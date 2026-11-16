@@ -15,6 +15,7 @@
 //! `PEP_HTTPS_PORT`, not verifying the certificate: it is the process's
 //! own loopback, and liveness is the question, not who answers.
 
+mod audit;
 mod authzen;
 mod authzen_catalogue;
 mod authzen_map;
@@ -353,6 +354,7 @@ async fn start(options: Options, info: version::VersionInfo) {
         pip,
         https.clone(),
     ));
+    let audit = pep.audit.clone();
 
     // The reverse proxy (#1760) is built here so the poll can reconcile
     // its relying parties after every pull; its listeners start below.
@@ -475,6 +477,42 @@ async fn start(options: Options, info: version::VersionInfo) {
                 }
                 result.ok
             })
+        },
+    );
+
+    // THE DECISION RECORDS (#1827): on their own fixed interval — the
+    // queue, not the timer, is what holds them while the service refuses,
+    // so there is nothing to back off from. ALWAYS STARTED, because
+    // `auditEnabled` is a managed setting (#1760) that may be switched on
+    // while this runs; switched off, nothing new is queued, and what is
+    // already queued is still sent.
+    tracing::info!(
+        "xacml-pep: decision records {} to POST {}{} every {}ms, with a \
+         token from {}{} (client {}).",
+        if audit.enabled() {
+            "are sent"
+        } else {
+            "are NOT queued (auditEnabled / PEP_AUDIT is false) but would be \
+             sent"
+        },
+        options.pdp_url.trim_end_matches('/'),
+        audit::AUDIT_PATH,
+        audit.interval_ms(),
+        options.pdp_url.trim_end_matches('/'),
+        audit::TOKEN_PATH,
+        options.audit_client_id
+    );
+    let (shipper, client) = (audit.clone(), sync.client().clone());
+    let timer = audit.clone();
+    on_backoff(
+        "sending the decision records",
+        move || {
+            let every = timer.interval_ms();
+            (every, every)
+        },
+        move || {
+            let (audit, client) = (shipper.clone(), client.clone());
+            Box::pin(async move { audit.ship(&client).await })
         },
     );
 

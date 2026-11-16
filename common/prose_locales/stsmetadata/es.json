@@ -1895,6 +1895,14 @@
     "en": "3ca2a7e72576096b",
     "text": "establece el cumplimiento de un dispositivo o de un lote"
   },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Un PEP XACML remoto envía los registros de las decisiones que tomó en su propio proceso — las aplicaciones de /protected, las evaluaciones AuthZEN que decidió, nunca una que reenvió, y las solicitudes de su proxy inverso a una ruta — al menos una vez y en orden, hasta 500 por lote, cada uno confirmado por su seq. El token lleva el ámbito PROTEGIDO xacml:pep-audit y nada más aquí lo acepta: la autoaserción RFC 7523 del propio PEP, a través del cliente público precargado sts-remote-pep, vinculada a su certificado, emitida y aceptada solo mientras su entrada esté en el grupo de PEP remotos (REMOTE_PEPS). El PEP debe estar registrado en el dominio. Filas xacml.remote.enforcement, authzen.remote.decision y, para las solicitudes del proxy inverso, xacml.remote.proxy en /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "registra como filas de auditoría un lote de decisiones tomadas por un PEP remoto"
+  },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
     "text": "NO ESTÁNDAR (#218). GET /admin/device-registration sobre JSON: los métodos de inscripción y cuáles están construidos, los tipos de reconocimiento, los vocabularios y los ajustes de Devices."

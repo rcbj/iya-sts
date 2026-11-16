@@ -76,8 +76,8 @@
     "text": "Un cliente público que no demostró nada."
   },
   "roles.builtIn.REMOTE_PEPS.what": {
-    "en": "a542d84d6db4c5b5",
-    "text": "Un Policy Enforcement Point remoto de XACML: quien sea miembro del grupo nombrado por `roles.remotePepGroup` (de forma predeterminada \"remote-peps\"). Es lo que exigen `/xacml/pep/register`, `/xacml/pep/policies` y `/xacml/pep/heartbeat`, y quien lo tiene normalmente es un DN de certificado de cliente más que una persona — el certificado dice QUIÉN, y este grupo dice si puede."
+    "en": "c88edce6cfb601d9",
+    "text": "Un Policy Enforcement Point remoto de XACML: quien sea miembro del grupo nombrado por `roles.remotePepGroup` (de forma predeterminada \"remote-peps\"). Es lo que exigen `/xacml/pep/register`, `/xacml/pep/policies` y `/xacml/pep/heartbeat`, y quien lo tiene normalmente es un DN de certificado de cliente más que una persona — el certificado dice QUIÉN, y este grupo dice si puede. Autoriza el permiso xacml:pep-audit: enviar al registro de auditoría de este servicio los registros de las decisiones que tomó el PEP, mediante POST /admin-api/pep-audit, y nada más en /admin-api."
   },
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",

@@ -2014,7 +2014,8 @@ READS `DPoP` TOO* above.
 The same two action names on `POST /admin-api/users` issue and revoke one
 for a **person** (`issueUserTlsClientCertificate`,
 `revokeUserTlsClientCertificate`). The subject is the directory entry's
-name, the subjectAltName is `urn:sts:person:<username>`, and the leaf is
+name, the subjectAltName is `urn:sts:person:<username>` (`urn:sts:sa:` for
+a service account, #1827; `implicitName` says which), and the leaf is
 not written to `userCertificate`. The list is `mfa.tls` of
 `GET /admin-api/users`, which adds `subjectDn`, `entryDn` and
 `caAvailable` to the signing list's shape. Codes `STS-ADMIN-0939` through
@@ -2517,6 +2518,52 @@ exception out of the gate's source. `admin-ui/devices_admin.ts`'s `mdmFeed()`
 is the handler. It was shared with development's test control at
 `/devices/test/compliance` until #597 deleted that route; the feed is the one
 door in both modes.
+
+## `POST /admin-api/pep-audit` — A REMOTE PEP'S DECISION RECORDS, THE SECOND OPERATION THAT IS NOT AN ADMINISTRATOR'S (#1827, 2026-11-16)
+
+rcbj: "Every log event pushed to iya-sts must be through an authenticated
+request on the mgmt API. Tie access to the built in group of remote PEPs."
+A remote XACML PEP pushes the records of the decisions it made in its own
+process here, and `xacml/pep_audit.ts` records each as an audit row
+(`xacml/CLAUDE.md`, *A remote PEP's decision records*). The gate's half is
+the device feed's above, made a second time:
+
+* **`isPepAuditFeed()`** — a POST to `PEP_AUDIT_PATH` — takes
+  **`xacml:pep-audit`**, which nothing else here takes, and the access policy
+  is asked for **REMOTE_PEPS**. It is not under `/xacml/:action` on
+  purpose: that route would take `pep-audit` as an unknown action.
+* **REMOTE_PEPS AUTHORIZES THE PERMISSION, AND IT IS A GROUP, NOT A
+  ROSTER.** It is the built-in role of `roles.remotePepGroup`'s members
+  (`common/roles.js`), and since #1827 it carries `permission:
+  'xacml:pep-audit'`, which puts it on `roles.AUTHORIZING_BUILT_INS` beside
+  the two owner roles. `role_permissions.ts` gates the scope with it at
+  issuance and held ∩ carried on every call: `heldRoles()` adds a held
+  authorizing built-in to the configured list, and `effectiveRoles()` takes
+  one ONLY through that list, never from `rolesOf()`'s built-ins — so an
+  `admin:write` token whose subject happens to be in the group is not a PEP's.
+* **THE GATE REFUSES BOTH CROSSINGS ITSELF (`STS-API-0147`)**, as it does a
+  security change without SECURITY_ADMIN: a push without `xacml:pep-audit`
+  and REMOTE_PEPS, and a token carrying `xacml:pep-audit` at any other
+  operation. With `xacml.enforceAccess` off the policy allows everything,
+  and a PEP's token must not be one setting away from administering.
+* **THE TOKEN IS THE PEP'S OWN RFC 7523 SELF-ASSERTION** (`common/CLAUDE.md`
+  3ab), presented through the seeded public client **`sts-remote-pep`**,
+  which holds the one delegated permission grant
+  (`urn:sts:admin-api:xacml:pep-audit`) and declares bound tokens, so the
+  token endpoint issues it only over mutual TLS (#1050's STS-OAUTH-0489) and
+  this gate honours it only on that certificate. The audit actor is the
+  token's subject, the PEP's entry, which since #1760 is a service account:
+  a service account's policy governs the browser and the password doors, and
+  a self-assertion is neither.
+* **THE PERMISSION IS FILLED INTO AN EXISTING `sts-management-api`**
+  (`applications.js`'s `fillApiPermissions()`, a name listed in
+  `PERMISSIONS_ADDED_SINCE_SEED` and absent from the entry), because a seeded
+  entry that already exists is otherwise left alone and the grant would name
+  nothing on a service upgraded from 1.1.0.
+
+`admin_api_spec.ts`'s `scopeForMethod()` states the exception and
+`tests/admin_api_document_security.js` holds the two together.
+`tests/remote_pep_audit.js` drives the whole path in process.
 
 ## ONE COPY OF THE COMPONENTS BEHIND EVERY VALIDATOR (#365, 2026-09-30)
 

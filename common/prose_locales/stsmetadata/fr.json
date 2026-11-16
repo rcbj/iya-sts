@@ -1895,6 +1895,14 @@
     "en": "3ca2a7e72576096b",
     "text": "définit la conformité d’un appareil ou d’un lot"
   },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827). Un PEP XACML distant envoie les enregistrements des décisions prises dans son propre processus — les applications de /protected, les évaluations AuthZEN qu’il a décidées, jamais une qu’il a transmise, et les requêtes de son proxy inverse vers une route — au moins une fois et dans l’ordre, jusqu’à 500 par lot, chacun acquitté par son seq. Le jeton porte la portée PROTÉGÉE xacml:pep-audit et rien d’autre ici ne l’accepte : l’auto-assertion RFC 7523 du PEP lui-même, via le client public pré-enregistré sts-remote-pep, liée à son certificat, émise et honorée seulement tant que son entrée est dans le groupe des PEP distants (REMOTE_PEPS). Le PEP doit être enregistré dans le domaine. Lignes xacml.remote.enforcement, authzen.remote.decision et, pour les requêtes du proxy inverse, xacml.remote.proxy sur /admin/audit."
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "enregistre comme lignes d’audit un lot de décisions prises par un PEP distant"
+  },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
     "text": "NON-SPEC (#218). GET /admin/device-registration en JSON : les méthodes d’enrôlement et celles qui sont construites, les types de reconnaissance, les vocabulaires et les paramètres Devices."

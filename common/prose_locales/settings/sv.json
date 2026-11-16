@@ -4348,8 +4348,8 @@
     "text": "Godta ett TLS-klientcertifikat"
   },
   "est.certificateAuthentication|description": {
-    "en": "00c619c4dd5d1658",
-    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person: eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
+    "en": "a9bb56c470b2a73f",
+    "text": "Ett klientcertifikat som DEN HÄR SFÄREN utfärdat, verifierat till dess mellanliggande CA och mappat till sin post genom namnet urn:sts:person:, urn:sts:sa: (ett tjänstekonto) eller urn:sts:application: i det (RFC 7030 avsnitt 3.3.2). Krävs för simplereenroll utan Basic-autentiseringsuppgift."
   },
   "est.serverKeyGeneration|label": {
     "en": "ee06989bdc51c67d",

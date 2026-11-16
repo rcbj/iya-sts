@@ -13,7 +13,8 @@ trust realm's **SCEP Issuing CA** — one of the Issuing CAs of the realm's
 Root.
 
 Every certificate names a directory entry — a person or an application — in a
-`urn:sts:person:` or `urn:sts:application:` subjectAltName, and is kept on that
+`urn:sts:person:` (`urn:sts:sa:` for a [service account](service-accounts.md))
+or `urn:sts:application:` subjectAltName, and is kept on that
 entry.
 
 > **Product mode does not answer SCEP unless you turn it on.** Every request

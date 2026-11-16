@@ -1086,7 +1086,7 @@
   "est.basicAuthentication|label": "Accept HTTP Basic",
   "est.basicAuthentication|description": "A person's directory password or an application's client_id and client_secret (RFC 7030 section 3.2.3). Whether the password is CHECKED is global.mode's answer, as it is everywhere in this service.",
   "est.certificateAuthentication|label": "Accept a TLS client certificate",
-  "est.certificateAuthentication|description": "A client certificate THIS REALM issued, verified to its Intermediate and mapped to its entry by the urn:sts:person: or urn:sts:application: name in it (RFC 7030 section 3.3.2). Required for simplereenroll with no Basic credential.",
+  "est.certificateAuthentication|description": "A client certificate THIS REALM issued, verified to its Intermediate and mapped to its entry by the urn:sts:person:, urn:sts:sa: (a service account) or urn:sts:application: name in it (RFC 7030 section 3.3.2). Required for simplereenroll with no Basic credential.",
   "est.serverKeyGeneration|label": "Offer /serverkeygen",
   "est.serverKeyGeneration|description": "Whether this service generates the key pair (RFC 7030 section 4.4) — the one enrollment path in which it holds a private key, which it then keeps, sealed, on the entry the certificate names.",
   "scep.enabled|label": "Run the SCEP server",

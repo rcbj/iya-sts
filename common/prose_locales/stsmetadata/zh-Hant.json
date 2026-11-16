@@ -1895,6 +1895,14 @@
     "en": "3ca2a7e72576096b",
     "text": "設定一個或一批裝置的合規性"
   },
+  "stsmetadata.endpoints./admin-api/pep-audit.what": {
+    "en": "0b396bb699707086",
+    "text": "NON-SPEC (#1827)。遠端 XACML PEP 推送它在自身行程中所作決定的紀錄——/protected 的執行、它自己決定的 AuthZEN 評估（從不包括它轉發的）以及其反向代理對某條路由的請求——至少一次且依序，每批最多 500 筆，每筆以其 seq 確認。權杖攜帶受保護的 xacml:pep-audit 範圍，此處沒有其他操作接受它：PEP 自己的 RFC 7523 自我斷言，經由預置的公開用戶端 sts-remote-pep，綁定至其憑證，僅在其項目屬於遠端 PEP 群組（REMOTE_PEPS）時簽發並接受。PEP 必須已在該領域註冊。/admin/audit 上的列為 xacml.remote.enforcement、authzen.remote.decision，以及反向代理請求的 xacml.remote.proxy。"
+  },
+  "stsmetadata.endpoints./admin-api/pep-audit.effect": {
+    "en": "6d8bfdfca2b19127",
+    "text": "將遠端 PEP 作出的一批決定記錄為稽核列"
+  },
   "stsmetadata.endpoints./admin-api/device-registration.what": {
     "en": "4050dc9d2959597e",
     "text": "非規格端點（#218）。以 JSON 提供的 GET /admin/device-registration：註冊方式及其中哪些已建置、辨識類型、詞彙以及裝置設定。"

@@ -4531,8 +4531,10 @@ const CODES = [
   { code: 'STS-PKI-0155',
     summary: 'An uploaded certificate this realm issued would widen its ' +
       'holder: for a person, its subjectAltName names somebody else ' +
-      '(another urn:sts:person: or an urn:sts:application:); for an ' +
-      'application, it names a urn:sts:person:.',
+      '(another urn:sts:person: or urn:sts:sa:, or an ' +
+      'urn:sts:application:); for an application, it names a person in ' +
+      'either spelling, urn:sts:person: or a service account\'s urn:sts:sa: ' +
+      '(#1827).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0156',
@@ -5188,6 +5190,12 @@ const CODES = [
       'use case needs, or the use case itself refused (a self-signed ' +
       'leaf, an anchor source out of reach).',
     spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0277',
+    summary: 'A certificate uploaded for a person was issued by this realm as ' +
+      'a service account\'s (urn:sts:sa:<name>, #1827), and that person is ' +
+      'not a service account in this realm.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -5371,6 +5379,11 @@ const CODES = [
       '/serverkeygen that its own estBasicAuthentication, ' +
       'estCertificateAuthentication or estServerKeyGeneration turns off.',
     spec: 'RFC 7030 HTTP 403' },
+  { code: 'STS-ENROLL-0097',
+    summary: 'An enrollment request, or the certificate presented to ' +
+      're-enroll, names a person as a service account (urn:sts:sa:<name>, ' +
+      '#1827), and in this realm that entry is not one.',
+    spec: 'ACME rejectedIdentifier, EST HTTP 403, SCEP badRequest' },
   { code: 'STS-ACME-0001',
     summary: 'ACME is turned off in this realm (acme.enabled is false).',
     spec: 'HTTP 503, ACME serverInternal problem' },
@@ -11764,6 +11777,12 @@ const CODES = [
       'refused (STS-CLUSTER-0166), and the block is handed out from no ' +
       'more.',
     spec: 'none (recorded; the response is the 503 STS-CLUSTER-0166 names)' },
+  { code: 'STS-OAUTH-1011',
+    summary: 'An assertion\'s x5c leaf, issued by this realm, names its ' +
+      'holder as a service account (urn:sts:sa:<name>, #1827), and in this ' +
+      'realm that entry is not one.',
+    spec: 'invalid_client or invalid_grant (HTTP 400/401), as the x5c path\'s ' +
+      'other refusals' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12827,6 +12846,15 @@ const CODES = [
       'is neither WS-Transfer Get nor WS-MetadataExchange GetMetadata ' +
       '(2004/09), or none, so there is no metadata request to answer.',
     spec: 'SOAP Client (SOAP 1.2: Sender) fault, HTTP 500' },
+  { code: 'STS-WSTRUST-0074',
+    summary: 'A WS-Trust requester\'s certificate (a WS-Security signer, or ' +
+      'the TLS client certificate on the connection) names its holder as a ' +
+      'service account (urn:sts:sa:<name>, #1827), and in this realm that ' +
+      'entry is not one. RETIRED before release (#1827, rcbj 2026-11-16: ' +
+      '"any user with valid credentials should be able to authenticate ' +
+      'through WS-Trust"): WS-Trust authenticates the entry whichever ' +
+      'spelling names it.',
+    spec: '', retired: true },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -18192,6 +18220,14 @@ const CODES = [
       'closed at once and its alert can be lost to the TCP reset ' +
       '(tls/alert_close.ts, 2026-11-13).',
     spec: 'none (logged once)' },
+  { code: 'STS-TLS-0063',
+    summary: 'A certificate this realm issued names its holder as a service ' +
+      'account (urn:sts:sa:<name>, #1827), and in its realm that entry is ' +
+      'not a service account, or there is none. The TLS client gate ' +
+      '(tls_client_certificates.js identityOf()) refuses it as an identity ' +
+      'at every door that asks it; each door refuses it under its own code ' +
+      'for a certificate that is not an identity.',
+    spec: 'none (logged): the door\'s own refusal' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -23649,6 +23685,27 @@ const CODES = [
       'delivered: the connection failed, the certificate did not verify, ' +
       'or the PEP refused it. The result is recorded on the PEP\'s row.',
     spec: 'HTTP 400 on /admin-api' },
+  // #1827: a remote PEP's decision records pushed to /admin-api.
+  { code: 'STS-XACML-0286',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit in a body that is not { instance, events } ' +
+      'with events a non-empty array of objects, or with more events than ' +
+      'one batch may carry (#1827). Nothing in the batch is recorded.',
+    spec: 'HTTP 400, an error message' },
+  { code: 'STS-XACML-0287',
+    summary: 'A remote PEP pushed decision records to POST ' +
+      '/admin-api/pep-audit and is not registered in this realm\'s ' +
+      'ou=peps under the name its token\'s subject carries (#1827). It ' +
+      'must register (POST /xacml/pep/register) before its records are ' +
+      'taken.',
+    spec: 'HTTP 404, an error message' },
+  { code: 'STS-XACML-0288',
+    summary: 'A decision record a remote PEP pushed to POST ' +
+      '/admin-api/pep-audit was not recorded: it had no positive ' +
+      'integer seq, or a kind other than enforcement, authzen or proxy ' +
+      '(#1827). The rest of the batch is recorded and the record is ' +
+      'counted as ignored.',
+    spec: 'none; counted as ignored in the answer' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24322,6 +24379,33 @@ const CODES = [
       'connection is lost; the worker catches the panic and takes the next ' +
       'job (2026-11-16).',
     spec: 'none — an error in the PEP\'s log' },
+  // #1827: the decision records shipped to the service.
+  { code: 'STS-XPEP-0122',
+    summary: 'The remote PEP\'s queue of decision records waiting for ' +
+      'the service was full, so the oldest record was dropped to make ' +
+      'room (#1827). Enforcement goes on; the dropped decision is still on ' +
+      'the PEP\'s own log. Logged at the first drop and then sparingly, ' +
+      'with the count.',
+    spec: 'none; the PEP keeps enforcing' },
+  { code: 'STS-XPEP-0123',
+    summary: 'The remote PEP could not obtain an access token for the ' +
+      'management API: the RFC 7523 self-assertion grant at the token ' +
+      'endpoint failed or was refused (#1827). Its entry must hold its ' +
+      'client certificate as an assertion key and be in the group ' +
+      'roles.remotePepGroup names. The records stay queued.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0124',
+    summary: 'The remote PEP could not deliver a batch of decision records ' +
+      'to POST /admin-api/pep-audit: no answer, a refusal of its token, or ' +
+      'a status other than 200 and 400 (#1827). The records stay queued ' +
+      'and are sent again.',
+    spec: 'none; the records are kept and sent later' },
+  { code: 'STS-XPEP-0125',
+    summary: 'The service refused a batch of decision records as malformed ' +
+      '(HTTP 400, STS-XACML-0286 on its side), so the remote PEP dropped ' +
+      'that batch rather than send it forever (#1827). Each decision is ' +
+      'still on the PEP\'s own log.',
+    spec: 'none; the batch is dropped' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -27150,6 +27234,14 @@ const CODES = [
       'members, once per set of names; the process needs a restart and the ' +
       'write that polluted it a fix.',
     spec: '' },
+  { code: 'STS-API-0147',
+    summary: 'A remote PEP\'s decision-record push (POST ' +
+      '/admin-api/pep-audit) arrived on a token that does not carry ' +
+      'xacml:pep-audit or whose subject is not in the remote PEPs\' group ' +
+      '(REMOTE_PEPS) now, or a token carrying xacml:pep-audit was presented ' +
+      'at another operation (#1827). Refused at the gate itself, so that ' +
+      'the separation does not depend on xacml.enforceAccess.',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
