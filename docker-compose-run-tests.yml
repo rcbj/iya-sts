@@ -975,6 +975,16 @@ services:
       # is refused, which is what a `docker compose -f this up` by hand gets.
       - PEP_TLS_CERT=${XACML_PEP_TLS_CERT:-}
       - PEP_TLS_KEY=${XACML_PEP_TLS_KEY:-}
+      # THE ASSERTION KEY (#1827's follow-up, phase 3): the ONE key the PEP
+      # signs its RFC 7523 self-assertion and its DPoP proofs with, generated
+      # by ./run-tests.sh beside pep.key (`pep-credential.js --assertion
+      # --csr-only`). The service never sees it: sts_xacml_remote_pep.js
+      # sends the request written beside it to issue-pep-credential once the
+      # PEP's entry exists, and the PEP's token fetches succeed from then on
+      # (it retries every five seconds). Until then, and while
+      # xacml.pepAuthentication is `either`, the client certificate above
+      # carries every call.
+      - PEP_ASSERTION_KEY=${XACML_PEP_ASSERTION_KEY:-}
       # THE HTTPS LISTENER'S PAIR (2026-09-13). The files do not exist when this
       # container starts: sts_xacml_remote_pep.js issues the pair through
       # /admin-api/xacml/issue-pep-certificate once this PEP has registered in

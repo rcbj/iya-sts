@@ -206,12 +206,10 @@ A PEP can authenticate with an access token in place of its client
 certificate on every call it makes to this service. That covers
 `/xacml/pep/*`, `POST /xacml/pip`, the decision-record push and the AuthZEN
 forward. Steps 1 and 2 above then become one step: **register one signing key
-on the PEP's entry** as its JWT assertion key. Step 3, the `remote-peps` group,
-is unchanged. You can issue the key pair on the person page's Credentials,
-or upload a certificate for an existing key with
-`POST /admin-api/pki/upload-certificate`, `target: "person"`,
-`purpose: "jwt"`. The key must be ES256 (EC P-256), which is preferred, or
-RSA.
+on the PEP's entry** as its JWT assertion key, with `issue-pep-credential`
+([Provisioning the key](#provisioning-the-key-issue-pep-credential)). Step 3,
+the `remote-peps` group, is unchanged. The key must be ES256 (EC P-256), which
+is preferred, or RSA of 2048 bits or more.
 
 For each audience, the PEP signs an [RFC 7523](jwt-assertions.md) assertion
 about itself. It presents the assertion at the realm's `/oauth2/token` through
@@ -386,13 +384,99 @@ loaded.
 1. **The PEP's entry**, whose username is `PEP_NAME` — the PEP names itself
    in the assertion, and the service names its row by that entry's username,
    so the two must be equal.
-2. **Its key registered on the entry** as its JWT assertion key: `POST
-   /admin-api/pki/upload-certificate` with `target: "person"` and `purpose:
-   "jwt"` (see [Its decisions in the service's audit log](#what-you-provision-for-it)
-   for the commands), or the service's `issue-pep-credential` operation.
-3. **The entry in the remote PEPs group**, as for every PEP.
+2. **The entry in the remote PEPs group**, as for every PEP. That makes it a
+   [service account](#the-peps-entry-is-a-service-account).
+3. **Its key, certified and registered with `issue-pep-credential`** — below.
 
 The PEP asks through the public client `sts-remote-pep` (`PEP_CLIENT_ID`).
+
+### Provisioning the key: `issue-pep-credential`
+
+**This service never holds the PEP's private key.** You — or the PEP's
+provisioning tool — generate the key pair where the PEP runs and send only a
+PKCS #10 certificate request. The realm's own Issuing CA certifies the public
+key in it and registers the certificate on the PEP's entry as its RFC 7523
+key. Nothing private is stored anywhere in the service.
+
+- **The request proves possession.** Its signature must verify with the key
+  it carries; a tampered request is refused.
+- **The key is EC P-256 (ES256, preferred) or RSA of 2048 bits or more.**
+  Anything else is refused by name (`STS-PKI-0281`).
+- **The request's names are ignored.** The certificate names the entry:
+  `urn:sts:sa:<username>`, with the username as its common name, whatever
+  the request's subject or subjectAltName asked for.
+- **The entry must exist, be a service account and hold `REMOTE_PEPS`**, or
+  the request is refused before anything is certified (`STS-XACML-0298`,
+  `STS-XACML-0299`, `STS-XACML-0301`). No registered row on
+  `/admin/xacml/peps` is needed: this is how a PEP is provisioned before it
+  has ever registered.
+- **The certificate is an ordinary leaf of the realm's CA.** Its CRL and OCSP
+  responder answer for it, and revoking it on the person's page refuses the
+  grant from then on.
+- **A new key is added; it does not replace.** The entry may hold up to
+  `pki.personSigningKeyMax` valid keys, so a running PEP keeps working until
+  you restart it on the new one. `revokePrevious: true` revokes the entry's
+  other keys in the same call — after the new key is registered, or before
+  it when the entry is at the cap.
+
+The answer carries the certificate and its chain, the key's `kid`, the
+`urn`, and the environment to start the PEP with. The act is in the audit log
+as `xacml.pep.credential`, with no key material.
+
+**With the tool.** `tests/tools/pep-credential.js --assertion` does all of
+it: it generates the key (EC P-256, or `--key-alg=rsa-2048`) and the request,
+calls the operation with your management API token, writes
+`pep-assertion.key` (the private key), `pep-assertion.csr` and
+`pep-assertion.crt` to `--out`, and prints the environment.
+
+```bash
+export STS_ADMIN_API_TOKEN=...   # an admin:write token, for this realm
+node tests/tools/pep-credential.js --assertion \
+  --url=https://localhost:8081 --realm=acme \
+  --name=remote-pep-1 --out=./pep-credential
+# PEP_ASSERTION_KEY=./pep-credential/pep-assertion.key
+# PEP_NAME=remote-pep-1
+# PEP_CLIENT_ID=sts-remote-pep
+```
+
+`--csr-only` writes the key and the request and sends nothing, for when the
+entry does not exist yet; `--reuse-key` later sends the request already in
+`--out`. `--revoke-previous` passes `revokePrevious`.
+
+**By hand.**
+
+```bash
+openssl ecparam -name prime256v1 -genkey -noout | \
+  openssl pkcs8 -topk8 -nocrypt -out pep-assertion.key
+openssl req -new -key pep-assertion.key -subj /CN=remote-pep-1 \
+  -out pep-assertion.csr
+jq -n --arg csr "$(cat pep-assertion.csr)" \
+  '{name: "remote-pep-1", csr: $csr}' | \
+curl -sk -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d @- https://localhost:8081/realm/acme/admin-api/xacml/issue-pep-credential
+```
+
+**On the console**, the PEP's page has a **Certify the key** form on its
+Overview, and the Remote PEPs tab has one with a name field for a PEP that
+has not registered yet. Paste the request or load it from a file; the
+certificate and the environment are shown once.
+
+Start the PEP with `PEP_ASSERTION_KEY` naming the key file, `PEP_NAME` the
+username, and `PEP_CLIENT_ID=sts-remote-pep` (the default).
+
+### When to set `xacml.pepAuthentication` to `token`
+
+While it is `either`, the default, a PEP that also has a client certificate
+keeps working if its key is missing or not yet registered. Once every PEP in
+the realm runs on its key — `GET /`'s `credential` shows a token held for each
+audience — set `xacml.pepAuthentication` to `token`. A certificate alone is
+then refused, and you can stop setting `PEP_TLS_CERT` and `PEP_TLS_KEY`.
+
+**Upgrading an installation that layers its own appconfig file.**
+`xacml.pepAuthentication` is new in this release. If you start a new image
+over your own file in `env/`, that file must carry the setting (`either` keeps
+the old behaviour); a setting with no value anywhere stops the service from
+starting ([Configuration](configuration.md)).
 
 ### Three tokens
 

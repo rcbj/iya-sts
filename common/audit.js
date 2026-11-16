@@ -1149,6 +1149,11 @@ const ACTIONS = [
   // row names the serial, the names and the expiry, and never the key.
   { action: 'xacml.pep.certificate', category: 'authorization',
     label: 'A remote PEP was issued an HTTPS listener certificate' },
+  // A remote PEP's RFC 7523 assertion key was certified from its own
+  // request (#1827's follow-up, phase 3). The row names the urn, the kid,
+  // the serial and the expiry, and never the certificate or a key.
+  { action: 'xacml.pep.credential', category: 'authorization',
+    label: 'A remote PEP\'s assertion key was certified from its request' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 
@@ -1715,6 +1720,25 @@ const ACTIONS = [
     label: 'A remote PEP\'s reverse-proxy configuration was removed' },
   { action: 'xacml.pep.validate', category: 'authorization',
     label: 'A remote PEP\'s proxy asked for a credential to be validated' },
+  // The Sync button (`xacml/xacml_admin.ts`'s `syncPep()`): a full pull
+  // asked of one PEP, whether or not its nudges are stopped.
+  { action: 'xacml.pep.sync', category: 'authorization',
+    label: 'A remote PEP was asked to pull its whole configuration now' },
+  // A defined HTTPS listener's certificate, issued over the key the PEP
+  // generated (`xacml/xacml_pep_tls.ts`'s `issueForListener()`, #1760).
+  { action: 'xacml.pep.listener.certificate', category: 'authorization',
+    label: 'A remote PEP\'s HTTPS listener was issued a certificate' },
+  // Remote PEP clusters: one configuration shared by several PEPs.
+  { action: 'xacml.pep.cluster.create', category: 'authorization',
+    label: 'A remote PEP cluster was created' },
+  { action: 'xacml.pep.cluster.delete', category: 'authorization',
+    label: 'A remote PEP cluster was deleted' },
+  { action: 'xacml.pep.cluster.member.add', category: 'authorization',
+    label: 'A remote PEP was added to a cluster' },
+  { action: 'xacml.pep.cluster.member.set', category: 'authorization',
+    label: 'The addresses of a remote PEP cluster\'s member were set' },
+  { action: 'xacml.pep.cluster.member.remove', category: 'authorization',
+    label: 'A remote PEP was removed from a cluster' },
   { action: 'xacml.policy.write', category: 'authorization',
     label: 'An XACML policy was written' },
   { action: 'xacml.policy.delete', category: 'authorization',
@@ -1763,7 +1787,187 @@ const ACTIONS = [
   // destination RECEIVES when an administrator presses Test, and a SIEM
   // filtering on actions needs this one named like every other.
   { action: 'audit.export.test', category: 'service',
-    label: 'A test event an audit export destination was sent' }
+    label: 'A test event an audit export destination was sent' },
+
+  // ---------------------------------------------------------------------
+  // ACTIONS BUILT AT RUN TIME AND NEVER LISTED (2026-11-16). Each was
+  // written by its module with no row here: built from a prefix and a
+  // suffix, handed through a helper's parameter, chosen by a ternary, or
+  // read from a table, none of which tests/audit_vocabulary.js read until
+  // then. A row whose site names no category was recorded as `protocol`;
+  // the row now says what it is about.
+  // ---------------------------------------------------------------------
+  // admin-core/admin_actions.ts
+  { action: 'certificate.stored', category: 'authentication',
+    label: 'A certificate was stored on a person\'s or an application\'s ' +
+           'entry' },
+  { action: 'certificate.unstored', category: 'authentication',
+    label: 'A certificate was removed from a person\'s or an application\'s ' +
+           'entry' },
+  { action: 'federation.link.add', category: 'admin',
+    label: 'An administrator linked a person to a partner\'s subject' },
+  { action: 'federation.link.remove', category: 'admin',
+    label: 'An administrator unlinked a person from a partner\'s subject' },
+  { action: 'roles.grant', category: 'admin',
+    label: 'A role was given to a person, a group or an application' },
+  { action: 'roles.revoke', category: 'admin',
+    label: 'A role was taken away from a person, a group or an application' },
+  { action: 'roles.authorize', category: 'admin',
+    label: 'A role was made to authorize a permission' },
+  { action: 'roles.unauthorize', category: 'admin',
+    label: 'A role no longer authorizes a permission' },
+  { action: 'krb5.trust.add', category: 'admin',
+    label: 'A Kerberos trust was added' },
+  { action: 'krb5.trust.update', category: 'admin',
+    label: 'A Kerberos trust was changed' },
+  { action: 'krb5.trust.enable', category: 'admin',
+    label: 'A Kerberos trust was enabled' },
+  { action: 'krb5.trust.disable', category: 'admin',
+    label: 'A Kerberos trust was disabled' },
+  { action: 'krb5.trust.rotate-key', category: 'admin',
+    label: 'A Kerberos trust\'s key was rotated' },
+  { action: 'krb5.trust.remove', category: 'admin',
+    label: 'A Kerberos trust was removed' },
+  { action: 'krb5.trust.pair', category: 'admin',
+    label: 'A Kerberos trust was paired with another trust realm' },
+  // admin-core/policy_kinds.ts' `auditAction`s, which /admin/policies and
+  // /admin-api write when a profile is saved or put back, or an act done.
+  { action: 'admin.authn-policy.save-named', category: 'admin',
+    label: 'A named authentication policy was created or replaced' },
+  { action: 'admin.authn-policy.delete-named', category: 'admin',
+    label: 'A named authentication policy was deleted' },
+  { action: 'admin.service-account-policy.change', category: 'admin',
+    label: 'A service account policy profile was changed' },
+  { action: 'admin.passkey-policy.change', category: 'admin',
+    label: 'A passkey policy profile was changed' },
+  { action: 'admin.passkey-client.clear', category: 'admin',
+    label: 'ML-DSA was offered again to one learned passkey client, or to ' +
+           'every one' },
+  { action: 'admin.attribute-policy.change', category: 'admin',
+    label: 'An attribute policy profile was changed' },
+  { action: 'admin.attribute-policy.define', category: 'admin',
+    label: 'A custom attribute was defined in a realm' },
+  { action: 'admin.attribute-policy.update', category: 'admin',
+    label: 'A realm\'s custom attribute was changed' },
+  { action: 'admin.attribute-policy.undefine', category: 'admin',
+    label: 'A realm\'s custom attribute was removed' },
+  // authn/device_bound_sessions.ts
+  { action: 'authn.session.registration.refused', category: 'session',
+    label: 'Binding a sign-on session to its browser\'s key was refused' },
+  { action: 'authn.session.refresh.refused', category: 'session',
+    label: 'Renewing a device-bound session\'s cookie was refused' },
+  // common/account_state.ts
+  { action: 'account.disable', category: 'directory',
+    label: 'A person\'s account was disabled' },
+  { action: 'account.enable', category: 'directory',
+    label: 'A person\'s account was enabled' },
+  // common/cert_enrollment.ts, whose site names `configuration`, which is
+  // not a category.
+  { action: 'enrollment.hostname.add', category: 'admin',
+    label: 'A host name was registered on an entry for certificate ' +
+           'enrollment' },
+  { action: 'enrollment.hostname.remove', category: 'admin',
+    label: 'A host name was removed from an entry for certificate ' +
+           'enrollment' },
+  // common/devices.ts
+  { action: 'device.risk', category: 'directory',
+    label: 'A registered device\'s risk level was set' },
+  // federation/federation.js' recordChange()
+  { action: 'federation.create', category: 'admin',
+    label: 'A federation relationship was created' },
+  { action: 'federation.update', category: 'admin',
+    label: 'A federation relationship was changed' },
+  { action: 'federation.delete', category: 'admin',
+    label: 'A federation relationship was deleted' },
+  { action: 'federation.encryption-key', category: 'admin',
+    label: 'A federation relationship\'s encryption keys changed' },
+  { action: 'federation.client-certificate', category: 'admin',
+    label: 'A federation relationship was given a client certificate' },
+  { action: 'federation.refused', category: 'authentication',
+    label: 'A federated sign-in through a relationship was refused' },
+  // kerberos/krb5_person_keys.ts: the scheduler's, and an operator's.
+  { action: 'krb5.krbtgt.created', category: 'authentication',
+    label: 'A realm\'s krbtgt key was created' },
+  { action: 'krb5.krbtgt.rotated', category: 'authentication',
+    label: 'A realm\'s krbtgt key was rotated' },
+  { action: 'krb5.krbtgt.invalidated', category: 'authentication',
+    label: 'A realm\'s krbtgt key was replaced and every older one ' +
+           'invalidated' },
+  { action: 'admin.krb5.krbtgt.created', category: 'admin',
+    label: 'An operator created a realm\'s krbtgt key' },
+  { action: 'admin.krb5.krbtgt.rotated', category: 'admin',
+    label: 'An operator rotated a realm\'s krbtgt key' },
+  { action: 'admin.krb5.krbtgt.invalidated', category: 'admin',
+    label: 'An operator replaced a realm\'s krbtgt key and invalidated ' +
+           'every older one' },
+  // oauth-oidc/ciba.ts
+  { action: 'ciba.approved', category: 'authentication',
+    label: 'A person approved a backchannel sign-in request' },
+  { action: 'ciba.denied', category: 'authentication',
+    label: 'A person denied a backchannel sign-in request' },
+  // oidfed/oidfed.ts
+  { action: 'oidfed.subordinate-suspended', category: 'admin',
+    label: 'An OpenID Federation subordinate was suspended' },
+  { action: 'oidfed.subordinate-reinstated', category: 'admin',
+    label: 'An OpenID Federation subordinate was reinstated' },
+  { action: 'oidfed.collection-crawled', category: 'admin',
+    label: 'An OpenID Federation Entity Collection was crawled' },
+  // portal/
+  { action: 'portal.device.approve', category: 'authentication',
+    label: 'A person approved a device sign-in on the portal' },
+  { action: 'portal.device.deny', category: 'authentication',
+    label: 'A person denied a device sign-in on the portal' },
+  { action: 'portal.device.prove', category: 'authentication',
+    label: 'A person proved a device\'s key on the portal' },
+  { action: 'portal.device.link', category: 'authentication',
+    label: 'A person linked a device to a passkey on the portal' },
+  { action: 'portal.vc.view', category: 'protocol',
+    label: 'Viewing the credentials a person may be offered was refused' },
+  // risk/risk_datasets.ts
+  { action: 'risk.dataset.import', category: 'admin',
+    label: 'A risk dataset was imported' },
+  { action: 'risk.dataset.activate', category: 'admin',
+    label: 'A version of a risk dataset was made the active one' },
+  { action: 'risk.dataset.delete', category: 'admin',
+    label: 'A version of a risk dataset was deleted' },
+  // ssf/ssf_transmitters.ts' streamAct()
+  { action: 'ssf.signals.replace-stream', category: 'signals',
+    label: 'A partner\'s Shared Signals stream was replaced' },
+  { action: 'ssf.signals.read-status', category: 'signals',
+    label: 'A partner\'s Shared Signals stream status was read' },
+  // xacml/xacml_admin.ts, from `owner.audit`: a remote PEP's, and a remote
+  // PEP cluster's, whose configuration its members share.
+  { action: 'xacml.pep.listener.set', category: 'authorization',
+    label: 'A remote PEP\'s listener was defined' },
+  { action: 'xacml.pep.listener.remove', category: 'authorization',
+    label: 'A remote PEP\'s listener was removed' },
+  { action: 'xacml.pep.listener.renew', category: 'authorization',
+    label: 'A remote PEP was asked for a new certificate for a listener' },
+  { action: 'xacml.pep.listener.environment', category: 'authorization',
+    label: 'The tuning of a remote PEP\'s environment listener was set' },
+  { action: 'xacml.pep.settings.set', category: 'authorization',
+    label: 'A remote PEP\'s managed settings were set' },
+  { action: 'xacml.pep.settings.clear', category: 'authorization',
+    label: 'A remote PEP\'s managed settings were cleared' },
+  { action: 'xacml.pep.cluster.listener.set', category: 'authorization',
+    label: 'A remote PEP cluster\'s listener was defined' },
+  { action: 'xacml.pep.cluster.listener.remove', category: 'authorization',
+    label: 'A remote PEP cluster\'s listener was removed' },
+  { action: 'xacml.pep.cluster.listener.renew', category: 'authorization',
+    label: 'A remote PEP cluster was asked for a new certificate for a ' +
+           'listener' },
+  { action: 'xacml.pep.cluster.listener.environment',
+    category: 'authorization',
+    label: 'The tuning of a remote PEP cluster\'s environment listener was ' +
+           'set' },
+  { action: 'xacml.pep.cluster.settings.set', category: 'authorization',
+    label: 'A remote PEP cluster\'s managed settings were set' },
+  { action: 'xacml.pep.cluster.settings.clear', category: 'authorization',
+    label: 'A remote PEP cluster\'s managed settings were cleared' },
+  { action: 'xacml.pep.cluster.proxy.set', category: 'authorization',
+    label: 'A remote PEP cluster\'s reverse-proxy configuration was set' },
+  { action: 'xacml.pep.cluster.proxy.clear', category: 'authorization',
+    label: 'A remote PEP cluster\'s reverse-proxy configuration was removed' }
 ];
 
 const CATEGORY_OF_ACTION = {};

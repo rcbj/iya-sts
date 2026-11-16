@@ -41,6 +41,7 @@ and the nudge.
 | `fga_policies.ts` | **An application's fine-grained authorization policy and its lifecycle (#564).** `ensure`, `enable`, `disable`, `retire`, `resolve`; fills `common/applications.js`'s `setFgaLifecycle()` slot when wired at 23c. A LIBRARY. See *Application-scoped fine-grained authorization* below. |
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
+| `xacml_pep_credential.ts` | `issue-pep-credential` (#1827's follow-up, phase 3): the key in a remote PEP's OWN PKCS #10 request certified by the realm's Issuing CA as `urn:sts:sa:<name>` and registered as the entry's RFC 7523 key (`person_assertions.certifyRequest()`); the entry must exist, be a service account and hold REMOTE_PEPS. No private key anywhere. A library; `xacml_admin.ts` routes the act. |
 | `pep_token.ts` | A remote PEP's DPoP-bound access token from `sts-remote-pep`, read for the PEP door (`/xacml/pep`, `xacml:pep`) and the AuthZEN door (`/access/v1`, `authzen:evaluate`): ours, the PEP's client, this audience and scope, a DPoP proof that holds, one `ou=users` entry. Writes no response (#1827's follow-up). |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
@@ -229,6 +230,43 @@ every call, unchanged.
 `tests/remote_pep_token_door.js` drives it in process over plain HTTP;
 `tests/authzen_evaluation.js` K2a/K2b hold the precedence over a real
 handshake.
+
+### PROVISIONING THE KEY: `issue-pep-credential` (phase 3, rcbj 2026-11-16)
+
+**The service never holds the PEP's private key** (rcbj), and the
+certificate is **issued by the realm's internal CA** (decision 4). The PEP or
+`tests/tools/pep-credential.js --assertion` generates the key and sends a
+PKCS #10 request; `xacml_pep_credential.ts` checks the entry and hands the
+request to `person_assertions.certifyRequest()`, the one CSR door for a
+person's RFC 7523 key (`common/CLAUDE.md` 3ab).
+
+* **WHO.** `name` (or `pep`) is a USERNAME under this realm's `ou=users`, not
+  an `ou=peps` row — a PEP is provisioned before it ever registers. Refused:
+  no such entry (`STS-XACML-0298`), not a service account (`0299`), not
+  holding REMOTE_PEPS (`0301`), asked of `roles.rolesOf()` by DN as
+  `pepAccess()` asks. A key for an entry every PEP door refuses would read as
+  a broken PEP rather than a missing membership.
+* **WHAT.** The leaf names the entry (`urn:sts:sa:<name>`, CN the username);
+  the request's subject and SANs are read for nothing. EC P-256 or RSA ≥ 2048
+  (`STS-PKI-0281`); a request that does not prove possession is the
+  enrollment reader's `STS-ENROLL-0033`.
+* **ROTATION ADDS** (#1290's rule for a person's keys): the old key keeps
+  working until the PEP is moved; `revokePrevious: true` revokes the entry's
+  other valid RFC 7523 keys after the new one is written, or before it when
+  the entry is at `pki.personSigningKeyMax`. A failed revocation is `0302`
+  with the new key registered.
+* **THE ANSWER** is public material and the environment (`PEP_NAME`,
+  `PEP_CLIENT_ID`, `PEP_ASSERTION_KEY` as a reminder, not a path); audited as
+  `xacml.pep.credential` without the certificate. On the console: a form on
+  the PEP's Overview and one under the Remote PEPs table (with a name field),
+  the answer drawn once by `WebAnswers.pepCredential()`.
+* **THE STACKS** generate the key with the client certificate
+  (`--assertion --csr-only`, beside `pep.key`) and mount it as
+  `PEP_ASSERTION_KEY`; `sts_xacml_remote_pep.js` sends the request once it has
+  made the PEP's entry in its realm. `xacml.pepAuthentication` stays `either`,
+  so the certificate carries every call until then.
+
+`tests/pep_assertion_credential.js` holds it in process.
 
 ### The entry is a SERVICE ACCOUNT, owned by the realm's administrators (#1760)
 

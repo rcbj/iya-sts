@@ -5732,6 +5732,110 @@ Scope: `admin:write`.
 | `what` | string |  |  |
 | `why` | string |  |  |
 
+## POST /admin-api/xacml/issue-pep-credential
+
+`issueXacmlPepCredential`
+
+**Certify a remote PEP's own key as its RFC 7523 assertion key**
+
+Certifies the public key in a remote PEP's own PKCS #10 certificate request (`csr`) from THIS REALM's Issuing CA and registers the leaf as the RFC 7523 (purpose=jwt) key of the PEP's entry, which is what lets the PEP sign its self-assertion for a DPoP-bound access token from `sts-remote-pep` (#1827's follow-up, phase 3). **This service never generates, sees or keeps the private key**: the PEP, or `tests/tools/pep-credential.js --assertion`, generates the key pair and sends only the request; no private value is written to the entry (`source` `issued-from-csr`).
+
+The request's signature must verify with the key it carries (proof of possession, the PKCS #10 reader ACME, EST and SCEP use), and the key must be EC P-256 (ES256, preferred) or RSA of 2048 bits or more; anything else is refused naming the two. **The request's subject and names are ignored**: the leaf names the ENTRY, `urn:sts:sa:<name>`. Like any issued leaf it is in its Issuing CA's register, so its CRL and OCSP responder answer for it and revoking it on /admin/users refuses the grant.
+
+`name` (or `pep`) is the USERNAME of the PEP's entry under this realm's ou=users — no registered ou=peps row is needed, because this is how a PEP is provisioned before it ever registers. The entry must exist (STS-XACML-0298), be a service account (STS-XACML-0299) and hold REMOTE_PEPS through the group roles.remotePepGroup names (STS-XACML-0301).
+
+A new key is ADDED beside any the entry holds, up to pki.personSigningKeyMax valid ones, so a running PEP keeps working until it is moved onto the new key. `revokePrevious: true` revokes every other valid RFC 7523 key of the entry (cessationOfOperation) after the new one is written — before it, where the entry is at the cap; a revocation that fails is STS-XACML-0302 with the new key registered.
+
+The answer carries the certificate, its chain, `fullChainPem` (through the Root), the `kid`, the `urn` and the `environment` the PEP is started with: `PEP_NAME`, `PEP_CLIENT_ID` and `PEP_ASSERTION_KEY` (the key file the caller kept). Audited as `xacml.pep.credential`, with no key material.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `csr` | string |  | The PEP's PKCS #10 certificate request, PEM or base64 DER, signed with the key to be certified (EC P-256 or RSA of 2048 bits or more). Its subject and names are ignored. |
+| `days` | integer |  | The lifetime. Defaults to `pki.leafLifetimeDays`, and is shortened to the Issuing CA's own expiry. |
+| `label` | string |  | A short name for the key on the entry's key list. Defaults to `remote PEP`. |
+| `name` | string |  | The username of the remote PEP's entry under this realm's ou=users: a service account in the remote PEPs group. |
+| `pep` | string |  | The same, under the member GET /admin-api/xacml/peps calls it. Send `pep` or `name`; both, they must name the same PEP. |
+| `revokePrevious` | boolean |  | Revoke every other valid RFC 7523 key of the entry once this one is registered. Default false: a running PEP keeps its old key until it is moved onto this one. |
+
+**200**: The key was certified and registered.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string |  |  |
+| `chainPem` | list |  | The Issuing CA and the realm Intermediate, leaf excluded. |
+| `chainPem[]` | string |  |  |
+| `environment` | object |  | What the PEP is started with. |
+| `environment.PEP_ASSERTION_KEY` | string | yes | A reminder, not a path: the key file the caller generated the request with. This service never had it. |
+| `environment.PEP_CLIENT_ID` | string | yes | The client its token is issued through, sts-remote-pep. |
+| `environment.PEP_NAME` | string | yes | The PEP's name: its entry's username, the iss and sub of its self-assertion. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `fullChainPem` | string |  | The leaf followed by its chain through the service Root. |
+| `jwsAlg` | string |  | The JWS algorithm the PEP signs with. |
+| `keyAlg` | string |  | The key algorithm, ec-p256 or rsa-&lt;bits>. |
+| `kid` | string |  | The key's kid on the entry's JWKS. |
+| `message` | string |  |  |
+| `notAfter` | string |  |  |
+| `notBefore` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `realm` | string |  | The realm whose Issuing CA certified it; empty for the default realm. |
+| `revoked` | list |  | The kids of the entry's other keys revokePrevious revoked. |
+| `revoked[]` | string |  |  |
+| `serialHex` | string |  |  |
+| `subject` | string |  |  |
+| `urn` | string |  | The URI subjectAltName the leaf carries, urn:sts:sa:&lt;name>. |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing was certified (except STS-XACML-0302, which says which other key is still valid).
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificatePem` | string |  |  |
+| `chainPem` | list |  | The Issuing CA and the realm Intermediate, leaf excluded. |
+| `chainPem[]` | string |  |  |
+| `environment` | object |  | What the PEP is started with. |
+| `environment.PEP_ASSERTION_KEY` | string | yes | A reminder, not a path: the key file the caller generated the request with. This service never had it. |
+| `environment.PEP_CLIENT_ID` | string | yes | The client its token is issued through, sts-remote-pep. |
+| `environment.PEP_NAME` | string | yes | The PEP's name: its entry's username, the iss and sub of its self-assertion. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `fullChainPem` | string |  | The leaf followed by its chain through the service Root. |
+| `jwsAlg` | string |  | The JWS algorithm the PEP signs with. |
+| `keyAlg` | string |  | The key algorithm, ec-p256 or rsa-&lt;bits>. |
+| `kid` | string |  | The key's kid on the entry's JWKS. |
+| `message` | string |  |  |
+| `notAfter` | string |  |  |
+| `notBefore` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `realm` | string |  | The realm whose Issuing CA certified it; empty for the default realm. |
+| `revoked` | list |  | The kids of the entry's other keys revokePrevious revoked. |
+| `revoked[]` | string |  |  |
+| `serialHex` | string |  |  |
+| `subject` | string |  |  |
+| `urn` | string |  | The URI subjectAltName the leaf carries, urn:sts:sa:&lt;name>. |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
 ## GET /admin-api/xacml/monitor
 
 `getXacmlMonitor`

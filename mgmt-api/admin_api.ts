@@ -7962,6 +7962,10 @@ class AdminApi {
           { action: 'sync-pep', operationId: 'syncXacmlPep' },
           { action: 'issue-pep-certificate',
             operationId: 'issueXacmlPepCertificate' },
+          // A remote PEP's RFC 7523 assertion key, certified from its own
+          // certificate request (#1827's follow-up, phase 3).
+          { action: 'issue-pep-credential',
+            operationId: 'issueXacmlPepCredential' },
           // The remote PEP's reverse proxy (#1760).
           { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
           { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },

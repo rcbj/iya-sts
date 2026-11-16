@@ -2103,6 +2103,20 @@ the roster. Now:
 
 `sts_admin_api_operations.js`'s `theAdminRolesRoundTrip()` asserts all three.
 
+## `issue-pep-credential`: A PEP'S KEY FROM ITS OWN REQUEST (#1827's follow-up, phase 3)
+
+`POST /admin-api/xacml/issue-pep-credential` takes `name` (a username under
+the realm's `ou=users`, no `ou=peps` row needed) and `csr`, and answers a
+PROMISE like `issue-pep-certificate` below. Gated as every XACML act (Admin
+Write, `admin:write`); the answer is `XacmlPepCredentialAnswer`, public
+material only — **this service never had the private key**, so unlike
+`issue-pep-certificate` there is nothing to hand over once. A refusal's code
+is the inner one (`STS-XACML-0298`, `0299`, `0301`, `0302`, `STS-PKI-0278`/`0279`, the
+enrollment reader's), carried through `xacmlAction()`'s conversion. The
+documented example's request is not a real CSR, so the operations walk's
+replay is refused about its referent, which counts as driven.
+`xacml/CLAUDE.md` argues the act.
+
 ## `issue-pep-certificate`: THE ONE XACML ACTION THAT AWAITS (2026-09-13)
 
 `POST /admin-api/xacml/issue-pep-certificate` issues a registered remote PEP the

@@ -1304,6 +1304,11 @@ COMPOSE_ENV=(
   "XACML_PEP_CERT_DIR=$(hostPath "${XACML_PEP_CERT_DIR}")"
   "XACML_PEP_TLS_CERT=/certs/pep.crt"
   "XACML_PEP_TLS_KEY=/certs/pep.key"
+  # THE ASSERTION KEY (#1827's follow-up, phase 3): mintThePepCredential()
+  # generates it beside pep.key with a certificate request, and the job
+  # registers the request once the PEP's entry exists in its realm. The
+  # service never sees the key.
+  "XACML_PEP_ASSERTION_KEY=/certs/pep-assertion.key"
   # THE REGISTERED NAME IS THE CERTIFICATE'S COMMON NAME. `xacml.js` files a
   # registration under the certificate and ignores the body, so a PEP_NAME that
   # differed would leave `sync.js` polling with a `?pep=` nobody has a row for.
@@ -2105,10 +2110,16 @@ mintThePepCredential()
                    \"/out/sts-certificate.pem\", t.pem); })" "$1" || exit 1
              export NODE_EXTRA_CA_CERTS=/out/sts-certificate.pem ;;
          esac
-         exec node /repo/tests/tools/pep-credential.js \
+         node /repo/tests/tools/pep-credential.js \
            --url="$1" --out=/out --subject="$2" \
-           --crl-base=http://xacml-pep:9090/crl' \
-         sh "$(serviceUrl)" "${XACML_PEP_SUBJECT}" > /dev/null;
+           --crl-base=http://xacml-pep:9090/crl || exit 1
+         # THE ASSERTION KEY AND ITS REQUEST (#1827, phase 3): generated
+         # here, sent by sts_xacml_remote_pep.js to issue-pep-credential
+         # once it has made the PEP'"'"'s entry in its realm.
+         exec node /repo/tests/tools/pep-credential.js --assertion \
+           --csr-only --out=/out --name="$3"' \
+         sh "$(serviceUrl)" "${XACML_PEP_SUBJECT}" "${XACML_PEP_NAME}" \
+         > /dev/null;
   then
     echo "" >&2
     echo "WARNING: the remote PEP's client certificate could not be minted." >&2
@@ -2124,6 +2135,7 @@ mintThePepCredential()
   # relaxed here, deliberately and narrowly, because this key exists for the
   # length of one test run and protects nothing.
   chmod 0644 "${XACML_PEP_CERT_DIR}/pep.key" 2>/dev/null || true
+  chmod 0644 "${XACML_PEP_CERT_DIR}/pep-assertion.key" 2>/dev/null || true
   # WHERE THE JOB WRITES THE HTTPS LISTENER'S PAIR, made now because the PEP
   # container mounts its parent and the job — in the tests container — writes
   # into it later. World-writable because that container may not be this user;

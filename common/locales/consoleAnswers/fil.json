@@ -116,5 +116,11 @@
   "cluster.back": "Bumalik sa cluster",
   "cluster.discardedDownload": "I-download ang itinapon",
   "cluster.discardedLead": "Wala nang sariling reverse proxy, setting o listener ang PEP: kinukuha nito ang sa cluster. Ito ang hawak nito dati, isang beses lang.",
-  "cluster.discardedTitle": "Sumali ang isang PEP sa isang cluster"
+  "cluster.discardedTitle": "Sumali ang isang PEP sa isang cluster",
+  "once.pepCredential": "Assertion key ng PEP",
+  "pepCredential.keyPath": "(ang path ng key file na ginamit mo sa paggawa ng request)",
+  "pepCredential.urn": "Pangalan",
+  "pepCredential.env": "Simulan ang PEP gamit ang environment na ito. Hindi kailanman umalis ang private key sa makinang gumawa ng request; walang maibibigay ang serbisyong ito.",
+  "pepCredential.chain": "Ang certificate at ang chain nito hanggang sa Root ng serbisyo. Pampubliko: hindi ito kailangan ng PEP para mag-authenticate, at nasa listahan ito ng mga key ng entry.",
+  "pepCredential.download": "I-download ang certificate"
 }

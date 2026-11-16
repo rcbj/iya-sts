@@ -1033,5 +1033,18 @@
   "tip.remotePeps.method": "The request's method. A path is counted without its query string.",
   "tip.remotePeps.path": "The request's path, with no query string, token or session id.",
   "tip.remotePeps.count": "Requests for this method and path since the process started.",
-  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused."
+  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused.",
+  "credential.legend": "Assertion key",
+  "credential.legendNew": "Provision a remote PEP&rsquo;s assertion key",
+  "credential.lead": "The PEP generates its own key pair and sends a certificate request; this realm&rsquo;s Issuing CA certifies the key in it as the PEP&rsquo;s RFC 7523 assertion key, named <code>urn:sts:sa:&lt;name&gt;</code>. This service never sees the private key. <code>node tests/tools/pep-credential.js --assertion</code> makes the key and the request.",
+  "credential.name": "PEP entry (username)",
+  "credential.csr": "Certificate request (PEM)",
+  "credential.load": "Load from file",
+  "credential.revokePrevious": "Revoke the entry&rsquo;s other assertion keys",
+  "credential.submit": "Certify the key",
+  "tip.credential.name": "The username of the PEP&rsquo;s entry under this realm&rsquo;s ou=users: a service account in the remote PEPs group. It need not have registered yet.",
+  "tip.credential.csr": "A PKCS #10 request signed with the key to certify: EC P-256 (preferred) or RSA of 2048 bits or more. Its subject and names are ignored; the certificate names the entry.",
+  "tip.credential.load": "Read a request file into the box above, in the browser. Nothing is sent until you certify.",
+  "tip.credential.revokePrevious": "Off by default: a running PEP keeps its old key until it is moved onto the new one. On, every other valid RFC 7523 key of the entry goes on its authority&rsquo;s revocation list.",
+  "tip.credential.submit": "Sends issue-pep-credential. The answer shows the certificate and the environment to start the PEP with, once."
 }

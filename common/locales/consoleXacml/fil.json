@@ -1033,5 +1033,18 @@
   "tip.remotePeps.method": "The request's method. A path is counted without its query string.",
   "tip.remotePeps.path": "The request's path, with no query string, token or session id.",
   "tip.remotePeps.count": "Requests for this method and path since the process started.",
-  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused."
+  "tip.remotePeps.pathRefused": "Requests for this method and path that were refused.",
+  "credential.legend": "Assertion key",
+  "credential.legendNew": "Maglaan ng assertion key ng isang remote PEP",
+  "credential.lead": "Ang PEP ang gumagawa ng sarili nitong key pair at nagpapadala ng certificate request; sine-certify ng Issuing CA ng realm na ito ang key sa loob nito bilang RFC 7523 assertion key ng PEP, na pinangalanang <code>urn:sts:sa:&lt;name&gt;</code>. Hindi kailanman nakikita ng serbisyong ito ang private key. Ang <code>node tests/tools/pep-credential.js --assertion</code> ang gumagawa ng key at ng request.",
+  "credential.name": "Entry ng PEP (username)",
+  "credential.csr": "Certificate request (PEM)",
+  "credential.load": "I-load mula sa file",
+  "credential.revokePrevious": "Bawiin ang iba pang assertion key ng entry",
+  "credential.submit": "I-certify ang key",
+  "tip.credential.name": "Ang username ng entry ng PEP sa ilalim ng ou=users ng realm na ito: isang service account sa grupo ng mga remote PEP. Hindi pa nito kailangang nakarehistro.",
+  "tip.credential.csr": "Isang PKCS #10 request na nilagdaan ng key na ise-certify: EC P-256 (mas mainam) o RSA na 2048 bits o higit pa. Binabalewala ang subject at mga pangalan nito; ang entry ang pinangangalanan ng certificate.",
+  "tip.credential.load": "Basahin ang isang request file papunta sa kahon sa itaas, sa browser. Walang ipapadala hangga’t hindi ka nagse-certify.",
+  "tip.credential.revokePrevious": "Naka-off bilang default: pinapanatili ng tumatakbong PEP ang luma nitong key hanggang mailipat ito sa bago. Kapag naka-on, mapupunta sa revocation list ng authority nito ang bawat iba pang valid na RFC 7523 key ng entry.",
+  "tip.credential.submit": "Ipinapadala ang issue-pep-credential. Isang beses na ipinapakita ng sagot ang certificate at ang environment na gagamitin sa pagsisimula ng PEP."
 }

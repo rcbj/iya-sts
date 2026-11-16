@@ -5196,6 +5196,18 @@ const CODES = [
       'not a service account in this realm.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0278',
+    summary: 'A person\'s RFC 7523 key was to be certified from their own ' +
+      'certificate request, and no request was sent or it could not be ' +
+      'read (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0281',
+    summary: 'A certificate request for a person\'s RFC 7523 key carries a ' +
+      'key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, ' +
+      'phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -23764,11 +23776,37 @@ const CODES = [
       'under this realm\'s ou=users: its sub is not urn:uuid: of exactly ' +
       'one person\'s entry, the PEP\'s own (#1827).',
     spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-XACML-0298',
+    summary: 'issue-pep-credential named no person in this realm\'s ' +
+      'ou=users, or named none at all: a remote PEP\'s key is certified ' +
+      'for an entry that exists (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0299',
+    summary: 'issue-pep-credential named a person who is not a service ' +
+      'account: a remote PEP\'s identity is one, and its key names it ' +
+      'urn:sts:sa:<name> (#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-XACML-0300',
     summary: 'A reverse-proxy route\'s `path` is /.iya-pep or under ' +
       '/.iya-pep/, the prefix the proxy reserves for its own callback and ' +
       'sign-out (#1830): an updated PEP refuses the whole configuration.',
     spec: 'HTTP 400 on /admin-api; configured: false at the pull' },
+  { code: 'STS-XACML-0301',
+    summary: 'issue-pep-credential named a service account that does not ' +
+      'hold REMOTE_PEPS (it is not in the group roles.remotePepGroup ' +
+      'names), so the key would authenticate an entry no PEP door admits ' +
+      '(#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0302',
+    summary: 'issue-pep-credential certified and registered the new key, ' +
+      'and revokePrevious could not revoke one of the entry\'s other RFC ' +
+      '7523 keys; the new key works, and the old one still does too ' +
+      '(#1827, phase 3).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

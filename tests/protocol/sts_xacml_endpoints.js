@@ -1144,6 +1144,48 @@ async function anUndischargeableObligationRefuses() {
 // cheap enough to be the contract — and THE PULL IS THE CONTRACT is the claim
 // the whole remote-PEP design rests on.
 // ===========================================================================
+// ---------------------------------------------------------------------------
+// THE SAME PULL ON THE PEP'S OWN KEY (#1827's follow-up, phase 3). The
+// admitted PEP's entry is given an RFC 7523 key this job generates — only
+// its certificate request is sent, through issue-pep-credential — and the
+// pull is made on the DPoP-bound token that key earns through
+// `sts-remote-pep`, with no client certificate: the same answer as the
+// certificate's. `xacml.pepAuthentication` is `either` here.
+// ---------------------------------------------------------------------------
+async function aRemotePepPullsOnItsKey() {
+  log.debug("Entering aRemotePepPullsOnItsKey().");
+  log.info("=== What a remote PEP pulls, on its own key ===");
+  const key = await credentials.assertionRequest({ keyAlg: "ec-p256",
+                                                   name: PEP_CN });
+  const issued = await credentials.issueAssertionCredential(
+    { post: postJson }, base, "/realm/" + REALM, PEP_CN, key.csrPem);
+  check("issue-pep-credential certifies the PEP's own key as urn:sts:sa:",
+        function () {
+    assert.strictEqual(issued.urn, "urn:sts:sa:" + PEP_CN);
+  });
+  const got = await credentials.pepAccessToken(realmUrl(""), PEP_CN,
+    key.privateKeyPem, "xacml:pep", "/xacml/pep");
+  assert.ok(got.status === 200 && got.token,
+    "the PEP's self-assertion grant answered " + got.status + " " +
+    String(got.text).slice(0, 300));
+  const where = realmUrl("/xacml/pep/policies");
+  const r = await fetchJson(where, { headers: credentials.dpopHeaders(
+    key.privateKeyPem, "GET", where, got.token) });
+  check("the pull on the PEP's DPoP-bound token answers the enabled " +
+        "policies, with no certificate", function () {
+    assert.strictEqual(r.status, 200, "the pull answered " + r.status + " " +
+                       String(r.text).slice(0, 300));
+    assert.strictEqual((r.body.policies || []).length, 1);
+    assert.strictEqual(r.body.root, POLICY);
+  });
+  // The key is taken off again: the realm is left standing, and a key whose
+  // private half was a variable in this process protects nothing.
+  await postJson(api("/pki/revoke"), { target: "person",
+    identifier: PEP_CN, purpose: "jwt", handle: issued.kid,
+    reason: "cessationOfOperation" });
+  log.debug("Leaving aRemotePepPullsOnItsKey().");
+}
+
 async function aRemotePepPulls() {
   log.debug("Entering aRemotePepPulls().");
   log.info("=== What a remote PEP pulls ===");
@@ -2401,6 +2443,7 @@ async function test() {
     await aMalformedRequestIsRefused();
     await anUndischargeableObligationRefuses();
     await aRemotePepPulls();
+    await aRemotePepPullsOnItsKey();
     await registeringAPep();
     await aSaveDoesNotWaitOnTheNudge();
     await thePipAnswersInXacmlsOwnXml();

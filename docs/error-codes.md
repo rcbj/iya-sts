@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5696** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5702** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 187
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 264
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 266
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -86,7 +86,7 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 220
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 134
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -1093,6 +1093,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0275` | pki.keyAlgorithm names a composite ML-DSA key, which the realm's TLS listeners cannot load, so a realm branch being built without a named algorithm used the classical default instead. | none: a log line; the build goes on |
 | `STS-PKI-0276` | Refused under paranoid PKI mode for policy-signer: the signer of a policy export (#1713); nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
 | `STS-PKI-0277` | A certificate uploaded for a person was issued by this realm as a service account's (urn:sts:sa:<name>, #1827), and that person is not a service account in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0278` | A person's RFC 7523 key was to be certified from their own certificate request, and no request was sent or it could not be read (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0281` | A certificate request for a person's RFC 7523 key carries a key that is neither EC P-256 nor RSA of 2048 bits or more (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
@@ -5166,7 +5168,11 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0295` | A remote PEP's access token at the PEP door does not carry xacml:pep, or sts-remote-pep no longer holds the delegated permission grant of it on sts-xacml-pep-api (#1827). | HTTP 401, WWW-Authenticate: DPoP error="insufficient_scope" |
 | `STS-XACML-0296` | A remote PEP's DPoP proof at the PEP door was refused: missing, malformed, not for this method and URL, outside its iat window, a replay, without the token's ath, by another key than the token is bound to, or without the server nonce the realm asks for (#1827). The log line names the proof's own STS-OAUTH code. | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" or "use_dpop_nonce" with a DPoP-Nonce header (RFC 9449 section 9) |
 | `STS-XACML-0297` | A remote PEP's access token at the PEP door names no entry under this realm's ou=users: its sub is not urn:uuid: of exactly one person's entry, the PEP's own (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
+| `STS-XACML-0298` | issue-pep-credential named no person in this realm's ou=users, or named none at all: a remote PEP's key is certified for an entry that exists (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0299` | issue-pep-credential named a person who is not a service account: a remote PEP's identity is one, and its key names it urn:sts:sa:<name> (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
+| `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-XPEP
 

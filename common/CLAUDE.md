@@ -9179,6 +9179,38 @@ hand-over still holds; what changed is the storage and the lifecycle.
   TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
   nothing under is `STS-PKI-0224`.
 
+### 3ab, continued: A KEY THE PERSON GENERATED, CERTIFIED FROM THEIR REQUEST (#1827's follow-up, phase 3, 2026-11-16)
+
+rcbj: **the service never holds the PEP's private key.** A third way onto
+`stsAssertionKeyPair`, beside Generate (the key made here, a sealed copy
+kept) and upload (a certificate the holder already has): the holder sends a
+PKCS #10 request and the realm's Issuing CA certifies the key in it.
+
+* **ONE DOOR, `person_assertions.certifyRequest(username, csr, opts)`**: the
+  entry and the cap are asked first (a leaf certified only for `write()` to
+  refuse would sit in the authority's register with no entry holding it),
+  then `pki.certifySigningRequest()`, then `write()` exactly as an issue —
+  `kid`, the JWK with `x5c`, `serialHex` and `caId`, so `revoke()` puts it on
+  that authority's CRL — with `source` `issued-from-csr` and NO private
+  value. `keysOf()`'s `privateKeyHeld` reads false for it, because only
+  `issued` implies a sealed half.
+* **`pki.certifySigningRequest()`** reads the request with
+  `cert_enrollment.ts`'s `parseCsr()` (required lazily: that module requires
+  `pki.js`), the one PKCS #10 reader and its proof-of-possession check, and
+  accepts `CSR_SIGNING_KEY_ALGS` — EC P-256 and RSA 2048/3072/4096, the keys
+  the remote PEP signs with (`STS-PKI-0281` otherwise; no request,
+  `STS-PKI-0278`). **The request's names are ignored**: it calls
+  `issueSigningKeyPair()` with `publicKeyPem` (new: a supplied key is
+  certified and `privateKeyPem` answered empty), `subjectKind` person and
+  `serviceAccount` from the caller, so the leaf is the same leaf an issue
+  makes and names `SubjectUrn.forPerson()`.
+* **ONLY THE PEP ACT CALLS IT TODAY** (`xacml/xacml_pep_credential.ts`, which
+  asks for a service account holding REMOTE_PEPS first). The `/admin/pki`
+  person issue and the portal are unchanged; a CSR door for an ordinary
+  person would need its own argument about who may send one.
+
+`tests/pep_assertion_credential.js` holds it.
+
 ## 3df. `subject_urn.ts`: A SERVICE ACCOUNT'S CERTIFICATES NAME IT `urn:sts:sa:` (#1827, 2026-11-16)
 
 rcbj: "Instead of urn:sts:person:remote-pep-N use the format urn:sts:sa:blah

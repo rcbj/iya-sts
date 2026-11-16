@@ -116,5 +116,11 @@
   "cluster.back": "Volver al clúster",
   "cluster.discardedDownload": "Descargar lo descartado",
   "cluster.discardedLead": "El PEP ya no tiene su propio proxy inverso, ajustes ni escuchas: obtiene los del clúster. Esto es lo que tenía, una sola vez.",
-  "cluster.discardedTitle": "Un PEP se unió a un clúster"
+  "cluster.discardedTitle": "Un PEP se unió a un clúster",
+  "once.pepCredential": "Clave de aserción del PEP",
+  "pepCredential.keyPath": "(la ruta del archivo de clave con el que hizo la solicitud)",
+  "pepCredential.urn": "Nombre",
+  "pepCredential.env": "Inicie el PEP con este entorno. La clave privada nunca salió de la máquina que hizo la solicitud; este servicio no tiene ninguna que entregar.",
+  "pepCredential.chain": "El certificado y su cadena hasta la raíz del servicio. Público: el PEP no lo necesita para autenticarse, y figura en la lista de claves de la entrada.",
+  "pepCredential.download": "Descargar el certificado"
 }

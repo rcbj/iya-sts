@@ -2135,6 +2135,14 @@ certificate or the token.
   drops every token held, since each is bound to the old one. A file that
   goes missing or bad KEEPS the key already loaded (`STS-XPEP-0126`,
   `0128`), as the listener pair does.
+* **WHERE THE KEY COMES FROM (phase 3).** It is generated where the PEP
+  runs — by its provisioning, or `tests/tools/pep-credential.js
+  --assertion` — and only a PKCS #10 request goes to the service's
+  `issue-pep-credential`, which certifies it from the realm's Issuing CA as
+  `urn:sts:sa:<PEP_NAME>` and registers it on the entry (rcbj: the service
+  never holds the private key; `xacml/CLAUDE.md`). Nothing in this binary
+  changed for it: the PEP reads the key file as before. The stacks mount
+  it as `/certs/pep-assertion.key` beside `pep.key`.
 * **THE ASSERTION**: `iss` = `sub` = `PEP_NAME`, which must be the entry's
   username; `aud` `<PDP>/oauth2/token`; two minutes; a fresh 128-bit `jti`;
   no `kid`. Presented with `client_id` = `PEP_CLIENT_ID` (`sts-remote-pep`),
